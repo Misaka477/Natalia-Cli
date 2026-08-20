@@ -26,6 +26,26 @@ test("global-scope settings survive across different workspaces", async () => {
   expect(a.config.team?.maxConcurrent).toBe(8);
 });
 
+test("collaboration auto rounds default to three and accept project overrides", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-collaboration-config-"));
+  const globalPath = join(root, "global.json");
+  expect(
+    (await resolveConfig({ workspaceRoot: root, globalPath })).config.runtime
+      .collaboration.maxAutoRounds,
+  ).toBe(3);
+
+  await updateConfigAtScope(
+    root,
+    { runtime: { collaboration: { maxAutoRounds: 7 } } },
+    "project",
+    { globalPath },
+  );
+  expect(
+    (await resolveConfig({ workspaceRoot: root, globalPath })).config.runtime
+      .collaboration.maxAutoRounds,
+  ).toBe(7);
+});
+
 test("legacy project model settings migrate once without moving other settings", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-model-migration-"));
   const globalPath = join(root, "global.json");

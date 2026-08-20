@@ -184,6 +184,11 @@ export type PluginContributionKind =
   | "listeners"
   | "services";
 
+export type PluginLoadContext = {
+  /** Built-ins keep stable public names; external plugins remain namespaced. */
+  builtin: boolean;
+};
+
 export function createPluginRegistry(input: {
   tools: ToolRegistry;
   allowed?: string[];
@@ -203,6 +208,7 @@ export function createPluginRegistry(input: {
    */
   contribute?: (
     manifest: PluginManifest,
+    context: PluginLoadContext,
   ) =>
     | ((
         kind: PluginContributionKind,
@@ -219,7 +225,7 @@ export function createPluginRegistry(input: {
       >
     | undefined;
   /** Called when a plugin unloads, so the host can release kernel ownership. */
-  onUnload?: (pluginID: string) => void;
+  onUnload?: (pluginID: string, context: PluginLoadContext) => void;
   /** The runtime's resolved config accessor, exposed to plugins as `api.runtimeConfig`. */
   runtimeConfig?: () => unknown;
 }) {
@@ -230,6 +236,7 @@ export function createPluginRegistry(input: {
       listeners: Set<(event: unknown) => void>;
       commands: Map<string, PluginCommand>;
       dispose: Array<() => void>;
+      loadContext: PluginLoadContext;
     }
   >();
   const audit: PluginAudit[] = [];
@@ -261,141 +268,203 @@ export function createPluginRegistry(input: {
       throw new Error(`plugin capability denied: ${manifest.id}/${capability}`);
     }
   };
+  async function loadPlugin(
+    plugin: Plugin,
+    allowedOverride: string[] | undefined,
+    config: unknown,
+    loadContext: PluginLoadContext,
+  ) {
+    const manifest = pluginManifestSchema.parse(plugin.manifest);
+    if (plugins.has(manifest.id))
+      throw new Error(`plugin already loaded: ${manifest.id}`);
+    // Validate before anything is registered: misconfiguration must fail
+    // loud at load, never reach `setup` as a half-applied config.
+    let resolvedConfig: unknown;
+    try {
+      resolvedConfig = resolvePluginConfig({ ...plugin, manifest }, config);
+    } catch (error) {
+      writeAudit(
+        manifest.id,
+        "failed",
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+    const listeners = new Set<(event: unknown) => void>();
+    const commands = new Map<string, PluginCommand>();
+    const providedServices = new Set<string>();
+    const disposers: Array<() => void> = [];
+    // The kernel channel is resolved before setup: the plugin's capability
+    // loads (and, for a plugin that declares `requires`, waits for the
+    // required services to appear) so setup runs only once the capability is
+    // active — the same dependency-ordered activation a built-in family gets.
+    let pluginContribute:
+      | ((
+          kind: PluginContributionKind,
+          name: string,
+          payload: unknown,
+        ) => () => void)
+      | undefined;
+    try {
+      pluginContribute = await input.contribute?.(manifest, loadContext);
+    } catch (error) {
+      writeAudit(
+        manifest.id,
+        "failed",
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+    const api: PluginAPI = {
+      config: resolvedConfig,
+      tools: {
+        register(tool) {
+          assertCapability(manifest, "tools", allowedOverride);
+          const name = loadContext.builtin
+            ? tool.name
+            : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${tool.name}`;
+          // Dynamic plugin tools require approval unless the workspace explicitly
+          // trusts a plugin's own read-only side-effect declaration.
+          const owned = {
+            ...tool,
+            name,
+            requiresApproval:
+              loadContext.builtin || input.readOnly?.[manifest.id]
+                ? tool.requiresApproval
+                : true,
+          };
+          input.tools.set(name, owned);
+          const dispose = () => {
+            if (input.tools.get(name) === owned) input.tools.delete(name);
+          };
+          disposers.push(dispose);
+          if (pluginContribute)
+            disposers.push(pluginContribute("tools", name, owned));
+          return dispose;
+        },
+      },
+      services: {
+        provide(name, value) {
+          if (!manifest.provides.includes(name))
+            throw new Error(
+              `plugin ${manifest.id} provided undeclared service: ${name}`,
+            );
+          disposers.push(() => undefined);
+          providedServices.add(name);
+          if (pluginContribute)
+            disposers.push(pluginContribute("services", name, value));
+          return () => undefined;
+        },
+      },
+      events: {
+        on(listener) {
+          assertCapability(manifest, "events", allowedOverride);
+          listeners.add(listener);
+          const dispose = () => listeners.delete(listener);
+          disposers.push(dispose);
+          if (pluginContribute)
+            disposers.push(
+              pluginContribute(
+                "listeners",
+                `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_listener_${listeners.size}`,
+                listener,
+              ),
+            );
+          return dispose;
+        },
+      },
+      commands: {
+        register(command) {
+          assertCapability(manifest, "commands", allowedOverride);
+          // Namespaced like plugin tools, so a plugin cannot shadow a built-in
+          // command by choosing its name.
+          const name = loadContext.builtin
+            ? command.name
+            : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${command.name}`;
+          if (commandOwners.has(name))
+            throw new Error(`plugin command already registered: ${name}`);
+          const owned: PluginCommand = {
+            ...command,
+            name,
+            category: command.category ?? manifest.name,
+          };
+          commands.set(name, owned);
+          commandOwners.set(name, manifest.id);
+          const dispose = () => {
+            commands.delete(name);
+            commandOwners.delete(name);
+          };
+          disposers.push(dispose);
+          if (pluginContribute)
+            disposers.push(pluginContribute("commands", name, owned));
+          return dispose;
+        },
+      },
+      // The runtime's resolved config, when the host provides it: a plugin
+      // reads the effective config by name instead of duplicating a parser.
+      ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
+    };
+    try {
+      await plugin.setup(api);
+      const missingServices = manifest.provides.filter(
+        (name) => !providedServices.has(name),
+      );
+      if (missingServices.length)
+        throw new Error(
+          `plugin ${manifest.id} did not provide declared services: ${missingServices.join(", ")}`,
+        );
+    } catch (error) {
+      for (const dispose of [...disposers].reverse()) dispose();
+      input.onUnload?.(manifest.id, loadContext);
+      writeAudit(
+        manifest.id,
+        "failed",
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+    plugins.set(manifest.id, {
+      plugin: { ...plugin, manifest },
+      listeners,
+      commands,
+      dispose: disposers,
+      loadContext,
+    });
+    writeAudit(manifest.id, "loaded");
+  }
+
   return {
     async load(plugin: Plugin, allowedOverride?: string[], config?: unknown) {
-      const manifest = pluginManifestSchema.parse(plugin.manifest);
-      if (plugins.has(manifest.id))
-        throw new Error(`plugin already loaded: ${manifest.id}`);
-      // Validate before anything is registered: misconfiguration must fail
-      // loud at load, never reach `setup` as a half-applied config.
-      let resolvedConfig: unknown;
-      try {
-        resolvedConfig = resolvePluginConfig({ ...plugin, manifest }, config);
-      } catch (error) {
-        writeAudit(
-          manifest.id,
-          "failed",
-          error instanceof Error ? error.message : String(error),
-        );
-        throw error;
-      }
-      const listeners = new Set<(event: unknown) => void>();
-      const commands = new Map<string, PluginCommand>();
-      const disposers: Array<() => void> = [];
-      // The kernel channel is resolved before setup: the plugin's capability
-      // loads (and, for a plugin that declares `requires`, waits for the
-      // required services to appear) so setup runs only once the capability is
-      // active — the same dependency-ordered activation a built-in family gets.
-      const pluginContribute = await input.contribute?.(manifest);
-      const api: PluginAPI = {
-        config: resolvedConfig,
-        tools: {
-          register(tool) {
-            assertCapability(manifest, "tools", allowedOverride);
-            const name = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${tool.name}`;
-            // Dynamic plugin tools require approval unless the workspace explicitly
-            // trusts a plugin's own read-only side-effect declaration.
-            const owned = {
-              ...tool,
-              name,
-              requiresApproval:
-                tool.requiresApproval || !input.readOnly?.[manifest.id],
-            };
-            input.tools.set(name, owned);
-            const dispose = () => {
-              if (input.tools.get(name) === owned) input.tools.delete(name);
-            };
-            disposers.push(dispose);
-            if (pluginContribute)
-              disposers.push(pluginContribute("tools", name, owned));
-            return dispose;
-          },
-        },
-        services: {
-          provide(name, value) {
-            if (!manifest.provides.includes(name))
-              throw new Error(
-                `plugin ${manifest.id} provided undeclared service: ${name}`,
-              );
-            disposers.push(() => undefined);
-            if (pluginContribute)
-              disposers.push(pluginContribute("services", name, value));
-            return () => undefined;
-          },
-        },
-        events: {
-          on(listener) {
-            assertCapability(manifest, "events", allowedOverride);
-            listeners.add(listener);
-            const dispose = () => listeners.delete(listener);
-            disposers.push(dispose);
-            if (pluginContribute)
-              disposers.push(
-                pluginContribute(
-                  "listeners",
-                  `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_listener_${listeners.size}`,
-                  listener,
-                ),
-              );
-            return dispose;
-          },
-        },
-        commands: {
-          register(command) {
-            assertCapability(manifest, "commands", allowedOverride);
-            // Namespaced like plugin tools, so a plugin cannot shadow a built-in
-            // command by choosing its name.
-            const name = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${command.name}`;
-            if (commandOwners.has(name))
-              throw new Error(`plugin command already registered: ${name}`);
-            const owned: PluginCommand = {
-              ...command,
-              name,
-              category: command.category ?? manifest.name,
-            };
-            commands.set(name, owned);
-            commandOwners.set(name, manifest.id);
-            const dispose = () => {
-              commands.delete(name);
-              commandOwners.delete(name);
-            };
-            disposers.push(dispose);
-            if (pluginContribute)
-              disposers.push(pluginContribute("commands", name, owned));
-            return dispose;
-          },
-        },
-        // The runtime's resolved config, when the host provides it: a plugin
-        // reads the effective config by name instead of duplicating a parser.
-        ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
-      };
-      try {
-        await plugin.setup(api);
-      } catch (error) {
-        for (const dispose of disposers) dispose();
-        writeAudit(
-          manifest.id,
-          "failed",
-          error instanceof Error ? error.message : String(error),
-        );
-        throw error;
-      }
-      plugins.set(manifest.id, {
-        plugin: { ...plugin, manifest },
-        listeners,
-        commands,
-        dispose: disposers,
+      await loadPlugin(plugin, allowedOverride, config, { builtin: false });
+    },
+    async loadBuiltin(plugin: Plugin, config?: unknown) {
+      await loadPlugin(plugin, plugin.manifest.capabilities, config, {
+        builtin: true,
       });
-      writeAudit(manifest.id, "loaded");
     },
     async unload(id: string) {
       const entry = plugins.get(id);
       if (!entry) throw new Error(`plugin not found: ${id}`);
-      await entry.plugin.dispose?.();
-      for (const dispose of entry.dispose) dispose();
-      plugins.delete(id);
-      input.onUnload?.(id);
-      writeAudit(id, "unloaded");
+      let disposeError: unknown;
+      try {
+        await entry.plugin.dispose?.();
+      } catch (error) {
+        disposeError = error;
+      } finally {
+        for (const dispose of [...entry.dispose].reverse()) dispose();
+        plugins.delete(id);
+        input.onUnload?.(id, entry.loadContext);
+        writeAudit(
+          id,
+          disposeError === undefined ? "unloaded" : "failed",
+          disposeError instanceof Error
+            ? disposeError.message
+            : disposeError === undefined
+              ? undefined
+              : String(disposeError),
+        );
+      }
+      if (disposeError !== undefined) throw disposeError;
     },
     dispatch(event: unknown) {
       for (const entry of plugins.values())

@@ -44,6 +44,15 @@ function makeHarness(
     }>;
     naviIntro?: boolean;
     naviAnswers?: Array<{ questionID: string; answer: string }>;
+    naviChats?: Array<{
+      id: string;
+      threadID: string;
+      from: "live_chat" | "main_agent";
+      text: string;
+      round: number;
+      expectsReply: boolean;
+      status: string;
+    }>;
     activePlan?: {
       planID: string;
       version: number;
@@ -126,6 +135,7 @@ function makeHarness(
     naviSuggestions: () => options?.naviSuggestions ?? [],
     naviIntro: () => options?.naviIntro ?? false,
     naviAnswers: () => options?.naviAnswers ?? [],
+    naviChats: () => options?.naviChats ?? [],
     activePlan: () => options?.activePlan,
     retryPolicy: () =>
       options?.retryPolicy ?? {
@@ -715,6 +725,46 @@ test("delivered mailbox intents render into the system prompt", async () => {
   expect(systemPrompt).toContain("[high] reprioritize");
   expect(systemPrompt).toContain("focus on the docs task first");
   expect(systemPrompt).toContain("</pending_user_intents>");
+});
+
+test("pending Navi chat renders as a required direct reply without becoming user intent", async () => {
+  let systemPrompt = "";
+  const { runner } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        const system = request.messages.find(
+          (message) => message.role === "system",
+        );
+        if (system && typeof system.content === "string")
+          systemPrompt = system.content;
+        yield content("replying to Navi");
+      },
+    },
+    {
+      naviIntro: true,
+      naviChats: [
+        {
+          id: "collab:chat:pending",
+          threadID: "collab:chat:thread",
+          from: "live_chat",
+          text: "Did you account for the empty case?",
+          round: 2,
+          expectsReply: true,
+          status: "pending",
+        },
+      ],
+    },
+  );
+
+  await runner.runTurn(turn);
+  expect(systemPrompt).toContain("<navi_chat>");
+  expect(systemPrompt).toContain("messageID: collab:chat:pending");
+  expect(systemPrompt).toContain("round 2 · REPLY_REQUIRED");
+  expect(systemPrompt).toContain("[Navi → you]");
+  expect(systemPrompt).toContain("must receive one direct collab_chat reply");
+  expect(systemPrompt).not.toContain("<pending_user_intents>");
 });
 
 test("an active plan renders as a NextPlanHandoff in the system prompt", async () => {

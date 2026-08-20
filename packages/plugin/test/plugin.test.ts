@@ -47,6 +47,108 @@ test("plugin registrations are capability-gated and removed on unload", async ()
   ]);
 });
 
+test("built-in plugins use the same lifecycle with stable public names", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "natalia-observe",
+        version: "1.0.0",
+        name: "Observe",
+        description: "",
+        entry: "natalia:observe",
+        capabilities: ["tools"],
+        scope: "workspace",
+        provides: [],
+        requires: [],
+      },
+      setup(api) {
+        api.tools.register({
+          name: "observe",
+          description: "Observe",
+          requiresApproval: false,
+          parameters: { type: "object", properties: {} },
+          async execute() {
+            return "ok";
+          },
+        });
+      },
+    }),
+  );
+
+  expect(tools.get("observe")?.requiresApproval).toBe(false);
+  expect(tools.has("plugin_natalia_observe_observe")).toBe(false);
+  await registry.unload("natalia-observe");
+  expect(tools.has("observe")).toBe(false);
+});
+
+test("declared services must be provided before activation completes", async () => {
+  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
+  await expect(
+    registry.loadBuiltin(
+      definePlugin({
+        manifest: {
+          apiVersion: 1,
+          id: "natalia-lying-service",
+          version: "1.0.0",
+          name: "Lying Service",
+          description: "",
+          entry: "natalia:lying-service",
+          capabilities: [],
+          scope: "workspace",
+          provides: ["missing.service"],
+          requires: [],
+        },
+        setup() {},
+      }),
+    ),
+  ).rejects.toThrow("did not provide declared services");
+  expect(registry.list()).toEqual([]);
+});
+
+test("a failing plugin disposer cannot retain owned registrations", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "natalia-broken-dispose",
+        version: "1.0.0",
+        name: "Broken Dispose",
+        description: "",
+        entry: "natalia:broken-dispose",
+        capabilities: ["tools"],
+        scope: "workspace",
+        provides: [],
+        requires: [],
+      },
+      setup(api) {
+        api.tools.register({
+          name: "temporary",
+          description: "Temporary",
+          requiresApproval: false,
+          parameters: { type: "object", properties: {} },
+          async execute() {
+            return "ok";
+          },
+        });
+      },
+      dispose() {
+        throw new Error("dispose failed");
+      },
+    }),
+  );
+
+  await expect(registry.unload("natalia-broken-dispose")).rejects.toThrow(
+    "dispose failed",
+  );
+  expect(tools.has("temporary")).toBe(false);
+  expect(registry.list()).toEqual([]);
+});
+
 test("plugin tools require approval unless workspace marks plugin read-only", async () => {
   const safeTools = createToolRegistry([]);
   const safeRegistry = createPluginRegistry({

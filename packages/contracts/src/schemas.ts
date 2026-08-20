@@ -50,6 +50,16 @@ export const sandboxConfigSchema = z.object({
 export const runtimeConfigSchema = z.object({
   maxStepsPerTurn: z.number().int().positive().optional(),
   subagentDepth: z.number().int().min(1).max(8).default(1),
+  collaboration: z
+    .object({
+      /**
+       * Maximum request/reply exchanges Natalia and Navi may continue without
+       * another user turn. A reply that closes the final exchange is always
+       * delivered; this limit only prevents another automatic follow-up.
+       */
+      maxAutoRounds: z.number().int().min(1).max(10).default(3),
+    })
+    .default({}),
   timeouts: timeoutSchema.default({}),
   maxAttemptsPerStep: z.number().int().positive().default(3),
   /**

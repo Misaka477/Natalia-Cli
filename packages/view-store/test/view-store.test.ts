@@ -79,6 +79,42 @@ test("a generated session title updates the active conversation", () => {
   expect(state.title).toBe("Readable topic");
 });
 
+test("collaboration chat renders both Natalia and Navi directions", () => {
+  const state = projectEvents([
+    {
+      type: "collab.chat",
+      id: "collab:chat:1",
+      threadID: "collab:chat:1",
+      from: "main_agent",
+      to: "live_chat",
+      text: "Check this edge case.",
+      round: 1,
+      expectsReply: true,
+      at: "t0",
+    },
+    {
+      type: "collab.chat",
+      id: "collab:chat:2",
+      threadID: "collab:chat:1",
+      replyToID: "collab:chat:1",
+      from: "live_chat",
+      to: "main_agent",
+      text: "It is covered.",
+      round: 1,
+      expectsReply: false,
+      at: "t1",
+    },
+  ]);
+
+  expect(state.chatMessages.map((message) => displayText(message))).toEqual([
+    "Natalia → Navi: Check this edge case.",
+    "Navi → Natalia: It is covered.",
+  ]);
+  expect(state.chatMessages.every((message) => message.role === "system")).toBe(
+    true,
+  );
+});
+
 test("a queued turn stays visibly queued without replacing active work", () => {
   const state = projectEvents([
     submitted("t1", "first"),
@@ -100,6 +136,24 @@ test("a queued turn stays visibly queued without replacing active work", () => {
     state.messages.find((block) => block.id === "t2:user")?.status,
   ).toBeUndefined();
   expect(state.activeTurn).toBe("t2");
+});
+
+test("an internal wake turn projects as system context, not user input", () => {
+  const state = projectEvents([
+    {
+      ...submitted("wake", "internal collaboration wake"),
+      internal: true,
+    },
+  ]);
+
+  expect(state.messages).toEqual([
+    expect.objectContaining({
+      id: "wake:system",
+      role: "system",
+      text: "internal collaboration wake",
+    }),
+  ]);
+  expect(state.lastSubmission).toBeUndefined();
 });
 
 test("cancelling a queued turn clears its queued marker", () => {

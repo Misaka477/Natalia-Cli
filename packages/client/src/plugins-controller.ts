@@ -10,6 +10,7 @@ import {
   loadLocalPlugins,
   validatePluginPath,
   type Plugin,
+  type PluginLoadContext,
   type PluginManifest,
 } from "@natalia/plugin";
 import type { ToolRegistry } from "@natalia/tools";
@@ -48,6 +49,7 @@ export function createPluginsController(input: {
 }) {
   let registry: ReturnType<typeof createPluginRegistry> | undefined;
   let reloadSequence = 0;
+  const builtinIDs = new Set<string>();
 
   function roots() {
     return [
@@ -56,29 +58,32 @@ export function createPluginsController(input: {
     ];
   }
 
-  async function init() {
+  async function init(options: { loadLocal?: boolean } = {}) {
     registry = createPluginRegistry({
       tools: input.tools,
       readOnly: input.pluginReadOnly(),
-      onAudit: (entry) =>
+      onAudit: (entry) => {
+        if (builtinIDs.has(entry.pluginID)) return;
         input.publish({
           type: "plugin.update",
           id: entry.pluginID,
           status: entry.action,
           detail: entry.detail,
-        }),
-      contribute: async (manifest) => {
-        const capabilityID = pluginCapabilityID(manifest.id);
+        });
+      },
+      contribute: async (manifest, context) => {
+        const capabilityID = capabilityIDFor(manifest.id, context);
         // The plugin's capability owns everything it registers — tools,
         // commands and event listeners all reach the kernel, the single
         // channel a built-in tool family uses. `events` maps to the kernel's
         // `listeners` grant; execution stays in the registry, ownership is the
         // kernel's.
         const grants: CapabilityGrant[] = [];
+        if (manifest.provides.length) grants.push("services");
         if (manifest.capabilities.includes("tools")) grants.push("tools");
         if (manifest.capabilities.includes("commands")) grants.push("commands");
         if (manifest.capabilities.includes("events")) grants.push("listeners");
-        if (manifest.provides.length) grants.push("services");
+        const provides: string[] = [];
         const result = input.capabilityRegistry.tryLoad(
           {
             id: capabilityID,
@@ -87,6 +92,7 @@ export function createPluginsController(input: {
             description: manifest.description,
             scope: manifest.scope,
             grants,
+            provides,
             // `requires` gates activation on the plugin's capability: its setup
             // waits for the required services. `provides` is not declared on
             // the registration — a plugin's services arrive during setup (post
@@ -111,10 +117,12 @@ export function createPluginsController(input: {
             elapsed += 10
           )
             await Bun.sleep(10);
-          if (input.capabilityRegistry.isPending(capabilityID))
+          if (input.capabilityRegistry.isPending(capabilityID)) {
+            input.capabilityRegistry.unload(capabilityID);
             throw new Error(
               `plugin capability ${capabilityID} still pending: required services were not provided`,
             );
+          }
         }
         return (kind, name, payload) => {
           input.capabilityRegistry.contribute(
@@ -123,21 +131,29 @@ export function createPluginsController(input: {
             name,
             payload,
           );
+          if (kind === "services" && !provides.includes(name))
+            provides.push(name);
           // Kernel ownership is released when the plugin unloads (the whole
           // capability goes), not per registration.
           return () => {};
         };
       },
-      onUnload: (pluginID) => {
-        input.capabilityRegistry.unload(pluginCapabilityID(pluginID));
+      onUnload: (pluginID, context) => {
+        input.capabilityRegistry.unload(capabilityIDFor(pluginID, context));
       },
       // The runtime's resolved config as a service: plugins read it by name,
       // refreshed in place on config reload (the D2 change notify).
       runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
     });
+    input.syncGlobalCommands();
+    if (options.loadLocal !== false) await loadLocal();
+  }
+
+  async function loadLocal() {
+    const current = get();
     await loadLocalPlugins({
       roots: roots(),
-      registry,
+      registry: current,
       enabled: input.pluginEnabled(),
       capabilities: input.pluginCapabilities(),
       settings: input.pluginSettings(),
@@ -159,10 +175,25 @@ export function createPluginsController(input: {
 
   /** The loaded plugins, or an empty list when plugins are not enabled. */
   function list(): PluginManifest[] {
-    return registry?.list() ?? [];
+    return (registry?.list() ?? []).filter(
+      (manifest) => !builtinIDs.has(manifest.id),
+    );
+  }
+
+  async function loadBuiltin(plugin: Plugin, config?: unknown) {
+    const current = get();
+    builtinIDs.add(plugin.manifest.id);
+    try {
+      await current.loadBuiltin(plugin, config);
+    } catch (error) {
+      builtinIDs.delete(plugin.manifest.id);
+      throw error;
+    }
+    input.syncGlobalCommands();
   }
 
   async function unload(id: string) {
+    if (builtinIDs.has(id)) throw new Error(`plugin not found: ${id}`);
     const current = registry;
     if (current && current.list().some((manifest) => manifest.id === id))
       await current.unload(id);
@@ -205,13 +236,40 @@ export function createPluginsController(input: {
   async function close() {
     const current = registry;
     if (!current) return;
-    for (const plugin of current.list()) await current.unload(plugin.id);
+    for (const plugin of current.list().reverse())
+      try {
+        await current.unload(plugin.id);
+      } catch (error) {
+        input.publish({
+          type: "diagnostic",
+          level: "warning",
+          owner: builtinIDs.has(plugin.id)
+            ? plugin.id
+            : pluginCapabilityID(plugin.id),
+          message: `plugin ${plugin.id} cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
     registry = undefined;
+    builtinIDs.clear();
   }
 
   function dispatch(event: RuntimeEvent) {
     registry?.dispatch(event);
   }
 
-  return { init, get, list, unload, reload, close, dispatch };
+  return {
+    init,
+    get,
+    list,
+    loadBuiltin,
+    loadLocal,
+    unload,
+    reload,
+    close,
+    dispatch,
+  };
+}
+
+function capabilityIDFor(pluginID: string, context: PluginLoadContext) {
+  return context.builtin ? pluginID : pluginCapabilityID(pluginID);
 }

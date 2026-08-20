@@ -16,6 +16,7 @@ export type AdmittedSessionInput = {
   resources?: PromptResourceMention[];
   agents?: PromptAgentMention[];
   delivery: SessionInputDelivery;
+  internal?: boolean;
   admittedAt: string;
   admittedSeq: number;
   promotedAt?: string;
@@ -51,7 +52,8 @@ export function admitInput(
         JSON.stringify(input.resources ?? []) &&
       JSON.stringify(existing.agents ?? []) ===
         JSON.stringify(input.agents ?? []) &&
-      existing.delivery === input.delivery
+      existing.delivery === input.delivery &&
+      existing.internal === input.internal
     )
       return existing;
     throw new SessionInputConflictError(input.id);

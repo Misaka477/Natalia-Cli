@@ -43,6 +43,35 @@ test("raw XML-like tool protocol becomes structured calls while preserving prose
   ]);
 });
 
+test("simple args XML-like tool protocol becomes a structured call", async () => {
+  async function* source() {
+    yield { type: "content" as const, text: "Before <edit_file><ar" };
+    yield {
+      type: "content" as const,
+      text: "gs>{&quot;path&quot;:&quot;note.txt&quot;,&quot;content&quot;:&quot;updated&quot;}</args></edit_file> after",
+    };
+    yield { type: "done" as const };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    { type: "content", text: "Before " },
+    { type: "content", text: " after" },
+    {
+      type: "tool_call",
+      calls: [
+        {
+          id: "raw_xml_tool_0",
+          name: "edit_file",
+          arguments: '{"path":"note.txt","content":"updated"}',
+        },
+      ],
+    },
+    { type: "done" },
+  ]);
+});
+
 test("raw XML normalization preserves the provider finish reason", async () => {
   async function* source() {
     yield { type: "content" as const, text: "partial" };

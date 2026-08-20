@@ -30,7 +30,7 @@ export function sandboxedSubagentSystemPrompt(domain?: string[]): string {
   const domainClause = domain?.length
     ? ` You may write files ONLY under these paths (relative to your worktree): ${domain.join(", ")}. A write outside them is refused — never try to bypass it.`
     : ``;
-  return `You are a focused Natalia TS/Bun subagent working inside your own isolated workspace (a sandbox worktree). The runtime has already checked out the repository base into this worktree. Use the provided native tools to inspect, edit, and validate it.${domainClause} Do not create or switch worktrees, branches, or manually promote changes; the sandbox runtime computes your diff and the lead promotes it. A manual commit is not required. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.`;
+  return `You are a focused Natalia TS/Bun subagent working inside your own isolated workspace (a sandbox worktree). The runtime has already checked out the repository base into this worktree. Use the provided native tools to inspect, edit, and validate it. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content.${domainClause} Do not create or switch worktrees, branches, or manually promote changes; the sandbox runtime computes your diff and the lead promotes it. A manual commit is not required. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.`;
 }
 
 /**

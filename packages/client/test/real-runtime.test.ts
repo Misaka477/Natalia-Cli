@@ -2059,6 +2059,16 @@ test("permission profile disables installed skills and plugins before discovery"
 
   expect(await client.skills?.()).toEqual([]);
   expect(await client.plugins?.()).toEqual([]);
+  expect(
+    (await client.capabilities?.())?.some(
+      (capability) => capability.id === "natalia-skills",
+    ),
+  ).toBe(false);
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "skill_load",
+    ),
+  ).toBe(false);
   await client.dispose?.();
 });
 
@@ -3230,6 +3240,19 @@ test("runtime skill catalog exposes discovery metadata without skill body", asyn
       sandboxRequired: false,
     },
   ]);
+  expect(
+    (await client.capabilities?.())?.find(
+      (capability) => capability.id === "natalia-skills",
+    ),
+  ).toMatchObject({
+    grants: ["services", "tools"],
+    provides: ["skills.registry"],
+    contributions: [
+      { kind: "services", name: "skills.registry" },
+      { kind: "tools", name: "skill_load" },
+    ],
+  });
+  await client.dispose?.();
 });
 
 test("runtime exposes contained workspace filesystem APIs", async () => {
@@ -4045,6 +4068,12 @@ test("real runtime client routes checkpoint slash commands to real store", async
       (event) => event.type === "rollback.previewed" && event.preview.dryRun,
     ),
   ).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.find(
+      (tool) => tool.name === "skill_load",
+    )?.owner,
+  ).toBe("natalia-skills");
+  await client.dispose?.();
 });
 
 test("real runtime client executes model tool calls with approval policy", async () => {
@@ -9138,7 +9167,7 @@ test("session attach switches the active journal while a background turn keeps r
       sessionID: "ses_attach_a",
     });
     await pollHistoryForFinished(client);
-    const first = await client.history?.({ limit: 100 });
+    const first = await client.history?.({ limit: 1000 });
     expect(
       first?.events.some((entry) => entry.event.type === "turn.submitted"),
     ).toBe(true);
@@ -11087,6 +11116,8 @@ test("chat answers with live main context while the main turn is still running",
 test("a queued mailbox intent wakes an idle main agent", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-mailbox-deliver-"));
   const systemPrompts: string[] = [];
+  const providerMessages: Array<Array<{ role: string; content: string }>> = [];
+  const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_mailbox_deliver",
@@ -11094,6 +11125,10 @@ test("a queued mailbox intent wakes an idle main agent", async () => {
       provider: "test",
       model: "test",
       async *stream(request) {
+        providerMessages.push(
+          (request as { messages: Array<{ role: string; content: string }> })
+            .messages,
+        );
         systemPrompts.push(
           String(
             (
@@ -11108,15 +11143,35 @@ test("a queued mailbox intent wakes an idle main agent", async () => {
       },
     },
   });
-  client.start(() => undefined);
+  client.start((event) => events.push(event));
   await client.mailboxSend!({
     intent: "constraint",
     text: "do not install that dependency",
   });
-  // The mailbox intent wakes the idle main agent: no manual submission is
-  // needed, the turn runs as if the user had typed the directive (P8 §7).
+  // The mailbox intent wakes the idle main agent without inventing another
+  // user-authored turn; the durable mailbox remains the sole intent source.
   await pollHistoryForFinished(client);
   expect(systemPrompts[0]).toContain("do not install that dependency");
+  const wake = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "turn.submitted" }> =>
+      event.type === "turn.submitted" && event.id.startsWith("turn_mailbox_"),
+  );
+  expect(wake).toMatchObject({ internal: true });
+  expect(wake?.text).not.toContain("do not install that dependency");
+  expect(
+    providerMessages[0]?.some(
+      (message) =>
+        message.role === "system" &&
+        message.content.includes("internal mailbox wake"),
+    ),
+  ).toBe(true);
+  expect(
+    providerMessages[0]?.some(
+      (message) =>
+        message.role === "user" &&
+        message.content.includes("do not install that dependency"),
+    ),
+  ).toBe(false);
   await client.dispose?.();
 });
 
@@ -11565,6 +11620,332 @@ test("collab_answer accepts a truncated question id (models drop the prefix)", a
   const answer = events.find((event) => event.type === "collab.answer");
   expect(answer).toMatchObject({ answer: "yes, echo is safe" });
   await client.dispose?.();
+}, 20000);
+
+test("collab_chat enforces direct replies and stops after three automatic rounds", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-collab-chat-"));
+  const events: RuntimeEvent[] = [];
+  let started = false;
+  let naviIgnoredRequiredReply = false;
+  let triedUnthreadedReply = false;
+  let mainIgnoredRequiredReply = false;
+  let mainWakeWithoutRequiredReply = false;
+  const repliedMessageIDs = new Set<string>();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_collab_chat",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const messages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages;
+        const system = String(messages[0]?.content ?? "");
+        const systemContext = messages
+          .filter((message) => message.role === "system")
+          .map((message) => message.content)
+          .join("\n");
+        const naviTurn = system.includes("<natalia_collaborations>");
+        const toolResult = messages
+          .filter((message) => message.role === "tool")
+          .at(-1)?.content;
+        const pendingID =
+          /messageID: (collab:chat:[^\s·]+)[^\n]*REPLY_REQUIRED/u.exec(
+            systemContext,
+          )?.[1];
+
+        if (!naviTurn && !started) {
+          started = true;
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "chat_start",
+                name: "collab_chat",
+                arguments: JSON.stringify({
+                  text: "Navi, check the edge case.",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (naviTurn && pendingID && !naviIgnoredRequiredReply) {
+          naviIgnoredRequiredReply = true;
+          yield {
+            type: "content" as const,
+            text: "I will answer without the collaboration tool.",
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        if (naviTurn && pendingID && !triedUnthreadedReply) {
+          triedUnthreadedReply = true;
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "chat_bad_reply",
+                name: "collab_chat",
+                arguments: JSON.stringify({
+                  text: "I checked it, but omitted the reply ID.",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (
+          naviTurn &&
+          pendingID &&
+          toolResult?.includes("reply required for chat message")
+        ) {
+          repliedMessageIDs.add(pendingID);
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "chat_fixed_reply",
+                name: "collab_chat",
+                arguments: JSON.stringify({
+                  text: "I checked it. Did you cover the empty input?",
+                  messageID: pendingID,
+                  continueConversation: true,
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (
+          !naviTurn &&
+          pendingID &&
+          !mainIgnoredRequiredReply &&
+          !repliedMessageIDs.has(pendingID)
+        ) {
+          mainIgnoredRequiredReply = true;
+          yield {
+            type: "content" as const,
+            text: "I will answer Navi without the collaboration tool.",
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        if (pendingID && !repliedMessageIDs.has(pendingID)) {
+          repliedMessageIDs.add(pendingID);
+          const sender = naviTurn ? "Navi" : "Natalia";
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: `chat_reply_${sender}`,
+                name: "collab_chat",
+                arguments: JSON.stringify({
+                  text: naviTurn
+                    ? "Yes. The final edge is covered."
+                    : "Yes, empty input is covered. Anything else?",
+                  messageID: pendingID,
+                  continueConversation: true,
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (!naviTurn && !pendingID && started)
+          mainWakeWithoutRequiredReply = true;
+        yield { type: "content" as const, text: "collaboration handled" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  try {
+    await client.submit("ask Navi to check it");
+    await waitForAsync(async () => {
+      const chatCount = events.filter(
+        (event) => event.type === "collab.chat",
+      ).length;
+      if (chatCount > 4)
+        throw new Error(`collab_chat exceeded its limit: ${chatCount}`);
+      return chatCount === 4 && mainWakeWithoutRequiredReply;
+    }, 10000).catch((error) => {
+      const summary = events
+        .filter(
+          (event) =>
+            event.type === "collab.chat" ||
+            event.type === "chat.tool.used" ||
+            event.type === "diagnostic" ||
+            event.type === "turn.finished",
+        )
+        .map((event) => JSON.stringify(event))
+        .join("\n");
+      throw new Error(`${String(error)}\n${summary}`);
+    });
+
+    const chats = events.filter(
+      (event): event is Extract<RuntimeEvent, { type: "collab.chat" }> =>
+        event.type === "collab.chat",
+    );
+    expect(chats.map((event) => event.from)).toEqual([
+      "main_agent",
+      "live_chat",
+      "main_agent",
+      "live_chat",
+    ]);
+    expect(chats.map((event) => event.round)).toEqual([1, 2, 3, 3]);
+    expect(chats.map((event) => event.expectsReply)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    expect(new Set(chats.map((event) => event.threadID)).size).toBe(1);
+    expect(
+      events
+        .filter(
+          (event): event is Extract<RuntimeEvent, { type: "turn.submitted" }> =>
+            event.type === "turn.submitted" &&
+            event.id.startsWith("turn_collab_"),
+        )
+        .every((event) => event.internal === true),
+    ).toBe(true);
+    expect(chats.slice(1).map((event) => event.replyToID)).toEqual(
+      chats.slice(0, -1).map((event) => event.id),
+    );
+    expect(
+      events.some(
+        (event) =>
+          event.type === "chat.tool.used" &&
+          event.toolName === "collab_chat" &&
+          event.result?.includes("reply required for chat message"),
+      ),
+    ).toBe(true);
+    const replyCorrections = events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "diagnostic" }> =>
+          event.type === "diagnostic" &&
+          event.message.includes("Correcting missing direct reply"),
+      )
+      .map((event) => event.message);
+    expect(
+      replyCorrections.some((message) => message.includes(chats[0]!.id)),
+    ).toBe(true);
+    expect(
+      replyCorrections.some((message) => message.includes(chats[1]!.id)),
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "chat.tool.used" &&
+          event.toolName === "collab_chat" &&
+          event.result?.includes('"autoRoundLimitReached":true'),
+      ),
+    ).toBe(true);
+  } finally {
+    await client.dispose?.();
+  }
+}, 20000);
+
+test("collab_chat honors a configured one-round automatic limit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-collab-chat-limit-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ runtime: { collaboration: { maxAutoRounds: 1 } } }),
+  );
+  const events: RuntimeEvent[] = [];
+  let started = false;
+  let finalWakeObserved = false;
+  const repliedMessageIDs = new Set<string>();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_collab_chat_limit",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const messages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages;
+        const system = String(messages[0]?.content ?? "");
+        const naviTurn = system.includes("<natalia_collaborations>");
+        const toolResult = messages
+          .filter((message) => message.role === "tool")
+          .at(-1)?.content;
+        const pendingID =
+          /messageID: (collab:chat:[^\s·]+)[^\n]*REPLY_REQUIRED/u.exec(
+            system,
+          )?.[1];
+        if (!naviTurn && !started) {
+          started = true;
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "limit_start",
+                name: "collab_chat",
+                arguments: JSON.stringify({ text: "One quick check." }),
+              },
+            ],
+          };
+          return;
+        }
+        if (
+          naviTurn &&
+          pendingID &&
+          !repliedMessageIDs.has(pendingID) &&
+          !toolResult?.includes('"autoRoundLimitReached":true')
+        ) {
+          repliedMessageIDs.add(pendingID);
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "limit_reply",
+                name: "collab_chat",
+                arguments: JSON.stringify({
+                  text: "Checked and closed.",
+                  messageID: pendingID,
+                  continueConversation: true,
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (!naviTurn && started && !pendingID) finalWakeObserved = true;
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  try {
+    await client.submit("start one round");
+    await waitForAsync(
+      async () =>
+        events.filter((event) => event.type === "collab.chat").length === 2 &&
+        finalWakeObserved,
+      10000,
+    );
+    const chats = events.filter(
+      (event): event is Extract<RuntimeEvent, { type: "collab.chat" }> =>
+        event.type === "collab.chat",
+    );
+    expect(chats.map((event) => event.round)).toEqual([1, 1]);
+    expect(chats.map((event) => event.expectsReply)).toEqual([true, false]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "chat.tool.used" &&
+          event.result?.includes('"maxAutoRounds":1'),
+      ),
+    ).toBe(true);
+  } finally {
+    await client.dispose?.();
+  }
 }, 20000);
 
 function sandboxedSubagentProvider(): StreamingProvider {

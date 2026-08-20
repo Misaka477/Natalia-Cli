@@ -11,7 +11,6 @@ import {
   isInvalidGeneratedSessionTitle,
   sanitizeSessionTitleInput,
 } from "./session-title";
-import { createSkillsController } from "./skills-controller";
 import { createSubagentsController } from "./subagents-controller";
 import { createTerminalController } from "./terminal-controller";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
@@ -142,10 +141,10 @@ import {
 } from "@natalia/tools";
 import { ManagedProcessRegistry } from "@natalia/tool-process";
 import {
-  createSkillLoadTool,
   readSkillResource,
   runSkillScript,
   type Skill,
+  type SkillRegistry,
 } from "@natalia/skills";
 import type { SubagentRegistry } from "@natalia/subagent";
 import type { NativeTerminalRegistry } from "@natalia/native-terminal";
@@ -189,6 +188,10 @@ import {
   refreshRuntimeConfigService,
   registerRuntimeConfigCapability,
 } from "./capabilities/runtime-config-capability";
+import {
+  createSkillsPlugin,
+  SKILLS_REGISTRY_SERVICE,
+} from "./builtin-plugins/skills-plugin";
 import {
   loadLocalToolFamilies,
   reloadLocalToolFamily,
@@ -717,6 +720,8 @@ export function createRealRuntimeClient(
     pauseWaiters: Array<() => void>;
     chatAbort?: AbortController;
     chatTask?: Promise<void>;
+    chatWakePending?: boolean;
+    chatWakeTask?: Promise<void>;
   };
   const executionBySession = new Map<SessionID, SessionExecutionState>();
   let activeExec: SessionExecutionState | undefined;
@@ -765,11 +770,9 @@ export function createRealRuntimeClient(
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
   let readySettled = false;
-  const skillsController = createSkillsController({
-    workspaceRoot,
-    userRoot: () => userSkillRoot(),
-    remoteURLs: () => tsRuntimeConfig?.skills.urls,
-  });
+  const skillRegistry = () =>
+    capabilityRegistry.service<SkillRegistry>(SKILLS_REGISTRY_SERVICE);
+  const skillsList = () => skillRegistry()?.list() ?? [];
   let activeSkill: Skill | undefined;
   let attachmentReferences = new Map<
     string,
@@ -923,6 +926,7 @@ export function createRealRuntimeClient(
   let chatSequence = 0;
   let collabSequence = 0;
   const chatTasks = new Set<Promise<unknown>>();
+  const internalWakeTasks = new Set<Promise<unknown>>();
   let planSequence = 0;
   let completionSequence = 0;
 
@@ -1739,7 +1743,7 @@ export function createRealRuntimeClient(
         const allowed = record?.allowedTools ?? [];
         const excluded = new Set(record?.excludeTools ?? []);
         const ledger = createSubagentContext(
-          "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+          "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
           task,
         );
         const repeatedCalls = new Map<string, number>();
@@ -1987,9 +1991,29 @@ export function createRealRuntimeClient(
         },
       });
     }
-    if (extensionEnabled("plugins")) {
-      await pluginsController.init();
-    }
+    await pluginsController.init({ loadLocal: false });
+    if (extensionEnabled("skills"))
+      await pluginsController.loadBuiltin(
+        createSkillsPlugin({
+          workspaceRoot,
+          userRoot: userSkillRoot(),
+          remoteURLs: tsRuntimeConfig?.skills.urls,
+          onLoad: (skill, output, context) => {
+            const owner = context.sessionID
+              ? executionBySession.get(context.sessionID as SessionID)
+              : undefined;
+            if (!owner) return;
+            owner.activeSkill = skill;
+            if (owner === activeExec) activeSkill = skill;
+            owner.context.add({
+              id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
+              role: "system",
+              content: output,
+            });
+          },
+        }),
+      );
+    if (extensionEnabled("plugins")) await pluginsController.loadLocal();
     await terminalController.init();
     terminalController.setActiveSession(sessionID);
 
@@ -2191,7 +2215,6 @@ export function createRealRuntimeClient(
       (input) => input.delivery === "queue",
     );
     if (queued) void turnCoordinator().wake(drainSession);
-    if (extensionEnabled("skills")) await skillsController.init();
     const activeSkillEntry = [...runtimeContext.snapshot().entries]
       .reverse()
       .find(
@@ -2200,35 +2223,13 @@ export function createRealRuntimeClient(
     const qualifiedName = activeSkillEntry?.id.match(
       /^skill:((?:project|remote|user):[^:]+):/u,
     )?.[1];
-    if (qualifiedName && skillsController.enabled()) {
+    if (qualifiedName && skillRegistry()) {
       try {
-        activeSkill = skillsController.resolve(qualifiedName);
+        activeSkill = skillRegistry()!.resolve(qualifiedName);
       } catch {
         // A removed skill must not prevent durable session recovery.
       }
     }
-    if (extensionEnabled("skills"))
-      tools.set(
-        "skill_load",
-        createSkillLoadTool({
-          registry: () =>
-            skillsController.enabled() ? skillsController.get() : undefined,
-          onLoad: (skill, output, context) => {
-            const owner = context.sessionID
-              ? executionBySession.get(context.sessionID as SessionID)
-              : undefined;
-            if (!owner) return;
-            owner.activeSkill = skill;
-            if (owner === activeExec) activeSkill = skill;
-            owner.context.add({
-              id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
-              role: "system",
-              content: output,
-            });
-          },
-        }),
-      );
-    else tools.delete("skill_load");
     // P8 C3: the main agent acknowledges delivered mailbox intents it acted
     // on; acknowledged messages stop being re-injected as pending intents.
     tools.set(
@@ -2341,6 +2342,7 @@ export function createRealRuntimeClient(
             : {}),
           at: new Date().toISOString(),
         });
+        requestNaviWake(owner);
         return JSON.stringify({ responded: true });
       },
     } as RuntimeTool);
@@ -2369,10 +2371,17 @@ export function createRealRuntimeClient(
             text: message.text,
             status: message.status,
             ...(message.questionID ? { questionID: message.questionID } : {}),
+            ...(message.threadID ? { threadID: message.threadID } : {}),
+            ...(message.replyToID ? { replyToID: message.replyToID } : {}),
+            ...(message.round ? { round: message.round } : {}),
+            ...(message.expectsReply !== undefined
+              ? { expectsReply: message.expectsReply }
+              : {}),
           })),
         );
       },
     } as RuntimeTool);
+    tools.set("collab_chat", createCollabChatTool("main_agent"));
     tools.set("collab_ask", {
       name: "collab_ask",
       description:
@@ -2405,7 +2414,7 @@ export function createRealRuntimeClient(
         // If Navi is not mid-conversation with the user, wake her to answer
         // immediately; if she is chatting, the question waits for her next
         // turn boundary (the queued path).
-        if (!exec.chatAbort) void wakeNavi(exec).catch(() => undefined);
+        requestNaviWake(exec);
         return JSON.stringify({ asked: true });
       },
     } as RuntimeTool);
@@ -2527,8 +2536,8 @@ export function createRealRuntimeClient(
    * kernel owns reports the capability that contributed it and that capability's
    * scope, so the journal says which family a tool came from and how long it
    * lives. `natalia-runtime` is left for a tool the host injected directly (a
-   * caller-supplied registry, and the skills/mailbox/collaboration tools the
-   * runtime registers after assembly).
+   * caller-supplied registry and the mailbox/collaboration tools the runtime
+   * still registers after assembly).
    */
   /**
    * Hot-reloads one out-of-tree family: re-imports its entry and re-registers
@@ -2650,15 +2659,13 @@ export function createRealRuntimeClient(
   /**
    * Every command a capability or plugin contributed.
    *
-   * Two sources, one list: plugins register through the plugin registry, and any
-   * capability holding the "commands" grant contributes through the kernel. A UI
-   * renders this without knowing which produced what.
+   * The kernel is the sole catalogue: external and built-in plugins both
+   * contribute through it, so a UI never merges parallel registries.
    */
   function commandCatalogEntries(): PluginCommand[] {
-    const contributed = capabilityRegistry
+    return capabilityRegistry
       .contributions<PluginCommand>("commands")
       .map((entry) => entry.payload);
-    return [...pluginsController.get().commands(), ...contributed];
   }
 
   function applyAgentPolicy() {
@@ -3587,10 +3594,15 @@ export function createRealRuntimeClient(
     });
   }
 
-  async function submitInput(input: SubmitInput, forSessionID?: SessionID) {
+  async function submitInput(
+    input: SubmitInput & { internal?: boolean },
+    forSessionID?: SessionID,
+  ) {
     await ready;
+    if (runtimeDisposed) throw new Error("runtime disposed");
     const targetSessionID = forSessionID ?? sessionID;
     const targetExec = await ensureExecution(targetSessionID);
+    if (runtimeDisposed) throw new Error("runtime disposed");
     const targetSession = targetExec.session;
     let text = input.text;
     // /team <message>: the user explicitly requests the agent team. Inject the
@@ -3611,6 +3623,7 @@ export function createRealRuntimeClient(
     const attachments = input.attachments?.length
       ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
       : [];
+    if (runtimeDisposed) throw new Error("runtime disposed");
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
     const delivery = input.delivery ?? "steer";
     const submitted: SubmittedTurn = {
@@ -3621,6 +3634,7 @@ export function createRealRuntimeClient(
       lineCount: lineCount(text),
       sha256: createHash("sha256").update(text).digest("hex"),
       ...(delivery === "queue" ? { delivery } : {}),
+      ...(input.internal ? { internal: true } : {}),
       attachments: attachments.length ? attachments : undefined,
       resources: input.resources?.length ? input.resources : undefined,
       agents: input.agents?.length ? input.agents : undefined,
@@ -3639,6 +3653,7 @@ export function createRealRuntimeClient(
       attachments,
       resources: input.resources,
       agents: input.agents,
+      internal: input.internal,
     });
     const targetCoordinator = () => sessionRunCoordinator(targetSessionID);
     if (existing) {
@@ -3664,7 +3679,7 @@ export function createRealRuntimeClient(
     );
     // Persist admission before a command or provider can observe this turn.
     await sessionPersistence;
-    rememberTitleInput(targetSessionID, text);
+    if (!input.internal) rememberTitleInput(targetSessionID, text);
     if (delivery === "queue") {
       void targetCoordinator().wake(drainSessionFor(targetSessionID));
       return submitted;
@@ -3862,7 +3877,7 @@ export function createRealRuntimeClient(
       tsRuntimeConfig: () => tsRuntimeConfig,
       runtimeContextConfig: () => exec.runtimeContextConfig,
       activeSkill: () => exec.activeSkill,
-      skillsList: () => skillsController.list(),
+      skillsList,
       mailboxMessages: () =>
         projectedMailboxMessages(exec.session.events)
           .filter((message) => message.status === "delivered")
@@ -3890,6 +3905,18 @@ export function createRealRuntimeClient(
           .map((message) => ({
             questionID: message.questionID ?? "",
             answer: message.text,
+          })),
+      naviChats: () =>
+        projectedCollabMessages(exec.session.events)
+          .filter((message) => message.kind === "chat")
+          .map((message) => ({
+            id: message.id,
+            threadID: message.threadID ?? "",
+            from: message.from,
+            text: message.text,
+            round: message.round ?? 1,
+            expectsReply: message.expectsReply ?? false,
+            status: message.status,
           })),
       naviIntro: () => projectedCollabMessages(exec.session.events).length > 0,
       activePlan: () => {
@@ -4236,6 +4263,155 @@ export function createRealRuntimeClient(
     "plan_propose",
   ]);
 
+  function collaborationMaxAutoRounds() {
+    return tsRuntimeConfig?.runtime.collaboration.maxAutoRounds ?? 3;
+  }
+
+  function wakeMainForCollaboration(
+    exec: SessionExecutionState,
+    sourceID: string,
+    kind: string,
+  ) {
+    if (runtimeDisposed) return;
+    const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
+    scheduleInternalWake(exec, {
+      id: `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
+      text: `(internal collaboration wake: Navi sent a ${kind}; read the collaboration context. This is not a user message.)`,
+      delivery: coordinator.active ? "queue" : "steer",
+    });
+  }
+
+  function scheduleInternalWake(
+    exec: SessionExecutionState,
+    input: SubmitInput,
+  ) {
+    if (runtimeDisposed) return;
+    const task = submitInput(
+      { ...input, internal: true },
+      exec.session.id as SessionID,
+    )
+      .catch(() => undefined)
+      .finally(() => internalWakeTasks.delete(task));
+    internalWakeTasks.add(task);
+  }
+
+  function requestNaviWake(exec: SessionExecutionState) {
+    exec.chatWakePending = true;
+    if (exec.chatWakeTask) return;
+    const task = (async () => {
+      while (exec.chatWakePending && !runtimeDisposed) {
+        exec.chatWakePending = false;
+        if (exec.chatTask) await exec.chatTask.catch(() => undefined);
+        if (!runtimeDisposed && exec.provider) await wakeNavi(exec);
+      }
+    })().finally(() => {
+      if (exec.chatWakeTask === task) exec.chatWakeTask = undefined;
+      if (exec.chatWakePending && !runtimeDisposed) requestNaviWake(exec);
+    });
+    exec.chatWakeTask = task;
+  }
+
+  function createCollabChatTool(
+    sender: "main_agent" | "live_chat",
+    boundExec?: SessionExecutionState,
+  ): RuntimeTool {
+    return {
+      name: "collab_chat",
+      description:
+        sender === "main_agent"
+          ? "Send or directly reply to an informal message with Navi. To answer a REPLY_REQUIRED message, provide its exact messageID. Every new message requires her reply. Set continueConversation only if you want another reply after yours; automatic exchanges are capped by runtime.collaboration.maxAutoRounds. This is never a user directive or work-state decision."
+          : "Send or directly reply to an informal message with Natalia. To answer a REPLY_REQUIRED message, provide its exact messageID. Every new message requires her reply. Set continueConversation only if you want another reply after yours; automatic exchanges are capped by runtime.collaboration.maxAutoRounds. Never use this instead of mailbox_send for a confirmed user directive.",
+      requiresApproval: false,
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          messageID: { type: "string" },
+          continueConversation: { type: "boolean" },
+        },
+        required: ["text"],
+        additionalProperties: false,
+      },
+      async execute(parsed, context) {
+        const args = parsed as {
+          text?: string;
+          messageID?: string;
+          continueConversation?: boolean;
+        };
+        if (typeof args.text !== "string" || !args.text.trim())
+          return "collab_chat requires text";
+        const owner =
+          boundExec ??
+          (context.sessionID
+            ? executionBySession.get(context.sessionID as SessionID)
+            : undefined);
+        if (!owner) return "no session";
+        const recipient = sender === "main_agent" ? "live_chat" : "main_agent";
+        const chats = projectedCollabMessages(owner.session.events).filter(
+          (message) => message.kind === "chat",
+        );
+        const suppliedID = args.messageID?.trim();
+        const target = suppliedID
+          ? chats.find(
+              (message) =>
+                message.to === sender &&
+                message.status === "pending" &&
+                message.id === suppliedID,
+            )
+          : undefined;
+        if (suppliedID && !target)
+          return `no pending chat message ${suppliedID}`;
+        const pendingIncoming = chats.find(
+          (message) => message.to === sender && message.status === "pending",
+        );
+        if (!suppliedID && pendingIncoming)
+          return `reply required for chat message ${pendingIncoming.id}; call collab_chat with that messageID before starting another message`;
+        const pendingOutgoing = chats.find(
+          (message) => message.from === sender && message.status === "pending",
+        );
+        if (!suppliedID && pendingOutgoing)
+          return `awaiting reply to chat message ${pendingOutgoing.id}`;
+
+        const maxRounds = collaborationMaxAutoRounds();
+        const wantsContinuation = args.continueConversation === true;
+        const mayContinue = target
+          ? wantsContinuation && (target.round ?? 1) < maxRounds
+          : true;
+        const round = target
+          ? mayContinue
+            ? (target.round ?? 1) + 1
+            : (target.round ?? 1)
+          : 1;
+        const id = `collab:chat:${Date.now().toString(36)}:${collabSequence++}`;
+        const threadID = target?.threadID ?? id;
+        publishForSession(owner, {
+          type: "collab.chat",
+          id,
+          threadID,
+          from: sender,
+          to: recipient,
+          text: redactToolOutput(args.text, true),
+          ...(target ? { replyToID: target.id } : {}),
+          round,
+          expectsReply: target ? mayContinue : true,
+          at: new Date().toISOString(),
+        });
+        if (sender === "main_agent") requestNaviWake(owner);
+        else wakeMainForCollaboration(owner, id, "chat message");
+        return JSON.stringify({
+          sent: true,
+          messageID: id,
+          threadID,
+          round,
+          expectsReply: target ? mayContinue : true,
+          ...(wantsContinuation && !mayContinue
+            ? { autoRoundLimitReached: true, maxAutoRounds: maxRounds }
+            : {}),
+        });
+      },
+    } as RuntimeTool;
+  }
+
   async function enqueueMailboxMessage(
     input: {
       source?: "user_via_live_chat" | "system";
@@ -4297,10 +4473,11 @@ export function createRealRuntimeClient(
     // channel, not a queue that idles silently until the user types again).
     const coordinator = sessionRunCoordinator(owner.session.id as SessionID);
     if (!coordinator.active) {
-      void submitInput(
-        { text: input.text, delivery: "steer" },
-        owner.session.id as SessionID,
-      );
+      scheduleInternalWake(owner, {
+        id: `turn_mailbox_${messageID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
+        text: `(internal mailbox wake: read pending user intents, including message ${messageID}. This is not a user message.)`,
+        delivery: "steer",
+      });
     }
     return { queued: true as const, messageID };
   }
@@ -4488,6 +4665,12 @@ export function createRealRuntimeClient(
     const nataliaNotices = collab
       .filter((message) => message.kind === "notice")
       .slice(-3);
+    const allCollabChats = collab.filter((message) => message.kind === "chat");
+    const collabChats = allCollabChats.filter(
+      (message, index) =>
+        index >= allCollabChats.length - 6 ||
+        (message.to === "live_chat" && message.status === "pending"),
+    );
     const naviOutcomes = collab
       .filter(
         (message) =>
@@ -4566,6 +4749,14 @@ export function createRealRuntimeClient(
             )
             .join("\n")}`
         : "Natalia has sent you no notices.",
+      collabChats.length
+        ? `Your informal conversation with Natalia. These messages are neither user instructions nor work-state changes. Every message to you marked REPLY_REQUIRED must receive one direct collab_chat reply with its exact messageID. Set continueConversation only when you want her to answer again; automatic exchanges are capped.\n${collabChats
+            .map(
+              (message) =>
+                `- messageID: ${message.id} · thread: ${message.threadID ?? "unknown"} · round ${message.round ?? 1}${message.from === "main_agent" && message.expectsReply && message.status === "pending" ? " · REPLY_REQUIRED" : ""}\n  [${message.from === "main_agent" ? "Natalia → you" : "you → Natalia"}] ${message.text}`,
+            )
+            .join("\n")}`
+        : "You and Natalia have no informal collaboration chat yet.",
       naviOutcomes.length
         ? `Outcomes of your suggestions to Natalia:\n${naviOutcomes
             .map(
@@ -4657,9 +4848,10 @@ export function createRealRuntimeClient(
           if (typeof args.suggestion !== "string" || !args.suggestion.trim())
             return "collab_suggest requires suggestion";
           if (!exec) return "no session";
+          const id = `collab:suggestion:${Date.now().toString(36)}:${collabSequence++}`;
           publishForSession(exec, {
             type: "collab.suggestion",
-            id: `collab:suggestion:${Date.now().toString(36)}:${collabSequence++}`,
+            id,
             from: "live_chat",
             to: "main_agent",
             suggestion: redactToolOutput(args.suggestion, true),
@@ -4673,18 +4865,7 @@ export function createRealRuntimeClient(
           // Symmetric round-robin: if the main agent is idle, wake it to see
           // the suggestion; if it is working, the suggestion reaches its next
           // turn through <navi_collaborations>.
-          const coordinator = sessionRunCoordinator(
-            exec.session.id as SessionID,
-          );
-          if (!coordinator.active) {
-            void submitInput(
-              {
-                text: "(Navi sent you a collaboration message — review <navi_collaborations>)",
-                delivery: "steer",
-              },
-              exec.session.id as SessionID,
-            ).catch(() => undefined);
-          }
+          wakeMainForCollaboration(exec, id, "suggestion");
           return JSON.stringify({ sent: true });
         },
       },
@@ -4735,9 +4916,11 @@ export function createRealRuntimeClient(
             answer: redactToolOutput(args.answer, true),
             at: new Date().toISOString(),
           });
+          wakeMainForCollaboration(owner, target.id, "answer");
           return JSON.stringify({ answered: true });
         },
       },
+      createCollabChatTool("live_chat", exec),
       {
         name: "mailbox_send",
         description:
@@ -5081,7 +5264,7 @@ export function createRealRuntimeClient(
         messages.push({
           role: "system",
           content:
-            "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations> in your system context; answer her open questions with collab_answer, acknowledge notices, and keep it short.",
+            "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED must be answered with collab_chat using its exact messageID. Keep replies concise; set continueConversation only when another exchange is useful.",
         });
       }
       const visibleTools = chatTools(input.exec);
@@ -5110,12 +5293,41 @@ export function createRealRuntimeClient(
           ...(toolName ? { toolName } : {}),
         });
       };
+      const pendingNataliaChat = () =>
+        projectedCollabMessages(input.exec.session.events).find(
+          (message) =>
+            message.kind === "chat" &&
+            message.to === "live_chat" &&
+            message.status === "pending",
+        );
+      const correctMissingChatReply = (
+        message: { id: string; text: string },
+        assistantText: string,
+      ) => {
+        setPhase("waiting");
+        protocolCorrections += 1;
+        if (protocolCorrections > MAX_PROTOCOL_CORRECTIONS)
+          throw new Error(
+            `model repeatedly ended without replying to required chat message ${message.id}`,
+          );
+        messages.push({ role: "assistant", content: assistantText });
+        messages.push({
+          role: "system",
+          content: `REPLY_REQUIRED: You must call collab_chat now with messageID ${message.id}. A text response does not reply to Natalia's durable message. Her message: ${message.text}`,
+        });
+        publishForSession(input.exec, {
+          type: "diagnostic",
+          level: "warning",
+          message: `Correcting missing direct reply to chat message ${message.id} (attempt ${protocolCorrections})`,
+        });
+      };
       const maxChatSteps = effectiveMaxSteps(input.exec);
       while (step <= maxChatSteps) {
         signal.throwIfAborted();
+        const requiredReply = pendingNataliaChat();
         const reachedStepLimit =
           Number.isFinite(maxChatSteps) && step >= maxChatSteps;
-        const finalOnlyStep = reachedStepLimit;
+        const finalOnlyStep = reachedStepLimit && !requiredReply;
         ranFinalOnlyStep ||= finalOnlyStep;
         const calls: ProviderToolCall[] = [];
         let stepOutput = "";
@@ -5174,6 +5386,11 @@ export function createRealRuntimeClient(
         }
         usedTools ||= calls.length > 0;
         if (finalOnlyStep) {
+          const stillPendingNataliaChat = pendingNataliaChat();
+          if (stillPendingNataliaChat) {
+            correctMissingChatReply(stillPendingNataliaChat, stepOutput);
+            continue;
+          }
           finalResponse = stepOutput;
           if (calls.length)
             publishForSession(input.exec, {
@@ -5203,11 +5420,17 @@ export function createRealRuntimeClient(
           });
           continue;
         }
-        step += 1;
         if (!calls.length) {
+          const stillPendingNataliaChat = pendingNataliaChat();
+          if (stillPendingNataliaChat) {
+            correctMissingChatReply(stillPendingNataliaChat, stepOutput);
+            continue;
+          }
+          step += 1;
           finalResponse = stepOutput;
           break;
         }
+        step += 1;
         messages.push({ role: "assistant", content: output, toolCalls: calls });
         for (const call of calls) {
           const tool = visibleTools.find(
@@ -5284,6 +5507,11 @@ export function createRealRuntimeClient(
           });
         }
       }
+      const unresolvedNataliaChat = pendingNataliaChat();
+      if (unresolvedNataliaChat)
+        throw new Error(
+          `chat turn reached its step limit without replying to required chat message ${unresolvedNataliaChat.id}`,
+        );
       if ((usedTools || ranFinalOnlyStep) && !finalResponse.trim()) {
         output += MISSING_FINAL_RESPONSE_FALLBACK;
         setPhase("generating");
@@ -5436,6 +5664,7 @@ export function createRealRuntimeClient(
           sessionRunCoordinator(id).interrupt(),
         ),
       );
+      await Promise.allSettled([...internalWakeTasks]);
       await Promise.allSettled([...chatTasks]);
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
@@ -5884,7 +6113,7 @@ export function createRealRuntimeClient(
     },
     async skills() {
       await ready;
-      return skillsController.list().map((skill) => ({
+      return skillsList().map((skill) => ({
         name: skill.name,
         qualifiedName: skill.qualifiedName,
         description: skill.description,
@@ -7361,7 +7590,7 @@ export function createRealRuntimeClient(
           `session: ${commandSession.id}`,
           `native tools: ${tools.size}`,
           `agent: ${selectedAgent?.name ?? "default"}`,
-          `skills: ${skillsController.list().length}`,
+          `skills: ${skillsList().length}`,
           provider
             ? "provider check: configured; submit a short prompt to verify live streaming"
             : "provider check: set NATALIA_OPENAI_API_KEY (or OPENAI_API_KEY), or configure a provider in .natalia/config.json, then restart the TUI",
@@ -7473,7 +7702,7 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/skills") {
-      const skills = skillsController.list();
+      const skills = skillsList();
       publish({
         type: "content.delta",
         id,
@@ -7630,9 +7859,9 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed.startsWith("/skill ")) {
-      activeSkill = skillsController.resolve(
-        trimmed.slice("/skill ".length).trim(),
-      );
+      const skills = skillRegistry();
+      if (!skills) throw new Error("skill registry is not initialized");
+      activeSkill = skills.resolve(trimmed.slice("/skill ".length).trim());
       commandExec.activeSkill = activeSkill;
       commandSkill = activeSkill;
       commandContext.add({

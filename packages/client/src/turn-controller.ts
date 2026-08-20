@@ -50,6 +50,7 @@ export function createTurnController(input: {
     attachments: LocalAttachment[];
     resources: PromptResourceMention[];
     agents: PromptAgentMention[];
+    internal?: boolean;
   }): Promise<void>;
 }) {
   async function persistInboxPromotion(sessionID: string) {
@@ -77,6 +78,7 @@ export function createTurnController(input: {
           item.attachments,
           item.resources,
           item.agents,
+          item.internal,
           signal,
         );
       }
@@ -116,6 +118,7 @@ export function createTurnController(input: {
         next.attachments,
         next.resources,
         next.agents,
+        next.internal,
         signal,
       );
     }
@@ -128,6 +131,7 @@ export function createTurnController(input: {
     attachments: LocalAttachment[] = [],
     resources: PromptResourceMention[] = [],
     agents: PromptAgentMention[] = [],
+    internal?: boolean,
     signal?: AbortSignal,
   ) {
     if (await input.runCommand(id, text, signal, sessionID)) {
@@ -141,6 +145,7 @@ export function createTurnController(input: {
       attachments,
       resources,
       agents,
+      internal,
     });
   }
 

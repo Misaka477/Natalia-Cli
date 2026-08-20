@@ -770,6 +770,7 @@ test("an external UI takes over approvals and answers questions", async () => {
   let streamCalls = 0;
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
+    globalConfigPath: join(root, "global.json"),
     sessionID: "ses_approval",
     provider: {
       provider: "scripted",
@@ -1188,6 +1189,7 @@ export default definePlugin({
   );
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
+    globalConfigPath: join(root, "global.json"),
     sessionID: "ses_management",
   });
   const server = createRuntimeHttpServer({

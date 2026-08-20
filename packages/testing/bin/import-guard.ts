@@ -32,6 +32,11 @@ const forbiddenCapabilityFactoryImports = [
   /from\s+["']@opentui\//u,
   /from\s+["']solid-js/u,
 ];
+const forbiddenStaticSkillsWiring = [
+  /\bcreateSkillsController\b/u,
+  /\bdiscoverSkills\b/u,
+  /\bcreateSkillLoadTool\b/u,
+];
 const productionRoots = ["apps", "packages", "cmd", "internal", "scripts"];
 /**
  * Packages an externally built UI is allowed to depend on (mainline plan §2.1).
@@ -189,6 +194,12 @@ for (const dir of deepImportRoots)
   });
 for (const dir of productionRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
+    if (full === join(root, "packages/client/src/real-runtime.ts"))
+      for (const pattern of forbiddenStaticSkillsWiring)
+        if (pattern.test(text))
+          failures.push(
+            `${full}: built-in skills must be mounted through its plugin, not statically wired ${pattern}`,
+          );
     for (const pattern of forbiddenTraceNames) {
       if (pattern.test(text))
         failures.push(`${full}: upstream trace name found`);

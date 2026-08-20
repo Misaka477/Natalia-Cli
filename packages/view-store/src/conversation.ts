@@ -163,13 +163,13 @@ export function applyConversationEvent(
       return true;
     case "turn.submitted":
       if (event.delivery !== "queue") state.activeTurn = event.id;
-      state.lastSubmission = event;
+      if (!event.internal) state.lastSubmission = event;
       state.lastStopReason = undefined;
       state.streams[streamID(event.id, "thinking")] = newStream();
       state.streams[streamID(event.id, "assistant")] = newStream();
       state.messages.push({
-        id: `${event.id}:user`,
-        role: "user",
+        id: `${event.id}:${event.internal ? "system" : "user"}`,
+        role: event.internal ? "system" : "user",
         text: userText(event),
         pendingText: "",
         status: event.delivery === "queue" ? "queued" : undefined,
@@ -794,6 +794,14 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         `chat:${event.id}:collab`,
         "system",
         `Navi → Natalia: ${event.answer}`,
+      );
+      return true;
+    case "collab.chat":
+      upsertInto(
+        state.chatMessages,
+        `chat:${event.id}:collab`,
+        "system",
+        `${event.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia"}: ${event.text}`,
       );
       return true;
     case "collab.response":

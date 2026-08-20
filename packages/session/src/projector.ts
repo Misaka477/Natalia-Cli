@@ -241,7 +241,8 @@ function projectedRowKind(
   event: RuntimeEvent,
   turnID: string,
 ): RuntimeProjectedMessageRowKind | undefined {
-  if (event.type === "turn.submitted" && event.id === turnID) return "user";
+  if (event.type === "turn.submitted" && event.id === turnID)
+    return event.internal ? "system" : "user";
   if (event.type === "policy.decision" && event.turnID === turnID)
     return "system";
   if (!("id" in event) || typeof event.id !== "string") return undefined;
@@ -621,14 +622,26 @@ export function projectedChatMessages(
  */
 export type ProjectedCollabMessage = {
   id: string;
-  kind: "suggestion" | "notice" | "question" | "answer";
+  kind: "suggestion" | "notice" | "question" | "answer" | "chat";
   from: "live_chat" | "main_agent";
   to: "live_chat" | "main_agent";
   text: string;
   priority?: string;
   noticeType?: string;
-  status: "proposed" | "adopted" | "rejected" | "deferred" | "answered";
+  status:
+    | "proposed"
+    | "adopted"
+    | "rejected"
+    | "deferred"
+    | "answered"
+    | "pending"
+    | "replied"
+    | "informational";
   questionID?: string;
+  threadID?: string;
+  replyToID?: string;
+  round?: number;
+  expectsReply?: boolean;
   /** The recipient's reply reason, when a suggestion was responded to. */
   responseReason?: string;
   at: string;
@@ -692,6 +705,29 @@ export function projectedCollabMessages(
         (message) => message.id === event.questionID,
       );
       if (target && target.kind === "question") target.status = "answered";
+      continue;
+    }
+    if (event.type === "collab.chat") {
+      if (event.replyToID) {
+        const target = messages.find(
+          (message) =>
+            message.id === event.replyToID && message.kind === "chat",
+        );
+        if (target) target.status = "replied";
+      }
+      messages.push({
+        id: event.id,
+        kind: "chat",
+        from: event.from,
+        to: event.to,
+        text: event.text,
+        threadID: event.threadID,
+        ...(event.replyToID ? { replyToID: event.replyToID } : {}),
+        round: event.round,
+        expectsReply: event.expectsReply,
+        status: event.expectsReply ? "pending" : "informational",
+        at: event.at,
+      });
       continue;
     }
     if (event.type === "collab.response") {

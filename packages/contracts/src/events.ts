@@ -246,6 +246,8 @@ type RuntimeEventData =
       sha256: string;
       /** Admission intent. Queued turns are durable but have not started yet. */
       delivery?: "steer" | "queue";
+      /** Runtime-generated wake boundary; never human-authored input. */
+      internal?: boolean;
       attachments?: LocalAttachment[];
       resources?: PromptResourceMention[];
       agents?: PromptAgentMention[];
@@ -1107,6 +1109,21 @@ type RuntimeEventData =
       from: "live_chat";
       to: "main_agent";
       answer: string;
+      at: string;
+    }
+  | {
+      type: "collab.chat";
+      id: string;
+      threadID: string;
+      from: "live_chat" | "main_agent";
+      to: "live_chat" | "main_agent";
+      text: string;
+      /** Direct reply to the preceding open chat message, when present. */
+      replyToID?: string;
+      /** One-based automatic exchange number within the thread. */
+      round: number;
+      /** Whether the recipient owes a direct `collab_chat` reply. */
+      expectsReply: boolean;
       at: string;
     }
   | {

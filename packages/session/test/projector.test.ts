@@ -13,6 +13,7 @@ import {
   projectedDecisionRecords,
   projectedEvidenceRecords,
   projectedMailboxMessages,
+  projectedCollabMessages,
   projectedPlans,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
@@ -475,6 +476,68 @@ test("projectedMailboxMessages replays to the same status from replay", () => {
     intent: "constraint",
     status: "acknowledged",
   });
+});
+
+test("projectedCollabMessages tracks required replies and closed chat threads", () => {
+  const session = createSessionRecord("ses_collab_chat", "Collaboration chat");
+  appendSessionEvent(session, {
+    type: "collab.chat",
+    id: "collab:chat:1",
+    threadID: "collab:chat:1",
+    from: "main_agent",
+    to: "live_chat",
+    text: "Can you sanity-check this?",
+    round: 1,
+    expectsReply: true,
+    at: "t0",
+  });
+  appendSessionEvent(session, {
+    type: "collab.chat",
+    id: "collab:chat:2",
+    threadID: "collab:chat:1",
+    replyToID: "collab:chat:1",
+    from: "live_chat",
+    to: "main_agent",
+    text: "Yes. One more detail?",
+    round: 2,
+    expectsReply: true,
+    at: "t1",
+  });
+  appendSessionEvent(session, {
+    type: "collab.chat",
+    id: "collab:chat:3",
+    threadID: "collab:chat:1",
+    replyToID: "collab:chat:2",
+    from: "main_agent",
+    to: "live_chat",
+    text: "No, that closes it.",
+    round: 2,
+    expectsReply: false,
+    at: "t2",
+  });
+
+  expect(projectedCollabMessages(session.events)).toEqual([
+    expect.objectContaining({
+      id: "collab:chat:1",
+      kind: "chat",
+      status: "replied",
+      threadID: "collab:chat:1",
+      round: 1,
+      expectsReply: true,
+    }),
+    expect.objectContaining({
+      id: "collab:chat:2",
+      status: "replied",
+      replyToID: "collab:chat:1",
+      round: 2,
+    }),
+    expect.objectContaining({
+      id: "collab:chat:3",
+      status: "informational",
+      replyToID: "collab:chat:2",
+      expectsReply: false,
+    }),
+  ]);
 });
 
 test("projectedPlans tracks the full plan lifecycle with version bumps", () => {

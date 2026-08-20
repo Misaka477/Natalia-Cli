@@ -148,9 +148,9 @@ export async function* normalizeRawToolCallProtocol(
     final: boolean,
   ): Iterable<ProviderStreamChunk> {
     while (content) {
-      const start = content.indexOf("<tool_call>");
+      const start = rawToolCallStart(content);
       if (start < 0) {
-        const retained = final ? "" : toolCallPrefixSuffix(content);
+        const retained = final ? "" : rawToolCallPrefixSuffix(content);
         const text = content.slice(0, content.length - retained.length);
         content = retained;
         if (text) yield { type: "content", text };
@@ -160,7 +160,9 @@ export async function* normalizeRawToolCallProtocol(
         yield { type: "content", text: content.slice(0, start) };
         content = content.slice(start);
       }
-      const end = content.indexOf("</tool_call>");
+      const simple = /^<([A-Za-z_][\w.-]*)>\s*<args>/u.exec(content);
+      const endMarker = simple ? `</${simple[1]}>` : "</tool_call>";
+      const end = content.indexOf(endMarker);
       if (end < 0) {
         if (final) {
           yield { type: "content", text: content };
@@ -168,7 +170,7 @@ export async function* normalizeRawToolCallProtocol(
         }
         return;
       }
-      const blockEnd = end + "</tool_call>".length;
+      const blockEnd = end + endMarker.length;
       const block = content.slice(0, blockEnd);
       content = content.slice(blockEnd);
       const call = parseRawToolCall(
@@ -227,9 +229,29 @@ function parseRawToolCall(
     /^<tool_call>\s*<function=([A-Za-z_][\w.:-]*)>([\s\S]*?)<\/function>\s*<\/tool_call>$/u.exec(
       block,
     );
-  if (!match) return undefined;
-  const name = decodeXMLEntities(match[1]!);
-  const body = match[2]!;
+  if (match) {
+    const name = decodeXMLEntities(match[1]!);
+    const body = match[2]!;
+    const parameters = parseParameterElements(body);
+    if (parameters !== undefined)
+      return { id, name, arguments: JSON.stringify(parameters) };
+  }
+
+  const simple = /^<([A-Za-z_][\w.-]*)>([\s\S]*)<\/\1>$/u.exec(block.trim());
+  if (simple) {
+    const name = decodeXMLEntities(simple[1]!);
+    const body = simple[2]!;
+    const parameters = parseArgsElements(body);
+    if (parameters !== undefined)
+      return { id, name, arguments: JSON.stringify(parameters) };
+  }
+
+  return undefined;
+}
+
+function parseParameterElements(
+  body: string,
+): Record<string, unknown> | undefined {
   const parameters: Record<string, unknown> = {};
   let cursor = 0;
   const parameter =
@@ -243,7 +265,30 @@ function parseRawToolCall(
     if (Object.hasOwn(parameters, key)) return undefined;
     parameters[key] = parseRawToolParameter(decodeXMLEntities(item[2]!));
   }
-  return { id, name, arguments: JSON.stringify(parameters) };
+  return parameters;
+}
+
+function parseArgsElements(body: string): Record<string, unknown> | undefined {
+  const parameters: Record<string, unknown> = {};
+  const trimmed = body.trim();
+  const argsMatch = /^<args>([\s\S]*)<\/args>$/.exec(trimmed);
+  const inner = argsMatch ? argsMatch[1]! : trimmed;
+  const json = parseRawToolParameter(decodeXMLEntities(inner.trim()));
+  if (json && typeof json === "object" && !Array.isArray(json))
+    return json as Record<string, unknown>;
+  let cursor = 0;
+  const element = /<([A-Za-z_][\w.-]*)>([\s\S]*?)<\/\1>/gu;
+  while (cursor < inner.length) {
+    element.lastIndex = cursor;
+    const item = element.exec(inner);
+    if (!item)
+      return /^\s*$/u.test(inner.slice(cursor)) ? parameters : undefined;
+    cursor = element.lastIndex;
+    const key = decodeXMLEntities(item[1]!);
+    if (Object.hasOwn(parameters, key)) return undefined;
+    parameters[key] = parseRawToolParameter(decodeXMLEntities(item[2]!));
+  }
+  return parameters;
 }
 
 function parseRawToolParameter(value: string): unknown {
@@ -271,6 +316,25 @@ function toolCallPrefixSuffix(value: string) {
   )
     if (value.endsWith(marker.slice(0, length))) return value.slice(-length);
   return "";
+}
+
+function simpleToolCallStart(value: string) {
+  return /<[A-Za-z_][\w.-]*>\s*<args>/u.exec(value)?.index ?? -1;
+}
+
+function rawToolCallStart(value: string) {
+  const wrapped = value.indexOf("<tool_call>");
+  const simple = simpleToolCallStart(value);
+  if (wrapped < 0) return simple;
+  if (simple < 0) return wrapped;
+  return Math.min(wrapped, simple);
+}
+
+function rawToolCallPrefixSuffix(value: string) {
+  const wrapped = toolCallPrefixSuffix(value);
+  if (wrapped) return wrapped;
+  const match = /<[A-Za-z_][\w.-]*(?:>\s*<[A-Za-z]*)?$/u.exec(value);
+  return match ? value.slice(match.index) : "";
 }
 
 const textualToolCallMarkers = ["<tool_call", "<function=", "<parameter="];
