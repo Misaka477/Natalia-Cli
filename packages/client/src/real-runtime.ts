@@ -22,10 +22,7 @@ import { createSandboxController } from "./sandbox-controller";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 import { createCheckpointController } from "./checkpoint-controller";
 import { createMcpController } from "./mcp-controller";
-import {
-  createWorkspaceFilesController,
-  type WorkspaceMutationIdentity,
-} from "./workspace-files-controller";
+import type { WorkspaceFilesController } from "./workspace-files-controller";
 import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
@@ -200,6 +197,11 @@ import {
   WEB_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "./builtin-plugins/local-tools-plugin";
+import {
+  WORKSPACE_FILES_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  WORKSPACE_WRITE_LOCK_SERVICE,
+} from "./builtin-plugins/workspace-plugin";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -213,7 +215,7 @@ import {
   terminalInputRisk,
 } from "./interactive-waiter";
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
-import { createWorkspaceWriteLock } from "./workspace-write-lock";
+import type { WorkspaceWriteLock } from "./workspace-write-lock";
 import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
 import { recordDecision, seedConstitutionRules } from "./constitution-ledger";
 import {
@@ -230,7 +232,7 @@ import {
   createDriftEvaluator,
   buildDriftFindingUpdate,
 } from "./drift-evaluator";
-import { createMutationRegistry } from "./mutation-registry";
+import type { MutationRegistry } from "./mutation-registry";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -739,8 +741,21 @@ export function createRealRuntimeClient(
   function executionForTurn(turnID: string) {
     return executionBySession.get(turnSession.get(turnID) ?? sessionID);
   }
-  /** D2: serialises workspace writes across parallel sessions. */
-  const workspaceWriteLock = createWorkspaceWriteLock();
+  /**
+   * Workspace services, resolved from the workspace built-in plugin after it
+   * loads during `start`. All consumers run post-start, so the services are in
+   * place by the time they are read.
+   */
+  let workspaceWriteLock: WorkspaceWriteLock | undefined;
+  let mutationRegistry: MutationRegistry | undefined;
+  let workspaceFilesController: WorkspaceFilesController | undefined;
+  /** The write lock is the single-writer guarantee: a write tool without it
+   * must not proceed. */
+  function requireWriteLock(): WorkspaceWriteLock {
+    if (!workspaceWriteLock)
+      throw new Error("workspace write lock unavailable");
+    return workspaceWriteLock;
+  }
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
@@ -835,32 +850,6 @@ export function createRealRuntimeClient(
     if (ext === "gif") return "image/gif";
     return "image/png";
   }
-  const mutationRegistry = createMutationRegistry();
-  const workspaceFilesController = createWorkspaceFilesController({
-    workspaceRoot,
-    listPaths: async () => {
-      const entries = await findWorkspaceFiles({ workspaceRoot, limit: 1000 });
-      return entries
-        .filter((entry) => entry.type === "file")
-        .map((entry) => entry.path);
-    },
-    resolveMutation: (path) => {
-      const mutation = mutationRegistry.match({
-        path,
-        operation: "modified",
-      });
-      if (!mutation) return undefined;
-      const identity: WorkspaceMutationIdentity = {
-        origin: mutation.operationID ? "sandbox_merge" : "tool",
-      };
-      if (mutation.turnID) identity.turnID = mutation.turnID;
-      if (mutation.callID) identity.callID = mutation.callID;
-      if (mutation.operationID) identity.operationID = mutation.operationID;
-      if (mutation.sessionID) identity.sessionID = mutation.sessionID;
-      if (mutation.episodeID) identity.episodeID = mutation.episodeID;
-      return identity;
-    },
-  });
   const driftEvaluator = createDriftEvaluator({
     openFindingIDs: () =>
       new Set(
@@ -1121,7 +1110,6 @@ export function createRealRuntimeClient(
       });
       if (options.permissionProfile) throw error;
     }
-    await workspaceFilesController.init();
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
     await sessionStoreController.init();
@@ -2029,6 +2017,22 @@ export function createRealRuntimeClient(
             },
           }
         : {}),
+      ...(options.tools
+        ? {}
+        : {
+            workspace: {
+              workspaceRoot,
+              listPaths: async () => {
+                const entries = await findWorkspaceFiles({
+                  workspaceRoot,
+                  limit: 1000,
+                });
+                return entries
+                  .filter((entry) => entry.type === "file")
+                  .map((entry) => entry.path);
+              },
+            },
+          }),
     });
     for (const entry of builtinPlugins) {
       if (!entry.enabled) continue;
@@ -2038,6 +2042,18 @@ export function createRealRuntimeClient(
       );
     }
     if (extensionEnabled("plugins")) await pluginsController.loadLocal();
+    // The workspace built-in provides these services during its setup; every
+    // consumer below runs after this point.
+    workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
+      WORKSPACE_WRITE_LOCK_SERVICE,
+    );
+    mutationRegistry = capabilityRegistry.service<MutationRegistry>(
+      WORKSPACE_MUTATIONS_SERVICE,
+    );
+    workspaceFilesController =
+      capabilityRegistry.service<WorkspaceFilesController>(
+        WORKSPACE_FILES_SERVICE,
+      );
     await terminalController.init();
     terminalController.setActiveSession(sessionID);
 
@@ -3225,7 +3241,7 @@ export function createRealRuntimeClient(
     return (async () => {
       const target = exec ?? activeExec;
       if (!target?.session) return [];
-      const confirmed = await workspaceFilesController.reconcile();
+      const confirmed = (await workspaceFilesController?.reconcile()) ?? [];
       for (const change of confirmed) {
         if (change.attribution === "attributed") continue;
         publishForSession(
@@ -5668,7 +5684,6 @@ export function createRealRuntimeClient(
         ),
       );
       await sessionStoreController.close();
-      workspaceFilesController.close();
       await pluginsController.close();
       await mcpController.close();
       await terminalController.close();
@@ -6350,7 +6365,7 @@ export function createRealRuntimeClient(
       // WG4 Phase 3: sandbox merge keeps its own operation provenance (not a
       // tool call), but registers an expected mutation so the auditor can
       // attribute merged paths to the merge operation.
-      mutationRegistry.register({
+      mutationRegistry?.register({
         sessionID: owner.session.id,
         episodeID: options.episodeID,
         operationID,
@@ -6369,7 +6384,7 @@ export function createRealRuntimeClient(
           }),
         );
       }
-      mutationRegistry.settle(operationID);
+      mutationRegistry?.settle(operationID);
       publishForSession(owner, sandboxes.updateEvent(id));
       publishForSession(owner, sandboxes.auditEvent(id, "merge"));
       return changes;
@@ -8468,7 +8483,7 @@ export function createRealRuntimeClient(
             tool.name,
             parsed as Record<string, unknown>,
           )
-            ? await workspaceWriteLock.acquire()
+            ? await requireWriteLock().acquire()
             : undefined;
           // WG4 Phase 3: register the expected mutation before the tool runs so the
           // auditor can attribute a watcher-confirmed change to this call. Only
@@ -8479,7 +8494,7 @@ export function createRealRuntimeClient(
             parsed as Record<string, unknown>,
           );
           if (writePath) {
-            mutationRegistry.register({
+            mutationRegistry?.register({
               sessionID: exec.session.id,
               turnID,
               callID: call.id,
@@ -8534,7 +8549,7 @@ export function createRealRuntimeClient(
                 // WG4 Phase 3: the tool settled successfully — the expected
                 // mutation stops matching unrelated later hints, but its identity
                 // stays available for attributing the change it caused.
-                mutationRegistry.settle(call.id);
+                mutationRegistry?.settle(call.id);
                 for (const change of changes) {
                   publish(
                     workspaceChangeNode({
@@ -8672,7 +8687,7 @@ export function createRealRuntimeClient(
               tryParseToolArguments(call.arguments),
             )
           )
-            mutationRegistry.forget(call.id);
+            mutationRegistry?.forget(call.id);
           const message =
             error instanceof Error ? error.message : String(error);
           publish({

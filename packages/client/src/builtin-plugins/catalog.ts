@@ -33,6 +33,7 @@ import {
   createLocalToolsPlugin,
   LOCAL_TOOLS_PLUGIN_ID,
 } from "./local-tools-plugin";
+import { createWorkspacePlugin, WORKSPACE_PLUGIN_ID } from "./workspace-plugin";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
@@ -102,6 +103,11 @@ export function builtinPluginCatalog(input: {
     };
     onError?: (id: string, error: unknown) => void;
     onChange?: (familyID: string, entryPath: string) => void;
+  };
+  /** Workspace observation, write lock and mutation attribution. */
+  workspace?: {
+    workspaceRoot: string;
+    listPaths: () => Promise<string[]>;
   };
 }): BuiltinPluginEntry[] {
   return [
@@ -203,6 +209,19 @@ export function builtinPluginCatalog(input: {
                 trust: input.localTools!.trust,
                 onError: input.localTools!.onError,
                 onChange: input.localTools!.onChange,
+              }),
+          },
+        ]
+      : []),
+    ...(input.workspace
+      ? [
+          {
+            id: WORKSPACE_PLUGIN_ID,
+            enabled: true,
+            create: () =>
+              createWorkspacePlugin({
+                workspaceRoot: input.workspace!.workspaceRoot,
+                listPaths: input.workspace!.listPaths,
               }),
           },
         ]

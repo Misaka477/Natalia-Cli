@@ -265,6 +265,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-workspace",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct workspace component construction",
+        pattern:
+          /\b(?:createWorkspaceWriteLock|createMutationRegistry|createWorkspaceFilesController)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

@@ -65,3 +65,7 @@ export function createWorkspaceFilesController(input: {
 
   return { init, close, reconcile, observationStatus, auditor };
 }
+
+export type WorkspaceFilesController = ReturnType<
+  typeof createWorkspaceFilesController
+>;
