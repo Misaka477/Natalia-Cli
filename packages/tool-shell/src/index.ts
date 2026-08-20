@@ -1,21 +1,21 @@
 /**
  * The shell tool family, as a separately packaged family.
  *
- * Depends on the framework for the tool-authoring surface and process helpers,
- * and on the platform package for shell resolution. It knows nothing about the
- * runtime or the capability kernel.
+ * Depends on the framework for the tool-authoring surface and process helpers.
+ * The `runShell` execution primitive it wraps lives in `@natalia/tools` so other
+ * tool plugins (notably `@natalia/tool-web`) can run commands without depending
+ * on this package. It knows nothing about the runtime or the capability kernel.
  */
-import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
-import { profileShellCommand } from "@natalia/platform";
 import type { Plugin } from "@natalia/plugin";
-import { numberOr, requireObject, requireString } from "@natalia/tools";
-import { safeToolEnv, terminateChildProcessTree } from "@natalia/tools";
-import type {
-  RuntimeTool,
-  ToolExecutionContext,
-  ToolFamily,
+import {
+  numberOr,
+  requireObject,
+  requireString,
+  runShell,
 } from "@natalia/tools";
+import type { RuntimeTool, ToolFamily } from "@natalia/tools";
+
+export { runShell };
 
 export const SHELL_PLUGIN_ID = "natalia-tool-shell";
 
@@ -82,60 +82,6 @@ function runShellTool(): RuntimeTool {
       );
     },
   };
-}
-
-export async function runShell(
-  command: string,
-  context: ToolExecutionContext,
-  timeoutSec: number,
-) {
-  await stat(context.workspaceRoot);
-  const shell = profileShellCommand(command);
-  return await new Promise<string>((resolvePromise, reject) => {
-    const child = spawn(shell.executable, shell.args, {
-      cwd: context.workspaceRoot,
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: safeToolEnv(context.settings?.envAllowlist),
-    });
-    let settled = false;
-    const finish = (result: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      context.signal?.removeEventListener("abort", abort);
-      result();
-    };
-    const abort = () => {
-      terminateChildProcessTree(child.pid);
-      finish(() =>
-        reject(context.signal?.reason ?? new Error("command cancelled")),
-      );
-    };
-    const timer = setTimeout(() => {
-      terminateChildProcessTree(child.pid);
-      finish(() => reject(new Error(`command timed out after ${timeoutSec}s`)));
-    }, timeoutSec * 1000);
-    context.signal?.addEventListener("abort", abort, { once: true });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += String(chunk)));
-    child.stderr.on("data", (chunk) => (stderr += String(chunk)));
-    child.on("error", (error) => {
-      finish(() => reject(error));
-    });
-    child.on("close", (code) => {
-      const output = [
-        `exit=${code}`,
-        stdout && `stdout:\n${stdout}`,
-        stderr && `stderr:\n${stderr}`,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      if (code === 0) finish(() => resolvePromise(output));
-      else finish(() => reject(new Error(output)));
-    });
-  });
 }
 
 export const shellTools: RuntimeTool[] = [runShellTool()];

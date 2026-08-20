@@ -214,6 +214,24 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-process",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct process package import",
+        pattern: /from\s+["']@natalia\/tool-process["']/u,
+      },
+      {
+        description: "direct process tool construction",
+        pattern:
+          /\b(?:processToolFamily|managedProcessTools|createProcessPlugin|ManagedProcessRegistry)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

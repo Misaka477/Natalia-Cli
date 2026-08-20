@@ -15,6 +15,7 @@ import {
   TERMINAL_PLUGIN_ID,
 } from "@natalia/tool-terminal";
 import { createSandboxPlugin, SANDBOX_PLUGIN_ID } from "@natalia/tool-sandbox";
+import { createProcessPlugin, PROCESS_PLUGIN_ID } from "@natalia/tool-process";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
@@ -30,6 +31,7 @@ export {
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
+  PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
@@ -52,6 +54,7 @@ export function builtinPluginCatalog(input: {
   fsReadEnabled: boolean;
   fsWriteEnabled: boolean;
   pdfEnabled: boolean;
+  processEnabled: boolean;
   sandboxEnabled: boolean;
   searchEnabled: boolean;
   shellEnabled: boolean;
@@ -119,6 +122,11 @@ export function builtinPluginCatalog(input: {
       id: SANDBOX_PLUGIN_ID,
       enabled: input.sandboxEnabled,
       create: () => createSandboxPlugin(),
+    },
+    {
+      id: PROCESS_PLUGIN_ID,
+      enabled: input.processEnabled,
+      create: () => createProcessPlugin(),
     },
     {
       id: SKILLS_PLUGIN_ID,

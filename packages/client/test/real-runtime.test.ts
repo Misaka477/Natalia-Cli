@@ -1538,6 +1538,44 @@ for (const [label, config] of [
     await client.dispose?.();
   }, 60_000);
 
+for (const [label, config] of [
+  ["legacy family switch", { tools: { enabled: { process: false } } }],
+  [
+    "plugin switch",
+    { plugins: { enabled: { "natalia-tool-process": false } } },
+  ],
+] as const)
+  test(`disabled process ${label} leaves no tool or capability`, async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "natalia-runtime-process-disabled-"),
+    );
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({ version: 3, ...config }),
+    );
+    const events: RuntimeEvent[] = [];
+    const kernel = new CapabilityRegistry();
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: `ses_runtime_process_disabled_${label.replaceAll(" ", "_")}`,
+      capabilityRegistry: kernel,
+      provider: scriptedProvider("ready"),
+    });
+    client.start((event) => events.push(event));
+    await waitFor(() => events.some((event) => event.type === "session.ready"));
+    expect(
+      events.some(
+        (event) =>
+          event.type === "tool.registered" &&
+          (event.name.startsWith("process_") ||
+            event.name.startsWith("background_")),
+      ),
+    ).toBe(false);
+    expect(kernel.has("natalia-tool-process")).toBe(false);
+    await client.dispose?.();
+  }, 60_000);
+
 test("read-only profile rejects side-effecting tools without an approval request", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-read-only-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

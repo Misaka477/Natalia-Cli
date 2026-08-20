@@ -14,9 +14,6 @@
     },
     {
       "path": "../platform"
-    },
-    {
-      "path": "../tool-shell"
     }
   ]
 }

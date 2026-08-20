@@ -14,9 +14,9 @@ import {
   optionalString,
   requireObject,
   requireString,
+  runShell,
   workspacePath,
 } from "@natalia/tools";
-import { runShell } from "@natalia/tool-shell";
 import type { Plugin } from "@natalia/plugin";
 import type {
   RuntimeTool,

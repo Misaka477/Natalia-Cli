@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@natalia/tools": "workspace:*",
-    "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*"
   }
 }

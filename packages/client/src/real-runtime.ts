@@ -139,7 +139,6 @@ import {
   type ToolMaterialization,
   type ToolRegistry,
 } from "@natalia/tools";
-import { ManagedProcessRegistry } from "@natalia/tool-process";
 import {
   readSkillResource,
   runSkillScript,
@@ -199,6 +198,7 @@ import {
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
+  PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
@@ -424,9 +424,6 @@ export function createRealRuntimeClient(
     : provider
       ? "environment"
       : "unconfigured";
-  const processRegistry = options.tools
-    ? undefined
-    : new ManagedProcessRegistry();
   /**
    * Created before the tool registry, because the built-in tool families are
    * capabilities: the kernel owns every tool, and the registry the executor reads
@@ -438,7 +435,6 @@ export function createRealRuntimeClient(
     ? undefined
     : createToolRegistryFromCapabilities({
         registry: capabilityRegistry,
-        processRegistry,
       });
   const tools = options.tools ?? initialFamilies!.tools;
   // A family that could not load at construction says why at start, instead of
@@ -926,9 +922,11 @@ export function createRealRuntimeClient(
     runningCount: async () =>
       subagentsController.runningCount() +
       sandboxController.runningResourceCount() +
-      (processRegistry
-        ? await processRegistry.runningCount({ workspaceRoot })
-        : 0),
+      ((await capabilityRegistry
+        .service<{
+          runningCount(input: { workspaceRoot: string }): Promise<number>;
+        }>("managedProcessRegistry")
+        ?.runningCount({ workspaceRoot })) ?? 0),
     publish,
   });
   async function runtimeStatusSnapshot() {
@@ -1925,7 +1923,7 @@ export function createRealRuntimeClient(
       const cascaded = applyToolFamilyEnabledFilter({
         tools,
         registry: capabilityRegistry,
-        families: builtinToolFamilies(processRegistry),
+        families: builtinToolFamilies(),
         enabled: tsRuntimeConfig.tools?.enabled,
       });
       for (const family of cascaded)
@@ -2072,6 +2070,10 @@ export function createRealRuntimeClient(
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.sandbox !== false &&
         tsRuntimeConfig?.plugins.enabled[SANDBOX_PLUGIN_ID] !== false,
+      processEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.process !== false &&
+        tsRuntimeConfig?.plugins.enabled[PROCESS_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,

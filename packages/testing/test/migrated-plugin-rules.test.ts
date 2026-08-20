@@ -38,6 +38,10 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "natalia-tool-sandbox",
       'import { sandboxTools } from "@natalia/tool-sandbox"',
     ],
+    [
+      "natalia-tool-process",
+      'import { managedProcessTools } from "@natalia/tool-process"',
+    ],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
@@ -56,6 +60,7 @@ test("tool migrations protect the legacy static capability root", () => {
     ["natalia-tool-agent", "agentToolFamily()"],
     ["natalia-tool-terminal", "terminalToolFamily()"],
     ["natalia-tool-sandbox", "sandboxToolFamily()"],
+    ["natalia-tool-process", "processToolFamily()"],
   ])
     expect(
       findMigratedPluginViolations(

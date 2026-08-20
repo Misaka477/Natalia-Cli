@@ -20,10 +20,6 @@ import type {
   CapabilityRegistryHost,
 } from "@natalia/capability";
 import {
-  ManagedProcessRegistry,
-  processToolFamily,
-} from "@natalia/tool-process";
-import {
   createToolRegistry,
   type RuntimeTool,
   type ToolFamily,
@@ -33,32 +29,23 @@ import {
 /**
  * The tool families this host loads, in the order their tools are advertised.
  *
- * Composition lives here, not in `@natalia/tools`, because the framework ships no
- * tools: a family is described by whoever packages it, and the host decides which
- * ones to load. `todo` already comes from its own package; the rest are described
- * by factories that still live next to their implementations, and moving one out
- * changes only its import here.
- *
- * This is also the effective built-in catalogue — the single list that says what
- * the model can call — so anything that needs to know the built-in tool names
- * reads it instead of keeping a second inventory.
+ * Every built-in tool family is now a built-in plugin loaded through the plugin
+ * catalog; this static assembly intentionally contributes nothing. It remains as
+ * the kernel path used when a host passes its own `families`, and as the test
+ * surface for family capability semantics.
  *
  * `enabled` is the config's `tools.enabled`: a family that is `false` does not
- * load, and a family that is absent or `true` loads. The filter happens here, so
- * a disabled family's tools never reach the kernel or the executor registry.
+ * load, and a family that is absent or `true` loads.
  */
 export function builtinToolFamilies(
-  processRegistry = new ManagedProcessRegistry(),
   enabled?: Record<string, boolean>,
 ): ToolFamily[] {
-  return [processToolFamily(processRegistry)].filter(
-    (family) => enabled?.[family.id] !== false,
-  );
+  return [];
 }
 
 /** Every built-in tool name, including the aliases a model may use. */
 export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
-  const names = builtinToolFamilies(undefined, enabled).flatMap((family) => [
+  const names = builtinToolFamilies(enabled).flatMap((family) => [
     ...family.tools.map((tool) => tool.name),
     ...Object.keys(family.aliases ?? {}),
   ]);
@@ -131,6 +118,27 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
       "sandbox_resource_list",
       "sandbox_resource_output",
       "sandbox_resource_stop",
+    );
+  if (enabled?.process !== false)
+    names.push(
+      "process_start",
+      "process_list",
+      "process_status",
+      "process_output",
+      "process_ready",
+      "process_stop",
+      "process_restart",
+      "process_attach",
+      "process_detach",
+      "process_cleanup",
+      "process_audit",
+      "background_start",
+      "background_list",
+      "background_output",
+      "background_stop",
+      "background_restart",
+      "background_cleanup",
+      "background_audit",
     );
   return names;
 }
@@ -274,6 +282,34 @@ export const migratedBuiltinToolFamilies = [
       "sandbox_resource_list",
       "sandbox_resource_output",
       "sandbox_resource_stop",
+    ],
+  },
+  {
+    id: "process",
+    name: "Managed Process Tools",
+    version: "1.0.0",
+    description: "Long-running background processes.",
+    scope: "session",
+    dependencies: [],
+    tools: [
+      "process_start",
+      "process_list",
+      "process_status",
+      "process_output",
+      "process_ready",
+      "process_stop",
+      "process_restart",
+      "process_attach",
+      "process_detach",
+      "process_cleanup",
+      "process_audit",
+      "background_start",
+      "background_list",
+      "background_output",
+      "background_stop",
+      "background_restart",
+      "background_cleanup",
+      "background_audit",
     ],
   },
 ] as const;
@@ -433,13 +469,11 @@ export function applyToolFamilyEnabledFilter(input: {
 
 export function createToolRegistryFromCapabilities(input: {
   registry: CapabilityRegistryHost;
-  processRegistry?: ManagedProcessRegistry;
   families?: ToolFamily[];
   /** Config `tools.enabled`: a family that is `false` does not load. */
   enabled?: Record<string, boolean>;
 }): { tools: ToolRegistry; outcome: ToolFamilyLoadOutcome } {
-  const families =
-    input.families ?? builtinToolFamilies(input.processRegistry, input.enabled);
+  const families = input.families ?? builtinToolFamilies(input.enabled);
 
   const outcome = registerToolFamilyCapabilities(input.registry, families);
   const tools = createToolRegistry([]);

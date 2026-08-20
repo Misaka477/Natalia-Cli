@@ -6,6 +6,7 @@ import {
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
+  PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
@@ -22,6 +23,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     fsReadEnabled: true,
     fsWriteEnabled: true,
     pdfEnabled: true,
+    processEnabled: true,
     sandboxEnabled: true,
     searchEnabled: true,
     shellEnabled: true,
@@ -40,6 +42,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     AGENT_PLUGIN_ID,
     TERMINAL_PLUGIN_ID,
     SANDBOX_PLUGIN_ID,
+    PROCESS_PLUGIN_ID,
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
   ]);

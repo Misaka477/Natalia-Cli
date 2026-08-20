@@ -5,6 +5,7 @@ export {
   type UnifiedPatchFile,
   type UnifiedPatchHunk,
 } from "./unified-patch";
+export { runShell } from "./run-shell";
 export {
   boundToolOutput,
   cleanupToolOutput,
