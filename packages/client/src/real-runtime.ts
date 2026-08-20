@@ -181,12 +181,7 @@ import {
   registerToolFamilyCapabilities,
   toolFamilyCapabilityID,
 } from "./capabilities/tool-family-capabilities";
-import {
-  RUNTIME_CONFIG_CAPABILITY_ID,
-  RUNTIME_CONFIG_SERVICE,
-  refreshRuntimeConfigService,
-  registerRuntimeConfigCapability,
-} from "./capabilities/runtime-config-capability";
+import { refreshRuntimeConfigService } from "./builtin-plugins/runtime-config-plugin";
 import {
   ASK_PLUGIN_ID,
   AGENT_PLUGIN_ID,
@@ -1061,19 +1056,9 @@ export function createRealRuntimeClient(
       providerConcurrencyLimiter = new ProviderConcurrencyLimiter(
         tsConfig.config.runtime.providerConcurrency ?? {},
       );
-      // The config is a kernel service: plugins and tool families can resolve
-      // it by name and subscribe to its updates.
-      const registeredConfig = registerRuntimeConfigCapability(
-        capabilityRegistry,
-        tsConfig.config,
-      );
-      if (!registeredConfig.ok)
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: RUNTIME_CONFIG_CAPABILITY_ID,
-          message: `runtime config service unavailable: ${registeredConfig.reason}`,
-        });
+      // The config is a kernel service provided by the runtime-config built-in
+      // plugin; plugins and tool families resolve it by name and subscribe to
+      // its updates.
       if (
         options.permissionProfile &&
         !tsConfig.config.permissionProfiles[options.permissionProfile]
@@ -2074,6 +2059,7 @@ export function createRealRuntimeClient(
       ...(options.taskModuleContext
         ? { taskModule: options.taskModuleContext }
         : {}),
+      ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
     });
     for (const entry of builtinPlugins) {
       if (!entry.enabled) continue;

@@ -8,7 +8,7 @@ import {
   createPluginsController,
   pluginCapabilityID,
 } from "../src/plugins-controller";
-import { registerRuntimeConfigCapability } from "../src/capabilities/runtime-config-capability";
+import { createRuntimeConfigPlugin } from "../src/builtin-plugins/runtime-config-plugin";
 import {
   installPluginSdkLinks,
   pluginSdkImportPath,
@@ -378,10 +378,14 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "req.plugin", versi
   );
 
   const kernel = new CapabilityRegistry();
-  // The required service is provided before the plugin loads.
-  registerRuntimeConfigCapability(kernel, { runtime: {} } as never);
   const { controller } = makeController(root, kernel);
-  await controller.init();
+  // The runtime-config builtin provides the required service before the local
+  // plugin loads, exactly as the real runtime wires it.
+  await controller.init({ loadLocal: false });
+  await controller.loadBuiltin(
+    createRuntimeConfigPlugin({ runtime: {} } as never),
+  );
+  await controller.loadLocal();
   // The capability activated (its requires satisfied) and setup ran.
   expect(kernel.isPending(pluginCapabilityID("req.plugin"))).toBe(false);
   expect(kernel.has(pluginCapabilityID("req.plugin"))).toBe(true);

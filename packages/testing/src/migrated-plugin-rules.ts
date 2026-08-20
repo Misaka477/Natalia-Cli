@@ -243,6 +243,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-runtime-config",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "runtime config capability registration",
+        pattern:
+          /\b(?:registerRuntimeConfigCapability|RUNTIME_CONFIG_CAPABILITY_ID)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

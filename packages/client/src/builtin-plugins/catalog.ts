@@ -19,11 +19,16 @@ import { createProcessPlugin, PROCESS_PLUGIN_ID } from "@natalia/tool-process";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
+import type { ConfigV3 } from "@natalia/contracts";
 import type { TaskModuleContext } from "../capabilities/task-module-tools";
 import {
   createTaskModulePlugin,
   TASK_MODULE_PLUGIN_ID,
 } from "./task-module-plugin";
+import {
+  createRuntimeConfigPlugin,
+  RUNTIME_CONFIG_PLUGIN_ID,
+} from "./runtime-config-plugin";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
@@ -78,6 +83,8 @@ export function builtinPluginCatalog(input: {
   };
   /** Present only when the host runs inside a flow-module execution. */
   taskModule?: TaskModuleContext;
+  /** The resolved runtime config, provided as the `runtime.config` service. */
+  runtimeConfig?: ConfigV3;
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -154,6 +161,15 @@ export function builtinPluginCatalog(input: {
             id: TASK_MODULE_PLUGIN_ID,
             enabled: true,
             create: () => createTaskModulePlugin(input.taskModule!),
+          },
+        ]
+      : []),
+    ...(input.runtimeConfig
+      ? [
+          {
+            id: RUNTIME_CONFIG_PLUGIN_ID,
+            enabled: true,
+            create: () => createRuntimeConfigPlugin(input.runtimeConfig!),
           },
         ]
       : []),
