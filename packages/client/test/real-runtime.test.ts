@@ -1309,7 +1309,8 @@ for (const [label, config] of [
             event.name === "write_file" ||
             event.name === "edit_file" ||
             event.name === "read_media_file" ||
-            event.name === "image_read"),
+            event.name === "image_read" ||
+            event.name === "apply_patch"),
       ),
     ).toBe(false);
     expect(kernel.has("natalia-tool-fs")).toBe(false);
@@ -1456,7 +1457,7 @@ test("selected permission profile denies tools outside its allow list before app
     }),
   );
   expect(events.some((event) => event.type === "approval.request")).toBe(false);
-  const history = await client.history!({ limit: 100 });
+  const history = await client.history!({ limit: 500 });
   expect(history.events).toContainEqual(
     expect.objectContaining({
       event: expect.objectContaining({
@@ -3991,7 +3992,7 @@ test("video attachments are refused by a model or adapter without video input", 
     client.start(() => undefined);
     const finishedWithError = async (): Promise<boolean> => {
       for (let elapsed = 0; elapsed < 10_000; elapsed += 20) {
-        const history = await client.history?.();
+        const history = await client.history?.({ limit: 500 });
         if (
           history?.events.some(
             (item) =>
@@ -4006,7 +4007,7 @@ test("video attachments are refused by a model or adapter without video input", 
     };
     await client.submitInput?.({ text: "watch", attachments: ["clip.mp4"] });
     expect(await finishedWithError()).toBe(true);
-    const firstHistory = await client.history?.();
+    const firstHistory = await client.history?.({ limit: 500 });
     expect(
       firstHistory?.events.find((item) => item.event.type === "turn.finished")
         ?.event,
@@ -5535,7 +5536,7 @@ test("restart projects unresolved interactive requests from durable events", asy
     approvals: [],
     questions: [],
   });
-  const history = await client.history!({ limit: 100 });
+  const history = await client.history!({ limit: 500 });
   expect(
     history.events.filter(
       (entry) =>
@@ -5606,7 +5607,7 @@ test("restart durably rejects orphaned interactive requests from a crashed turn"
     approvals: [expect.objectContaining({ id: "independent_approval" })],
     questions: [],
   });
-  const history = await client.history!({ limit: 100 });
+  const history = await client.history!({ limit: 500 });
   expect(history.events.map((entry) => entry.event)).toEqual(
     expect.arrayContaining([
       expect.objectContaining({

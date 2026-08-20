@@ -8392,11 +8392,9 @@ export function createRealRuntimeClient(
           call.id,
           tool.name,
           tool.name,
-          // `write`/`apply_patch` were named here but no such tools exist — the
-          // real ones are `write_file`/`edit_file`, so this always fell through
-          // to "global" and a path-scoped constitution rule could never match.
-          // Latent rather than exploited, because constitution rules still have
-          // no writer.
+          // `apply_patch` reports the whole-workspace scope `"."` because it can
+          // touch many files; `write_file`/`edit_file` report their single path.
+          // Anything else has no path scope and falls through to "global".
           workspaceWritePathForTool(
             tool.name,
             tryParseToolArguments(call.arguments),

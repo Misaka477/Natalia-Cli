@@ -1,4 +1,5 @@
 import { isAbsolute, normalize, relative, resolve } from "node:path";
+import { parseUnifiedPatch } from "@natalia/tools";
 import {
   commandHasPrefix,
   parseBashCommandRule,
@@ -194,7 +195,37 @@ export function commandTextForTool(
  * paths in its own arguments — `authorizeSandboxMerge` authorizes each merged path
  * individually and is the only place those paths are known.
  */
-const WORKSPACE_WRITE_TOOLS = ["write_file", "edit_file", "browser_screenshot"];
+const WORKSPACE_WRITE_TOOLS = [
+  "write_file",
+  "edit_file",
+  "apply_patch",
+  "browser_screenshot",
+];
+
+/**
+ * The workspace files one tool call will write, or an empty array when it
+ * writes nothing there. `apply_patch` names every path its diff touches; the
+ * path-based write tools name a single `path`.
+ *
+ * Exported so the permission layer can evaluate each touched path, while
+ * `workspaceWritePathForTool` keeps answering the single-path question the
+ * write lock, constitution check and Work Graph writer ask.
+ */
+export function workspaceWritePathsForTool(
+  toolName: string,
+  args: Record<string, unknown>,
+): string[] {
+  if (toolName === "apply_patch") {
+    const patch = typeof args.patch === "string" ? args.patch : "";
+    try {
+      return parseUnifiedPatch(patch).map((file) => file.path);
+    } catch {
+      return [];
+    }
+  }
+  if (!WORKSPACE_WRITE_TOOLS.includes(toolName)) return [];
+  return typeof args.path === "string" && args.path.trim() ? [args.path] : [];
+}
 
 /**
  * The workspace file one tool call will write, or undefined when the call writes
@@ -204,15 +235,19 @@ const WORKSPACE_WRITE_TOOLS = ["write_file", "edit_file", "browser_screenshot"];
  * writer all answer "does this call change a workspace file, and which one?" from
  * one place. Three private copies of that list would drift, and the copy that
  * drifted would be the one enforcing policy.
+ *
+ * `apply_patch` can touch many files, so it reports the whole-workspace scope
+ * `"."`: the write lock serialises it like any write, and the mutation registry
+ * attributes any workspace change to it.
  */
 export function workspaceWritePathForTool(
   toolName: string,
   args: Record<string, unknown>,
 ): string | undefined {
-  if (!WORKSPACE_WRITE_TOOLS.includes(toolName)) return undefined;
-  return typeof args.path === "string" && args.path.trim()
-    ? args.path
-    : undefined;
+  const paths = workspaceWritePathsForTool(toolName, args);
+  if (!paths.length) return undefined;
+  if (toolName === "apply_patch") return ".";
+  return paths[0]!;
 }
 
 /**
@@ -343,12 +378,22 @@ export function evaluatePermissionRules(
   // not workspace writes: a sandbox path is still a path a profile may restrict,
   // and merge arrives here through `authorizeSandboxMerge` with a synthesized
   // per-path argument.
+  const writePaths = workspaceWritePathsForTool(toolName, args);
   const writesPath =
-    workspaceWritePathForTool(toolName, args) !== undefined ||
+    writePaths.length > 0 ||
     ["sandbox_write", "sandbox_merge"].includes(toolName);
   if (rules.files && (readsPath || writesPath)) {
-    const path = typeof args.path === "string" ? args.path : undefined;
-    if (path) {
+    // A path-based write tool names a single `path`; `apply_patch` names every
+    // path its diff touches; `sandbox_write` names a sandbox path directly.
+    const evaluatedWritePaths =
+      writesPath && writePaths.length
+        ? writePaths
+        : typeof args.path === "string"
+          ? [args.path]
+          : [];
+    const evaluatedReadPaths =
+      readsPath && typeof args.path === "string" ? [args.path] : [];
+    for (const path of [...evaluatedWritePaths, ...evaluatedReadPaths]) {
       if (writesPath && rules.files.writePaths) {
         const decision = evaluateResourceRules(
           rules.files.writePaths,

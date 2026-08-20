@@ -6,7 +6,9 @@
  * capability kernel or the host that loads it.
  */
 import {
+  applyUnifiedPatchToText,
   optionalInteger,
+  parseUnifiedPatch,
   requireObject,
   requireString,
   workspacePath,
@@ -261,6 +263,7 @@ export const fileTools: RuntimeTool[] = [
   editFileTool(),
   readMediaFileTool(),
   imageReadTool(),
+  applyPatchTool(),
 ];
 
 /**
@@ -298,6 +301,117 @@ export function createFsPlugin(): Plugin {
     },
     setup(api) {
       for (const tool of fileTools) api.tools.register(tool);
+    },
+  };
+}
+
+function applyPatchTool(): RuntimeTool {
+  return {
+    name: "apply_patch",
+    description:
+      "Apply a unified diff (the format `git diff` emits) to workspace files. " +
+      "Use it to make several coordinated edits in one call instead of many separate " +
+      "edit_file calls. Every hunk must match before anything is written, so a bad " +
+      "patch changes nothing.",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: { patch: { type: "string" } },
+      required: ["patch"],
+      additionalProperties: false,
+    },
+    output: {
+      schema: {
+        type: "object",
+        properties: { files: { type: "array" } },
+        required: ["files"],
+        additionalProperties: false,
+      },
+      presentCall() {
+        return { kind: "diff", title: "workspace", summary: "apply patch" };
+      },
+      presentResult(_args, value) {
+        return { kind: "diff", title: "workspace", summary: value };
+      },
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const patch = requireString(args.patch, "patch");
+      const files = parseUnifiedPatch(patch);
+      if (!files.length) throw new Error("patch contains no file changes");
+
+      // Phase 1: authorize every touched path and compute every new content in
+      // memory. A mismatch anywhere aborts here, before any file is written.
+      const prepared: Array<{
+        path: string;
+        abs: string;
+        next: string;
+        changed: boolean;
+      }> = [];
+      for (const file of files) {
+        const abs = workspacePath(context.workspaceRoot, file.path);
+        await context.workspaceWriteAuthorize?.({
+          toolName: "apply_patch",
+          path: abs,
+        });
+        let current = "";
+        if (!file.newFile) {
+          try {
+            current = await readFile(abs, "utf8");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT")
+              throw new Error(`apply_patch: file does not exist: ${file.path}`);
+            throw error;
+          }
+        }
+        const applied = applyUnifiedPatchToText(current, file);
+        prepared.push({
+          path: file.path,
+          abs,
+          next: applied.next,
+          changed: applied.changed,
+        });
+      }
+
+      // Phase 2: write the changed files. On a mid-write failure, restore the
+      // files already written so a patch is all-or-nothing on disk too.
+      const written: string[] = [];
+      const originals = new Map<string, string | undefined>();
+      try {
+        for (const entry of prepared) {
+          if (!entry.changed) continue;
+          let original: string | undefined;
+          try {
+            original = await readFile(entry.abs, "utf8");
+          } catch {
+            original = undefined;
+          }
+          originals.set(entry.abs, original);
+          await mkdir(dirname(entry.abs), { recursive: true });
+          await writeFile(entry.abs, entry.next);
+          written.push(entry.path);
+        }
+      } catch (error) {
+        for (const [abs, original] of originals) {
+          try {
+            if (original === undefined) {
+              await import("node:fs/promises").then(({ rm }) =>
+                rm(abs, { force: true }),
+              );
+            } else {
+              await writeFile(abs, original);
+            }
+          } catch {
+            // Best-effort rollback; report the original failure below.
+          }
+        }
+        throw error;
+      }
+
+      if (!written.length) return "patch already applied (no changes)";
+      return `applied patch to ${written.length} file${
+        written.length === 1 ? "" : "s"
+      }: ${written.join(", ")}`;
     },
   };
 }

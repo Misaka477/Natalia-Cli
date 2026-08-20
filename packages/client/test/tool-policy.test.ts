@@ -271,6 +271,46 @@ test("terminal command buffer is pane-scoped and fails closed for unsafe input",
   ).resolves.toMatchObject({ allowed: false });
 });
 
+test("apply_patch is evaluated per path it touches", () => {
+  const fileRules = {
+    files: {
+      writePaths: [
+        { pattern: "protected/*", allow: false, reason: "protected" },
+      ],
+    },
+  };
+  // A patch that touches a protected path is blocked even when it also touches
+  // an allowed one.
+  expect(
+    evaluatePermissionRules(fileRules, "apply_patch", {
+      patch: [
+        "--- a/open.ts",
+        "+++ b/open.ts",
+        "@@ -1,1 +1,1 @@",
+        "-a",
+        "+A",
+        "--- a/protected/secret.ts",
+        "+++ b/protected/secret.ts",
+        "@@ -1,1 +1,1 @@",
+        "-b",
+        "+B",
+      ].join("\n"),
+    }),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+  // A patch that avoids protected paths is allowed.
+  expect(
+    evaluatePermissionRules(fileRules, "apply_patch", {
+      patch: [
+        "--- a/open.ts",
+        "+++ b/open.ts",
+        "@@ -1,1 +1,1 @@",
+        "-a",
+        "+A",
+      ].join("\n"),
+    }),
+  ).toMatchObject({ allowed: true });
+});
+
 test("agent rules cover sandbox paths and all command-launching tools", () => {
   const fileRules = {
     files: {
@@ -1086,7 +1126,7 @@ test("runtime persists safe policy decisions without tool arguments", async () =
       reason: 'write to "protected.txt" blocked: protected by agent policy',
     }),
   );
-  const history = await client.history!({ limit: 100 });
+  const history = await client.history!({ limit: 500 });
   const decision = history.events.find(
     (
       entry,

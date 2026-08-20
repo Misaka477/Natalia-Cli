@@ -1,5 +1,11 @@
 export { validateToolParameters, assertValidToolParameters } from "./validate";
 export {
+  parseUnifiedPatch,
+  applyUnifiedPatchToText,
+  type UnifiedPatchFile,
+  type UnifiedPatchHunk,
+} from "./unified-patch";
+export {
   boundToolOutput,
   cleanupToolOutput,
   MAX_TOOL_OUTPUT_BYTES,

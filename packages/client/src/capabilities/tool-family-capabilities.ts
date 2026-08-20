@@ -82,6 +82,7 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
       "edit_file",
       "read_media_file",
       "image_read",
+      "apply_patch",
     );
   return names;
 }
@@ -128,6 +129,7 @@ export const migratedBuiltinToolFamilies = [
       "edit_file",
       "read_media_file",
       "image_read",
+      "apply_patch",
     ],
   },
 ] as const;

@@ -38,6 +38,7 @@ test("the host composes the built-in catalogue from families", () => {
   expect(builtinToolNames()).toEqual(
     expect.arrayContaining(["read_file", "write_file", "edit_file"]),
   );
+  expect(builtinToolNames()).toContain("apply_patch");
   expect(builtinToolNames({ ask: false })).not.toContain("ask_user");
   expect(builtinToolNames({ todo: false })).not.toContain("todo_read");
   expect(builtinToolNames({ search: false })).not.toContain("glob");

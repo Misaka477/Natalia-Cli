@@ -45,6 +45,7 @@ const catalogue: Array<
   ["agent_status", false],
   ["agent_stop", true],
   ["agent_wait", false],
+  ["apply_patch", true],
   ["background_audit", false],
   ["background_cleanup", true],
   ["background_list", false],
@@ -105,6 +106,7 @@ const catalogue: Array<
 ];
 
 const migratedPluginTools = new Set([
+  "apply_patch",
   "ask_user",
   "edit_file",
   "glob",

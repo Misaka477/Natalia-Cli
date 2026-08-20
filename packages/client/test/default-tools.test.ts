@@ -417,6 +417,7 @@ test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("write_file")).toBe(false);
   expect(builtinTools().has("edit_file")).toBe(false);
   expect(builtinTools().has("image_read")).toBe(false);
+  expect(builtinTools().has("apply_patch")).toBe(false);
 });
 
 test("web_search uses a native configured endpoint without proxying Go", async () => {

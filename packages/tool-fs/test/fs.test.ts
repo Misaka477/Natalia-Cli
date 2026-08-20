@@ -150,3 +150,81 @@ test("read_media_file reports native metadata without injecting bytes", async ()
       .execute({ path: "image.png" }, { workspaceRoot: root }),
   ).toContain('"kind": "png"');
 });
+
+test("apply_patch edits several files in one call and authorizes each path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-fs-patch-"));
+  await writeFile(join(root, "a.ts"), "const a = 1;\nconst b = 2;\n");
+  await writeFile(join(root, "c.ts"), "const c = 3;\n");
+  const writes: Array<{ toolName: string; path: string }> = [];
+  const context = {
+    workspaceRoot: root,
+    workspaceWriteAuthorize: async (input: {
+      toolName: string;
+      path: string;
+    }) => {
+      writes.push(input);
+    },
+  };
+  const tools = new Map(fsToolFamily().tools.map((tool) => [tool.name, tool]));
+  const patch = [
+    "--- a/a.ts",
+    "+++ b/a.ts",
+    "@@ -1,2 +1,2 @@",
+    " const a = 1;",
+    "-const b = 2;",
+    "+const b = 20;",
+    "--- a/c.ts",
+    "+++ b/c.ts",
+    "@@ -1,1 +1,1 @@",
+    "-const c = 3;",
+    "+const c = 30;",
+  ].join("\n");
+  const result = await tools.get("apply_patch")!.execute({ patch }, context);
+  expect(result).toContain("2 files");
+  expect(result).toContain("a.ts");
+  expect(result).toContain("c.ts");
+  const { readFile } = await import("node:fs/promises");
+  expect(await readFile(join(root, "a.ts"), "utf8")).toBe(
+    "const a = 1;\nconst b = 20;\n",
+  );
+  expect(await readFile(join(root, "c.ts"), "utf8")).toBe("const c = 30;\n");
+  expect(writes).toEqual([
+    { toolName: "apply_patch", path: join(root, "a.ts") },
+    { toolName: "apply_patch", path: join(root, "c.ts") },
+  ]);
+});
+
+test("apply_patch changes nothing when a hunk does not match", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-fs-patch-fail-"));
+  await writeFile(join(root, "a.ts"), "const a = 1;\n");
+  const tools = new Map(fsToolFamily().tools.map((tool) => [tool.name, tool]));
+  const patch = [
+    "--- a/a.ts",
+    "+++ b/a.ts",
+    "@@ -1,1 +1,1 @@",
+    "-does not exist",
+    "+replacement",
+  ].join("\n");
+  await expect(
+    tools.get("apply_patch")!.execute({ patch }, { workspaceRoot: root }),
+  ).rejects.toThrow(/did not match/u);
+  const { readFile } = await import("node:fs/promises");
+  expect(await readFile(join(root, "a.ts"), "utf8")).toBe("const a = 1;\n");
+});
+
+test("apply_patch creates a new file from a /dev/null diff", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-fs-patch-new-"));
+  const tools = new Map(fsToolFamily().tools.map((tool) => [tool.name, tool]));
+  const patch = [
+    "--- /dev/null",
+    "+++ b/notes.txt",
+    "@@ -0,0 +1,1 @@",
+    "+fresh",
+  ].join("\n");
+  const result = await tools
+    .get("apply_patch")!
+    .execute({ patch }, { workspaceRoot: root });
+  expect(result).toContain("notes.txt");
+  const { readFile } = await import("node:fs/promises");
+  expect(await readFile(join(root, "notes.txt"), "utf8")).toBe("fresh\n");
+});
