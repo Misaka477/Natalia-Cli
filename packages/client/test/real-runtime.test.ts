@@ -117,6 +117,50 @@ test("real runtime client streams provider output and persists replayable sessio
   ).toBe(true);
 });
 
+test("disabled provider-model plugin constructs no provider loop or chat task", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-provider-model-disabled-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-provider-model": false } },
+    }),
+  );
+  let streams = 0;
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_provider_model_disabled",
+    capabilityRegistry: kernel,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        streams += 1;
+        yield { type: "content" as const, text: "unexpected" };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("do not run");
+  expect(streams).toBe(0);
+  expect(kernel.has("natalia-provider-model")).toBe(false);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "diagnostic",
+      message: "Provider/model plugin is disabled.",
+    }),
+  );
+  expect(await client.chatSubmit!({ text: "do not chat" })).toEqual({
+    messageID: "",
+  });
+  await client.dispose?.();
+});
+
 test("flow_module_complete is only advertised to an active task module runtime", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-task-module-runtime-"));
   const store = await NataliaTaskStateStore.open(root);

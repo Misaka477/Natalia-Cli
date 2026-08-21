@@ -15,6 +15,7 @@ import {
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
+import { PROVIDER_MODEL_PLUGIN_ID } from "../src/builtin-plugins/provider-model-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -52,4 +53,37 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
   );
   for (const entry of catalog.filter((candidate) => candidate.enabled))
     expect(entry.create().manifest.id).toBe(entry.id);
+});
+
+test("provider-model catalog construction stays lazy", () => {
+  let initialized = 0;
+  const catalog = builtinPluginCatalog({
+    agentEnabled: false,
+    askEnabled: false,
+    fsReadEnabled: false,
+    fsWriteEnabled: false,
+    pdfEnabled: false,
+    processEnabled: false,
+    sandboxEnabled: false,
+    searchEnabled: false,
+    shellEnabled: false,
+    terminalEnabled: false,
+    todoEnabled: false,
+    webEnabled: false,
+    providerModel: {
+      enabled: false,
+      controller: {
+        initialize: () => {
+          initialized += 1;
+        },
+      } as never,
+    },
+  });
+  const entry = catalog.find(
+    (candidate) => candidate.id === PROVIDER_MODEL_PLUGIN_ID,
+  );
+  expect(entry?.enabled).toBe(false);
+  expect(initialized).toBe(0);
+  expect(entry?.create().manifest.id).toBe(PROVIDER_MODEL_PLUGIN_ID);
+  expect(initialized).toBe(0);
 });

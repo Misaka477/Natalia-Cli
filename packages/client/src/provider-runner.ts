@@ -87,7 +87,7 @@ const maxProtocolCorrections = 2;
  * runtime on purpose: it is the canonical policy funnel, and moving it would
  * create a second policy path (resource-ownership observation 5).
  */
-export function createProviderRunner(input: {
+export type ProviderRunnerInput = {
   provider(): StreamingProvider | undefined;
   session(): SessionRecord | undefined;
   context(): ContextLedger;
@@ -236,7 +236,9 @@ export function createProviderRunner(input: {
    * "done", and the runtime persists the pending-human state.
    */
   waitingHuman(): { terminalID: string; reason: string } | undefined;
-}) {
+};
+
+export function createProviderRunner(input: ProviderRunnerInput) {
   async function runTurn(input: {
     id: string;
     text: string;

@@ -74,6 +74,11 @@ import {
   COLLABORATION_PLUGIN_ID,
 } from "./collaboration-plugin";
 import {
+  createProviderModelPlugin,
+  PROVIDER_MODEL_PLUGIN_ID,
+} from "./provider-model-plugin";
+import type { ProviderModelControllerInput } from "../provider-model-controller";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -190,6 +195,11 @@ export function builtinPluginCatalog(input: {
   /** The interactive approval/question waiter. */
   collaboration?: {
     waiter: import("../interactive-waiter").InteractiveWaiterDeps;
+  };
+  /** Provider selection, main agent loop and Live Work Chat lifecycle. */
+  providerModel?: {
+    enabled: boolean;
+    controller: ProviderModelControllerInput;
   };
 }): BuiltinPluginEntry[] {
   return [
@@ -403,6 +413,16 @@ export function builtinPluginCatalog(input: {
               createCollaborationPlugin({
                 waiter: input.collaboration!.waiter,
               }),
+          },
+        ]
+      : []),
+    ...(input.providerModel
+      ? [
+          {
+            id: PROVIDER_MODEL_PLUGIN_ID,
+            enabled: input.providerModel.enabled,
+            create: () =>
+              createProviderModelPlugin(input.providerModel!.controller),
           },
         ]
       : []),

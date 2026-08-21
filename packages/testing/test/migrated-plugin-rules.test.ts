@@ -61,6 +61,9 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "evaluatePermissionRules(rules, name, args, root)",
     ],
     ["natalia-collaboration", "createInteractiveWaiter({})"],
+    ["natalia-provider-model", "createProviderRunner({})"],
+    ["natalia-provider-model", "const runnerBySession = new Map()"],
+    ["natalia-provider-model", "let chatAbort = new AbortController()"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),

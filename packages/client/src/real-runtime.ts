@@ -5,7 +5,9 @@ import { createStatusSnapshotController } from "./status-controller";
 import type { SessionStoreController } from "./session-store-controller";
 import { SESSION_STORE_CONTROLLER_SERVICE } from "./builtin-plugins/session-store-controller-plugin";
 import { createTurnController } from "./turn-controller";
-import { createProviderRunner } from "./provider-runner";
+import type { ProviderRunnerInput } from "./provider-runner";
+import type { ProviderModelController } from "./provider-model-controller";
+import { PROVIDER_MODEL_CONTROLLER_SERVICE } from "./builtin-plugins/provider-model-plugin";
 import {
   fallbackSessionTitle,
   generateSessionTitle,
@@ -405,16 +407,12 @@ export function createRealRuntimeClient(
   let workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
   let sessionID: SessionID;
   let sessionStoreController!: SessionStoreController;
-  let provider = options.provider ?? providerFromEnvironment();
+  let provider = options.provider;
   let providerSource:
     | "explicit"
     | "environment"
     | "ts_config"
-    | "unconfigured" = options.provider
-    ? "explicit"
-    : provider
-      ? "environment"
-      : "unconfigured";
+    | "unconfigured" = options.provider ? "explicit" : "unconfigured";
   /**
    * Created before the tool registry, because the built-in tool families are
    * capabilities: the kernel owns every tool, and the registry the executor reads
@@ -473,6 +471,7 @@ export function createRealRuntimeClient(
   let defaultPermissionProfile: PermissionProfile | undefined;
   let maxSteps: number | undefined;
   let subagentsController: SubagentsController | undefined;
+  let providerModelController: ProviderModelController | undefined;
   /**
    * Controllers provided by the terminal/sandbox/mcp built-in plugins, resolved
    * after they load during `start`. All consumers run post-start, so the
@@ -576,10 +575,6 @@ export function createRealRuntimeClient(
     lastSubmitted?: SubmittedTurn;
     paused: boolean;
     pauseWaiters: Array<() => void>;
-    chatAbort?: AbortController;
-    chatTask?: Promise<void>;
-    chatWakePending?: boolean;
-    chatWakeTask?: Promise<void>;
   };
   const executionBySession = new Map<SessionID, SessionExecutionState>();
   let activeExec: SessionExecutionState | undefined;
@@ -797,7 +792,6 @@ export function createRealRuntimeClient(
   let mailboxSequence = 0;
   let chatSequence = 0;
   let collabSequence = 0;
-  const chatTasks = new Set<Promise<unknown>>();
   const internalWakeTasks = new Set<Promise<unknown>>();
   let planSequence = 0;
   let completionSequence = 0;
@@ -1118,6 +1112,37 @@ export function createRealRuntimeClient(
         },
         toolPipeline: { enabled: true },
         collaboration: { waiter: waiterDeps },
+        providerModel: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-provider-model"] !== false,
+          controller: {
+            initialize: () => {
+              if (!provider && !options.provider) {
+                provider = providerFromEnvironment();
+                if (provider) providerSource = "environment";
+              }
+            },
+            runnerInput: providerRunnerInput,
+            chat: {
+              available: (id) =>
+                executionBySession.get(id)?.provider !== undefined,
+              publish: (id, event) =>
+                publishForSession(executionBySession.get(id), event),
+              runBody: async (input, signal) => {
+                const exec = executionBySession.get(input.sessionID);
+                if (!exec)
+                  throw new Error(
+                    `no execution state for session ${input.sessionID}`,
+                  );
+                await runChatTurnBody({ ...input, exec }, signal);
+              },
+              wake: async (id) => {
+                const exec = executionBySession.get(id);
+                if (exec) await wakeNavi(exec);
+              },
+            },
+          },
+        },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1171,6 +1196,11 @@ export function createRealRuntimeClient(
           "collaboration waiter unavailable (natalia-collaboration)",
         );
       interactive = resolvedWaiter;
+      const resolvedProviderModel =
+        capabilityRegistry.service<ProviderModelController>(
+          PROVIDER_MODEL_CONTROLLER_SERVICE,
+        );
+      providerModelController = resolvedProviderModel;
       agentToolLayer = toolPolicy.createHookLayer();
       permissionProfileToolLayer = toolPolicy.createHookLayer();
       moduleToolLayer = toolPolicy.createHookLayer(
@@ -3901,23 +3931,10 @@ export function createRealRuntimeClient(
     }
   }
 
-  /**
-   * D2: one provider runner per session. Every per-session accessor resolves
-   * through that session's exec, so a background turn keeps reading and
-   * writing its own session record, context ledger and turn markers while the
-   * UI is attached to another session. Shared machinery (tools, permissions,
-   * config) stays activity-scoped by design.
-   */
-  const runnerBySession = new Map<
-    SessionID,
-    ReturnType<typeof createProviderRunner>
-  >();
-  function providerRunnerFor(sessionID: string) {
-    const existing = runnerBySession.get(sessionID as SessionID);
-    if (existing) return existing;
-    const exec = executionBySession.get(sessionID as SessionID);
+  function providerRunnerInput(sessionID: SessionID): ProviderRunnerInput {
+    const exec = executionBySession.get(sessionID);
     if (!exec) throw new Error(`no execution state for session ${sessionID}`);
-    const runner = createProviderRunner({
+    return {
       provider: () => exec.provider,
       session: () => exec.session,
       context: () => exec.context,
@@ -4049,9 +4066,7 @@ export function createRealRuntimeClient(
       effectiveMaxSteps: () => effectiveMaxSteps(exec),
       waitIfPaused: () => waitIfPaused(exec),
       waitingHuman: () => exec.endTurnWaitingHuman,
-    });
-    runnerBySession.set(sessionID as SessionID, runner);
-    return runner;
+    };
   }
 
   const turnController = createTurnController({
@@ -4109,7 +4124,24 @@ export function createRealRuntimeClient(
         executionBySession.get(input.sessionID as SessionID),
       );
       try {
-        await providerRunnerFor(input.sessionID).runTurn(input);
+        if (providerModelController)
+          await providerModelController.runTurn(
+            input.sessionID as SessionID,
+            input,
+          );
+        else {
+          const exec = executionBySession.get(input.sessionID as SessionID);
+          publishForSession(exec, {
+            type: "diagnostic",
+            level: "error",
+            message: "Provider/model plugin is disabled.",
+          });
+          publishForSession(exec, {
+            type: "turn.finished",
+            id: input.id,
+            stopReason: "error",
+          });
+        }
       } finally {
         scheduleTitleGeneration(input.sessionID as SessionID);
       }
@@ -4375,19 +4407,7 @@ export function createRealRuntimeClient(
   }
 
   function requestNaviWake(exec: SessionExecutionState) {
-    exec.chatWakePending = true;
-    if (exec.chatWakeTask) return;
-    const task = (async () => {
-      while (exec.chatWakePending && !runtimeDisposed) {
-        exec.chatWakePending = false;
-        if (exec.chatTask) await exec.chatTask.catch(() => undefined);
-        if (!runtimeDisposed && exec.provider) await wakeNavi(exec);
-      }
-    })().finally(() => {
-      if (exec.chatWakeTask === task) exec.chatWakeTask = undefined;
-      if (exec.chatWakePending && !runtimeDisposed) requestNaviWake(exec);
-    });
-    exec.chatWakeTask = task;
+    providerModelController?.requestChatWake(exec.session.id as SessionID);
   }
 
   function createCollabChatTool(
@@ -5249,67 +5269,6 @@ export function createRealRuntimeClient(
     }
   }
 
-  /** Runs one Chat turn: shared context + history -> provider stream -> tools. */
-  async function runChatTurn(input: {
-    text: string;
-    responseMessageID: string;
-    exec: SessionExecutionState;
-    /** Internal wake (no user message): respond to Natalia's collaboration
-        messages instead of a human prompt. */
-    internal?: boolean;
-  }) {
-    const activeProvider = input.exec.provider;
-    if (!activeProvider)
-      throw new Error("provider unavailable for live work chat");
-    if (input.exec.chatAbort)
-      throw new Error("live work chat is already busy for this session");
-    const startedAt = Date.now();
-    publishForSession(input.exec, {
-      type: "chat.turn.started",
-      id: `${input.responseMessageID}:started`,
-      messageID: input.responseMessageID,
-      startedAt,
-      ...(input.internal ? { internal: true } : {}),
-    });
-    const chatAbort = new AbortController();
-    input.exec.chatAbort = chatAbort;
-    const task = (async () => {
-      await runChatTurnBody(input, chatAbort.signal);
-    })();
-    input.exec.chatTask = task;
-    chatTasks.add(task);
-    try {
-      await task;
-      const endedAt = Date.now();
-      publishForSession(input.exec, {
-        type: "chat.turn.finished",
-        id: `${input.responseMessageID}:finished`,
-        messageID: input.responseMessageID,
-        stopReason: "done",
-        startedAt,
-        endedAt,
-      });
-    } catch (cause) {
-      const endedAt = Date.now();
-      publishForSession(input.exec, {
-        type: "chat.turn.finished",
-        id: `${input.responseMessageID}:finished`,
-        messageID: input.responseMessageID,
-        stopReason: chatAbort.signal.aborted ? "cancelled" : "error",
-        startedAt,
-        endedAt,
-        ...(!chatAbort.signal.aborted
-          ? { error: cause instanceof Error ? cause.message : String(cause) }
-          : {}),
-      });
-      throw cause;
-    } finally {
-      chatTasks.delete(task);
-      if (input.exec.chatTask === task) input.exec.chatTask = undefined;
-      if (input.exec.chatAbort === chatAbort) input.exec.chatAbort = undefined;
-    }
-  }
-
   async function runChatTurnBody(
     input: {
       text: string;
@@ -5414,7 +5373,7 @@ export function createRealRuntimeClient(
         // Chat is an independent collaboration lane, not provider fan-out from
         // the Main turn. Putting it behind the Main/subagent semaphore makes a
         // configured cap of 1 block Chat until Main stops, defeating its core
-        // always-available contract. `chatAbort` still limits this session to
+        // always-available contract. The chat controller still limits each session to
         // one Chat stream at a time.
         const stream = activeProvider.stream({
           messages: finalOnlyStep
@@ -5627,13 +5586,14 @@ export function createRealRuntimeClient(
    * question until the user happens to chat again.
    */
   async function wakeNavi(exec: SessionExecutionState) {
-    if (!exec.provider || exec.chatAbort) return;
+    const controller = providerModelController;
+    if (!exec.provider || !controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
     try {
-      await runChatTurn({
+      await controller.runChatTurn({
+        sessionID: exec.session.id as SessionID,
         text: "",
         responseMessageID,
-        exec,
         internal: true,
       });
     } catch (cause) {
@@ -5733,7 +5693,6 @@ export function createRealRuntimeClient(
       terminalCommandBuffer.clearAll();
       for (const exec of executionBySession.values()) {
         exec.activeAbort?.abort(new Error("runtime disposed"));
-        exec.chatAbort?.abort(new Error("runtime disposed"));
         exec.paused = false;
         for (const resolveWaiter of exec.pauseWaiters) resolveWaiter();
         exec.pauseWaiters = [];
@@ -5743,8 +5702,8 @@ export function createRealRuntimeClient(
           sessionRunCoordinator(id).interrupt(),
         ),
       );
+      await providerModelController?.dispose();
       await Promise.allSettled([...internalWakeTasks]);
-      await Promise.allSettled([...chatTasks]);
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
@@ -7221,7 +7180,8 @@ export function createRealRuntimeClient(
       await ready;
       const text = typeof input.text === "string" ? input.text.trim() : "";
       const exec = activeExec;
-      if (!text || !exec?.provider) return { messageID: "" };
+      const controller = providerModelController;
+      if (!text || !exec?.provider || !controller) return { messageID: "" };
       const now = new Date();
       const userMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
       publishForSession(exec, {
@@ -7234,7 +7194,11 @@ export function createRealRuntimeClient(
       });
       const responseMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
       try {
-        await runChatTurn({ text, responseMessageID, exec });
+        await controller.runChatTurn({
+          sessionID: exec.session.id as SessionID,
+          text,
+          responseMessageID,
+        });
       } catch (cause) {
         publishForSession(exec, {
           type: "chat.message.added",

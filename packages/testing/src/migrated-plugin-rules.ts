@@ -367,6 +367,24 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-provider-model",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct provider runner construction in the host",
+        pattern: /(?<!\.)\bcreateProviderRunner\b/u,
+      },
+      {
+        description: "host-owned provider runner cache",
+        pattern: /(?<!\.)\brunnerBySession\b/u,
+      },
+      {
+        description: "host-owned live chat abort state",
+        pattern: /(?<!\.)\bchatAbort\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
