@@ -297,6 +297,18 @@ test("client physical dependency guard excludes extracted product packages", () 
       'import { authorizeSkillTool } from "@natalia/skills-plugin"',
     ),
   ).toBeUndefined();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/real-runtime.ts",
+      'import { agentsFromConfig } from "@natalia/agent"',
+    ),
+  ).toBeString();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/real-runtime.ts",
+      'import { agentsFromConfig } from "@natalia/agent-plugin"',
+    ),
+  ).toBeUndefined();
 });
 
 test("migrated plugin rules only protect declared composition roots", () => {

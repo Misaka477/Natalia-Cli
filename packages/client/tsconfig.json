@@ -7,7 +7,7 @@
   "include": ["src", "test"],
   "references": [
     {
-      "path": "../agent"
+      "path": "../agent-plugin"
     },
     {
       "path": "../builtin-tool-plugins"

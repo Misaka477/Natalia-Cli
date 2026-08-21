@@ -6,6 +6,7 @@
     { "path": "apps/cli" },
     { "path": "packages/contracts" },
     { "path": "packages/agent" },
+    { "path": "packages/agent-plugin" },
     { "path": "packages/builtin-tool-plugins" },
     { "path": "packages/capability" },
     { "path": "packages/client" },

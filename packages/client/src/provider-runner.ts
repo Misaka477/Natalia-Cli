@@ -21,7 +21,7 @@ import {
   type StreamingProvider,
 } from "@natalia/runtime";
 import type { RetryService } from "./retry-service";
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
+import type { AgentDefinition, AgentRegistry } from "@natalia/agent-plugin";
 import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";

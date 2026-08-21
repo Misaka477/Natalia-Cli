@@ -103,7 +103,7 @@ import {
   agentsFromConfig,
   type AgentDefinition,
   type AgentRegistry,
-} from "@natalia/agent";
+} from "@natalia/agent-plugin";
 import {
   appendSessionEvent,
   createSessionRecord,

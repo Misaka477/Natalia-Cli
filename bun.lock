@@ -63,6 +63,13 @@
         "@natalia/contracts": "workspace:*",
       },
     },
+    "packages/agent-plugin": {
+      "name": "@natalia/agent-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/agent": "workspace:*",
+      },
+    },
     "packages/builtin-tool-plugins": {
       "name": "@natalia/builtin-tool-plugins",
       "version": "0.0.0-m13",
@@ -93,7 +100,7 @@
       "name": "@natalia/client",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/agent": "workspace:*",
+        "@natalia/agent-plugin": "workspace:*",
         "@natalia/builtin-tool-plugins": "workspace:*",
         "@natalia/capability": "workspace:*",
         "@natalia/config": "workspace:*",
@@ -526,6 +533,8 @@
     "@napi-rs/canvas-win32-x64-msvc": ["@napi-rs/canvas-win32-x64-msvc@1.0.7", "", { "os": "win32", "cpu": "x64" }, "sha512-SKTNdBV/ljfhkPsLhXjm4x2PQ0ILpc0PhkBzRHuroJXidZUaF5yh0j3s3dIzB8PrRmW+nEASzyMTaWT3nH1ywQ=="],
 
     "@natalia/agent": ["@natalia/agent@workspace:packages/agent"],
+
+    "@natalia/agent-plugin": ["@natalia/agent-plugin@workspace:packages/agent-plugin"],
 
     "@natalia/builtin-tool-plugins": ["@natalia/builtin-tool-plugins@workspace:packages/builtin-tool-plugins"],
 

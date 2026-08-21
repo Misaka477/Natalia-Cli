@@ -12,6 +12,7 @@
     "baseUrl": ".",
     "paths": {
       "@natalia/agent": ["packages/agent/src/index.ts"],
+      "@natalia/agent-plugin": ["packages/agent-plugin/src/index.ts"],
       "@natalia/builtin-tool-plugins": [
         "packages/builtin-tool-plugins/src/index.ts"
       ],

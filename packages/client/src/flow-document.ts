@@ -5,7 +5,7 @@ import type {
   NataliaFlowDocumentInput,
   NataliaTaskDocument,
 } from "@natalia/contracts";
-import { agentsFromConfig } from "@natalia/agent";
+import { agentsFromConfig } from "@natalia/agent-plugin";
 import { resolveEffectiveModel } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
 import { providerForModel } from "@natalia/runtime";

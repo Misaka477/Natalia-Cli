@@ -43,6 +43,7 @@ export function findClientToolDependencyViolation(
  * must not be added until the client no longer imports the package anywhere.
  */
 const clientProductPackages = [
+  "agent",
   "mcp",
   "native-terminal",
   "sandbox",
