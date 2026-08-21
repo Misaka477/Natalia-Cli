@@ -48,9 +48,17 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "registerRuntimeConfigCapability(registry, cfg)",
     ],
     ["natalia-local-tools", "loadLocalToolFamilies({ roots })"],
+    [
+      "natalia-tool-plugins",
+      "createToolRegistryFromCapabilities({ registry })",
+    ],
     ["natalia-workspace", "createWorkspaceWriteLock()"],
     ["natalia-terminal", "createTerminalController({})"],
     ["natalia-sandbox", "createSandboxController({})"],
+    [
+      "natalia-sandbox",
+      'import { SnapshotSandboxManager } from "@natalia/sandbox"',
+    ],
     ["natalia-mcp", "createMcpController({})"],
     ["natalia-checkpoint", "createCheckpointController({})"],
     ["natalia-subagents", "createSubagentsController({})"],

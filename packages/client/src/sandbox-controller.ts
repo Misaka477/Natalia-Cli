@@ -58,6 +58,12 @@ export function createSandboxController(input: {
   return {
     init,
     get,
+    async referencedObjectIDs() {
+      const current = get();
+      return current instanceof SnapshotSandboxManager
+        ? await current.referencedObjectIDs()
+        : undefined;
+    },
     runningResourceCount() {
       return manager?.runningResourceCount() ?? 0;
     },

@@ -11,6 +11,8 @@ import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
 import type { ToolRegistry } from "@natalia/tools";
 import { createMcpController } from "../mcp-controller";
 
+export type { McpAccess, McpController } from "../mcp-controller";
+
 export const MCP_PLUGIN_ID = "natalia-mcp";
 export const MCP_CONTROLLER_SERVICE = "mcp.controller";
 
@@ -43,8 +45,8 @@ export function createMcpControllerPlugin(input: {
       controller = createMcpController(input);
       api.services.provide(MCP_CONTROLLER_SERVICE, controller);
     },
-    dispose() {
-      void controller?.close();
+    async dispose() {
+      await controller?.close();
       controller = undefined;
     },
   };

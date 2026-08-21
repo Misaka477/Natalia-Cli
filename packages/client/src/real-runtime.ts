@@ -27,19 +27,15 @@ import {
 } from "./session-title";
 import type { SubagentsController } from "./subagents-controller";
 import { SUBAGENTS_CONTROLLER_SERVICE } from "./builtin-plugins/subagents-controller-plugin";
-import type { TerminalController } from "./terminal-controller";
-import { SnapshotSandboxManager } from "@natalia/sandbox";
 import {
   TEAM_MODE_DIRECTIVE,
   sandboxedSubagentSystemPrompt,
 } from "./agent-team-prompts";
-import type { SandboxController } from "./sandbox-controller";
 import type { CheckpointController } from "./checkpoint-controller";
 import {
   CHECKPOINT_FACTORY_SERVICE,
   type CheckpointControllerFactory,
 } from "./builtin-plugins/checkpoint-controller-plugin";
-import type { McpAccess, McpController } from "./mcp-controller";
 import type { WorkspaceFilesController } from "./workspace-files-controller";
 import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
@@ -141,6 +137,7 @@ import {
 import {
   boundToolOutput,
   cleanupToolOutput,
+  createToolRegistry,
   ToolExecutionPipeline,
   validateToolParameters,
   type RuntimeTool,
@@ -167,13 +164,7 @@ import {
   type PluginCommand,
 } from "@natalia/plugin";
 import { moduleToolPolicy } from "@natalia/workflow";
-import {
-  applyToolFamilyEnabledFilter,
-  builtinToolFamilies,
-  createToolRegistryFromCapabilities,
-  registerToolFamilyCapabilities,
-  toolFamilyCapabilityID,
-} from "./capabilities/tool-family-capabilities";
+import { toolFamilyCapabilityID } from "./capabilities/tool-family-capabilities";
 import { refreshRuntimeConfigService } from "./builtin-plugins/runtime-config-plugin";
 import {
   ASK_PLUGIN_ID,
@@ -197,9 +188,19 @@ import {
   WORKSPACE_MUTATIONS_SERVICE,
   WORKSPACE_WRITE_LOCK_SERVICE,
 } from "./builtin-plugins/workspace-plugin";
-import { TERMINAL_CONTROLLER_SERVICE } from "./builtin-plugins/terminal-controller-plugin";
-import { SANDBOX_CONTROLLER_SERVICE } from "./builtin-plugins/sandbox-controller-plugin";
-import { MCP_CONTROLLER_SERVICE } from "./builtin-plugins/mcp-controller-plugin";
+import {
+  TERMINAL_CONTROLLER_SERVICE,
+  type TerminalController,
+} from "./builtin-plugins/terminal-controller-plugin";
+import {
+  SANDBOX_CONTROLLER_SERVICE,
+  type SandboxController,
+} from "./builtin-plugins/sandbox-controller-plugin";
+import {
+  MCP_CONTROLLER_SERVICE,
+  type McpAccess,
+  type McpController,
+} from "./builtin-plugins/mcp-controller-plugin";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import type { TaskWorkflowController } from "./task-workflow-controller";
 import { TASK_WORKFLOW_CONTROLLER_SERVICE } from "./builtin-plugins/task-workflow-plugin";
@@ -384,24 +385,12 @@ export function createRealRuntimeClient(
     | "environment"
     | "ts_config"
     | "unconfigured" = options.provider ? "explicit" : "unconfigured";
-  /**
-   * Created before the tool registry, because the built-in tool families are
-   * capabilities: the kernel owns every tool, and the registry the executor reads
-   * is assembled from what the kernel accepted.
-   */
   const capabilityRegistry: CapabilityRegistryHost =
     options.capabilityRegistry ?? new CapabilityRegistry();
-  const initialFamilies = options.tools
-    ? undefined
-    : createToolRegistryFromCapabilities({
-        registry: capabilityRegistry,
-      });
-  const tools = options.tools ?? initialFamilies!.tools;
-  // A family that could not load at construction says why at start, instead of
-  // its tools silently missing from the catalogue.
-  const initialFamilyFailures = options.tools
-    ? []
-    : initialFamilies!.outcome.failed;
+  // Built-ins enter this registry only through plugin contributions. Starting
+  // empty prevents the former capability-family bootstrap from becoming a
+  // second construction path.
+  const tools = options.tools ?? createToolRegistry([]);
   const workspaceCapabilityView = options.capabilityHost?.view;
   /**
    * The tool policy funnel, resolved from the `natalia-tool-pipeline` plugin
@@ -2315,32 +2304,6 @@ export function createRealRuntimeClient(
     });
     if (tsRuntimeConfig && extensionEnabled("mcp")) {
       await mcpController?.reload();
-    }
-    // The config's `tools.enabled` decides which built-in families stay: a
-    // disabled family's capability is unloaded and its tools dropped, so they
-    // are never callable and never appear in `tool.registered`. A family that
-    // depends on a disabled one is cascade-disabled too, and says why.
-    if (tsRuntimeConfig && !options.tools) {
-      for (const failure of initialFamilyFailures)
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: failure.id,
-          message: `tool family ${failure.id} is not loaded: ${failure.reason}`,
-        });
-      const cascaded = applyToolFamilyEnabledFilter({
-        tools,
-        registry: capabilityRegistry,
-        families: builtinToolFamilies(),
-        enabled: tsRuntimeConfig.tools?.enabled,
-      });
-      for (const family of cascaded)
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: toolFamilyCapabilityID(family.id),
-          message: `tool family ${family.id} is not loaded: ${family.reason}`,
-        });
     }
     // Out-of-tree families declared by `tools.paths` join the built-ins through
     // the same kernel, so they own their tools the same way. They load here
@@ -5808,8 +5771,6 @@ export function createRealRuntimeClient(
       );
       await sessionStoreController?.close();
       await pluginsController.close();
-      await mcpController?.close();
-      await terminalController?.close();
       await performanceTrace.stop();
     },
     cancel(reason = "user cancel") {
@@ -7649,10 +7610,9 @@ export function createRealRuntimeClient(
         // The shared object library: the sandbox's snapshot indices are also
         // owners, so checkpoint GC must never prune a live sandbox object.
         async () => {
-          const manager = requireSandboxes();
-          return manager instanceof SnapshotSandboxManager
-            ? await manager.referencedObjectIDs()
-            : undefined;
+          if (!sandboxController)
+            throw new Error("sandbox controller unavailable");
+          return await sandboxController.referencedObjectIDs();
         },
       );
       publish({ type: "content.delta", id, text: result.output });

@@ -266,6 +266,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     ],
   },
   {
+    id: "natalia-tool-plugins",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "legacy built-in tool-family bootstrap",
+        pattern:
+          /\b(?:applyToolFamilyEnabledFilter|builtinToolFamilies|createToolRegistryFromCapabilities|registerToolFamilyCapabilities)\b/u,
+      },
+    ],
+  },
+  {
     id: "natalia-workspace",
     targets: ["packages/client/src/real-runtime.ts"],
     forbidden: [
@@ -290,6 +301,10 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     id: "natalia-sandbox",
     targets: ["packages/client/src/real-runtime.ts"],
     forbidden: [
+      {
+        description: "direct sandbox implementation import",
+        pattern: /from\s+["']@natalia\/sandbox["']/u,
+      },
       {
         description: "direct sandbox controller construction",
         pattern: /\bcreateSandboxController\b/u,

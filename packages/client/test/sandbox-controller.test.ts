@@ -13,9 +13,13 @@ test("sandbox controller initializes lazily and refuses before init", async () =
   const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-controller-"));
   const controller = createSandboxController({ workspaceRoot: root });
   expect(() => controller.get()).toThrow("sandbox manager is not initialized");
+  await expect(controller.referencedObjectIDs()).rejects.toThrow(
+    "sandbox manager is not initialized",
+  );
   expect(controller.runningResourceCount()).toBe(0);
   await controller.init();
   expect(controller.get()).toBeDefined();
+  expect(await controller.referencedObjectIDs()).toBeInstanceOf(Set);
   expect(controller.runningResourceCount()).toBe(0);
 });
 
@@ -48,4 +52,5 @@ test("sandbox.backend=worktree opts into the real-git backend when a repo exists
   });
   await controller.init();
   expect(controller.get()).toBeInstanceOf(WorktreeSandboxManager);
+  expect(await controller.referencedObjectIDs()).toBeUndefined();
 });

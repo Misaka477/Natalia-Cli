@@ -3,6 +3,12 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveNataliaWezTermForkExecutable } from "@natalia/native-terminal";
+import { createPluginRegistry } from "@natalia/plugin";
+import { createToolRegistry } from "@natalia/tools";
+import {
+  createTerminalControllerPlugin,
+  TERMINAL_PLUGIN_ID,
+} from "../src/builtin-plugins/terminal-controller-plugin";
 import { createTerminalController } from "../src/terminal-controller";
 
 test("terminal controller init without a host environment leaves the registry absent", async () => {
@@ -50,4 +56,29 @@ test("an externally provided registry is installed as-is and never rebuilt", asy
   await controller.init();
   expect(controller.get()).toBe(external);
   await controller.close();
+});
+
+test("terminal plugin unload owns and awaits controller teardown", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-plugin-"));
+  let disposals = 0;
+  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
+  await registry.loadBuiltin(
+    createTerminalControllerPlugin({
+      workspaceRoot: root,
+      publish: () => undefined,
+      onPerformance: () => undefined,
+      runtimeID: () => "runtime-test",
+      userRuntimeHome: () => undefined,
+      windowMode: () => "auto",
+      external: {
+        async dispose() {
+          await Bun.sleep(1);
+          disposals += 1;
+        },
+      } as never,
+    }),
+  );
+
+  await registry.unload(TERMINAL_PLUGIN_ID);
+  expect(disposals).toBe(1);
 });
