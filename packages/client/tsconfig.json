@@ -46,9 +46,6 @@
       "path": "../subagents-plugin"
     },
     {
-      "path": "../terminal"
-    },
-    {
       "path": "../testing"
     },
     {

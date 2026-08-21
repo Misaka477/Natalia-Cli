@@ -18,8 +18,6 @@
     { "path": "packages/platform" },
     { "path": "packages/tools" },
     { "path": "packages/tool-pdf" },
-    { "path": "packages/terminal" },
-    { "path": "packages/terminal" },
     { "path": "packages/sandbox" },
     { "path": "packages/sandbox-plugin" },
     { "path": "packages/skills-plugin" },

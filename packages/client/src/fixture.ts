@@ -1,5 +1,4 @@
 import { lineCount, makeDigest } from "@natalia/testing";
-import { appendTerminalOutput, ModelTerminalRegistry } from "@natalia/terminal";
 import type {
   ApprovalResponse,
   FakeBackend,
@@ -15,8 +14,6 @@ export function createFakeBackend(): FakeBackend {
   let activeTurn: string | undefined;
   let submission: SubmittedTurn | undefined;
   const cancelled = new Set<string>();
-  const modelTerminal = new ModelTerminalRegistry();
-  const streamingModelTerminal = new Set<string>();
   const publish = (event: RuntimeEvent) => sink?.(event);
   const checkActive = (id: string) => activeTurn === id;
   const publishStatusSnapshot = (detail = "fixture") =>
@@ -567,78 +564,6 @@ export function createFakeBackend(): FakeBackend {
     publish({ type: "content.done", id });
   }
 
-  async function modelTerminalResponse(id: string, text: string) {
-    const sessionID = text.includes("2")
-      ? "terminal_model_2"
-      : "terminal_model_1";
-    const target = {
-      kind: "sandbox" as const,
-      sandboxID: "box_model",
-      root: "/tmp/kilo/model-terminal",
-      isolationLevel: "workspace" as const,
-    };
-    const created = modelTerminal.create({
-      id: sessionID,
-      command: "bash --noprofile --norc",
-      cwd: "/tmp/kilo/model-terminal",
-      rows: 32,
-      cols: 120,
-      target,
-    });
-    const isNewSession = created.events.length > 0;
-    if (isNewSession) {
-      created.session.status = "waiting";
-      created.session.activity = "waiting";
-      created.session.prompt = "$";
-      created.session.tail = "Natalia model PTY\n$";
-      created.session.transcript = "Natalia model PTY\n$";
-    }
-    if (text.includes("stream")) streamingModelTerminal.add(sessionID);
-    for (const event of created.events) publish(event);
-    if (isNewSession) publish({ type: "terminal.update", ...created.session });
-    if (text.includes("exit")) {
-      const exited = await modelTerminal.request(sessionID, {
-        action: "exit",
-        reason: "model ended PTY session",
-      });
-      for (const event of exited.events) publish(event);
-      publish({
-        type: "content.delta",
-        id,
-        text: `Model ended ${sessionID}.\n`,
-      });
-      publish({ type: "content.done", id });
-      return;
-    }
-    const pending = await modelTerminal.request(sessionID, {
-      action: "submit",
-      input: "npm install example-package",
-      requiresApproval: true,
-      reason: "package installation in model-controlled PTY requires approval",
-    });
-    for (const event of pending.events) publish(event);
-    if (pending.state === "awaiting_approval") {
-      publish({
-        type: "approval.request",
-        id: pending.approvalID,
-        title: "Approve model PTY action",
-        preview: "Model requests: npm install example-package",
-        detail: `PTY ${sessionID} · target sandbox:box_model · workspace isolation only. The model is waiting for approval.`,
-        keyArguments: [
-          "action=submit",
-          "command=npm install example-package",
-          "target=sandbox:box_model",
-        ],
-      });
-    }
-    publish({
-      type: "content.delta",
-      id,
-      text: "Model PTY created; waiting for user approval.\n",
-    });
-    publish({ type: "content.done", id });
-  }
-
   async function sandboxResponse(id: string) {
     const target = {
       kind: "sandbox" as const,
@@ -773,11 +698,7 @@ export function createFakeBackend(): FakeBackend {
       if (text.trim().toLowerCase().startsWith("/modal")) {
         await modalResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/terminal")) {
-        if (text.trim().toLowerCase().startsWith("/terminal-model")) {
-          await modelTerminalResponse(id, text);
-        } else {
-          await terminalResponse(id);
-        }
+        await terminalResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/sandbox")) {
         await sandboxResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/compact")) {
@@ -841,41 +762,6 @@ export function createFakeBackend(): FakeBackend {
         decision: response.decision,
         feedback: response.feedback,
       });
-      if (response.requestID.startsWith("apr_terminal_")) {
-        void modelTerminal
-          .resolveApproval(response.requestID, response.decision !== "reject")
-          .then((result) => {
-            for (const event of result.events) publish(event);
-            if (result.state === "executed") {
-              const update = result.events.find(
-                (event) => event.type === "terminal.update",
-              );
-              if (!update) return;
-              const session = modelTerminal.get(update.id);
-              appendTerminalOutput(session, {
-                text: "installed fixture package\n$",
-              });
-              session.status = "waiting";
-              session.activity = "waiting";
-              publish({ type: "terminal.update", ...session });
-              if (streamingModelTerminal.delete(session.id)) {
-                void (async () => {
-                  for (let index = 1; index <= 48; index++) {
-                    await Bun.sleep(12);
-                    appendTerminalOutput(session, {
-                      text: `stream line ${index.toString().padStart(2, "0")}: model observes interactive command output\n`,
-                    });
-                    publish({ type: "terminal.update", ...session });
-                  }
-                  appendTerminalOutput(session, { text: "$" });
-                  session.status = "waiting";
-                  session.activity = "waiting";
-                  publish({ type: "terminal.update", ...session });
-                })();
-              }
-            }
-          });
-      }
       // The fixture keeps no register of pending requests, so it accepts whatever
       // it is handed. Saying so is the point: a scripted backend that reported
       // refusals it cannot detect would be inventing them.

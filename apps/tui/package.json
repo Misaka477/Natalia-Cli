@@ -18,7 +18,6 @@
     "smoke:compact": "npx bun run bin/compact-smoke.ts",
     "smoke:checkpoint": "npx bun run bin/checkpoint-smoke.ts",
     "smoke:terminal-sandbox": "npx bun run bin/terminal-sandbox-smoke.ts",
-    "smoke:terminal-model": "npx bun run bin/terminal-model-smoke.ts",
     "smoke:retry": "npx bun run bin/retry-smoke.ts",
     "smoke:real-runtime": "npx bun run bin/real-runtime-smoke.ts",
     "smoke:resize": "npx bun run bin/resize-smoke.ts",

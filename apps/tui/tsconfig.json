@@ -19,7 +19,6 @@
     { "path": "../../packages/ui-model" },
     { "path": "../../packages/testing" },
     { "path": "../../packages/tools" },
-    { "path": "../../packages/terminal" },
     { "path": "../../packages/view-store" }
   ]
 }

@@ -23,7 +23,6 @@
     "@natalia/session": "workspace:*",
     "@natalia/skills-plugin": "workspace:*",
     "@natalia/subagents-plugin": "workspace:*",
-    "@natalia/terminal": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/ui-model": "workspace:*",
