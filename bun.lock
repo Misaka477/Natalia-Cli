@@ -104,7 +104,7 @@
         "@natalia/runtime": "workspace:*",
         "@natalia/sandbox-plugin": "workspace:*",
         "@natalia/session": "workspace:*",
-        "@natalia/skills": "workspace:*",
+        "@natalia/skills-plugin": "workspace:*",
         "@natalia/subagents-plugin": "workspace:*",
         "@natalia/terminal": "workspace:*",
         "@natalia/terminal-plugin": "workspace:*",
@@ -242,6 +242,15 @@
       "version": "0.0.0-ts7",
       "dependencies": {
         "@natalia/platform": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/skills-plugin": {
+      "name": "@natalia/skills-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/plugin": "workspace:*",
+        "@natalia/skills": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -555,6 +564,8 @@
     "@natalia/session": ["@natalia/session@workspace:packages/session"],
 
     "@natalia/skills": ["@natalia/skills@workspace:packages/skills"],
+
+    "@natalia/skills-plugin": ["@natalia/skills-plugin@workspace:packages/skills-plugin"],
 
     "@natalia/subagent": ["@natalia/subagent@workspace:packages/subagent"],
 

@@ -30,7 +30,7 @@ import {
   type DurableInFlightOperation,
   type SessionRecord,
 } from "@natalia/session";
-import { authorizeSkillTool, type Skill } from "@natalia/skills";
+import { authorizeSkillTool, type Skill } from "@natalia/skills-plugin";
 import {
   materializeTools,
   type ToolMaterialization,

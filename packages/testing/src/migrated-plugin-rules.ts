@@ -42,7 +42,13 @@ export function findClientToolDependencyViolation(
  * package owns them. The list grows as each controller is extracted; an entry
  * must not be added until the client no longer imports the package anywhere.
  */
-const clientProductPackages = ["mcp", "native-terminal", "sandbox", "subagent"];
+const clientProductPackages = [
+  "mcp",
+  "native-terminal",
+  "sandbox",
+  "skills",
+  "subagent",
+];
 
 /** Keep concrete product packages outside the client package boundary. */
 export function findClientProductDependencyViolation(

@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@natalia/tools";
-import type { SkillRegistry } from "@natalia/skills";
+import type { SkillRegistry } from "@natalia/skills-plugin";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
-} from "../src/builtin-plugins/skills-plugin";
+} from "@natalia/skills-plugin";
 import { createPluginsController } from "../src/plugins-controller";
 
 async function skillWorkspace() {

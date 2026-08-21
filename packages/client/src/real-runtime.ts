@@ -150,7 +150,7 @@ import {
   runSkillScript,
   type Skill,
   type SkillRegistry,
-} from "@natalia/skills";
+} from "@natalia/skills-plugin";
 import type { SubagentRegistry } from "@natalia/subagents-plugin";
 import type { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import {

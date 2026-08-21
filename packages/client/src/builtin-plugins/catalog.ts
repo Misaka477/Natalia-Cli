@@ -15,7 +15,7 @@ import {
   WEB_PLUGIN_ID,
 } from "@natalia/builtin-tool-plugins";
 import type { Plugin } from "@natalia/plugin";
-import type { Skill } from "@natalia/skills";
+import type { Skill } from "@natalia/skills-plugin";
 import type { ToolExecutionContext, ToolRegistry } from "@natalia/tools";
 import type {
   ConfigV3,
@@ -110,7 +110,7 @@ import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
-} from "./skills-plugin";
+} from "@natalia/skills-plugin";
 import {
   createRuntimeUiPlugin,
   RUNTIME_UI_PLUGIN_ID,

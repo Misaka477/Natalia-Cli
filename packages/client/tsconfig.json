@@ -40,7 +40,7 @@
       "path": "../session"
     },
     {
-      "path": "../skills"
+      "path": "../skills-plugin"
     },
     {
       "path": "../subagents-plugin"
