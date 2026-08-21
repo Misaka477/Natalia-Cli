@@ -70,6 +70,10 @@ import {
   TOOL_PIPELINE_PLUGIN_ID,
 } from "./tool-pipeline-plugin";
 import {
+  createCollaborationPlugin,
+  COLLABORATION_PLUGIN_ID,
+} from "./collaboration-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -183,6 +187,10 @@ export function builtinPluginCatalog(input: {
   team?: { enabled: boolean };
   /** The tool policy funnel (always on). */
   toolPipeline?: { enabled: boolean };
+  /** The interactive approval/question waiter. */
+  collaboration?: {
+    waiter: import("../interactive-waiter").InteractiveWaiterDeps;
+  };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -383,6 +391,18 @@ export function builtinPluginCatalog(input: {
             id: TOOL_PIPELINE_PLUGIN_ID,
             enabled: input.toolPipeline.enabled,
             create: () => createToolPipelinePlugin(),
+          },
+        ]
+      : []),
+    ...(input.collaboration
+      ? [
+          {
+            id: COLLABORATION_PLUGIN_ID,
+            enabled: true,
+            create: () =>
+              createCollaborationPlugin({
+                waiter: input.collaboration!.waiter,
+              }),
           },
         ]
       : []),

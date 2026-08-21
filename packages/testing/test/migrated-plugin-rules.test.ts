@@ -60,6 +60,7 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "natalia-tool-pipeline",
       "evaluatePermissionRules(rules, name, args, root)",
     ],
+    ["natalia-collaboration", "createInteractiveWaiter({})"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),

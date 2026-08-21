@@ -216,11 +216,13 @@ import {
 } from "./task-overview";
 import { workflowDocumentCatalog } from "./workflow-document-catalog";
 import {
-  createInteractiveWaiter,
   readOnlyToolMessage,
   terminalApprovalScope,
   terminalInputRisk,
+  type InteractiveWaiter,
+  type InteractiveWaiterDeps,
 } from "./interactive-waiter";
+import { COLLABORATION_WAITER_SERVICE } from "./builtin-plugins/collaboration-plugin";
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
 import type { WorkspaceWriteLock } from "./workspace-write-lock";
 import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
@@ -500,7 +502,7 @@ export function createRealRuntimeClient(
    * values: a captured permission mode or abort signal would go stale the moment
    * the mode changed or the turn ended.
    */
-  const interactive = createInteractiveWaiter({
+  const waiterDeps: InteractiveWaiterDeps = {
     publish: (event) => publish(event),
     sessionID: () => sessionID,
     permissionMode: (turnID) =>
@@ -518,7 +520,9 @@ export function createRealRuntimeClient(
       capabilityRegistry.ownerOf("tools", toolName),
     publishForSession: (sessionID, event) =>
       publishForSession(executionBySession.get(sessionID), event),
-  });
+  };
+  /** The interactive waiter, resolved from the collaboration plugin after load. */
+  let interactive!: InteractiveWaiter;
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let replayMode: "all" | "none" = "all";
   let session: SessionRecord | undefined;
@@ -813,7 +817,7 @@ export function createRealRuntimeClient(
   function configReloadBlockedReason() {
     if ([...executionBySession.values()].some((exec) => exec.activeTurnID))
       return "runtime config cannot be applied while a turn is running";
-    if (interactive.hasPendingWaiters())
+    if (interactive?.hasPendingWaiters())
       return "runtime config cannot be applied while an approval or question is pending";
     return undefined;
   }
@@ -1113,6 +1117,7 @@ export function createRealRuntimeClient(
           enabled: extensionEnabled("plugins") || extensionEnabled("skills"),
         },
         toolPipeline: { enabled: true },
+        collaboration: { waiter: waiterDeps },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1158,6 +1163,14 @@ export function createRealRuntimeClient(
         capabilityRegistry.service<ToolPolicyService>(TOOL_POLICY_SERVICE);
       if (!toolPolicy)
         throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
+      const resolvedWaiter = capabilityRegistry.service<InteractiveWaiter>(
+        COLLABORATION_WAITER_SERVICE,
+      );
+      if (!resolvedWaiter)
+        throw new Error(
+          "collaboration waiter unavailable (natalia-collaboration)",
+        );
+      interactive = resolvedWaiter;
       agentToolLayer = toolPolicy.createHookLayer();
       permissionProfileToolLayer = toolPolicy.createHookLayer();
       moduleToolLayer = toolPolicy.createHookLayer(
@@ -7571,10 +7584,12 @@ export function createRealRuntimeClient(
         episodeID: r.episodeID,
       }));
     },
-    respondApproval(response) {
+    async respondApproval(response) {
+      await ready;
       return interactive.respondApproval(response);
     },
-    respondQuestion(response) {
+    async respondQuestion(response) {
+      await ready;
       return interactive.respondQuestion(response);
     },
   };

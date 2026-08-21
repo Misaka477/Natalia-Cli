@@ -357,6 +357,16 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-collaboration",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct waiter construction in the host",
+        pattern: /\bcreateInteractiveWaiter\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
