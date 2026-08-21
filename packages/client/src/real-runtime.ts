@@ -182,6 +182,7 @@ import {
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
+import { mountRuntimePlugins } from "./builtin-mount";
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "./builtin-plugins/local-tools-plugin";
 import {
   WORKSPACE_FILES_SERVICE,
@@ -864,7 +865,6 @@ export function createRealRuntimeClient(
       // applied before the plugin catalog is assembled, or a disabled extension
       // would still load its plugin.
       reloadPermissionSettings(tsConfig.config);
-      await pluginsController.init({ loadLocal: false });
       const builtinPlugins = builtinPluginCatalog({
         askEnabled:
           !options.tools &&
@@ -1257,14 +1257,12 @@ export function createRealRuntimeClient(
           },
         },
       });
-      for (const entry of builtinPlugins) {
-        if (!entry.enabled) continue;
-        await pluginsController.loadBuiltin(
-          entry.create(),
-          tsRuntimeConfig?.plugins.settings[entry.id],
-        );
-      }
-      if (extensionEnabled("plugins")) await pluginsController.loadLocal();
+      await mountRuntimePlugins({
+        controller: pluginsController,
+        builtins: builtinPlugins,
+        settings: tsRuntimeConfig?.plugins.settings,
+        loadExternal: extensionEnabled("plugins"),
+      });
       // The workspace built-in provides these services during its setup; every
       // consumer below runs after this point.
       workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
