@@ -1,5 +1,10 @@
 import { CapabilityRegistry } from "@natalia/capability";
-import { createPluginRegistry, type Plugin } from "@natalia/plugin";
+import {
+  createPluginAdapterMaterializer,
+  createPluginRegistry,
+  type Plugin,
+  type PluginAdapterInstance,
+} from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import {
   createRuntimeHttpServer,
@@ -8,12 +13,17 @@ import {
 } from "@natalia/transport/host";
 
 export const TRANSPORT_PLUGIN_ID = "natalia-transport";
-export const HTTP_TRANSPORT_SERVICE = "transport.http.server";
+export const HTTP_TRANSPORT_ADAPTER = "transport.http.server";
+
+type HttpTransportAdapter = PluginAdapterInstance & {
+  server: RuntimeHttpServer;
+};
 
 export function createHttpTransportPlugin(
-  options: RuntimeHttpServerOptions,
+  createServer: (
+    options: RuntimeHttpServerOptions,
+  ) => RuntimeHttpServer = createRuntimeHttpServer,
 ): Plugin {
-  let server: RuntimeHttpServer | undefined;
   return {
     manifest: {
       apiVersion: 2,
@@ -23,27 +33,26 @@ export function createHttpTransportPlugin(
       description: "Process-level HTTP runtime transport provider.",
       entry: "natalia:transport",
       scope: "process",
-      provides: [HTTP_TRANSPORT_SERVICE],
+      provides: [],
       requires: [],
       optionalRequires: [],
       conflicts: [],
       dependencies: [],
       hooks: {},
-      integrationPoints: ["services"],
+      integrationPoints: ["adapters"],
     },
     setup(api) {
-      server = createRuntimeHttpServer(options);
-      try {
-        api.services.provide(HTTP_TRANSPORT_SERVICE, server);
-      } catch (error) {
-        server.stop(true);
-        server = undefined;
-        throw error;
-      }
-    },
-    dispose() {
-      server?.stop(true);
-      server = undefined;
+      api.adapters.register({
+        name: HTTP_TRANSPORT_ADAPTER,
+        adapterType: "transport",
+        create(options: RuntimeHttpServerOptions): HttpTransportAdapter {
+          const server = createServer(options);
+          return {
+            server,
+            dispose: () => server.stop(true),
+          };
+        },
+      });
     },
   };
 }
@@ -65,9 +74,7 @@ export async function createHttpTransportPluginHost(
         version: manifest.version,
         description: manifest.description,
         scope: manifest.scope,
-        grants: ["services"],
-        // Services arrive during plugin setup, after this ownership record is
-        // active. The plugin registry separately enforces manifest.provides.
+        grants: ["adapters"],
         provides: [],
       });
       if (!result.ok)
@@ -80,18 +87,24 @@ export async function createHttpTransportPluginHost(
       };
     },
     onUnload: (pluginID) => kernel.unload(pluginID),
-    service: (name) => kernel.service(name),
   });
-  await registry.loadBuiltin(createHttpTransportPlugin(serverOptions));
-  const server = kernel.service<RuntimeHttpServer>(HTTP_TRANSPORT_SERVICE);
-  if (!server) throw new Error("transport plugin failed to load");
+  await registry.loadBuiltin(createHttpTransportPlugin());
+  const materializer = createPluginAdapterMaterializer(kernel);
+  const adapter = await materializer.materialize<
+    RuntimeHttpServerOptions,
+    HttpTransportAdapter
+  >(HTTP_TRANSPORT_ADAPTER, serverOptions);
   let closed = false;
   return {
-    server,
+    server: adapter.server,
     async close() {
       if (closed) return;
       closed = true;
-      await registry.unloadAll();
+      try {
+        await materializer.close();
+      } finally {
+        await registry.unloadAll();
+      }
     },
   };
 }

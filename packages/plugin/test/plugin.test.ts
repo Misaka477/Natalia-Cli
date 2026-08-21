@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createToolRegistry } from "@natalia/tools";
 import {
   createPluginRegistry,
+  createPluginAdapterMaterializer,
   definePlugin,
   discoverPluginManifests,
   pluginManifestSchema,
@@ -378,7 +379,11 @@ test("v2 contributions and typed services use the shared ownership channel", asy
         api.projections.register({ name: "projection" });
         api.workflows.register({ name: "workflow" });
         api.settingsSchema.register({ name: "settings" });
-        api.adapters.register({ name: "adapter" });
+        api.adapters.register({
+          name: "adapter",
+          adapterType: "test",
+          create: () => ({ dispose() {} }),
+        });
         api.scheduler.add({ name: "job" });
       },
     }),
@@ -404,6 +409,94 @@ test("v2 contributions and typed services use the shared ownership channel", asy
     "resources:resource",
   ]);
   expect(serviceListener).toBeUndefined();
+});
+
+test("adapter contributions stay inert until materialized and dispose in reverse", async () => {
+  const contributions = new Map<string, unknown>();
+  const owners = new Map<string, string>();
+  const lifecycle: string[] = [];
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    contribute: (manifest) => (kind, name, payload) => {
+      if (kind === "adapters") {
+        contributions.set(name, payload);
+        owners.set(name, manifest.id);
+      }
+      return () => {
+        contributions.delete(name);
+        owners.delete(name);
+      };
+    },
+  });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-adapters",
+        version: "2.0.0",
+        name: "Adapters",
+        description: "",
+        entry: "natalia:adapters",
+        scope: "process",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: ["adapters"],
+      },
+      setup(api) {
+        for (const name of ["first", "second"]) {
+          api.adapters.register({
+            name,
+            adapterType: "test",
+            create(context: { value: string }) {
+              lifecycle.push(`create:${name}:${context.value}`);
+              return {
+                dispose: () => {
+                  lifecycle.push(`dispose:${name}`);
+                },
+              };
+            },
+          });
+        }
+      },
+    }),
+  );
+  expect(lifecycle).toEqual([]);
+
+  const materializer = createPluginAdapterMaterializer({
+    contribution: <T>(_kind: "adapters", name: string) =>
+      contributions.get(name) as T | undefined,
+    ownerOf: (_kind, name) => owners.get(name),
+  });
+  await materializer.materialize("first", { value: "a" });
+  await materializer.materialize("second", { value: "b" });
+  expect(materializer.active()).toEqual([
+    { name: "first", ownerID: "natalia-adapters" },
+    { name: "second", ownerID: "natalia-adapters" },
+  ]);
+  await materializer.close();
+  await materializer.close();
+  expect(lifecycle).toEqual([
+    "create:first:a",
+    "create:second:b",
+    "dispose:second",
+    "dispose:first",
+  ]);
+  await registry.unloadAll();
+});
+
+test("adapter materializer fails before creating unavailable resources", async () => {
+  const materializer = createPluginAdapterMaterializer({
+    contribution: () => undefined,
+    ownerOf: () => undefined,
+  });
+  await expect(materializer.materialize("missing", {})).rejects.toThrow(
+    "adapter is not available: missing",
+  );
+  await materializer.close();
 });
 
 test("plugin cleanup is reverse ordered and isolates disposer failures", async () => {

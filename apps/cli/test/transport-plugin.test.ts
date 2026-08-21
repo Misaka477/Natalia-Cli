@@ -1,14 +1,52 @@
 import { expect, test } from "bun:test";
+import { CapabilityRegistry } from "@natalia/capability";
 import type { RuntimeClient } from "@natalia/contracts";
+import { createPluginRegistry } from "@natalia/plugin";
+import { createToolRegistry } from "@natalia/tools";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createHttpTransportPlugin,
   createHttpTransportPluginHost,
   TRANSPORT_PLUGIN_ID,
 } from "../src/transport-plugin";
 
 const client = {} as RuntimeClient;
+
+test("transport plugin registration does not create a server", async () => {
+  let creations = 0;
+  const kernel = new CapabilityRegistry();
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    contribute: (manifest) => {
+      expect(
+        kernel.tryLoad({
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version,
+          scope: manifest.scope,
+          grants: ["adapters"],
+          provides: [],
+        }).ok,
+      ).toBe(true);
+      return (kind, name, payload) => {
+        kernel.contribute(manifest.id, kind, name, payload);
+        return () => undefined;
+      };
+    },
+  });
+  const plugin = createHttpTransportPlugin(() => {
+    creations += 1;
+    throw new Error("must not materialize during setup");
+  });
+  await registry.loadBuiltin(plugin);
+  expect(creations).toBe(0);
+  expect(
+    kernel.contribution("adapters", "transport.http.server"),
+  ).toBeDefined();
+  await registry.unloadAll();
+});
 
 test("transport plugin owns the HTTP server lifecycle", async () => {
   const host = await createHttpTransportPluginHost({
