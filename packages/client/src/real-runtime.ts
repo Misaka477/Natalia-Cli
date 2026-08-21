@@ -185,6 +185,10 @@ import {
 import { computeBuiltinFeatureGates } from "./builtin-feature-gates";
 import { mountRuntimePlugins } from "./builtin-mount";
 import { derivePermissionSettings } from "./permission-settings";
+import {
+  deriveAgentToolPolicy,
+  deriveProfileToolPolicy,
+} from "./tool-policy-derivation";
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "./builtin-plugins/local-tools-plugin";
 import {
   WORKSPACE_FILES_SERVICE,
@@ -2891,22 +2895,11 @@ export function createRealRuntimeClient(
 
   function agentPolicyLayer(agent: AgentDefinition | undefined) {
     const mode = tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
-    const allow = [
-      ...(agent?.allowedTools ?? mode?.allowedTools ?? []),
-      ...(agent?.permissions?.tools?.allow ?? []),
-    ];
-    const exclude = [
-      ...(agent?.excludedTools ?? mode?.excludedTools ?? []),
-      ...(agent?.permissions?.tools?.exclude ?? []),
-    ];
-    return toolPolicy!.createHookLayer({ allow, exclude });
+    return toolPolicy!.createHookLayer(deriveAgentToolPolicy({ agent, mode }));
   }
 
   function permissionProfileLayer(profile: PermissionProfile | undefined) {
-    return toolPolicy!.createHookLayer({
-      allow: profile?.permissions?.tools?.allow,
-      exclude: profile?.permissions?.tools?.exclude,
-    });
+    return toolPolicy!.createHookLayer(deriveProfileToolPolicy({ profile }));
   }
 
   /**
