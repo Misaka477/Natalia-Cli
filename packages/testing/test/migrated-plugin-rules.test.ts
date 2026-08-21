@@ -127,6 +127,15 @@ test("compaction migration protects both former consumers", () => {
     ).toEqual([expect.objectContaining({ pluginID: "natalia-compaction" })]);
 });
 
+test("transport migration protects the CLI composition root", () => {
+  expect(
+    findMigratedPluginViolations(
+      "apps/cli/src/main.ts",
+      "const server = createRuntimeHttpServer(options)",
+    ),
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-transport" })]);
+});
+
 test("tool migrations protect the legacy static capability root", () => {
   for (const [pluginID, source] of [
     ["natalia-tool-ask", "askToolFamily()"],

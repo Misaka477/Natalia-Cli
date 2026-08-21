@@ -49,12 +49,15 @@ import { providerForModel } from "@natalia/runtime";
 import { createRecordedFetch, readCassette } from "@natalia/transport";
 import {
   createRuntimeDaemonStore,
-  createRuntimeHttpServer,
   daemonToken,
   registerRuntimeDaemon,
   runtimeDaemonStatus,
   stopRuntimeDaemon,
 } from "@natalia/transport/host";
+import {
+  createHttpTransportPluginHost,
+  TRANSPORT_PLUGIN_ID,
+} from "./transport-plugin";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -107,12 +110,15 @@ switch (subcommand) {
     );
     if (!Number.isInteger(port) || port <= 0 || port > 65535)
       throw new Error("serve requires a valid port");
+    const transportIsEnabled = await transportEnabled();
     const client = createRealRuntimeClient();
-    const server = createRuntimeHttpServer({
+    const transport = await createHttpTransportPluginHost({
       client,
       port,
       token: process.env.NATALIA_TRANSPORT_TOKEN,
+      enabled: transportIsEnabled,
     });
+    const { server } = transport;
     console.log(
       JSON.stringify({
         url: server.url,
@@ -122,7 +128,7 @@ switch (subcommand) {
       }),
     );
     await waitSignal();
-    server.stop(true);
+    await transport.close();
     // Without dispose the initialized runtime keeps its native input broker
     // socket and watcher handles, so a SIGTERM'd server process never exits
     // (observed zombie daemon holding the port).
@@ -141,6 +147,7 @@ switch (subcommand) {
     const port = Number(requestedPort ?? "8787");
     if (!Number.isInteger(port) || port < 0 || port > 65535)
       throw new Error("daemon requires a valid port");
+    const transportIsEnabled = await transportEnabled();
     const token = await daemonToken(store);
     const maxConcurrentTasks = Number(
       valueAfter(argv, "--max-concurrent-tasks") ?? "1",
@@ -174,10 +181,11 @@ switch (subcommand) {
       return created;
     };
     const client = createRealRuntimeClient();
-    const server = createRuntimeHttpServer({
+    const transport = await createHttpTransportPluginHost({
       client,
       port,
       token,
+      enabled: transportIsEnabled,
       taskExecution: true,
       // Delivery reuses the very same controller a one-shot run uses, so the
       // resident path cannot drift from it or bypass its policy.
@@ -198,6 +206,7 @@ switch (subcommand) {
         });
       },
     });
+    const { server } = transport;
     await registerRuntimeDaemon(store, {
       url: server.url,
       pid: process.pid,
@@ -205,7 +214,7 @@ switch (subcommand) {
     });
     console.log(JSON.stringify({ url: server.url }));
     await waitSignal();
-    server.stop(true);
+    await transport.close();
     // The daemon must dispose the runtime it started: the native input broker
     // socket and the workspace watcher keep the process alive otherwise, and
     // a daemon that survives SIGTERM holds its port forever (the zombie-daemon
@@ -735,15 +744,20 @@ switch (subcommand) {
   case "record": {
     const cassettePath = argv[1];
     if (!cassettePath) throw new Error("record requires a cassette path");
+    const transportIsEnabled = await transportEnabled();
     const record = createRecordedFetch({ mode: "record", cassettePath });
-    const server = createRuntimeHttpServer({
-      client: createRealRuntimeClient(),
+    const client = createRealRuntimeClient();
+    const transport = await createHttpTransportPluginHost({
+      client,
       port: Number(argv[2] ?? "8787"),
+      enabled: transportIsEnabled,
     });
+    const { server } = transport;
     globalThis.fetch = record as typeof globalThis.fetch;
     console.log(JSON.stringify({ url: server.url, cassette: cassettePath }));
     await waitSignal();
-    server.stop(true);
+    await transport.close();
+    await client.dispose?.();
     break;
   }
 
@@ -1154,6 +1168,16 @@ async function submitTaskToDaemon(input: {
 
 function daemonDir() {
   return resolve(userStateHome(), "natalia-cli", "daemon");
+}
+
+async function transportEnabled() {
+  const resolved = await resolveConfig({
+    workspaceRoot: process.cwd(),
+    ...(process.env.NATALIA_CONFIG
+      ? { globalPath: process.env.NATALIA_CONFIG }
+      : {}),
+  });
+  return resolved.config.plugins.enabled[TRANSPORT_PLUGIN_ID] !== false;
 }
 
 function waitSignal() {

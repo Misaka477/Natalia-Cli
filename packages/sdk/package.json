@@ -9,11 +9,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
-    "@natalia/transport": "workspace:*"
+    "@natalia/contracts": "workspace:*"
   },
   "devDependencies": {
     "@natalia/client": "workspace:*",
+    "@natalia/transport": "workspace:*",
     "@natalia/view-store": "workspace:*"
   }
 }

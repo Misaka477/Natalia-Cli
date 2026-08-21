@@ -7,6 +7,9 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../../packages/capability"
+    },
+    {
       "path": "../../packages/client"
     },
     {
@@ -22,6 +25,9 @@
       "path": "../../packages/platform"
     },
     {
+      "path": "../../packages/plugin"
+    },
+    {
       "path": "../../packages/runtime"
     },
     {
@@ -32,6 +38,9 @@
     },
     {
       "path": "../../packages/transport"
+    },
+    {
+      "path": "../../packages/tools"
     },
     {
       "path": "../../packages/workflow"

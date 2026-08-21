@@ -27,7 +27,6 @@ import {
   updateConfig,
 } from "@natalia/config";
 import type { RuntimeEvent } from "@natalia/contracts";
-import { callRuntimeRPC } from "@natalia/transport";
 import { ContextWindowResolver } from "@natalia/runtime";
 import {
   JsonSessionStore,

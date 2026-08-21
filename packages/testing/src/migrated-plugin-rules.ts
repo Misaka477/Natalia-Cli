@@ -513,6 +513,16 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-transport",
+    targets: ["apps/cli/src/main.ts"],
+    forbidden: [
+      {
+        description: "direct HTTP transport server lifecycle",
+        pattern: /\bcreateRuntimeHttpServer\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
