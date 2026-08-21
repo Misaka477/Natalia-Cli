@@ -16,6 +16,9 @@ import {
   WEB_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
 import { PROVIDER_MODEL_PLUGIN_ID } from "../src/builtin-plugins/provider-model-plugin";
+import { CONTEXT_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/context-ledger-plugin";
+import { WORK_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/work-ledger-plugin";
+import { GOVERNANCE_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/governance-ledger-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -86,4 +89,49 @@ test("provider-model catalog construction stays lazy", () => {
   expect(initialized).toBe(0);
   expect(entry?.create().manifest.id).toBe(PROVIDER_MODEL_PLUGIN_ID);
   expect(initialized).toBe(0);
+});
+
+test("ledger catalog entries stay lazy and preserve dependency order", () => {
+  let openFindingReads = 0;
+  const catalog = builtinPluginCatalog({
+    agentEnabled: false,
+    askEnabled: false,
+    fsReadEnabled: false,
+    fsWriteEnabled: false,
+    pdfEnabled: false,
+    processEnabled: false,
+    sandboxEnabled: false,
+    searchEnabled: false,
+    shellEnabled: false,
+    terminalEnabled: false,
+    todoEnabled: false,
+    webEnabled: false,
+    contextLedger: { enabled: false },
+    workLedger: {
+      enabled: false,
+      controller: {
+        openFindingIDs: () => {
+          openFindingReads += 1;
+          return new Set();
+        },
+      },
+    },
+    governanceLedger: { enabled: false },
+  });
+  const ledgerEntries = catalog.filter((entry) =>
+    [
+      CONTEXT_LEDGER_PLUGIN_ID,
+      WORK_LEDGER_PLUGIN_ID,
+      GOVERNANCE_LEDGER_PLUGIN_ID,
+    ].includes(entry.id),
+  );
+  expect(ledgerEntries.map((entry) => entry.id)).toEqual([
+    CONTEXT_LEDGER_PLUGIN_ID,
+    WORK_LEDGER_PLUGIN_ID,
+    GOVERNANCE_LEDGER_PLUGIN_ID,
+  ]);
+  expect(ledgerEntries.every((entry) => !entry.enabled)).toBe(true);
+  for (const entry of ledgerEntries)
+    expect(entry.create().manifest.id).toBe(entry.id);
+  expect(openFindingReads).toBe(0);
 });

@@ -186,6 +186,33 @@ test("disabled task-workflow plugin constructs no service or task storage", asyn
   await client.dispose?.();
 });
 
+for (const [pluginID, expectedError] of [
+  ["natalia-context-ledger", "context ledger unavailable"],
+  ["natalia-work-ledger", "work ledger unavailable"],
+  ["natalia-governance-ledger", "governance ledger unavailable"],
+] as const)
+  test(`disabled required ${pluginID} fails closed without a service`, async () => {
+    const root = await mkdtemp(join(tmpdir(), `${pluginID}-disabled-`));
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 3,
+        plugins: { enabled: { [pluginID]: false } },
+      }),
+    );
+    const kernel = new CapabilityRegistry();
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: `ses_${pluginID.replaceAll("-", "_")}_disabled`,
+      capabilityRegistry: kernel,
+    });
+    client.start(() => undefined);
+    await expect(client.history!()).rejects.toThrow(expectedError);
+    expect(kernel.has(pluginID)).toBe(false);
+    await client.dispose?.();
+  });
+
 test("flow_module_complete is only advertised to an active task module runtime", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-task-module-runtime-"));
   const store = await NataliaTaskStateStore.open(root);

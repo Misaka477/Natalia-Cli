@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCheckpointController } from "../src/checkpoint-controller";
+import { createWorkLedgerController } from "../src/work-ledger-controller";
 
 function makeController(workspaceRoot: string, enabled: boolean) {
   const events: Array<{ type: string }> = [];
@@ -26,6 +27,8 @@ function makeController(workspaceRoot: string, enabled: boolean) {
       }) as never,
     subagents: () => undefined,
     activeAbort: () => undefined,
+    workLedger: () =>
+      createWorkLedgerController({ openFindingIDs: () => new Set() }),
   });
   return { controller, events };
 }

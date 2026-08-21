@@ -84,6 +84,19 @@ import {
 } from "./task-workflow-plugin";
 import type { createTaskWorkflowController } from "../task-workflow-controller";
 import {
+  CONTEXT_LEDGER_PLUGIN_ID,
+  createContextLedgerPlugin,
+} from "./context-ledger-plugin";
+import {
+  createWorkLedgerPlugin,
+  WORK_LEDGER_PLUGIN_ID,
+} from "./work-ledger-plugin";
+import type { createWorkLedgerController } from "../work-ledger-controller";
+import {
+  createGovernanceLedgerPlugin,
+  GOVERNANCE_LEDGER_PLUGIN_ID,
+} from "./governance-ledger-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -210,6 +223,12 @@ export function builtinPluginCatalog(input: {
     enabled: boolean;
     controller: Parameters<typeof createTaskWorkflowController>[0];
   };
+  contextLedger?: { enabled: boolean };
+  workLedger?: {
+    enabled: boolean;
+    controller: Parameters<typeof createWorkLedgerController>[0];
+  };
+  governanceLedger?: { enabled: boolean };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -442,6 +461,33 @@ export function builtinPluginCatalog(input: {
             enabled: input.taskWorkflow.enabled,
             create: () =>
               createTaskWorkflowPlugin(input.taskWorkflow!.controller),
+          },
+        ]
+      : []),
+    ...(input.contextLedger
+      ? [
+          {
+            id: CONTEXT_LEDGER_PLUGIN_ID,
+            enabled: input.contextLedger.enabled,
+            create: () => createContextLedgerPlugin(),
+          },
+        ]
+      : []),
+    ...(input.workLedger
+      ? [
+          {
+            id: WORK_LEDGER_PLUGIN_ID,
+            enabled: input.workLedger.enabled,
+            create: () => createWorkLedgerPlugin(input.workLedger!.controller),
+          },
+        ]
+      : []),
+    ...(input.governanceLedger
+      ? [
+          {
+            id: GOVERNANCE_LEDGER_PLUGIN_ID,
+            enabled: input.governanceLedger.enabled,
+            create: () => createGovernanceLedgerPlugin(),
           },
         ]
       : []),

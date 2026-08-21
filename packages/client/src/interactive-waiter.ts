@@ -35,7 +35,7 @@ import {
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import { projectInteractiveRequests } from "@natalia/session";
-import { approvalEdge, approvalNode } from "./work-graph";
+import type { WorkLedgerController } from "./work-ledger-controller";
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
 
 export type InteractiveWaiterDeps = {
@@ -77,6 +77,7 @@ export type InteractiveWaiterDeps = {
    */
   publishForSession: (sessionID: SessionID, event: RuntimeEvent) => void;
   capabilityOwnerForTool?: (toolName: string) => string | undefined;
+  workLedger: () => WorkLedgerController;
 };
 
 export type InteractiveWaiter = ReturnType<typeof createInteractiveWaiter>;
@@ -310,7 +311,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     // The decision is recorded; the preview text is not, because it can carry a
     // command line.
     deps.publishForSession(responseSession, {
-      ...approvalNode({
+      ...deps.workLedger().approvalNode({
         approvalID: response.requestID,
         decision: response.decision,
         toolName: graphContext?.toolName,
@@ -321,7 +322,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     });
     if (graphContext)
       deps.publishForSession(responseSession, {
-        ...approvalEdge({
+        ...deps.workLedger().approvalEdge({
           approvalID: response.requestID,
           decision: response.decision,
           turnID: graphContext.turnID,

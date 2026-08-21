@@ -414,6 +414,45 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-context-ledger",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct context ledger construction",
+        pattern: /\bnew\s+ContextLedger\b/u,
+      },
+      {
+        description: "host-owned context event recovery",
+        pattern: /\brestoreContextFromEvents\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-work-ledger",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/interactive-waiter.ts",
+      "packages/client/src/checkpoint-controller.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct work ledger implementation import",
+        pattern:
+          /from\s+["']\.\/(?:plan-ledger|drift-evaluator|work-graph)["']/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-governance-ledger",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct governance ledger implementation import",
+        pattern: /from\s+["']\.\/(?:constitution-ledger|evidence-ledger)["']/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

@@ -9,7 +9,7 @@ import {
   type DurableContextCheckpoint,
 } from "@natalia/runtime";
 import type { SubagentRegistry } from "@natalia/subagent";
-import { checkpointNode, rollbackCheckpointEdge } from "./work-graph";
+import type { WorkLedgerController } from "./work-ledger-controller";
 
 /**
  * The checkpoint resource controller — third cut of the resource controllers
@@ -29,6 +29,7 @@ export function createCheckpointController(input: {
   context(): import("@natalia/runtime").ContextLedger;
   subagents(): SubagentRegistry | undefined;
   activeAbort(): AbortController | undefined;
+  workLedger(): WorkLedgerController;
 }) {
   let store: CheckpointStore | undefined;
 
@@ -55,7 +56,7 @@ export function createCheckpointController(input: {
         input.publish(event);
         if (event.type === "checkpoint.created")
           input.publish(
-            checkpointNode({
+            input.workLedger().checkpointNode({
               checkpointID: event.id,
               reason: event.reason,
               sessionID: input.sessionID(),
@@ -64,7 +65,7 @@ export function createCheckpointController(input: {
           );
         if (event.type === "rollback.end")
           input.publish(
-            rollbackCheckpointEdge({
+            input.workLedger().rollbackCheckpointEdge({
               checkpointID: event.checkpointID,
               safetyCheckpointID: event.safetyCheckpointID,
               sessionID: input.sessionID(),
@@ -153,4 +154,5 @@ export type CheckpointControllerAccessors = {
   context(): import("@natalia/runtime").ContextLedger;
   subagents(): SubagentRegistry | undefined;
   activeAbort(): AbortController | undefined;
+  workLedger(): WorkLedgerController;
 };

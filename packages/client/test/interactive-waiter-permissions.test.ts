@@ -7,6 +7,7 @@ import type {
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import { createInteractiveWaiter } from "../src/interactive-waiter";
+import { createWorkLedgerController } from "../src/work-ledger-controller";
 
 const tool = (name: string): RuntimeTool => ({
   name,
@@ -42,6 +43,8 @@ function harness(initialSession = "ses_a" as SessionID) {
     abortSignal: () => undefined,
     activeTurnID: () => undefined,
     isPending: () => false,
+    workLedger: () =>
+      createWorkLedgerController({ openFindingIDs: () => new Set() }),
   });
   return {
     waiter,

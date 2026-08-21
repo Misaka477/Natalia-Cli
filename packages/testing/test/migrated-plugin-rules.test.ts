@@ -69,6 +69,16 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       'import { saveTaskDocument } from "./task-document"',
     ],
     ["natalia-task-workflow", "new NataliaDocumentStore(root)"],
+    ["natalia-context-ledger", "new ContextLedger()"],
+    ["natalia-context-ledger", "restoreContextFromEvents(context, events)"],
+    [
+      "natalia-work-ledger",
+      'import { buildPlanTransition } from "./plan-ledger"',
+    ],
+    [
+      "natalia-governance-ledger",
+      'import { recordDecision } from "./constitution-ledger"',
+    ],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),

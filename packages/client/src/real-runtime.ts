@@ -54,7 +54,6 @@ import type {
   QuestionResponse,
 } from "@natalia/contracts";
 import {
-  ContextLedger,
   ContextWindowResolver,
   contextEntriesToProviderMessages,
   contextStatusEvent,
@@ -196,6 +195,11 @@ import { MCP_CONTROLLER_SERVICE } from "./builtin-plugins/mcp-controller-plugin"
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import type { TaskWorkflowController } from "./task-workflow-controller";
 import { TASK_WORKFLOW_CONTROLLER_SERVICE } from "./builtin-plugins/task-workflow-plugin";
+import type {
+  ContextLedgerFactory,
+  RuntimeContextLedger,
+} from "./context-ledger-factory";
+import { CONTEXT_LEDGER_FACTORY_SERVICE } from "./builtin-plugins/context-ledger-plugin";
 import {
   readOnlyToolMessage,
   terminalApprovalScope,
@@ -207,40 +211,20 @@ import { COLLABORATION_WAITER_SERVICE } from "./builtin-plugins/collaboration-pl
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
 import type { WorkspaceWriteLock } from "./workspace-write-lock";
 import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
-import { recordDecision, seedConstitutionRules } from "./constitution-ledger";
-import {
-  boundValidationOutcome,
-  buildCompletionRecorded,
-  buildEvidenceRecorded,
-  evidenceStatusForPlanState,
-  type PlanLifecycleState,
-} from "./evidence-ledger";
+import type {
+  GovernanceLedgerController,
+  PlanLifecycleState,
+} from "./governance-ledger-controller";
+import { GOVERNANCE_LEDGER_CONTROLLER_SERVICE } from "./builtin-plugins/governance-ledger-plugin";
 import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
-import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
 import { createMailboxAcknowledgeTool } from "./mailbox-tool";
-import {
-  createDriftEvaluator,
-  buildDriftFindingUpdate,
-} from "./drift-evaluator";
+import type { WorkLedgerController } from "./work-ledger-controller";
+import { WORK_LEDGER_CONTROLLER_SERVICE } from "./builtin-plugins/work-ledger-plugin";
 import type { MutationRegistry } from "./mutation-registry";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
 export { terminalApprovalScope, terminalInputRisk };
-import {
-  agentActionNode,
-  approvalEdge,
-  approvalNode,
-  toolCallEdge,
-  toolCallNode,
-  workspaceChangeEdge,
-  workspaceChangeNode,
-  externalWorkspaceChangeNode,
-  completionValidationEdge,
-  constitutionRuleNode,
-  constitutionCheckEdge,
-  decisionNode,
-} from "./work-graph";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
@@ -452,6 +436,9 @@ export function createRealRuntimeClient(
   let subagentsController: SubagentsController | undefined;
   let providerModelController: ProviderModelController | undefined;
   let taskWorkflowController: TaskWorkflowController | undefined;
+  let contextLedgerFactory!: ContextLedgerFactory;
+  let workLedgerController!: WorkLedgerController;
+  let governanceLedgerController!: GovernanceLedgerController;
   function requireTaskWorkflow() {
     if (!taskWorkflowController)
       throw new RuntimeRefusal("Task/workflow plugin is disabled.");
@@ -479,7 +466,7 @@ export function createRealRuntimeClient(
     syncGlobalCommands: () => setGlobalPluginCommands(commandCatalogEntries()),
   });
   let toolCalls = new Map<string, number>();
-  let runtimeContext = new ContextLedger();
+  let runtimeContext!: RuntimeContextLedger;
   /**
    * Approvals and questions, and everything that belongs to them. The runtime
    * hands over only what changes underneath the waiter, as accessors rather than
@@ -502,6 +489,7 @@ export function createRealRuntimeClient(
     agentIDForTurn: (turnID) => turnAgent.get(turnID),
     capabilityOwnerForTool: (toolName) =>
       capabilityRegistry.ownerOf("tools", toolName),
+    workLedger: () => workLedgerController,
     publishForSession: (sessionID, event) =>
       publishForSession(executionBySession.get(sessionID), event),
   };
@@ -537,7 +525,7 @@ export function createRealRuntimeClient(
    */
   type SessionExecutionState = {
     session: SessionRecord;
-    context: ContextLedger;
+    context: RuntimeContextLedger;
     attachmentReferences: Map<
       string,
       import("@natalia/contracts").LocalAttachment[]
@@ -589,6 +577,7 @@ export function createRealRuntimeClient(
           ? subagentsController!.get()
           : undefined,
       activeAbort: () => exec.activeAbort,
+      workLedger: () => workLedgerController,
     });
     checkpointControllerBySession.set(id, controller);
     return controller;
@@ -722,21 +711,6 @@ export function createRealRuntimeClient(
     if (ext === "gif") return "image/gif";
     return "image/png";
   }
-  const driftEvaluator = createDriftEvaluator({
-    openFindingIDs: () =>
-      new Set(
-        (session?.events ?? [])
-          .filter(
-            (
-              event,
-            ): event is Extract<
-              RuntimeEvent,
-              { type: "drift.finding_opened" }
-            > => event.type === "drift.finding_opened",
-          )
-          .map((event) => event.findingID),
-      ),
-  });
   const statusController = createStatusSnapshotController({
     provider: () => provider,
     context: () => runtimeContext,
@@ -1142,6 +1116,34 @@ export function createRealRuntimeClient(
               publish({ type: "diagnostic", level: "warning", message }),
           },
         },
+        contextLedger: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-context-ledger"] !== false,
+        },
+        workLedger: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-work-ledger"] !== false,
+          controller: {
+            openFindingIDs: () =>
+              new Set(
+                (session?.events ?? [])
+                  .filter(
+                    (
+                      event,
+                    ): event is Extract<
+                      RuntimeEvent,
+                      { type: "drift.finding_opened" }
+                    > => event.type === "drift.finding_opened",
+                  )
+                  .map((event) => event.findingID),
+              ),
+          },
+        },
+        governanceLedger: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-governance-ledger"] !==
+            false,
+        },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1403,6 +1405,30 @@ export function createRealRuntimeClient(
       });
       if (options.permissionProfile) throw error;
     }
+    const resolvedContextLedgerFactory =
+      capabilityRegistry.service<ContextLedgerFactory>(
+        CONTEXT_LEDGER_FACTORY_SERVICE,
+      );
+    if (!resolvedContextLedgerFactory)
+      throw new Error("context ledger unavailable (natalia-context-ledger)");
+    contextLedgerFactory = resolvedContextLedgerFactory;
+    runtimeContext = contextLedgerFactory.create();
+    const resolvedWorkLedgerController =
+      capabilityRegistry.service<WorkLedgerController>(
+        WORK_LEDGER_CONTROLLER_SERVICE,
+      );
+    if (!resolvedWorkLedgerController)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
+    workLedgerController = resolvedWorkLedgerController;
+    const resolvedGovernanceLedgerController =
+      capabilityRegistry.service<GovernanceLedgerController>(
+        GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+      );
+    if (!resolvedGovernanceLedgerController)
+      throw new Error(
+        "governance ledger unavailable (natalia-governance-ledger)",
+      );
+    governanceLedgerController = resolvedGovernanceLedgerController;
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
     await sessionStoreController?.init();
@@ -1511,13 +1537,13 @@ export function createRealRuntimeClient(
       turnAgent.delete(id);
     }
     function createSubagentContext(system: string, task: string) {
-      const ledger = new ContextLedger();
+      const ledger = contextLedgerFactory.create();
       ledger.add({ id: "system", role: "system", content: system });
       ledger.add({ id: "task", role: "user", content: task });
       return ledger;
     }
     async function runSubagentProviderStep(
-      ledger: ContextLedger,
+      ledger: RuntimeContextLedger,
       visibleTools: RuntimeTool[],
       runner: import("@natalia/subagent").RunnerContext,
       step: number,
@@ -1658,7 +1684,7 @@ export function createRealRuntimeClient(
       return result;
     }
     function appendSubagentAssistant(
-      ledger: ContextLedger,
+      ledger: RuntimeContextLedger,
       runner: import("@natalia/subagent").RunnerContext,
       step: number,
       output: string,
@@ -1679,7 +1705,7 @@ export function createRealRuntimeClient(
         });
     }
     function appendSubagentToolResult(
-      ledger: ContextLedger,
+      ledger: RuntimeContextLedger,
       runner: import("@natalia/subagent").RunnerContext,
       step: number,
       call: ProviderToolCall,
@@ -2360,7 +2386,7 @@ export function createRealRuntimeClient(
       runtimeContext.restoreDurableCheckpoint(sqliteEpoch.snapshot);
     else if (latestContextCheckpoint)
       runtimeContext.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
-    restoreContextFromEvents(
+    contextLedgerFactory.restore(
       runtimeContext,
       sqliteEpoch
         ? sessionStoreController
@@ -2624,12 +2650,14 @@ export function createRealRuntimeClient(
     // into the durable journal on every boot (idempotent — replay already holds
     // them) so `constitutionRules()` and the /constitution UI answer real rules,
     // not the empty projection CST1 shipped.
-    for (const rule of seedConstitutionRules(session.events)) {
+    for (const rule of governanceLedgerController.seedConstitutionRules(
+      session.events,
+    )) {
       publish(rule);
       // CST4 Work Graph linkage: each seeded rule is a `constraint` node, so
       // tool calls and drift findings can relate to it in the graph.
       publish(
-        constitutionRuleNode({
+        workLedgerController.constitutionRuleNode({
           ruleID: rule.ruleID,
           statement: rule.statement,
           sessionID,
@@ -2757,7 +2785,7 @@ export function createRealRuntimeClient(
     const ownerSessionID = exec?.session.id ?? sessionID;
     publishForSession(
       exec,
-      toolCallNode({
+      workLedgerController.toolCallNode({
         turnID,
         callID,
         toolName,
@@ -2765,7 +2793,10 @@ export function createRealRuntimeClient(
         sessionID: ownerSessionID,
       }),
     );
-    publishForSession(exec, toolCallEdge({ turnID, callID }));
+    publishForSession(
+      exec,
+      workLedgerController.toolCallEdge({ turnID, callID }),
+    );
   }
 
   /**
@@ -3287,7 +3318,7 @@ export function createRealRuntimeClient(
     if (!queued) return;
     publishForSession(
       target,
-      buildPlanTransition({
+      workLedgerController.buildPlanTransition({
         id: `${queued.planID}:activated:${queued.version + 1}`,
         planID: queued.planID,
         version: queued.version + 1,
@@ -3337,7 +3368,7 @@ export function createRealRuntimeClient(
         if (change.attribution === "attributed") continue;
         publishForSession(
           target,
-          externalWorkspaceChangeNode({
+          workLedgerController.externalWorkspaceChangeNode({
             confirmedChangeID: change.id,
             path: change.path,
             sessionID: target.session.id,
@@ -3351,7 +3382,7 @@ export function createRealRuntimeClient(
         const objective = activePlan?.objective ?? "";
         const applicableConstraints = activePlan?.constraints ?? [];
         if (objective || applicableConstraints.length) {
-          const findings = driftEvaluator.evaluate({
+          const findings = workLedgerController.evaluateDrift({
             sessionID: target.session.id,
             turnID: target.activeTurnID,
             objective,
@@ -3770,7 +3801,7 @@ export function createRealRuntimeClient(
     // contain anything, and the graph is replayable and shareable.
     publishForSession(
       targetExec,
-      agentActionNode({
+      workLedgerController.agentActionNode({
         turnID: id,
         sessionID: targetSessionID,
         agent: targetExec?.selectedAgent?.name,
@@ -4217,12 +4248,12 @@ export function createRealRuntimeClient(
     const existing = executionBySession.get(sessionID);
     if (existing) return existing;
     const loaded = await loadSessionForAttach(sessionID);
-    const execContext = new ContextLedger();
+    const execContext = contextLedgerFactory.create();
     const projection = projectSession(loaded);
     const sessionSqlite = sessionStoreController?.sqlite();
     const epoch = sessionSqlite?.loadContextEpoch(sessionID);
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
-    restoreContextFromEvents(
+    contextLedgerFactory.restore(
       execContext,
       epoch
         ? sessionSqlite!.loadEventsAfter(sessionID, epoch.baselineSeq)
@@ -4605,7 +4636,7 @@ export function createRealRuntimeClient(
     const planID = `plan:${Date.now().toString(36)}:${planSequence++}`;
     publishForSession(
       targetExec,
-      buildPlanDraftCreated({
+      workLedgerController.buildPlanDraftCreated({
         id: `${planID}:draft:0`,
         planID,
         version: 1,
@@ -5162,7 +5193,7 @@ export function createRealRuntimeClient(
           if (!plan) return `no live_chat draft ${args.planID}`;
           publishForSession(
             exec,
-            buildPlanTransition({
+            workLedgerController.buildPlanTransition({
               id: `${plan.planID}:draft:${plan.version + 1}`,
               planID: plan.planID,
               version: plan.version + 1,
@@ -5200,7 +5231,7 @@ export function createRealRuntimeClient(
             return `no draftable live_chat plan ${args.planID}`;
           publishForSession(
             exec,
-            buildPlanTransition({
+            workLedgerController.buildPlanTransition({
               id: `${plan.planID}:proposed:${Date.now().toString(36)}`,
               planID: plan.planID,
               version: plan.version,
@@ -6224,7 +6255,7 @@ export function createRealRuntimeClient(
       for (const change of changes) {
         publishForSession(
           owner,
-          workspaceChangeNode({
+          workLedgerController.workspaceChangeNode({
             operationID,
             path: change.path,
             toolName: "sandbox_merge",
@@ -6534,7 +6565,7 @@ export function createRealRuntimeClient(
       return await hotReloadToolFamily(id);
     },
     async runtimeStatus() {
-      await ready;
+      await ensureReady();
       return await runtimeStatusSnapshot();
     },
     async canReloadConfig() {
@@ -6649,7 +6680,7 @@ export function createRealRuntimeClient(
       linkedConstraints?: string[];
     }) {
       if (!session) return { recorded: false as const };
-      const event = recordDecision({
+      const event = governanceLedgerController.recordDecision({
         id: `decision:${Date.now().toString(36)}:${decisionSequence++}`,
         ...input,
       });
@@ -6657,7 +6688,7 @@ export function createRealRuntimeClient(
       // CST4 Work Graph linkage: the decision is a `decision` node in the graph.
       publishForSession(
         activeExec,
-        decisionNode({
+        workLedgerController.decisionNode({
           decisionID: event.id,
           decision: event.decision,
           sessionID,
@@ -6682,7 +6713,7 @@ export function createRealRuntimeClient(
         status: r.status,
         effectiveStatus:
           r.taskID && planStateForTask.has(r.taskID)
-            ? evidenceStatusForPlanState(
+            ? governanceLedgerController.evidenceStatusForPlanState(
                 planStateForTask.get(r.taskID)! as PlanLifecycleState,
                 r.status,
               )
@@ -6751,13 +6782,13 @@ export function createRealRuntimeClient(
           error instanceof Error ? error.message : String(error)
         }`;
       }
-      const outcome = boundValidationOutcome({
+      const outcome = governanceLedgerController.boundValidationOutcome({
         command: redactToolOutput(input.command, true),
         result,
         safeSummary,
         durationMs: performance.now() - startedAt,
       });
-      const event = buildEvidenceRecorded({
+      const event = governanceLedgerController.buildEvidenceRecorded({
         id: `evidence:${Date.now().toString(36)}:${evidenceSequence++}`,
         taskID: input.taskID,
         objective: input.objective,
@@ -6804,7 +6835,7 @@ export function createRealRuntimeClient(
         return { recorded: false as const };
       const recordedAt = new Date().toISOString();
       const completionID = `completion:${Date.now().toString(36)}:${completionSequence++}`;
-      const event = buildCompletionRecorded({
+      const event = governanceLedgerController.buildCompletionRecorded({
         id: completionID,
         taskID: input.taskID,
         objective: input.objective,
@@ -6813,7 +6844,7 @@ export function createRealRuntimeClient(
           ? { behaviorImpact: redactToolOutput(input.behaviorImpact, true) }
           : {}),
         validations: (input.validations ?? []).map((validation) =>
-          boundValidationOutcome({
+          governanceLedgerController.boundValidationOutcome({
             command: redactToolOutput(validation.command, true),
             result: validation.result,
             safeSummary: validation.safeSummary,
@@ -6834,7 +6865,7 @@ export function createRealRuntimeClient(
       for (const path of input.changePaths ?? [])
         publishForSession(
           activeExec,
-          completionValidationEdge({
+          workLedgerController.completionValidationEdge({
             changeID: event.taskID,
             path,
             completionID,
@@ -7072,7 +7103,7 @@ export function createRealRuntimeClient(
       if (!plan) return { updated: false as const };
       publishForSession(
         activeExec,
-        buildPlanTransition({
+        workLedgerController.buildPlanTransition({
           id: `${input.planID}:draft:${plan.version + 1}`,
           planID: input.planID,
           version: plan.version + 1,
@@ -7092,7 +7123,7 @@ export function createRealRuntimeClient(
       if (!plan) return { proposed: false as const };
       publishForSession(
         activeExec,
-        buildPlanTransition({
+        workLedgerController.buildPlanTransition({
           id: `${planID}:proposed:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -7129,7 +7160,7 @@ export function createRealRuntimeClient(
         return { accepted: false as const };
       publishForSession(
         owner,
-        buildPlanTransition({
+        workLedgerController.buildPlanTransition({
           id: `${planID}:accepted:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -7148,7 +7179,7 @@ export function createRealRuntimeClient(
       if (!plan) return { queued: false as const };
       publishForSession(
         activeExec,
-        buildPlanTransition({
+        workLedgerController.buildPlanTransition({
           id: `${planID}:queued:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -7167,7 +7198,7 @@ export function createRealRuntimeClient(
       if (!plan) return { activated: false as const };
       publishForSession(
         activeExec,
-        buildPlanTransition({
+        workLedgerController.buildPlanTransition({
           id: `${planID}:activated:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -7189,7 +7220,7 @@ export function createRealRuntimeClient(
       if (!plan) return { superseded: false as const };
       publishForSession(
         activeExec,
-        buildPlanTransition({
+        workLedgerController.buildPlanTransition({
           id: `${planID}:superseded:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -7211,7 +7242,7 @@ export function createRealRuntimeClient(
       if (!plan) return { completed: false as const };
       publishForSession(
         activeExec,
-        buildPlanTransition({
+        workLedgerController.buildPlanTransition({
           id: `${planID}:completed:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -7262,7 +7293,7 @@ export function createRealRuntimeClient(
       if (!session) return { opened: 0 as const };
       if (!input.objective.trim() || !input.currentActivity.trim())
         return { opened: 0 as const };
-      const findings = driftEvaluator.evaluate({
+      const findings = workLedgerController.evaluateDrift({
         sessionID,
         turnID: activeExec?.activeTurnID,
         objective: input.objective,
@@ -7293,7 +7324,7 @@ export function createRealRuntimeClient(
       if (!finding) return { acknowledged: false as const };
       publishForSession(
         activeExec,
-        buildDriftFindingUpdate({
+        workLedgerController.buildDriftFindingUpdate({
           id: `drift:${Date.now().toString(36)}:${input.findingID}`,
           findingID: input.findingID,
           status: input.status,
@@ -8035,7 +8066,7 @@ export function createRealRuntimeClient(
           // the edge's source exists once the call settles; a conflict is the
           // only check worth an edge (a pass-through rule is not news).
           publish(
-            constitutionCheckEdge({
+            workLedgerController.constitutionCheckEdge({
               turnID,
               callID,
               ruleID: entry.ruleID,
@@ -8410,7 +8441,7 @@ export function createRealRuntimeClient(
                 mutationRegistry?.settle(call.id);
                 for (const change of changes) {
                   publish(
-                    workspaceChangeNode({
+                    workLedgerController.workspaceChangeNode({
                       turnID,
                       path: change.path,
                       toolName: tool.name,
@@ -8418,7 +8449,7 @@ export function createRealRuntimeClient(
                     }),
                   );
                   publish(
-                    workspaceChangeEdge({
+                    workLedgerController.workspaceChangeEdge({
                       turnID,
                       callID: call.id,
                       path: change.path,
@@ -8497,7 +8528,7 @@ export function createRealRuntimeClient(
           );
           if (changedPath) {
             publish(
-              workspaceChangeNode({
+              workLedgerController.workspaceChangeNode({
                 turnID,
                 path: changedPath,
                 toolName: tool.name,
@@ -8505,7 +8536,7 @@ export function createRealRuntimeClient(
               }),
             );
             publish(
-              workspaceChangeEdge({
+              workLedgerController.workspaceChangeEdge({
                 turnID,
                 callID: call.id,
                 path: changedPath,
@@ -8927,88 +8958,6 @@ function isManagedResourceTool(toolName: string) {
     "background_stop",
     "background_restart",
   ].includes(toolName);
-}
-
-/**
- * Rebuilds a context ledger from a session's durable events. Used when a
- * session's exec is created (attach, background work) and at startup.
- */
-function restoreContextFromEvents(
-  context: ContextLedger,
-  events: RuntimeEvent[],
-) {
-  const assistantByID = new Map<string, string>();
-  const recordedCalls = new Set<string>();
-  const recordedResults = new Set<string>();
-  for (const event of events) {
-    if (event.type === "turn.submitted") {
-      context.add({
-        id: `${event.id}:user`,
-        role: "user",
-        content: event.text,
-        attachments: event.attachments,
-      });
-      continue;
-    }
-    if (event.type === "content.delta") {
-      assistantByID.set(
-        event.id,
-        `${assistantByID.get(event.id) ?? ""}${event.text}`,
-      );
-      continue;
-    }
-    if (event.type === "content.done" && event.text !== undefined) {
-      assistantByID.set(event.id, event.text);
-      continue;
-    }
-    if (
-      event.type === "tool.update" &&
-      event.callID &&
-      !recordedCalls.has(event.callID) &&
-      (event.status === "receiving_arguments" ||
-        event.status === "queued" ||
-        event.status === "awaiting_approval")
-    ) {
-      recordedCalls.add(event.callID);
-      context.add({
-        id: `restore:${event.id}:call`,
-        role: "tool_call",
-        content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
-        pairID: event.callID,
-      });
-      continue;
-    }
-    if (
-      event.type === "tool.update" &&
-      event.callID &&
-      !recordedResults.has(event.callID) &&
-      ["succeeded", "failed", "rejected", "cancelled"].includes(event.status)
-    ) {
-      recordedResults.add(event.callID);
-      context.add({
-        id: `restore:${event.id}:result`,
-        role: "tool_result",
-        content:
-          event.result ??
-          (event.status === "succeeded"
-            ? event.summary
-            : `ERROR: ${event.summary}`),
-        pairID: event.callID,
-      });
-      continue;
-    }
-    if (event.type === "turn.finished") {
-      const content = assistantByID.get(event.id);
-      if (content?.trim()) {
-        context.add({
-          id: `${event.id}:assistant`,
-          role: "assistant",
-          content,
-        });
-        assistantByID.delete(event.id);
-      }
-    }
-  }
 }
 
 function referencedAttachments(
