@@ -3,12 +3,14 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSessionStoreController } from "../src/session-store-controller";
+import { createAttachmentService } from "../src/attachment-service";
 
 test("session store: create is idempotent, archive marks, export dumps", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-store-"));
   const controller = createSessionStoreController({
     workspaceRoot: root,
     sessionID: () => "ses_host" as const,
+    attachments: createAttachmentService(root),
   });
   await controller.init();
 
@@ -44,6 +46,7 @@ test("session store: the active session refuses deletion", async () => {
   const controller = createSessionStoreController({
     workspaceRoot: root,
     sessionID: () => "ses_active" as const,
+    attachments: createAttachmentService(root),
   });
   await controller.init();
   const refused = await controller
@@ -60,6 +63,7 @@ test("session store: JSON summaries project the pending human terminal", async (
   const controller = createSessionStoreController({
     workspaceRoot: root,
     sessionID: () => "ses_host" as const,
+    attachments: createAttachmentService(root),
   });
   await controller.init();
   try {
@@ -103,6 +107,7 @@ test("session store: SQLite summaries project the pending human terminal", async
     workspaceRoot: root,
     sessionID: () => "ses_host" as const,
     useSqliteStore: true,
+    attachments: createAttachmentService(root),
   });
   await controller.init();
   try {

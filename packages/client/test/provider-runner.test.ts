@@ -13,6 +13,7 @@ import {
   estimateProviderMessages,
 } from "../src/provider-runner";
 import { createRetryService } from "../src/retry-service";
+import { createAttachmentService } from "../src/attachment-service";
 
 function content(text: string): ProviderStreamChunk {
   return { type: "content", text };
@@ -100,6 +101,7 @@ function makeHarness(
     context: () => ledger,
     tools: () => new ToolRegistry(),
     attachmentReferences: () => new Map(),
+    attachments: createAttachmentService("/tmp/ws"),
     mcpAccess: () => [],
     agentRegistry: () => undefined,
     activeAbort: () => activeAbort,

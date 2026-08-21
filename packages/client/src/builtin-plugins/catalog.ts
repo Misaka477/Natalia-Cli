@@ -104,6 +104,10 @@ import type { TurnControllerInput } from "../turn-controller";
 import { createRetryPlugin, RETRY_PLUGIN_ID } from "./retry-plugin";
 import type { RetryRunnerOptions } from "@natalia/runtime";
 import {
+  ATTACHMENT_PLUGIN_ID,
+  createAttachmentPlugin,
+} from "./attachment-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -244,6 +248,7 @@ export function builtinPluginCatalog(input: {
     enabled: boolean;
     policy(): RetryRunnerOptions["policy"];
   };
+  attachment?: { enabled: boolean; workspaceRoot: string };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -410,6 +415,15 @@ export function builtinPluginCatalog(input: {
                 workDir: input.subagents!.workDir,
                 sessionID: input.subagents!.sessionID,
               }),
+          },
+        ]
+      : []),
+    ...(input.attachment
+      ? [
+          {
+            id: ATTACHMENT_PLUGIN_ID,
+            enabled: input.attachment.enabled,
+            create: () => createAttachmentPlugin(input.attachment!),
           },
         ]
       : []),

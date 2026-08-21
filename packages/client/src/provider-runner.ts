@@ -40,11 +40,7 @@ import {
   type ToolMaterialization,
   type ToolRegistry,
 } from "@natalia/tools";
-import {
-  attachmentDataURL,
-  attachmentText,
-  isTextAttachment,
-} from "./attachments";
+import type { AttachmentService } from "./attachment-service";
 
 export function estimateProviderMessages(messages: ProviderMessage[]) {
   let tokens = 0;
@@ -92,6 +88,7 @@ export type ProviderRunnerInput = {
   context(): ContextLedger;
   tools(): ToolRegistry;
   attachmentReferences(): Map<string, LocalAttachment[]>;
+  attachments: AttachmentService;
   mcpAccess(): ReadonlyArray<{
     readResource(server: string, uri: string): Promise<unknown>;
   }>;
@@ -974,10 +971,10 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       if (index < 0) continue;
       cursor = index + 1;
       const user = messages[index]!;
-      const textAttachments = attachments.filter(isTextAttachment);
+      const textAttachments = attachments.filter(input.attachments.isText);
       const imageAttachments = attachments.filter(
         (attachment) =>
-          !isTextAttachment(attachment) &&
+          !input.attachments.isText(attachment) &&
           attachment.mediaType !== "application/pdf" &&
           attachment.mediaType !== "video/mp4" &&
           attachment.mediaType !== "video/webm",
@@ -995,7 +992,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           await Promise.all(
             textAttachments.map(
               async (attachment) =>
-                `[Attachment: ${attachment.filename}]\n${await attachmentText(input.workspaceRoot(), attachment)}`,
+                `[Attachment: ${attachment.filename}]\n${await input.attachments.text(attachment)}`,
             ),
           )
         ).join("\n\n")}`;
@@ -1024,19 +1021,19 @@ export function createProviderRunner(input: ProviderRunnerInput) {
             | "image/jpeg"
             | "image/webp"
             | "image/gif",
-          dataURL: await attachmentDataURL(input.workspaceRoot(), attachment),
+          dataURL: await input.attachments.dataURL(attachment),
         })),
       );
       user.pdfs = await Promise.all(
         pdfAttachments.map(async (attachment) => ({
           mediaType: "application/pdf" as const,
-          dataURL: await attachmentDataURL(input.workspaceRoot(), attachment),
+          dataURL: await input.attachments.dataURL(attachment),
         })),
       );
       user.videos = await Promise.all(
         videoAttachments.map(async (attachment) => ({
           mediaType: attachment.mediaType as "video/mp4" | "video/webm",
-          dataURL: await attachmentDataURL(input.workspaceRoot(), attachment),
+          dataURL: await input.attachments.dataURL(attachment),
         })),
       );
     }

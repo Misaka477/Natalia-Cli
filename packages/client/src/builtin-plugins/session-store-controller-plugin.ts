@@ -10,6 +10,11 @@
 import type { Plugin } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
 import { createSessionStoreController } from "../session-store-controller";
+import {
+  ATTACHMENT_PLUGIN_ID,
+  ATTACHMENT_SERVICE,
+  type AttachmentService,
+} from "./attachment-plugin";
 
 export const SESSION_STORE_PLUGIN_ID = "natalia-session-store";
 export const SESSION_STORE_CONTROLLER_SERVICE = "session-store.controller";
@@ -32,15 +37,26 @@ export function createSessionStoreControllerPlugin(input: {
       entry: "natalia:session-store",
       scope: "workspace",
       provides: [SESSION_STORE_CONTROLLER_SERVICE],
-      requires: [],
+      requires: [ATTACHMENT_SERVICE],
       optionalRequires: [],
       conflicts: [],
-      dependencies: [],
+      dependencies: [
+        {
+          id: ATTACHMENT_PLUGIN_ID,
+          spec: ">=1.0.0",
+          optional: false,
+          peer: false,
+        },
+      ],
       hooks: {},
       integrationPoints: ["services"],
     },
     setup(api) {
-      controller = createSessionStoreController(input);
+      const attachments =
+        api.services.get<AttachmentService>(ATTACHMENT_SERVICE);
+      if (!attachments)
+        throw new Error("attachment service unavailable (natalia-attachment)");
+      controller = createSessionStoreController({ ...input, attachments });
       api.services.provide(SESSION_STORE_CONTROLLER_SERVICE, controller);
     },
     dispose() {

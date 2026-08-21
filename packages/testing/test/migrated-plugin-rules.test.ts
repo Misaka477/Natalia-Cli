@@ -85,6 +85,10 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     ],
     ["natalia-turn-orchestration", "createTurnController({})"],
     ["natalia-retry", "runWithRetry(context, operation)"],
+    [
+      "natalia-attachment",
+      'import { storeLocalAttachments } from "./attachments"',
+    ],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
@@ -98,6 +102,16 @@ test("retry migration protects provider runner", () => {
       "runStreamingWithRetry(context, operation)",
     ),
   ).toEqual([expect.objectContaining({ pluginID: "natalia-retry" })]);
+});
+
+test("attachment migration protects all former consumers", () => {
+  for (const path of [
+    "packages/client/src/provider-runner.ts",
+    "packages/client/src/session-store-controller.ts",
+  ])
+    expect(
+      findMigratedPluginViolations(path, "attachmentDataURL(root, attachment)"),
+    ).toEqual([expect.objectContaining({ pluginID: "natalia-attachment" })]);
 });
 
 test("tool migrations protect the legacy static capability root", () => {

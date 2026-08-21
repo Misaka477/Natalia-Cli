@@ -187,6 +187,7 @@ test("disabled task-workflow plugin constructs no service or task storage", asyn
 });
 
 for (const [pluginID, expectedError] of [
+  ["natalia-attachment", "attachment service unavailable"],
   ["natalia-retry", "retry service unavailable"],
   ["natalia-context-ledger", "context ledger unavailable"],
   ["natalia-work-ledger", "work ledger unavailable"],
@@ -211,6 +212,10 @@ for (const [pluginID, expectedError] of [
     client.start(() => undefined);
     await expect(client.history!()).rejects.toThrow(expectedError);
     expect(kernel.has(pluginID)).toBe(false);
+    if (pluginID === "natalia-attachment") {
+      expect(existsSync(join(root, ".natalia", "sessions"))).toBe(false);
+      expect(existsSync(join(root, ".natalia", "attachments"))).toBe(false);
+    }
     await client.dispose?.();
   });
 

@@ -480,6 +480,25 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-attachment",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/provider-runner.ts",
+      "packages/client/src/session-store-controller.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct attachment implementation import",
+        pattern: /from\s+["']\.\/attachments["']/u,
+      },
+      {
+        description: "direct attachment helper use",
+        pattern:
+          /\b(?:attachmentDataURL|attachmentText|cleanupUnreferencedAttachments|isTextAttachment|referencedAttachmentsForSessions|storeLocalAttachments)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

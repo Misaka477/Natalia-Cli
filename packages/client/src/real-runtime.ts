@@ -244,13 +244,9 @@ import {
 } from "./tool-policy";
 import { TOOL_POLICY_SERVICE } from "./builtin-plugins/tool-pipeline-plugin";
 import {
-  attachmentDataURL,
-  attachmentText,
-  cleanupUnreferencedAttachments,
-  isTextAttachment,
-  referencedAttachmentsForSessions,
-  storeLocalAttachments,
-} from "./attachments";
+  ATTACHMENT_SERVICE,
+  type AttachmentService,
+} from "./builtin-plugins/attachment-plugin";
 
 type PermissionProfile = ConfigV3["permissionProfiles"][string];
 
@@ -658,6 +654,7 @@ export function createRealRuntimeClient(
   let runtimeContextConfig = defaultContextStatusConfig();
   let retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
   let retryService!: RetryService;
+  let attachmentService!: AttachmentService;
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   /** The selected model's declared image-input capability, from config. */
@@ -1066,13 +1063,21 @@ export function createRealRuntimeClient(
         },
         checkpoint: { workspaceRoot },
         subagents: { workDir: workspaceRoot, sessionID: () => sessionID },
-        sessionStore: {
+        attachment: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false,
           workspaceRoot,
-          sessionID: () => sessionID,
-          sessionDir: options.sessionDir,
-          useSqliteStore: options.useSqliteStore,
-          title: options.title,
         },
+        sessionStore:
+          tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false
+            ? {
+                workspaceRoot,
+                sessionID: () => sessionID,
+                sessionDir: options.sessionDir,
+                useSqliteStore: options.useSqliteStore,
+                title: options.title,
+              }
+            : undefined,
         team: {
           enabled: extensionEnabled("plugins") || extensionEnabled("skills"),
         },
@@ -1084,6 +1089,7 @@ export function createRealRuntimeClient(
         },
         providerModel: {
           enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false &&
             tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false &&
             tsRuntimeConfig.plugins.enabled["natalia-provider-model"] !== false,
           controller: {
@@ -1159,8 +1165,9 @@ export function createRealRuntimeClient(
         },
         turnOrchestration: {
           enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false &&
             tsRuntimeConfig.plugins.enabled["natalia-turn-orchestration"] !==
-            false,
+              false,
           controller: {
             session: () => session,
             activeAbort: () => activeAbort,
@@ -1502,6 +1509,11 @@ export function createRealRuntimeClient(
     if (!resolvedRetryService)
       throw new Error("retry service unavailable (natalia-retry)");
     retryService = resolvedRetryService;
+    const resolvedAttachmentService =
+      capabilityRegistry.service<AttachmentService>(ATTACHMENT_SERVICE);
+    if (!resolvedAttachmentService)
+      throw new Error("attachment service unavailable (natalia-attachment)");
+    attachmentService = resolvedAttachmentService;
     const resolvedContextLedgerFactory =
       capabilityRegistry.service<ContextLedgerFactory>(
         CONTEXT_LEDGER_FACTORY_SERVICE,
@@ -2388,20 +2400,21 @@ export function createRealRuntimeClient(
     // list) would silently see the pre-recovery shell instead of the restored
     // state.
     if (activeExec) activeExec.session = session;
-    await cleanupUnreferencedAttachments({
-      workspaceRoot,
-      attachments: sessionStoreController?.sqlite()
-        ? sessionStoreController?.sqlite()!.referencedAttachments()
-        : referencedAttachmentsForSessions(
-            await sessionStoreController?.json().list(),
-          ),
-    }).catch((error) =>
-      publish({
-        type: "diagnostic",
-        level: "warning",
-        message: `attachment cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-      }),
-    );
+    await attachmentService
+      .cleanup(
+        sessionStoreController?.sqlite()
+          ? sessionStoreController?.sqlite()!.referencedAttachments()
+          : attachmentService.referencedForSessions(
+              await sessionStoreController?.json().list(),
+            ),
+      )
+      .catch((error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `attachment cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      );
     const interruptedOperation = session.metadata?.inFlightOperation;
     const interrupted = sqliteRecovery
       ? settleInterruptedTurnIDs(
@@ -3855,7 +3868,7 @@ export function createRealRuntimeClient(
       text = message;
     }
     const attachments = input.attachments?.length
-      ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
+      ? await attachmentService.store(input.attachments)
       : [];
     if (runtimeDisposed) throw new Error("runtime disposed");
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
@@ -4065,6 +4078,7 @@ export function createRealRuntimeClient(
       context: () => exec.context,
       tools: () => tools,
       attachmentReferences: () => exec.attachmentReferences,
+      attachments: attachmentService,
       mcpAccess: () => mcpAccess,
       agentRegistry: () => agentRegistry,
       activeAbort: () => exec.activeAbort,

@@ -13,10 +13,7 @@ import {
   type SessionRecord,
   type SessionRow,
 } from "@natalia/session";
-import {
-  cleanupUnreferencedAttachments,
-  referencedAttachmentsForSessions,
-} from "./attachments";
+import type { AttachmentService } from "./attachment-service";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in
@@ -81,6 +78,7 @@ export function createSessionStoreController(input: {
   sessionDir?: string;
   useSqliteStore?: boolean;
   title?: string;
+  attachments: AttachmentService;
 }) {
   let sessionStore: JsonSessionStore;
   let sqliteStore: SqliteSessionStore | undefined;
@@ -256,18 +254,16 @@ export function createSessionStoreController(input: {
       if (!store.get(id as SessionID))
         throw new Error(`session not found: ${id}`);
       store.delete(id as SessionID);
-      const removedAttachments = await cleanupUnreferencedAttachments({
-        workspaceRoot: input.workspaceRoot,
-        attachments: store.referencedAttachments(),
-      });
+      const removedAttachments = await input.attachments.cleanup(
+        store.referencedAttachments(),
+      );
       return { id, removedAttachments: removedAttachments.length };
     }
     await byID(id);
     await sessionStore.delete(id as SessionID);
-    const removedAttachments = await cleanupUnreferencedAttachments({
-      workspaceRoot: input.workspaceRoot,
-      attachments: referencedAttachmentsForSessions(await sessionStore.list()),
-    });
+    const removedAttachments = await input.attachments.cleanup(
+      input.attachments.referencedForSessions(await sessionStore.list()),
+    );
     return { id, removedAttachments: removedAttachments.length };
   }
 

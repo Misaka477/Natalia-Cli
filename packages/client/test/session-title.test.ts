@@ -10,6 +10,7 @@ import {
   sanitizeSessionTitleInput,
 } from "../src/session-title";
 import { createSessionStoreController } from "../src/session-store-controller";
+import { createAttachmentService } from "../src/attachment-service";
 
 test("session titles sanitize secrets, JWTs, and home paths", () => {
   const input = sanitizeSessionTitleInput(
@@ -114,6 +115,7 @@ test("session title fallback and manual rename take precedence in JSON and SQLit
       workspaceRoot: root,
       sessionID: () => "ses_host" as const,
       useSqliteStore,
+      attachments: createAttachmentService(root),
     });
     await controller.init();
     try {
