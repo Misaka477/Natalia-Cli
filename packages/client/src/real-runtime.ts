@@ -185,6 +185,7 @@ import {
 import { computeBuiltinFeatureGates } from "./builtin-feature-gates";
 import { mountRuntimePlugins } from "./builtin-mount";
 import { derivePermissionSettings } from "./permission-settings";
+import { deriveModelRefKey } from "./model-ref-key";
 import {
   deriveAgentToolPolicy,
   deriveProfileToolPolicy,
@@ -3036,13 +3037,11 @@ export function createRealRuntimeClient(
     agent: AgentDefinition | undefined,
     model: { modelID?: string; variant?: string } | undefined,
   ): string | undefined {
-    const candidate =
-      agent?.model ??
-      model?.modelID ??
-      tsRuntimeConfig?.defaultModel ??
-      undefined;
-    if (!candidate) return undefined;
-    return typeof candidate === "string" ? candidate : modelRefKey(candidate);
+    return deriveModelRefKey({
+      agent,
+      model,
+      defaultModel: tsRuntimeConfig?.defaultModel,
+    });
   }
 
   function selectedModelRefKey() {
