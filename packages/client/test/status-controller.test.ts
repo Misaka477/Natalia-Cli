@@ -58,3 +58,11 @@ test("a failed refresh publishes a warning diagnostic, not a crash", async () =>
   expect(warning?.level).toBe("warning");
   expect(String(warning?.message)).toContain("count exploded");
 });
+
+test("dispose cancels a queued status publication", async () => {
+  const { controller, events } = makeController();
+  controller.schedule();
+  controller.dispose();
+  await Bun.sleep(10);
+  expect(events).toEqual([]);
+});

@@ -147,6 +147,15 @@ test("TUI adapter migration protects the executable bootstrap", () => {
     ).toEqual([expect.objectContaining({ pluginID: "natalia-tui" })]);
 });
 
+test("runtime UI migration protects status construction", () => {
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/real-runtime.ts",
+      "createStatusSnapshotController(input)",
+    ),
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-runtime-ui" })]);
+});
+
 test("tool migrations protect the legacy static capability root", () => {
   for (const [pluginID, source] of [
     ["natalia-tool-ask", "askToolFamily()"],

@@ -23,6 +23,7 @@ import { TURN_ORCHESTRATION_PLUGIN_ID } from "../src/builtin-plugins/turn-orches
 import { RETRY_PLUGIN_ID } from "../src/builtin-plugins/retry-plugin";
 import { ATTACHMENT_PLUGIN_ID } from "../src/builtin-plugins/attachment-plugin";
 import { COMPACTION_PLUGIN_ID } from "../src/builtin-plugins/compaction-plugin";
+import { RUNTIME_UI_PLUGIN_ID } from "../src/builtin-plugins/runtime-ui-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -282,4 +283,41 @@ test("compaction catalog follows dependencies and precedes provider-model", () =
   expect(
     catalog.find((entry) => entry.id === COMPACTION_PLUGIN_ID)?.enabled,
   ).toBe(false);
+});
+
+test("runtime UI catalog construction stays lazy and precedes consumers", () => {
+  let providerReads = 0;
+  const catalog = builtinPluginCatalog({
+    agentEnabled: false,
+    askEnabled: false,
+    fsReadEnabled: false,
+    fsWriteEnabled: false,
+    pdfEnabled: false,
+    processEnabled: false,
+    sandboxEnabled: false,
+    searchEnabled: false,
+    shellEnabled: false,
+    terminalEnabled: false,
+    todoEnabled: false,
+    webEnabled: false,
+    runtimeUi: {
+      enabled: false,
+      controller: {
+        provider: () => {
+          providerReads += 1;
+          return undefined;
+        },
+      } as never,
+    },
+    providerModel: { enabled: false, controller: {} as never },
+  });
+  const entry = catalog.find(
+    (candidate) => candidate.id === RUNTIME_UI_PLUGIN_ID,
+  );
+  expect(entry?.enabled).toBe(false);
+  expect(entry?.create().manifest.id).toBe(RUNTIME_UI_PLUGIN_ID);
+  expect(providerReads).toBe(0);
+  expect(catalog.indexOf(entry!)).toBeLessThan(
+    catalog.findIndex((candidate) => candidate.id === PROVIDER_MODEL_PLUGIN_ID),
+  );
 });

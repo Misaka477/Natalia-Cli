@@ -190,6 +190,7 @@ for (const [pluginID, expectedError] of [
   ["natalia-attachment", "attachment service unavailable"],
   ["natalia-retry", "retry service unavailable"],
   ["natalia-compaction", "compaction service unavailable"],
+  ["natalia-runtime-ui", "runtime UI unavailable"],
   ["natalia-context-ledger", "context ledger unavailable"],
   ["natalia-work-ledger", "work ledger unavailable"],
   ["natalia-governance-ledger", "governance ledger unavailable"],

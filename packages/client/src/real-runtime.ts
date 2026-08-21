@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
-import { createStatusSnapshotController } from "./status-controller";
+import type { StatusSnapshotController } from "./status-controller";
 import type { SessionStoreController } from "./session-store-controller";
 import { SESSION_STORE_CONTROLLER_SERVICE } from "./builtin-plugins/session-store-controller-plugin";
 import {
@@ -15,6 +15,10 @@ import {
   RETRY_SERVICE,
   type RetryService,
 } from "./builtin-plugins/retry-plugin";
+import {
+  RUNTIME_UI_PLUGIN_ID,
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+} from "./builtin-plugins/runtime-ui-plugin";
 import {
   fallbackSessionTitle,
   generateSessionTitle,
@@ -719,21 +723,7 @@ export function createRealRuntimeClient(
     if (ext === "gif") return "image/gif";
     return "image/png";
   }
-  const statusController = createStatusSnapshotController({
-    provider: () => provider,
-    context: () => runtimeContext,
-    workspaceRoot,
-    permissionMode: () => permissionMode,
-    runningCount: async () =>
-      (subagentsController?.runningCount() ?? 0) +
-      (sandboxController?.runningResourceCount() ?? 0) +
-      ((await capabilityRegistry
-        .service<{
-          runningCount(input: { workspaceRoot: string }): Promise<number>;
-        }>("managedProcessRegistry")
-        ?.runningCount({ workspaceRoot })) ?? 0),
-    publish,
-  });
+  let statusController: StatusSnapshotController;
   async function runtimeStatusSnapshot() {
     return await statusController.snapshot();
   }
@@ -1256,6 +1246,27 @@ export function createRealRuntimeClient(
             },
           },
         },
+        runtimeUi: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled[RUNTIME_UI_PLUGIN_ID] !== false,
+          controller: {
+            provider: () => provider,
+            context: () => runtimeContext,
+            workspaceRoot,
+            permissionMode: () => permissionMode,
+            runningCount: async () =>
+              (subagentsController?.runningCount() ?? 0) +
+              (sandboxController?.runningResourceCount() ?? 0) +
+              ((await capabilityRegistry
+                .service<{
+                  runningCount(input: {
+                    workspaceRoot: string;
+                  }): Promise<number>;
+                }>("managedProcessRegistry")
+                ?.runningCount({ workspaceRoot })) ?? 0),
+            publish,
+          },
+        },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1539,6 +1550,13 @@ export function createRealRuntimeClient(
     if (!resolvedCompactionService)
       throw new Error("compaction service unavailable (natalia-compaction)");
     compactionService = resolvedCompactionService;
+    const resolvedStatusController =
+      capabilityRegistry.service<StatusSnapshotController>(
+        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+      );
+    if (!resolvedStatusController)
+      throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+    statusController = resolvedStatusController;
     runtimeContext = contextLedgerFactory.create();
     const resolvedWorkLedgerController =
       capabilityRegistry.service<WorkLedgerController>(

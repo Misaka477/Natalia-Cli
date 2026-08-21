@@ -537,6 +537,16 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-runtime-ui",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct status controller construction",
+        pattern: /\bcreateStatusSnapshotController\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

@@ -23,6 +23,7 @@ export function createStatusSnapshotController(input: {
   publish(event: RuntimeEvent): void;
 }) {
   let refreshQueued = false;
+  let disposed = false;
 
   async function snapshotFor(overrides?: {
     provider?: StreamingProvider;
@@ -44,24 +45,40 @@ export function createStatusSnapshotController(input: {
   }
 
   function schedule() {
-    if (refreshQueued) return;
+    if (refreshQueued || disposed) return;
     refreshQueued = true;
     queueMicrotask(() => {
       refreshQueued = false;
+      if (disposed) return;
       void snapshot()
-        .then(input.publish)
+        .then((event) => {
+          if (!disposed) input.publish(event);
+        })
         .catch((error) =>
-          input.publish({
-            type: "diagnostic",
-            level: "warning",
-            message: `runtime status refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-          }),
+          !disposed
+            ? input.publish({
+                type: "diagnostic",
+                level: "warning",
+                message: `runtime status refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+              })
+            : undefined,
         );
     });
   }
 
-  return { snapshot, snapshotFor, schedule };
+  return {
+    snapshot,
+    snapshotFor,
+    schedule,
+    dispose() {
+      disposed = true;
+    },
+  };
 }
+
+export type StatusSnapshotController = ReturnType<
+  typeof createStatusSnapshotController
+>;
 
 export type ContextLedger = {
   journalStatus(): { tokenEstimate: number; messageCount: number };

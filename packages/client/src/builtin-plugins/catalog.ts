@@ -116,6 +116,11 @@ import {
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
 } from "./skills-plugin";
+import {
+  createRuntimeUiPlugin,
+  RUNTIME_UI_PLUGIN_ID,
+} from "./runtime-ui-plugin";
+import type { createStatusSnapshotController } from "../status-controller";
 
 export {
   AGENT_PLUGIN_ID,
@@ -254,6 +259,10 @@ export function builtinPluginCatalog(input: {
   };
   attachment?: { enabled: boolean; workspaceRoot: string };
   compaction?: { enabled: boolean };
+  runtimeUi?: {
+    enabled: boolean;
+    controller: Parameters<typeof createStatusSnapshotController>[0];
+  };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -502,6 +511,15 @@ export function builtinPluginCatalog(input: {
             id: COMPACTION_PLUGIN_ID,
             enabled: input.compaction.enabled,
             create: () => createCompactionPlugin(),
+          },
+        ]
+      : []),
+    ...(input.runtimeUi
+      ? [
+          {
+            id: RUNTIME_UI_PLUGIN_ID,
+            enabled: input.runtimeUi.enabled,
+            create: () => createRuntimeUiPlugin(input.runtimeUi!.controller),
           },
         ]
       : []),
