@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../.."
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../plugin" },
+    { "path": "../tool-agent" },
+    { "path": "../tool-ask" },
+    { "path": "../tool-fs-read" },
+    { "path": "../tool-fs-write" },
+    { "path": "../tool-pdf" },
+    { "path": "../tool-process" },
+    { "path": "../tool-sandbox" },
+    { "path": "../tool-search" },
+    { "path": "../tool-shell" },
+    { "path": "../tool-terminal" },
+    { "path": "../tool-todo" },
+    { "path": "../tool-web" }
+  ]
+}

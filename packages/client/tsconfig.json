@@ -10,6 +10,9 @@
       "path": "../agent"
     },
     {
+      "path": "../builtin-tool-plugins"
+    },
+    {
       "path": "../config"
     },
     {
@@ -47,42 +50,6 @@
     },
     {
       "path": "../testing"
-    },
-    {
-      "path": "../tool-ask"
-    },
-    {
-      "path": "../tool-fs-read"
-    },
-    {
-      "path": "../tool-fs-write"
-    },
-    {
-      "path": "../tool-pdf"
-    },
-    {
-      "path": "../tool-search"
-    },
-    {
-      "path": "../tool-shell"
-    },
-    {
-      "path": "../tool-web"
-    },
-    {
-      "path": "../tool-process"
-    },
-    {
-      "path": "../tool-terminal"
-    },
-    {
-      "path": "../tool-agent"
-    },
-    {
-      "path": "../tool-sandbox"
-    },
-    {
-      "path": "../tool-todo"
     },
     {
       "path": "../tools"

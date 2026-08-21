@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/builtin-tool-plugins",
+  "version": "0.0.0-m13",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@natalia/plugin": "workspace:*",
+    "@natalia/tool-agent": "workspace:*",
+    "@natalia/tool-ask": "workspace:*",
+    "@natalia/tool-fs-read": "workspace:*",
+    "@natalia/tool-fs-write": "workspace:*",
+    "@natalia/tool-pdf": "workspace:*",
+    "@natalia/tool-process": "workspace:*",
+    "@natalia/tool-sandbox": "workspace:*",
+    "@natalia/tool-search": "workspace:*",
+    "@natalia/tool-shell": "workspace:*",
+    "@natalia/tool-terminal": "workspace:*",
+    "@natalia/tool-todo": "workspace:*",
+    "@natalia/tool-web": "workspace:*"
+  }
+}

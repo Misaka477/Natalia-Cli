@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  findClientToolDependencyViolation,
   findMigratedPluginViolations,
   type MigratedPluginRule,
 } from "../src/migrated-plugin-rules";
@@ -195,6 +196,29 @@ test("tool migrations protect the legacy static capability root", () => {
         source,
       ),
     ).toEqual([expect.objectContaining({ pluginID })]);
+});
+
+test("client physical dependency guard excludes concrete tool packages", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createAskPlugin } from "@natalia/tool-ask"',
+    ],
+    [
+      "packages/client/test/tool-catalogue.test.ts",
+      'import { terminalTools } from "@natalia/tool-terminal"',
+    ],
+    ["packages/client/package.json", '"@natalia/tool-ask": "workspace:*"'],
+    ["packages/client/tsconfig.json", '"path": "../tool-ask"'],
+  ])
+    expect(findClientToolDependencyViolation(path, source)).toBeString();
+
+  expect(
+    findClientToolDependencyViolation(
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { builtinToolPluginCatalog } from "@natalia/builtin-tool-plugins"',
+    ),
+  ).toBeUndefined();
 });
 
 test("migrated plugin rules only protect declared composition roots", () => {

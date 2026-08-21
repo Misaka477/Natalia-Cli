@@ -1,21 +1,19 @@
-import { createPdfPlugin, PDF_PLUGIN_ID } from "@natalia/tool-pdf";
-import { ASK_PLUGIN_ID, createAskPlugin } from "@natalia/tool-ask";
-import { createTodoPlugin, TODO_PLUGIN_ID } from "@natalia/tool-todo";
-import { createSearchPlugin, SEARCH_PLUGIN_ID } from "@natalia/tool-search";
-import { createFsReadPlugin, FS_READ_PLUGIN_ID } from "@natalia/tool-fs-read";
 import {
-  createFsWritePlugin,
+  AGENT_PLUGIN_ID,
+  ASK_PLUGIN_ID,
+  builtinPdfPluginEntry,
+  builtinToolPluginCatalog,
   FS_WRITE_PLUGIN_ID,
-} from "@natalia/tool-fs-write";
-import { createWebPlugin, WEB_PLUGIN_ID } from "@natalia/tool-web";
-import { createShellPlugin, SHELL_PLUGIN_ID } from "@natalia/tool-shell";
-import { createAgentPlugin, AGENT_PLUGIN_ID } from "@natalia/tool-agent";
-import {
-  createTerminalPlugin,
+  FS_READ_PLUGIN_ID,
+  PDF_PLUGIN_ID,
+  PROCESS_PLUGIN_ID,
+  SANDBOX_PLUGIN_ID,
+  SEARCH_PLUGIN_ID,
+  SHELL_PLUGIN_ID,
   TERMINAL_PLUGIN_ID,
-} from "@natalia/tool-terminal";
-import { createSandboxPlugin, SANDBOX_PLUGIN_ID } from "@natalia/tool-sandbox";
-import { createProcessPlugin, PROCESS_PLUGIN_ID } from "@natalia/tool-process";
+  TODO_PLUGIN_ID,
+  WEB_PLUGIN_ID,
+} from "@natalia/builtin-tool-plugins";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext, ToolRegistry } from "@natalia/tools";
@@ -265,61 +263,7 @@ export function builtinPluginCatalog(input: {
   };
 }): BuiltinPluginEntry[] {
   return [
-    {
-      id: ASK_PLUGIN_ID,
-      enabled: input.askEnabled,
-      create: () => createAskPlugin(),
-    },
-    {
-      id: TODO_PLUGIN_ID,
-      enabled: input.todoEnabled,
-      create: () => createTodoPlugin(),
-    },
-    {
-      id: SEARCH_PLUGIN_ID,
-      enabled: input.searchEnabled,
-      create: () => createSearchPlugin(),
-    },
-    {
-      id: FS_READ_PLUGIN_ID,
-      enabled: input.fsReadEnabled,
-      create: () => createFsReadPlugin(),
-    },
-    {
-      id: FS_WRITE_PLUGIN_ID,
-      enabled: input.fsWriteEnabled,
-      create: () => createFsWritePlugin(),
-    },
-    {
-      id: WEB_PLUGIN_ID,
-      enabled: input.webEnabled,
-      create: () => createWebPlugin(),
-    },
-    {
-      id: SHELL_PLUGIN_ID,
-      enabled: input.shellEnabled,
-      create: () => createShellPlugin(),
-    },
-    {
-      id: AGENT_PLUGIN_ID,
-      enabled: input.agentEnabled,
-      create: () => createAgentPlugin(),
-    },
-    {
-      id: TERMINAL_PLUGIN_ID,
-      enabled: input.terminalEnabled,
-      create: () => createTerminalPlugin(),
-    },
-    {
-      id: SANDBOX_PLUGIN_ID,
-      enabled: input.sandboxEnabled,
-      create: () => createSandboxPlugin(),
-    },
-    {
-      id: PROCESS_PLUGIN_ID,
-      enabled: input.processEnabled,
-      create: () => createProcessPlugin(),
-    },
+    ...builtinToolPluginCatalog(input),
     {
       id: SKILLS_PLUGIN_ID,
       enabled: input.skills !== undefined,
@@ -328,11 +272,7 @@ export function builtinPluginCatalog(input: {
         return createSkillsPlugin(input.skills);
       },
     },
-    {
-      id: PDF_PLUGIN_ID,
-      enabled: input.pdfEnabled,
-      create: () => createPdfPlugin(),
-    },
+    builtinPdfPluginEntry(input.pdfEnabled),
     ...(input.taskModule
       ? [
           {

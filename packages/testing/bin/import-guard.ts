@@ -1,6 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { findMigratedPluginViolations } from "../src/migrated-plugin-rules";
+import {
+  findClientToolDependencyViolation,
+  findMigratedPluginViolations,
+} from "../src/migrated-plugin-rules";
 
 const root = process.cwd();
 const dependencyGuarded = [
@@ -191,7 +194,12 @@ for (const dir of deepImportRoots)
   });
 for (const dir of productionRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
-    const relative = full.slice(root.length + 1);
+    const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+    const clientToolViolation = findClientToolDependencyViolation(
+      relative,
+      text,
+    );
+    if (clientToolViolation) failures.push(`${full}: ${clientToolViolation}`);
     for (const violation of findMigratedPluginViolations(relative, text))
       failures.push(
         `${full}: migrated plugin "${violation.pluginID}" must be mounted through the plugin catalog: ${violation.description}`,

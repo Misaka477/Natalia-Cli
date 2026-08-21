@@ -9,6 +9,35 @@ export type MigratedPluginViolation = {
   description: string;
 };
 
+const clientToolImplementationImport =
+  /(?:from\s+|import\s*\(|require\s*\()\s*["']@natalia\/tool-[a-z-]+["']/u;
+const clientToolImplementationDependency = /["']@natalia\/tool-[a-z-]+["']/u;
+const clientToolImplementationReference = /["']\.\.\/tool-[a-z-]+["']/u;
+
+/** Keep concrete tool implementations outside the client package boundary. */
+export function findClientToolDependencyViolation(
+  path: string,
+  text: string,
+): string | undefined {
+  const normalized = path.replaceAll("\\", "/");
+  if (
+    /packages\/client\/(?:src|test)\//u.test(normalized) &&
+    clientToolImplementationImport.test(text)
+  )
+    return "client project imports a concrete tool package";
+  if (
+    normalized === "packages/client/package.json" &&
+    clientToolImplementationDependency.test(text)
+  )
+    return "client manifest depends on a concrete tool package";
+  if (
+    normalized === "packages/client/tsconfig.json" &&
+    clientToolImplementationReference.test(text)
+  )
+    return "client TypeScript project references a concrete tool package";
+  return undefined;
+}
+
 export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-skills",

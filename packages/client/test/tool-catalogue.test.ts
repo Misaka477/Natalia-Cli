@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
-import { ToolRegistry } from "@natalia/tools";
-import { terminalTools, terminalToolFamily } from "@natalia/tool-terminal";
 import {
   builtinToolNames,
   createToolRegistryFromCapabilities,
@@ -220,25 +218,4 @@ test("the static tool catalogue contains only unmigrated tools", () => {
     )
     .sort((left, right) => left[0].localeCompare(right[0]));
   expect(actual).toEqual(expected);
-});
-
-test("the interactive terminal aliases resolve to the tools they stand for", () => {
-  // The short names are what a model tends to reach for; they are registered as
-  // aliases rather than duplicate tools so there is one implementation and one
-  // approval boundary per action.
-  const registry = new ToolRegistry();
-  for (const tool of terminalTools()) registry.set(tool.name, tool);
-  for (const [alias, target] of Object.entries(
-    terminalToolFamily().aliases ?? {},
-  ))
-    registry.addAlias(alias, target);
-  for (const [alias, target] of Object.entries(
-    terminalToolFamily().aliases ?? {},
-  )) {
-    expect(registry.get(alias)?.name).toBe(target);
-    // `has` resolves aliases too, so a caller can check either name...
-    expect(registry.has(alias)).toBe(true);
-    // ...but an alias must not become a second entry in the catalogue.
-    expect([...registry.keys()]).not.toContain(alias);
-  }
 });
