@@ -14,6 +14,7 @@ import {
 } from "../src/provider-runner";
 import { createRetryService } from "../src/retry-service";
 import { createAttachmentService } from "../src/attachment-service";
+import { createCompactionService } from "../src/compaction-service";
 
 function content(text: string): ProviderStreamChunk {
   return { type: "content", text };
@@ -95,6 +96,16 @@ function makeHarness(
   let activeAbort: AbortController | undefined;
   let activeTurnID: string | undefined;
   let lastUsage: { inputTokens: number; outputTokens: number } | undefined;
+  const retry = createRetryService({
+    policy: () =>
+      options?.retryPolicy ?? {
+        maxAttemptsPerStep: 1,
+        initialBackoffMs: 1,
+        maxBackoffMs: 1,
+        jitterMs: 0,
+        maxRetryAfterMs: 1,
+      },
+  });
   const runner = createProviderRunner({
     provider: () => provider,
     session: () => undefined,
@@ -102,6 +113,7 @@ function makeHarness(
     tools: () => new ToolRegistry(),
     attachmentReferences: () => new Map(),
     attachments: createAttachmentService("/tmp/ws"),
+    compaction: createCompactionService({ retry }),
     mcpAccess: () => [],
     agentRegistry: () => undefined,
     activeAbort: () => activeAbort,
@@ -143,16 +155,7 @@ function makeHarness(
     naviAnswers: () => options?.naviAnswers ?? [],
     naviChats: () => options?.naviChats ?? [],
     activePlan: () => options?.activePlan,
-    retry: createRetryService({
-      policy: () =>
-        options?.retryPolicy ?? {
-          maxAttemptsPerStep: 1,
-          initialBackoffMs: 1,
-          maxBackoffMs: 1,
-          jitterMs: 0,
-          maxRetryAfterMs: 1,
-        },
-    }),
+    retry,
     lastProviderUsage: () => lastUsage,
     setLastProviderUsage: (usage) => {
       lastUsage = usage;

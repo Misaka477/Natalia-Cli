@@ -69,9 +69,7 @@ import {
   nativeToolCallCorrection,
   normalizeRawToolCallProtocol,
   ProviderConcurrencyLimiter,
-  providerCompactor,
   providerForModel,
-  recoverContextLimitOnce,
   requireNativeToolCallProtocol,
   resolveReservedOutputTokens,
   modelsDevModelLimits,
@@ -247,6 +245,10 @@ import {
   ATTACHMENT_SERVICE,
   type AttachmentService,
 } from "./builtin-plugins/attachment-plugin";
+import {
+  COMPACTION_SERVICE,
+  type CompactionService,
+} from "./builtin-plugins/compaction-plugin";
 
 type PermissionProfile = ConfigV3["permissionProfiles"][string];
 
@@ -655,6 +657,7 @@ export function createRealRuntimeClient(
   let retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
   let retryService!: RetryService;
   let attachmentService!: AttachmentService;
+  let compactionService!: CompactionService;
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   /** The selected model's declared image-input capability, from config. */
@@ -1087,10 +1090,20 @@ export function createRealRuntimeClient(
           enabled: tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false,
           policy: () => retryPolicy,
         },
+        compaction: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false &&
+            tsRuntimeConfig.plugins.enabled["natalia-context-ledger"] !==
+              false &&
+            tsRuntimeConfig.plugins.enabled["natalia-compaction"] !== false,
+        },
         providerModel: {
           enabled:
             tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false &&
             tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false &&
+            tsRuntimeConfig.plugins.enabled["natalia-context-ledger"] !==
+              false &&
+            tsRuntimeConfig.plugins.enabled["natalia-compaction"] !== false &&
             tsRuntimeConfig.plugins.enabled["natalia-provider-model"] !== false,
           controller: {
             initialize: () => {
@@ -1521,6 +1534,11 @@ export function createRealRuntimeClient(
     if (!resolvedContextLedgerFactory)
       throw new Error("context ledger unavailable (natalia-context-ledger)");
     contextLedgerFactory = resolvedContextLedgerFactory;
+    const resolvedCompactionService =
+      capabilityRegistry.service<CompactionService>(COMPACTION_SERVICE);
+    if (!resolvedCompactionService)
+      throw new Error("compaction service unavailable (natalia-compaction)");
+    compactionService = resolvedCompactionService;
     runtimeContext = contextLedgerFactory.create();
     const resolvedWorkLedgerController =
       capabilityRegistry.service<WorkLedgerController>(
@@ -1746,22 +1764,17 @@ export function createRealRuntimeClient(
       let result;
       while (true) {
         runner.signal.throwIfAborted();
-        result = await recoverContextLimitOnce({
+        result = await compactionService.runWithContextLimitRecovery({
           id,
           step,
+          compactionID: `${id}:context-limit:${step}`,
           ledger,
-          compactor: providerCompactor(activeProvider, runner.signal),
-          compact: {
-            id: `${id}:context-limit:${step}`,
-            maxTokens: activeContextConfig.max,
-            thresholdPercent: activeContextConfig.thresholdPercent,
-            reservedTokens: activeContextConfig.reserved,
-            preservedRecentMessages:
-              tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
-            instruction:
-              "Recover this subagent from the provider context limit.",
-            retry: { policy: retryPolicy, signal: runner.signal },
-          },
+          provider: activeProvider,
+          budget: activeContextConfig,
+          preservedRecentMessages:
+            tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
+          instruction: "Recover this subagent from the provider context limit.",
+          signal: runner.signal,
           runStep,
           onEvent: (event) => publishSubagentEvent(runner, event),
         });
@@ -4079,6 +4092,7 @@ export function createRealRuntimeClient(
       tools: () => tools,
       attachmentReferences: () => exec.attachmentReferences,
       attachments: attachmentService,
+      compaction: compactionService,
       mcpAccess: () => mcpAccess,
       agentRegistry: () => agentRegistry,
       activeAbort: () => exec.activeAbort,

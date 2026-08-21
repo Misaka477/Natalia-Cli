@@ -5,8 +5,6 @@ import type {
 } from "@natalia/contracts";
 import {
   ContextLedger,
-  compactContext,
-  compactionTrigger,
   contextEntriesToProviderMessages,
   contextStatusEvent,
   estimateTokens,
@@ -14,8 +12,6 @@ import {
   MISSING_FINAL_RESPONSE_FALLBACK,
   nativeToolCallCorrection,
   normalizeRawToolCallProtocol,
-  providerCompactor,
-  providerError,
   requireNativeToolCallProtocol,
   type ContextEntry,
   type CreateCheckpointInput,
@@ -41,6 +37,7 @@ import {
   type ToolRegistry,
 } from "@natalia/tools";
 import type { AttachmentService } from "./attachment-service";
+import type { CompactionService } from "./compaction-service";
 
 export function estimateProviderMessages(messages: ProviderMessage[]) {
   let tokens = 0;
@@ -89,6 +86,7 @@ export type ProviderRunnerInput = {
   tools(): ToolRegistry;
   attachmentReferences(): Map<string, LocalAttachment[]>;
   attachments: AttachmentService;
+  compaction: CompactionService;
   mcpAccess(): ReadonlyArray<{
     readResource(server: string, uri: string): Promise<unknown>;
   }>;
@@ -785,64 +783,20 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     allowToolCalls = true,
     contextConfig = input.runtimeContextConfig(),
   ) {
-    try {
-      return await runProviderStep(
-        id,
-        messages,
-        step,
-        activeProvider,
-        activeModelCapabilities,
-        activePermissionMode,
-        allowToolCalls,
-      );
-    } catch (error) {
-      if ((error as { kind?: string }).kind !== "context_limit") throw error;
-      input.publish({
-        type: "context.limit.recovery",
-        id,
-        step,
-        attempted: true,
-        compacted: false,
-        reason: "context_limit",
-      });
-      const ledger = input.context();
-      const compacted = await compactContext(
-        ledger,
-        providerCompactor(activeProvider, input.activeAbort()?.signal),
-        {
-          id: `${id}:context-limit`,
-          trigger: "context_limit",
-          force: true,
-          maxTokens: contextConfig.max,
-          thresholdPercent: contextConfig.thresholdPercent,
-          reservedTokens: contextConfig.reserved,
-          preservedRecentMessages:
-            input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
-          instruction: "Recover from provider context limit before retrying.",
-          onEvent: input.publish,
-          retry: {
-            policy: input.retry.policy(),
-            signal: input.activeAbort()?.signal,
-          },
-        },
-      );
-      if (compacted.compacted)
-        input.publish({
-          type: "context.checkpoint",
-          id: `${id}:context-limit:${ledger.journalStatus().journalOffset}`,
-          snapshot: ledger.durableCheckpoint(step),
-        });
-      input.publish({
-        type: "context.limit.recovery",
-        id,
-        step,
-        attempted: true,
-        compacted: compacted.compacted,
-        reason: "context_limit",
-      });
-      try {
-        rebuildMessagesAfterCompaction(messages, input.context());
-        return await runProviderStep(
+    return input.compaction.runWithContextLimitRecovery({
+      id,
+      step,
+      compactionID: `${id}:context-limit`,
+      ledger: input.context(),
+      provider: activeProvider,
+      budget: contextConfig,
+      preservedRecentMessages:
+        input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
+      instruction: "Recover from provider context limit before retrying.",
+      signal: input.activeAbort()?.signal,
+      onEvent: input.publish,
+      runStep: () =>
+        runProviderStep(
           id,
           messages,
           step,
@@ -850,17 +804,16 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           activeModelCapabilities,
           activePermissionMode,
           allowToolCalls,
-        );
-      } catch (retryError) {
-        if ((retryError as { kind?: string }).kind === "context_limit")
-          throw providerError({
-            kind: "context_limit",
-            message: "context-limit recovery already attempted",
-            cause: retryError,
-          });
-        throw retryError;
-      }
-    }
+        ),
+      onCompacted: () =>
+        input.publish({
+          type: "context.checkpoint",
+          id: `${id}:context-limit:${input.context().journalStatus().journalOffset}`,
+          snapshot: input.context().durableCheckpoint(step),
+        }),
+      beforeRetry: () =>
+        rebuildMessagesAfterCompaction(messages, input.context()),
+    });
   }
 
   async function compactBeforeProviderStep(
@@ -875,35 +828,20 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       ledger.effectiveTokens(),
       estimateProviderMessages(messages),
     );
-    const trigger = compactionTrigger({
-      used,
-      max: config.max,
-      thresholdPercent: config.thresholdPercent,
-      reserved: config.reserved,
-    });
-    if (!trigger) return;
-    const compacted = await compactContext(
+    const compacted = await input.compaction.compactBeforeProviderStep({
+      compactionID: `${id}:preflight:${step}`,
       ledger,
-      providerCompactor(activeProvider, input.activeAbort()?.signal),
-      {
-        id: `${id}:preflight:${step}`,
-        trigger,
-        enabled: input.tsRuntimeConfig()?.context.compactionEnabled ?? true,
-        maxTokens: config.max,
-        thresholdPercent: config.thresholdPercent,
-        reservedTokens: config.reserved,
-        preservedRecentMessages:
-          input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
-        beforeTokens: used,
-        instruction:
-          "Compact before the next provider request while preserving the active task.",
-        onEvent: input.publish,
-        retry: {
-          policy: input.retry.policy(),
-          signal: input.activeAbort()?.signal,
-        },
-      },
-    );
+      provider: activeProvider,
+      usedTokens: used,
+      budget: config,
+      enabled: input.tsRuntimeConfig()?.context.compactionEnabled ?? true,
+      preservedRecentMessages:
+        input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
+      instruction:
+        "Compact before the next provider request while preserving the active task.",
+      signal: input.activeAbort()?.signal,
+      onEvent: input.publish,
+    });
     if (!compacted.compacted) return;
     rebuildMessagesAfterCompaction(messages, ledger);
     input.publish({

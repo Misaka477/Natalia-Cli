@@ -114,6 +114,19 @@ test("attachment migration protects all former consumers", () => {
     ).toEqual([expect.objectContaining({ pluginID: "natalia-attachment" })]);
 });
 
+test("compaction migration protects both former consumers", () => {
+  for (const path of [
+    "packages/client/src/provider-runner.ts",
+    "packages/client/src/real-runtime.ts",
+  ])
+    expect(
+      findMigratedPluginViolations(
+        path,
+        "compactContext(ledger, compactor, options)",
+      ),
+    ).toEqual([expect.objectContaining({ pluginID: "natalia-compaction" })]);
+});
+
 test("tool migrations protect the legacy static capability root", () => {
   for (const [pluginID, source] of [
     ["natalia-tool-ask", "askToolFamily()"],

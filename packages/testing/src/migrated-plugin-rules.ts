@@ -499,6 +499,20 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-compaction",
+    targets: [
+      "packages/client/src/provider-runner.ts",
+      "packages/client/src/real-runtime.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct compaction runtime orchestration",
+        pattern:
+          /\b(?:compactContext|compactionTrigger|providerCompactor|recoverContextLimitOnce)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

@@ -22,6 +22,7 @@ import { GOVERNANCE_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/governance-l
 import { TURN_ORCHESTRATION_PLUGIN_ID } from "../src/builtin-plugins/turn-orchestration-plugin";
 import { RETRY_PLUGIN_ID } from "../src/builtin-plugins/retry-plugin";
 import { ATTACHMENT_PLUGIN_ID } from "../src/builtin-plugins/attachment-plugin";
+import { COMPACTION_PLUGIN_ID } from "../src/builtin-plugins/compaction-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -247,4 +248,38 @@ test("attachment catalog precedes session and provider consumers", () => {
   expect(catalog[attachmentIndex]?.create().manifest.id).toBe(
     ATTACHMENT_PLUGIN_ID,
   );
+});
+
+test("compaction catalog follows dependencies and precedes provider-model", () => {
+  const catalog = builtinPluginCatalog({
+    agentEnabled: false,
+    askEnabled: false,
+    fsReadEnabled: false,
+    fsWriteEnabled: false,
+    pdfEnabled: false,
+    processEnabled: false,
+    sandboxEnabled: false,
+    searchEnabled: false,
+    shellEnabled: false,
+    terminalEnabled: false,
+    todoEnabled: false,
+    webEnabled: false,
+    retry: { enabled: false, policy: () => undefined },
+    contextLedger: { enabled: false },
+    compaction: { enabled: false },
+    providerModel: { enabled: false, controller: {} as never },
+  });
+  const ids = catalog.map((entry) => entry.id);
+  expect(ids.indexOf(RETRY_PLUGIN_ID)).toBeLessThan(
+    ids.indexOf(COMPACTION_PLUGIN_ID),
+  );
+  expect(ids.indexOf(CONTEXT_LEDGER_PLUGIN_ID)).toBeLessThan(
+    ids.indexOf(COMPACTION_PLUGIN_ID),
+  );
+  expect(ids.indexOf(COMPACTION_PLUGIN_ID)).toBeLessThan(
+    ids.indexOf(PROVIDER_MODEL_PLUGIN_ID),
+  );
+  expect(
+    catalog.find((entry) => entry.id === COMPACTION_PLUGIN_ID)?.enabled,
+  ).toBe(false);
 });

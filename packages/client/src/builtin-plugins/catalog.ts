@@ -108,6 +108,10 @@ import {
   createAttachmentPlugin,
 } from "./attachment-plugin";
 import {
+  COMPACTION_PLUGIN_ID,
+  createCompactionPlugin,
+} from "./compaction-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -249,6 +253,7 @@ export function builtinPluginCatalog(input: {
     policy(): RetryRunnerOptions["policy"];
   };
   attachment?: { enabled: boolean; workspaceRoot: string };
+  compaction?: { enabled: boolean };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -482,6 +487,24 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
+    ...(input.contextLedger
+      ? [
+          {
+            id: CONTEXT_LEDGER_PLUGIN_ID,
+            enabled: input.contextLedger.enabled,
+            create: () => createContextLedgerPlugin(),
+          },
+        ]
+      : []),
+    ...(input.compaction
+      ? [
+          {
+            id: COMPACTION_PLUGIN_ID,
+            enabled: input.compaction.enabled,
+            create: () => createCompactionPlugin(),
+          },
+        ]
+      : []),
     ...(input.providerModel
       ? [
           {
@@ -499,15 +522,6 @@ export function builtinPluginCatalog(input: {
             enabled: input.taskWorkflow.enabled,
             create: () =>
               createTaskWorkflowPlugin(input.taskWorkflow!.controller),
-          },
-        ]
-      : []),
-    ...(input.contextLedger
-      ? [
-          {
-            id: CONTEXT_LEDGER_PLUGIN_ID,
-            enabled: input.contextLedger.enabled,
-            create: () => createContextLedgerPlugin(),
           },
         ]
       : []),
