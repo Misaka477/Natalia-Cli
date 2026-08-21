@@ -20,6 +20,7 @@
     { "path": "packages/terminal" },
     { "path": "packages/terminal" },
     { "path": "packages/sandbox" },
+    { "path": "packages/sandbox-plugin" },
     { "path": "packages/skills" },
     { "path": "packages/workflow" },
     { "path": "packages/transport" },

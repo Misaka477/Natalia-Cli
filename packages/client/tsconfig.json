@@ -34,7 +34,7 @@
       "path": "../runtime"
     },
     {
-      "path": "../sandbox"
+      "path": "../sandbox-plugin"
     },
     {
       "path": "../session"

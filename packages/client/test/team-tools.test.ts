@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SubagentRegistry } from "@natalia/subagents-plugin";
-import { SnapshotSandboxManager } from "@natalia/sandbox";
+import { SnapshotSandboxManager } from "@natalia/sandbox-plugin";
 import { createTeamFanoutTool, createTeamReviewTool } from "../src/team-tools";
 
 test("team_fanout + team_review drive a fan-out from a tool context", async () => {

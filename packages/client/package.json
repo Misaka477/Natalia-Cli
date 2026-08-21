@@ -19,7 +19,7 @@
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
-    "@natalia/sandbox": "workspace:*",
+    "@natalia/sandbox-plugin": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/skills": "workspace:*",
     "@natalia/subagents-plugin": "workspace:*",

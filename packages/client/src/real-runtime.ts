@@ -195,7 +195,7 @@ import {
 import {
   SANDBOX_CONTROLLER_SERVICE,
   type SandboxController,
-} from "./builtin-plugins/sandbox-controller-plugin";
+} from "@natalia/sandbox-plugin";
 import {
   MCP_CONTROLLER_SERVICE,
   type McpAccess,

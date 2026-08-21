@@ -261,6 +261,18 @@ test("client physical dependency guard excludes extracted product packages", () 
       'import type { SubagentRegistry } from "@natalia/subagents-plugin"',
     ),
   ).toBeUndefined();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/sandbox-controller.ts",
+      'import { SnapshotSandboxManager } from "@natalia/sandbox"',
+    ),
+  ).toBeString();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/fan-out.ts",
+      'import type { WorkspaceSandboxManager } from "@natalia/sandbox-plugin"',
+    ),
+  ).toBeUndefined();
 });
 
 test("migrated plugin rules only protect declared composition roots", () => {

@@ -103,7 +103,7 @@
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime": "workspace:*",
-        "@natalia/sandbox": "workspace:*",
+        "@natalia/sandbox-plugin": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/skills": "workspace:*",
         "@natalia/subagents-plugin": "workspace:*",
@@ -207,6 +207,15 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/object-store": "workspace:*",
         "@natalia/platform": "workspace:*",
+      },
+    },
+    "packages/sandbox-plugin": {
+      "name": "@natalia/sandbox-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/sandbox": "workspace:*",
       },
     },
     "packages/sdk": {
@@ -528,6 +537,8 @@
     "@natalia/runtime": ["@natalia/runtime@workspace:packages/runtime"],
 
     "@natalia/sandbox": ["@natalia/sandbox@workspace:packages/sandbox"],
+
+    "@natalia/sandbox-plugin": ["@natalia/sandbox-plugin@workspace:packages/sandbox-plugin"],
 
     "@natalia/sdk": ["@natalia/sdk@workspace:packages/sdk"],
 

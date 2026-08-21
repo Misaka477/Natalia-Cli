@@ -21,7 +21,7 @@ import type {
   ProviderStreamRequest,
   StreamingProvider,
 } from "@natalia/runtime";
-import { WorkspaceSandboxManager } from "@natalia/sandbox";
+import { WorkspaceSandboxManager } from "@natalia/sandbox-plugin";
 
 test("createToolPolicyHookLayer default allows all tools", () => {
   const layer = createToolPolicyHookLayer();

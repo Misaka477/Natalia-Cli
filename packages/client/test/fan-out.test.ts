@@ -5,7 +5,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SubagentRegistry } from "@natalia/subagents-plugin";
-import { SnapshotSandboxManager } from "@natalia/sandbox";
+import { SnapshotSandboxManager } from "@natalia/sandbox-plugin";
 import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/fan-out";
 
 test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each", async () => {

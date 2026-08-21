@@ -9,9 +9,9 @@
  */
 import type { Plugin } from "@natalia/plugin";
 import type { SubagentsController } from "@natalia/subagents-plugin";
-import type { SandboxController } from "../sandbox-controller";
+import type { SandboxController } from "@natalia/sandbox-plugin";
 import { SUBAGENTS_CONTROLLER_SERVICE } from "@natalia/subagents-plugin";
-import { SANDBOX_CONTROLLER_SERVICE } from "./sandbox-controller-plugin";
+import { SANDBOX_CONTROLLER_SERVICE } from "@natalia/sandbox-plugin";
 import { createTeamFanoutTool, createTeamReviewTool } from "../team-tools";
 
 export const TEAM_PLUGIN_ID = "natalia-team";

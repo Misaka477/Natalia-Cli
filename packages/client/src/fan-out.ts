@@ -14,7 +14,10 @@
  */
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { SubagentRegistry } from "@natalia/subagents-plugin";
-import type { WorkspaceSandboxManager, SandboxChange } from "@natalia/sandbox";
+import type {
+  WorkspaceSandboxManager,
+  SandboxChange,
+} from "@natalia/sandbox-plugin";
 
 export type FanOutTask = {
   id: string;
