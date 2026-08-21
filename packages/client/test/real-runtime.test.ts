@@ -187,6 +187,7 @@ test("disabled task-workflow plugin constructs no service or task storage", asyn
 });
 
 for (const [pluginID, expectedError] of [
+  ["natalia-retry", "retry service unavailable"],
   ["natalia-context-ledger", "context ledger unavailable"],
   ["natalia-work-ledger", "work ledger unavailable"],
   ["natalia-governance-ledger", "governance ledger unavailable"],

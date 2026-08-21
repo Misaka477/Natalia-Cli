@@ -84,10 +84,20 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       'import { createTurnController } from "./turn-controller"',
     ],
     ["natalia-turn-orchestration", "createTurnController({})"],
+    ["natalia-retry", "runWithRetry(context, operation)"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
     );
+});
+
+test("retry migration protects provider runner", () => {
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/provider-runner.ts",
+      "runStreamingWithRetry(context, operation)",
+    ),
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-retry" })]);
 });
 
 test("tool migrations protect the legacy static capability root", () => {

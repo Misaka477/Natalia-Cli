@@ -101,6 +101,8 @@ import {
   TURN_ORCHESTRATION_PLUGIN_ID,
 } from "./turn-orchestration-plugin";
 import type { TurnControllerInput } from "../turn-controller";
+import { createRetryPlugin, RETRY_PLUGIN_ID } from "./retry-plugin";
+import type { RetryRunnerOptions } from "@natalia/runtime";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
@@ -237,6 +239,10 @@ export function builtinPluginCatalog(input: {
   turnOrchestration?: {
     enabled: boolean;
     controller: TurnControllerInput;
+  };
+  retry?: {
+    enabled: boolean;
+    policy(): RetryRunnerOptions["policy"];
   };
 }): BuiltinPluginEntry[] {
   return [
@@ -450,6 +456,15 @@ export function builtinPluginCatalog(input: {
               createCollaborationPlugin({
                 waiter: input.collaboration!.waiter,
               }),
+          },
+        ]
+      : []),
+    ...(input.retry
+      ? [
+          {
+            id: RETRY_PLUGIN_ID,
+            enabled: input.retry.enabled,
+            create: () => createRetryPlugin({ policy: input.retry!.policy }),
           },
         ]
       : []),

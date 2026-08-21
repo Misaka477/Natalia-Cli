@@ -17,7 +17,6 @@ import {
   providerCompactor,
   providerError,
   requireNativeToolCallProtocol,
-  runWithRetry,
   type ContextEntry,
   type CreateCheckpointInput,
   type ProviderMessage,
@@ -25,6 +24,7 @@ import {
   type ProviderToolCall,
   type StreamingProvider,
 } from "@natalia/runtime";
+import type { RetryService } from "./retry-service";
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
@@ -70,7 +70,6 @@ export function estimateProviderMessages(messages: ProviderMessage[]) {
 export type ProviderUsage = { inputTokens: number; outputTokens: number };
 
 type TsRuntimeConfig = Awaited<ReturnType<typeof resolveConfig>>["config"];
-type RetryPolicy = NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
 type PermissionMode = "ask" | "auto" | "read_only";
 const maxProtocolCorrections = 2;
 
@@ -194,7 +193,7 @@ export type ProviderRunnerInput = {
         riskNotes: string[];
       }
     | undefined;
-  retryPolicy(): RetryPolicy;
+  retry: RetryService;
   lastProviderUsage(): ProviderUsage | undefined;
   setLastProviderUsage(usage: ProviderUsage | undefined): void;
   taskModuleContext():
@@ -626,7 +625,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       ),
     );
     const materialized = materializeTools(input.tools(), advertised);
-    const output = await runWithRetry(
+    const output = await input.retry.run(
       { id, operation: "llm_step", step },
       async ({ attempt }) => {
         await input.setInFlightOperation({
@@ -697,7 +696,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       },
       {
         onEvent: input.publish,
-        policy: input.retryPolicy(),
         signal: input.activeAbort()?.signal,
       },
     );
@@ -826,7 +824,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           instruction: "Recover from provider context limit before retrying.",
           onEvent: input.publish,
           retry: {
-            policy: input.retryPolicy(),
+            policy: input.retry.policy(),
             signal: input.activeAbort()?.signal,
           },
         },
@@ -904,7 +902,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           "Compact before the next provider request while preserving the active task.",
         onEvent: input.publish,
         retry: {
-          policy: input.retryPolicy(),
+          policy: input.retry.policy(),
           signal: input.activeAbort()?.signal,
         },
       },

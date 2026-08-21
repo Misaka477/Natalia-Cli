@@ -467,6 +467,19 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-retry",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/provider-runner.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct retry runner use",
+        pattern: /\b(?:runWithRetry|runStreamingWithRetry)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

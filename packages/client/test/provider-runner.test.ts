@@ -12,6 +12,7 @@ import {
   createProviderRunner,
   estimateProviderMessages,
 } from "../src/provider-runner";
+import { createRetryService } from "../src/retry-service";
 
 function content(text: string): ProviderStreamChunk {
   return { type: "content", text };
@@ -140,14 +141,16 @@ function makeHarness(
     naviAnswers: () => options?.naviAnswers ?? [],
     naviChats: () => options?.naviChats ?? [],
     activePlan: () => options?.activePlan,
-    retryPolicy: () =>
-      options?.retryPolicy ?? {
-        maxAttemptsPerStep: 1,
-        initialBackoffMs: 1,
-        maxBackoffMs: 1,
-        jitterMs: 0,
-        maxRetryAfterMs: 1,
-      },
+    retry: createRetryService({
+      policy: () =>
+        options?.retryPolicy ?? {
+          maxAttemptsPerStep: 1,
+          initialBackoffMs: 1,
+          maxBackoffMs: 1,
+          jitterMs: 0,
+          maxRetryAfterMs: 1,
+        },
+    }),
     lastProviderUsage: () => lastUsage,
     setLastProviderUsage: (usage) => {
       lastUsage = usage;

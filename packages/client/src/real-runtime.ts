@@ -12,6 +12,10 @@ import type { ProviderRunnerInput } from "./provider-runner";
 import type { ProviderModelController } from "./provider-model-controller";
 import { PROVIDER_MODEL_CONTROLLER_SERVICE } from "./builtin-plugins/provider-model-plugin";
 import {
+  RETRY_SERVICE,
+  type RetryService,
+} from "./builtin-plugins/retry-plugin";
+import {
   fallbackSessionTitle,
   generateSessionTitle,
   isInvalidGeneratedSessionTitle,
@@ -74,7 +78,6 @@ import {
   type ProviderMessage,
   type ProviderToolCall,
   providerFromEnvironment,
-  runWithRetry,
   runCheckpointCommand,
   type StreamingProvider,
   withProviderConcurrency,
@@ -653,7 +656,8 @@ export function createRealRuntimeClient(
     | undefined;
   const contextWindowResolver = new ContextWindowResolver();
   let runtimeContextConfig = defaultContextStatusConfig();
-  let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
+  let retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
+  let retryService!: RetryService;
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   /** The selected model's declared image-input capability, from config. */
@@ -1074,8 +1078,13 @@ export function createRealRuntimeClient(
         },
         toolPipeline: { enabled: true },
         collaboration: { waiter: waiterDeps },
+        retry: {
+          enabled: tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false,
+          policy: () => retryPolicy,
+        },
         providerModel: {
           enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false &&
             tsRuntimeConfig.plugins.enabled["natalia-provider-model"] !== false,
           controller: {
             initialize: () => {
@@ -1488,6 +1497,11 @@ export function createRealRuntimeClient(
       });
       if (options.permissionProfile) throw error;
     }
+    const resolvedRetryService =
+      capabilityRegistry.service<RetryService>(RETRY_SERVICE);
+    if (!resolvedRetryService)
+      throw new Error("retry service unavailable (natalia-retry)");
+    retryService = resolvedRetryService;
     const resolvedContextLedgerFactory =
       capabilityRegistry.service<ContextLedgerFactory>(
         CONTEXT_LEDGER_FACTORY_SERVICE,
@@ -1648,7 +1662,7 @@ export function createRealRuntimeClient(
     ) {
       const id = subagentTurnID(runner);
       const runStep = () =>
-        runWithRetry(
+        retryService.run(
           { id, operation: "llm_step", step },
           async ({ attempt }) => {
             let output = "";
@@ -1706,7 +1720,6 @@ export function createRealRuntimeClient(
             return { output, thinking, calls, protocolViolation };
           },
           {
-            policy: retryPolicy,
             signal: runner.signal,
             onEvent: (event) => {
               publishSubagentEvent(runner, event);
@@ -4143,7 +4156,7 @@ export function createRealRuntimeClient(
           riskNotes: plan.riskNotes,
         };
       },
-      retryPolicy: () => retryPolicy,
+      retry: retryService,
       lastProviderUsage: () => exec.lastProviderUsage,
       setLastProviderUsage: (usage) => {
         exec.lastProviderUsage = usage;

@@ -20,6 +20,7 @@ import { CONTEXT_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/context-ledger-
 import { WORK_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/work-ledger-plugin";
 import { GOVERNANCE_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/governance-ledger-plugin";
 import { TURN_ORCHESTRATION_PLUGIN_ID } from "../src/builtin-plugins/turn-orchestration-plugin";
+import { RETRY_PLUGIN_ID } from "../src/builtin-plugins/retry-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -168,4 +169,42 @@ test("turn orchestration catalog construction stays lazy", () => {
   expect(entry?.enabled).toBe(false);
   expect(entry?.create().manifest.id).toBe(TURN_ORCHESTRATION_PLUGIN_ID);
   expect(sessionReads).toBe(0);
+});
+
+test("retry catalog construction stays lazy and precedes provider-model", () => {
+  let policyReads = 0;
+  const catalog = builtinPluginCatalog({
+    agentEnabled: false,
+    askEnabled: false,
+    fsReadEnabled: false,
+    fsWriteEnabled: false,
+    pdfEnabled: false,
+    processEnabled: false,
+    sandboxEnabled: false,
+    searchEnabled: false,
+    shellEnabled: false,
+    terminalEnabled: false,
+    todoEnabled: false,
+    webEnabled: false,
+    retry: {
+      enabled: false,
+      policy: () => {
+        policyReads += 1;
+        return undefined;
+      },
+    },
+    providerModel: {
+      enabled: false,
+      controller: {} as never,
+    },
+  });
+  const retryIndex = catalog.findIndex((entry) => entry.id === RETRY_PLUGIN_ID);
+  const providerIndex = catalog.findIndex(
+    (entry) => entry.id === PROVIDER_MODEL_PLUGIN_ID,
+  );
+  expect(retryIndex).toBeGreaterThanOrEqual(0);
+  expect(retryIndex).toBeLessThan(providerIndex);
+  expect(catalog[retryIndex]?.enabled).toBe(false);
+  expect(catalog[retryIndex]?.create().manifest.id).toBe(RETRY_PLUGIN_ID);
+  expect(policyReads).toBe(0);
 });
