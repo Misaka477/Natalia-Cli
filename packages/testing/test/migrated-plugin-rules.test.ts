@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  findClientClosureViolation,
   findClientProductDependencyViolation,
   findClientToolDependencyViolation,
   findMigratedPluginViolations,
@@ -307,6 +308,39 @@ test("client physical dependency guard excludes extracted product packages", () 
     findClientProductDependencyViolation(
       "packages/client/src/real-runtime.ts",
       'import { agentsFromConfig } from "@natalia/agent-plugin"',
+    ),
+  ).toBeUndefined();
+});
+
+test("client dependency closure rejects any non-kernel package", () => {
+  expect(
+    findClientClosureViolation(
+      "packages/client/package.json",
+      '"@natalia/tool-shell": "workspace:*"',
+    ),
+  ).toBeString();
+  expect(
+    findClientClosureViolation(
+      "packages/client/package.json",
+      '"@natalia/capability": "workspace:*"',
+    ),
+  ).toBeUndefined();
+  expect(
+    findClientClosureViolation(
+      "packages/client/tsconfig.json",
+      '"path": "../transport"',
+    ),
+  ).toBeString();
+  expect(
+    findClientClosureViolation(
+      "packages/client/tsconfig.json",
+      '"path": "../mcp-plugin"',
+    ),
+  ).toBeUndefined();
+  expect(
+    findClientClosureViolation(
+      "packages/client/test/sandbox-controller.test.ts",
+      'import { createSandboxController } from "../src/sandbox-controller"',
     ),
   ).toBeUndefined();
 });

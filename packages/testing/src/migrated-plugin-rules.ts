@@ -88,6 +88,60 @@ export function findClientProductDependencyViolation(
   return undefined;
 }
 
+/**
+ * Allowlist of packages the client composition root may depend on: the kernel,
+ * built-in plugin host packages and testing utilities. Any other @natalia
+ * workspace dependency is a concrete product package leaking back into the
+ * client closure and must be rejected (Phase 4 dependency closure).
+ */
+const clientClosureAllowlist = [
+  "agent-plugin",
+  "builtin-tool-plugins",
+  "capability",
+  "config",
+  "contracts",
+  "mcp-plugin",
+  "object-store",
+  "platform",
+  "plugin",
+  "runtime",
+  "sandbox-plugin",
+  "session",
+  "skills-plugin",
+  "subagents-plugin",
+  "terminal-plugin",
+  "testing",
+  "tools",
+  "ui-model",
+  "workflow",
+];
+
+/** Keep the client dependency closure free of non-kernel product packages. */
+export function findClientClosureViolation(
+  path: string,
+  text: string,
+): string | undefined {
+  const normalized = path.replaceAll("\\", "/");
+  const allowed = new Set(clientClosureAllowlist);
+  if (normalized === "packages/client/package.json") {
+    const dependencyPattern = /"@natalia\/([a-z0-9-]+)":\s*"workspace:\*"/gu;
+    for (const match of text.matchAll(dependencyPattern)) {
+      const name = match[1];
+      if (!allowed.has(name))
+        return `client manifest depends on non-kernel package @natalia/${name}`;
+    }
+  }
+  if (normalized === "packages/client/tsconfig.json") {
+    const referencePattern = /"(\.\.\/)([a-z0-9-]+)"/gu;
+    for (const match of text.matchAll(referencePattern)) {
+      const name = match[2];
+      if (!allowed.has(name))
+        return `client TypeScript project references non-kernel package ${name}`;
+    }
+  }
+  return undefined;
+}
+
 export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-skills",
