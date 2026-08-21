@@ -182,6 +182,7 @@ import {
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
+import { computeBuiltinFeatureGates } from "./builtin-feature-gates";
 import { mountRuntimePlugins } from "./builtin-mount";
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "./builtin-plugins/local-tools-plugin";
 import {
@@ -866,53 +867,11 @@ export function createRealRuntimeClient(
       // would still load its plugin.
       reloadPermissionSettings(tsConfig.config);
       const builtinPlugins = builtinPluginCatalog({
-        askEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.ask !== false &&
-          tsRuntimeConfig?.plugins.enabled[ASK_PLUGIN_ID] !== false,
-        todoEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.todo !== false &&
-          tsRuntimeConfig?.plugins.enabled[TODO_PLUGIN_ID] !== false,
-        searchEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.search !== false &&
-          tsRuntimeConfig?.plugins.enabled[SEARCH_PLUGIN_ID] !== false,
-        fsReadEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.fs !== false &&
-          tsRuntimeConfig?.plugins.enabled[FS_READ_PLUGIN_ID] !== false,
-        fsWriteEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.fs !== false &&
-          tsRuntimeConfig?.plugins.enabled[FS_WRITE_PLUGIN_ID] !== false,
-        webEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.web !== false &&
-          tsRuntimeConfig?.plugins.enabled[WEB_PLUGIN_ID] !== false,
-        shellEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.shell !== false &&
-          tsRuntimeConfig?.plugins.enabled[SHELL_PLUGIN_ID] !== false,
-        agentEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.agent !== false &&
-          tsRuntimeConfig?.plugins.enabled[AGENT_PLUGIN_ID] !== false,
-        terminalEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.terminal !== false &&
-          tsRuntimeConfig?.plugins.enabled[TERMINAL_PLUGIN_ID] !== false,
-        sandboxEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.sandbox !== false &&
-          tsRuntimeConfig?.plugins.enabled[SANDBOX_PLUGIN_ID] !== false,
-        processEnabled:
-          !options.tools &&
-          tsRuntimeConfig?.tools.enabled.process !== false &&
-          tsRuntimeConfig?.plugins.enabled[PROCESS_PLUGIN_ID] !== false,
-        pdfEnabled:
-          extensionEnabled("plugins") &&
-          tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,
+        ...computeBuiltinFeatureGates({
+          config: tsRuntimeConfig,
+          hasCustomTools: !!options.tools,
+          extensionEnabled,
+        }),
         ...(extensionEnabled("skills")
           ? {
               skills: {
