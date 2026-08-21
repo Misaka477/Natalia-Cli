@@ -42,6 +42,7 @@
       "@natalia/sandbox-plugin": ["packages/sandbox-plugin/src/index.ts"],
       "@natalia/subagent": ["packages/subagent/src/index.ts"],
       "@natalia/subagents-plugin": ["packages/subagents-plugin/src/index.ts"],
+      "@natalia/terminal-plugin": ["packages/terminal-plugin/src/index.ts"],
       "@natalia/tools": ["packages/tools/src/index.ts"]
     },
     "noUncheckedIndexedAccess": false,

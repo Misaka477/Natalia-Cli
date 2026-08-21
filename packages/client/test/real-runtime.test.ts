@@ -16,7 +16,7 @@ import { getPluginCommands } from "@natalia/plugin";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SqliteSessionStore } from "@natalia/session";
 import { WorkspaceSandboxManager } from "@natalia/sandbox-plugin";
-import { NativeTerminalRegistry } from "@natalia/native-terminal";
+import { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import {
   installPluginSdkLinks,

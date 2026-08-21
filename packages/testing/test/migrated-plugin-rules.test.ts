@@ -273,6 +273,18 @@ test("client physical dependency guard excludes extracted product packages", () 
       'import type { WorkspaceSandboxManager } from "@natalia/sandbox-plugin"',
     ),
   ).toBeUndefined();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/terminal-controller.ts",
+      'import { NativeTerminalRegistry } from "@natalia/native-terminal"',
+    ),
+  ).toBeString();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/real-runtime.ts",
+      'import type { NativeTerminalRegistry } from "@natalia/terminal-plugin"',
+    ),
+  ).toBeUndefined();
 });
 
 test("migrated plugin rules only protect declared composition roots", () => {

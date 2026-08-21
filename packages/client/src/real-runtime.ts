@@ -152,7 +152,7 @@ import {
   type SkillRegistry,
 } from "@natalia/skills";
 import type { SubagentRegistry } from "@natalia/subagents-plugin";
-import type { NativeTerminalRegistry } from "@natalia/native-terminal";
+import type { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import {
   foregroundProcessForTTY,
   globalConfigHome,
@@ -191,7 +191,7 @@ import {
 import {
   TERMINAL_CONTROLLER_SERVICE,
   type TerminalController,
-} from "./builtin-plugins/terminal-controller-plugin";
+} from "@natalia/terminal-plugin";
 import {
   SANDBOX_CONTROLLER_SERVICE,
   type SandboxController,
@@ -327,7 +327,7 @@ function refusalFromRegistry(error: unknown): RuntimeRefusal {
 }
 
 function publicNativeTerminal(
-  session: import("@natalia/native-terminal").NativeTerminalSession,
+  session: import("@natalia/terminal-plugin").NativeTerminalSession,
 ) {
   return {
     id: session.id,

@@ -23,7 +23,7 @@ import type {
   RuntimeEvent,
 } from "@natalia/contracts";
 import type { SandboxBackend } from "@natalia/contracts";
-import type { NativeTerminalRegistry } from "@natalia/native-terminal";
+import type { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import type { TaskModuleContext } from "../capabilities/task-module-tools";
 import {
   createTaskModulePlugin,
@@ -41,7 +41,7 @@ import { createWorkspacePlugin, WORKSPACE_PLUGIN_ID } from "./workspace-plugin";
 import {
   createTerminalControllerPlugin,
   TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
-} from "./terminal-controller-plugin";
+} from "@natalia/terminal-plugin";
 import {
   createSandboxControllerPlugin,
   SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,

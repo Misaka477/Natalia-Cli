@@ -2,13 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveNataliaWezTermForkExecutable } from "@natalia/native-terminal";
 import { createPluginRegistry } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import {
   createTerminalControllerPlugin,
+  resolveNataliaWezTermForkExecutable,
   TERMINAL_PLUGIN_ID,
-} from "../src/builtin-plugins/terminal-controller-plugin";
+} from "../src";
 import { createTerminalController } from "../src/terminal-controller";
 
 test("terminal controller init without a host environment leaves the registry absent", async () => {

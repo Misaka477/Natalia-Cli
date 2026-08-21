@@ -22,7 +22,7 @@
       "path": "../mcp-plugin"
     },
     {
-      "path": "../native-terminal"
+      "path": "../terminal-plugin"
     },
     {
       "path": "../platform"

@@ -9,9 +9,9 @@
 import type { Plugin } from "@natalia/plugin";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { NativeTerminalRegistry } from "@natalia/native-terminal";
-import { createTerminalController } from "../terminal-controller";
+import { createTerminalController } from "./terminal-controller";
 
-export type { TerminalController } from "../terminal-controller";
+export type { TerminalController } from "./terminal-controller";
 
 export const TERMINAL_PLUGIN_ID = "natalia-terminal";
 export const TERMINAL_CONTROLLER_SERVICE = "terminal.controller";

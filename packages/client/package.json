@@ -15,7 +15,7 @@
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/mcp-plugin": "workspace:*",
-    "@natalia/native-terminal": "workspace:*",
+    "@natalia/terminal-plugin": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
