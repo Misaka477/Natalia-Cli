@@ -11,11 +11,14 @@
   "references": [
     { "path": "../../packages/contracts" },
     { "path": "../../packages/client" },
+    { "path": "../../packages/capability" },
     { "path": "../../packages/config" },
+    { "path": "../../packages/plugin" },
     { "path": "../../packages/platform" },
     { "path": "../../packages/session" },
     { "path": "../../packages/ui-model" },
     { "path": "../../packages/testing" },
+    { "path": "../../packages/tools" },
     { "path": "../../packages/terminal" },
     { "path": "../../packages/view-store" }
   ]

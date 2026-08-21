@@ -136,6 +136,17 @@ test("transport migration protects the CLI composition root", () => {
   ).toEqual([expect.objectContaining({ pluginID: "natalia-transport" })]);
 });
 
+test("TUI adapter migration protects the executable bootstrap", () => {
+  for (const source of [
+    "const channel = new MessageChannel()",
+    "const worker = new Worker(url)",
+    "await runTuiShell(options)",
+  ])
+    expect(
+      findMigratedPluginViolations("apps/tui/src/main.tsx", source),
+    ).toEqual([expect.objectContaining({ pluginID: "natalia-tui" })]);
+});
+
 test("tool migrations protect the legacy static capability root", () => {
   for (const [pluginID, source] of [
     ["natalia-tool-ask", "askToolFamily()"],

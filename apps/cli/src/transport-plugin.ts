@@ -90,10 +90,16 @@ export async function createHttpTransportPluginHost(
   });
   await registry.loadBuiltin(createHttpTransportPlugin());
   const materializer = createPluginAdapterMaterializer(kernel);
-  const adapter = await materializer.materialize<
-    RuntimeHttpServerOptions,
-    HttpTransportAdapter
-  >(HTTP_TRANSPORT_ADAPTER, serverOptions);
+  let adapter: HttpTransportAdapter;
+  try {
+    adapter = await materializer.materialize<
+      RuntimeHttpServerOptions,
+      HttpTransportAdapter
+    >(HTTP_TRANSPORT_ADAPTER, serverOptions);
+  } catch (error) {
+    await registry.unloadAll();
+    throw error;
+  }
   let closed = false;
   return {
     server: adapter.server,
