@@ -187,6 +187,18 @@ import { mountRuntimePlugins } from "./builtin-mount";
 import { derivePermissionSettings } from "./permission-settings";
 import { deriveModelRefKey } from "./model-ref-key";
 import {
+  buildSandbox,
+  buildMcp,
+  buildCheckpoint,
+  buildTeam,
+  buildToolPipeline,
+  buildRetry,
+  buildCompaction,
+  buildContextLedger,
+  buildGovernanceLedger,
+  type RuntimeAssemblyHost,
+} from "./runtime-assembly";
+import {
   deriveAgentToolPolicy,
   deriveProfileToolPolicy,
 } from "./tool-policy-derivation";
@@ -872,6 +884,14 @@ export function createRealRuntimeClient(
       // applied before the plugin catalog is assembled, or a disabled extension
       // would still load its plugin.
       reloadPermissionSettings(tsConfig.config);
+      const assemblyHost: RuntimeAssemblyHost = {
+        workspaceRoot,
+        tools,
+        getRuntimeConfig: () => tsRuntimeConfig,
+        extensionEnabled,
+        publish,
+        retryPolicy: () => retryPolicy,
+      };
       const builtinPlugins = builtinPluginCatalog({
         ...computeBuiltinFeatureGates({
           config: tsRuntimeConfig,
@@ -997,18 +1017,9 @@ export function createRealRuntimeClient(
             tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
           external: options.nativeTerminal,
         },
-        sandbox: {
-          workspaceRoot,
-          backend: () => tsRuntimeConfig?.sandbox.backend,
-        },
-        mcp: {
-          servers: () => tsRuntimeConfig?.mcpServers ?? {},
-          workspaceRoot,
-          tools,
-          enabled: () => extensionEnabled("mcp"),
-          publish,
-        },
-        checkpoint: { workspaceRoot },
+        sandbox: buildSandbox(assemblyHost),
+        mcp: buildMcp(assemblyHost),
+        checkpoint: buildCheckpoint(assemblyHost),
         subagents: { workDir: workspaceRoot, sessionID: () => sessionID },
         attachment: {
           enabled:
@@ -1025,22 +1036,11 @@ export function createRealRuntimeClient(
                 title: options.title,
               }
             : undefined,
-        team: {
-          enabled: extensionEnabled("plugins") || extensionEnabled("skills"),
-        },
-        toolPipeline: { enabled: true },
+        team: buildTeam(assemblyHost),
+        toolPipeline: buildToolPipeline(assemblyHost),
         collaboration: { waiter: waiterDeps },
-        retry: {
-          enabled: tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false,
-          policy: () => retryPolicy,
-        },
-        compaction: {
-          enabled:
-            tsRuntimeConfig.plugins.enabled["natalia-retry"] !== false &&
-            tsRuntimeConfig.plugins.enabled["natalia-context-ledger"] !==
-              false &&
-            tsRuntimeConfig.plugins.enabled["natalia-compaction"] !== false,
-        },
+        retry: buildRetry(assemblyHost),
+        compaction: buildCompaction(assemblyHost),
         providerModel: {
           enabled:
             tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false &&
@@ -1092,10 +1092,7 @@ export function createRealRuntimeClient(
               publish({ type: "diagnostic", level: "warning", message }),
           },
         },
-        contextLedger: {
-          enabled:
-            tsRuntimeConfig.plugins.enabled["natalia-context-ledger"] !== false,
-        },
+        contextLedger: buildContextLedger(assemblyHost),
         workLedger: {
           enabled:
             tsRuntimeConfig.plugins.enabled["natalia-work-ledger"] !== false,
@@ -1115,11 +1112,7 @@ export function createRealRuntimeClient(
               ),
           },
         },
-        governanceLedger: {
-          enabled:
-            tsRuntimeConfig.plugins.enabled["natalia-governance-ledger"] !==
-            false,
-        },
+        governanceLedger: buildGovernanceLedger(assemblyHost),
         turnOrchestration: {
           enabled:
             tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false &&
