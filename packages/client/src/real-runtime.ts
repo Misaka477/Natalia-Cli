@@ -184,6 +184,7 @@ import {
 } from "./builtin-plugins/catalog";
 import { computeBuiltinFeatureGates } from "./builtin-feature-gates";
 import { mountRuntimePlugins } from "./builtin-mount";
+import { derivePermissionSettings } from "./permission-settings";
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "./builtin-plugins/local-tools-plugin";
 import {
   WORKSPACE_FILES_SERVICE,
@@ -2917,25 +2918,17 @@ export function createRealRuntimeClient(
    * keeps the current selection; the caller decides whether that is fatal.
    */
   function reloadPermissionSettings(config: ConfigV3) {
-    const requestedPermissionProfile = options.permissionProfile;
-    const configuredDefaultPermissionProfile =
-      config.permissionProfiles[config.defaultPermission];
-    const mode = config.modes[config.defaultMode];
-    const modePermissionProfile = mode?.permission
-      ? config.permissionProfiles[mode.permission]
-      : undefined;
-    if (requestedPermissionProfile) {
-      const found = config.permissionProfiles[requestedPermissionProfile];
-      if (!found) return;
-      selectedPermissionProfile = found;
-    } else {
-      selectedPermissionProfile =
-        modePermissionProfile ?? configuredDefaultPermissionProfile;
-    }
-    if (!options.permissionMode && selectedPermissionProfile)
-      permissionMode = selectedPermissionProfile.approval;
-    defaultPermissionMode = permissionMode;
-    defaultPermissionProfile = selectedPermissionProfile;
+    const derived = derivePermissionSettings({
+      config,
+      requestedProfile: options.permissionProfile,
+      optionMode: options.permissionMode,
+      permissionMode,
+    });
+    if (!derived.found) return;
+    selectedPermissionProfile = derived.selectedProfile;
+    permissionMode = derived.mode;
+    defaultPermissionMode = derived.defaultMode;
+    defaultPermissionProfile = derived.defaultProfile;
   }
 
   function isToolAllowed(
