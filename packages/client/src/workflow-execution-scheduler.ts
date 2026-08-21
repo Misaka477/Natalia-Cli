@@ -114,6 +114,8 @@ export class WorkflowExecutionScheduler {
   private readonly executionIDs = new Set<string>();
   private readonly idempotency = new Map<string, ScheduledExecution<unknown>>();
   private readonly queueTimeoutMs: number;
+  private readonly executions = new Set<ScheduledExecution<unknown>>();
+  private disposed = false;
 
   constructor(
     options: {
@@ -153,6 +155,7 @@ export class WorkflowExecutionScheduler {
     idempotencyFingerprint?: string;
     run: ScheduledExecution<T>["run"];
   }): WorkflowExecutionHandle<T> {
+    if (this.disposed) throw new Error("workflow execution scheduler disposed");
     const workspaceRoot = resolve(input.workspaceRoot);
     const executionID =
       input.executionID ?? `exe_${crypto.randomUUID().replace(/-/gu, "")}`;
@@ -203,6 +206,7 @@ export class WorkflowExecutionScheduler {
         execution as ScheduledExecution<unknown>,
       );
     this.waiting.push(execution as ScheduledExecution<unknown>);
+    this.executions.add(execution as ScheduledExecution<unknown>);
     if (this.queueTimeoutMs > 0)
       execution.queueTimer = setTimeout(
         () => this.expireQueued(execution),
@@ -224,6 +228,7 @@ export class WorkflowExecutionScheduler {
           );
           if (index >= 0) this.waiting.splice(index, 1);
           execution.settled = true;
+          this.executions.delete(execution as ScheduledExecution<unknown>);
           this.executionIDs.delete(execution.executionID);
           if (execution.queueTimer) clearTimeout(execution.queueTimer);
           if (
@@ -250,6 +255,7 @@ export class WorkflowExecutionScheduler {
     if (index < 0) return;
     this.waiting.splice(index, 1);
     execution.settled = true;
+    this.executions.delete(execution);
     this.executionIDs.delete(execution.executionID);
     if (
       execution.idempotencyKey &&
@@ -325,6 +331,7 @@ export class WorkflowExecutionScheduler {
         });
         execution.abort.signal.throwIfAborted();
         execution.settled = true;
+        this.executions.delete(execution);
         this.executionIDs.delete(execution.executionID);
         if (
           execution.idempotencyKey &&
@@ -335,6 +342,7 @@ export class WorkflowExecutionScheduler {
         execution.resolve(value);
       } catch (error) {
         execution.settled = true;
+        this.executions.delete(execution);
         this.executionIDs.delete(execution.executionID);
         if (
           execution.idempotencyKey &&
@@ -357,6 +365,16 @@ export class WorkflowExecutionScheduler {
         this.drain();
       }
     });
+  }
+
+  async dispose(reason = "workflow execution scheduler disposed") {
+    if (this.disposed) return;
+    this.disposed = true;
+    const executions = [...this.executions];
+    for (const execution of executions) execution.handle?.cancel(reason);
+    await Promise.allSettled(
+      executions.map((execution) => execution.handle?.result),
+    );
   }
 
   private publish(

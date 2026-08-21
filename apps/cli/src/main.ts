@@ -12,7 +12,7 @@ import {
   runTask,
   runTaskFromDocument,
   CapabilityExecutionHost,
-  WorkflowExecutionScheduler,
+  createWorkflowSchedulerPluginHost,
   CapabilityHost,
   removeTaskSystemd,
   taskPermissionPreview,
@@ -147,13 +147,14 @@ switch (subcommand) {
     );
     if (!Number.isInteger(maxConcurrentTasks) || maxConcurrentTasks <= 0)
       throw new Error("daemon requires a positive --max-concurrent-tasks");
-    const taskScheduler = new WorkflowExecutionScheduler({
+    const taskSchedulerHost = await createWorkflowSchedulerPluginHost({
       globalConcurrency: maxConcurrentTasks,
       workspaceConcurrency: 1,
       queueTimeoutMs: Number(
         valueAfter(argv, "--queue-timeout-ms") ?? "300000",
       ),
     });
+    const taskScheduler = taskSchedulerHost.scheduler;
     const workspaceHosts = new Map<
       string,
       { capabilities: CapabilityHost; executions: CapabilityExecutionHost }
@@ -211,6 +212,7 @@ switch (subcommand) {
     // defect this closes). The smoke that delivers tasks also depends on this
     // instead of its SIGKILL fallback.
     await client.dispose?.();
+    await taskSchedulerHost.close();
     for (const host of workspaceHosts.values()) host.capabilities.dispose();
     break;
   }

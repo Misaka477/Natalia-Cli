@@ -385,6 +385,35 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-task-workflow",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct task/workflow implementation import",
+        pattern:
+          /from\s+["']\.\/(?:task-controller|task-preflight|task-document|flow-document|task-overview|workflow-document-catalog|workflow-contributions)["']/u,
+      },
+      {
+        description: "direct workflow document store access",
+        pattern: /(?<!\.)\bNataliaDocumentStore\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-workflow-scheduler",
+    targets: [
+      "packages/client/src/capability-execution-host.ts",
+      "apps/cli/src/main.ts",
+      "apps/tui/src/runtime-worker.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct workflow scheduler construction",
+        pattern: /\bnew\s+WorkflowExecutionScheduler\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

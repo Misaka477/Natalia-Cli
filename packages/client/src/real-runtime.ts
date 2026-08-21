@@ -36,8 +36,6 @@ import {
   runtimeEventDurability,
   runtimeSlashCommands,
 } from "@natalia/contracts";
-import { assertConfigApplied, taskPermissionPreview } from "./task-controller";
-import { assertTaskReferences } from "./task-preflight";
 import {
   findWorkspaceFiles,
   globWorkspaceFiles,
@@ -98,7 +96,6 @@ import {
   type CapabilityRegistryHost,
 } from "@natalia/capability";
 import { mergeContributedToolSettings } from "./capability-settings";
-import { workflowContributionsProjection } from "./workflow-contributions";
 import {
   agentsFromConfig,
   type AgentDefinition,
@@ -162,22 +159,7 @@ import {
   setGlobalPluginCommands,
   type PluginCommand,
 } from "@natalia/plugin";
-import {
-  moduleToolPolicy,
-  NataliaTaskStateStore,
-  type NataliaFlowModuleType,
-} from "@natalia/workflow";
-import { NataliaDocumentStore } from "@natalia/workflow";
-import {
-  deleteFlowDocument as deleteFlowDocumentFile,
-  saveFlowDocument as saveFlowDocumentFile,
-} from "./flow-document";
-import {
-  configureTaskSystemd,
-  deleteTaskDocument,
-  removeTaskSystemd,
-  saveTaskDocument,
-} from "./task-document";
+import { moduleToolPolicy } from "@natalia/workflow";
 import {
   applyToolFamilyEnabledFilter,
   builtinToolFamilies,
@@ -212,11 +194,8 @@ import { TERMINAL_CONTROLLER_SERVICE } from "./builtin-plugins/terminal-controll
 import { SANDBOX_CONTROLLER_SERVICE } from "./builtin-plugins/sandbox-controller-plugin";
 import { MCP_CONTROLLER_SERVICE } from "./builtin-plugins/mcp-controller-plugin";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
-import {
-  flowOverview as flowOverviewForWorkspace,
-  scheduledTaskOverview,
-} from "./task-overview";
-import { workflowDocumentCatalog } from "./workflow-document-catalog";
+import type { TaskWorkflowController } from "./task-workflow-controller";
+import { TASK_WORKFLOW_CONTROLLER_SERVICE } from "./builtin-plugins/task-workflow-plugin";
 import {
   readOnlyToolMessage,
   terminalApprovalScope,
@@ -472,6 +451,12 @@ export function createRealRuntimeClient(
   let maxSteps: number | undefined;
   let subagentsController: SubagentsController | undefined;
   let providerModelController: ProviderModelController | undefined;
+  let taskWorkflowController: TaskWorkflowController | undefined;
+  function requireTaskWorkflow() {
+    if (!taskWorkflowController)
+      throw new RuntimeRefusal("Task/workflow plugin is disabled.");
+    return taskWorkflowController;
+  }
   /**
    * Controllers provided by the terminal/sandbox/mcp built-in plugins, resolved
    * after they load during `start`. All consumers run post-start, so the
@@ -661,7 +646,6 @@ export function createRealRuntimeClient(
   };
   const runtimeDiagnosticsBySession = new Map<SessionID, RuntimeDiagnostic[]>();
   const runtimeDiagnostics: RuntimeDiagnostic[] = [];
-  const publishedWorkflowContributionDiagnostics = new Set<string>();
   let selectedAgent: AgentDefinition | undefined;
   let selectedModel: { modelID?: string; variant?: string } | undefined;
   let pendingAgent: AgentDefinition | undefined;
@@ -1143,6 +1127,21 @@ export function createRealRuntimeClient(
             },
           },
         },
+        taskWorkflow: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-task-workflow"] !== false,
+          controller: {
+            workspaceRoot,
+            globalConfigPath: options.globalConfigPath,
+            runtimeConfig: () => tsRuntimeConfig,
+            capabilityViews: () => [
+              capabilityRegistry,
+              ...(workspaceCapabilityView ? [workspaceCapabilityView] : []),
+            ],
+            publishDiagnostic: (message) =>
+              publish({ type: "diagnostic", level: "warning", message }),
+          },
+        },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1201,6 +1200,10 @@ export function createRealRuntimeClient(
           PROVIDER_MODEL_CONTROLLER_SERVICE,
         );
       providerModelController = resolvedProviderModel;
+      taskWorkflowController =
+        capabilityRegistry.service<TaskWorkflowController>(
+          TASK_WORKFLOW_CONTROLLER_SERVICE,
+        );
       agentToolLayer = toolPolicy.createHookLayer();
       permissionProfileToolLayer = toolPolicy.createHookLayer();
       moduleToolLayer = toolPolicy.createHookLayer(
@@ -3047,19 +3050,6 @@ export function createRealRuntimeClient(
 
   function publish(event: RuntimeEvent) {
     publishForSession(activeExec, event);
-  }
-
-  function projectedWorkflowContributions() {
-    const local = workflowContributionsProjection(capabilityRegistry);
-    const workspace = workspaceCapabilityView
-      ? workflowContributionsProjection(workspaceCapabilityView)
-      : { documents: {}, diagnostics: [] };
-    for (const message of [...workspace.diagnostics, ...local.diagnostics]) {
-      if (publishedWorkflowContributionDiagnostics.has(message)) continue;
-      publishedWorkflowContributionDiagnostics.add(message);
-      publish({ type: "diagnostic", level: "warning", message });
-    }
-    return { ...local.documents, ...workspace.documents };
   }
 
   function publishForSession(
@@ -5610,6 +5600,30 @@ export function createRealRuntimeClient(
     }
   }
 
+  function ensureReady() {
+    if (!ready || readySettled) {
+      readySettled = false;
+      ready = initialize().then(
+        () => {
+          readySettled = true;
+        },
+        (error) => {
+          readySettled = true;
+          const failure =
+            error instanceof Error ? error : new Error(String(error));
+          publish({
+            type: "diagnostic",
+            level: "error",
+            message: failure.message,
+          });
+          throw failure;
+        },
+      );
+      void ready.catch(() => undefined);
+    }
+    return ready;
+  }
+
   return {
     start(onEvent, startOptions) {
       sink = onEvent;
@@ -5619,31 +5633,7 @@ export function createRealRuntimeClient(
       // it opened a second sqlite connection and a second workspace watcher,
       // which on Windows fails the sqlite open and leaks the first watcher,
       // keeping the process alive after dispose.
-      if (!ready || readySettled) {
-        readySettled = false;
-        ready = initialize().then(
-          () => {
-            readySettled = true;
-          },
-          (error) => {
-            readySettled = true;
-            const failure =
-              error instanceof Error ? error : new Error(String(error));
-            publish({
-              type: "diagnostic",
-              level: "error",
-              message: failure.message,
-            });
-            // Rethrow, so every member's `await ready` fails with the *cause*,
-            // not with a derived symptom ("checkpoint store is not initialized").
-            throw failure;
-          },
-        );
-        // Members still `await ready` and receive the rejection; this catch
-        // only keeps a runtime nobody calls from tripping unhandled-rejection
-        // reporting.
-        void ready.catch(() => undefined);
-      }
+      void ensureReady();
     },
     async submit(text) {
       return await submitInput({ text });
@@ -5911,216 +5901,44 @@ export function createRealRuntimeClient(
       }));
     },
     async taskOverview() {
-      await ready;
-      // The overview needs resolved config to compute effective permissions, so
-      // it is only answerable once the runtime has initialized.
-      const config =
-        tsRuntimeConfig ??
-        (
-          await resolveConfig({
-            workspaceRoot,
-            globalPath: options.globalConfigPath,
-          })
-        ).config;
-      return await scheduledTaskOverview({
-        workspaceRoot,
-        config,
-        contributedDocuments: projectedWorkflowContributions(),
-      });
+      await ensureReady();
+      return requireTaskWorkflow().taskOverview();
     },
     async flowOverview() {
-      await ready;
-      return await flowOverviewForWorkspace({
-        workspaceRoot,
-        contributedDocuments: projectedWorkflowContributions(),
-      });
+      await ensureReady();
+      return requireTaskWorkflow().flowOverview();
     },
     async documentCatalog() {
-      await ready;
-      return await workflowDocumentCatalog(
-        workspaceRoot,
-        tsRuntimeConfig,
-        projectedWorkflowContributions(),
-      );
+      await ensureReady();
+      return requireTaskWorkflow().documentCatalog();
     },
     async saveFlowDocument(input) {
-      // P0-G: the flow write surface, previously CLI-only. Idempotent by
-      // path: replaying the same request reproduces the same outcome. The
-      // path is validated (and refused) by flowPath inside saveFlowDocument.
-      if (input.path?.startsWith("cap:"))
-        throw new RuntimeRefusal(
-          "contributed document paths are read-only and cannot be saved",
-        );
-      const documents = new NataliaDocumentStore(workspaceRoot);
-      const resolved = input.path ?? `${input.document.flowID}.yaml`;
-      let existed = false;
-      try {
-        await documents.loadFlow(`.natalia/flows/${resolved}`);
-        existed = true;
-      } catch {
-        existed = false;
-      }
-      await saveFlowDocumentFile({
-        workspaceRoot,
-        path: input.path,
-        document: input.document,
-      });
-      return {
-        // The editor-relative name, not the resolved absolute path: the
-        // caller named this path and should get it back as named.
-        path: resolved,
-        flowID: input.document.flowID,
-        created: !existed,
-        updated: existed,
-      };
+      await ensureReady();
+      return requireTaskWorkflow().saveFlowDocument(input);
     },
     async taskPermissionPreview(input) {
-      await ready;
-      // Validation problems are a value, not an exception: an orchestrator
-      // validates a task document before delivering it, and decides on the
-      // result. Only the path policy throws (refused, like workspace paths).
-      const config = assertConfigApplied(
-        await resolveConfig({
-          workspaceRoot,
-          globalPath: options.globalConfigPath,
-        }),
-      );
-      const path = input.path;
-      if (
-        !path ||
-        path.startsWith("/") ||
-        path.includes("..") ||
-        path.includes("\\")
-      )
-        throw new RuntimeRefusal(
-          "task document path must stay under .natalia/tasks as a relative file name",
-        );
-      const documents = new NataliaDocumentStore(
-        workspaceRoot,
-        projectedWorkflowContributions(),
-      );
-      const task = await documents.loadTaskDocument(path);
-      const flow = await documents.resolveTaskFlow(task);
-      const problems: string[] = [];
-      try {
-        assertTaskReferences({ task, config });
-      } catch (error) {
-        problems.push(error instanceof Error ? error.message : String(error));
-      }
-      const permissions = taskPermissionPreview({ task, flow, config });
-      for (const entry of permissions.blocked)
-        problems.push(`${entry.moduleID}: ${entry.reason}`);
-      const conditionless = flow.modules
-        .filter((module) => module.enabled && !module.minimumConditions.length)
-        .map((module) => module.id);
-      for (const moduleID of conditionless)
-        problems.push(`${moduleID}: stage has no minimum completion condition`);
-      return {
-        taskID: task.taskID,
-        displayName: task.displayName,
-        permissionProfile: task.permissionProfile,
-        flowID: flow.flowID,
-        flowDisplayName: flow.displayName,
-        enabledModules: flow.modules.filter((module) => module.enabled).length,
-        blocked: permissions.blocked,
-        conditionlessModules: conditionless,
-        problems,
-        valid: problems.length === 0,
-      };
+      await ensureReady();
+      return requireTaskWorkflow().taskPermissionPreview(input);
     },
     async deleteFlowDocument(input) {
-      // Idempotent delete: a document that is already gone answers
-      // `alreadyDeleted: true` instead of failing; a flow still referenced
-      // by task documents is refused with the referencing tasks.
-      if (input.path.startsWith("cap:"))
-        throw new RuntimeRefusal(
-          "contributed document paths are read-only and cannot be deleted",
-        );
-      let existed = true;
-      try {
-        const documents = new NataliaDocumentStore(workspaceRoot);
-        await documents.loadFlow(`.natalia/flows/${input.path}`);
-      } catch {
-        existed = false;
-      }
-      if (!existed)
-        return { path: input.path, deleted: false, alreadyDeleted: true };
-      await deleteFlowDocumentFile({ workspaceRoot, path: input.path });
-      return { path: input.path, deleted: true, alreadyDeleted: false };
+      await ensureReady();
+      return requireTaskWorkflow().deleteFlowDocument(input);
     },
     async saveTaskDocument(input) {
-      await ready;
-      if (input.path?.startsWith("cap:"))
-        throw new RuntimeRefusal(
-          "contributed document paths are read-only and cannot be saved",
-        );
-      const resolved = input.path ?? `${input.document.taskID}.yaml`;
-      let existed = false;
-      try {
-        await new NataliaDocumentStore(workspaceRoot).loadTask(resolved);
-        existed = true;
-      } catch {
-        existed = false;
-      }
-      await saveTaskDocument({
-        workspaceRoot,
-        path: input.path,
-        document: input.document,
-      });
-      return {
-        path: resolved,
-        taskID: input.document.taskID,
-        created: !existed,
-        updated: existed,
-      };
+      await ensureReady();
+      return requireTaskWorkflow().saveTaskDocument(input);
     },
     async deleteTaskDocument(input) {
-      await ready;
-      let existed = true;
-      try {
-        await new NataliaDocumentStore(workspaceRoot).loadTask(input.path);
-      } catch {
-        existed = false;
-      }
-      if (!existed)
-        return { path: input.path, deleted: false, alreadyDeleted: true };
-      await deleteTaskDocument({ workspaceRoot, path: input.path });
-      return { path: input.path, deleted: true, alreadyDeleted: false };
+      await ensureReady();
+      return requireTaskWorkflow().deleteTaskDocument(input);
     },
     async taskSchedule(input) {
-      await ready;
-      const result = await configureTaskSystemd({
-        workspaceRoot,
-        path: input.path,
-        calendar: input.calendar,
-        scope: input.scope,
-        executable: process.execPath,
-        cliEntry: process.argv[1],
-      });
-      const task = await new NataliaDocumentStore(
-        workspaceRoot,
-      ).loadTaskDocument(input.path);
-      return {
-        path: input.path,
-        taskID: task.taskID,
-        timerUnit: result.units.timerUnit,
-        scope: input.scope,
-        normalizedCalendar: result.preview.normalized,
-        next: result.preview.next,
-        commands: result.commands,
-      };
+      await ensureReady();
+      return requireTaskWorkflow().taskSchedule(input);
     },
     async taskUnschedule(input) {
-      await ready;
-      const task = await new NataliaDocumentStore(
-        workspaceRoot,
-      ).loadTaskDocument(input.path);
-      const removed = Boolean(task.systemd?.timerUnit);
-      const result = await removeTaskSystemd({
-        workspaceRoot,
-        path: input.path,
-      });
-      return { path: input.path, removed, commands: result.commands };
+      await ensureReady();
+      return requireTaskWorkflow().taskUnschedule(input);
     },
     async modelCatalog() {
       return await clientModelCatalog();

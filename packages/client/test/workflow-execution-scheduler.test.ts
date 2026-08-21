@@ -282,3 +282,30 @@ test("queued executions fail closed after the queue timeout", async () => {
   release.resolve();
   await first.result;
 });
+
+test("dispose cancels queued and running executions and refuses new work", async () => {
+  const scheduler = new WorkflowExecutionScheduler();
+  const running = scheduler.schedule({
+    workspaceRoot: "/workspace/a",
+    run: async ({ signal }) =>
+      new Promise<void>((_resolve, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        }),
+      ),
+  });
+  const queued = scheduler.schedule({
+    workspaceRoot: "/workspace/a",
+    run: async () => undefined,
+  });
+  await Bun.sleep(0);
+  await scheduler.dispose("plugin unloaded");
+  await expect(running.result).rejects.toThrow("plugin unloaded");
+  await expect(queued.result).rejects.toThrow("plugin unloaded");
+  expect(() =>
+    scheduler.schedule({
+      workspaceRoot: "/workspace/a",
+      run: async () => undefined,
+    }),
+  ).toThrow("scheduler disposed");
+});

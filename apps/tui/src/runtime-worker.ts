@@ -3,6 +3,7 @@ import {
   assertConfigApplied,
   attachRuntimeClientWorker,
   CapabilityExecutionHost,
+  createWorkflowSchedulerPluginHost,
   createRealRuntimeClient,
 } from "@natalia/client";
 import { CapabilityHost } from "@natalia/capability";
@@ -17,7 +18,10 @@ const input = workerData as {
 const capabilityHost = new CapabilityHost({
   workspaceRoot: input.workspaceRoot,
 });
-const workflowExecution = new CapabilityExecutionHost(capabilityHost);
+const workflowScheduler = await createWorkflowSchedulerPluginHost();
+const workflowExecution = new CapabilityExecutionHost(capabilityHost, {
+  scheduler: workflowScheduler.scheduler,
+});
 const createRuntime = () =>
   createRealRuntimeClient({
     workspaceRoot: input.workspaceRoot,
@@ -33,5 +37,8 @@ attachRuntimeClientWorker(input.port, createRuntime(), {
     assertConfigApplied(
       await resolveConfig({ workspaceRoot: input.workspaceRoot }),
     ),
-  disposeHost: () => capabilityHost.dispose(),
+  disposeHost: async () => {
+    await workflowScheduler.close();
+    capabilityHost.dispose();
+  },
 });

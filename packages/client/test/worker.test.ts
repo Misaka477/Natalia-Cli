@@ -16,6 +16,7 @@ import {
 import { createRealRuntimeClient } from "../src/real-runtime";
 import { CapabilityHost } from "@natalia/capability";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
+import { WorkflowExecutionScheduler } from "../src/workflow-execution-scheduler";
 import { configV3Schema } from "@natalia/contracts";
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
@@ -616,7 +617,9 @@ test("the worker streams capability task execution", async () => {
   const channel = new MessageChannel();
   attachRuntimeClientWorker(channel.port1, createRuntime(), {
     reload: createRuntime,
-    workflowExecution: new CapabilityExecutionHost(capabilities),
+    workflowExecution: new CapabilityExecutionHost(capabilities, {
+      scheduler: new WorkflowExecutionScheduler(),
+    }),
     workflowConfig: async () => configV3Schema.parse({ version: 3 }),
   });
   const client = createWorkerRuntimeClient(channel.port2);
@@ -682,7 +685,9 @@ test("worker cancellation is retained while workflow config is resolving", async
     channel.port1,
     createRealRuntimeClient({ workspaceRoot: root }),
     {
-      workflowExecution: new CapabilityExecutionHost(capabilities),
+      workflowExecution: new CapabilityExecutionHost(capabilities, {
+        scheduler: new WorkflowExecutionScheduler(),
+      }),
       workflowConfig: async () => {
         await configReady;
         return configV3Schema.parse({ version: 3 });

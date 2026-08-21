@@ -161,6 +161,31 @@ test("disabled provider-model plugin constructs no provider loop or chat task", 
   await client.dispose?.();
 });
 
+test("disabled task-workflow plugin constructs no service or task storage", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-workflow-disabled-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-task-workflow": false } },
+    }),
+  );
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_workflow_disabled",
+    capabilityRegistry: kernel,
+  });
+  client.start(() => undefined);
+  await expect(client.taskOverview!()).rejects.toThrow(
+    "Task/workflow plugin is disabled.",
+  );
+  expect(kernel.has("natalia-task-workflow")).toBe(false);
+  expect(existsSync(join(root, ".natalia", "tasks.db"))).toBe(false);
+  await client.dispose?.();
+});
+
 test("flow_module_complete is only advertised to an active task module runtime", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-task-module-runtime-"));
   const store = await NataliaTaskStateStore.open(root);

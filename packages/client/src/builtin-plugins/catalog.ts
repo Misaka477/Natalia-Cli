@@ -79,6 +79,11 @@ import {
 } from "./provider-model-plugin";
 import type { ProviderModelControllerInput } from "../provider-model-controller";
 import {
+  createTaskWorkflowPlugin,
+  TASK_WORKFLOW_PLUGIN_ID,
+} from "./task-workflow-plugin";
+import type { createTaskWorkflowController } from "../task-workflow-controller";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -200,6 +205,10 @@ export function builtinPluginCatalog(input: {
   providerModel?: {
     enabled: boolean;
     controller: ProviderModelControllerInput;
+  };
+  taskWorkflow?: {
+    enabled: boolean;
+    controller: Parameters<typeof createTaskWorkflowController>[0];
   };
 }): BuiltinPluginEntry[] {
   return [
@@ -423,6 +432,16 @@ export function builtinPluginCatalog(input: {
             enabled: input.providerModel.enabled,
             create: () =>
               createProviderModelPlugin(input.providerModel!.controller),
+          },
+        ]
+      : []),
+    ...(input.taskWorkflow
+      ? [
+          {
+            id: TASK_WORKFLOW_PLUGIN_ID,
+            enabled: input.taskWorkflow.enabled,
+            create: () =>
+              createTaskWorkflowPlugin(input.taskWorkflow!.controller),
           },
         ]
       : []),

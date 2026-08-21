@@ -81,7 +81,9 @@ test("started execution leases capability cleanup and streams controller output"
   const cleanup: string[] = [];
   const capabilities = new CapabilityHost({ workspaceRoot: root });
   loadTask(capabilities, cleanup);
-  const executions = new CapabilityExecutionHost(capabilities);
+  const executions = new CapabilityExecutionHost(capabilities, {
+    scheduler: new WorkflowExecutionScheduler(),
+  });
   const handle = executions.runTask({
     workspaceRoot: root,
     taskID: "task_doctor",
@@ -123,7 +125,9 @@ test("started execution leases capability cleanup and streams controller output"
 test("execution host refuses a workspace owned by another capability host", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-root-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
-  const executions = new CapabilityExecutionHost(capabilities);
+  const executions = new CapabilityExecutionHost(capabilities, {
+    scheduler: new WorkflowExecutionScheduler(),
+  });
   expect(() =>
     executions.runTask({
       workspaceRoot: join(root, "other"),

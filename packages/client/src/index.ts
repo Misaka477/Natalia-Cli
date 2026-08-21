@@ -108,6 +108,11 @@ export {
   type WorkflowExecutionStatus,
 } from "./workflow-execution-scheduler";
 export {
+  createWorkflowSchedulerPluginHost,
+  WORKFLOW_SCHEDULER_PLUGIN_ID,
+  WORKFLOW_SCHEDULER_SERVICE,
+} from "./builtin-plugins/workflow-scheduler-plugin";
+export {
   CapabilityExecutionHost,
   type CapabilityTaskExecutionRequest,
 } from "./capability-execution-host";

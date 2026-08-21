@@ -64,6 +64,11 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     ["natalia-provider-model", "createProviderRunner({})"],
     ["natalia-provider-model", "const runnerBySession = new Map()"],
     ["natalia-provider-model", "let chatAbort = new AbortController()"],
+    [
+      "natalia-task-workflow",
+      'import { saveTaskDocument } from "./task-document"',
+    ],
+    ["natalia-task-workflow", "new NataliaDocumentStore(root)"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
@@ -128,4 +133,20 @@ test("migrated plugin matcher accepts new declarative rules", () => {
   ).toEqual([
     { pluginID: "natalia-example", description: "direct construction" },
   ]);
+});
+
+test("workflow scheduler migration protects host construction sites", () => {
+  for (const path of [
+    "packages/client/src/capability-execution-host.ts",
+    "apps/cli/src/main.ts",
+    "apps/tui/src/runtime-worker.ts",
+  ])
+    expect(
+      findMigratedPluginViolations(
+        path,
+        "const scheduler = new WorkflowExecutionScheduler()",
+      ),
+    ).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-workflow-scheduler" }),
+    );
 });

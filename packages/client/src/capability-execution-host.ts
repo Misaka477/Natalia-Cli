@@ -40,16 +40,10 @@ export class CapabilityExecutionHost {
   constructor(
     private readonly capabilities: CapabilityHost,
     options: {
-      scheduler?: WorkflowExecutionScheduler;
-      globalConcurrency?: number;
-      workspaceConcurrency?: number;
-      globalQueueLimit?: number;
-      workspaceQueueLimit?: number;
-      queueTimeoutMs?: number;
-    } = {},
+      scheduler: WorkflowExecutionScheduler;
+    },
   ) {
-    this.scheduler =
-      options.scheduler ?? new WorkflowExecutionScheduler(options);
+    this.scheduler = options.scheduler;
   }
 
   runTask(
