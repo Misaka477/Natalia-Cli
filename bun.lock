@@ -25,6 +25,7 @@
         "@natalia/client": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/installer": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/session": "workspace:*",
@@ -87,7 +88,8 @@
         "@natalia/testing": "workspace:*",
         "@natalia/tool-agent": "workspace:*",
         "@natalia/tool-ask": "workspace:*",
-        "@natalia/tool-fs": "workspace:*",
+        "@natalia/tool-fs-read": "workspace:*",
+        "@natalia/tool-fs-write": "workspace:*",
         "@natalia/tool-pdf": "workspace:*",
         "@natalia/tool-process": "workspace:*",
         "@natalia/tool-sandbox": "workspace:*",
@@ -118,6 +120,16 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/ui-model": "workspace:*",
+        "zod": "3.25.76",
+      },
+    },
+    "packages/installer": {
+      "name": "@natalia/installer",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/config": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "zod": "3.25.76",
       },
     },
@@ -226,6 +238,7 @@
       "name": "@natalia/tool-agent",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/plugin": "workspace:*",
         "@natalia/subagent": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
@@ -234,13 +247,23 @@
       "name": "@natalia/tool-ask",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-fs": {
-      "name": "@natalia/tool-fs",
+    "packages/tool-fs-read": {
+      "name": "@natalia/tool-fs-read",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/plugin": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/tool-fs-write": {
+      "name": "@natalia/tool-fs-write",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -259,6 +282,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/platform": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -266,6 +290,7 @@
       "name": "@natalia/tool-sandbox",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/plugin": "workspace:*",
         "@natalia/sandbox": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
@@ -274,6 +299,7 @@
       "name": "@natalia/tool-search",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -281,7 +307,7 @@
       "name": "@natalia/tool-shell",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/platform": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -290,6 +316,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/native-terminal": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -297,6 +324,7 @@
       "name": "@natalia/tool-todo",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -305,7 +333,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/platform": "workspace:*",
-        "@natalia/tool-shell": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -452,6 +480,8 @@
 
     "@natalia/contracts": ["@natalia/contracts@workspace:packages/contracts"],
 
+    "@natalia/installer": ["@natalia/installer@workspace:packages/installer"],
+
     "@natalia/mcp": ["@natalia/mcp@workspace:packages/mcp"],
 
     "@natalia/native-terminal": ["@natalia/native-terminal@workspace:packages/native-terminal"],
@@ -482,7 +512,9 @@
 
     "@natalia/tool-ask": ["@natalia/tool-ask@workspace:packages/tool-ask"],
 
-    "@natalia/tool-fs": ["@natalia/tool-fs@workspace:packages/tool-fs"],
+    "@natalia/tool-fs-read": ["@natalia/tool-fs-read@workspace:packages/tool-fs-read"],
+
+    "@natalia/tool-fs-write": ["@natalia/tool-fs-write@workspace:packages/tool-fs-write"],
 
     "@natalia/tool-pdf": ["@natalia/tool-pdf@workspace:packages/tool-pdf"],
 
