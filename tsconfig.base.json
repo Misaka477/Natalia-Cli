@@ -40,6 +40,7 @@
       "@natalia/tool-todo": ["packages/tool-todo/src/index.ts"],
       "@natalia/sandbox": ["packages/sandbox/src/index.ts"],
       "@natalia/subagent": ["packages/subagent/src/index.ts"],
+      "@natalia/subagents-plugin": ["packages/subagents-plugin/src/index.ts"],
       "@natalia/tools": ["packages/tools/src/index.ts"]
     },
     "noUncheckedIndexedAccess": false,

@@ -43,7 +43,7 @@
       "path": "../skills"
     },
     {
-      "path": "../subagent"
+      "path": "../subagents-plugin"
     },
     {
       "path": "../terminal"

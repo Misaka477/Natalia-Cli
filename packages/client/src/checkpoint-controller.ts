@@ -8,7 +8,7 @@ import {
   CheckpointStore,
   type DurableContextCheckpoint,
 } from "@natalia/runtime";
-import type { SubagentRegistry } from "@natalia/subagent";
+import type { SubagentRegistry } from "@natalia/subagents-plugin";
 import type { WorkLedgerController } from "./work-ledger-controller";
 
 /**

@@ -25,8 +25,8 @@ import {
   isInvalidGeneratedSessionTitle,
   sanitizeSessionTitleInput,
 } from "./session-title";
-import type { SubagentsController } from "./subagents-controller";
-import { SUBAGENTS_CONTROLLER_SERVICE } from "./builtin-plugins/subagents-controller-plugin";
+import type { SubagentsController } from "@natalia/subagents-plugin";
+import { SUBAGENTS_CONTROLLER_SERVICE } from "@natalia/subagents-plugin";
 import {
   TEAM_MODE_DIRECTIVE,
   sandboxedSubagentSystemPrompt,
@@ -151,7 +151,7 @@ import {
   type Skill,
   type SkillRegistry,
 } from "@natalia/skills";
-import type { SubagentRegistry } from "@natalia/subagent";
+import type { SubagentRegistry } from "@natalia/subagents-plugin";
 import type { NativeTerminalRegistry } from "@natalia/native-terminal";
 import {
   foregroundProcessForTTY,
@@ -1627,7 +1627,7 @@ export function createRealRuntimeClient(
       }
     }
     function publishSubagentEvent(
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       event: RuntimeEvent,
     ) {
       const parentSessionID = subagentsController?.get()?.get(runner.agentId)
@@ -1639,7 +1639,9 @@ export function createRealRuntimeClient(
           : { ...event, agentID: runner.agentId },
       );
     }
-    function subagentTurnID(runner: import("@natalia/subagent").RunnerContext) {
+    function subagentTurnID(
+      runner: import("@natalia/subagents-plugin").RunnerContext,
+    ) {
       const continuation =
         subagentsController?.get()?.get(runner.agentId)?.continuation ?? 0;
       return continuation
@@ -1647,7 +1649,7 @@ export function createRealRuntimeClient(
         : `subagent:${runner.agentId}`;
     }
     function beginSubagentConversation(
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       task: string,
     ) {
       const id = subagentTurnID(runner);
@@ -1666,7 +1668,7 @@ export function createRealRuntimeClient(
       publishSubagentEvent(runner, { type: "turn.started", id });
     }
     function finishSubagentConversation(
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       stopReason: "done" | "cancelled" | "error",
     ) {
       const id = subagentTurnID(runner);
@@ -1687,7 +1689,7 @@ export function createRealRuntimeClient(
     async function runSubagentProviderStep(
       ledger: RuntimeContextLedger,
       visibleTools: RuntimeTool[],
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       step: number,
       activeProvider: StreamingProvider,
       activeContextConfig: {
@@ -1821,7 +1823,7 @@ export function createRealRuntimeClient(
     }
     function appendSubagentAssistant(
       ledger: RuntimeContextLedger,
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       step: number,
       output: string,
       calls: ProviderToolCall[],
@@ -1842,7 +1844,7 @@ export function createRealRuntimeClient(
     }
     function appendSubagentToolResult(
       ledger: RuntimeContextLedger,
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       step: number,
       call: ProviderToolCall,
       content: string,
@@ -1857,7 +1859,7 @@ export function createRealRuntimeClient(
     async function executeSubagentToolCall(input: {
       call: ProviderToolCall;
       step: number;
-      runner: import("@natalia/subagent").RunnerContext;
+      runner: import("@natalia/subagents-plugin").RunnerContext;
       visibleTools: RuntimeTool[];
       childWorkspaceRoot: string;
       repeatedCalls: Map<string, number>;
@@ -2029,7 +2031,7 @@ export function createRealRuntimeClient(
     }
     async function runSandboxedSubagent(
       task: string,
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       exec: SessionExecutionState,
       activeProvider: StreamingProvider,
     ) {
@@ -2042,7 +2044,7 @@ export function createRealRuntimeClient(
     }
     async function runSandboxedSubagentInner(
       task: string,
-      runner: import("@natalia/subagent").RunnerContext,
+      runner: import("@natalia/subagents-plugin").RunnerContext,
       exec: SessionExecutionState,
       activeProvider: StreamingProvider,
     ) {

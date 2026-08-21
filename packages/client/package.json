@@ -22,7 +22,7 @@
     "@natalia/sandbox": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/skills": "workspace:*",
-    "@natalia/subagent": "workspace:*",
+    "@natalia/subagents-plugin": "workspace:*",
     "@natalia/terminal": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*",

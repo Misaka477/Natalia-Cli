@@ -249,6 +249,18 @@ test("client physical dependency guard excludes extracted product packages", () 
       '"path": "../mcp-plugin"',
     ),
   ).toBeUndefined();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/fan-out.ts",
+      'import type { SubagentRegistry } from "@natalia/subagent"',
+    ),
+  ).toBeString();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/fan-out.ts",
+      'import type { SubagentRegistry } from "@natalia/subagents-plugin"',
+    ),
+  ).toBeUndefined();
 });
 
 test("migrated plugin rules only protect declared composition roots", () => {

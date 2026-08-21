@@ -106,7 +106,7 @@
         "@natalia/sandbox": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/skills": "workspace:*",
-        "@natalia/subagent": "workspace:*",
+        "@natalia/subagents-plugin": "workspace:*",
         "@natalia/terminal": "workspace:*",
         "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -239,6 +239,14 @@
     "packages/subagent": {
       "name": "@natalia/subagent",
       "version": "0.0.0-m13",
+    },
+    "packages/subagents-plugin": {
+      "name": "@natalia/subagents-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/plugin": "workspace:*",
+        "@natalia/subagent": "workspace:*",
+      },
     },
     "packages/terminal": {
       "name": "@natalia/terminal",
@@ -528,6 +536,8 @@
     "@natalia/skills": ["@natalia/skills@workspace:packages/skills"],
 
     "@natalia/subagent": ["@natalia/subagent@workspace:packages/subagent"],
+
+    "@natalia/subagents-plugin": ["@natalia/subagents-plugin@workspace:packages/subagents-plugin"],
 
     "@natalia/terminal": ["@natalia/terminal@workspace:packages/terminal"],
 

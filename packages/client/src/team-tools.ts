@@ -15,7 +15,7 @@ import {
   type FanOutPR,
 } from "./fan-out";
 import type { RuntimeTool } from "@natalia/tools";
-import type { SubagentRegistry } from "@natalia/subagent";
+import type { SubagentRegistry } from "@natalia/subagents-plugin";
 import type { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 export function createTeamFanoutTool(input: {

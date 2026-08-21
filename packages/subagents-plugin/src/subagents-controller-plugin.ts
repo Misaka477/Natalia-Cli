@@ -9,7 +9,7 @@
  * provider/agent loop.
  */
 import type { Plugin } from "@natalia/plugin";
-import { createSubagentsController } from "../subagents-controller";
+import { createSubagentsController } from "./subagents-controller";
 
 export const SUBAGENTS_PLUGIN_ID = "natalia-subagents";
 export const SUBAGENTS_CONTROLLER_SERVICE = "subagents.controller";

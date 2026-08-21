@@ -54,7 +54,7 @@ import {
 import {
   createSubagentsControllerPlugin,
   SUBAGENTS_PLUGIN_ID,
-} from "./subagents-controller-plugin";
+} from "@natalia/subagents-plugin";
 import {
   createSessionStoreControllerPlugin,
   SESSION_STORE_PLUGIN_ID,

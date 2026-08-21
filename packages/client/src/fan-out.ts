@@ -13,7 +13,7 @@
  * fan-out core.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { SubagentRegistry } from "@natalia/subagent";
+import type { SubagentRegistry } from "@natalia/subagents-plugin";
 import type { WorkspaceSandboxManager, SandboxChange } from "@natalia/sandbox";
 
 export type FanOutTask = {

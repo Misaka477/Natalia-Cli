@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { SubagentRegistry } from "@natalia/subagent";
+import { SubagentRegistry } from "@natalia/subagents-plugin";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
 import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/fan-out";
 

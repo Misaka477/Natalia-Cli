@@ -8,9 +8,9 @@
  * provided. A disabled team plugin registers no team tools at all.
  */
 import type { Plugin } from "@natalia/plugin";
-import type { SubagentsController } from "../subagents-controller";
+import type { SubagentsController } from "@natalia/subagents-plugin";
 import type { SandboxController } from "../sandbox-controller";
-import { SUBAGENTS_CONTROLLER_SERVICE } from "./subagents-controller-plugin";
+import { SUBAGENTS_CONTROLLER_SERVICE } from "@natalia/subagents-plugin";
 import { SANDBOX_CONTROLLER_SERVICE } from "./sandbox-controller-plugin";
 import { createTeamFanoutTool, createTeamReviewTool } from "../team-tools";
 
