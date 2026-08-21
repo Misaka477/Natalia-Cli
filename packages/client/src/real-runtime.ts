@@ -197,6 +197,9 @@ import {
   buildContextLedger,
   buildGovernanceLedger,
   buildTerminal,
+  buildWorkspace,
+  buildAttachment,
+  buildSessionStore,
   type RuntimeAssemblyHost,
 } from "./runtime-assembly";
 import {
@@ -905,6 +908,11 @@ export function createRealRuntimeClient(
         nativeRuntimeID: () => nativeRuntimeID,
         userRuntimeHome: () => userRuntimeHome(),
         nativeTerminal: options.nativeTerminal,
+        findWorkspaceFiles,
+        sessionID: () => sessionID,
+        sessionDir: options.sessionDir,
+        useSqliteStore: options.useSqliteStore,
+        title: options.title,
       };
       const builtinPlugins = builtinPluginCatalog({
         ...computeBuiltinFeatureGates({
@@ -1002,38 +1010,14 @@ export function createRealRuntimeClient(
               },
             }
           : {}),
-        workspace: {
-          workspaceRoot,
-          listPaths: async () => {
-            const entries = await findWorkspaceFiles({
-              workspaceRoot,
-              limit: 1000,
-            });
-            return entries
-              .filter((entry) => entry.type === "file")
-              .map((entry) => entry.path);
-          },
-        },
+        workspace: buildWorkspace(assemblyHost),
         terminal: buildTerminal(assemblyHost),
         sandbox: buildSandbox(assemblyHost),
         mcp: buildMcp(assemblyHost),
         checkpoint: buildCheckpoint(assemblyHost),
         subagents: { workDir: workspaceRoot, sessionID: () => sessionID },
-        attachment: {
-          enabled:
-            tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false,
-          workspaceRoot,
-        },
-        sessionStore:
-          tsRuntimeConfig.plugins.enabled["natalia-attachment"] !== false
-            ? {
-                workspaceRoot,
-                sessionID: () => sessionID,
-                sessionDir: options.sessionDir,
-                useSqliteStore: options.useSqliteStore,
-                title: options.title,
-              }
-            : undefined,
+        attachment: buildAttachment(assemblyHost),
+        sessionStore: buildSessionStore(assemblyHost),
         team: buildTeam(assemblyHost),
         toolPipeline: buildToolPipeline(assemblyHost),
         collaboration: { waiter: waiterDeps },

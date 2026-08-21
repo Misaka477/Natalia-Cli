@@ -13,6 +13,7 @@ import type {
   ConfigV3,
   MCPServerConfig,
   RuntimeEvent,
+  RuntimeWorkspaceFileEntry,
   SessionID,
 } from "@natalia/contracts";
 import type { RetryRunnerOptions } from "@natalia/runtime";
@@ -41,7 +42,58 @@ export type RuntimeAssemblyHost = {
   nativeRuntimeID(): string;
   userRuntimeHome(): string | undefined;
   nativeTerminal: NativeTerminalRegistry | undefined;
+  findWorkspaceFiles(input: {
+    workspaceRoot: string;
+    query?: string;
+    type?: "file" | "directory";
+    limit?: number;
+  }): Promise<RuntimeWorkspaceFileEntry[]>;
+  sessionID(): SessionID;
+  sessionDir: string | undefined;
+  useSqliteStore: boolean | undefined;
+  title: string | undefined;
 };
+
+export function buildWorkspace(
+  host: RuntimeAssemblyHost,
+): NonNullable<CatalogInput["workspace"]> {
+  return {
+    workspaceRoot: host.workspaceRoot,
+    listPaths: async () => {
+      const entries = await host.findWorkspaceFiles({
+        workspaceRoot: host.workspaceRoot,
+        limit: 1000,
+      });
+      return entries
+        .filter((entry) => entry.type === "file")
+        .map((entry) => entry.path);
+    },
+  };
+}
+
+export function buildAttachment(
+  host: RuntimeAssemblyHost,
+): NonNullable<CatalogInput["attachment"]> {
+  return {
+    enabled:
+      host.getRuntimeConfig()?.plugins.enabled["natalia-attachment"] !== false,
+    workspaceRoot: host.workspaceRoot,
+  };
+}
+
+export function buildSessionStore(
+  host: RuntimeAssemblyHost,
+): NonNullable<CatalogInput["sessionStore"]> | undefined {
+  if (host.getRuntimeConfig()?.plugins.enabled["natalia-attachment"] === false)
+    return undefined;
+  return {
+    workspaceRoot: host.workspaceRoot,
+    sessionID: () => host.sessionID(),
+    sessionDir: host.sessionDir,
+    useSqliteStore: host.useSqliteStore,
+    title: host.title,
+  };
+}
 
 export function buildTerminal(
   host: RuntimeAssemblyHost,
