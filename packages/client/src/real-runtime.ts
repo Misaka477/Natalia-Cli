@@ -196,6 +196,7 @@ import {
   buildCompaction,
   buildContextLedger,
   buildGovernanceLedger,
+  buildTerminal,
   type RuntimeAssemblyHost,
 } from "./runtime-assembly";
 import {
@@ -393,6 +394,38 @@ export type RealRuntimeClientOptions = {
   capabilityHost?: CapabilityHost;
 };
 
+/**
+ * Per-session execution state held by the runtime for each attached session.
+ * Module-scoped so the runtime assembly host can thread it without a runtime
+ * cycle (type-only imports are erased).
+ */
+export type SessionExecutionState = {
+  session: SessionRecord;
+  context: RuntimeContextLedger;
+  attachmentReferences: Map<
+    string,
+    import("@natalia/contracts").LocalAttachment[]
+  >;
+  toolCalls: Map<string, number>;
+  provider?: StreamingProvider;
+  runtimeContextConfig: ReturnType<typeof defaultContextStatusConfig>;
+  activeModelCapabilities?: ModelCapabilities;
+  permissionMode: "ask" | "auto" | "read_only";
+  permissionProfile?: PermissionProfile;
+  activeAbort?: AbortController;
+  activeTurnID?: string;
+  selectedAgent?: AgentDefinition;
+  pendingAgent?: AgentDefinition;
+  selectedModel?: { modelID?: string; variant?: string };
+  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+  lastProviderUsage?: { inputTokens: number; outputTokens: number };
+  activeSkill?: Skill;
+  endTurnWaitingHuman?: { terminalID: string; reason: string };
+  lastSubmitted?: SubmittedTurn;
+  paused: boolean;
+  pauseWaiters: Array<() => void>;
+};
+
 export function createRealRuntimeClient(
   options: RealRuntimeClientOptions = {},
 ): RuntimeClient {
@@ -541,32 +574,6 @@ export function createRealRuntimeClient(
    * has background work. Plan §41.9: state is reached by session, never
    * captured as a single value.
    */
-  type SessionExecutionState = {
-    session: SessionRecord;
-    context: RuntimeContextLedger;
-    attachmentReferences: Map<
-      string,
-      import("@natalia/contracts").LocalAttachment[]
-    >;
-    toolCalls: Map<string, number>;
-    provider?: StreamingProvider;
-    runtimeContextConfig: ReturnType<typeof defaultContextStatusConfig>;
-    activeModelCapabilities?: ModelCapabilities;
-    permissionMode: "ask" | "auto" | "read_only";
-    permissionProfile?: PermissionProfile;
-    activeAbort?: AbortController;
-    activeTurnID?: string;
-    selectedAgent?: AgentDefinition;
-    pendingAgent?: AgentDefinition;
-    selectedModel?: { modelID?: string; variant?: string };
-    reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
-    lastProviderUsage?: { inputTokens: number; outputTokens: number };
-    activeSkill?: Skill;
-    endTurnWaitingHuman?: { terminalID: string; reason: string };
-    lastSubmitted?: SubmittedTurn;
-    paused: boolean;
-    pauseWaiters: Array<() => void>;
-  };
   const executionBySession = new Map<SessionID, SessionExecutionState>();
   let activeExec: SessionExecutionState | undefined;
   const checkpointControllerBySession = new Map<
@@ -891,6 +898,13 @@ export function createRealRuntimeClient(
         extensionEnabled,
         publish,
         retryPolicy: () => retryPolicy,
+        publishForSession,
+        executionBySession: () => executionBySession,
+        activeExec: () => activeExec,
+        performanceTrace,
+        nativeRuntimeID: () => nativeRuntimeID,
+        userRuntimeHome: () => userRuntimeHome(),
+        nativeTerminal: options.nativeTerminal,
       };
       const builtinPlugins = builtinPluginCatalog({
         ...computeBuiltinFeatureGates({
@@ -1000,23 +1014,7 @@ export function createRealRuntimeClient(
               .map((entry) => entry.path);
           },
         },
-        terminal: {
-          workspaceRoot,
-          publish: (event: RuntimeEvent) =>
-            publishForSession(
-              event.sessionID
-                ? executionBySession.get(event.sessionID as SessionID)
-                : activeExec,
-              event,
-            ),
-          onPerformance: (name: string, durationMs: number) =>
-            performanceTrace.mark(name, durationMs),
-          runtimeID: () => nativeRuntimeID,
-          userRuntimeHome: () => userRuntimeHome(),
-          windowMode: () =>
-            tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
-          external: options.nativeTerminal,
-        },
+        terminal: buildTerminal(assemblyHost),
         sandbox: buildSandbox(assemblyHost),
         mcp: buildMcp(assemblyHost),
         checkpoint: buildCheckpoint(assemblyHost),

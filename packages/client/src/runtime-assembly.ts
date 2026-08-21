@@ -13,10 +13,14 @@ import type {
   ConfigV3,
   MCPServerConfig,
   RuntimeEvent,
+  SessionID,
 } from "@natalia/contracts";
 import type { RetryRunnerOptions } from "@natalia/runtime";
 import type { ToolRegistry } from "@natalia/tools";
+import type { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import { builtinPluginCatalog } from "./builtin-plugins/catalog";
+import type { RuntimePerformanceTrace } from "./performance-trace";
+import type { SessionExecutionState } from "./real-runtime";
 
 type CatalogInput = Parameters<typeof builtinPluginCatalog>[0];
 
@@ -27,7 +31,39 @@ export type RuntimeAssemblyHost = {
   extensionEnabled(name: "skills" | "mcp" | "plugins"): boolean;
   publish(event: RuntimeEvent): void;
   retryPolicy(): RetryRunnerOptions["policy"];
+  publishForSession(
+    exec: SessionExecutionState | undefined,
+    event: RuntimeEvent,
+  ): void;
+  executionBySession(): Map<SessionID, SessionExecutionState>;
+  activeExec(): SessionExecutionState | undefined;
+  performanceTrace: RuntimePerformanceTrace;
+  nativeRuntimeID(): string;
+  userRuntimeHome(): string | undefined;
+  nativeTerminal: NativeTerminalRegistry | undefined;
 };
+
+export function buildTerminal(
+  host: RuntimeAssemblyHost,
+): NonNullable<CatalogInput["terminal"]> {
+  return {
+    workspaceRoot: host.workspaceRoot,
+    publish: (event: RuntimeEvent) =>
+      host.publishForSession(
+        event.sessionID
+          ? host.executionBySession().get(event.sessionID as SessionID)
+          : host.activeExec(),
+        event,
+      ),
+    onPerformance: (name: string, durationMs: number) =>
+      host.performanceTrace.mark(name, durationMs),
+    runtimeID: () => host.nativeRuntimeID(),
+    userRuntimeHome: () => host.userRuntimeHome(),
+    windowMode: () =>
+      host.getRuntimeConfig()?.runtime.terminal.windowMode ?? "auto",
+    external: host.nativeTerminal,
+  };
+}
 
 export function buildSandbox(
   host: RuntimeAssemblyHost,
