@@ -200,7 +200,7 @@ import {
   MCP_CONTROLLER_SERVICE,
   type McpAccess,
   type McpController,
-} from "./builtin-plugins/mcp-controller-plugin";
+} from "@natalia/mcp-plugin";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import type { TaskWorkflowController } from "./task-workflow-controller";
 import { TASK_WORKFLOW_CONTROLLER_SERVICE } from "./builtin-plugins/task-workflow-plugin";

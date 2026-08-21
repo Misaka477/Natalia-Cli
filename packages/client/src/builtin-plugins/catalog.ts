@@ -46,10 +46,7 @@ import {
   createSandboxControllerPlugin,
   SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
 } from "./sandbox-controller-plugin";
-import {
-  createMcpControllerPlugin,
-  MCP_PLUGIN_ID,
-} from "./mcp-controller-plugin";
+import { createMcpControllerPlugin, MCP_PLUGIN_ID } from "@natalia/mcp-plugin";
 import {
   createCheckpointControllerPlugin,
   CHECKPOINT_PLUGIN_ID,

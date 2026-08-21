@@ -98,7 +98,7 @@
         "@natalia/capability": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
-        "@natalia/mcp": "workspace:*",
+        "@natalia/mcp-plugin": "workspace:*",
         "@natalia/native-terminal": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -149,6 +149,16 @@
       "version": "0.0.0-ts7",
       "dependencies": {
         "@natalia/config": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/mcp-plugin": {
+      "name": "@natalia/mcp-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/mcp": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -496,6 +506,8 @@
     "@natalia/installer": ["@natalia/installer@workspace:packages/installer"],
 
     "@natalia/mcp": ["@natalia/mcp@workspace:packages/mcp"],
+
+    "@natalia/mcp-plugin": ["@natalia/mcp-plugin@workspace:packages/mcp-plugin"],
 
     "@natalia/native-terminal": ["@natalia/native-terminal@workspace:packages/native-terminal"],
 

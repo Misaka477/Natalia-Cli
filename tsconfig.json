@@ -24,6 +24,7 @@
     { "path": "packages/workflow" },
     { "path": "packages/transport" },
     { "path": "packages/mcp" },
+    { "path": "packages/mcp-plugin" },
     { "path": "packages/sdk" },
     { "path": "packages/testing" },
     { "path": "packages/subagent" },

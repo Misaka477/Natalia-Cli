@@ -19,7 +19,7 @@
       "path": "../contracts"
     },
     {
-      "path": "../mcp"
+      "path": "../mcp-plugin"
     },
     {
       "path": "../native-terminal"

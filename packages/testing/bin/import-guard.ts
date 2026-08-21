@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  findClientProductDependencyViolation,
   findClientToolDependencyViolation,
   findMigratedPluginViolations,
 } from "../src/migrated-plugin-rules";
@@ -200,6 +201,12 @@ for (const dir of productionRoots)
       text,
     );
     if (clientToolViolation) failures.push(`${full}: ${clientToolViolation}`);
+    const clientProductViolation = findClientProductDependencyViolation(
+      relative,
+      text,
+    );
+    if (clientProductViolation)
+      failures.push(`${full}: ${clientProductViolation}`);
     for (const violation of findMigratedPluginViolations(relative, text))
       failures.push(
         `${full}: migrated plugin "${violation.pluginID}" must be mounted through the plugin catalog: ${violation.description}`,

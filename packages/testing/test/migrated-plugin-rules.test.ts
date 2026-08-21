@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  findClientProductDependencyViolation,
   findClientToolDependencyViolation,
   findMigratedPluginViolations,
   type MigratedPluginRule,
@@ -217,6 +218,35 @@ test("client physical dependency guard excludes concrete tool packages", () => {
     findClientToolDependencyViolation(
       "packages/client/src/builtin-plugins/catalog.ts",
       'import { builtinToolPluginCatalog } from "@natalia/builtin-tool-plugins"',
+    ),
+  ).toBeUndefined();
+});
+
+test("client physical dependency guard excludes extracted product packages", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/real-runtime.ts",
+      'import { loadNativeMCPTools } from "@natalia/mcp"',
+    ],
+    [
+      "packages/client/test/mcp-controller.test.ts",
+      'import type { MCPCatalogSnapshot } from "@natalia/mcp"',
+    ],
+    ["packages/client/package.json", '"@natalia/mcp": "workspace:*"'],
+    ["packages/client/tsconfig.json", '"path": "../mcp"'],
+  ])
+    expect(findClientProductDependencyViolation(path, source)).toBeString();
+
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/real-runtime.ts",
+      'import { MCP_CONTROLLER_SERVICE } from "@natalia/mcp-plugin"',
+    ),
+  ).toBeUndefined();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/tsconfig.json",
+      '"path": "../mcp-plugin"',
     ),
   ).toBeUndefined();
 });

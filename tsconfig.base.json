@@ -19,6 +19,7 @@
       "@natalia/contracts": ["packages/contracts/src/index.ts"],
       "@natalia/installer": ["packages/installer/src/index.ts"],
       "@natalia/mcp": ["packages/mcp/src/index.ts"],
+      "@natalia/mcp-plugin": ["packages/mcp-plugin/src/index.ts"],
       "@natalia/object-store": ["packages/object-store/src/index.ts"],
       "@natalia/native-terminal": ["packages/native-terminal/src/index.ts"],
       "@natalia/platform": ["packages/platform/src/index.ts"],

@@ -9,7 +9,7 @@ import {
   MCP_CONTROLLER_SERVICE,
   MCP_PLUGIN_ID,
   type McpController,
-} from "../src/builtin-plugins/mcp-controller-plugin";
+} from "../src";
 import { createMcpController } from "../src/mcp-controller";
 
 const SERVER = String.raw`

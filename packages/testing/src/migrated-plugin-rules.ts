@@ -8,7 +8,6 @@ export type MigratedPluginViolation = {
   pluginID: string;
   description: string;
 };
-
 const clientToolImplementationImport =
   /(?:from\s+|import\s*\(|require\s*\()\s*["']@natalia\/tool-[a-z-]+["']/u;
 const clientToolImplementationDependency = /["']@natalia\/tool-[a-z-]+["']/u;
@@ -35,6 +34,50 @@ export function findClientToolDependencyViolation(
     clientToolImplementationReference.test(text)
   )
     return "client TypeScript project references a concrete tool package";
+  return undefined;
+}
+
+/**
+ * Keep concrete product packages outside the client boundary once a plugin
+ * package owns them. The list grows as each controller is extracted; an entry
+ * must not be added until the client no longer imports the package anywhere.
+ */
+const clientProductPackages = ["mcp"];
+
+/** Keep concrete product packages outside the client package boundary. */
+export function findClientProductDependencyViolation(
+  path: string,
+  text: string,
+): string | undefined {
+  const normalized = path.replaceAll("\\", "/");
+  const alternation = clientProductPackages.join("|");
+  const importPattern = new RegExp(
+    `(?:from\\s+|import\\s*\\(|require\\s*\\()\\s*["']@natalia\\/(?:${alternation})["']`,
+    "u",
+  );
+  const dependencyPattern = new RegExp(
+    `["']@natalia\\/(?:${alternation})["']`,
+    "u",
+  );
+  const referencePattern = new RegExp(
+    `["']\\.\\.\\/(?:${alternation})["']`,
+    "u",
+  );
+  if (
+    /packages\/client\/(?:src|test)\//u.test(normalized) &&
+    importPattern.test(text)
+  )
+    return "client project imports a concrete product package";
+  if (
+    normalized === "packages/client/package.json" &&
+    dependencyPattern.test(text)
+  )
+    return "client manifest depends on a concrete product package";
+  if (
+    normalized === "packages/client/tsconfig.json" &&
+    referencePattern.test(text)
+  )
+    return "client TypeScript project references a concrete product package";
   return undefined;
 }
 
