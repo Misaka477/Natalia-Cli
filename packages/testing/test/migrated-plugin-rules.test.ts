@@ -130,10 +130,21 @@ test("compaction migration protects both former consumers", () => {
 test("transport migration protects the CLI composition root", () => {
   expect(
     findMigratedPluginViolations(
-      "apps/cli/src/main.ts",
+      "apps/cli/src/command-dispatcher.ts",
       "const server = createRuntimeHttpServer(options)",
     ),
   ).toEqual([expect.objectContaining({ pluginID: "natalia-transport" })]);
+});
+
+test("CLI adapter migration protects the executable bootstrap", () => {
+  for (const source of [
+    'import { dispatch } from "./command-dispatcher"',
+    "createRealRuntimeClient(options)",
+    "createHttpTransportPluginHost(options)",
+  ])
+    expect(
+      findMigratedPluginViolations("apps/cli/src/main.ts", source),
+    ).toEqual([expect.objectContaining({ pluginID: "natalia-cli" })]);
 });
 
 test("TUI adapter migration protects the executable bootstrap", () => {
@@ -219,7 +230,7 @@ test("migrated plugin matcher accepts new declarative rules", () => {
 test("workflow scheduler migration protects host construction sites", () => {
   for (const path of [
     "packages/client/src/capability-execution-host.ts",
-    "apps/cli/src/main.ts",
+    "apps/cli/src/command-dispatcher.ts",
     "apps/tui/src/runtime-worker.ts",
   ])
     expect(

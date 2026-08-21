@@ -404,7 +404,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     id: "natalia-workflow-scheduler",
     targets: [
       "packages/client/src/capability-execution-host.ts",
-      "apps/cli/src/main.ts",
+      "apps/cli/src/command-dispatcher.ts",
       "apps/tui/src/runtime-worker.ts",
     ],
     forbidden: [
@@ -515,11 +515,22 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-transport",
-    targets: ["apps/cli/src/main.ts"],
+    targets: ["apps/cli/src/command-dispatcher.ts"],
     forbidden: [
       {
         description: "direct HTTP transport server lifecycle",
         pattern: /\bcreateRuntimeHttpServer\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-cli",
+    targets: ["apps/cli/src/main.ts"],
+    forbidden: [
+      {
+        description: "direct CLI command dispatcher lifecycle",
+        pattern:
+          /(?:from\s+["']\.\/command-dispatcher["']|\bcreateRealRuntimeClient\b|\bcreateHttpTransportPluginHost\b|\bcreateWorkflowSchedulerPluginHost\b)/u,
       },
     ],
   },
