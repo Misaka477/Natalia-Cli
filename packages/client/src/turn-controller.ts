@@ -25,7 +25,7 @@ import type { SessionRecord } from "@natalia/session";
  * Plan §41.9: `session()`, `activeAbort()`, the persistence chain and the
  * command/turn runners are accessors and callbacks, never captured values.
  */
-export function createTurnController(input: {
+export type TurnControllerInput = {
   session(): SessionRecord | undefined;
   activeAbort(): AbortController | undefined;
   /** D2: the session a drain belongs to — parallel sessions have their own. */
@@ -52,8 +52,17 @@ export function createTurnController(input: {
     agents: PromptAgentMention[];
     internal?: boolean;
   }): Promise<void>;
-}) {
+};
+
+export function createTurnController(input: TurnControllerInput) {
+  let disposed = false;
+
+  function assertActive() {
+    if (disposed) throw new Error("turn orchestration controller disposed");
+  }
+
   async function persistInboxPromotion(sessionID: string) {
+    assertActive();
     const session = input.sessionFor(sessionID);
     if (!session) return;
     const snapshot = structuredClone(session);
@@ -61,6 +70,7 @@ export function createTurnController(input: {
   }
 
   async function drain(signal: AbortSignal, sessionID: string) {
+    assertActive();
     const session = input.sessionFor(sessionID);
     if (!session) return;
     const abort = () => input.activeAbortFor(sessionID)?.abort(signal.reason);
@@ -97,6 +107,7 @@ export function createTurnController(input: {
     signal: AbortSignal | undefined,
     sessionID: string,
   ) {
+    assertActive();
     const session = input.sessionFor(sessionID);
     if (!session) return;
     while (true) {
@@ -134,6 +145,7 @@ export function createTurnController(input: {
     internal?: boolean,
     signal?: AbortSignal,
   ) {
+    assertActive();
     if (await input.runCommand(id, text, signal, sessionID)) {
       await input.flush();
       return;
@@ -154,5 +166,11 @@ export function createTurnController(input: {
     await persistInboxPromotion(sessionID);
   }
 
-  return { drain, drainQueue, admit, persistPromotion };
+  function dispose() {
+    disposed = true;
+  }
+
+  return { drain, drainQueue, admit, persistPromotion, dispose };
 }
+
+export type TurnController = ReturnType<typeof createTurnController>;

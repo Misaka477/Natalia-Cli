@@ -213,6 +213,33 @@ for (const [pluginID, expectedError] of [
     await client.dispose?.();
   });
 
+test("disabled turn orchestration fails before session or inbox initialization", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-turn-orchestration-disabled-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-turn-orchestration": false } },
+    }),
+  );
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_turn_orchestration_disabled",
+    capabilityRegistry: kernel,
+  });
+  client.start(() => undefined);
+  await expect(client.submit("must not be admitted")).rejects.toThrow(
+    "turn orchestration unavailable",
+  );
+  expect(kernel.has("natalia-turn-orchestration")).toBe(false);
+  expect(existsSync(join(root, ".natalia", "sessions"))).toBe(false);
+  await client.dispose?.();
+});
+
 test("flow_module_complete is only advertised to an active task module runtime", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-task-module-runtime-"));
   const store = await NataliaTaskStateStore.open(root);

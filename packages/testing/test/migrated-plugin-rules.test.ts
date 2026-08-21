@@ -79,6 +79,11 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "natalia-governance-ledger",
       'import { recordDecision } from "./constitution-ledger"',
     ],
+    [
+      "natalia-turn-orchestration",
+      'import { createTurnController } from "./turn-controller"',
+    ],
+    ["natalia-turn-orchestration", "createTurnController({})"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),

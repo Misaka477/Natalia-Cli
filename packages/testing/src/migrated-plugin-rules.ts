@@ -453,6 +453,20 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-turn-orchestration",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct turn controller implementation import",
+        pattern: /from\s+["']\.\/turn-controller["']/u,
+      },
+      {
+        description: "direct turn controller construction",
+        pattern: /\bcreateTurnController\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

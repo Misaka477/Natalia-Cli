@@ -4,7 +4,10 @@ import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createStatusSnapshotController } from "./status-controller";
 import type { SessionStoreController } from "./session-store-controller";
 import { SESSION_STORE_CONTROLLER_SERVICE } from "./builtin-plugins/session-store-controller-plugin";
-import { createTurnController } from "./turn-controller";
+import {
+  TURN_CONTROLLER_SERVICE,
+  type TurnController,
+} from "./builtin-plugins/turn-orchestration-plugin";
 import type { ProviderRunnerInput } from "./provider-runner";
 import type { ProviderModelController } from "./provider-model-controller";
 import { PROVIDER_MODEL_CONTROLLER_SERVICE } from "./builtin-plugins/provider-model-plugin";
@@ -439,6 +442,7 @@ export function createRealRuntimeClient(
   let contextLedgerFactory!: ContextLedgerFactory;
   let workLedgerController!: WorkLedgerController;
   let governanceLedgerController!: GovernanceLedgerController;
+  let turnController!: TurnController;
   function requireTaskWorkflow() {
     if (!taskWorkflowController)
       throw new RuntimeRefusal("Task/workflow plugin is disabled.");
@@ -1144,6 +1148,85 @@ export function createRealRuntimeClient(
             tsRuntimeConfig.plugins.enabled["natalia-governance-ledger"] !==
             false,
         },
+        turnOrchestration: {
+          enabled:
+            tsRuntimeConfig.plugins.enabled["natalia-turn-orchestration"] !==
+            false,
+          controller: {
+            session: () => session,
+            activeAbort: () => activeAbort,
+            sessionFor: (id) =>
+              executionBySession.get(id as SessionID)?.session ?? session,
+            activeAbortFor: (id) =>
+              executionBySession.get(id as SessionID)?.activeAbort,
+            persist: (fn) => {
+              sessionPersistence = sessionPersistence.then(fn).catch((error) =>
+                publish({
+                  type: "diagnostic",
+                  level: "warning",
+                  message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
+                }),
+              );
+              return sessionPersistence;
+            },
+            saveInbox: async (snapshot) => {
+              if (sessionStoreController?.sqlite())
+                sessionStoreController
+                  ?.sqlite()!
+                  .replaceInbox(snapshot.id, snapshot.inbox ?? []);
+              else await sessionStoreController?.json().save(snapshot);
+            },
+            flush: async () => {
+              await sessionPersistence;
+            },
+            runCommand: async (id, text, signal, ownerID) => {
+              const owner = await ensureExecution(ownerID as SessionID);
+              publishForSession(owner, { type: "turn.started", id });
+              try {
+                return await handleCommand(id, text, signal, owner);
+              } catch (error) {
+                publishForSession(owner, {
+                  type: "turn.cancelled",
+                  id,
+                  reason:
+                    error instanceof Error ? error.message : String(error),
+                });
+                throw error;
+              } finally {
+                scheduleTitleGeneration(ownerID as SessionID);
+              }
+            },
+            runTurn: async (input) => {
+              deliverQueuedMailboxAtBoundary(
+                executionBySession.get(input.sessionID as SessionID),
+              );
+              try {
+                if (providerModelController)
+                  await providerModelController.runTurn(
+                    input.sessionID as SessionID,
+                    input,
+                  );
+                else {
+                  const exec = executionBySession.get(
+                    input.sessionID as SessionID,
+                  );
+                  publishForSession(exec, {
+                    type: "diagnostic",
+                    level: "error",
+                    message: "Provider/model plugin is disabled.",
+                  });
+                  publishForSession(exec, {
+                    type: "turn.finished",
+                    id: input.id,
+                    stopReason: "error",
+                  });
+                }
+              } finally {
+                scheduleTitleGeneration(input.sessionID as SessionID);
+              }
+            },
+          },
+        },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1429,6 +1512,14 @@ export function createRealRuntimeClient(
         "governance ledger unavailable (natalia-governance-ledger)",
       );
     governanceLedgerController = resolvedGovernanceLedgerController;
+    const resolvedTurnController = capabilityRegistry.service<TurnController>(
+      TURN_CONTROLLER_SERVICE,
+    );
+    if (!resolvedTurnController)
+      throw new Error(
+        "turn orchestration unavailable (natalia-turn-orchestration)",
+      );
+    turnController = resolvedTurnController;
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
     await sessionStoreController?.init();
@@ -4090,84 +4181,6 @@ export function createRealRuntimeClient(
     };
   }
 
-  const turnController = createTurnController({
-    session: () => session,
-    activeAbort: () => activeAbort,
-    sessionFor: (sessionID) =>
-      executionBySession.get(sessionID as SessionID)?.session ?? session,
-    activeAbortFor: (sessionID) =>
-      executionBySession.get(sessionID as SessionID)?.activeAbort,
-    persist: (fn) => {
-      sessionPersistence = sessionPersistence.then(fn).catch((error) =>
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      );
-      return sessionPersistence;
-    },
-    saveInbox: async (snapshot) => {
-      if (sessionStoreController?.sqlite())
-        sessionStoreController
-          ?.sqlite()!
-          .replaceInbox(snapshot.id, snapshot.inbox ?? []);
-      else await sessionStoreController?.json().save(snapshot);
-    },
-    flush: async () => {
-      await sessionPersistence;
-    },
-    runCommand: async (id, text, signal, ownerID) => {
-      const owner = await ensureExecution(ownerID as SessionID);
-      publishForSession(owner, {
-        type: "turn.started",
-        id,
-      });
-      try {
-        return await handleCommand(id, text, signal, owner);
-      } catch (error) {
-        publishForSession(owner, {
-          type: "turn.cancelled",
-          id,
-          reason: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      } finally {
-        scheduleTitleGeneration(ownerID as SessionID);
-      }
-    },
-    runTurn: async (input) => {
-      // P8 C3: deliver queued mailbox intents at the turn boundary, before the
-      // system prompt is built, so the main agent sees them in THIS turn. The
-      // finish-time settlement alone only made them visible from the turn after
-      // (queued while idle → delivered at the previous finish → seen too late).
-      deliverQueuedMailboxAtBoundary(
-        executionBySession.get(input.sessionID as SessionID),
-      );
-      try {
-        if (providerModelController)
-          await providerModelController.runTurn(
-            input.sessionID as SessionID,
-            input,
-          );
-        else {
-          const exec = executionBySession.get(input.sessionID as SessionID);
-          publishForSession(exec, {
-            type: "diagnostic",
-            level: "error",
-            message: "Provider/model plugin is disabled.",
-          });
-          publishForSession(exec, {
-            type: "turn.finished",
-            id: input.id,
-            stopReason: "error",
-          });
-        }
-      } finally {
-        scheduleTitleGeneration(input.sessionID as SessionID);
-      }
-    },
-  });
   async function drainSession(signal: AbortSignal) {
     await turnController.drain(signal, sessionID);
   }

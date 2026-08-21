@@ -97,6 +97,11 @@ import {
   GOVERNANCE_LEDGER_PLUGIN_ID,
 } from "./governance-ledger-plugin";
 import {
+  createTurnOrchestrationPlugin,
+  TURN_ORCHESTRATION_PLUGIN_ID,
+} from "./turn-orchestration-plugin";
+import type { TurnControllerInput } from "../turn-controller";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -229,6 +234,10 @@ export function builtinPluginCatalog(input: {
     controller: Parameters<typeof createWorkLedgerController>[0];
   };
   governanceLedger?: { enabled: boolean };
+  turnOrchestration?: {
+    enabled: boolean;
+    controller: TurnControllerInput;
+  };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -488,6 +497,18 @@ export function builtinPluginCatalog(input: {
             id: GOVERNANCE_LEDGER_PLUGIN_ID,
             enabled: input.governanceLedger.enabled,
             create: () => createGovernanceLedgerPlugin(),
+          },
+        ]
+      : []),
+    ...(input.turnOrchestration
+      ? [
+          {
+            id: TURN_ORCHESTRATION_PLUGIN_ID,
+            enabled: input.turnOrchestration.enabled,
+            create: () =>
+              createTurnOrchestrationPlugin(
+                input.turnOrchestration!.controller,
+              ),
           },
         ]
       : []),

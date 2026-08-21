@@ -19,6 +19,7 @@ import { PROVIDER_MODEL_PLUGIN_ID } from "../src/builtin-plugins/provider-model-
 import { CONTEXT_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/context-ledger-plugin";
 import { WORK_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/work-ledger-plugin";
 import { GOVERNANCE_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/governance-ledger-plugin";
+import { TURN_ORCHESTRATION_PLUGIN_ID } from "../src/builtin-plugins/turn-orchestration-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -134,4 +135,37 @@ test("ledger catalog entries stay lazy and preserve dependency order", () => {
   for (const entry of ledgerEntries)
     expect(entry.create().manifest.id).toBe(entry.id);
   expect(openFindingReads).toBe(0);
+});
+
+test("turn orchestration catalog construction stays lazy", () => {
+  let sessionReads = 0;
+  const catalog = builtinPluginCatalog({
+    agentEnabled: false,
+    askEnabled: false,
+    fsReadEnabled: false,
+    fsWriteEnabled: false,
+    pdfEnabled: false,
+    processEnabled: false,
+    sandboxEnabled: false,
+    searchEnabled: false,
+    shellEnabled: false,
+    terminalEnabled: false,
+    todoEnabled: false,
+    webEnabled: false,
+    turnOrchestration: {
+      enabled: false,
+      controller: {
+        session: () => {
+          sessionReads += 1;
+          return undefined;
+        },
+      } as never,
+    },
+  });
+  const entry = catalog.find(
+    (candidate) => candidate.id === TURN_ORCHESTRATION_PLUGIN_ID,
+  );
+  expect(entry?.enabled).toBe(false);
+  expect(entry?.create().manifest.id).toBe(TURN_ORCHESTRATION_PLUGIN_ID);
+  expect(sessionReads).toBe(0);
 });

@@ -123,3 +123,20 @@ test("an aborted drain stops admitting further inputs", async () => {
   // Only the first input ran; the loop stops at the first failure.
   expect(turns).toEqual(["ran"]);
 });
+
+test("disposed turn orchestration refuses new work", async () => {
+  const session = sessionWithInbox([
+    { id: "s1", text: "first", delivery: "steer" },
+  ]);
+  const { controller } = makeController(session);
+  controller.dispose();
+  await expect(
+    controller.drain(
+      new AbortController().signal,
+      session.id as unknown as string,
+    ),
+  ).rejects.toThrow("turn orchestration controller disposed");
+  await expect(
+    controller.admit(session.id as unknown as string, "s2", "second"),
+  ).rejects.toThrow("turn orchestration controller disposed");
+});
