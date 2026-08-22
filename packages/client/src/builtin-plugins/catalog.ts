@@ -266,14 +266,7 @@ export function builtinPluginCatalog(input: {
 }): BuiltinPluginEntry[] {
   return [
     ...builtinToolPluginCatalog(input),
-    {
-      id: SKILLS_PLUGIN_ID,
-      enabled: input.skills !== undefined,
-      create: () => {
-        if (!input.skills) throw new Error("skills plugin is disabled");
-        return createSkillsPlugin(input.skills);
-      },
-    },
+    skillsPluginEntry(input.skills),
     builtinPdfPluginEntry(input.pdfEnabled),
     ...(input.taskModule
       ? [
@@ -504,6 +497,19 @@ export function localToolsPluginEntry(
     create: () => {
       if (!input) throw new Error("local tools plugin is disabled");
       return createLocalToolsPlugin(input);
+    },
+  };
+}
+
+export function skillsPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["skills"],
+): BuiltinPluginEntry {
+  return {
+    id: SKILLS_PLUGIN_ID,
+    enabled: input !== undefined,
+    create: () => {
+      if (!input) throw new Error("skills plugin is disabled");
+      return createSkillsPlugin(input);
     },
   };
 }

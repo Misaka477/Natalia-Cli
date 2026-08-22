@@ -25,7 +25,11 @@ import {
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger-plugin";
 import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
-import { PDF_PLUGIN_ID, TODO_PLUGIN_ID } from "../src/builtin-plugins/catalog";
+import {
+  PDF_PLUGIN_ID,
+  SKILLS_PLUGIN_ID,
+  TODO_PLUGIN_ID,
+} from "../src/builtin-plugins/catalog";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -1471,6 +1475,100 @@ test("PDF plugin config reload reconciles its lifecycle", async () => {
       (tool) => tool.name === "pdf_read",
     ),
   ).toBe(true);
+  await client.dispose?.();
+}, 60_000);
+
+test("skills plugin config reload reconciles its lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-skills-config-reload-"));
+  const skillRoot = join(root, ".natalia", "skills", "reloadable");
+  await mkdir(skillRoot, { recursive: true });
+  await writeFile(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: reloadable\ndescription: Reloadable skill\nresources: [note.txt]\n---\nReload guidance.",
+  );
+  await writeFile(join(skillRoot, "note.txt"), "skill resource");
+  const configPath = join(root, ".natalia", "config.json");
+  const disabledConfig = {
+    version: 3,
+    plugins: { enabled: { [SKILLS_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  const kernel = new CapabilityRegistry();
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_skills_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await client.runtimeStatus?.();
+  expect(kernel.has(SKILLS_PLUGIN_ID)).toBe(false);
+  expect(await client.skills?.()).toEqual([]);
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "skill_load",
+    ),
+  ).toBe(false);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(SKILLS_PLUGIN_ID)).toBe(true);
+  expect(await client.skills?.()).toEqual([
+    expect.objectContaining({ qualifiedName: "project:reloadable" }),
+  ]);
+  expect(
+    (await client.registeredTools?.())?.filter(
+      (tool) => tool.name === "skill_load",
+    ),
+  ).toHaveLength(1);
+  await client.submit("/skill reloadable");
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(SKILLS_PLUGIN_ID)).toBe(false);
+  expect(await client.skills?.()).toEqual([]);
+  const eventCount = events.length;
+  await client.submit("/skill-resource note.txt");
+  expect(
+    events
+      .slice(eventCount)
+      .some(
+        (event) =>
+          event.type === "content.delta" && event.text === "skill resource",
+      ),
+  ).toBe(false);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(SKILLS_PLUGIN_ID)).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.filter(
+      (tool) => tool.name === "skill_load",
+    ),
+  ).toHaveLength(1);
+  await client.submit("/skill reloadable");
+  await expect(
+    client.submit("/skill-resource note.txt"),
+  ).resolves.toBeDefined();
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      defaultPermission: "without-skills",
+      permissionProfiles: {
+        "without-skills": {
+          approval: "ask",
+          description: "Skills disabled",
+          extensions: { skills: false },
+        },
+      },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(SKILLS_PLUGIN_ID)).toBe(false);
+  expect(await client.skills?.()).toEqual([]);
   await client.dispose?.();
 }, 60_000);
 

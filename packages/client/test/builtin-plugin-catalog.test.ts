@@ -11,6 +11,7 @@ import {
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
+  skillsPluginEntry,
   TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
@@ -72,6 +73,17 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
   );
   for (const entry of catalog.filter((candidate) => candidate.enabled))
     expect(entry.create().manifest.id).toBe(entry.id);
+});
+
+test("skills catalog entry stays stable while disabled", () => {
+  const disabled = skillsPluginEntry(undefined);
+  expect(disabled.id).toBe(SKILLS_PLUGIN_ID);
+  expect(disabled.enabled).toBe(false);
+  expect(() => disabled.create()).toThrow("skills plugin is disabled");
+
+  const enabled = skillsPluginEntry({ workspaceRoot: "/tmp/workspace" });
+  expect(enabled.enabled).toBe(true);
+  expect(enabled.create().manifest.id).toBe(SKILLS_PLUGIN_ID);
 });
 
 test("provider-model catalog construction stays lazy", () => {

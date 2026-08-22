@@ -148,6 +148,7 @@ import {
   ToolExecutionPipeline,
   validateToolParameters,
   type RuntimeTool,
+  type ToolExecutionContext,
   type ToolFamily,
   type ToolMaterialization,
   type ToolRegistry,
@@ -187,7 +188,9 @@ import {
   SANDBOX_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
+  SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
+  skillsPluginEntry,
   teamPluginEntry,
   TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
@@ -695,6 +698,7 @@ export function createRealRuntimeClient(
     | undefined;
   let activeExternalPluginConfigFingerprint: string | undefined;
   let activeBuiltinToolConfigFingerprint: string | undefined;
+  let activeSkillsPluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -875,9 +879,16 @@ export function createRealRuntimeClient(
         };
       const nextExternalPluginConfigFingerprint =
         externalPluginConfigFingerprint(tsConfig.config);
+      const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
+        tsConfig.config,
+      );
       const nextBuiltinToolConfigFingerprint = builtinToolConfigFingerprint(
         tsConfig.config,
       );
+      const reconcileSkills =
+        activeSkillsPluginConfigFingerprint !== undefined &&
+        nextSkillsPluginConfigFingerprint !==
+          activeSkillsPluginConfigFingerprint;
       const reconcileBuiltinTools =
         activeBuiltinToolConfigFingerprint !== undefined &&
         nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
@@ -915,7 +926,7 @@ export function createRealRuntimeClient(
         exec.permissionProfile = selectedPermissionProfile;
       }
       const toolsBeforeReconcile =
-        reconcileBuiltinTools || reconcilePlugins
+        reconcileBuiltinTools || reconcileSkills || reconcilePlugins
           ? new Set(tools.keys())
           : undefined;
       if (reconcileBuiltinTools)
@@ -923,12 +934,38 @@ export function createRealRuntimeClient(
           builtinToolEntries(tsConfig.config),
           tsConfig.config.plugins.settings,
         );
+      if (reconcileSkills) {
+        const selectedSkills = new Map(
+          [...executionBySession.entries()].flatMap(([id, exec]) =>
+            exec.activeSkill ? [[id, exec.activeSkill.qualifiedName]] : [],
+          ),
+        );
+        await pluginsController.reconcileBuiltins(
+          [skillsPluginEntry(skillsPluginInput(tsConfig.config))],
+          tsConfig.config.plugins.settings,
+        );
+        const registry = skillRegistry();
+        for (const [id, exec] of executionBySession) {
+          const qualifiedName = selectedSkills.get(id);
+          if (!qualifiedName || !registry) {
+            exec.activeSkill = undefined;
+            continue;
+          }
+          try {
+            exec.activeSkill = registry.resolve(qualifiedName);
+          } catch {
+            exec.activeSkill = undefined;
+          }
+        }
+        activeSkill = activeExec?.activeSkill;
+      }
       if (reconcilePlugins) await pluginsController.reconcile();
       if (toolsBeforeReconcile) publishToolCatalogChanges(toolsBeforeReconcile);
       activeExternalPluginConfigFingerprint =
         nextExternalPluginConfigFingerprint;
       activeBuiltinPluginConfigFingerprint = nextBuiltinPluginConfigFingerprint;
       activeBuiltinToolConfigFingerprint = nextBuiltinToolConfigFingerprint;
+      activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
       // existing service consumers are notified once reconciliation completes.
@@ -1009,26 +1046,9 @@ export function createRealRuntimeClient(
           hasCustomTools: !!options.tools,
           extensionEnabled,
         }),
-        ...(extensionEnabled("skills")
+        ...(skillsPluginInput(runtimeConfig)
           ? {
-              skills: {
-                workspaceRoot,
-                userRoot: userSkillRoot(),
-                remoteURLs: tsRuntimeConfig?.skills.urls,
-                onLoad: (skill, output, context) => {
-                  const owner = context.sessionID
-                    ? executionBySession.get(context.sessionID as SessionID)
-                    : undefined;
-                  if (!owner) return;
-                  owner.activeSkill = skill;
-                  if (owner === activeExec) activeSkill = skill;
-                  owner.context.add({
-                    id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
-                    role: "system",
-                    content: output,
-                  });
-                },
-              },
+              skills: skillsPluginInput(runtimeConfig),
             }
           : {}),
         ...(options.taskModuleContext
@@ -1318,6 +1338,9 @@ export function createRealRuntimeClient(
         tsConfig.config,
       );
       activeBuiltinToolConfigFingerprint = builtinToolConfigFingerprint(
+        tsConfig.config,
+      );
+      activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
       await mountRuntimePlugins({
@@ -3050,14 +3073,33 @@ export function createRealRuntimeClient(
       optionMode: options.permissionMode,
       permissionMode,
     });
+    const { skills: _skills, ...extensions } =
+      permission.found && permission.selectedProfile?.extensions
+        ? permission.selectedProfile.extensions
+        : {};
     return JSON.stringify({
       enabled: selectPluginConfig(config.plugins.enabled, "static"),
       settings: selectPluginConfig(config.plugins.settings, "static"),
-      skills: config.skills,
-      extensions: permission.found
-        ? permission.selectedProfile?.extensions
-        : undefined,
+      extensions,
       moduleExtensions: options.taskModuleContext?.moduleExtensions,
+    });
+  }
+
+  function skillsPluginConfigFingerprint(config: ConfigV3) {
+    const permission = derivePermissionSettings({
+      config,
+      requestedProfile: options.permissionProfile,
+      optionMode: options.permissionMode,
+      permissionMode,
+    });
+    return JSON.stringify({
+      enabled: config.plugins.enabled[SKILLS_PLUGIN_ID],
+      settings: config.plugins.settings[SKILLS_PLUGIN_ID],
+      skills: config.skills,
+      extension: permission.found
+        ? permission.selectedProfile?.extensions?.skills
+        : undefined,
+      moduleExtension: options.taskModuleContext?.moduleExtensions?.skills,
     });
   }
 
@@ -3090,6 +3132,32 @@ export function createRealRuntimeClient(
       config.plugins.enabled["natalia-subagents"] !== false &&
       (extensionEnabled("plugins") || extensionEnabled("skills"))
     );
+  }
+
+  function skillsPluginInput(config: ConfigV3) {
+    if (
+      config.plugins.enabled[SKILLS_PLUGIN_ID] === false ||
+      !extensionEnabled("skills")
+    )
+      return undefined;
+    return {
+      workspaceRoot,
+      userRoot: userSkillRoot(),
+      remoteURLs: config.skills.urls,
+      onLoad: (skill: Skill, output: string, context: ToolExecutionContext) => {
+        const owner = context.sessionID
+          ? executionBySession.get(context.sessionID as SessionID)
+          : undefined;
+        if (!owner) return;
+        owner.activeSkill = skill;
+        if (owner === activeExec) activeSkill = skill;
+        owner.context.add({
+          id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
+          role: "system",
+          content: output,
+        });
+      },
+    };
   }
 
   function localToolsPluginInput(config: ConfigV3) {
@@ -3173,7 +3241,8 @@ export function createRealRuntimeClient(
         const tool = BUILTIN_TOOL_PLUGIN_IDS.has(id);
         const builtin = builtinPluginIDs.has(id);
         if (kind === "tool") return tool;
-        if (kind === "static") return builtin && !tool;
+        if (kind === "static")
+          return builtin && !tool && id !== SKILLS_PLUGIN_ID;
         return !builtin;
       }),
     );
