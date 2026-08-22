@@ -384,15 +384,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.team
-      ? [
-          {
-            id: TEAM_PLUGIN_ID,
-            enabled: input.team.enabled,
-            create: () => createTeamPlugin(),
-          },
-        ]
-      : []),
+    teamPluginEntry(input.team?.enabled === true),
     ...(input.toolPipeline
       ? [
           {
@@ -513,5 +505,13 @@ export function localToolsPluginEntry(
       if (!input) throw new Error("local tools plugin is disabled");
       return createLocalToolsPlugin(input);
     },
+  };
+}
+
+export function teamPluginEntry(enabled: boolean): BuiltinPluginEntry {
+  return {
+    id: TEAM_PLUGIN_ID,
+    enabled,
+    create: () => createTeamPlugin(),
   };
 }

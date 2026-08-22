@@ -188,10 +188,12 @@ import {
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
+  teamPluginEntry,
   TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
+import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 import { computeBuiltinFeatureGates } from "./builtin-feature-gates";
 import { mountRuntimePlugins } from "./builtin-mount";
 import { derivePermissionSettings } from "./permission-settings";
@@ -266,6 +268,7 @@ const BUILTIN_TOOL_PLUGIN_IDS = new Set([
   PROCESS_PLUGIN_ID,
   PDF_PLUGIN_ID,
   LOCAL_TOOLS_PLUGIN_ID,
+  TEAM_PLUGIN_ID,
 ]);
 
 // Re-exported because the policy tests reach for the risk classifier directly and
@@ -3076,7 +3079,17 @@ export function createRealRuntimeClient(
       ...builtinToolPluginCatalog(gates),
       builtinPdfPluginEntry(gates.pdfEnabled),
       localToolsPluginEntry(localToolsPluginInput(config)),
+      teamPluginEntry(teamPluginEnabled(config)),
     ];
+  }
+
+  function teamPluginEnabled(config: ConfigV3) {
+    return (
+      config.plugins.enabled[TEAM_PLUGIN_ID] !== false &&
+      config.plugins.enabled["natalia-sandbox"] !== false &&
+      config.plugins.enabled["natalia-subagents"] !== false &&
+      (extensionEnabled("plugins") || extensionEnabled("skills"))
+    );
   }
 
   function localToolsPluginInput(config: ConfigV3) {

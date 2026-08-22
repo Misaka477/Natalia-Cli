@@ -24,6 +24,7 @@ import {
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger-plugin";
+import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 import { PDF_PLUGIN_ID, TODO_PLUGIN_ID } from "../src/builtin-plugins/catalog";
 
 function createRealRuntimeClient(
@@ -1470,6 +1471,64 @@ test("PDF plugin config reload reconciles its lifecycle", async () => {
       (tool) => tool.name === "pdf_read",
     ),
   ).toBe(true);
+  await client.dispose?.();
+}, 60_000);
+
+test("team plugin config reload reconciles its lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-team-config-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  const disabledConfig = {
+    version: 3,
+    plugins: { enabled: { [TEAM_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_team_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
+  expect(kernel.has("natalia-sandbox")).toBe(true);
+  expect(kernel.has("natalia-subagents")).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.some((tool) =>
+      tool.name.startsWith("team_"),
+    ),
+  ).toBe(false);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.filter((tool) =>
+      tool.name.startsWith("team_"),
+    ),
+  ).toHaveLength(2);
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
+  expect(kernel.has("natalia-sandbox")).toBe(true);
+  expect(kernel.has("natalia-subagents")).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.some((tool) =>
+      tool.name.startsWith("team_"),
+    ),
+  ).toBe(false);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.filter((tool) =>
+      tool.name.startsWith("team_"),
+    ),
+  ).toHaveLength(2);
   await client.dispose?.();
 }, 60_000);
 

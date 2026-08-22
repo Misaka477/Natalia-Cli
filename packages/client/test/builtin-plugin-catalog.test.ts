@@ -26,6 +26,7 @@ import { COMPACTION_PLUGIN_ID } from "@natalia/compaction-plugin";
 import { RUNTIME_UI_PLUGIN_ID } from "@natalia/runtime-ui-plugin";
 import { WORKSPACE_PLUGIN_ID } from "@natalia/workspace-plugin";
 import { LOCAL_TOOLS_PLUGIN_ID } from "@natalia/local-tools-plugin";
+import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -57,6 +58,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
     LOCAL_TOOLS_PLUGIN_ID,
+    TEAM_PLUGIN_ID,
   ]);
   expect(new Set(catalog.map((entry) => entry.id)).size).toBe(catalog.length);
   expect(catalog.find((entry) => entry.id === SKILLS_PLUGIN_ID)?.enabled).toBe(
@@ -65,6 +67,9 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
   expect(
     catalog.find((entry) => entry.id === LOCAL_TOOLS_PLUGIN_ID)?.enabled,
   ).toBe(false);
+  expect(catalog.find((entry) => entry.id === TEAM_PLUGIN_ID)?.enabled).toBe(
+    false,
+  );
   for (const entry of catalog.filter((candidate) => candidate.enabled))
     expect(entry.create().manifest.id).toBe(entry.id);
 });
