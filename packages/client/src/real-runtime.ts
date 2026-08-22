@@ -180,6 +180,7 @@ import {
   builtinToolPluginCatalog,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
+  localToolsPluginEntry,
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
@@ -198,7 +199,10 @@ import {
   deriveAgentToolPolicy,
   deriveProfileToolPolicy,
 } from "./tool-policy-derivation";
-import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/local-tools-plugin";
+import {
+  LOCAL_TOOLS_PLUGIN_ID,
+  LOCAL_TOOLS_RELOAD_SERVICE,
+} from "@natalia/local-tools-plugin";
 import {
   TERMINAL_CONTROLLER_SERVICE,
   type TerminalController,
@@ -259,6 +263,7 @@ const BUILTIN_TOOL_PLUGIN_IDS = new Set([
   TERMINAL_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
+  LOCAL_TOOLS_PLUGIN_ID,
 ]);
 
 // Re-exported because the policy tests reach for the risk classifier directly and
@@ -992,6 +997,7 @@ export function createRealRuntimeClient(
       const workLedgerEnabled = pluginEnabled("natalia-work-ledger");
       const sandboxControllerEnabled = pluginEnabled("natalia-sandbox");
       const subagentsEnabled = pluginEnabled("natalia-subagents");
+      const localTools = localToolsPluginInput(runtimeConfig);
       const builtinPlugins = builtinPluginCatalog({
         ...computeBuiltinFeatureGates({
           config: tsRuntimeConfig,
@@ -1024,70 +1030,7 @@ export function createRealRuntimeClient(
           ? { taskModule: options.taskModuleContext }
           : {}),
         ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
-        ...(tsRuntimeConfig &&
-        !options.tools &&
-        tsRuntimeConfig.tools.paths.length
-          ? {
-              localTools: {
-                roots: tsRuntimeConfig.tools.paths.map((path) =>
-                  resolve(workspaceRoot, path),
-                ),
-                enabled: tsRuntimeConfig.tools.enabled,
-                onError: (id: string, error: unknown) =>
-                  publish({
-                    type: "diagnostic",
-                    level: "warning",
-                    owner: "natalia-tools",
-                    message: `tool family ${id} failed to load: ${
-                      error instanceof Error ? error.message : String(error)
-                    }`,
-                  }),
-                trust: {
-                  workspaceRoot,
-                  verify: (key: string, entryPath: string) =>
-                    verifyTrust(workspaceRoot, key, entryPath),
-                },
-                onChange: async (familyID: string, entryPath: string) => {
-                  // The "hot" half of HMR: verify against the trust database. A
-                  // trusted change (the agent's promoted edit, with the record
-                  // re-pinned) is hot-reloaded; an untrusted edit is reported — a
-                  // package must not change without a promotion.
-                  const verified = await verifyTrust(
-                    workspaceRoot,
-                    resolve(entryPath, ".."),
-                    entryPath,
-                  );
-                  if (verified.expected && !verified.verified) {
-                    publish({
-                      type: "diagnostic",
-                      level: "warning",
-                      owner: toolFamilyCapabilityID(familyID),
-                      message: `tool family ${familyID} changed on disk without a promotion — refusing to hot reload`,
-                    });
-                    return;
-                  }
-                  try {
-                    await hotReloadToolFamily(familyID);
-                    publish({
-                      type: "diagnostic",
-                      level: "info",
-                      owner: toolFamilyCapabilityID(familyID),
-                      message: `tool family ${familyID} hot-reloaded`,
-                    });
-                  } catch (error) {
-                    publish({
-                      type: "diagnostic",
-                      level: "warning",
-                      owner: toolFamilyCapabilityID(familyID),
-                      message: `tool family ${familyID} hot reload failed: ${
-                        error instanceof Error ? error.message : String(error)
-                      }`,
-                    });
-                  }
-                },
-              },
-            }
-          : {}),
+        ...(localTools ? { localTools } : {}),
         ...(pluginEnabled("natalia-workspace")
           ? {
               workspace: {
@@ -3122,13 +3065,77 @@ export function createRealRuntimeClient(
   }
 
   function builtinToolEntries(config: ConfigV3) {
-    return builtinToolPluginCatalog({
-      ...computeBuiltinFeatureGates({
-        config,
-        hasCustomTools: !!options.tools,
-        extensionEnabled,
+    return [
+      ...builtinToolPluginCatalog({
+        ...computeBuiltinFeatureGates({
+          config,
+          hasCustomTools: !!options.tools,
+          extensionEnabled,
+        }),
       }),
-    });
+      localToolsPluginEntry(localToolsPluginInput(config)),
+    ];
+  }
+
+  function localToolsPluginInput(config: ConfigV3) {
+    if (
+      options.tools ||
+      !config.tools.paths.length ||
+      config.plugins.enabled[LOCAL_TOOLS_PLUGIN_ID] === false
+    )
+      return undefined;
+    return {
+      roots: config.tools.paths.map((path) => resolve(workspaceRoot, path)),
+      enabled: config.tools.enabled,
+      onError: (id: string, error: unknown) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          owner: "natalia-tools",
+          message: `tool family ${id} failed to load: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }),
+      trust: {
+        workspaceRoot,
+        verify: (key: string, entryPath: string) =>
+          verifyTrust(workspaceRoot, key, entryPath),
+      },
+      onChange: async (familyID: string, entryPath: string) => {
+        const verified = await verifyTrust(
+          workspaceRoot,
+          resolve(entryPath, ".."),
+          entryPath,
+        );
+        if (verified.expected && !verified.verified) {
+          publish({
+            type: "diagnostic",
+            level: "warning",
+            owner: toolFamilyCapabilityID(familyID),
+            message: `tool family ${familyID} changed on disk without a promotion — refusing to hot reload`,
+          });
+          return;
+        }
+        try {
+          await hotReloadToolFamily(familyID);
+          publish({
+            type: "diagnostic",
+            level: "info",
+            owner: toolFamilyCapabilityID(familyID),
+            message: `tool family ${familyID} hot-reloaded`,
+          });
+        } catch (error) {
+          publish({
+            type: "diagnostic",
+            level: "warning",
+            owner: toolFamilyCapabilityID(familyID),
+            message: `tool family ${familyID} hot reload failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
+        }
+      },
+    };
   }
 
   function externalPluginConfigFingerprint(config: ConfigV3) {

@@ -1426,6 +1426,82 @@ test("built-in tool plugin config reload reconciles its lifecycle", async () => 
   await client.dispose?.();
 }, 60_000);
 
+test("local tool paths reconcile plugin lifecycle on config reload", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-local-tools-config-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await mkdir(join(root, "extra-tools", "extra.family"), { recursive: true });
+  await writeFile(
+    join(root, "extra-tools", "extra.family", "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  await writeFile(
+    join(root, "extra-tools", "extra.family", "index.ts"),
+    `export default { id: "extra.family", name: "Extra", version: "1.0.0",
+description: "Extra", scope: "session", tools: [{ name: "extra_run",
+description: "Run", requiresApproval: false, parameters: { type: "object", properties: {} },
+async execute() { return "ok"; } }] };`,
+  );
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_local_tools_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+  expect(kernel.has("natalia-local-tools")).toBe(false);
+
+  await writeFile(
+    configPath,
+    JSON.stringify({ version: 3, tools: { paths: ["extra-tools"] } }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has("natalia-local-tools")).toBe(true);
+  expect(kernel.service("localTools.reload")).toBeDefined();
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "extra_run",
+    ),
+  ).toBe(true);
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      tools: { paths: ["extra-tools"] },
+      plugins: { enabled: { "natalia-local-tools": false } },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has("natalia-local-tools")).toBe(false);
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "extra_run",
+    ),
+  ).toBe(false);
+
+  await writeFile(
+    configPath,
+    JSON.stringify({ version: 3, tools: { paths: ["extra-tools"] } }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has("natalia-local-tools")).toBe(true);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has("natalia-local-tools")).toBe(false);
+  expect(kernel.service("localTools.reload")).toBeUndefined();
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "extra_run",
+    ),
+  ).toBe(false);
+  await client.dispose?.();
+}, 60_000);
+
 for (const [label, config] of [
   ["legacy family switch", { tools: { enabled: { todo: false } } }],
   ["plugin switch", { plugins: { enabled: { "natalia-tool-todo": false } } }],

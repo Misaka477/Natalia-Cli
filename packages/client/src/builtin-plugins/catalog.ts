@@ -292,22 +292,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.localTools
-      ? [
-          {
-            id: LOCAL_TOOLS_PLUGIN_ID,
-            enabled: true,
-            create: () =>
-              createLocalToolsPlugin({
-                roots: input.localTools!.roots,
-                enabled: input.localTools!.enabled,
-                trust: input.localTools!.trust,
-                onError: input.localTools!.onError,
-                onChange: input.localTools!.onChange,
-              }),
-          },
-        ]
-      : []),
+    localToolsPluginEntry(input.localTools),
     ...(input.workspace
       ? [
           {
@@ -515,4 +500,17 @@ export function builtinPluginCatalog(input: {
         ]
       : []),
   ];
+}
+
+export function localToolsPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["localTools"],
+): BuiltinPluginEntry {
+  return {
+    id: LOCAL_TOOLS_PLUGIN_ID,
+    enabled: input !== undefined,
+    create: () => {
+      if (!input) throw new Error("local tools plugin is disabled");
+      return createLocalToolsPlugin(input);
+    },
+  };
 }
