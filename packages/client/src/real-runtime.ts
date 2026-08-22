@@ -503,6 +503,7 @@ export function createRealRuntimeClient(
     tools,
     capabilityRegistry,
     pluginPaths: () => tsRuntimeConfig?.plugins.paths ?? [],
+    externalPluginsEnabled: () => extensionEnabled("plugins"),
     pluginPackages: () => tsRuntimeConfig?.plugins.packages,
     pluginEnabled: () => tsRuntimeConfig?.plugins.enabled,
     pluginCapabilities: () => tsRuntimeConfig?.plugins.capabilities,
@@ -667,7 +668,9 @@ export function createRealRuntimeClient(
   let tsRuntimeConfig:
     | Awaited<ReturnType<typeof resolveConfig>>["config"]
     | undefined;
-  let activePluginConfigFingerprint: string | undefined;
+  let activeExternalPluginConfigFingerprint: string | undefined;
+  let activeBuiltinPluginConfigFingerprint: string | undefined;
+  let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
   let runtimeContextConfig = defaultContextStatusConfig();
   let retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
@@ -830,19 +833,26 @@ export function createRealRuntimeClient(
         workspaceRoot,
         globalPath: options.globalConfigPath,
       });
-      const nextPluginConfigFingerprint = pluginConfigFingerprint(
+      const nextBuiltinPluginConfigFingerprint = builtinPluginConfigFingerprint(
         tsConfig.config,
       );
       if (
-        activePluginConfigFingerprint !== undefined &&
-        nextPluginConfigFingerprint !== activePluginConfigFingerprint
+        activeBuiltinPluginConfigFingerprint !== undefined &&
+        nextBuiltinPluginConfigFingerprint !==
+          activeBuiltinPluginConfigFingerprint
       )
         return {
           read: true,
           providerReconfigured: false,
           reason:
-            "plugin configuration changes require a runtime restart until plugin reconciliation is available",
+            "built-in plugin configuration changes require a runtime restart",
         };
+      const nextExternalPluginConfigFingerprint =
+        externalPluginConfigFingerprint(tsConfig.config);
+      const reconcilePlugins =
+        activeExternalPluginConfigFingerprint !== undefined &&
+        nextExternalPluginConfigFingerprint !==
+          activeExternalPluginConfigFingerprint;
       tsRuntimeConfig = tsConfig.config;
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
       retryPolicy = {
@@ -865,9 +875,6 @@ export function createRealRuntimeClient(
           ? (agentRegistry.select(name) ?? agentRegistry.default())
           : agentRegistry.default();
       }
-      // The config service is refreshed in place, so consumers of the service
-      // are notified of the reload.
-      refreshRuntimeConfigService(capabilityRegistry, tsConfig.config);
       // Permission changes (default profile switch, auto/ask flip, profile
       // edits) apply immediately, not on the next restart.
       reloadPermissionSettings(tsConfig.config);
@@ -875,6 +882,14 @@ export function createRealRuntimeClient(
         exec.permissionMode = permissionMode;
         exec.permissionProfile = selectedPermissionProfile;
       }
+      if (reconcilePlugins) await pluginsController.reconcile();
+      activeExternalPluginConfigFingerprint =
+        nextExternalPluginConfigFingerprint;
+      activeBuiltinPluginConfigFingerprint = nextBuiltinPluginConfigFingerprint;
+      // Publish the new config only after plugin lifecycle state agrees with it.
+      // Newly loaded plugins still receive the parsed config through api.config;
+      // existing service consumers are notified once reconciliation completes.
+      refreshRuntimeConfigService(capabilityRegistry, tsConfig.config);
       applyAgentPolicy();
       if (
         selectedPermissionProfile?.commandRules &&
@@ -930,7 +945,6 @@ export function createRealRuntimeClient(
       // applied before the plugin catalog is assembled, or a disabled extension
       // would still load its plugin.
       reloadPermissionSettings(tsConfig.config);
-      activePluginConfigFingerprint = pluginConfigFingerprint(tsConfig.config);
       const pluginEnabled = (id: string) =>
         runtimeConfig.plugins.enabled[id] !== false;
       const attachmentEnabled = pluginEnabled("natalia-attachment");
@@ -1315,6 +1329,13 @@ export function createRealRuntimeClient(
           },
         },
       });
+      builtinPluginIDs = new Set(builtinPlugins.map((entry) => entry.id));
+      activeExternalPluginConfigFingerprint = externalPluginConfigFingerprint(
+        tsConfig.config,
+      );
+      activeBuiltinPluginConfigFingerprint = builtinPluginConfigFingerprint(
+        tsConfig.config,
+      );
       await mountRuntimePlugins({
         controller: pluginsController,
         builtins: builtinPlugins,
@@ -3018,7 +3039,7 @@ export function createRealRuntimeClient(
     defaultPermissionProfile = derived.defaultProfile;
   }
 
-  function pluginConfigFingerprint(config: ConfigV3) {
+  function builtinPluginConfigFingerprint(config: ConfigV3) {
     const permission = derivePermissionSettings({
       config,
       requestedProfile: options.permissionProfile,
@@ -3027,13 +3048,36 @@ export function createRealRuntimeClient(
     });
     return JSON.stringify({
       tools: config.tools,
-      plugins: config.plugins,
+      enabled: selectPluginConfig(config.plugins.enabled, true),
+      settings: selectPluginConfig(config.plugins.settings, true),
       skills: config.skills,
       extensions: permission.found
         ? permission.selectedProfile?.extensions
         : undefined,
       moduleExtensions: options.taskModuleContext?.moduleExtensions,
     });
+  }
+
+  function externalPluginConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      paths: config.plugins.paths,
+      packages: config.plugins.packages,
+      enabled: selectPluginConfig(config.plugins.enabled, false),
+      capabilities: config.plugins.capabilities,
+      readOnly: config.plugins.readOnly,
+      settings: selectPluginConfig(config.plugins.settings, false),
+    });
+  }
+
+  function selectPluginConfig<T>(
+    values: Record<string, T> | undefined,
+    builtin: boolean,
+  ) {
+    return Object.fromEntries(
+      Object.entries(values ?? {}).filter(
+        ([id]) => builtinPluginIDs.has(id) === builtin,
+      ),
+    );
   }
 
   function isToolAllowed(

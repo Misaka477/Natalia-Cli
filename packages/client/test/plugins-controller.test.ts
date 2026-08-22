@@ -41,6 +41,10 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", vers
 function makeController(
   root: string,
   capabilityRegistry = new CapabilityRegistry(),
+  config: {
+    enabled?: Record<string, boolean>;
+    settings?: Record<string, unknown>;
+  } = {},
 ) {
   let synced = 0;
   const controller = createPluginsController({
@@ -48,10 +52,10 @@ function makeController(
     tools: createToolRegistry([]),
     capabilityRegistry,
     pluginPaths: () => [".natalia/plugins"],
-    pluginEnabled: () => undefined,
+    pluginEnabled: () => config.enabled,
     pluginCapabilities: () => undefined,
     pluginReadOnly: () => undefined,
-    pluginSettings: () => undefined,
+    pluginSettings: () => config.settings,
     publish: () => undefined,
     syncGlobalCommands: () => {
       synced++;
@@ -59,6 +63,60 @@ function makeController(
   });
   return { controller, synced: () => synced };
 }
+
+test("plugins controller reconciles the configured external plugin set", async () => {
+  const root = await pluginWorkspace();
+  const config: {
+    enabled?: Record<string, boolean>;
+    settings?: Record<string, unknown>;
+  } = {};
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel, config);
+  await controller.init();
+  expect(controller.list().map((plugin) => plugin.id)).toEqual(["demo.plugin"]);
+
+  config.enabled = { "demo.plugin": false };
+  await controller.reconcile();
+  expect(controller.list()).toHaveLength(0);
+  expect(kernel.has(pluginCapabilityID("demo.plugin"))).toBe(false);
+
+  config.enabled = { "demo.plugin": true };
+  await controller.reconcile();
+  expect(controller.list().map((plugin) => plugin.id)).toEqual(["demo.plugin"]);
+  expect(kernel.has(pluginCapabilityID("demo.plugin"))).toBe(true);
+  await controller.close();
+});
+
+test("plugins controller reapplies external plugin settings on reconcile", async () => {
+  const root = await pluginWorkspace();
+  const entry = join(root, ".natalia", "plugins", "demo.plugin", "index.ts");
+  await writeFile(
+    entry,
+    `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", version: "1.0.0", name: "Demo", capabilities: ["commands"] }, setup(api) { const name = String(api.config); api.commands.register({ name, title: name, run() {} }); } });`,
+  );
+  const config: { settings?: Record<string, unknown> } = {
+    settings: { "demo.plugin": "before" },
+  };
+  const { controller } = makeController(root, new CapabilityRegistry(), config);
+  await controller.init();
+  expect(
+    controller
+      .get()
+      .commands()
+      .map((command) => command.name),
+  ).toEqual(["plugin_demo_plugin_before"]);
+
+  config.settings = { "demo.plugin": "after" };
+  await controller.reconcile();
+  expect(
+    controller
+      .get()
+      .commands()
+      .map((command) => command.name),
+  ).toEqual(["plugin_demo_plugin_after"]);
+  await controller.close();
+});
 
 test("plugins controller loads, unloads idempotently and reloads", async () => {
   const root = await pluginWorkspace();

@@ -1314,11 +1314,33 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   await client.dispose?.();
 }, 60_000);
 
-test("plugin config reload is refused until lifecycle reconciliation exists", async () => {
+test("external plugin config reload reconciles its lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-config-reload-"));
-  await mkdir(join(root, ".natalia"), { recursive: true });
+  const pluginRoot = join(root, ".natalia", "plugins", "reload.plugin");
+  await mkdir(pluginRoot, { recursive: true });
   const configPath = join(root, ".natalia", "config.json");
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "reload.plugin",
+      version: "1.0.0",
+      name: "Reload",
+      entry: "index.ts",
+      capabilities: ["commands"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    `export default { setup(api) { api.commands.register({ name: "reload", title: "Reload", run() {} }); } };`,
+  );
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: { paths: [".natalia/plugins"] },
+    }),
+  );
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_plugin_config_reload",
@@ -1326,7 +1348,39 @@ test("plugin config reload is refused until lifecycle reconciliation exists", as
   });
   client.start(() => undefined);
   await client.runtimeStatus?.();
+  expect(
+    (await client.plugins?.())?.some((plugin) => plugin.id === "reload.plugin"),
+  ).toBe(true);
 
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: {
+        paths: [".natalia/plugins"],
+        enabled: { "reload.plugin": false },
+      },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(
+    (await client.plugins?.())?.some((plugin) => plugin.id === "reload.plugin"),
+  ).toBe(false);
+  await client.dispose?.();
+}, 60_000);
+
+test("built-in plugin config reload remains restart-bound", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-builtin-config-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_builtin_config_reload",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
   await writeFile(
     configPath,
     JSON.stringify({
@@ -1336,8 +1390,7 @@ test("plugin config reload is refused until lifecycle reconciliation exists", as
   );
   await expect(client.reloadConfig?.()).resolves.toEqual({
     applied: false,
-    reason:
-      "plugin configuration changes require a runtime restart until plugin reconciliation is available",
+    reason: "built-in plugin configuration changes require a runtime restart",
   });
   await client.dispose?.();
 }, 60_000);

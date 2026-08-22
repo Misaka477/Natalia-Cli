@@ -41,6 +41,7 @@ export function createPluginsController(input: {
   tools: ToolRegistry;
   capabilityRegistry: CapabilityRegistryHost;
   pluginPaths(): string[];
+  externalPluginsEnabled?(): boolean;
   pluginPackages?(): Record<string, PluginPackageConfig> | undefined;
   pluginEnabled(): Record<string, boolean> | undefined;
   pluginCapabilities(): Record<string, string[]> | undefined;
@@ -189,7 +190,23 @@ export function createPluginsController(input: {
     input.syncGlobalCommands();
   }
 
+  async function reconcile() {
+    const current = get();
+    const external = current
+      .list()
+      .filter((manifest) => !builtinIDs.has(manifest.id))
+      .reverse();
+    for (const manifest of external)
+      try {
+        await current.unload(manifest.id);
+      } catch (error) {
+        publishLoadError(manifest.id, error);
+      }
+    await loadLocal();
+  }
+
   async function externalEntries() {
+    if (input.externalPluginsEnabled?.() === false) return [];
     const installed = await resolveInstalledPluginEntries({
       workspaceRoot: input.workspaceRoot,
       packages: input.pluginPackages?.() ?? {},
@@ -331,6 +348,7 @@ export function createPluginsController(input: {
     list,
     loadBuiltin,
     loadLocal,
+    reconcile,
     unload,
     unloadBuiltin,
     reload,
