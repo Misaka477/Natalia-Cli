@@ -135,6 +135,7 @@ const clientClosureAllowlist = [
   "session-store-plugin",
   "skills-plugin",
   "subagents-plugin",
+  "task-module-plugin",
   "task-workflow-plugin",
   "terminal-plugin",
   "testing",
@@ -398,12 +399,27 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-task-module",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/task-module-plugin.ts",
+      "packages/client/src/capabilities/task-module-tools.ts",
+    ],
     forbidden: [
       {
         description: "task module tool construction",
         pattern:
           /\b(?:registerTaskModuleCapability|taskModuleCapability|taskModuleTools)\b/u,
+      },
+      {
+        description: "direct task module implementation import",
+        pattern:
+          /from\s+["'](?:\.\/task-module-plugin|\.\/builtin-plugins\/task-module-plugin|\.\/capabilities\/task-module-tools|\.\.\/capabilities\/task-module-tools)["']/u,
+      },
+      {
+        description: "client-owned task module implementation",
+        pattern:
+          /export\s+(?:async\s+)?function\s+(?:taskModuleTools|createTaskModulePlugin|createFlowModuleCompleteTool|createReportIssueTool|createReadDataSourceTool)\b/u,
       },
     ],
   },

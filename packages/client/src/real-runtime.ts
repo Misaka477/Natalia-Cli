@@ -211,7 +211,7 @@ import {
   type McpAccess,
   type McpController,
 } from "@natalia/mcp-plugin";
-import type { TaskModuleContext } from "./capabilities/task-module-tools";
+import type { TaskModuleContext } from "@natalia/task-module-plugin";
 import {
   TASK_WORKFLOW_CONTROLLER_SERVICE,
   TASK_WORKFLOW_PLUGIN_ID,

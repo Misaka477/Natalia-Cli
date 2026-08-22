@@ -35,6 +35,7 @@
     "@natalia/session-store-plugin": "workspace:*",
     "@natalia/skills-plugin": "workspace:*",
     "@natalia/subagents-plugin": "workspace:*",
+    "@natalia/task-module-plugin": "workspace:*",
     "@natalia/task-workflow-plugin": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*",

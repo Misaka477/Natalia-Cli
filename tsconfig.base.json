@@ -17,6 +17,7 @@
       "@natalia/builtin-tool-plugins": [
         "packages/builtin-tool-plugins/src/index.ts"
       ],
+      "@natalia/capability": ["packages/capability/src/index.ts"],
       "@natalia/checkpoint-plugin": ["packages/checkpoint-plugin/src/index.ts"],
       "@natalia/collaboration-plugin": [
         "packages/collaboration-plugin/src/index.ts"
@@ -70,6 +71,9 @@
       "@natalia/skills-plugin": ["packages/skills-plugin/src/index.ts"],
       "@natalia/subagent": ["packages/subagent/src/index.ts"],
       "@natalia/subagents-plugin": ["packages/subagents-plugin/src/index.ts"],
+      "@natalia/task-module-plugin": [
+        "packages/task-module-plugin/src/index.ts"
+      ],
       "@natalia/task-workflow-plugin": [
         "packages/task-workflow-plugin/src/index.ts"
       ],
@@ -82,6 +86,7 @@
         "packages/work-ledger-plugin/src/index.ts"
       ],
       "@natalia/workspace-plugin": ["packages/workspace-plugin/src/index.ts"],
+      "@natalia/workflow": ["packages/workflow/src/index.ts"],
       "@natalia/workflow-scheduler-plugin": [
         "packages/workflow-scheduler-plugin/src/index.ts"
       ]

@@ -145,6 +145,7 @@
         "@natalia/session-store-plugin": "workspace:*",
         "@natalia/skills-plugin": "workspace:*",
         "@natalia/subagents-plugin": "workspace:*",
+        "@natalia/task-module-plugin": "workspace:*",
         "@natalia/task-workflow-plugin": "workspace:*",
         "@natalia/terminal-plugin": "workspace:*",
         "@natalia/testing": "workspace:*",
@@ -408,6 +409,17 @@
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/subagent": "workspace:*",
+      },
+    },
+    "packages/task-module-plugin": {
+      "name": "@natalia/task-module-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/capability": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/tools": "workspace:*",
+        "@natalia/workflow": "workspace:*",
       },
     },
     "packages/task-workflow-plugin": {
@@ -781,6 +793,8 @@
     "@natalia/subagent": ["@natalia/subagent@workspace:packages/subagent"],
 
     "@natalia/subagents-plugin": ["@natalia/subagents-plugin@workspace:packages/subagents-plugin"],
+
+    "@natalia/task-module-plugin": ["@natalia/task-module-plugin@workspace:packages/task-module-plugin"],
 
     "@natalia/task-workflow-plugin": ["@natalia/task-workflow-plugin@workspace:packages/task-workflow-plugin"],
 

@@ -1,18 +1,5 @@
-/**
- * The task-module built-in plugin.
- *
- * The task-scoped tools for the active flow module (`flow_module_complete`,
- * `report_issue`, `read_data_source`) load through the same plugin lifecycle as
- * every other built-in: the plugin owns its contributions, unloading releases
- * them, and a disabled or absent plugin leaves no tools behind. It is created
- * only when the host is running inside a flow-module execution (a
- * `TaskModuleContext` is bound), so in an ordinary session it never exists.
- */
 import type { Plugin } from "@natalia/plugin";
-import {
-  taskModuleTools,
-  type TaskModuleContext,
-} from "../capabilities/task-module-tools";
+import { taskModuleTools, type TaskModuleContext } from "./task-module-tools";
 
 export const TASK_MODULE_PLUGIN_ID = "natalia-task-module";
 

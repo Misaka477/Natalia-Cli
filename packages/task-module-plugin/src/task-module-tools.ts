@@ -1,28 +1,14 @@
-/**
- * Task-scoped capability: the three tools that only exist while a flow module
- * is the active execution context.
- *
- * This module owns its own context contract (`TaskModuleContext`) rather than
- * deriving it from the runtime options, so the dependency runs one way: the
- * composition root consumes the capability, never the reverse. That is what
- * makes the factories testable without constructing a runtime.
- *
- * Two of these tools carry a credential or a read position that the model must
- * never see. The controller binds them here as closures, so `report_issue`
- * cannot leak a token into arguments, the process list or the journal, and
- * `read_data_source` cannot let the model choose its own offset.
- */
+import type {
+  AgentPermissionRules,
+  ExtensionRules,
+  InteractiveProgramRules,
+  PermissionProfile,
+} from "@natalia/contracts";
 import type { RuntimeTool } from "@natalia/tools";
 import type {
   NataliaFlowModuleType,
   NataliaTaskStateStore,
 } from "@natalia/workflow";
-import type { ExtensionRules } from "@natalia/contracts";
-import type {
-  InteractiveProgramAuthorization,
-  PermissionProfileCommandRules,
-  PermissionRules,
-} from "../tool-policy";
 
 export type TaskModuleContext = {
   store: NataliaTaskStateStore;
@@ -32,38 +18,22 @@ export type TaskModuleContext = {
   moduleID: string;
   moduleType: NataliaFlowModuleType;
   moduleInstructions?: string;
-  moduleCommandRules?: PermissionProfileCommandRules;
-  /** Interactive programs the active module allows, intersected with the profile. */
-  moduleInteractivePrograms?: InteractiveProgramAuthorization;
-  /** Module-level extension switches can only further narrow the profile. */
+  moduleCommandRules?: NonNullable<PermissionProfile["commandRules"]>;
+  moduleInteractivePrograms?: InteractiveProgramRules;
   moduleExtensions?: ExtensionRules;
-  /** Module-level file/tool policies can only further narrow the profile. */
-  modulePermissions?: PermissionRules;
-  /**
-   * The active module's completion conditions, so `flow_module_complete` can be
-   * claimed with the real condition IDs instead of guessed ones.
-   */
+  modulePermissions?: AgentPermissionRules;
   moduleConditions?: Array<{
     id: string;
     text: string;
     kind: "minimum" | "ideal";
   }>;
-  /** Controller-owned structured continuation for the active module only. */
   moduleContinuation?: string;
-  /**
-   * Runtime-side finding reconciliation. The controller binds the credential
-   * here so the model can report a finding without ever seeing the token.
-   */
   reportIssue?: (finding: {
     fingerprintParts: string[];
     title: string;
     body: string;
     labels?: string[];
   }) => Promise<Record<string, unknown>>;
-  /**
-   * Runtime-side incremental read of the task's configured append-only source.
-   * The controller stages the new position; the model never sees an offset.
-   */
   readDataSource?: (input: {
     maxBytes?: number;
   }) => Promise<Record<string, unknown>>;
@@ -74,11 +44,6 @@ export type TaskReadDataSource = NonNullable<
   TaskModuleContext["readDataSource"]
 >;
 
-/**
- * The tools this capability contributes, given a module context. The order is
- * stable so a caller can register them without re-deriving which of the
- * optional controller bindings were supplied.
- */
 export function taskModuleTools(context: TaskModuleContext): RuntimeTool[] {
   const tools = [createFlowModuleCompleteTool(context)];
   if (context.reportIssue)
@@ -187,12 +152,6 @@ export function createFlowModuleCompleteTool(
   };
 }
 
-/**
- * The report tool submits a finding to the runtime, which owns the credential
- * and performs the request. The model never sees the token and never runs
- * `curl`, so the credential cannot reach the command line, the process list or
- * the journal.
- */
 export function createReportIssueTool(
   reportIssue: TaskReportIssue,
 ): RuntimeTool {
@@ -231,11 +190,6 @@ export function createReportIssueTool(
   };
 }
 
-/**
- * The runtime owns the read position of an external log, so the model asks for
- * "what is new" instead of tracking byte offsets itself. The position is staged
- * by the controller and only becomes durable when the whole task succeeds.
- */
 export function createReadDataSourceTool(
   readDataSource: TaskReadDataSource,
 ): RuntimeTool {

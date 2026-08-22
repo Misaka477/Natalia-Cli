@@ -85,6 +85,9 @@
       "path": "../subagents-plugin"
     },
     {
+      "path": "../task-module-plugin"
+    },
+    {
       "path": "../task-workflow-plugin"
     },
     {

@@ -24,11 +24,11 @@ import type {
 } from "@natalia/contracts";
 import type { SandboxBackend } from "@natalia/contracts";
 import type { NativeTerminalRegistry } from "@natalia/terminal-plugin";
-import type { TaskModuleContext } from "../capabilities/task-module-tools";
 import {
   createTaskModulePlugin,
   TASK_MODULE_PLUGIN_ID,
-} from "./task-module-plugin";
+  type TaskModuleContext,
+} from "@natalia/task-module-plugin";
 import {
   createRuntimeConfigPlugin,
   RUNTIME_CONFIG_PLUGIN_ID,

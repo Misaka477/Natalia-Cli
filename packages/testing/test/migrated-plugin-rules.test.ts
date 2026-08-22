@@ -134,6 +134,33 @@ test("local tools migration rejects client-owned implementations", () => {
   ).toEqual([]);
 });
 
+test("task module migration rejects client-owned implementations", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createTaskModulePlugin } from "./task-module-plugin"',
+    ],
+    [
+      "packages/client/src/builtin-plugins/task-module-plugin.ts",
+      "export function createTaskModulePlugin() {}",
+    ],
+    [
+      "packages/client/src/capabilities/task-module-tools.ts",
+      "export function createFlowModuleCompleteTool() {}",
+    ],
+  ] as const) {
+    expect(findMigratedPluginViolations(path, source)).toEqual([
+      expect.objectContaining({ pluginID: "natalia-task-module" }),
+    ]);
+  }
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createTaskModulePlugin } from "@natalia/task-module-plugin"',
+    ),
+  ).toEqual([]);
+});
+
 test("retry migration protects provider runner", () => {
   expect(
     findMigratedPluginViolations(

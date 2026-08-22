@@ -41,6 +41,7 @@
     { "path": "packages/testing" },
     { "path": "packages/subagent" },
     { "path": "packages/subagents-plugin" },
+    { "path": "packages/task-module-plugin" },
     { "path": "packages/task-workflow-plugin" },
     { "path": "packages/workflow-scheduler-plugin" },
     { "path": "packages/terminal-plugin" },
