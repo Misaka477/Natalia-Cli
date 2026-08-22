@@ -177,6 +177,7 @@ import {
   ASK_PLUGIN_ID,
   AGENT_PLUGIN_ID,
   builtinPluginCatalog,
+  builtinToolPluginCatalog,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
@@ -245,6 +246,20 @@ import {
   WORK_LEDGER_CONTROLLER_SERVICE,
   type WorkLedgerController,
 } from "@natalia/work-ledger-plugin";
+
+const BUILTIN_TOOL_PLUGIN_IDS = new Set([
+  ASK_PLUGIN_ID,
+  TODO_PLUGIN_ID,
+  SEARCH_PLUGIN_ID,
+  FS_READ_PLUGIN_ID,
+  FS_WRITE_PLUGIN_ID,
+  WEB_PLUGIN_ID,
+  SHELL_PLUGIN_ID,
+  AGENT_PLUGIN_ID,
+  TERMINAL_PLUGIN_ID,
+  SANDBOX_PLUGIN_ID,
+  PROCESS_PLUGIN_ID,
+]);
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -669,6 +684,7 @@ export function createRealRuntimeClient(
     | Awaited<ReturnType<typeof resolveConfig>>["config"]
     | undefined;
   let activeExternalPluginConfigFingerprint: string | undefined;
+  let activeBuiltinToolConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -849,6 +865,12 @@ export function createRealRuntimeClient(
         };
       const nextExternalPluginConfigFingerprint =
         externalPluginConfigFingerprint(tsConfig.config);
+      const nextBuiltinToolConfigFingerprint = builtinToolConfigFingerprint(
+        tsConfig.config,
+      );
+      const reconcileBuiltinTools =
+        activeBuiltinToolConfigFingerprint !== undefined &&
+        nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
       const reconcilePlugins =
         activeExternalPluginConfigFingerprint !== undefined &&
         nextExternalPluginConfigFingerprint !==
@@ -882,10 +904,21 @@ export function createRealRuntimeClient(
         exec.permissionMode = permissionMode;
         exec.permissionProfile = selectedPermissionProfile;
       }
+      const toolsBeforeReconcile =
+        reconcileBuiltinTools || reconcilePlugins
+          ? new Set(tools.keys())
+          : undefined;
+      if (reconcileBuiltinTools)
+        await pluginsController.reconcileBuiltins(
+          builtinToolEntries(tsConfig.config),
+          tsConfig.config.plugins.settings,
+        );
       if (reconcilePlugins) await pluginsController.reconcile();
+      if (toolsBeforeReconcile) publishToolCatalogChanges(toolsBeforeReconcile);
       activeExternalPluginConfigFingerprint =
         nextExternalPluginConfigFingerprint;
       activeBuiltinPluginConfigFingerprint = nextBuiltinPluginConfigFingerprint;
+      activeBuiltinToolConfigFingerprint = nextBuiltinToolConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
       // existing service consumers are notified once reconciliation completes.
@@ -1334,6 +1367,9 @@ export function createRealRuntimeClient(
         tsConfig.config,
       );
       activeBuiltinPluginConfigFingerprint = builtinPluginConfigFingerprint(
+        tsConfig.config,
+      );
+      activeBuiltinToolConfigFingerprint = builtinToolConfigFingerprint(
         tsConfig.config,
       );
       await mountRuntimePlugins({
@@ -2960,6 +2996,26 @@ export function createRealRuntimeClient(
     }
   }
 
+  function publishToolCatalogChanges(before: Set<string>) {
+    for (const name of before)
+      if (!tools.has(name))
+        publish({ type: "tool.unregistered", id: `tool:${name}`, name });
+    for (const tool of tools.values()) {
+      if (before.has(tool.name)) continue;
+      const owner = capabilityRegistry.ownerOf("tools", tool.name);
+      publish({
+        type: "tool.registered",
+        id: `tool:${tool.name}`,
+        name: tool.name,
+        owner: owner ?? "natalia-runtime",
+        scope: (owner && capabilityRegistry.scopeOf(owner)) || "session",
+        recovery: "fail_closed",
+        precedence: 0,
+        requiresApproval: tool.requiresApproval,
+      });
+    }
+  }
+
   /**
    * Records a settled tool call in the Work Graph, with the edge to the turn that
    * caused it. Only settled calls: an in-flight call is not yet a fact. The tool
@@ -3047,9 +3103,8 @@ export function createRealRuntimeClient(
       permissionMode,
     });
     return JSON.stringify({
-      tools: config.tools,
-      enabled: selectPluginConfig(config.plugins.enabled, true),
-      settings: selectPluginConfig(config.plugins.settings, true),
+      enabled: selectPluginConfig(config.plugins.enabled, "static"),
+      settings: selectPluginConfig(config.plugins.settings, "static"),
       skills: config.skills,
       extensions: permission.found
         ? permission.selectedProfile?.extensions
@@ -3058,25 +3113,47 @@ export function createRealRuntimeClient(
     });
   }
 
+  function builtinToolConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      tools: config.tools,
+      enabled: selectPluginConfig(config.plugins.enabled, "tool"),
+      settings: selectPluginConfig(config.plugins.settings, "tool"),
+    });
+  }
+
+  function builtinToolEntries(config: ConfigV3) {
+    return builtinToolPluginCatalog({
+      ...computeBuiltinFeatureGates({
+        config,
+        hasCustomTools: !!options.tools,
+        extensionEnabled,
+      }),
+    });
+  }
+
   function externalPluginConfigFingerprint(config: ConfigV3) {
     return JSON.stringify({
       paths: config.plugins.paths,
       packages: config.plugins.packages,
-      enabled: selectPluginConfig(config.plugins.enabled, false),
+      enabled: selectPluginConfig(config.plugins.enabled, "external"),
       capabilities: config.plugins.capabilities,
       readOnly: config.plugins.readOnly,
-      settings: selectPluginConfig(config.plugins.settings, false),
+      settings: selectPluginConfig(config.plugins.settings, "external"),
     });
   }
 
   function selectPluginConfig<T>(
     values: Record<string, T> | undefined,
-    builtin: boolean,
+    kind: "tool" | "static" | "external",
   ) {
     return Object.fromEntries(
-      Object.entries(values ?? {}).filter(
-        ([id]) => builtinPluginIDs.has(id) === builtin,
-      ),
+      Object.entries(values ?? {}).filter(([id]) => {
+        const tool = BUILTIN_TOOL_PLUGIN_IDS.has(id);
+        const builtin = builtinPluginIDs.has(id);
+        if (kind === "tool") return tool;
+        if (kind === "static") return builtin && !tool;
+        return !builtin;
+      }),
     );
   }
 

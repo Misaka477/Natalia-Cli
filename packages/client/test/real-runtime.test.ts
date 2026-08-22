@@ -24,6 +24,7 @@ import {
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger-plugin";
+import { TODO_PLUGIN_ID } from "../src/builtin-plugins/catalog";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -1392,6 +1393,36 @@ test("built-in plugin config reload remains restart-bound", async () => {
     applied: false,
     reason: "built-in plugin configuration changes require a runtime restart",
   });
+  await client.dispose?.();
+}, 60_000);
+
+test("built-in tool plugin config reload reconciles its lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-config-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_tool_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+  expect(kernel.has(TODO_PLUGIN_ID)).toBe(true);
+
+  await writeFile(
+    configPath,
+    JSON.stringify({ version: 3, tools: { enabled: { todo: false } } }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(TODO_PLUGIN_ID)).toBe(false);
+  expect(
+    (await client.registeredTools?.())?.some((tool) =>
+      tool.name.startsWith("todo_"),
+    ),
+  ).toBe(false);
   await client.dispose?.();
 }, 60_000);
 

@@ -16,6 +16,7 @@ import {
   type PluginManifest,
 } from "@natalia/plugin";
 import type { ToolRegistry } from "@natalia/tools";
+import type { BuiltinPluginEntry } from "./builtin-plugins/catalog";
 
 /** The capability id a plugin is loaded as. */
 export function pluginCapabilityID(pluginID: string) {
@@ -205,6 +206,21 @@ export function createPluginsController(input: {
     await loadLocal();
   }
 
+  async function reconcileBuiltins(
+    entries: BuiltinPluginEntry[],
+    settings: Record<string, unknown> | undefined,
+  ) {
+    const current = get();
+    const ids = new Set(entries.map((entry) => entry.id));
+    for (const manifest of current.list().reverse())
+      if (ids.has(manifest.id) && builtinIDs.has(manifest.id))
+        await current.unload(manifest.id);
+    for (const entry of entries)
+      if (entry.enabled)
+        await loadBuiltin(entry.create(), settings?.[entry.id]);
+    input.syncGlobalCommands();
+  }
+
   async function externalEntries() {
     if (input.externalPluginsEnabled?.() === false) return [];
     const installed = await resolveInstalledPluginEntries({
@@ -349,6 +365,7 @@ export function createPluginsController(input: {
     loadBuiltin,
     loadLocal,
     reconcile,
+    reconcileBuiltins,
     unload,
     unloadBuiltin,
     reload,
