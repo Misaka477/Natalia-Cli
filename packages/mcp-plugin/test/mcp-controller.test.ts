@@ -40,7 +40,7 @@ test("MCP controller reload is a no-op when the extension is disabled", async ()
   const controller = createMcpController({
     servers: () => ({}),
     workspaceRoot: root,
-    tools: createToolRegistry([]),
+    tools: { register: () => () => undefined },
     enabled: () => false,
     publish: (event) => events.push(event),
   });
@@ -54,41 +54,44 @@ test("MCP plugin unload owns connection and tool teardown", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-mcp-plugin-"));
   const tools = createToolRegistry([]);
   let controller: McpController | undefined;
+  const contributions: Array<[kind: string, name: string]> = [];
   const registry = createPluginRegistry({
     tools,
     contribute: async () => (kind, name, payload) => {
+      contributions.push([kind, name]);
       if (kind === "services" && name === MCP_CONTROLLER_SERVICE)
         controller = payload as McpController;
       return () => undefined;
     },
   });
-  await registry.loadBuiltin(
-    createMcpControllerPlugin({
-      servers: () => ({
-        fixture: {
-          type: "stdio",
-          command: process.execPath,
-          args: ["-e", SERVER],
-          headers: {},
-          environment: {},
-          allowedTools: [],
-          excludedTools: [],
-          readOnly: true,
-          enabled: true,
-          timeoutSec: 5,
-        },
-      }),
-      workspaceRoot: root,
-      tools,
-      enabled: () => true,
-      publish: () => undefined,
+  const plugin = createMcpControllerPlugin({
+    servers: () => ({
+      fixture: {
+        type: "stdio",
+        command: process.execPath,
+        args: ["-e", SERVER],
+        headers: {},
+        environment: {},
+        allowedTools: [],
+        excludedTools: [],
+        readOnly: true,
+        enabled: true,
+        timeoutSec: 5,
+      },
     }),
-  );
+    workspaceRoot: root,
+    enabled: () => true,
+    publish: () => undefined,
+  });
+  expect(plugin.manifest).toMatchObject({
+    integrationPoints: ["tools", "services"],
+  });
+  await registry.loadBuiltin(plugin);
   expect(controller).toBeDefined();
   await controller?.reload();
   expect(tools.get("mcp_fixture_echo")).toBeDefined();
   expect(controller?.access).toHaveLength(1);
-
+  expect(contributions).toContainEqual(["tools", "mcp_fixture_echo"]);
   await registry.unload(MCP_PLUGIN_ID);
   expect(tools.get("mcp_fixture_echo")).toBeUndefined();
   expect(controller?.access).toHaveLength(0);

@@ -1,6 +1,5 @@
 import type { RuntimeEvent } from "@natalia/contracts";
-import { loadNativeMCPTools } from "@natalia/mcp";
-import type { ToolRegistry } from "@natalia/tools";
+import { loadNativeMCPTools, type MCPToolRegistrar } from "@natalia/mcp";
 import type { MCPServerConfig } from "@natalia/contracts";
 
 /**
@@ -17,7 +16,7 @@ import type { MCPServerConfig } from "@natalia/contracts";
 export function createMcpController(input: {
   servers(): Record<string, MCPServerConfig>;
   workspaceRoot: string;
-  tools: ToolRegistry;
+  tools: MCPToolRegistrar;
   enabled(): boolean;
   publish(event: RuntimeEvent): void;
 }) {
@@ -37,7 +36,7 @@ export function createMcpController(input: {
     await Promise.all(cleanup.splice(0).map((close) => close()));
     access.length = 0;
     const nativeMCP = await loadNativeMCPTools({
-      registry: input.tools,
+      tools: input.tools,
       servers: input.servers(),
       workspaceRoot: input.workspaceRoot,
       onDiagnostic: (server, message) =>

@@ -550,6 +550,21 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     ],
   },
   {
+    id: "natalia-mcp",
+    targets: [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/mcp/src/index.ts",
+      "packages/mcp-plugin/src/mcp-controller.ts",
+      "packages/mcp-plugin/src/mcp-controller-plugin.ts",
+    ],
+    forbidden: [
+      {
+        description: "raw MCP tool registry wiring",
+        pattern: /\bToolRegistry\b/u,
+      },
+    ],
+  },
+  {
     id: "natalia-checkpoint",
     targets: [
       "packages/client/src/real-runtime.ts",

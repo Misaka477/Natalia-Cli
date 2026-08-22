@@ -16,7 +16,7 @@ import {
 } from "@natalia/builtin-tool-plugins";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills-plugin";
-import type { ToolExecutionContext, ToolRegistry } from "@natalia/tools";
+import type { ToolExecutionContext } from "@natalia/tools";
 import type {
   ConfigV3,
   MCPServerConfig,
@@ -209,7 +209,6 @@ export function builtinPluginCatalog(input: {
   mcp?: {
     servers(): Record<string, MCPServerConfig>;
     workspaceRoot: string;
-    tools: ToolRegistry;
     enabled(): boolean;
     publish(event: RuntimeEvent): void;
   };

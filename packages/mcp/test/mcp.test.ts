@@ -11,6 +11,17 @@ import {
   StdioMCPClient,
 } from "../src";
 
+function toolRegistrar(registry: ReturnType<typeof createToolRegistry>) {
+  return {
+    register(tool: Parameters<typeof registry.set>[1]) {
+      registry.set(tool.name, tool);
+      return () => {
+        if (registry.get(tool.name) === tool) registry.delete(tool.name);
+      };
+    },
+  };
+}
+
 const SERVER = String.raw`
 import json, sys, time
 for line in sys.stdin:
@@ -288,7 +299,7 @@ test("native MCP loader registers catalog-backed prompt and resource runtime too
   try {
     const registry = createToolRegistry([]);
     const result = await loadNativeMCPTools({
-      registry,
+      tools: toolRegistrar(registry),
       workspaceRoot: process.cwd(),
       servers: {
         fixture: {
@@ -373,7 +384,7 @@ for line in sys.stdin:
 `;
     const registry = createToolRegistry([]);
     const result = await loadNativeMCPTools({
-      registry,
+      tools: toolRegistrar(registry),
       workspaceRoot: root,
       servers: {
         fixture: {
@@ -408,7 +419,7 @@ pythonTest(
     const loader = await import("../src");
     const registry = createToolRegistry([]);
     const result = await loader.loadNativeMCPTools({
-      registry,
+      tools: toolRegistrar(registry),
       workspaceRoot: root,
       servers: {
         fixture: {
@@ -435,7 +446,7 @@ pythonTest(
 test("native MCP loader reports disabled, failed, and interactive-auth statuses without opening auth", async () => {
   const registry = createToolRegistry([]);
   const result = await loadNativeMCPTools({
-    registry,
+    tools: toolRegistrar(registry),
     workspaceRoot: process.cwd(),
     servers: {
       disabled: {
@@ -489,7 +500,7 @@ test("MCP diagnostics are attributed to the server they come from", async () => 
   const seen: Array<[server: string, message: string]> = [];
   const registry = createToolRegistry([]);
   const result = await loadNativeMCPTools({
-    registry,
+    tools: toolRegistrar(registry),
     workspaceRoot: process.cwd(),
     onDiagnostic: (server, message) => seen.push([server, message]),
     servers: {

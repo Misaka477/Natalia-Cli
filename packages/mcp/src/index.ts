@@ -1,4 +1,4 @@
-import type { RuntimeTool, ToolRegistry } from "@natalia/tools";
+import type { RuntimeTool } from "@natalia/tools";
 
 export type MCPTool = {
   name: string;
@@ -382,16 +382,20 @@ type MCPCatalogClient = MCPToolClient & {
 };
 type ClosableMCPClient = MCPCatalogClient & { close?: () => Promise<void> };
 
+export type MCPToolRegistrar = {
+  register(tool: RuntimeTool): () => void;
+};
+
 export class MCPConnectionOwner {
   private readonly clients: ClosableMCPClient[] = [];
   private readonly servers = new Map<string, ClosableMCPClient>();
   private readonly registrations: Array<{
     name: string;
-    tool: RuntimeTool;
+    dispose: () => void;
   }> = [];
   private closed = false;
 
-  constructor(private readonly registry: ToolRegistry) {}
+  constructor(private readonly tools: MCPToolRegistrar) {}
 
   addClient(name: string, client: ClosableMCPClient) {
     if (this.closed) throw new Error("MCP connection owner is closed");
@@ -401,15 +405,13 @@ export class MCPConnectionOwner {
 
   register(name: string, tool: RuntimeTool) {
     if (this.closed) throw new Error("MCP connection owner is closed");
-    this.registry.set(name, tool);
-    this.registrations.push({ name, tool });
+    this.registrations.push({ name, dispose: this.tools.register(tool) });
   }
 
   unregister(prefix: string) {
     const retained = this.registrations.filter((item) => {
       if (!item.name.startsWith(prefix)) return true;
-      if (this.registry.get(item.name) === item.tool)
-        this.registry.delete(item.name);
+      item.dispose();
       return false;
     });
     this.registrations.splice(0, this.registrations.length, ...retained);
@@ -453,9 +455,8 @@ export class MCPConnectionOwner {
     if (this.closed) return;
     this.closed = true;
     this.servers.clear();
-    for (const registration of this.registrations)
-      if (this.registry.get(registration.name) === registration.tool)
-        this.registry.delete(registration.name);
+    for (const registration of this.registrations.splice(0))
+      registration.dispose();
     await Promise.all(
       this.clients.map((client) => client.close?.().catch(() => undefined)),
     );
@@ -494,7 +495,7 @@ export function mcpToolToRuntimeTool(
 }
 
 export async function loadNativeMCPTools(input: {
-  registry: ToolRegistry;
+  tools: MCPToolRegistrar;
   servers: Record<
     string,
     {
@@ -519,7 +520,7 @@ export async function loadNativeMCPTools(input: {
   let loaded = 0;
   const diagnostics: Array<[server: string, message: string]> = [];
   const statuses: Record<string, MCPServerStatus> = {};
-  const owner = new MCPConnectionOwner(input.registry);
+  const owner = new MCPConnectionOwner(input.tools);
   for (const [name, server] of Object.entries(input.servers)) {
     if (!server.enabled) {
       statuses[name] = { status: "disabled", tools: 0 };

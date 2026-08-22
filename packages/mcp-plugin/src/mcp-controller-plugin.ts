@@ -8,7 +8,6 @@
  */
 import type { Plugin } from "@natalia/plugin";
 import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
-import type { ToolRegistry } from "@natalia/tools";
 import { createMcpController } from "./mcp-controller";
 
 export type { McpAccess, McpController } from "./mcp-controller";
@@ -19,7 +18,6 @@ export const MCP_CONTROLLER_SERVICE = "mcp.controller";
 export function createMcpControllerPlugin(input: {
   servers(): Record<string, MCPServerConfig>;
   workspaceRoot: string;
-  tools: ToolRegistry;
   enabled(): boolean;
   publish(event: RuntimeEvent): void;
 }): Plugin {
@@ -39,10 +37,13 @@ export function createMcpControllerPlugin(input: {
       conflicts: [],
       dependencies: [],
       hooks: {},
-      integrationPoints: ["services"],
+      integrationPoints: ["tools", "services"],
     },
     setup(api) {
-      controller = createMcpController(input);
+      controller = createMcpController({
+        ...input,
+        tools: { register: (tool) => api.tools.register(tool) },
+      });
       api.services.provide(MCP_CONTROLLER_SERVICE, controller);
     },
     async dispose() {

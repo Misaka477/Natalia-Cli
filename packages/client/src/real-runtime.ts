@@ -1090,7 +1090,6 @@ export function createRealRuntimeClient(
               mcp: {
                 servers: () => tsRuntimeConfig?.mcpServers ?? {},
                 workspaceRoot,
-                tools,
                 enabled: () => extensionEnabled("mcp"),
                 publish,
               },

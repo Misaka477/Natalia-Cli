@@ -107,6 +107,21 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     );
 });
 
+test("MCP migration rejects raw tool registry wiring", () => {
+  for (const path of [
+    "packages/client/src/builtin-plugins/catalog.ts",
+    "packages/mcp/src/index.ts",
+    "packages/mcp-plugin/src/mcp-controller.ts",
+    "packages/mcp-plugin/src/mcp-controller-plugin.ts",
+  ])
+    expect(
+      findMigratedPluginViolations(
+        path,
+        "const tools: ToolRegistry = registry",
+      ),
+    ).toContainEqual(expect.objectContaining({ pluginID: "natalia-mcp" }));
+});
+
 test("local tools migration rejects client-owned implementations", () => {
   for (const [path, source] of [
     [
