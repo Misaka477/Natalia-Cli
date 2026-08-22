@@ -137,6 +137,7 @@ const clientClosureAllowlist = [
   "subagents-plugin",
   "task-module-plugin",
   "task-workflow-plugin",
+  "team-plugin",
   "terminal-plugin",
   "testing",
   "tools",
@@ -602,11 +603,29 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-team",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/index.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/team-plugin.ts",
+      "packages/client/src/team-tools.ts",
+      "packages/client/src/fan-out.ts",
+      "packages/client/src/agent-team-prompts.ts",
+    ],
     forbidden: [
       {
         description: "direct team tool construction",
         pattern: /\b(?:createTeamFanoutTool|createTeamReviewTool)\b/u,
+      },
+      {
+        description: "direct team implementation import",
+        pattern:
+          /from\s+["'](?:\.\/(?:builtin-plugins\/)?team-plugin|\.\/team-tools|\.\/fan-out|\.\/agent-team-prompts|\.\.\/team-tools|\.\.\/fan-out)["']/u,
+      },
+      {
+        description: "client-owned team implementation",
+        pattern:
+          /export\s+(?:async\s+)?(?:function|const)\s+(?:createTeamPlugin|createTeamFanoutTool|createTeamReviewTool|runFanOut|reviewPRs|validateOwnershipMap|ORCHESTRATOR_SYSTEM_PROMPT|TEAM_MODE_DIRECTIVE)\b/u,
       },
     ],
   },

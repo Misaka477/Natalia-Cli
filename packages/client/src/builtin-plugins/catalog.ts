@@ -62,7 +62,7 @@ import {
   createSessionStoreControllerPlugin,
   SESSION_STORE_PLUGIN_ID,
 } from "@natalia/session-store-plugin";
-import { createTeamPlugin, TEAM_PLUGIN_ID } from "./team-plugin";
+import { createTeamPlugin, TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 import {
   createToolPipelinePlugin,
   TOOL_PIPELINE_PLUGIN_ID,
@@ -403,7 +403,7 @@ export function builtinPluginCatalog(input: {
           {
             id: TEAM_PLUGIN_ID,
             enabled: input.team.enabled,
-            create: () => createTeamPlugin({ enabled: input.team!.enabled }),
+            create: () => createTeamPlugin(),
           },
         ]
       : []),

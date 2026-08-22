@@ -37,7 +37,7 @@ import {
 import {
   TEAM_MODE_DIRECTIVE,
   sandboxedSubagentSystemPrompt,
-} from "./agent-team-prompts";
+} from "@natalia/team-plugin";
 import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {

@@ -8,18 +8,21 @@
  * provided. A disabled team plugin registers no team tools at all.
  */
 import type { Plugin } from "@natalia/plugin";
-import type { SubagentsController } from "@natalia/subagents-plugin";
 import type { SandboxController } from "@natalia/sandbox-plugin";
-import { SUBAGENTS_CONTROLLER_SERVICE } from "@natalia/subagents-plugin";
-import { SANDBOX_CONTROLLER_SERVICE } from "@natalia/sandbox-plugin";
-import { createTeamFanoutTool, createTeamReviewTool } from "../team-tools";
+import {
+  SANDBOX_CONTROLLER_SERVICE,
+  SANDBOX_PLUGIN_ID,
+} from "@natalia/sandbox-plugin";
+import type { SubagentsController } from "@natalia/subagents-plugin";
+import {
+  SUBAGENTS_CONTROLLER_SERVICE,
+  SUBAGENTS_PLUGIN_ID,
+} from "@natalia/subagents-plugin";
+import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 
 export const TEAM_PLUGIN_ID = "natalia-team";
 
-export function createTeamPlugin(input: {
-  /** The host's extension gate: plugins or skills enabled. */
-  enabled: boolean;
-}): Plugin {
+export function createTeamPlugin(): Plugin {
   return {
     manifest: {
       apiVersion: 2,
@@ -34,7 +37,20 @@ export function createTeamPlugin(input: {
       requires: [SUBAGENTS_CONTROLLER_SERVICE, SANDBOX_CONTROLLER_SERVICE],
       optionalRequires: [],
       conflicts: [],
-      dependencies: [],
+      dependencies: [
+        {
+          id: SUBAGENTS_PLUGIN_ID,
+          spec: "workspace:*",
+          optional: false,
+          peer: false,
+        },
+        {
+          id: SANDBOX_PLUGIN_ID,
+          spec: "workspace:*",
+          optional: false,
+          peer: false,
+        },
+      ],
       hooks: {},
       integrationPoints: ["tools"],
     },

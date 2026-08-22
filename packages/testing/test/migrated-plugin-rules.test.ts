@@ -161,6 +161,38 @@ test("task module migration rejects client-owned implementations", () => {
   ).toEqual([]);
 });
 
+test("team migration rejects client-owned implementations", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createTeamPlugin } from "./team-plugin"',
+    ],
+    [
+      "packages/client/src/builtin-plugins/team-plugin.ts",
+      "export function createTeamPlugin() {}",
+    ],
+    [
+      "packages/client/src/team-tools.ts",
+      "export function createTeamFanoutTool() {}",
+    ],
+    ["packages/client/src/fan-out.ts", "export async function runFanOut() {}"],
+    [
+      "packages/client/src/agent-team-prompts.ts",
+      'export const TEAM_MODE_DIRECTIVE = "team"',
+    ],
+  ] as const) {
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-team" }),
+    );
+  }
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createTeamPlugin } from "@natalia/team-plugin"',
+    ),
+  ).toEqual([]);
+});
+
 test("retry migration protects provider runner", () => {
   expect(
     findMigratedPluginViolations(

@@ -147,6 +147,7 @@
         "@natalia/subagents-plugin": "workspace:*",
         "@natalia/task-module-plugin": "workspace:*",
         "@natalia/task-workflow-plugin": "workspace:*",
+        "@natalia/team-plugin": "workspace:*",
         "@natalia/terminal-plugin": "workspace:*",
         "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -433,6 +434,17 @@
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/workflow": "workspace:*",
+      },
+    },
+    "packages/team-plugin": {
+      "name": "@natalia/team-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/sandbox-plugin": "workspace:*",
+        "@natalia/subagents-plugin": "workspace:*",
+        "@natalia/tools": "workspace:*",
       },
     },
     "packages/terminal-plugin": {
@@ -797,6 +809,8 @@
     "@natalia/task-module-plugin": ["@natalia/task-module-plugin@workspace:packages/task-module-plugin"],
 
     "@natalia/task-workflow-plugin": ["@natalia/task-workflow-plugin@workspace:packages/task-workflow-plugin"],
+
+    "@natalia/team-plugin": ["@natalia/team-plugin@workspace:packages/team-plugin"],
 
     "@natalia/terminal-plugin": ["@natalia/terminal-plugin@workspace:packages/terminal-plugin"],
 

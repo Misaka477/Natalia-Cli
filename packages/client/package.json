@@ -37,6 +37,7 @@
     "@natalia/subagents-plugin": "workspace:*",
     "@natalia/task-module-plugin": "workspace:*",
     "@natalia/task-workflow-plugin": "workspace:*",
+    "@natalia/team-plugin": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/turn-orchestration-plugin": "workspace:*",

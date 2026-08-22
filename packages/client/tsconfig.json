@@ -91,6 +91,9 @@
       "path": "../task-workflow-plugin"
     },
     {
+      "path": "../team-plugin"
+    },
+    {
       "path": "../testing"
     },
     {

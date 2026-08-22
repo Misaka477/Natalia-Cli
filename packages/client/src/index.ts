@@ -123,15 +123,6 @@ export {
   toolFamilyCapabilityID,
   type ToolFamilyLoadOutcome,
 } from "./capabilities/tool-family-capabilities";
-export {
-  reviewPRs,
-  runFanOut,
-  validateOwnershipMap,
-  type FanOutPR,
-  type FanOutTask,
-  type PRReviewDecision,
-  type PRReviewOutcome,
-} from "./fan-out";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   findWorkspaceFiles,

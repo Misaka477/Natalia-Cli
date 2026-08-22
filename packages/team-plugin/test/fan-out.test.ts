@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SubagentRegistry } from "@natalia/subagents-plugin";
 import { SnapshotSandboxManager } from "@natalia/sandbox-plugin";
-import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/fan-out";
+import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/index";
 
 test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-fanout-"));
@@ -163,7 +163,7 @@ import {
   LEAD_REVIEWER_SYSTEM_PROMPT,
   ORCHESTRATOR_SYSTEM_PROMPT,
   sandboxedSubagentSystemPrompt,
-} from "../src/agent-team-prompts";
+} from "../src/index";
 
 test("agent-team prompts carry the contract each role must follow", () => {
   // The orchestrator: disjoint ownership + validation are load-bearing.
