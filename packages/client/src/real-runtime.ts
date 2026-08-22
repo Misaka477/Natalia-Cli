@@ -185,6 +185,8 @@ import {
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   localToolsPluginEntry,
+  MCP_PLUGIN_ID,
+  mcpPluginEntry,
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
@@ -703,6 +705,7 @@ export function createRealRuntimeClient(
   let activeBuiltinToolConfigFingerprint: string | undefined;
   let activeSkillsPluginConfigFingerprint: string | undefined;
   let activeCheckpointPluginConfigFingerprint: string | undefined;
+  let activeMcpPluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -885,6 +888,9 @@ export function createRealRuntimeClient(
         externalPluginConfigFingerprint(tsConfig.config);
       const nextCheckpointPluginConfigFingerprint =
         checkpointPluginConfigFingerprint(tsConfig.config);
+      const nextMcpPluginConfigFingerprint = mcpPluginConfigFingerprint(
+        tsConfig.config,
+      );
       const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -899,6 +905,9 @@ export function createRealRuntimeClient(
         activeCheckpointPluginConfigFingerprint !== undefined &&
         nextCheckpointPluginConfigFingerprint !==
           activeCheckpointPluginConfigFingerprint;
+      const reconcileMcp =
+        activeMcpPluginConfigFingerprint !== undefined &&
+        nextMcpPluginConfigFingerprint !== activeMcpPluginConfigFingerprint;
       const reconcileBuiltinTools =
         activeBuiltinToolConfigFingerprint !== undefined &&
         nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
@@ -936,7 +945,10 @@ export function createRealRuntimeClient(
         exec.permissionProfile = selectedPermissionProfile;
       }
       const toolsBeforeReconcile =
-        reconcileBuiltinTools || reconcileSkills || reconcilePlugins
+        reconcileBuiltinTools ||
+        reconcileSkills ||
+        reconcileMcp ||
+        reconcilePlugins
           ? new Set(tools.keys())
           : undefined;
       if (reconcileBuiltinTools)
@@ -951,6 +963,19 @@ export function createRealRuntimeClient(
           [checkpointPluginEntry(checkpointPluginInput(tsConfig.config))],
           tsConfig.config.plugins.settings,
         );
+      }
+      if (reconcileMcp) {
+        mcpController = undefined;
+        mcpAccess = [];
+        await pluginsController.reconcileBuiltins(
+          [mcpPluginEntry(mcpPluginInput(tsConfig.config))],
+          tsConfig.config.plugins.settings,
+        );
+        mcpController = capabilityRegistry.service<McpController>(
+          MCP_CONTROLLER_SERVICE,
+        );
+        mcpAccess = mcpController?.access ?? [];
+        await mcpController?.reload();
       }
       if (reconcileSkills) {
         const selectedSkills = new Map(
@@ -985,6 +1010,7 @@ export function createRealRuntimeClient(
       activeBuiltinToolConfigFingerprint = nextBuiltinToolConfigFingerprint;
       activeCheckpointPluginConfigFingerprint =
         nextCheckpointPluginConfigFingerprint;
+      activeMcpPluginConfigFingerprint = nextMcpPluginConfigFingerprint;
       activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
@@ -1121,15 +1147,8 @@ export function createRealRuntimeClient(
               },
             }
           : {}),
-        ...(pluginEnabled("natalia-mcp")
-          ? {
-              mcp: {
-                servers: () => tsRuntimeConfig?.mcpServers ?? {},
-                workspaceRoot,
-                enabled: () => extensionEnabled("mcp"),
-                publish,
-              },
-            }
+        ...(mcpPluginInput(runtimeConfig)
+          ? { mcp: mcpPluginInput(runtimeConfig) }
           : {}),
         ...(pluginEnabled("natalia-checkpoint")
           ? { checkpoint: { workspaceRoot } }
@@ -1362,6 +1381,9 @@ export function createRealRuntimeClient(
       );
       activeCheckpointPluginConfigFingerprint =
         checkpointPluginConfigFingerprint(tsConfig.config);
+      activeMcpPluginConfigFingerprint = mcpPluginConfigFingerprint(
+        tsConfig.config,
+      );
       activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -3095,10 +3117,13 @@ export function createRealRuntimeClient(
       optionMode: options.permissionMode,
       permissionMode,
     });
-    const { skills: _skills, ...extensions } =
-      permission.found && permission.selectedProfile?.extensions
-        ? permission.selectedProfile.extensions
-        : {};
+    const {
+      skills: _skills,
+      mcp: _mcp,
+      ...extensions
+    } = permission.found && permission.selectedProfile?.extensions
+      ? permission.selectedProfile.extensions
+      : {};
     return JSON.stringify({
       enabled: selectPluginConfig(config.plugins.enabled, "static"),
       settings: selectPluginConfig(config.plugins.settings, "static"),
@@ -3129,6 +3154,24 @@ export function createRealRuntimeClient(
     return JSON.stringify({
       enabled: config.plugins.enabled[CHECKPOINT_PLUGIN_ID],
       settings: config.plugins.settings[CHECKPOINT_PLUGIN_ID],
+    });
+  }
+
+  function mcpPluginConfigFingerprint(config: ConfigV3) {
+    const permission = derivePermissionSettings({
+      config,
+      requestedProfile: options.permissionProfile,
+      optionMode: options.permissionMode,
+      permissionMode,
+    });
+    return JSON.stringify({
+      enabled: config.plugins.enabled[MCP_PLUGIN_ID],
+      settings: config.plugins.settings[MCP_PLUGIN_ID],
+      servers: config.mcpServers,
+      extension: permission.found
+        ? permission.selectedProfile?.extensions?.mcp
+        : undefined,
+      moduleExtension: options.taskModuleContext?.moduleExtensions?.mcp,
     });
   }
 
@@ -3193,6 +3236,20 @@ export function createRealRuntimeClient(
     return config.plugins.enabled[CHECKPOINT_PLUGIN_ID] === false
       ? undefined
       : { workspaceRoot };
+  }
+
+  function mcpPluginInput(config: ConfigV3) {
+    if (
+      config.plugins.enabled[MCP_PLUGIN_ID] === false ||
+      !extensionEnabled("mcp")
+    )
+      return undefined;
+    return {
+      servers: () => tsRuntimeConfig?.mcpServers ?? {},
+      workspaceRoot,
+      enabled: () => extensionEnabled("mcp"),
+      publish,
+    };
   }
 
   function localToolsPluginInput(config: ConfigV3) {
@@ -3281,7 +3338,8 @@ export function createRealRuntimeClient(
             builtin &&
             !tool &&
             id !== SKILLS_PLUGIN_ID &&
-            id !== CHECKPOINT_PLUGIN_ID
+            id !== CHECKPOINT_PLUGIN_ID &&
+            id !== MCP_PLUGIN_ID
           );
         return !builtin;
       }),
@@ -6764,7 +6822,6 @@ export function createRealRuntimeClient(
         { globalPath: options.globalConfigPath },
       );
       await applyConfigFromDisk();
-      await mcpController?.reload();
       return { saved: true };
     },
     async mcpServerRemove(name) {
@@ -6778,7 +6835,6 @@ export function createRealRuntimeClient(
         { globalPath: options.globalConfigPath },
       );
       await applyConfigFromDisk();
-      await mcpController?.reload();
       return { removed: true };
     },
     async agentCreate(input) {

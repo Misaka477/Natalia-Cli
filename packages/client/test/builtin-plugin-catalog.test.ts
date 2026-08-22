@@ -7,6 +7,8 @@ import {
   checkpointPluginEntry,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
+  MCP_PLUGIN_ID,
+  mcpPluginEntry,
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
@@ -61,6 +63,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
     LOCAL_TOOLS_PLUGIN_ID,
+    MCP_PLUGIN_ID,
     CHECKPOINT_PLUGIN_ID,
     TEAM_PLUGIN_ID,
   ]);
@@ -71,6 +74,9 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
   expect(
     catalog.find((entry) => entry.id === LOCAL_TOOLS_PLUGIN_ID)?.enabled,
   ).toBe(false);
+  expect(catalog.find((entry) => entry.id === MCP_PLUGIN_ID)?.enabled).toBe(
+    false,
+  );
   expect(
     catalog.find((entry) => entry.id === CHECKPOINT_PLUGIN_ID)?.enabled,
   ).toBe(false);
@@ -101,6 +107,22 @@ test("checkpoint catalog entry stays stable while disabled", () => {
   const enabled = checkpointPluginEntry({ workspaceRoot: "/tmp/workspace" });
   expect(enabled.enabled).toBe(true);
   expect(enabled.create().manifest.id).toBe(CHECKPOINT_PLUGIN_ID);
+});
+
+test("MCP catalog entry stays stable while disabled", () => {
+  const disabled = mcpPluginEntry(undefined);
+  expect(disabled.id).toBe(MCP_PLUGIN_ID);
+  expect(disabled.enabled).toBe(false);
+  expect(() => disabled.create()).toThrow("MCP plugin is disabled");
+
+  const enabled = mcpPluginEntry({
+    servers: () => ({}),
+    workspaceRoot: "/tmp/workspace",
+    enabled: () => true,
+    publish: () => undefined,
+  });
+  expect(enabled.enabled).toBe(true);
+  expect(enabled.create().manifest.id).toBe(MCP_PLUGIN_ID);
 });
 
 test("provider-model catalog construction stays lazy", () => {

@@ -140,6 +140,7 @@ export {
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 };
+export { MCP_PLUGIN_ID };
 
 export type BuiltinPluginEntry = {
   id: string;
@@ -319,15 +320,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.mcp
-      ? [
-          {
-            id: MCP_PLUGIN_ID,
-            enabled: true,
-            create: () => createMcpControllerPlugin(input.mcp!),
-          },
-        ]
-      : []),
+    mcpPluginEntry(input.mcp),
     checkpointPluginEntry(input.checkpoint),
     ...(input.subagents
       ? [
@@ -513,6 +506,19 @@ export function checkpointPluginEntry(
     create: () => {
       if (!input) throw new Error("checkpoint plugin is disabled");
       return createCheckpointControllerPlugin(input);
+    },
+  };
+}
+
+export function mcpPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["mcp"],
+): BuiltinPluginEntry {
+  return {
+    id: MCP_PLUGIN_ID,
+    enabled: input !== undefined,
+    create: () => {
+      if (!input) throw new Error("MCP plugin is disabled");
+      return createMcpControllerPlugin(input);
     },
   };
 }

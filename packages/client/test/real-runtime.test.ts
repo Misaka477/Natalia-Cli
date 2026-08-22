@@ -26,6 +26,7 @@ import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger-plugin";
 import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 import {
+  MCP_PLUGIN_ID,
   PDF_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
   TODO_PLUGIN_ID,
@@ -1458,6 +1459,121 @@ test("checkpoint plugin config reload reconciles its lifecycle", async () => {
   expect(
     events.filter((event) => event.type === "checkpoint.created").length,
   ).toBeGreaterThan(checkpointCount);
+  await client.dispose?.();
+}, 60_000);
+
+test("MCP plugin config reload reconciles its lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-mcp-config-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  const server = String.raw`
+import readline from "node:readline";
+const lines = readline.createInterface({ input: process.stdin });
+lines.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (!("id" in message)) return;
+  let result = {};
+  if (message.method === "initialize") {
+    result = {
+      protocolVersion: "2024-11-05",
+      capabilities: { tools: {}, prompts: {}, resources: {} },
+      serverInfo: { name: "reload", version: "1" },
+    };
+  } else if (message.method === "tools/list") {
+    result = { tools: [{ name: "echo", inputSchema: { type: "object" } }] };
+  } else if (message.method === "prompts/list") {
+    result = { prompts: [{ name: "reload_prompt" }] };
+  } else if (message.method === "resources/list") {
+    result = { resources: [] };
+  }
+  console.log(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+});
+`;
+  const mcpServers = {
+    reload: {
+      type: "stdio",
+      command: process.execPath,
+      args: ["-e", server],
+      enabled: true,
+      allowedTools: [],
+      excludedTools: [],
+      readOnly: true,
+      headers: {},
+      environment: {},
+      timeoutSec: 5,
+    },
+  };
+  const disabledConfig = {
+    version: 3,
+    mcpServers,
+    plugins: { enabled: { [MCP_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_mcp_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+  expect(kernel.has(MCP_PLUGIN_ID)).toBe(false);
+  expect(await client.mcpCatalog?.()).toEqual({ prompts: [], resources: [] });
+
+  await writeFile(configPath, JSON.stringify({ version: 3, mcpServers }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(MCP_PLUGIN_ID)).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.filter(
+      (tool) => tool.name === "mcp_reload_echo",
+    ),
+  ).toHaveLength(1);
+  expect(await client.mcpCatalog?.()).toEqual({
+    prompts: [
+      expect.objectContaining({ server: "reload", name: "reload_prompt" }),
+    ],
+    resources: [],
+  });
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(MCP_PLUGIN_ID)).toBe(false);
+  expect(
+    (await client.registeredTools?.())?.some((tool) =>
+      tool.name.startsWith("mcp_reload_"),
+    ),
+  ).toBe(false);
+  expect(await client.mcpCatalog?.()).toEqual({ prompts: [], resources: [] });
+
+  await writeFile(configPath, JSON.stringify({ version: 3, mcpServers }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(MCP_PLUGIN_ID)).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.filter(
+      (tool) => tool.name === "mcp_reload_echo",
+    ),
+  ).toHaveLength(1);
+  expect((await client.mcpCatalog?.())?.prompts).toHaveLength(1);
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      mcpServers,
+      defaultPermission: "without-mcp",
+      permissionProfiles: {
+        "without-mcp": {
+          approval: "ask",
+          description: "MCP disabled",
+          extensions: { mcp: false },
+        },
+      },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(MCP_PLUGIN_ID)).toBe(false);
+  expect(await client.mcpCatalog?.()).toEqual({ prompts: [], resources: [] });
   await client.dispose?.();
 }, 60_000);
 
