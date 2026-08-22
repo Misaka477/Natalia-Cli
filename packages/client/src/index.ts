@@ -4,7 +4,7 @@ export {
   parseBashSimpleCommand,
   type BashCommandParseResult,
   type BashCommandRule,
-} from "./bash-command-policy";
+} from "@natalia/tool-pipeline-plugin";
 export { compactionDisplayLine } from "./compaction-display";
 export {
   installExampleDocuments,
@@ -149,7 +149,7 @@ export {
   type ToolHooks,
   type ToolHookEvent,
   type ToolHookResult,
-} from "./tool-policy";
+} from "@natalia/tool-pipeline-plugin";
 export type {
   RuntimeClient,
   RuntimeEvent,

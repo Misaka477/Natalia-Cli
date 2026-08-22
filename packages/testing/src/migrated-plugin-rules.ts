@@ -23,9 +23,11 @@ export function findForbiddenRepositoryPathViolation(
 }
 
 const clientToolImplementationImport =
-  /(?:from\s+|import\s*\(|require\s*\()\s*["']@natalia\/tool-[a-z-]+["']/u;
-const clientToolImplementationDependency = /["']@natalia\/tool-[a-z-]+["']/u;
-const clientToolImplementationReference = /["']\.\.\/tool-[a-z-]+["']/u;
+  /(?:from\s+|import\s*\(|require\s*\()\s*["']@natalia\/tool-(?!pipeline-plugin["'])[a-z-]+["']/u;
+const clientToolImplementationDependency =
+  /["']@natalia\/tool-(?!pipeline-plugin["'])[a-z-]+["']/u;
+const clientToolImplementationReference =
+  /["']\.\.\/tool-(?!pipeline-plugin["'])[a-z-]+["']/u;
 
 /** Keep concrete tool implementations outside the client package boundary. */
 export function findClientToolDependencyViolation(
@@ -138,6 +140,7 @@ const clientClosureAllowlist = [
   "task-module-plugin",
   "task-workflow-plugin",
   "team-plugin",
+  "tool-pipeline-plugin",
   "terminal-plugin",
   "testing",
   "tools",
@@ -631,12 +634,28 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-tool-pipeline",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/tool-pipeline-plugin.ts",
+      "packages/client/src/tool-policy.ts",
+      "packages/client/src/bash-command-policy.ts",
+    ],
     forbidden: [
       {
         description: "direct policy construction in the host",
         pattern:
           /(?<!\.)\b(?:createToolPolicyHookLayer|evaluatePermissionRules|workspaceWritePathForTool|commandTextForTool)\b/u,
+      },
+      {
+        description: "direct tool pipeline implementation import",
+        pattern:
+          /from\s+["'](?:\.\/(?:builtin-plugins\/)?tool-pipeline-plugin|\.\/tool-policy|\.\/bash-command-policy|\.\.\/tool-policy|\.\.\/bash-command-policy)["']/u,
+      },
+      {
+        description: "client-owned tool pipeline implementation",
+        pattern:
+          /export\s+(?:async\s+)?(?:function|class|const)\s+(?:createToolPipelinePlugin|createToolPolicyHookLayer|evaluatePermissionRules|TerminalCommandBuffer|parseBashSimpleCommand)\b/u,
       },
     ],
   },

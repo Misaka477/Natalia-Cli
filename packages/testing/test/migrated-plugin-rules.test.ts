@@ -193,6 +193,37 @@ test("team migration rejects client-owned implementations", () => {
   ).toEqual([]);
 });
 
+test("tool pipeline migration rejects client-owned implementations", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createToolPipelinePlugin } from "./tool-pipeline-plugin"',
+    ],
+    [
+      "packages/client/src/builtin-plugins/tool-pipeline-plugin.ts",
+      "export function createToolPipelinePlugin() {}",
+    ],
+    [
+      "packages/client/src/tool-policy.ts",
+      "export function evaluatePermissionRules() {}",
+    ],
+    [
+      "packages/client/src/bash-command-policy.ts",
+      "export async function parseBashSimpleCommand() {}",
+    ],
+  ] as const) {
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-tool-pipeline" }),
+    );
+  }
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createToolPipelinePlugin } from "@natalia/tool-pipeline-plugin"',
+    ),
+  ).toEqual([]);
+});
+
 test("retry migration protects provider runner", () => {
   expect(
     findMigratedPluginViolations(

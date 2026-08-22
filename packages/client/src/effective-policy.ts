@@ -7,7 +7,7 @@ import {
   moduleToolPolicy,
   type NataliaFlowModuleType,
 } from "@natalia/workflow";
-import { createToolPolicyHookLayer } from "./tool-policy";
+import { createToolPolicyHookLayer } from "@natalia/tool-pipeline-plugin";
 
 /** The system control tool is always available and is not a capability. */
 const SYSTEM_MODULE_TOOL = "flow_module_complete";

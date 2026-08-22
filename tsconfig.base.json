@@ -78,6 +78,9 @@
         "packages/task-workflow-plugin/src/index.ts"
       ],
       "@natalia/team-plugin": ["packages/team-plugin/src/index.ts"],
+      "@natalia/tool-pipeline-plugin": [
+        "packages/tool-pipeline-plugin/src/index.ts"
+      ],
       "@natalia/terminal-plugin": ["packages/terminal-plugin/src/index.ts"],
       "@natalia/tools": ["packages/tools/src/index.ts"],
       "@natalia/turn-orchestration-plugin": [

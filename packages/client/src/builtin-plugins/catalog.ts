@@ -66,7 +66,7 @@ import { createTeamPlugin, TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 import {
   createToolPipelinePlugin,
   TOOL_PIPELINE_PLUGIN_ID,
-} from "./tool-pipeline-plugin";
+} from "@natalia/tool-pipeline-plugin";
 import {
   createCollaborationPlugin,
   COLLABORATION_PLUGIN_ID,

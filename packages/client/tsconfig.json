@@ -94,6 +94,9 @@
       "path": "../team-plugin"
     },
     {
+      "path": "../tool-pipeline-plugin"
+    },
+    {
       "path": "../testing"
     },
     {

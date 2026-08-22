@@ -249,18 +249,18 @@ import {
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
 export { terminalApprovalScope, terminalInputRisk };
-import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
+  ensureBashCommandParser,
   evaluatePermissionProfileCommandRules,
   TerminalCommandBuffer,
+  TOOL_POLICY_SERVICE,
   type ToolHookEvent,
   type ToolHooks,
   type ToolPolicy,
   type ToolPolicyHookLayer,
   type ToolPolicyService,
-} from "./tool-policy";
-import { TOOL_POLICY_SERVICE } from "./builtin-plugins/tool-pipeline-plugin";
+} from "@natalia/tool-pipeline-plugin";
 import {
   ATTACHMENT_SERVICE,
   type AttachmentService,
@@ -1453,7 +1453,7 @@ export function createRealRuntimeClient(
               ].filter(
                 (
                   rules,
-                ): rules is import("./tool-policy").PermissionProfileCommandRules =>
+                ): rules is import("@natalia/tool-pipeline-plugin").PermissionProfileCommandRules =>
                   Boolean(rules),
               ),
               event.toolName,

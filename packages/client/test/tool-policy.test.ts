@@ -14,8 +14,8 @@ import {
   evaluatePermissionRules,
   evaluatePermissionProfileCommandRules,
   TerminalCommandBuffer,
-} from "../src/tool-policy";
-import { parseBashSimpleCommand } from "../src/bash-command-policy";
+} from "@natalia/tool-pipeline-plugin";
+import { parseBashSimpleCommand } from "@natalia/tool-pipeline-plugin";
 import { terminalApprovalScope, terminalInputRisk } from "../src/real-runtime";
 import type {
   ProviderStreamRequest,

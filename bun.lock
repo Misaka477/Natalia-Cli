@@ -150,6 +150,7 @@
         "@natalia/team-plugin": "workspace:*",
         "@natalia/terminal-plugin": "workspace:*",
         "@natalia/testing": "workspace:*",
+        "@natalia/tool-pipeline-plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/turn-orchestration-plugin": "workspace:*",
         "@natalia/ui-model": "workspace:*",
@@ -157,8 +158,6 @@
         "@natalia/workflow": "workspace:*",
         "@natalia/workflow-scheduler-plugin": "workspace:*",
         "@natalia/workspace-plugin": "workspace:*",
-        "@vscode/tree-sitter-wasm": "0.3.1",
-        "web-tree-sitter": "0.25.10",
       },
     },
     "packages/collaboration-plugin": {
@@ -507,6 +506,16 @@
         "pdfjs-dist": "6.2.108",
       },
     },
+    "packages/tool-pipeline-plugin": {
+      "name": "@natalia/tool-pipeline-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/plugin": "workspace:*",
+        "@natalia/tools": "workspace:*",
+        "@vscode/tree-sitter-wasm": "0.3.1",
+        "web-tree-sitter": "0.25.10",
+      },
+    },
     "packages/tool-process": {
       "name": "@natalia/tool-process",
       "version": "0.0.0-m13",
@@ -825,6 +834,8 @@
     "@natalia/tool-fs-write": ["@natalia/tool-fs-write@workspace:packages/tool-fs-write"],
 
     "@natalia/tool-pdf": ["@natalia/tool-pdf@workspace:packages/tool-pdf"],
+
+    "@natalia/tool-pipeline-plugin": ["@natalia/tool-pipeline-plugin@workspace:packages/tool-pipeline-plugin"],
 
     "@natalia/tool-process": ["@natalia/tool-process@workspace:packages/tool-process"],
 

@@ -39,14 +39,13 @@
     "@natalia/task-workflow-plugin": "workspace:*",
     "@natalia/team-plugin": "workspace:*",
     "@natalia/testing": "workspace:*",
+    "@natalia/tool-pipeline-plugin": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/turn-orchestration-plugin": "workspace:*",
     "@natalia/ui-model": "workspace:*",
     "@natalia/work-ledger-plugin": "workspace:*",
     "@natalia/workspace-plugin": "workspace:*",
     "@natalia/workflow": "workspace:*",
-    "@natalia/workflow-scheduler-plugin": "workspace:*",
-    "@vscode/tree-sitter-wasm": "0.3.1",
-    "web-tree-sitter": "0.25.10"
+    "@natalia/workflow-scheduler-plugin": "workspace:*"
   }
 }

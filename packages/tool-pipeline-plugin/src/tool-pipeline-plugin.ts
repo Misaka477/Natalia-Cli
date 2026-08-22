@@ -19,7 +19,7 @@ import {
   workspaceWritePathForTool,
   workspaceWritePathsForTool,
   commandTextForTool,
-} from "../tool-policy";
+} from "./tool-policy";
 
 export const TOOL_PIPELINE_PLUGIN_ID = "natalia-tool-pipeline";
 export const TOOL_POLICY_SERVICE = "tool.policy";
