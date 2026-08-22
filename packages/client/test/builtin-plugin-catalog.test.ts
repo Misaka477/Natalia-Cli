@@ -12,6 +12,7 @@ import {
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
+  sandboxPluginEntry,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
@@ -63,6 +64,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
     LOCAL_TOOLS_PLUGIN_ID,
+    "natalia-sandbox",
     MCP_PLUGIN_ID,
     CHECKPOINT_PLUGIN_ID,
     TEAM_PLUGIN_ID,
@@ -123,6 +125,17 @@ test("MCP catalog entry stays stable while disabled", () => {
   });
   expect(enabled.enabled).toBe(true);
   expect(enabled.create().manifest.id).toBe(MCP_PLUGIN_ID);
+});
+
+test("sandbox controller catalog entry stays stable while disabled", () => {
+  const disabled = sandboxPluginEntry(undefined);
+  expect(disabled.id).toBe("natalia-sandbox");
+  expect(disabled.enabled).toBe(false);
+  expect(() => disabled.create()).toThrow("sandbox plugin is disabled");
+
+  const enabled = sandboxPluginEntry({ workspaceRoot: "/tmp/workspace" });
+  expect(enabled.enabled).toBe(true);
+  expect(enabled.create().manifest.id).toBe("natalia-sandbox");
 });
 
 test("provider-model catalog construction stays lazy", () => {

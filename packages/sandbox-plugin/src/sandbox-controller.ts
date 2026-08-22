@@ -32,22 +32,35 @@ export function createSandboxController(input: {
   backend?(): SandboxBackend | undefined;
 }) {
   let manager: WorkspaceSandboxManager | undefined;
+  let initializing: Promise<void> | undefined;
+  let closed = false;
 
   async function init() {
+    if (closed) throw new Error("sandbox controller is closed");
     if (manager) return;
     // Our own git-free snapshot backend is the default; the worktree backend
     // (real git, for history integration) is a per-project opt-in that needs a
     // git repo. Both extend the shared operational surface the sandbox tools
     // call.
-    const isGitRepo =
-      existsSync(join(input.workspaceRoot, ".git")) ||
-      existsSync(join(input.workspaceRoot, ".git", "HEAD"));
-    const next =
-      input.backend?.() === "worktree" && isGitRepo
-        ? new WorktreeSandboxManager(input.workspaceRoot)
-        : new SnapshotSandboxManager(input.workspaceRoot);
-    await next.initialize();
-    manager = next;
+    if (!initializing)
+      initializing = (async () => {
+        const isGitRepo =
+          existsSync(join(input.workspaceRoot, ".git")) ||
+          existsSync(join(input.workspaceRoot, ".git", "HEAD"));
+        const next =
+          input.backend?.() === "worktree" && isGitRepo
+            ? new WorktreeSandboxManager(input.workspaceRoot)
+            : new SnapshotSandboxManager(input.workspaceRoot);
+        await next.initialize();
+        if (closed) await next.close();
+        else manager = next;
+      })();
+    try {
+      await initializing;
+    } finally {
+      initializing = undefined;
+    }
+    if (closed) throw new Error("sandbox controller is closed");
   }
 
   function get(): WorkspaceSandboxManager {
@@ -58,6 +71,14 @@ export function createSandboxController(input: {
   return {
     init,
     get,
+    async close() {
+      if (closed) return;
+      closed = true;
+      await initializing;
+      const current = manager;
+      manager = undefined;
+      await current?.close();
+    },
     async referencedObjectIDs() {
       const current = get();
       return current instanceof SnapshotSandboxManager

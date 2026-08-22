@@ -63,6 +63,7 @@ export type SandboxManager = {
     hostRoot: string,
     authorize?: (paths: string[]) => Promise<void>,
   ): Promise<SandboxChange[]>;
+  close(): Promise<void>;
 };
 
 export type SandboxExecutor = {
@@ -212,6 +213,21 @@ export class WorkspaceSandboxManager
     return [...this.resources.values()].filter(
       (resource) => this.refreshResource(resource)?.status === "running",
     ).length;
+  }
+
+  async close() {
+    if (!this.initialized) return;
+    await this.initialized;
+    const errors: unknown[] = [];
+    for (const manifest of this.sandboxes.values())
+      for (const resourceID of [...manifest.runningResources])
+        try {
+          await this.stopResource(manifest.id, resourceID);
+        } catch (error) {
+          errors.push(error);
+        }
+    if (errors.length)
+      throw new AggregateError(errors, "sandbox resource cleanup failed");
   }
 
   async resourceOutput(id: string, resourceID: string, maxBytes = 20000) {

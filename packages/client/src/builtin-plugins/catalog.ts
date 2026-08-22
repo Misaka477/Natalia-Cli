@@ -311,15 +311,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.sandbox
-      ? [
-          {
-            id: SANDBOX_CONTROLLER_PLUGIN_ID,
-            enabled: true,
-            create: () => createSandboxControllerPlugin(input.sandbox!),
-          },
-        ]
-      : []),
+    sandboxPluginEntry(input.sandbox),
     mcpPluginEntry(input.mcp),
     checkpointPluginEntry(input.checkpoint),
     ...(input.subagents
@@ -506,6 +498,19 @@ export function checkpointPluginEntry(
     create: () => {
       if (!input) throw new Error("checkpoint plugin is disabled");
       return createCheckpointControllerPlugin(input);
+    },
+  };
+}
+
+export function sandboxPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["sandbox"],
+): BuiltinPluginEntry {
+  return {
+    id: SANDBOX_CONTROLLER_PLUGIN_ID,
+    enabled: input !== undefined,
+    create: () => {
+      if (!input) throw new Error("sandbox plugin is disabled");
+      return createSandboxControllerPlugin(input);
     },
   };
 }

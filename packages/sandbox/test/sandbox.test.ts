@@ -232,6 +232,27 @@ test("sandbox tracks running resources with output and stop lifecycle", async ()
   expect(manager.updateEvent("box")).toMatchObject({ runningResources: 0 });
 });
 
+test("sandbox manager close stops every running resource", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-close-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("first");
+  await manager.create("second");
+  const first = await manager.startResource("first", "sleep 30", "res_first");
+  const second = await manager.startResource(
+    "second",
+    "sleep 30",
+    "res_second",
+  );
+
+  await manager.close();
+
+  expect(manager.runningResourceCount()).toBe(0);
+  expect(manager.resourcesFor("first")).toEqual([]);
+  expect(manager.resourcesFor("second")).toEqual([]);
+  await waitForProcessExit(first.pid);
+  await waitForProcessExit(second.pid);
+}, 15_000);
+
 test("sandbox manifests restore changes but never falsely recover processes", async () => {
   const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-restart-"));
   const first = new WorkspaceSandboxManager(base);
@@ -276,4 +297,17 @@ async function waitForResourceOutput(path: string, timeoutMs = 20_000) {
     await Bun.sleep(100);
   }
   return "";
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await Bun.sleep(20);
+  }
+  throw new Error(`timed out waiting for process ${pid} to exit`);
 }

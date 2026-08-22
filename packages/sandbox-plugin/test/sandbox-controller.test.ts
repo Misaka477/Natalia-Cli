@@ -32,6 +32,29 @@ test("sandbox controller init is idempotent", async () => {
   expect(controller.get()).toBe(first);
 });
 
+test("sandbox controller close is lazy, idempotent, and final", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-close-"));
+  const controller = createSandboxController({ workspaceRoot: root });
+
+  await controller.close();
+  await controller.close();
+  await expect(controller.init()).rejects.toThrow(
+    "sandbox controller is closed",
+  );
+  expect(() => controller.get()).toThrow("sandbox manager is not initialized");
+});
+
+test("sandbox controller close releases its initialized manager", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-release-"));
+  const controller = createSandboxController({ workspaceRoot: root });
+  await controller.init();
+  await controller.close();
+  expect(() => controller.get()).toThrow("sandbox manager is not initialized");
+  await expect(controller.init()).rejects.toThrow(
+    "sandbox controller is closed",
+  );
+});
+
 test("the default sandbox backend is our own git-free snapshot manager", async () => {
   // A git repo workspace, but no backend configured: our own snapshot backend
   // is the default — git is not required.

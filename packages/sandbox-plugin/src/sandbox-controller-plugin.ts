@@ -44,7 +44,8 @@ export function createSandboxControllerPlugin(input: {
       });
       api.services.provide(SANDBOX_CONTROLLER_SERVICE, controller);
     },
-    dispose() {
+    async dispose() {
+      await controller?.close();
       controller = undefined;
     },
   };

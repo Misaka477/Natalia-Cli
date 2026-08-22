@@ -15,7 +15,12 @@ import { createToolRegistry } from "@natalia/tools";
 import { getPluginCommands } from "@natalia/plugin";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SqliteSessionStore } from "@natalia/session";
-import { WorkspaceSandboxManager } from "@natalia/sandbox-plugin";
+import {
+  SANDBOX_CONTROLLER_SERVICE,
+  SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
+  type SandboxController,
+  WorkspaceSandboxManager,
+} from "@natalia/sandbox-plugin";
 import { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import {
@@ -1574,6 +1579,77 @@ lines.on("line", (line) => {
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(MCP_PLUGIN_ID)).toBe(false);
   expect(await client.mcpCatalog?.()).toEqual({ prompts: [], resources: [] });
+  await client.dispose?.();
+}, 60_000);
+
+test("sandbox plugin config reload releases resources and reconciles team", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-config-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  const disabledConfig = {
+    version: 3,
+    plugins: { enabled: { [SANDBOX_CONTROLLER_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_sandbox_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+
+  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(false);
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(SANDBOX_CONTROLLER_SERVICE)).toBeUndefined();
+  await expect(client.sandboxList?.()).rejects.toThrow(
+    "sandbox controller unavailable",
+  );
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  const first = kernel.service<SandboxController>(SANDBOX_CONTROLLER_SERVICE)!;
+  const manager = first.get();
+  await manager.create("reload_box");
+  const resource = await manager.startResource(
+    "reload_box",
+    "sleep 30",
+    "reload_resource",
+  );
+  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(true);
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(false);
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(SANDBOX_CONTROLLER_SERVICE)).toBeUndefined();
+  expect(() => first.get()).toThrow("sandbox manager is not initialized");
+  expect(
+    (await client.registeredTools?.())?.some((tool) =>
+      tool.name.startsWith("team_"),
+    ),
+  ).toBe(false);
+  await expect(client.sandboxList?.()).rejects.toThrow(
+    "sandbox controller unavailable",
+  );
+  await waitForProcessExit(resource.pid);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(true);
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
+  const second = kernel.service<SandboxController>(SANDBOX_CONTROLLER_SERVICE);
+  expect(second).toBeDefined();
+  expect(second).not.toBe(first);
+  expect(await client.sandboxList?.()).toMatchObject([{ id: "reload_box" }]);
+  expect(
+    (await client.registeredTools?.())?.filter((tool) =>
+      tool.name.startsWith("team_"),
+    ),
+  ).toHaveLength(2);
   await client.dispose?.();
 }, 60_000);
 
@@ -9336,6 +9412,19 @@ async function waitFor(
     await Bun.sleep(10);
   }
   throw new Error(`timed out waiting for ${label}`);
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await Bun.sleep(20);
+  }
+  throw new Error(`timed out waiting for process ${pid} to exit`);
 }
 
 /** Re-pins a family's trust record to the promoted bytes (the promotion step). */

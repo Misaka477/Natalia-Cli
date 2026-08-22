@@ -190,6 +190,7 @@ import {
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
+  sandboxPluginEntry,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
@@ -219,6 +220,7 @@ import {
 } from "@natalia/terminal-plugin";
 import {
   SANDBOX_CONTROLLER_SERVICE,
+  SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
   type SandboxController,
 } from "@natalia/sandbox-plugin";
 import {
@@ -706,6 +708,7 @@ export function createRealRuntimeClient(
   let activeSkillsPluginConfigFingerprint: string | undefined;
   let activeCheckpointPluginConfigFingerprint: string | undefined;
   let activeMcpPluginConfigFingerprint: string | undefined;
+  let activeSandboxPluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -891,6 +894,9 @@ export function createRealRuntimeClient(
       const nextMcpPluginConfigFingerprint = mcpPluginConfigFingerprint(
         tsConfig.config,
       );
+      const nextSandboxPluginConfigFingerprint = sandboxPluginConfigFingerprint(
+        tsConfig.config,
+      );
       const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -908,6 +914,10 @@ export function createRealRuntimeClient(
       const reconcileMcp =
         activeMcpPluginConfigFingerprint !== undefined &&
         nextMcpPluginConfigFingerprint !== activeMcpPluginConfigFingerprint;
+      const reconcileSandbox =
+        activeSandboxPluginConfigFingerprint !== undefined &&
+        nextSandboxPluginConfigFingerprint !==
+          activeSandboxPluginConfigFingerprint;
       const reconcileBuiltinTools =
         activeBuiltinToolConfigFingerprint !== undefined &&
         nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
@@ -948,6 +958,7 @@ export function createRealRuntimeClient(
         reconcileBuiltinTools ||
         reconcileSkills ||
         reconcileMcp ||
+        reconcileSandbox ||
         reconcilePlugins
           ? new Set(tools.keys())
           : undefined;
@@ -976,6 +987,20 @@ export function createRealRuntimeClient(
         );
         mcpAccess = mcpController?.access ?? [];
         await mcpController?.reload();
+      }
+      if (reconcileSandbox) {
+        sandboxController = undefined;
+        await pluginsController.reconcileBuiltins(
+          [
+            sandboxPluginEntry(sandboxPluginInput(tsConfig.config)),
+            teamPluginEntry(teamPluginEnabled(tsConfig.config)),
+          ],
+          tsConfig.config.plugins.settings,
+        );
+        sandboxController = capabilityRegistry.service<SandboxController>(
+          SANDBOX_CONTROLLER_SERVICE,
+        );
+        await sandboxController?.init();
       }
       if (reconcileSkills) {
         const selectedSkills = new Map(
@@ -1011,6 +1036,7 @@ export function createRealRuntimeClient(
       activeCheckpointPluginConfigFingerprint =
         nextCheckpointPluginConfigFingerprint;
       activeMcpPluginConfigFingerprint = nextMcpPluginConfigFingerprint;
+      activeSandboxPluginConfigFingerprint = nextSandboxPluginConfigFingerprint;
       activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
@@ -1083,7 +1109,9 @@ export function createRealRuntimeClient(
       const sessionStoreEnabled =
         pluginEnabled("natalia-session-store") && attachmentEnabled;
       const workLedgerEnabled = pluginEnabled("natalia-work-ledger");
-      const sandboxControllerEnabled = pluginEnabled("natalia-sandbox");
+      const sandboxControllerEnabled = pluginEnabled(
+        SANDBOX_CONTROLLER_PLUGIN_ID,
+      );
       const subagentsEnabled = pluginEnabled("natalia-subagents");
       const localTools = localToolsPluginInput(runtimeConfig);
       const builtinPlugins = builtinPluginCatalog({
@@ -1139,14 +1167,7 @@ export function createRealRuntimeClient(
               },
             }
           : {}),
-        ...(sandboxControllerEnabled
-          ? {
-              sandbox: {
-                workspaceRoot,
-                backend: () => tsRuntimeConfig?.sandbox.backend,
-              },
-            }
-          : {}),
+        sandbox: sandboxPluginInput(runtimeConfig),
         ...(mcpPluginInput(runtimeConfig)
           ? { mcp: mcpPluginInput(runtimeConfig) }
           : {}),
@@ -1382,6 +1403,9 @@ export function createRealRuntimeClient(
       activeCheckpointPluginConfigFingerprint =
         checkpointPluginConfigFingerprint(tsConfig.config);
       activeMcpPluginConfigFingerprint = mcpPluginConfigFingerprint(
+        tsConfig.config,
+      );
+      activeSandboxPluginConfigFingerprint = sandboxPluginConfigFingerprint(
         tsConfig.config,
       );
       activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
@@ -3175,6 +3199,14 @@ export function createRealRuntimeClient(
     });
   }
 
+  function sandboxPluginConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      enabled: config.plugins.enabled[SANDBOX_CONTROLLER_PLUGIN_ID],
+      settings: config.plugins.settings[SANDBOX_CONTROLLER_PLUGIN_ID],
+      sandbox: config.sandbox,
+    });
+  }
+
   function builtinToolConfigFingerprint(config: ConfigV3) {
     return JSON.stringify({
       tools: config.tools,
@@ -3200,7 +3232,7 @@ export function createRealRuntimeClient(
   function teamPluginEnabled(config: ConfigV3) {
     return (
       config.plugins.enabled[TEAM_PLUGIN_ID] !== false &&
-      config.plugins.enabled["natalia-sandbox"] !== false &&
+      config.plugins.enabled[SANDBOX_CONTROLLER_PLUGIN_ID] !== false &&
       config.plugins.enabled["natalia-subagents"] !== false &&
       (extensionEnabled("plugins") || extensionEnabled("skills"))
     );
@@ -3236,6 +3268,15 @@ export function createRealRuntimeClient(
     return config.plugins.enabled[CHECKPOINT_PLUGIN_ID] === false
       ? undefined
       : { workspaceRoot };
+  }
+
+  function sandboxPluginInput(config: ConfigV3) {
+    return config.plugins.enabled[SANDBOX_CONTROLLER_PLUGIN_ID] === false
+      ? undefined
+      : {
+          workspaceRoot,
+          backend: () => tsRuntimeConfig?.sandbox.backend,
+        };
   }
 
   function mcpPluginInput(config: ConfigV3) {
@@ -3339,7 +3380,8 @@ export function createRealRuntimeClient(
             !tool &&
             id !== SKILLS_PLUGIN_ID &&
             id !== CHECKPOINT_PLUGIN_ID &&
-            id !== MCP_PLUGIN_ID
+            id !== MCP_PLUGIN_ID &&
+            id !== SANDBOX_CONTROLLER_PLUGIN_ID
           );
         return !builtin;
       }),
