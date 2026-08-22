@@ -503,6 +503,7 @@ export function createRealRuntimeClient(
     tools,
     capabilityRegistry,
     pluginPaths: () => tsRuntimeConfig?.plugins.paths ?? [],
+    pluginPackages: () => tsRuntimeConfig?.plugins.packages,
     pluginEnabled: () => tsRuntimeConfig?.plugins.enabled,
     pluginCapabilities: () => tsRuntimeConfig?.plugins.capabilities,
     pluginReadOnly: () => tsRuntimeConfig?.plugins.readOnly,

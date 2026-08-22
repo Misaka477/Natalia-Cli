@@ -1,11 +1,12 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import { resolveConfig, updateConfig, type ConfigPatch } from "@natalia/config";
 import {
+  nataliaLockSchema,
   pluginPackageConfigSchema,
   pluginPackageSourceSchema,
+  type NataliaLock,
   type PluginPackageConfig,
   type PluginPackageSource,
 } from "@natalia/contracts";
@@ -14,32 +15,8 @@ import {
   type PluginInstallationMetadata,
 } from "@natalia/plugin";
 
-const lockEntrySchema = z.object({
-  packageName: z.string().min(1),
-  manifest: z.string().min(1),
-  metadata: z.object({
-    id: z.string().min(1),
-    source: pluginPackageSourceSchema,
-    resolvedVersion: z.string().min(1),
-    integrity: z.string().min(1).optional(),
-    signature: z.string().min(1).optional(),
-    scope: z.enum(["process", "workspace", "session"]),
-    dependencies: z.array(
-      z.object({
-        id: z.string().min(1),
-        resolvedVersion: z.string().min(1),
-        optional: z.boolean().optional(),
-        peer: z.boolean().optional(),
-      }),
-    ),
-  }),
-});
-
-export const nataliaLockSchema = z.object({
-  version: z.literal(1),
-  plugins: z.record(lockEntrySchema).default({}),
-});
-export type NataliaLock = z.infer<typeof nataliaLockSchema>;
+export { nataliaLockSchema } from "@natalia/contracts";
+export type { NataliaLock } from "@natalia/contracts";
 export type PluginDoctorFinding = {
   pluginID: string;
   code:

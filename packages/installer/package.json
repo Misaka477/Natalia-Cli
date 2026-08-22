@@ -10,7 +10,6 @@
   "dependencies": {
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
-    "@natalia/plugin": "workspace:*",
-    "zod": "3.25.76"
+    "@natalia/plugin": "workspace:*"
   }
 }

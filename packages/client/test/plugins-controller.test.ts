@@ -47,7 +47,7 @@ function makeController(
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry,
-    pluginPaths: () => [],
+    pluginPaths: () => [".natalia/plugins"],
     pluginEnabled: () => undefined,
     pluginCapabilities: () => undefined,
     pluginReadOnly: () => undefined,
@@ -94,6 +94,88 @@ test("plugins controller loads, unloads idempotently and reloads", async () => {
 
   await controller.close();
   expect(() => controller.get()).toThrow("plugins are not enabled");
+});
+
+test("plugins controller loads only configured lock-backed packages", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-closure-"));
+  const modulesRoot = join(root, ".natalia", "plugins", "node_modules");
+  const configuredRoot = join(modulesRoot, "configured-plugin");
+  const neighborRoot = join(modulesRoot, "neighbor-plugin");
+  await Promise.all([
+    mkdir(configuredRoot, { recursive: true }),
+    mkdir(neighborRoot, { recursive: true }),
+  ]);
+  for (const [directory, id, command] of [
+    [configuredRoot, "configured.plugin", "configured"],
+    [neighborRoot, "neighbor.plugin", "neighbor"],
+  ] as const) {
+    await writeFile(
+      join(directory, "natalia.plugin.json"),
+      JSON.stringify({
+        apiVersion: 1,
+        id,
+        version: "1.0.0",
+        name: id,
+        entry: "index.ts",
+        capabilities: ["commands"],
+        scope: "workspace",
+      }),
+    );
+    await writeFile(
+      join(directory, "index.ts"),
+      `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({ manifest: { apiVersion: 1, id: "${id}", version: "1.0.0", name: "${id}", capabilities: ["commands"], scope: "workspace" }, setup(api) { api.commands.register({ name: "${command}", title: "${command}", run() {} }); } });`,
+    );
+  }
+  await writeFile(
+    join(root, ".natalia", "natalia.lock"),
+    JSON.stringify({
+      version: 1,
+      plugins: {
+        "configured.plugin": {
+          packageName: "configured-plugin",
+          manifest: join(configuredRoot, "natalia.plugin.json"),
+          metadata: {
+            id: "configured.plugin",
+            source: { type: "registry", spec: "configured-plugin@1.0.0" },
+            resolvedVersion: "1.0.0",
+            scope: "workspace",
+            dependencies: [],
+          },
+        },
+      },
+    }),
+  );
+  const controller = createPluginsController({
+    workspaceRoot: root,
+    tools: createToolRegistry([]),
+    capabilityRegistry: new CapabilityRegistry(),
+    pluginPaths: () => [],
+    pluginPackages: () => ({
+      "configured.plugin": {
+        source: { type: "registry", spec: "configured-plugin@1.0.0" },
+        version: "1.0.0",
+        scope: "workspace",
+      },
+    }),
+    pluginEnabled: () => undefined,
+    pluginCapabilities: () => undefined,
+    pluginReadOnly: () => undefined,
+    pluginSettings: () => undefined,
+    publish: () => undefined,
+    syncGlobalCommands: () => undefined,
+  });
+  await controller.init();
+  expect(controller.list().map((plugin) => plugin.id)).toEqual([
+    "configured.plugin",
+  ]);
+  expect(
+    controller
+      .get()
+      .commands()
+      .map((command) => command.name),
+  ).toEqual(["plugin_configured_plugin_configured"]);
+  await controller.close();
 });
 
 test("plugin tools are owned by the kernel with the plugin's declared scope", async () => {
@@ -160,7 +242,7 @@ test("a failing plugin's diagnostic is attributed to the plugin", async () => {
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
-    pluginPaths: () => [],
+    pluginPaths: () => [".natalia/plugins"],
     pluginEnabled: () => undefined,
     pluginCapabilities: () => undefined,
     pluginReadOnly: () => undefined,
@@ -370,7 +452,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "bad.plugin", versi
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
-    pluginPaths: () => [],
+    pluginPaths: () => [".natalia/plugins"],
     pluginEnabled: () => undefined,
     pluginCapabilities: () => undefined,
     pluginReadOnly: () => undefined,

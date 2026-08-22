@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { PluginPackageConfig, RuntimeEvent } from "@natalia/contracts";
 import type {
   CapabilityGrant,
   CapabilityRegistryHost,
@@ -7,8 +7,9 @@ import type {
 import {
   createPluginRegistry,
   discoverPluginManifests,
-  loadLocalPlugins,
+  loadPluginEntries,
   manifestIntegrationPoints,
+  resolveInstalledPluginEntries,
   validatePluginPath,
   type Plugin,
   type PluginLoadContext,
@@ -40,6 +41,7 @@ export function createPluginsController(input: {
   tools: ToolRegistry;
   capabilityRegistry: CapabilityRegistryHost;
   pluginPaths(): string[];
+  pluginPackages?(): Record<string, PluginPackageConfig> | undefined;
   pluginEnabled(): Record<string, boolean> | undefined;
   pluginCapabilities(): Record<string, string[]> | undefined;
   pluginReadOnly(): Record<string, boolean> | undefined;
@@ -171,10 +173,9 @@ export function createPluginsController(input: {
 
   async function loadLocal() {
     const current = get();
-    await loadLocalPlugins({
-      roots: roots(),
+    await loadPluginEntries({
+      entries: await externalEntries(),
       registry: current,
-      enabled: input.pluginEnabled(),
       capabilities: input.pluginCapabilities(),
       settings: input.pluginSettings(),
       onError: (id, error) =>
@@ -186,6 +187,45 @@ export function createPluginsController(input: {
         }),
     });
     input.syncGlobalCommands();
+  }
+
+  async function externalEntries() {
+    const installed = await resolveInstalledPluginEntries({
+      workspaceRoot: input.workspaceRoot,
+      packages: input.pluginPackages?.() ?? {},
+      enabled: input.pluginEnabled(),
+    });
+    for (const failure of installed.errors)
+      publishLoadError(failure.id, failure.error);
+    const entries = [...installed.entries];
+    const known = new Set(Object.keys(input.pluginPackages?.() ?? {}));
+    for (const root of roots())
+      for (const entry of await discoverPluginManifests(root, {
+        nodeModules: false,
+      })) {
+        if (input.pluginEnabled()?.[entry.manifest.id] === false) continue;
+        if (known.has(entry.manifest.id)) {
+          publishLoadError(
+            entry.manifest.id,
+            new Error(
+              `plugin ${entry.manifest.id} is declared by more than one source`,
+            ),
+          );
+          continue;
+        }
+        known.add(entry.manifest.id);
+        entries.push(entry);
+      }
+    return entries;
+  }
+
+  function publishLoadError(id: string, error: unknown) {
+    input.publish({
+      type: "diagnostic",
+      level: "warning",
+      owner: pluginCapabilityID(id),
+      message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
+    });
   }
 
   function get(): ReturnType<typeof createPluginRegistry> {
@@ -233,32 +273,30 @@ export function createPluginsController(input: {
 
   async function reload(id: string) {
     if (!registry) throw new Error("plugins are not enabled in this runtime");
-    for (const root of roots()) {
-      for (const { manifest, path } of await discoverPluginManifests(root)) {
-        if (manifest.id !== id) continue;
-        if (input.pluginEnabled()?.[id] === false)
-          throw new Error(`plugin is disabled in config: ${id}`);
-        if (registry.list().some((loaded) => loaded.id === id))
-          await registry.unload(id);
-        const entry = validatePluginPath(resolve(path, ".."), manifest.entry);
-        // Bun ignores query strings on file:// URLs, but a plain path with a
-        // query is a fresh cache key — the reload must re-read the entry.
-        const module = (await import(
-          `${entry}?reload=${Date.now()}-${reloadSequence++}`
-        )) as {
-          default?: unknown;
-        };
-        const candidate = module.default as Partial<Plugin>;
-        if (!candidate.setup || typeof candidate.setup !== "function")
-          throw new Error(`plugin module has no setup function: ${id}`);
-        await registry.load(
-          { ...candidate, manifest } as Plugin,
-          input.pluginCapabilities()?.[id],
-          input.pluginSettings()?.[id],
-        );
-        input.syncGlobalCommands();
-        return { reloaded: true };
-      }
+    for (const { manifest, path } of await externalEntries()) {
+      if (manifest.id !== id) continue;
+      if (input.pluginEnabled()?.[id] === false)
+        throw new Error(`plugin is disabled in config: ${id}`);
+      if (registry.list().some((loaded) => loaded.id === id))
+        await registry.unload(id);
+      const entry = validatePluginPath(resolve(path, ".."), manifest.entry);
+      // Bun ignores query strings on file:// URLs, but a plain path with a
+      // query is a fresh cache key — the reload must re-read the entry.
+      const module = (await import(
+        `${entry}?reload=${Date.now()}-${reloadSequence++}`
+      )) as {
+        default?: unknown;
+      };
+      const candidate = module.default as Partial<Plugin>;
+      if (!candidate.setup || typeof candidate.setup !== "function")
+        throw new Error(`plugin module has no setup function: ${id}`);
+      await registry.load(
+        { ...candidate, manifest } as Plugin,
+        input.pluginCapabilities()?.[id],
+        input.pluginSettings()?.[id],
+      );
+      input.syncGlobalCommands();
+      return { reloaded: true };
     }
     throw new Error(`plugin not found: ${id}`);
   }

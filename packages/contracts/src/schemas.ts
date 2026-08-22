@@ -523,6 +523,32 @@ export const pluginPackageConfigSchema = z.object({
   scope: z.enum(["process", "workspace", "session"]),
 });
 
+export const pluginLockEntrySchema = z.object({
+  packageName: z.string().min(1),
+  manifest: z.string().min(1),
+  metadata: z.object({
+    id: z.string().min(1),
+    source: pluginPackageSourceSchema,
+    resolvedVersion: z.string().min(1),
+    integrity: z.string().min(1).optional(),
+    signature: z.string().min(1).optional(),
+    scope: z.enum(["process", "workspace", "session"]),
+    dependencies: z.array(
+      z.object({
+        id: z.string().min(1),
+        resolvedVersion: z.string().min(1),
+        optional: z.boolean().optional(),
+        peer: z.boolean().optional(),
+      }),
+    ),
+  }),
+});
+
+export const nataliaLockSchema = z.object({
+  version: z.literal(1),
+  plugins: z.record(pluginLockEntrySchema).default({}),
+});
+
 export const pluginIntegrationPointSchema = z.enum([
   "tools",
   "commands",
@@ -925,6 +951,7 @@ export type SandboxBackend = z.infer<typeof sandboxConfigSchema>["backend"];
 export type ConfigV3 = z.infer<typeof configV3Schema>;
 export type PluginPackageSource = z.infer<typeof pluginPackageSourceSchema>;
 export type PluginPackageConfig = z.infer<typeof pluginPackageConfigSchema>;
+export type NataliaLock = z.infer<typeof nataliaLockSchema>;
 export type ModelRef = z.infer<typeof modelRefSchema>;
 export type ModelCapabilities = z.infer<typeof modelCapabilitiesSchema>;
 export type ModelLimits = z.infer<typeof modelLimitsSchema>;

@@ -12,6 +12,7 @@ import {
   pluginManifestSchema,
   resolvePluginDependencies,
   resolvePluginConfig,
+  resolveInstalledPluginEntries,
   runPluginConformance,
 } from "../src";
 
@@ -38,6 +39,130 @@ test("plugin discovery scans unscoped and scoped installed packages", async () =
       .map((entry) => entry.manifest.id)
       .sort(),
   ).toEqual(["fixture.plugin.0", "fixture.plugin.1"]);
+});
+
+test("installed plugin entries require matching config, lock, and manifest", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-closure-"));
+  const packageRoot = join(
+    root,
+    ".natalia",
+    "plugins",
+    "node_modules",
+    "@fixture",
+    "plugin",
+  );
+  await mkdir(packageRoot, { recursive: true });
+  const manifestPath = join(packageRoot, "natalia.plugin.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      apiVersion: 2,
+      id: "fixture.plugin",
+      version: "1.2.3",
+      name: "Fixture",
+      entry: "index.ts",
+      scope: "workspace",
+    }),
+  );
+  await writeFile(join(packageRoot, "index.ts"), "export default {};");
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "natalia.lock"),
+    JSON.stringify({
+      version: 1,
+      plugins: {
+        "fixture.plugin": {
+          packageName: "@fixture/plugin",
+          manifest: manifestPath,
+          metadata: {
+            id: "fixture.plugin",
+            source: { type: "registry", spec: "@fixture/plugin@1.2.3" },
+            resolvedVersion: "1.2.3",
+            integrity: "sha512-fixture",
+            scope: "workspace",
+            dependencies: [],
+          },
+        },
+      },
+    }),
+  );
+  const configured = {
+    source: { type: "registry" as const, spec: "@fixture/plugin@1.2.3" },
+    version: "1.2.3",
+    integrity: "sha512-fixture",
+    scope: "workspace" as const,
+  };
+  const resolved = await resolveInstalledPluginEntries({
+    workspaceRoot: root,
+    packages: { "fixture.plugin": configured },
+  });
+  expect(resolved.errors).toEqual([]);
+  expect(resolved.entries).toEqual([
+    expect.objectContaining({
+      path: manifestPath,
+      manifest: expect.objectContaining({ id: "fixture.plugin" }),
+    }),
+  ]);
+
+  const mismatch = await resolveInstalledPluginEntries({
+    workspaceRoot: root,
+    packages: {
+      "fixture.plugin": { ...configured, version: "2.0.0" },
+      "missing.plugin": configured,
+    },
+  });
+  expect(mismatch.entries).toEqual([]);
+  expect(mismatch.errors.map(({ id }) => id).sort()).toEqual([
+    "fixture.plugin",
+    "missing.plugin",
+  ]);
+});
+
+test("installed plugin entries reject lock paths outside their package", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-escape-"));
+  const packageRoot = join(
+    root,
+    ".natalia",
+    "plugins",
+    "node_modules",
+    "fixture-plugin",
+  );
+  await mkdir(packageRoot, { recursive: true });
+  await writeFile(join(packageRoot, "index.ts"), "export default {};");
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "natalia.lock"),
+    JSON.stringify({
+      version: 1,
+      plugins: {
+        "fixture.plugin": {
+          packageName: "fixture-plugin",
+          manifest: join(root, "outside", "natalia.plugin.json"),
+          metadata: {
+            id: "fixture.plugin",
+            source: { type: "registry", spec: "fixture-plugin" },
+            resolvedVersion: "1.0.0",
+            scope: "workspace",
+            dependencies: [],
+          },
+        },
+      },
+    }),
+  );
+  const resolved = await resolveInstalledPluginEntries({
+    workspaceRoot: root,
+    packages: {
+      "fixture.plugin": {
+        source: { type: "registry", spec: "fixture-plugin" },
+        version: "1.0.0",
+        scope: "workspace",
+      },
+    },
+  });
+  expect(resolved.entries).toEqual([]);
+  expect(resolved.errors[0]?.error.message).toContain(
+    "manifest escapes package",
+  );
 });
 
 test("plugin manifest v2 keeps v1 compatibility and applies defaults", () => {
