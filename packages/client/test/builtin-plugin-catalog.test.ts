@@ -3,6 +3,8 @@ import {
   AGENT_PLUGIN_ID,
   ASK_PLUGIN_ID,
   builtinPluginCatalog,
+  CHECKPOINT_PLUGIN_ID,
+  checkpointPluginEntry,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
@@ -59,6 +61,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
     LOCAL_TOOLS_PLUGIN_ID,
+    CHECKPOINT_PLUGIN_ID,
     TEAM_PLUGIN_ID,
   ]);
   expect(new Set(catalog.map((entry) => entry.id)).size).toBe(catalog.length);
@@ -67,6 +70,9 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
   );
   expect(
     catalog.find((entry) => entry.id === LOCAL_TOOLS_PLUGIN_ID)?.enabled,
+  ).toBe(false);
+  expect(
+    catalog.find((entry) => entry.id === CHECKPOINT_PLUGIN_ID)?.enabled,
   ).toBe(false);
   expect(catalog.find((entry) => entry.id === TEAM_PLUGIN_ID)?.enabled).toBe(
     false,
@@ -84,6 +90,17 @@ test("skills catalog entry stays stable while disabled", () => {
   const enabled = skillsPluginEntry({ workspaceRoot: "/tmp/workspace" });
   expect(enabled.enabled).toBe(true);
   expect(enabled.create().manifest.id).toBe(SKILLS_PLUGIN_ID);
+});
+
+test("checkpoint catalog entry stays stable while disabled", () => {
+  const disabled = checkpointPluginEntry(undefined);
+  expect(disabled.id).toBe(CHECKPOINT_PLUGIN_ID);
+  expect(disabled.enabled).toBe(false);
+  expect(() => disabled.create()).toThrow("checkpoint plugin is disabled");
+
+  const enabled = checkpointPluginEntry({ workspaceRoot: "/tmp/workspace" });
+  expect(enabled.enabled).toBe(true);
+  expect(enabled.create().manifest.id).toBe(CHECKPOINT_PLUGIN_ID);
 });
 
 test("provider-model catalog construction stays lazy", () => {

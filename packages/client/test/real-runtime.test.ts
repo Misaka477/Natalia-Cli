@@ -30,6 +30,7 @@ import {
   SKILLS_PLUGIN_ID,
   TODO_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
+import { CHECKPOINT_PLUGIN_ID } from "@natalia/checkpoint-plugin";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -1398,6 +1399,65 @@ test("built-in plugin config reload remains restart-bound", async () => {
     applied: false,
     reason: "built-in plugin configuration changes require a runtime restart",
   });
+  await client.dispose?.();
+}, 60_000);
+
+test("checkpoint plugin config reload reconciles its lifecycle", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-checkpoint-config-reload-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  const disabledConfig = {
+    version: 3,
+    plugins: { enabled: { [CHECKPOINT_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  const kernel = new CapabilityRegistry();
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_checkpoint_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await client.runtimeStatus?.();
+  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(false);
+  await client.submit("without checkpoint");
+  expect(events.some((event) => event.type === "checkpoint.created")).toBe(
+    false,
+  );
+  await expect(client.checkpointList?.()).rejects.toThrow(
+    "checkpoint controller unavailable",
+  );
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(true);
+  await client.submit("with checkpoint");
+  expect(events.some((event) => event.type === "checkpoint.created")).toBe(
+    true,
+  );
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(false);
+  const checkpointCount = events.filter(
+    (event) => event.type === "checkpoint.created",
+  ).length;
+  await client.submit("disabled again");
+  expect(
+    events.filter((event) => event.type === "checkpoint.created"),
+  ).toHaveLength(checkpointCount);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(true);
+  await client.submit("enabled again");
+  expect(
+    events.filter((event) => event.type === "checkpoint.created").length,
+  ).toBeGreaterThan(checkpointCount);
   await client.dispose?.();
 }, 60_000);
 

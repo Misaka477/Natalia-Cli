@@ -126,6 +126,7 @@ export {
   ASK_PLUGIN_ID,
   builtinPdfPluginEntry,
   builtinToolPluginCatalog,
+  CHECKPOINT_PLUGIN_ID,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
@@ -327,18 +328,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.checkpoint
-      ? [
-          {
-            id: CHECKPOINT_PLUGIN_ID,
-            enabled: true,
-            create: () =>
-              createCheckpointControllerPlugin({
-                workspaceRoot: input.checkpoint!.workspaceRoot,
-              }),
-          },
-        ]
-      : []),
+    checkpointPluginEntry(input.checkpoint),
     ...(input.subagents
       ? [
           {
@@ -510,6 +500,19 @@ export function skillsPluginEntry(
     create: () => {
       if (!input) throw new Error("skills plugin is disabled");
       return createSkillsPlugin(input);
+    },
+  };
+}
+
+export function checkpointPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["checkpoint"],
+): BuiltinPluginEntry {
+  return {
+    id: CHECKPOINT_PLUGIN_ID,
+    enabled: input !== undefined,
+    create: () => {
+      if (!input) throw new Error("checkpoint plugin is disabled");
+      return createCheckpointControllerPlugin(input);
     },
   };
 }

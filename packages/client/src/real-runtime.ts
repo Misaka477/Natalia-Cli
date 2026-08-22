@@ -31,6 +31,7 @@ import type { SubagentsController } from "@natalia/subagents-plugin";
 import { SUBAGENTS_CONTROLLER_SERVICE } from "@natalia/subagents-plugin";
 import {
   CHECKPOINT_FACTORY_SERVICE,
+  CHECKPOINT_PLUGIN_ID,
   type CheckpointController,
   type CheckpointControllerFactory,
 } from "@natalia/checkpoint-plugin";
@@ -180,6 +181,7 @@ import {
   builtinPdfPluginEntry,
   builtinPluginCatalog,
   builtinToolPluginCatalog,
+  checkpointPluginEntry,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   localToolsPluginEntry,
@@ -613,8 +615,7 @@ export function createRealRuntimeClient(
     const factory = capabilityRegistry.service<CheckpointControllerFactory>(
       CHECKPOINT_FACTORY_SERVICE,
     );
-    if (!factory)
-      throw new Error("checkpoint controller unavailable (natalia-checkpoint)");
+    if (!factory) return undefined;
     const controller = factory({
       sessionID: () => id,
       checkpoint: () => tsRuntimeConfig?.checkpoint,
@@ -636,7 +637,9 @@ export function createRealRuntimeClient(
     const id = exec.session.id;
     let pending = checkpointInitBySession.get(id);
     if (!pending) {
-      pending = checkpointControllerFor(exec).init();
+      const controller = checkpointControllerFor(exec);
+      if (!controller) return undefined;
+      pending = controller.init();
       checkpointInitBySession.set(id, pending);
     }
     await pending;
@@ -699,6 +702,7 @@ export function createRealRuntimeClient(
   let activeExternalPluginConfigFingerprint: string | undefined;
   let activeBuiltinToolConfigFingerprint: string | undefined;
   let activeSkillsPluginConfigFingerprint: string | undefined;
+  let activeCheckpointPluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -879,6 +883,8 @@ export function createRealRuntimeClient(
         };
       const nextExternalPluginConfigFingerprint =
         externalPluginConfigFingerprint(tsConfig.config);
+      const nextCheckpointPluginConfigFingerprint =
+        checkpointPluginConfigFingerprint(tsConfig.config);
       const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -889,6 +895,10 @@ export function createRealRuntimeClient(
         activeSkillsPluginConfigFingerprint !== undefined &&
         nextSkillsPluginConfigFingerprint !==
           activeSkillsPluginConfigFingerprint;
+      const reconcileCheckpoint =
+        activeCheckpointPluginConfigFingerprint !== undefined &&
+        nextCheckpointPluginConfigFingerprint !==
+          activeCheckpointPluginConfigFingerprint;
       const reconcileBuiltinTools =
         activeBuiltinToolConfigFingerprint !== undefined &&
         nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
@@ -934,6 +944,14 @@ export function createRealRuntimeClient(
           builtinToolEntries(tsConfig.config),
           tsConfig.config.plugins.settings,
         );
+      if (reconcileCheckpoint) {
+        checkpointControllerBySession.clear();
+        checkpointInitBySession.clear();
+        await pluginsController.reconcileBuiltins(
+          [checkpointPluginEntry(checkpointPluginInput(tsConfig.config))],
+          tsConfig.config.plugins.settings,
+        );
+      }
       if (reconcileSkills) {
         const selectedSkills = new Map(
           [...executionBySession.entries()].flatMap(([id, exec]) =>
@@ -965,6 +983,8 @@ export function createRealRuntimeClient(
         nextExternalPluginConfigFingerprint;
       activeBuiltinPluginConfigFingerprint = nextBuiltinPluginConfigFingerprint;
       activeBuiltinToolConfigFingerprint = nextBuiltinToolConfigFingerprint;
+      activeCheckpointPluginConfigFingerprint =
+        nextCheckpointPluginConfigFingerprint;
       activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
@@ -1340,6 +1360,8 @@ export function createRealRuntimeClient(
       activeBuiltinToolConfigFingerprint = builtinToolConfigFingerprint(
         tsConfig.config,
       );
+      activeCheckpointPluginConfigFingerprint =
+        checkpointPluginConfigFingerprint(tsConfig.config);
       activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -3103,6 +3125,13 @@ export function createRealRuntimeClient(
     });
   }
 
+  function checkpointPluginConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      enabled: config.plugins.enabled[CHECKPOINT_PLUGIN_ID],
+      settings: config.plugins.settings[CHECKPOINT_PLUGIN_ID],
+    });
+  }
+
   function builtinToolConfigFingerprint(config: ConfigV3) {
     return JSON.stringify({
       tools: config.tools,
@@ -3158,6 +3187,12 @@ export function createRealRuntimeClient(
         });
       },
     };
+  }
+
+  function checkpointPluginInput(config: ConfigV3) {
+    return config.plugins.enabled[CHECKPOINT_PLUGIN_ID] === false
+      ? undefined
+      : { workspaceRoot };
   }
 
   function localToolsPluginInput(config: ConfigV3) {
@@ -3242,7 +3277,12 @@ export function createRealRuntimeClient(
         const builtin = builtinPluginIDs.has(id);
         if (kind === "tool") return tool;
         if (kind === "static")
-          return builtin && !tool && id !== SKILLS_PLUGIN_ID;
+          return (
+            builtin &&
+            !tool &&
+            id !== SKILLS_PLUGIN_ID &&
+            id !== CHECKPOINT_PLUGIN_ID
+          );
         return !builtin;
       }),
     );
@@ -4446,7 +4486,7 @@ export function createRealRuntimeClient(
       persistInboxPromotion: () => persistInboxPromotion(exec.session.id),
       createTurnCheckpoint: async (input) => {
         const controller = await initializeCheckpointController(exec);
-        if (controller.isEnabled())
+        if (controller?.isEnabled())
           await controller.get().createCheckpoint(input);
       },
       isToolAllowed: (toolName) => isToolAllowed(toolName, exec),
@@ -6453,6 +6493,10 @@ export function createRealRuntimeClient(
       const owner = activeExec;
       if (!owner) throw new Error("session is not initialized");
       const controller = await initializeCheckpointController(owner);
+      if (!controller)
+        throw new Error(
+          "checkpoint controller unavailable (natalia-checkpoint)",
+        );
       return (await controller.get().list()).map((record) => ({
         id: record.id,
         sequence: record.sequence,
@@ -6474,6 +6518,10 @@ export function createRealRuntimeClient(
       const owner = activeExec;
       if (!owner) throw new Error("session is not initialized");
       const controller = await initializeCheckpointController(owner);
+      if (!controller)
+        throw new Error(
+          "checkpoint controller unavailable (natalia-checkpoint)",
+        );
       return await controller
         .get()
         .previewRollback(id, owner.context, controller.resources(), true);
@@ -6483,6 +6531,10 @@ export function createRealRuntimeClient(
       const owner = activeExec;
       if (!owner) throw new Error("session is not initialized");
       const controller = await initializeCheckpointController(owner);
+      if (!controller)
+        throw new Error(
+          "checkpoint controller unavailable (natalia-checkpoint)",
+        );
       const preview = await controller.get().rollbackTo(input.id, {
         context: owner.context,
         dryRun: input.dryRun,
@@ -7867,6 +7919,10 @@ export function createRealRuntimeClient(
     }
     if (/^\/(?:checkpoint|checkpoints|rollback)\b/u.test(trimmed)) {
       const controller = await initializeCheckpointController(commandExec);
+      if (!controller)
+        throw new Error(
+          "checkpoint controller unavailable (natalia-checkpoint)",
+        );
       if (!controller.isEnabled())
         throw new Error("checkpoint store is not initialized");
       const result = await runCheckpointCommand(
