@@ -1,6 +1,5 @@
 import { resolve } from "node:path";
 import { agentsFromConfig } from "@natalia/agent-plugin";
-import type { ResolvedConfig } from "@natalia/config";
 import { resolveEffectiveModel } from "@natalia/config";
 import type { CapabilityRegistryView } from "@natalia/capability";
 import type {
@@ -37,8 +36,11 @@ import {
   type NataliaTaskInvocationStatus,
 } from "@natalia/workflow";
 import { effectiveFlowPermissions } from "./effective-policy";
-import { assertTaskReferences } from "./task-preflight";
-import { workflowContributionsProjection } from "./workflow-contributions";
+import {
+  assertConfigApplied,
+  assertTaskReferences,
+  workflowContributionsProjection,
+} from "@natalia/task-workflow-plugin";
 import {
   createRealRuntimeClient,
   type RealRuntimeClientOptions,
@@ -59,22 +61,6 @@ import {
  * is active but the runtime silently ignored: a rejected file drops permission
  * profiles, command rules and channel credentials with it.
  */
-export function assertConfigApplied(resolved: ResolvedConfig) {
-  const rejected = resolved.sources.filter(
-    (source) =>
-      !source.applied && source.diagnostic?.startsWith("invalid_config"),
-  );
-  if (rejected.length)
-    throw new Error(
-      `configuration was rejected and is not in effect: ${rejected
-        .map(
-          (source) => `${source.path ?? source.scope} (${source.diagnostic})`,
-        )
-        .join(", ")}`,
-    );
-  return resolved.config;
-}
-
 /**
  * Effective permissions each stage of the task's flow would get. It is a preview
  * for the operator, not a boundary: the runtime recomputes every layer before it

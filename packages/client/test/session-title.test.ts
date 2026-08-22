@@ -9,8 +9,8 @@ import {
   normalizeSessionTitle,
   sanitizeSessionTitleInput,
 } from "../src/session-title";
-import { createSessionStoreController } from "../src/session-store-controller";
-import { createAttachmentService } from "../src/attachment-service";
+import { createSessionStoreController } from "@natalia/session-store-plugin";
+import { createAttachmentService } from "@natalia/attachment-plugin";
 
 test("session titles sanitize secrets, JWTs, and home paths", () => {
   const input = sanitizeSessionTitleInput(

@@ -13,7 +13,7 @@ import type { TaskRunResult } from "./task-controller";
 import type {
   WorkflowExecutionEvent,
   WorkflowExecutionHandle,
-} from "./workflow-execution-scheduler";
+} from "@natalia/workflow-scheduler-plugin";
 
 /**
  * The worker channel's route table, mirroring `handleWorkerRequest` below.
@@ -843,7 +843,9 @@ export function attachRuntimeClientWorker(
     WorkflowExecutionHandle<TaskRunResult>
   >();
   const workflowPumps = new Map<string, Promise<void>>();
+  const workflowAdmissions = new Set<string>();
   const pendingWorkflowCancellations = new Map<string, string | undefined>();
+  let closing = false;
   const forwardEvent = (event: RuntimeEvent) => {
     port.postMessage({ type: "runtime.event", event } satisfies WorkerEvent);
   };
@@ -877,10 +879,26 @@ export function attachRuntimeClientWorker(
           value = { applied: true };
         }
       } else if (request.method === "workflow.run") {
+        if (closing) throw new Error("worker runtime disposed");
         if (!options?.workflowExecution || !options.workflowConfig)
           throw new Error("workflow execution is not available in this worker");
         const input = request.value as WorkerWorkflowRunInput;
-        const config = await options.workflowConfig();
+        if (
+          workflowExecutions.has(input.executionID) ||
+          workflowAdmissions.has(input.executionID)
+        )
+          throw new Error(
+            `workflow execution ID is already admitted: ${input.executionID}`,
+          );
+        workflowAdmissions.add(input.executionID);
+        let config: import("@natalia/contracts").ConfigV3;
+        try {
+          config = await options.workflowConfig();
+        } catch (error) {
+          workflowAdmissions.delete(input.executionID);
+          pendingWorkflowCancellations.delete(input.executionID);
+          throw error;
+        }
         // `workflow.run` and an immediate `workflow.cancel` are separate port
         // messages. Yield one message turn after async config resolution so the
         // ordered cancel can populate pendingWorkflowCancellations before the
@@ -888,24 +906,35 @@ export function attachRuntimeClientWorker(
         await new Promise<void>((resolveAdmission) =>
           setTimeout(resolveAdmission, 0),
         );
-        const handle = options.workflowExecution.runTask({
-          executionID: input.executionID,
-          idempotencyKey: input.idempotencyKey,
-          idempotencyFingerprint: input.idempotencyFingerprint,
-          workspaceRoot: input.workspaceRoot,
-          path: input.path,
-          taskID: input.taskID,
-          config,
-          requestedBy: {
-            transport: "worker",
-            sessionID: input.requestedBy?.sessionID,
-          },
-        });
-        workflowExecutions.set(handle.executionID, handle);
-        if (pendingWorkflowCancellations.has(handle.executionID)) {
-          handle.cancel(pendingWorkflowCancellations.get(handle.executionID));
-          pendingWorkflowCancellations.delete(handle.executionID);
+        if (closing) {
+          workflowAdmissions.delete(input.executionID);
+          throw new Error("worker runtime disposed");
         }
+        let handle: WorkflowExecutionHandle<TaskRunResult>;
+        try {
+          handle = options.workflowExecution.runTask({
+            executionID: input.executionID,
+            idempotencyKey: input.idempotencyKey,
+            idempotencyFingerprint: input.idempotencyFingerprint,
+            workspaceRoot: input.workspaceRoot,
+            path: input.path,
+            taskID: input.taskID,
+            config,
+            requestedBy: {
+              transport: "worker",
+              sessionID: input.requestedBy?.sessionID,
+            },
+          });
+        } finally {
+          workflowAdmissions.delete(input.executionID);
+        }
+        workflowExecutions.set(handle.executionID, handle);
+        const cancelled = pendingWorkflowCancellations.has(handle.executionID);
+        const cancellation = pendingWorkflowCancellations.get(
+          handle.executionID,
+        );
+        pendingWorkflowCancellations.delete(handle.executionID);
+        if (cancelled) handle.cancel(cancellation);
         const pump = (async () => {
           for await (const workflowEvent of handle.events)
             port.postMessage({
@@ -925,7 +954,8 @@ export function attachRuntimeClientWorker(
         const input = request.value as { executionID: string; reason?: string };
         const handle = workflowExecutions.get(input.executionID);
         if (handle) handle.cancel(input.reason);
-        else pendingWorkflowCancellations.set(input.executionID, input.reason);
+        else if (workflowAdmissions.has(input.executionID))
+          pendingWorkflowCancellations.set(input.executionID, input.reason);
       } else if (request.method === "config.update") {
         // The write-apply path, unlike the rebuild path above: the patch lands
         // on disk and the runtime applies it in place.
@@ -936,9 +966,11 @@ export function attachRuntimeClientWorker(
           },
         );
       } else if (request.method === "dispose") {
+        closing = true;
         for (const handle of workflowExecutions.values())
           handle.cancel("worker runtime disposed");
         pendingWorkflowCancellations.clear();
+        workflowAdmissions.clear();
         await Promise.allSettled(workflowPumps.values());
         value = await activeClient.dispose?.();
         await options?.disposeHost?.();

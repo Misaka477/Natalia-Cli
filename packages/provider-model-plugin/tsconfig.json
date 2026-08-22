@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../.."
+  },
+  "include": ["src", "test"],
+  "references": [
+    { "path": "../agent-plugin" },
+    { "path": "../attachment-plugin" },
+    { "path": "../compaction-plugin" },
+    { "path": "../config" },
+    { "path": "../contracts" },
+    { "path": "../plugin" },
+    { "path": "../retry-plugin" },
+    { "path": "../runtime" },
+    { "path": "../session" },
+    { "path": "../skills-plugin" },
+    { "path": "../tools" }
+  ]
+}

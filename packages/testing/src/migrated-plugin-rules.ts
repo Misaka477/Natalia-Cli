@@ -8,6 +8,20 @@ export type MigratedPluginViolation = {
   pluginID: string;
   description: string;
 };
+const forbiddenRepositoryPaths = new Map([
+  [
+    "packages/client/src/runtime-assembly.ts",
+    "runtime assembly must remain in the composition root until metadata-driven loading replaces it",
+  ],
+]);
+
+/** Prevent deleted transitional architecture seams from being recreated. */
+export function findForbiddenRepositoryPathViolation(
+  path: string,
+): string | undefined {
+  return forbiddenRepositoryPaths.get(path.replaceAll("\\", "/"));
+}
+
 const clientToolImplementationImport =
   /(?:from\s+|import\s*\(|require\s*\()\s*["']@natalia\/tool-[a-z-]+["']/u;
 const clientToolImplementationDependency = /["']@natalia\/tool-[a-z-]+["']/u;
@@ -96,24 +110,40 @@ export function findClientProductDependencyViolation(
  */
 const clientClosureAllowlist = [
   "agent-plugin",
+  "attachment-plugin",
   "builtin-tool-plugins",
   "capability",
+  "checkpoint-plugin",
+  "collaboration-plugin",
+  "compaction-plugin",
   "config",
+  "context-ledger-plugin",
   "contracts",
+  "governance-ledger-plugin",
   "mcp-plugin",
   "object-store",
   "platform",
   "plugin",
+  "provider-model-plugin",
   "runtime",
+  "retry-plugin",
+  "runtime-config-plugin",
+  "runtime-ui-plugin",
   "sandbox-plugin",
   "session",
+  "session-store-plugin",
   "skills-plugin",
   "subagents-plugin",
+  "task-workflow-plugin",
   "terminal-plugin",
   "testing",
   "tools",
+  "turn-orchestration-plugin",
   "ui-model",
+  "work-ledger-plugin",
+  "workspace-plugin",
   "workflow",
+  "workflow-scheduler-plugin",
 ];
 
 /** Keep the client dependency closure free of non-kernel product packages. */
@@ -378,8 +408,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-runtime-config",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/runtime-config-plugin.ts",
+    ],
     forbidden: [
+      {
+        description: "direct runtime config implementation import",
+        pattern:
+          /from\s+["'](?:\.\/runtime-config-plugin|\.\/builtin-plugins\/runtime-config-plugin)["']/u,
+      },
       {
         description: "runtime config capability registration",
         pattern:
@@ -411,12 +450,32 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-workspace",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/workspace-plugin.ts",
+      "packages/client/src/mutation-registry.ts",
+      "packages/client/src/workspace-change-auditor.ts",
+      "packages/client/src/workspace-files-controller.ts",
+      "packages/client/src/workspace-files.ts",
+      "packages/client/src/workspace-observation.ts",
+      "packages/client/src/workspace-write-lock.ts",
+    ],
     forbidden: [
       {
         description: "direct workspace component construction",
         pattern:
           /\b(?:createWorkspaceWriteLock|createMutationRegistry|createWorkspaceFilesController)\b/u,
+      },
+      {
+        description: "direct workspace implementation import",
+        pattern:
+          /from\s+["'](?:\.\.?\/)*(?:mutation-registry|workspace-change-auditor|workspace-files-controller|workspace-files|workspace-observation|workspace-write-lock|workspace-plugin|builtin-plugins\/workspace-plugin)["']/u,
+      },
+      {
+        description: "client-owned workspace implementation",
+        pattern:
+          /export (?:async )?function (?:createWorkspacePlugin|createWorkspaceChangeAuditor|findWorkspaceFiles|watchWorkspaceFiles)\b/u,
       },
     ],
   },
@@ -456,11 +515,25 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-checkpoint",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/checkpoint-controller-plugin.ts",
+      "packages/client/src/checkpoint-controller.ts",
+    ],
     forbidden: [
       {
         description: "direct checkpoint controller construction",
         pattern: /\bcreateCheckpointController\b/u,
+      },
+      {
+        description: "direct checkpoint implementation import",
+        pattern:
+          /from\s+["'](?:\.\/checkpoint-controller|\.\.\/checkpoint-controller|\.\/checkpoint-controller-plugin|\.\/builtin-plugins\/checkpoint-controller-plugin)["']/u,
+      },
+      {
+        description: "client-owned checkpoint plugin implementation",
+        pattern: /export function createCheckpointControllerPlugin\b/u,
       },
     ],
   },
@@ -476,8 +549,19 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-session-store",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/turn-orchestration-plugin.ts",
+      "packages/client/src/session-store-controller.ts",
+      "packages/client/src/builtin-plugins/session-store-controller-plugin.ts",
+    ],
     forbidden: [
+      {
+        description: "direct session store implementation import",
+        pattern:
+          /from\s+["'](?:\.\/session-store-controller|\.\/session-store-controller-plugin|\.\/builtin-plugins\/session-store-controller-plugin)["']/u,
+      },
       {
         description: "direct session store controller construction",
         pattern: /\bcreateSessionStoreController\b/u,
@@ -507,17 +591,40 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-collaboration",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/collaboration-plugin.ts",
+      "packages/client/src/interactive-waiter.ts",
+      "packages/client/src/mailbox-ledger.ts",
+      "packages/client/src/mailbox-tool.ts",
+    ],
     forbidden: [
       {
         description: "direct waiter construction in the host",
         pattern: /\bcreateInteractiveWaiter\b/u,
       },
+      {
+        description: "direct collaboration implementation import",
+        pattern:
+          /from\s+["'](?:\.\.?\/)*(?:interactive-waiter|mailbox-ledger|mailbox-tool|collaboration-plugin|builtin-plugins\/collaboration-plugin)["']/u,
+      },
+      {
+        description: "client-owned collaboration implementation",
+        pattern:
+          /export function (?:createCollaborationPlugin|buildMailboxQueued|buildMailboxStatus|createMailboxAcknowledgeTool)\b/u,
+      },
     ],
   },
   {
     id: "natalia-provider-model",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
+      "packages/client/src/provider-model-controller.ts",
+      "packages/client/src/provider-runner.ts",
+    ],
     forbidden: [
       {
         description: "direct provider runner construction in the host",
@@ -531,27 +638,63 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
         description: "host-owned live chat abort state",
         pattern: /(?<!\.)\bchatAbort\b/u,
       },
+      {
+        description: "direct provider model implementation import",
+        pattern:
+          /from\s+["'](?:\.\/provider-model-controller|\.\/provider-runner|\.\/provider-model-plugin|\.\/builtin-plugins\/provider-model-plugin)["']/u,
+      },
+      {
+        description: "client-owned provider model plugin construction",
+        pattern: /export function createProviderModelPlugin\b/u,
+      },
+      {
+        description: "client-owned provider model controller",
+        pattern: /export function createProviderModelController\b/u,
+      },
     ],
   },
   {
     id: "natalia-task-workflow",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/task-workflow-plugin.ts",
+      "packages/client/src/task-workflow-controller.ts",
+      "packages/client/src/task-preflight.ts",
+      "packages/client/src/task-document.ts",
+      "packages/client/src/flow-document.ts",
+      "packages/client/src/task-overview.ts",
+      "packages/client/src/workflow-document-catalog.ts",
+      "packages/client/src/workflow-contributions.ts",
+      "packages/client/src/systemd-adapter.ts",
+    ],
     forbidden: [
       {
         description: "direct task/workflow implementation import",
         pattern:
-          /from\s+["']\.\/(?:task-controller|task-preflight|task-document|flow-document|task-overview|workflow-document-catalog|workflow-contributions)["']/u,
+          /from\s+["'](?:\.\.?\/)*(?:task-workflow-controller|task-preflight|task-document|flow-document|workflow-contributions|systemd-adapter|task-workflow-plugin|builtin-plugins\/task-workflow-plugin)["']/u,
       },
       {
         description: "direct workflow document store access",
         pattern: /(?<!\.)\bNataliaDocumentStore\b/u,
+      },
+      {
+        description: "client-owned task workflow implementation",
+        pattern:
+          /export (?:async )?function (?:createTaskWorkflowPlugin|createTaskWorkflowController|saveTaskDocument|saveFlowDocument|configureTaskSystemd|workflowContributionsProjection)\b/u,
       },
     ],
   },
   {
     id: "natalia-workflow-scheduler",
     targets: [
+      "packages/client/src/index.ts",
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/capability-execution-host.ts",
+      "packages/client/src/worker.ts",
+      "packages/client/src/workflow-execution-scheduler.ts",
+      "packages/client/src/builtin-plugins/workflow-scheduler-plugin.ts",
       "apps/cli/src/command-dispatcher.ts",
       "apps/tui/src/runtime-worker.ts",
     ],
@@ -560,12 +703,32 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
         description: "direct workflow scheduler construction",
         pattern: /\bnew\s+WorkflowExecutionScheduler\b/u,
       },
+      {
+        description: "direct workflow scheduler implementation import",
+        pattern:
+          /from\s+["'](?:\.\.?\/)*(?:workflow-execution-scheduler|workflow-scheduler-plugin|builtin-plugins\/workflow-scheduler-plugin)["']/u,
+      },
+      {
+        description: "client-owned workflow scheduler implementation",
+        pattern:
+          /export (?:class WorkflowExecutionScheduler|function createWorkflowSchedulerPlugin)\b/u,
+      },
     ],
   },
   {
     id: "natalia-context-ledger",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/compaction-service.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/compaction-plugin.ts",
+    ],
     forbidden: [
+      {
+        description: "direct context ledger implementation import",
+        pattern:
+          /from\s+["'](?:\.\/context-ledger-factory|\.\/context-ledger-plugin|\.\/builtin-plugins\/context-ledger-plugin)["']/u,
+      },
       {
         description: "direct context ledger construction",
         pattern: /\bnew\s+ContextLedger\b/u,
@@ -582,36 +745,75 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       "packages/client/src/real-runtime.ts",
       "packages/client/src/interactive-waiter.ts",
       "packages/client/src/checkpoint-controller.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/governance-ledger-plugin.ts",
+      "packages/client/src/builtin-plugins/work-ledger-plugin.ts",
+      "packages/client/src/work-ledger-controller.ts",
+      "packages/client/src/plan-ledger.ts",
+      "packages/client/src/drift-evaluator.ts",
+      "packages/client/src/work-graph.ts",
     ],
     forbidden: [
       {
         description: "direct work ledger implementation import",
         pattern:
-          /from\s+["']\.\/(?:plan-ledger|drift-evaluator|work-graph)["']/u,
+          /from\s+["'](?:\.\.?\/)*(?:plan-ledger|drift-evaluator|work-graph|work-ledger-controller|work-ledger-plugin|builtin-plugins\/work-ledger-plugin)["']/u,
+      },
+      {
+        description: "client-owned work ledger implementation",
+        pattern:
+          /export function (?:createWorkLedgerPlugin|createWorkLedgerController|buildPlanDraftCreated|createDriftEvaluator)\b/u,
+      },
+      {
+        description: "client-owned work graph implementation",
+        pattern: /export const WORK_GRAPH_KIND\b/u,
       },
     ],
   },
   {
     id: "natalia-governance-ledger",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/governance-ledger-plugin.ts",
+      "packages/client/src/governance-ledger-controller.ts",
+      "packages/client/src/constitution-ledger.ts",
+      "packages/client/src/evidence-ledger.ts",
+    ],
     forbidden: [
       {
         description: "direct governance ledger implementation import",
-        pattern: /from\s+["']\.\/(?:constitution-ledger|evidence-ledger)["']/u,
+        pattern:
+          /from\s+["'](?:\.\.?\/)*(?:constitution-ledger|evidence-ledger|governance-ledger-controller|governance-ledger-plugin|builtin-plugins\/governance-ledger-plugin)["']/u,
+      },
+      {
+        description: "client-owned governance ledger implementation",
+        pattern:
+          /export (?:const SELF_PROTECTION_RULES|function (?:createGovernanceLedgerPlugin|createGovernanceLedgerController|seedConstitutionRules|recordDecision|buildEvidenceRecorded|buildCompletionRecorded))/u,
       },
     ],
   },
   {
     id: "natalia-turn-orchestration",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/turn-orchestration-plugin.ts",
+      "packages/client/src/turn-controller.ts",
+    ],
     forbidden: [
       {
         description: "direct turn controller implementation import",
-        pattern: /from\s+["']\.\/turn-controller["']/u,
+        pattern:
+          /from\s+["'](?:\.\/turn-controller|\.\.\/turn-controller|\.\/builtin-plugins\/turn-orchestration-plugin|\.\/turn-orchestration-plugin)["']/u,
       },
       {
         description: "direct turn controller construction",
         pattern: /\bcreateTurnController\b/u,
+      },
+      {
+        description: "client-owned turn orchestration implementation",
+        pattern: /export function createTurnOrchestrationPlugin\b/u,
       },
     ],
   },
@@ -620,8 +822,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     targets: [
       "packages/client/src/real-runtime.ts",
       "packages/client/src/provider-runner.ts",
+      "packages/client/src/compaction-service.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/compaction-plugin.ts",
+      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
     ],
     forbidden: [
+      {
+        description: "direct retry implementation import",
+        pattern:
+          /from\s+["'](?:\.\/retry-service|\.\/retry-plugin|\.\/builtin-plugins\/retry-plugin)["']/u,
+      },
       {
         description: "direct retry runner use",
         pattern: /\b(?:runWithRetry|runStreamingWithRetry)\b/u,
@@ -634,12 +845,28 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       "packages/client/src/real-runtime.ts",
       "packages/client/src/provider-runner.ts",
       "packages/client/src/session-store-controller.ts",
+      "packages/client/src/index.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
+      "packages/client/src/builtin-plugins/session-store-controller-plugin.ts",
+      "apps/cli/src/index.ts",
     ],
     forbidden: [
       {
         description: "direct attachment implementation import",
-        pattern: /from\s+["']\.\/attachments["']/u,
+        pattern:
+          /from\s+["'](?:\.\/attachments|\.\/attachment-service|\.\/attachment-plugin|\.\/builtin-plugins\/attachment-plugin)["']/u,
       },
+    ],
+  },
+  {
+    id: "natalia-attachment",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/provider-runner.ts",
+      "packages/client/src/session-store-controller.ts",
+    ],
+    forbidden: [
       {
         description: "direct attachment helper use",
         pattern:
@@ -652,8 +879,15 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     targets: [
       "packages/client/src/provider-runner.ts",
       "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
     ],
     forbidden: [
+      {
+        description: "direct compaction implementation import",
+        pattern:
+          /from\s+["'](?:\.\/compaction-service|\.\/compaction-plugin|\.\/builtin-plugins\/compaction-plugin)["']/u,
+      },
       {
         description: "direct compaction runtime orchestration",
         pattern:
@@ -698,11 +932,25 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-runtime-ui",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/runtime-ui-plugin.ts",
+      "packages/client/src/status-controller.ts",
+    ],
     forbidden: [
       {
         description: "direct status controller construction",
         pattern: /\bcreateStatusSnapshotController\b/u,
+      },
+      {
+        description: "client-owned runtime UI implementation import",
+        pattern:
+          /from\s+["'](?:\.\/status-controller|\.\.\/status-controller|\.\/runtime-ui-plugin|\.\/builtin-plugins\/runtime-ui-plugin)["']/u,
+      },
+      {
+        description: "client-owned runtime UI implementation",
+        pattern: /export function (?:createRuntimeUiPlugin|statusSnapshot)\b/u,
       },
     ],
   },

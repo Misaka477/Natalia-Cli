@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@natalia/agent": "workspace:*",
+    "@natalia/attachment-plugin": "workspace:*",
     "@natalia/capability": "workspace:*",
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",

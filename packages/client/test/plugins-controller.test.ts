@@ -8,7 +8,7 @@ import {
   createPluginsController,
   pluginCapabilityID,
 } from "../src/plugins-controller";
-import { createRuntimeConfigPlugin } from "../src/builtin-plugins/runtime-config-plugin";
+import { createRuntimeConfigPlugin } from "@natalia/runtime-config-plugin";
 import {
   installPluginSdkLinks,
   pluginSdkImportPath,
@@ -301,6 +301,43 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "svc.plugin", versi
   expect(kernel.service<{ text: string }>("greeting")?.text).toBe("hello");
   await controller.unload("svc.plugin");
   expect(kernel.ownerOf("services", "greeting")).toBeUndefined();
+});
+
+test("the composition root can unload a builtin through its lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-builtin-"));
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel);
+  await controller.init({ loadLocal: false });
+  await controller.loadBuiltin({
+    manifest: {
+      apiVersion: 2,
+      id: "builtin.service",
+      version: "1.0.0",
+      name: "Builtin Service",
+      description: "Test builtin lifecycle.",
+      entry: "natalia:test:builtin-service",
+      scope: "workspace",
+      provides: ["builtin.greeting"],
+      requires: [],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["services"],
+    },
+    setup(api) {
+      api.services.provide("builtin.greeting", { text: "hello" });
+    },
+  });
+
+  expect(kernel.service("builtin.greeting")).toBeDefined();
+  await expect(controller.unload("builtin.service")).rejects.toThrow(
+    "plugin not found",
+  );
+  await controller.unloadBuiltin("builtin.service");
+  expect(kernel.service("builtin.greeting")).toBeUndefined();
+  await controller.unloadBuiltin("builtin.service");
+  await controller.close();
 });
 
 test("a plugin providing an undeclared service is refused", async () => {

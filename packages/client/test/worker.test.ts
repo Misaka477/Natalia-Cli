@@ -16,7 +16,7 @@ import {
 import { createRealRuntimeClient } from "../src/real-runtime";
 import { CapabilityHost } from "@natalia/capability";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
-import { WorkflowExecutionScheduler } from "../src/workflow-execution-scheduler";
+import { WorkflowExecutionScheduler } from "@natalia/workflow-scheduler-plugin";
 import { configV3Schema } from "@natalia/contracts";
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
@@ -705,6 +705,49 @@ test("worker cancellation is retained while workflow config is resolving", async
   resolveConfig();
   await expect(handle.result).rejects.toThrow("cancelled before config");
   await client.dispose?.();
+});
+
+test("worker disposal prevents workflow admission after config resolution", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-worker-workflow-dispose-"),
+  );
+  const capabilities = new CapabilityHost({ workspaceRoot: root });
+  const scheduler = new WorkflowExecutionScheduler();
+  const schedule = scheduler.schedule.bind(scheduler);
+  let admissions = 0;
+  scheduler.schedule = ((input) => {
+    admissions += 1;
+    return schedule(input);
+  }) as typeof scheduler.schedule;
+  const channel = new MessageChannel();
+  let resolveConfig!: () => void;
+  const configReady = new Promise<void>((resolve) => (resolveConfig = resolve));
+  attachRuntimeClientWorker(
+    channel.port1,
+    createRealRuntimeClient({ workspaceRoot: root }),
+    {
+      workflowExecution: new CapabilityExecutionHost(capabilities, {
+        scheduler,
+      }),
+      workflowConfig: async () => {
+        await configReady;
+        return configV3Schema.parse({ version: 3 });
+      },
+    },
+  );
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+  const handle = client.runWorkflowTask({
+    workspaceRoot: root,
+    taskID: "task_never_started",
+  });
+  void handle.result.catch(() => undefined);
+
+  await client.dispose?.();
+  resolveConfig();
+  await Bun.sleep(10);
+  expect(admissions).toBe(0);
+  await scheduler.dispose();
 });
 
 test("a host-owned workflow contribution survives runtime replacement", async () => {

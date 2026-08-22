@@ -6,7 +6,7 @@ import { CapabilityHost } from "@natalia/capability";
 import { configV3Schema } from "@natalia/contracts";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
-import { WorkflowExecutionScheduler } from "../src/workflow-execution-scheduler";
+import { WorkflowExecutionScheduler } from "@natalia/workflow-scheduler-plugin";
 
 function loadTask(host: CapabilityHost, cleanup: string[] = []) {
   host.load(

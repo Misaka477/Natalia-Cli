@@ -15,15 +15,16 @@ import {
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
-import { PROVIDER_MODEL_PLUGIN_ID } from "../src/builtin-plugins/provider-model-plugin";
-import { CONTEXT_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/context-ledger-plugin";
-import { WORK_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/work-ledger-plugin";
-import { GOVERNANCE_LEDGER_PLUGIN_ID } from "../src/builtin-plugins/governance-ledger-plugin";
-import { TURN_ORCHESTRATION_PLUGIN_ID } from "../src/builtin-plugins/turn-orchestration-plugin";
-import { RETRY_PLUGIN_ID } from "../src/builtin-plugins/retry-plugin";
-import { ATTACHMENT_PLUGIN_ID } from "../src/builtin-plugins/attachment-plugin";
-import { COMPACTION_PLUGIN_ID } from "../src/builtin-plugins/compaction-plugin";
-import { RUNTIME_UI_PLUGIN_ID } from "../src/builtin-plugins/runtime-ui-plugin";
+import { PROVIDER_MODEL_PLUGIN_ID } from "@natalia/provider-model-plugin";
+import { CONTEXT_LEDGER_PLUGIN_ID } from "@natalia/context-ledger-plugin";
+import { WORK_LEDGER_PLUGIN_ID } from "@natalia/work-ledger-plugin";
+import { GOVERNANCE_LEDGER_PLUGIN_ID } from "@natalia/governance-ledger-plugin";
+import { TURN_ORCHESTRATION_PLUGIN_ID } from "@natalia/turn-orchestration-plugin";
+import { RETRY_PLUGIN_ID } from "@natalia/retry-plugin";
+import { ATTACHMENT_PLUGIN_ID } from "@natalia/attachment-plugin";
+import { COMPACTION_PLUGIN_ID } from "@natalia/compaction-plugin";
+import { RUNTIME_UI_PLUGIN_ID } from "@natalia/runtime-ui-plugin";
+import { WORKSPACE_PLUGIN_ID } from "@natalia/workspace-plugin";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -94,6 +95,39 @@ test("provider-model catalog construction stays lazy", () => {
   expect(initialized).toBe(0);
   expect(entry?.create().manifest.id).toBe(PROVIDER_MODEL_PLUGIN_ID);
   expect(initialized).toBe(0);
+});
+
+test("workspace catalog construction stays lazy", () => {
+  let listed = 0;
+  const catalog = builtinPluginCatalog({
+    agentEnabled: false,
+    askEnabled: false,
+    fsReadEnabled: false,
+    fsWriteEnabled: false,
+    pdfEnabled: false,
+    processEnabled: false,
+    sandboxEnabled: false,
+    searchEnabled: false,
+    shellEnabled: false,
+    terminalEnabled: false,
+    todoEnabled: false,
+    webEnabled: false,
+    workspace: {
+      workspaceRoot: "/tmp/workspace",
+      listPaths: async () => {
+        listed += 1;
+        return [];
+      },
+    },
+  });
+  const entry = catalog.find(
+    (candidate) => candidate.id === WORKSPACE_PLUGIN_ID,
+  );
+
+  expect(entry?.enabled).toBe(true);
+  expect(listed).toBe(0);
+  expect(entry?.create().manifest.id).toBe(WORKSPACE_PLUGIN_ID);
+  expect(listed).toBe(0);
 });
 
 test("ledger catalog entries stay lazy and preserve dependency order", () => {

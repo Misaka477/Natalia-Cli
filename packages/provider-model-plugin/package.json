@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/provider-model-plugin",
+  "version": "0.0.0-m13",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@natalia/agent-plugin": "workspace:*",
+    "@natalia/attachment-plugin": "workspace:*",
+    "@natalia/compaction-plugin": "workspace:*",
+    "@natalia/config": "workspace:*",
+    "@natalia/contracts": "workspace:*",
+    "@natalia/plugin": "workspace:*",
+    "@natalia/retry-plugin": "workspace:*",
+    "@natalia/runtime": "workspace:*",
+    "@natalia/session": "workspace:*",
+    "@natalia/skills-plugin": "workspace:*",
+    "@natalia/tools": "workspace:*"
+  }
+}

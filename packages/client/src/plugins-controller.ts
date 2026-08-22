@@ -221,6 +221,16 @@ export function createPluginsController(input: {
     return { unloaded: true };
   }
 
+  async function unloadBuiltin(id: string) {
+    const current = registry;
+    if (current?.list().some((manifest) => manifest.id === id))
+      await current.unload(id);
+    for (const builtinID of [...builtinIDs])
+      if (!current?.list().some((manifest) => manifest.id === builtinID))
+        builtinIDs.delete(builtinID);
+    input.syncGlobalCommands();
+  }
+
   async function reload(id: string) {
     if (!registry) throw new Error("plugins are not enabled in this runtime");
     for (const root of roots()) {
@@ -284,6 +294,7 @@ export function createPluginsController(input: {
     loadBuiltin,
     loadLocal,
     unload,
+    unloadBuiltin,
     reload,
     close,
     dispatch,

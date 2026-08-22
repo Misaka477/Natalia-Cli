@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSessionStoreController } from "../src/session-store-controller";
-import { createAttachmentService } from "../src/attachment-service";
+import { createSessionStoreController } from "@natalia/session-store-plugin";
+import { createAttachmentService } from "@natalia/attachment-plugin";
 
 test("session store: create is idempotent, archive marks, export dumps", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-store-"));

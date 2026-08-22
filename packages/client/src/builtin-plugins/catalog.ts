@@ -32,12 +32,15 @@ import {
 import {
   createRuntimeConfigPlugin,
   RUNTIME_CONFIG_PLUGIN_ID,
-} from "./runtime-config-plugin";
+} from "@natalia/runtime-config-plugin";
 import {
   createLocalToolsPlugin,
   LOCAL_TOOLS_PLUGIN_ID,
 } from "./local-tools-plugin";
-import { createWorkspacePlugin, WORKSPACE_PLUGIN_ID } from "./workspace-plugin";
+import {
+  createWorkspacePlugin,
+  WORKSPACE_PLUGIN_ID,
+} from "@natalia/workspace-plugin";
 import {
   createTerminalControllerPlugin,
   TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
@@ -50,7 +53,7 @@ import { createMcpControllerPlugin, MCP_PLUGIN_ID } from "@natalia/mcp-plugin";
 import {
   createCheckpointControllerPlugin,
   CHECKPOINT_PLUGIN_ID,
-} from "./checkpoint-controller-plugin";
+} from "@natalia/checkpoint-plugin";
 import {
   createSubagentsControllerPlugin,
   SUBAGENTS_PLUGIN_ID,
@@ -58,7 +61,7 @@ import {
 import {
   createSessionStoreControllerPlugin,
   SESSION_STORE_PLUGIN_ID,
-} from "./session-store-controller-plugin";
+} from "@natalia/session-store-plugin";
 import { createTeamPlugin, TEAM_PLUGIN_ID } from "./team-plugin";
 import {
   createToolPipelinePlugin,
@@ -67,45 +70,46 @@ import {
 import {
   createCollaborationPlugin,
   COLLABORATION_PLUGIN_ID,
-} from "./collaboration-plugin";
+  type InteractiveWaiterDeps,
+} from "@natalia/collaboration-plugin";
 import {
   createProviderModelPlugin,
   PROVIDER_MODEL_PLUGIN_ID,
-} from "./provider-model-plugin";
-import type { ProviderModelControllerInput } from "../provider-model-controller";
+  type ProviderModelControllerInput,
+} from "@natalia/provider-model-plugin";
 import {
   createTaskWorkflowPlugin,
   TASK_WORKFLOW_PLUGIN_ID,
-} from "./task-workflow-plugin";
-import type { createTaskWorkflowController } from "../task-workflow-controller";
+  type createTaskWorkflowController,
+} from "@natalia/task-workflow-plugin";
 import {
   CONTEXT_LEDGER_PLUGIN_ID,
   createContextLedgerPlugin,
-} from "./context-ledger-plugin";
+} from "@natalia/context-ledger-plugin";
 import {
+  createWorkLedgerController,
   createWorkLedgerPlugin,
   WORK_LEDGER_PLUGIN_ID,
-} from "./work-ledger-plugin";
-import type { createWorkLedgerController } from "../work-ledger-controller";
+} from "@natalia/work-ledger-plugin";
 import {
   createGovernanceLedgerPlugin,
   GOVERNANCE_LEDGER_PLUGIN_ID,
-} from "./governance-ledger-plugin";
+} from "@natalia/governance-ledger-plugin";
 import {
   createTurnOrchestrationPlugin,
   TURN_ORCHESTRATION_PLUGIN_ID,
-} from "./turn-orchestration-plugin";
-import type { TurnControllerInput } from "../turn-controller";
-import { createRetryPlugin, RETRY_PLUGIN_ID } from "./retry-plugin";
+  type TurnControllerInput,
+} from "@natalia/turn-orchestration-plugin";
+import { createRetryPlugin, RETRY_PLUGIN_ID } from "@natalia/retry-plugin";
 import type { RetryRunnerOptions } from "@natalia/runtime";
 import {
   ATTACHMENT_PLUGIN_ID,
   createAttachmentPlugin,
-} from "./attachment-plugin";
+} from "@natalia/attachment-plugin";
 import {
   COMPACTION_PLUGIN_ID,
   createCompactionPlugin,
-} from "./compaction-plugin";
+} from "@natalia/compaction-plugin";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
@@ -114,8 +118,8 @@ import {
 import {
   createRuntimeUiPlugin,
   RUNTIME_UI_PLUGIN_ID,
-} from "./runtime-ui-plugin";
-import type { createStatusSnapshotController } from "../status-controller";
+  type RuntimeUiPluginInput,
+} from "@natalia/runtime-ui-plugin";
 
 export {
   AGENT_PLUGIN_ID,
@@ -227,7 +231,7 @@ export function builtinPluginCatalog(input: {
   toolPipeline?: { enabled: boolean };
   /** The interactive approval/question waiter. */
   collaboration?: {
-    waiter: import("../interactive-waiter").InteractiveWaiterDeps;
+    waiter: InteractiveWaiterDeps;
   };
   /** Provider selection, main agent loop and Live Work Chat lifecycle. */
   providerModel?: {
@@ -256,7 +260,7 @@ export function builtinPluginCatalog(input: {
   compaction?: { enabled: boolean };
   runtimeUi?: {
     enabled: boolean;
-    controller: Parameters<typeof createStatusSnapshotController>[0];
+    controller: RuntimeUiPluginInput;
   };
 }): BuiltinPluginEntry[] {
   return [

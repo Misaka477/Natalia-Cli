@@ -36,7 +36,7 @@ export {
   manualFlowTask,
   newFlowID,
   saveFlowDocument,
-} from "./flow-document";
+} from "@natalia/task-workflow-plugin";
 export {
   decomposeFlowConditions,
   defaultExecutionProviderID,
@@ -45,7 +45,6 @@ export {
   type FlowConditionModel,
 } from "./flow-condition-decomposition";
 export {
-  assertConfigApplied,
   newHeadlessExecution,
   plainRuntimeEvent,
   runTask,
@@ -56,7 +55,10 @@ export {
   type HeadlessExecution,
   type TaskRunResult,
 } from "./task-controller";
-export { assertTaskReferences } from "./task-preflight";
+export {
+  assertConfigApplied,
+  assertTaskReferences,
+} from "@natalia/task-workflow-plugin";
 export {
   effectiveFlowPermissions,
   effectiveModulePermissions,
@@ -79,7 +81,7 @@ export {
   newScheduledTaskID,
   removeTaskSystemd,
   saveTaskDocument,
-} from "./task-document";
+} from "@natalia/task-workflow-plugin";
 export {
   generateTaskUnits,
   installUserTaskUnits,
@@ -94,24 +96,22 @@ export {
   type SystemdCalendarPreview,
   type SystemdCommandRunner,
   writeGeneratedTaskUnits,
-} from "./systemd-adapter";
+} from "@natalia/task-workflow-plugin";
 export type { RealRuntimeClientOptions } from "./real-runtime";
 export {
   workflowContributionsProjection,
   type WorkflowContributionsProjection,
-} from "./workflow-contributions";
+} from "@natalia/task-workflow-plugin";
 export {
   WorkflowExecutionRefusal,
   WorkflowExecutionScheduler,
   type WorkflowExecutionEvent,
   type WorkflowExecutionHandle,
   type WorkflowExecutionStatus,
-} from "./workflow-execution-scheduler";
-export {
   createWorkflowSchedulerPluginHost,
   WORKFLOW_SCHEDULER_PLUGIN_ID,
   WORKFLOW_SCHEDULER_SERVICE,
-} from "./builtin-plugins/workflow-scheduler-plugin";
+} from "@natalia/workflow-scheduler-plugin";
 export {
   CapabilityExecutionHost,
   type CapabilityTaskExecutionRequest,
@@ -140,10 +140,6 @@ export {
 } from "./fan-out";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
-  cleanupUnreferencedAttachments,
-  referencedAttachmentsForSessions,
-} from "./attachments";
-export {
   findWorkspaceFiles,
   globWorkspaceFiles,
   invalidateWorkspaceFiles,
@@ -151,7 +147,7 @@ export {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
-} from "./workspace-files";
+} from "@natalia/workspace-plugin";
 export {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,

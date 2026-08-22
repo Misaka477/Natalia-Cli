@@ -4,6 +4,7 @@ import {
   findClientClosureViolation,
   findClientProductDependencyViolation,
   findClientToolDependencyViolation,
+  findForbiddenRepositoryPathViolation,
   findMigratedPluginViolations,
 } from "../src/migrated-plugin-rules";
 
@@ -13,15 +14,30 @@ const dependencyGuarded = [
   "packages/session",
   "packages/tools",
   "packages/config",
+  "packages/attachment-plugin",
+  "packages/compaction-plugin",
+  "packages/context-ledger-plugin",
   "packages/sandbox",
   "packages/mcp",
   "packages/skills",
   "packages/subagent",
   "packages/workflow",
   "packages/plugin",
+  "packages/retry-plugin",
+  "packages/runtime-ui-plugin",
+  "packages/turn-orchestration-plugin",
+  "packages/provider-model-plugin",
+  "packages/task-workflow-plugin",
+  "packages/workflow-scheduler-plugin",
+  "packages/work-ledger-plugin",
+  "packages/checkpoint-plugin",
+  "packages/collaboration-plugin",
+  "packages/governance-ledger-plugin",
+  "packages/session-store-plugin",
+  "packages/workspace-plugin",
   "packages/tool-pdf",
 ];
-const capabilityRoots = ["packages/capabilities"];
+const capabilityRoots = ["packages/capability"];
 /**
  * Capability factory modules that live inside the client package. They are not
  * yet decoupled capability packages — they still use kernel types such as
@@ -195,6 +211,10 @@ for (const dir of deepImportRoots)
 for (const dir of productionRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
     const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+    const forbiddenPathViolation =
+      findForbiddenRepositoryPathViolation(relative);
+    if (forbiddenPathViolation)
+      failures.push(`${full}: ${forbiddenPathViolation}`);
     const clientToolViolation = findClientToolDependencyViolation(
       relative,
       text,

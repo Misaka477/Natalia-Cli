@@ -13,7 +13,7 @@ import {
 import {
   cleanupUnreferencedAttachments,
   referencedAttachmentsForSessions,
-} from "@natalia/client";
+} from "@natalia/attachment-plugin";
 import {
   fingerprintFile,
   loadConfigFile,

@@ -7,11 +7,11 @@ import type {
 } from "@natalia/contracts";
 import { NataliaDocumentStore, type NataliaDocument } from "@natalia/workflow";
 import { runTaskFromDocument, type TaskRunResult } from "./task-controller";
-import { workflowContributionsProjection } from "./workflow-contributions";
+import { workflowContributionsProjection } from "@natalia/task-workflow-plugin";
 import {
   WorkflowExecutionScheduler,
   type WorkflowExecutionHandle,
-} from "./workflow-execution-scheduler";
+} from "@natalia/workflow-scheduler-plugin";
 
 export type CapabilityTaskExecutionRequest = {
   executionID?: string;

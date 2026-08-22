@@ -7,7 +7,7 @@ import { CapabilityRegistry } from "@natalia/capability";
 import { createRealRuntimeClient } from "../src/real-runtime";
 import { runTaskFromDocument } from "../src/task-controller";
 import { flowOverview, scheduledTaskOverview } from "../src/task-overview";
-import { workflowContributionsProjection } from "../src/workflow-contributions";
+import { workflowContributionsProjection } from "@natalia/task-workflow-plugin";
 import { workflowDocumentCatalog } from "../src/workflow-document-catalog";
 
 const flow = {

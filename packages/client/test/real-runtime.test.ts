@@ -23,7 +23,7 @@ import {
   pluginSdkImportPath,
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
-import { toolCallNodeID } from "../src/work-graph";
+import { toolCallNodeID } from "@natalia/work-ledger-plugin";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -909,6 +909,7 @@ test("runtime status and diagnostics expose only published safe state", async ()
     workspaceRoot: root,
     sessionID: "ses_runtime_status",
     provider: scriptedProvider("ready"),
+    nativeTerminal: nativeTerminalFixture(),
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
@@ -1310,6 +1311,34 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
     ),
   ).toBe(true);
   unsubscribe();
+  await client.dispose?.();
+}, 60_000);
+
+test("plugin config reload is refused until lifecycle reconciliation exists", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-config-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_config_reload",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-terminal": false } },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({
+    applied: false,
+    reason:
+      "plugin configuration changes require a runtime restart until plugin reconciliation is available",
+  });
   await client.dispose?.();
 }, 60_000);
 
@@ -2110,6 +2139,7 @@ test("durable diagnostics restore on runtime reopen and render through the comma
     workspaceRoot: root,
     sessionID,
     provider: scriptedProvider("first"),
+    nativeTerminal: nativeTerminalFixture(),
   });
   first.start(() => undefined);
   await first.runtimeStatus?.();
@@ -2120,6 +2150,7 @@ test("durable diagnostics restore on runtime reopen and render through the comma
     workspaceRoot: root,
     sessionID,
     provider: scriptedProvider("reopened"),
+    nativeTerminal: nativeTerminalFixture(),
   });
   reopened.start((event) => events.push(event));
   expect(await reopened.diagnostics?.()).toMatchObject([
@@ -12087,8 +12118,6 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
 test("collab_inbox lets the main agent read Navi's answer on demand", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-collab-inbox-"));
   let mainAsked = false;
-  let inboxRequested = false;
-  let userTurn = false;
   let naviAnswered = false;
   const inboxToolResults: string[] = [];
   const client = createRealRuntimeClient({
@@ -12102,11 +12131,24 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
           (request as { messages: Array<{ role: string; content: string }> })
             .messages[0]?.content ?? "",
         );
-        const toolMessages = (
+        const messages = (
           request as {
-            messages: Array<{ role: string; content: string }>;
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
           }
-        ).messages.filter((message) => message.role === "tool");
+        ).messages;
+        const toolMessages = messages.filter(
+          (message) => message.role === "tool",
+        );
+        const inboxToolMessage = toolMessages.find(
+          (message) => message.toolCallID === "c5",
+        );
+        const inboxTurn = messages.some(
+          (message) => message.role === "user" && message.content === "check",
+        );
         const naviTurn = system.includes("<natalia_collaborations>");
         if (!naviTurn) {
           if (!mainAsked) {
@@ -12123,16 +12165,15 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
             };
             return;
           }
-          if (userTurn && !inboxRequested) {
-            inboxRequested = true;
+          if (inboxTurn && !inboxToolMessage) {
             yield {
               type: "tool_call" as const,
               calls: [{ id: "c5", name: "collab_inbox", arguments: "{}" }],
             };
             return;
           }
-          if (inboxRequested)
-            inboxToolResults.push(String(toolMessages.at(-1)?.content ?? ""));
+          if (inboxToolMessage)
+            inboxToolResults.push(String(inboxToolMessage.content ?? ""));
           yield { type: "content" as const, text: "ok" };
           yield { type: "done" as const };
           return;
@@ -12169,7 +12210,12 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
     await waitForAsync(async () =>
       events.some((event) => event.type === "collab.answer"),
     );
-    userTurn = true;
+    await waitForAsync(async () =>
+      events.some(
+        (event) =>
+          event.type === "turn.finished" && event.id.startsWith("turn_collab_"),
+      ),
+    );
     await client.submit("check");
     await waitForAsync(async () =>
       inboxToolResults.some((result) => result.includes("yes, echo is safe")),
