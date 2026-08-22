@@ -40,9 +40,12 @@ test("terminal controller init without a host environment leaves the registry ab
 
 test("an externally provided registry is installed as-is and never rebuilt", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-controller-2-"));
+  let disposals = 0;
   const external = {
     marker: "external",
-    dispose: async () => undefined,
+    dispose: async () => {
+      disposals += 1;
+    },
   } as never;
   const controller = createTerminalController({
     workspaceRoot: root,
@@ -56,9 +59,15 @@ test("an externally provided registry is installed as-is and never rebuilt", asy
   await controller.init();
   expect(controller.get()).toBe(external);
   await controller.close();
+  await controller.close();
+  expect(disposals).toBe(0);
+  expect(controller.get()).toBeUndefined();
+  await expect(controller.init()).rejects.toThrow(
+    "terminal controller is closed",
+  );
 });
 
-test("terminal plugin unload owns and awaits controller teardown", async () => {
+test("terminal plugin unload preserves its host-owned external registry", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-plugin-"));
   let disposals = 0;
   const registry = createPluginRegistry({ tools: createToolRegistry([]) });
@@ -80,5 +89,5 @@ test("terminal plugin unload owns and awaits controller teardown", async () => {
   );
 
   await registry.unload(TERMINAL_PLUGIN_ID);
-  expect(disposals).toBe(1);
+  expect(disposals).toBe(0);
 });

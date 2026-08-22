@@ -197,6 +197,7 @@ import {
   SKILLS_REGISTRY_SERVICE,
   skillsPluginEntry,
   teamPluginEntry,
+  terminalPluginEntry,
   TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
@@ -216,6 +217,7 @@ import {
 } from "@natalia/local-tools-plugin";
 import {
   TERMINAL_CONTROLLER_SERVICE,
+  TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
   type TerminalController,
 } from "@natalia/terminal-plugin";
 import {
@@ -709,6 +711,7 @@ export function createRealRuntimeClient(
   let activeCheckpointPluginConfigFingerprint: string | undefined;
   let activeMcpPluginConfigFingerprint: string | undefined;
   let activeSandboxPluginConfigFingerprint: string | undefined;
+  let activeTerminalPluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -897,6 +900,8 @@ export function createRealRuntimeClient(
       const nextSandboxPluginConfigFingerprint = sandboxPluginConfigFingerprint(
         tsConfig.config,
       );
+      const nextTerminalPluginConfigFingerprint =
+        terminalPluginConfigFingerprint(tsConfig.config);
       const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -918,6 +923,10 @@ export function createRealRuntimeClient(
         activeSandboxPluginConfigFingerprint !== undefined &&
         nextSandboxPluginConfigFingerprint !==
           activeSandboxPluginConfigFingerprint;
+      const reconcileTerminal =
+        activeTerminalPluginConfigFingerprint !== undefined &&
+        nextTerminalPluginConfigFingerprint !==
+          activeTerminalPluginConfigFingerprint;
       const reconcileBuiltinTools =
         activeBuiltinToolConfigFingerprint !== undefined &&
         nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
@@ -1002,6 +1011,18 @@ export function createRealRuntimeClient(
         );
         await sandboxController?.init();
       }
+      if (reconcileTerminal) {
+        terminalController = undefined;
+        await pluginsController.reconcileBuiltins(
+          [terminalPluginEntry(terminalPluginInput(tsConfig.config))],
+          tsConfig.config.plugins.settings,
+        );
+        terminalController = capabilityRegistry.service<TerminalController>(
+          TERMINAL_CONTROLLER_SERVICE,
+        );
+        await terminalController?.init();
+        terminalController?.setActiveSession(sessionID);
+      }
       if (reconcileSkills) {
         const selectedSkills = new Map(
           [...executionBySession.entries()].flatMap(([id, exec]) =>
@@ -1037,6 +1058,8 @@ export function createRealRuntimeClient(
         nextCheckpointPluginConfigFingerprint;
       activeMcpPluginConfigFingerprint = nextMcpPluginConfigFingerprint;
       activeSandboxPluginConfigFingerprint = nextSandboxPluginConfigFingerprint;
+      activeTerminalPluginConfigFingerprint =
+        nextTerminalPluginConfigFingerprint;
       activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
@@ -1146,27 +1169,7 @@ export function createRealRuntimeClient(
               },
             }
           : {}),
-        ...(pluginEnabled("natalia-terminal")
-          ? {
-              terminal: {
-                workspaceRoot,
-                publish: (event: RuntimeEvent) =>
-                  publishForSession(
-                    event.sessionID
-                      ? executionBySession.get(event.sessionID as SessionID)
-                      : undefined,
-                    event,
-                  ),
-                onPerformance: (name: string, durationMs: number) =>
-                  performanceTrace.mark(name, durationMs),
-                runtimeID: () => nativeRuntimeID,
-                userRuntimeHome: () => userRuntimeHome(),
-                windowMode: () =>
-                  tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
-                external: options.nativeTerminal,
-              },
-            }
-          : {}),
+        terminal: terminalPluginInput(runtimeConfig),
         sandbox: sandboxPluginInput(runtimeConfig),
         ...(mcpPluginInput(runtimeConfig)
           ? { mcp: mcpPluginInput(runtimeConfig) }
@@ -1406,6 +1409,9 @@ export function createRealRuntimeClient(
         tsConfig.config,
       );
       activeSandboxPluginConfigFingerprint = sandboxPluginConfigFingerprint(
+        tsConfig.config,
+      );
+      activeTerminalPluginConfigFingerprint = terminalPluginConfigFingerprint(
         tsConfig.config,
       );
       activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
@@ -3207,6 +3213,14 @@ export function createRealRuntimeClient(
     });
   }
 
+  function terminalPluginConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      enabled: config.plugins.enabled[TERMINAL_CONTROLLER_PLUGIN_ID],
+      settings: config.plugins.settings[TERMINAL_CONTROLLER_PLUGIN_ID],
+      windowMode: config.runtime.terminal.windowMode,
+    });
+  }
+
   function builtinToolConfigFingerprint(config: ConfigV3) {
     return JSON.stringify({
       tools: config.tools,
@@ -3276,6 +3290,28 @@ export function createRealRuntimeClient(
       : {
           workspaceRoot,
           backend: () => tsRuntimeConfig?.sandbox.backend,
+        };
+  }
+
+  function terminalPluginInput(config: ConfigV3) {
+    return config.plugins.enabled[TERMINAL_CONTROLLER_PLUGIN_ID] === false
+      ? undefined
+      : {
+          workspaceRoot,
+          publish: (event: RuntimeEvent) =>
+            publishForSession(
+              event.sessionID
+                ? executionBySession.get(event.sessionID as SessionID)
+                : undefined,
+              event,
+            ),
+          onPerformance: (name: string, durationMs: number) =>
+            performanceTrace.mark(name, durationMs),
+          runtimeID: () => nativeRuntimeID,
+          userRuntimeHome: () => userRuntimeHome(),
+          windowMode: () =>
+            tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
+          external: options.nativeTerminal,
         };
   }
 
@@ -3381,7 +3417,8 @@ export function createRealRuntimeClient(
             id !== SKILLS_PLUGIN_ID &&
             id !== CHECKPOINT_PLUGIN_ID &&
             id !== MCP_PLUGIN_ID &&
-            id !== SANDBOX_CONTROLLER_PLUGIN_ID
+            id !== SANDBOX_CONTROLLER_PLUGIN_ID &&
+            id !== TERMINAL_CONTROLLER_PLUGIN_ID
           );
         return !builtin;
       }),

@@ -302,15 +302,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.terminal
-      ? [
-          {
-            id: TERMINAL_CONTROLLER_PLUGIN_ID,
-            enabled: true,
-            create: () => createTerminalControllerPlugin(input.terminal!),
-          },
-        ]
-      : []),
+    terminalPluginEntry(input.terminal),
     sandboxPluginEntry(input.sandbox),
     mcpPluginEntry(input.mcp),
     checkpointPluginEntry(input.checkpoint),
@@ -511,6 +503,19 @@ export function sandboxPluginEntry(
     create: () => {
       if (!input) throw new Error("sandbox plugin is disabled");
       return createSandboxControllerPlugin(input);
+    },
+  };
+}
+
+export function terminalPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["terminal"],
+): BuiltinPluginEntry {
+  return {
+    id: TERMINAL_CONTROLLER_PLUGIN_ID,
+    enabled: input !== undefined,
+    create: () => {
+      if (!input) throw new Error("terminal plugin is disabled");
+      return createTerminalControllerPlugin(input);
     },
   };
 }

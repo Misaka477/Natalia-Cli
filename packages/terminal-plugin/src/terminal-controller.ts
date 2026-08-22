@@ -13,11 +13,11 @@ import {
 
 /**
  * The native terminal resource controller — cut of the resource controllers
- * split (mainline plan §15). It owns the `NativeTerminalRegistry` and the
- * input broker, and their lifecycle: the WezTerm host bootstrap, the
- * one-shot recovery when the mux server was killed or the runtime dirs were
- * deleted, and teardown. An externally provided registry (the host's own
- * `options.nativeTerminal`) is installed as-is and never rebuilt.
+ * split (mainline plan §15). It owns an internally created
+ * `NativeTerminalRegistry` and input broker, including the WezTerm host
+ * bootstrap, one-shot recovery when the mux server or runtime dirs disappear,
+ * and teardown. An externally provided registry (the host's own
+ * `options.nativeTerminal`) is borrowed as-is and never rebuilt or disposed.
  *
  * Multi-session shape (plan §41.9): the registry is reached by accessor;
  * when sessions become per-session panes (TERM-M I3), only this module's
@@ -35,6 +35,7 @@ export function createTerminalController(input: {
 }) {
   let nativeTerminal: NativeTerminalRegistry | undefined = input.external;
   let nativeInputBroker: NativeInputBroker | undefined;
+  let closed = false;
 
   function broker() {
     const runtimeHome = input.userRuntimeHome();
@@ -154,6 +155,7 @@ export function createTerminalController(input: {
   }
 
   async function init() {
+    if (closed) throw new Error("terminal controller is closed");
     if (nativeTerminal) return;
     const { nativeRuntimeDir, nativeMuxRuntimeDir, nativeMuxSocket } = broker();
     let nativeDomain: Awaited<
@@ -223,10 +225,12 @@ export function createTerminalController(input: {
   }
 
   async function close() {
-    await nativeTerminal?.dispose();
-    nativeTerminal = undefined;
+    if (closed) return;
+    closed = true;
     await nativeInputBroker?.stop();
     nativeInputBroker = undefined;
+    if (!input.external) await nativeTerminal?.dispose();
+    nativeTerminal = undefined;
   }
 
   return { init, get, setActiveSession, close };

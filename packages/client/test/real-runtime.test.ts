@@ -21,7 +21,11 @@ import {
   type SandboxController,
   WorkspaceSandboxManager,
 } from "@natalia/sandbox-plugin";
-import { NativeTerminalRegistry } from "@natalia/terminal-plugin";
+import {
+  NativeTerminalRegistry,
+  TERMINAL_CONTROLLER_SERVICE,
+  TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
+} from "@natalia/terminal-plugin";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import {
   installPluginSdkLinks,
@@ -1382,30 +1386,99 @@ test("external plugin config reload reconciles its lifecycle", async () => {
   await client.dispose?.();
 }, 60_000);
 
-test("built-in plugin config reload remains restart-bound", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-builtin-config-reload-"));
+test("terminal plugin config reload preserves its host-owned registry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-config-reload-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
   const configPath = join(root, ".natalia", "config.json");
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  const disabledConfig = {
+    version: 3,
+    plugins: { enabled: { [TERMINAL_CONTROLLER_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  let stops = 0;
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 81, window_id: 8, tab_id: 1 };
+    },
+    async list() {
+      return [{ pane_id: 81, window_id: 8, tab_id: 1, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "reload pane output";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {
+      stops += 1;
+    },
+  });
+  await nativeTerminal.start({
+    id: "reload_terminal",
+    cwd: root,
+    command: "cat",
+    sessionID: "ses_terminal_config_reload",
+  });
+  const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
-    sessionID: "ses_builtin_config_reload",
+    sessionID: "ses_terminal_config_reload",
+    capabilityRegistry: kernel,
+    nativeTerminal,
     provider: scriptedProvider("ready"),
   });
   client.start(() => undefined);
   await client.runtimeStatus?.();
+
+  expect(kernel.has(TERMINAL_CONTROLLER_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeUndefined();
+  expect(await client.nativeTerminalList?.()).toEqual([]);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(TERMINAL_CONTROLLER_PLUGIN_ID)).toBe(true);
+  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeDefined();
+  expect(await client.nativeTerminalList?.()).toMatchObject([
+    { id: "reload_terminal" },
+  ]);
+  await expect(client.nativeTerminalRead?.("reload_terminal")).resolves.toEqual(
+    { id: "reload_terminal", text: "reload pane output" },
+  );
+  const firstController = kernel.service(TERMINAL_CONTROLLER_SERVICE);
+
   await writeFile(
     configPath,
     JSON.stringify({
       version: 3,
-      plugins: { enabled: { "natalia-terminal": false } },
+      runtime: { terminal: { windowMode: "windowless" } },
     }),
   );
-  await expect(client.reloadConfig?.()).resolves.toEqual({
-    applied: false,
-    reason: "built-in plugin configuration changes require a runtime restart",
-  });
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).not.toBe(firstController);
+  expect(await client.nativeTerminalList?.()).toMatchObject([
+    { id: "reload_terminal" },
+  ]);
+  expect(stops).toBe(0);
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(TERMINAL_CONTROLLER_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeUndefined();
+  expect(stops).toBe(0);
+  expect(await client.nativeTerminalList?.()).toEqual([]);
+  await expect(client.nativeTerminalRead?.("reload_terminal")).rejects.toThrow(
+    "Native Terminal Host is unavailable",
+  );
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(await client.nativeTerminalList?.()).toMatchObject([
+    { id: "reload_terminal" },
+  ]);
   await client.dispose?.();
+  expect(stops).toBe(0);
 }, 60_000);
 
 test("checkpoint plugin config reload reconciles its lifecycle", async () => {
