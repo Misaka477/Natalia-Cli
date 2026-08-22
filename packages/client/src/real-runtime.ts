@@ -176,6 +176,7 @@ import { refreshRuntimeConfigService } from "@natalia/runtime-config-plugin";
 import {
   ASK_PLUGIN_ID,
   AGENT_PLUGIN_ID,
+  builtinPdfPluginEntry,
   builtinPluginCatalog,
   builtinToolPluginCatalog,
   FS_READ_PLUGIN_ID,
@@ -263,6 +264,7 @@ const BUILTIN_TOOL_PLUGIN_IDS = new Set([
   TERMINAL_PLUGIN_ID,
   SANDBOX_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
+  PDF_PLUGIN_ID,
   LOCAL_TOOLS_PLUGIN_ID,
 ]);
 
@@ -3065,14 +3067,14 @@ export function createRealRuntimeClient(
   }
 
   function builtinToolEntries(config: ConfigV3) {
+    const gates = computeBuiltinFeatureGates({
+      config,
+      hasCustomTools: !!options.tools,
+      extensionEnabled,
+    });
     return [
-      ...builtinToolPluginCatalog({
-        ...computeBuiltinFeatureGates({
-          config,
-          hasCustomTools: !!options.tools,
-          extensionEnabled,
-        }),
-      }),
+      ...builtinToolPluginCatalog(gates),
+      builtinPdfPluginEntry(gates.pdfEnabled),
       localToolsPluginEntry(localToolsPluginInput(config)),
     ];
   }

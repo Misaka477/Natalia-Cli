@@ -124,6 +124,7 @@ import {
 export {
   AGENT_PLUGIN_ID,
   ASK_PLUGIN_ID,
+  builtinPdfPluginEntry,
   builtinToolPluginCatalog,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,

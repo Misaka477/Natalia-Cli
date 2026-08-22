@@ -24,7 +24,7 @@ import {
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger-plugin";
-import { TODO_PLUGIN_ID } from "../src/builtin-plugins/catalog";
+import { PDF_PLUGIN_ID, TODO_PLUGIN_ID } from "../src/builtin-plugins/catalog";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -1423,6 +1423,53 @@ test("built-in tool plugin config reload reconciles its lifecycle", async () => 
       tool.name.startsWith("todo_"),
     ),
   ).toBe(false);
+  await client.dispose?.();
+}, 60_000);
+
+test("PDF plugin config reload reconciles its lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pdf-config-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_pdf_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+  expect(kernel.has(PDF_PLUGIN_ID)).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "pdf_read",
+    ),
+  ).toBe(true);
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { [PDF_PLUGIN_ID]: false } },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(PDF_PLUGIN_ID)).toBe(false);
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "pdf_read",
+    ),
+  ).toBe(false);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(PDF_PLUGIN_ID)).toBe(true);
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "pdf_read",
+    ),
+  ).toBe(true);
   await client.dispose?.();
 }, 60_000);
 
