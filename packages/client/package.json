@@ -20,6 +20,7 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/context-ledger-plugin": "workspace:*",
     "@natalia/governance-ledger-plugin": "workspace:*",
+    "@natalia/local-tools-plugin": "workspace:*",
     "@natalia/mcp-plugin": "workspace:*",
     "@natalia/terminal-plugin": "workspace:*",
     "@natalia/platform": "workspace:*",

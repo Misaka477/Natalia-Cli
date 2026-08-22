@@ -197,7 +197,7 @@ import {
   deriveAgentToolPolicy,
   deriveProfileToolPolicy,
 } from "./tool-policy-derivation";
-import { LOCAL_TOOLS_RELOAD_SERVICE } from "./builtin-plugins/local-tools-plugin";
+import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/local-tools-plugin";
 import {
   TERMINAL_CONTROLLER_SERVICE,
   type TerminalController,

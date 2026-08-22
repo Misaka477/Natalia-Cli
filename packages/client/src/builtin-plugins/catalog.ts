@@ -36,7 +36,7 @@ import {
 import {
   createLocalToolsPlugin,
   LOCAL_TOOLS_PLUGIN_ID,
-} from "./local-tools-plugin";
+} from "@natalia/local-tools-plugin";
 import {
   createWorkspacePlugin,
   WORKSPACE_PLUGIN_ID,

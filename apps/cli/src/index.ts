@@ -1,7 +1,6 @@
 import {
   builtinToolFamilies,
   checkpointDisplayLine,
-  discoverLocalToolFamilies,
   compactionDisplayLine,
   globWorkspaceFiles,
   listWorkspaceFiles,
@@ -10,6 +9,7 @@ import {
   retryDisplayLine,
   searchWorkspaceFiles,
 } from "@natalia/client";
+import { discoverLocalToolFamilies } from "@natalia/local-tools-plugin";
 import {
   cleanupUnreferencedAttachments,
   referencedAttachmentsForSessions,

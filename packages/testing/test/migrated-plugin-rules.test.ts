@@ -107,6 +107,33 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     );
 });
 
+test("local tools migration rejects client-owned implementations", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createLocalToolsPlugin } from "./local-tools-plugin"',
+    ],
+    [
+      "packages/client/src/builtin-plugins/local-tools-plugin.ts",
+      "export function createLocalToolsPlugin() {}",
+    ],
+    [
+      "packages/client/src/capabilities/local-tool-families.ts",
+      "export async function discoverLocalToolFamilies() {}",
+    ],
+  ] as const) {
+    expect(findMigratedPluginViolations(path, source)).toEqual([
+      expect.objectContaining({ pluginID: "natalia-local-tools" }),
+    ]);
+  }
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/builtin-plugins/catalog.ts",
+      'import { createLocalToolsPlugin } from "@natalia/local-tools-plugin"',
+    ),
+  ).toEqual([]);
+});
+
 test("retry migration protects provider runner", () => {
   expect(
     findMigratedPluginViolations(
@@ -897,12 +924,12 @@ test("the deleted runtime assembly seam cannot be recreated", () => {
     findForbiddenRepositoryPathViolation(
       "packages/client/src/runtime-assembly.ts",
     ),
-  ).toMatch(/must remain in the composition root/u);
+  ).toMatch(/must not be recreated/u);
   expect(
     findForbiddenRepositoryPathViolation(
       "packages\\client\\src\\runtime-assembly.ts",
     ),
-  ).toMatch(/must remain in the composition root/u);
+  ).toMatch(/must not be recreated/u);
   expect(
     findForbiddenRepositoryPathViolation("packages/client/src/real-runtime.ts"),
   ).toBeUndefined();

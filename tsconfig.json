@@ -48,6 +48,7 @@
     { "path": "packages/work-ledger-plugin" },
     { "path": "packages/workspace-plugin" },
     { "path": "packages/plugin" },
-    { "path": "packages/installer" }
+    { "path": "packages/installer" },
+    { "path": "packages/local-tools-plugin" }
   ]
 }

@@ -1,17 +1,3 @@
-/**
- * The local-tools built-in plugin: out-of-tree tool families discovered in
- * configured `tools.paths`.
- *
- * A family is a package: a directory with a `natalia.tool.json` manifest naming
- * the entry, whose default export is the family. The plugin loads them through
- * the unified plugin lifecycle — its capability owns every contributed tool,
- * unloading releases them, and a disabled or absent plugin leaves no tools and
- * starts no watcher.
- *
- * The plugin also owns the hot-reload watcher (the "hot" half of HMR a
- * self-modifying agent needs) and exposes a `localTools.reload` service the
- * host calls to swap one family's tools after its change is promoted.
- */
 import type { Plugin } from "@natalia/plugin";
 import type { ToolFamily } from "@natalia/tools";
 import {
@@ -19,7 +5,7 @@ import {
   reloadLocalToolFamily,
   watchLocalToolFamilies,
   type LocalToolFamilyOptions,
-} from "../capabilities/local-tool-families";
+} from "./local-tool-families";
 
 export const LOCAL_TOOLS_PLUGIN_ID = "natalia-local-tools";
 export const LOCAL_TOOLS_RELOAD_SERVICE = "localTools.reload";
@@ -29,8 +15,6 @@ export function createLocalToolsPlugin(input: {
   enabled?: Record<string, boolean>;
   trust?: LocalToolFamilyOptions["trust"];
   onError?: (id: string, error: unknown) => void;
-  /** Called when a watched family entry changes on disk; the host decides what
-   * a change means (trusted → reload, untrusted → report). */
   onChange?: (familyID: string, entryPath: string) => void;
 }): Plugin {
   const familyDisposers = new Map<string, () => void>();
@@ -55,31 +39,19 @@ export function createLocalToolsPlugin(input: {
     },
     async setup(api) {
       const registerFamily = (family: ToolFamily) => {
+        familyDisposers.get(family.id)?.();
         const disposers = family.tools.map((tool) => api.tools.register(tool));
         familyDisposers.set(family.id, () => {
           for (const dispose of disposers) dispose();
         });
       };
-      const loaded = await loadLocalToolFamilies({
-        roots: input.roots,
-        enabled: input.enabled,
-        trust: input.trust,
-        onError: input.onError,
-      });
+      const loaded = await loadLocalToolFamilies(input);
       for (const family of loaded) registerFamily(family);
 
       api.services.provide(
         LOCAL_TOOLS_RELOAD_SERVICE,
         async (familyID: string): Promise<ToolFamily> => {
-          const family = await reloadLocalToolFamily({
-            roots: input.roots,
-            familyID,
-            enabled: input.enabled,
-            trust: input.trust,
-            onError: input.onError,
-          });
-          familyDisposers.get(familyID)?.();
-          familyDisposers.delete(familyID);
+          const family = await reloadLocalToolFamily({ ...input, familyID });
           registerFamily(family);
           return family;
         },
@@ -87,16 +59,16 @@ export function createLocalToolsPlugin(input: {
 
       if (input.roots.length)
         closeWatcher = await watchLocalToolFamilies({
-          roots: input.roots,
+          ...input,
           onChange: (familyID, entryPath) =>
             input.onChange?.(familyID, entryPath),
         });
     },
-    dispose() {
+    async dispose() {
       familyDisposers.clear();
       const watcher = closeWatcher;
       closeWatcher = undefined;
-      void watcher?.();
+      await watcher?.();
     },
   };
 }

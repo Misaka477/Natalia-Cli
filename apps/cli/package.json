@@ -22,6 +22,7 @@
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/installer": "workspace:*",
+    "@natalia/local-tools-plugin": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",

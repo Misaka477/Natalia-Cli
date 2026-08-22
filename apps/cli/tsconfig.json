@@ -25,6 +25,9 @@
       "path": "../../packages/installer"
     },
     {
+      "path": "../../packages/local-tools-plugin"
+    },
+    {
       "path": "../../packages/platform"
     },
     {

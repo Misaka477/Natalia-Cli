@@ -28,6 +28,7 @@
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/installer": "workspace:*",
+        "@natalia/local-tools-plugin": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime": "workspace:*",
@@ -130,6 +131,7 @@
         "@natalia/context-ledger-plugin": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/governance-ledger-plugin": "workspace:*",
+        "@natalia/local-tools-plugin": "workspace:*",
         "@natalia/mcp-plugin": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -223,6 +225,15 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "zod": "3.25.76",
+      },
+    },
+    "packages/local-tools-plugin": {
+      "name": "@natalia/local-tools-plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/config": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/tools": "workspace:*",
       },
     },
     "packages/mcp": {
@@ -728,6 +739,8 @@
     "@natalia/governance-ledger-plugin": ["@natalia/governance-ledger-plugin@workspace:packages/governance-ledger-plugin"],
 
     "@natalia/installer": ["@natalia/installer@workspace:packages/installer"],
+
+    "@natalia/local-tools-plugin": ["@natalia/local-tools-plugin@workspace:packages/local-tools-plugin"],
 
     "@natalia/mcp": ["@natalia/mcp@workspace:packages/mcp"],
 

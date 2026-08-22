@@ -11,7 +11,7 @@ export type MigratedPluginViolation = {
 const forbiddenRepositoryPaths = new Map([
   [
     "packages/client/src/runtime-assembly.ts",
-    "runtime assembly must remain in the composition root until metadata-driven loading replaces it",
+    "deleted runtime assembly seam must not be recreated",
   ],
 ]);
 
@@ -120,6 +120,7 @@ const clientClosureAllowlist = [
   "context-ledger-plugin",
   "contracts",
   "governance-ledger-plugin",
+  "local-tools-plugin",
   "mcp-plugin",
   "object-store",
   "platform",
@@ -428,12 +429,27 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-local-tools",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/builtin-plugins/local-tools-plugin.ts",
+      "packages/client/src/capabilities/local-tool-families.ts",
+    ],
     forbidden: [
       {
         description: "direct local family loading",
         pattern:
           /\b(?:loadLocalToolFamilies|reloadLocalToolFamily|watchLocalToolFamilies)\b/u,
+      },
+      {
+        description: "direct local tools implementation import",
+        pattern:
+          /from\s+["'](?:\.\/(?:builtin-plugins\/)?local-tools-plugin|\.\/capabilities\/local-tool-families|\.\.\/capabilities\/local-tool-families)["']/u,
+      },
+      {
+        description: "client-owned local tools implementation",
+        pattern:
+          /export (?:async )?function (?:createLocalToolsPlugin|discoverLocalToolFamilies|loadLocalToolFamilies|reloadLocalToolFamily|watchLocalToolFamilies)\b/u,
       },
     ],
   },

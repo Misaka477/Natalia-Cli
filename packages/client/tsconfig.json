@@ -40,6 +40,9 @@
       "path": "../governance-ledger-plugin"
     },
     {
+      "path": "../local-tools-plugin"
+    },
+    {
       "path": "../mcp-plugin"
     },
     {

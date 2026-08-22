@@ -1,17 +1,3 @@
-/**
- * Out-of-tree tool family loading (the 分发层's local half).
- *
- * A family is a package: a directory with a `natalia.tool.json` manifest naming
- * the entry, and the entry's default export is the family — either the
- * `ToolFamily` itself or a factory returning it, so a family can be written the
- * same way a `packages/tool-*` package is. Loaded families join the built-ins
- * through the same capability kernel, owning their tools the same way; nothing
- * about an out-of-tree family is special-cased once loaded.
- *
- * `reloadLocalToolFamily` is the hot-reload a self-modifying agent needs: after
- * its change is promoted to the system slot, the entry is re-imported with a
- * cache-busting query and re-registered without a restart.
- */
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,7 +6,6 @@ import type { ToolFamily } from "@natalia/tools";
 export const TOOL_FAMILY_MANIFEST = "natalia.tool.json";
 
 export type LocalToolFamilyManifest = {
-  /** Relative entry, like a plugin's `entry`. */
   entry: string;
 };
 
@@ -35,13 +20,9 @@ export type LocalToolFamilyOptions = {
   };
 };
 
-/** The discovered family packages under a root, in stable order. */
 export async function discoverLocalToolFamilies(root: string) {
   const dir = resolve(root);
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-  // Symlinks count as directories here: the package manager links local
-  // `file:` specs, and Dirent.isDirectory() is false for a symlink even
-  // though it resolves to one.
   const isDirectory = (entry: {
     isDirectory(): boolean;
     isSymbolicLink(): boolean;
@@ -50,11 +31,6 @@ export async function discoverLocalToolFamilies(root: string) {
     dir,
     ...entries.filter(isDirectory).map((entry) => join(dir, entry.name)),
   ];
-  // A `node_modules` subdirectory holds installed packages (the package
-  // manager's layout, the same "reconcile by installed state" the dsh
-  // research calls for): scan one level into it — plus scoped packages, which
-  // nest one deeper as `node_modules/@scope/<name>` — so an installed package
-  // with a `natalia.tool.json` at its root is discovered.
   for (const entry of entries.filter(
     (entry) => isDirectory(entry) && entry.name === "node_modules",
   )) {
@@ -91,16 +67,6 @@ export async function discoverLocalToolFamilies(root: string) {
   return discovered;
 }
 
-/**
- * Loads the out-of-tree families declared by `tools.paths`, applying the same
- * `tools.enabled` filter the built-ins get. A family whose entry cannot be
- * imported, or whose default export is not a family, is skipped with its error
- * reported — a broken package must not take the rest of the catalogue down.
- *
- * When `trust` is provided, each family's entry is verified against the trust
- * database: a changed or replaced package is reported (not loaded silently) so
- * the operator hears that the bytes differ from what was installed.
- */
 export async function loadLocalToolFamilies(input: {
   roots: string[];
   enabled?: Record<string, boolean>;
@@ -112,20 +78,13 @@ export async function loadLocalToolFamilies(input: {
     const discovered = await discoverLocalToolFamilies(root);
     for (const { manifest, path } of discovered) {
       const imported = await importLocalToolFamily(manifest, path, input);
-      if (!imported) continue;
-      if (input.enabled?.[imported.family.id] === false) continue;
+      if (!imported || input.enabled?.[imported.family.id] === false) continue;
       families.push(imported.family);
     }
   }
   return families;
 }
 
-/**
- * Re-imports one out-of-tree family with a cache-busting query — the hot
- * reload a self-modifying agent needs after its change is promoted: the entry
- * on disk is re-read and re-registered without a restart. The reload still
- * verifies the package against the trust database.
- */
 export async function reloadLocalToolFamily(input: {
   roots: string[];
   familyID: string;
@@ -133,6 +92,8 @@ export async function reloadLocalToolFamily(input: {
   onError?: (id: string, error: unknown) => void;
   trust?: LocalToolFamilyOptions["trust"];
 }): Promise<ToolFamily> {
+  if (input.enabled?.[input.familyID] === false)
+    throw new Error(`tool family is disabled in config: ${input.familyID}`);
   for (const root of input.roots) {
     const discovered = await discoverLocalToolFamilies(root);
     for (const { manifest, path } of discovered) {
@@ -140,8 +101,6 @@ export async function reloadLocalToolFamily(input: {
         cacheBust: true,
       });
       if (imported?.family.id !== input.familyID) continue;
-      if (input.enabled?.[input.familyID] === false)
-        throw new Error(`tool family is disabled in config: ${input.familyID}`);
       return imported.family;
     }
   }
@@ -167,9 +126,7 @@ async function importLocalToolFamily(
       }
     }
     const href = options?.cacheBust
-      ? // Bun ignores query strings on file:// URLs, but a plain path with a
-        // query is a fresh cache key — the hot reload must re-read the entry.
-        `${entryPath}?reload=${Date.now()}`
+      ? `${entryPath}?reload=${Date.now()}`
       : pathToFileURL(entryPath).href;
     const module = (await import(href)) as { default?: unknown };
     const exported = module.default;
@@ -191,27 +148,15 @@ async function importLocalToolFamily(
   }
 }
 
-/**
- * The trust-record key for a family package. The family id is only known after
- * import, so a package is keyed by its resolved directory path.
- */
 function keyForPath(manifestPath: string) {
   return resolve(manifestPath, "..");
 }
 
-/**
- * Watches out-of-tree family entries and reports changes, debounced per family.
- *
- * This is the "hot" half of HMR: after the agent's change is promoted (and the
- * trust record re-pinned), the entry changes on disk and the watcher fires. The
- * caller decides what the change means — a trusted change is hot-reloaded, an
- * untrusted one is reported as an edit without promotion. `fs.watch` is used so
- * no polling is involved; returning `close` keeps the watcher's lifecycle in
- * the caller's hands.
- */
 export async function watchLocalToolFamilies(input: {
   roots: string[];
-  /** Called with the family id and its entry path when the entry changed. */
+  enabled?: Record<string, boolean>;
+  onError?: (id: string, error: unknown) => void;
+  trust?: LocalToolFamilyOptions["trust"];
   onChange: (familyID: string, entryPath: string) => void;
   debounceMs?: number;
 }): Promise<() => Promise<void>> {
@@ -222,21 +167,12 @@ export async function watchLocalToolFamilies(input: {
   for (const root of input.roots) {
     const discovered = await discoverLocalToolFamilies(root);
     for (const { manifest, path } of discovered) {
-      const entryPath = resolve(path, "..", manifest.entry);
-      // The id is only known after import; derive it once at watch time.
-      const module = (await import(pathToFileURL(entryPath).href)) as {
-        default?: unknown;
-      };
-      const exported = module.default;
-      const family =
-        typeof exported === "function"
-          ? (exported as () => ToolFamily)()
-          : (exported as ToolFamily | undefined);
-      if (!family?.id) continue;
+      const imported = await importLocalToolFamily(manifest, path, input);
+      if (!imported || input.enabled?.[imported.family.id] === false) continue;
       entries.push({
-        familyID: family.id,
+        familyID: imported.family.id,
         dir: resolve(path, ".."),
-        entryPath,
+        entryPath: imported.entryPath,
       });
     }
   }

@@ -124,12 +124,6 @@ export {
   type ToolFamilyLoadOutcome,
 } from "./capabilities/tool-family-capabilities";
 export {
-  discoverLocalToolFamilies,
-  loadLocalToolFamilies,
-  reloadLocalToolFamily,
-  watchLocalToolFamilies,
-} from "./capabilities/local-tool-families";
-export {
   reviewPRs,
   runFanOut,
   validateOwnershipMap,

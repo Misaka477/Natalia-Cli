@@ -8,7 +8,7 @@ import {
   loadLocalToolFamilies,
   reloadLocalToolFamily,
   watchLocalToolFamilies,
-} from "../src/capabilities/local-tool-families";
+} from "../src/local-tool-families";
 
 async function fixtureFamily(root: string, id: string) {
   const dir = join(root, id);
@@ -161,6 +161,26 @@ test("reloadLocalToolFamily refuses a disabled family", async () => {
   ).rejects.toThrow(/disabled in config/u);
 });
 
+test("reloadLocalToolFamily does not import a disabled family", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-disabled-import-"));
+  const dir = await fixtureFamily(root, "fixture.a");
+  const marker = join(root, "imported.txt");
+  await writeFile(
+    join(dir, "index.ts"),
+    `import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(marker)}, "imported");
+export default { id: "fixture.a", tools: [] };`,
+  );
+  await expect(
+    reloadLocalToolFamily({
+      roots: [root],
+      familyID: "fixture.a",
+      enabled: { "fixture.a": false },
+    }),
+  ).rejects.toThrow(/disabled in config/u);
+  await expect(readFile(marker, "utf8")).rejects.toThrow();
+});
+
 test("watchLocalToolFamilies reports a family entry change (debounced)", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-watch-"));
   const dir = await fixtureFamily(root, "fixture.a");
@@ -175,6 +195,49 @@ test("watchLocalToolFamilies reports a family entry change (debounced)", async (
   await Bun.sleep(200);
   expect(fired.some(([familyID]) => familyID === "fixture.a")).toBe(true);
   expect(fired[0]![1]).toBe(entry);
+  await close();
+});
+
+test("watchLocalToolFamilies ignores disabled families", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-watch-disabled-"));
+  const dir = await fixtureFamily(root, "fixture.a");
+  const entry = join(dir, "index.ts");
+  const fired: string[] = [];
+  const close = await watchLocalToolFamilies({
+    roots: [root],
+    enabled: { "fixture.a": false },
+    debounceMs: 20,
+    onChange: (familyID) => fired.push(familyID),
+  });
+  await writeFile(entry, "// touch\n" + (await readFile(entry, "utf8")));
+  await Bun.sleep(100);
+  expect(fired).toEqual([]);
+  await close();
+});
+
+test("watchLocalToolFamilies does not watch an untrusted family", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-watch-trust-"));
+  const dir = await fixtureFamily(root, "fixture.a");
+  const entry = join(dir, "index.ts");
+  const errors: string[] = [];
+  const fired: string[] = [];
+  const close = await watchLocalToolFamilies({
+    roots: [root],
+    trust: {
+      workspaceRoot: root,
+      verify: async () => ({ verified: false, expected: "expected" }),
+    },
+    debounceMs: 20,
+    onError: (_id, error) =>
+      errors.push(error instanceof Error ? error.message : String(error)),
+    onChange: (familyID) => fired.push(familyID),
+  });
+  await writeFile(entry, "// touch\n" + (await readFile(entry, "utf8")));
+  await Bun.sleep(100);
+  expect(errors).toContain(
+    "package changed since install (fingerprint mismatch)",
+  );
+  expect(fired).toEqual([]);
   await close();
 });
 
