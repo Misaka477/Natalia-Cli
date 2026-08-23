@@ -13,9 +13,14 @@ import {
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   PROVIDER_MODEL_PLUGIN_ID,
   type ProviderModelController,
+  type ProviderModelControllerInput,
   type ProviderRunnerInput,
 } from "@natalia/provider-model-plugin";
-import { RETRY_SERVICE, type RetryService } from "@natalia/retry-plugin";
+import {
+  RETRY_PLUGIN_ID,
+  RETRY_SERVICE,
+  type RetryService,
+} from "@natalia/retry-plugin";
 import {
   RUNTIME_UI_PLUGIN_ID,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
@@ -190,6 +195,7 @@ import {
   mcpPluginEntry,
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
+  providerModelPluginEntry,
   SANDBOX_PLUGIN_ID,
   sandboxPluginEntry,
   SEARCH_PLUGIN_ID,
@@ -300,10 +306,12 @@ import {
   type ToolPolicyService,
 } from "@natalia/tool-pipeline-plugin";
 import {
+  ATTACHMENT_PLUGIN_ID,
   ATTACHMENT_SERVICE,
   type AttachmentService,
 } from "@natalia/attachment-plugin";
 import {
+  COMPACTION_PLUGIN_ID,
   COMPACTION_SERVICE,
   type CompactionService,
 } from "@natalia/compaction-plugin";
@@ -715,6 +723,7 @@ export function createRealRuntimeClient(
   let activeSandboxPluginConfigFingerprint: string | undefined;
   let activeTerminalPluginConfigFingerprint: string | undefined;
   let activeWorkspacePluginConfigFingerprint: string | undefined;
+  let activeProviderModelPluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -907,6 +916,8 @@ export function createRealRuntimeClient(
         terminalPluginConfigFingerprint(tsConfig.config);
       const nextWorkspacePluginConfigFingerprint =
         workspacePluginConfigFingerprint(tsConfig.config);
+      const nextProviderModelPluginConfigFingerprint =
+        providerModelPluginConfigFingerprint(tsConfig.config);
       const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -936,6 +947,10 @@ export function createRealRuntimeClient(
         activeWorkspacePluginConfigFingerprint !== undefined &&
         nextWorkspacePluginConfigFingerprint !==
           activeWorkspacePluginConfigFingerprint;
+      const reconcileProviderModel =
+        activeProviderModelPluginConfigFingerprint !== undefined &&
+        nextProviderModelPluginConfigFingerprint !==
+          activeProviderModelPluginConfigFingerprint;
       const reconcileBuiltinTools =
         activeBuiltinToolConfigFingerprint !== undefined &&
         nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
@@ -1051,6 +1066,17 @@ export function createRealRuntimeClient(
             WORKSPACE_FILES_SERVICE,
           );
       }
+      if (reconcileProviderModel) {
+        providerModelController = undefined;
+        await pluginsController.reconcileBuiltins(
+          [providerModelPluginEntry(providerModelPluginInput(tsConfig.config))],
+          tsConfig.config.plugins.settings,
+        );
+        providerModelController =
+          capabilityRegistry.service<ProviderModelController>(
+            PROVIDER_MODEL_CONTROLLER_SERVICE,
+          );
+      }
       if (reconcileSkills) {
         const selectedSkills = new Map(
           [...executionBySession.entries()].flatMap(([id, exec]) =>
@@ -1090,6 +1116,8 @@ export function createRealRuntimeClient(
         nextTerminalPluginConfigFingerprint;
       activeWorkspacePluginConfigFingerprint =
         nextWorkspacePluginConfigFingerprint;
+      activeProviderModelPluginConfigFingerprint =
+        nextProviderModelPluginConfigFingerprint;
       activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
@@ -1234,40 +1262,7 @@ export function createRealRuntimeClient(
           ? { retry: { enabled: true, policy: () => retryPolicy } }
           : {}),
         ...(compactionEnabled ? { compaction: { enabled: true } } : {}),
-        providerModel: {
-          enabled:
-            attachmentEnabled &&
-            retryEnabled &&
-            compactionEnabled &&
-            tsRuntimeConfig.plugins.enabled["natalia-provider-model"] !== false,
-          controller: {
-            initialize: () => {
-              if (!provider && !options.provider) {
-                provider = providerFromEnvironment();
-                if (provider) providerSource = "environment";
-              }
-            },
-            runnerInput: providerRunnerInput,
-            chat: {
-              available: (id) =>
-                executionBySession.get(id)?.provider !== undefined,
-              publish: (id, event) =>
-                publishForSession(executionBySession.get(id), event),
-              runBody: async (input, signal) => {
-                const exec = executionBySession.get(input.sessionID);
-                if (!exec)
-                  throw new Error(
-                    `no execution state for session ${input.sessionID}`,
-                  );
-                await runChatTurnBody({ ...input, exec }, signal);
-              },
-              wake: async (id) => {
-                const exec = executionBySession.get(id);
-                if (exec) await wakeNavi(exec);
-              },
-            },
-          },
-        },
+        providerModel: providerModelPluginInput(runtimeConfig),
         taskWorkflow: {
           enabled:
             tsRuntimeConfig.plugins.enabled[TASK_WORKFLOW_PLUGIN_ID] !== false,
@@ -1432,6 +1427,8 @@ export function createRealRuntimeClient(
       activeWorkspacePluginConfigFingerprint = workspacePluginConfigFingerprint(
         tsConfig.config,
       );
+      activeProviderModelPluginConfigFingerprint =
+        providerModelPluginConfigFingerprint(tsConfig.config);
       activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -3246,6 +3243,13 @@ export function createRealRuntimeClient(
     });
   }
 
+  function providerModelPluginConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      enabled: config.plugins.enabled[PROVIDER_MODEL_PLUGIN_ID],
+      settings: config.plugins.settings[PROVIDER_MODEL_PLUGIN_ID],
+    });
+  }
+
   function builtinToolConfigFingerprint(config: ConfigV3) {
     return JSON.stringify({
       tools: config.tools,
@@ -3357,6 +3361,46 @@ export function createRealRuntimeClient(
         };
   }
 
+  function providerModelPluginInput(config: ConfigV3): {
+    enabled: boolean;
+    controller: ProviderModelControllerInput;
+  } {
+    const enabled =
+      config.plugins.enabled[ATTACHMENT_PLUGIN_ID] !== false &&
+      config.plugins.enabled[RETRY_PLUGIN_ID] !== false &&
+      config.plugins.enabled[COMPACTION_PLUGIN_ID] !== false &&
+      config.plugins.enabled[PROVIDER_MODEL_PLUGIN_ID] !== false;
+    return {
+      enabled,
+      controller: {
+        initialize: () => {
+          if (!provider && !options.provider) {
+            provider = providerFromEnvironment();
+            if (provider) providerSource = "environment";
+          }
+        },
+        runnerInput: providerRunnerInput,
+        chat: {
+          available: (id) => executionBySession.get(id)?.provider !== undefined,
+          publish: (id, event) =>
+            publishForSession(executionBySession.get(id), event),
+          runBody: async (input, signal) => {
+            const exec = executionBySession.get(input.sessionID);
+            if (!exec)
+              throw new Error(
+                `no execution state for session ${input.sessionID}`,
+              );
+            await runChatTurnBody({ ...input, exec }, signal);
+          },
+          wake: async (id) => {
+            const exec = executionBySession.get(id);
+            if (exec) await wakeNavi(exec);
+          },
+        },
+      },
+    };
+  }
+
   function mcpPluginInput(config: ConfigV3) {
     if (
       config.plugins.enabled[MCP_PLUGIN_ID] === false ||
@@ -3461,7 +3505,8 @@ export function createRealRuntimeClient(
             id !== MCP_PLUGIN_ID &&
             id !== SANDBOX_CONTROLLER_PLUGIN_ID &&
             id !== TERMINAL_CONTROLLER_PLUGIN_ID &&
-            id !== WORKSPACE_PLUGIN_ID
+            id !== WORKSPACE_PLUGIN_ID &&
+            id !== PROVIDER_MODEL_PLUGIN_ID
           );
         return !builtin;
       }),

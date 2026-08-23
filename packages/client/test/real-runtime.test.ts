@@ -42,6 +42,11 @@ import {
 } from "../src/builtin-plugins/catalog";
 import { CHECKPOINT_PLUGIN_ID } from "@natalia/checkpoint-plugin";
 import {
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
+  PROVIDER_MODEL_PLUGIN_ID,
+  type ProviderModelController,
+} from "@natalia/provider-model-plugin";
+import {
   WORKSPACE_FILES_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
   WORKSPACE_PLUGIN_ID,
@@ -1453,6 +1458,67 @@ test("workspace plugin config reload reconciles its services", async () => {
   expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeDefined();
   expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeDefined();
   expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeDefined();
+  await client.dispose?.();
+}, 60_000);
+
+test("provider-model plugin config reload reconciles its controller", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-provider-model-config-reload-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  const disabledConfig = {
+    version: 3,
+    plugins: { enabled: { [PROVIDER_MODEL_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_provider_model_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+
+  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeUndefined();
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(true);
+  const firstController = kernel.service<ProviderModelController>(
+    PROVIDER_MODEL_CONTROLLER_SERVICE,
+  );
+  expect(firstController).toBeDefined();
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: {
+        settings: { [PROVIDER_MODEL_PLUGIN_ID]: { generation: 2 } },
+      },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).not.toBe(
+    firstController,
+  );
+  await expect(
+    firstController!.runTurn("ses_provider_model_config_reload", {} as never),
+  ).rejects.toThrow("provider/model controller disposed");
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeUndefined();
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(true);
+  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeDefined();
   await client.dispose?.();
 }, 60_000);
 

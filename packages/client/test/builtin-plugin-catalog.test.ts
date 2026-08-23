@@ -11,6 +11,7 @@ import {
   mcpPluginEntry,
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
+  providerModelPluginEntry,
   SANDBOX_PLUGIN_ID,
   sandboxPluginEntry,
   SEARCH_PLUGIN_ID,
@@ -72,6 +73,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     MCP_PLUGIN_ID,
     CHECKPOINT_PLUGIN_ID,
     TEAM_PLUGIN_ID,
+    PROVIDER_MODEL_PLUGIN_ID,
   ]);
   expect(new Set(catalog.map((entry) => entry.id)).size).toBe(catalog.length);
   expect(catalog.find((entry) => entry.id === SKILLS_PLUGIN_ID)?.enabled).toBe(
@@ -197,6 +199,20 @@ test("provider-model catalog construction stays lazy", () => {
   expect(initialized).toBe(0);
   expect(entry?.create().manifest.id).toBe(PROVIDER_MODEL_PLUGIN_ID);
   expect(initialized).toBe(0);
+});
+
+test("provider-model catalog entry stays stable while disabled", () => {
+  const disabled = providerModelPluginEntry(undefined);
+  expect(disabled.id).toBe(PROVIDER_MODEL_PLUGIN_ID);
+  expect(disabled.enabled).toBe(false);
+  expect(() => disabled.create()).toThrow("provider-model plugin is disabled");
+
+  const configured = providerModelPluginEntry({
+    enabled: false,
+    controller: {} as never,
+  });
+  expect(configured.enabled).toBe(false);
+  expect(configured.create().manifest.id).toBe(PROVIDER_MODEL_PLUGIN_ID);
 });
 
 test("workspace catalog construction stays lazy", () => {

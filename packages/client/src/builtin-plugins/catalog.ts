@@ -390,16 +390,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.providerModel
-      ? [
-          {
-            id: PROVIDER_MODEL_PLUGIN_ID,
-            enabled: input.providerModel.enabled,
-            create: () =>
-              createProviderModelPlugin(input.providerModel!.controller),
-          },
-        ]
-      : []),
+    providerModelPluginEntry(input.providerModel),
     ...(input.taskWorkflow
       ? [
           {
@@ -465,6 +456,19 @@ export function workspacePluginEntry(
     create: () => {
       if (!input) throw new Error("workspace plugin is disabled");
       return createWorkspacePlugin(input);
+    },
+  };
+}
+
+export function providerModelPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["providerModel"],
+): BuiltinPluginEntry {
+  return {
+    id: PROVIDER_MODEL_PLUGIN_ID,
+    enabled: input?.enabled === true,
+    create: () => {
+      if (!input) throw new Error("provider-model plugin is disabled");
+      return createProviderModelPlugin(input.controller);
     },
   };
 }
