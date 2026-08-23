@@ -7,6 +7,7 @@ import {
   createProviderSelection,
   defaultContextStatusConfig,
 } from "./runtime/provider-selection";
+import { createPermissions } from "./runtime/permissions";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
@@ -657,7 +658,6 @@ export function createRealRuntimeClient(
   ctx.ports.getPaused = () => paused;
   ctx.ports.getCapabilityRegistry = () => capabilityRegistry;
   ctx.ports.submitInput = submitInput;
-  ctx.ports.applyAgentPolicy = applyAgentPolicy;
   ctx.ports.getTsRuntimeConfig = () => tsRuntimeConfig;
   ctx.ports.getSubagentsController = () => subagentsController;
   ctx.ports.getWorkLedgerController = () => workLedgerController;
@@ -676,6 +676,47 @@ export function createRealRuntimeClient(
     runtimeContextConfig = value;
   };
   ctx.ports.getRuntimeContextConfig = () => runtimeContextConfig;
+  ctx.ports.getToolPolicy = () => toolPolicy;
+  ctx.ports.getToolLayer = () => toolLayer;
+  ctx.ports.getAgentToolLayer = () => agentToolLayer;
+  ctx.ports.getPermissionProfileToolLayer = () => permissionProfileToolLayer;
+  ctx.ports.getModuleToolLayer = () => moduleToolLayer;
+  ctx.ports.getModulePermissionToolLayer = () => modulePermissionToolLayer;
+  ctx.ports.setToolLayer = (layer) => {
+    toolLayer = layer;
+  };
+  ctx.ports.setAgentToolLayer = (layer) => {
+    agentToolLayer = layer;
+  };
+  ctx.ports.setPermissionProfileToolLayer = (layer) => {
+    permissionProfileToolLayer = layer;
+  };
+  ctx.ports.getPermissionMode = () => permissionMode;
+  ctx.ports.setPermissionMode = (mode) => {
+    permissionMode = mode;
+  };
+  ctx.ports.getSelectedPermissionProfile = () => selectedPermissionProfile;
+  ctx.ports.setSelectedPermissionProfile = (profile) => {
+    selectedPermissionProfile = profile;
+  };
+  ctx.ports.getDefaultPermissionMode = () => defaultPermissionMode;
+  ctx.ports.setDefaultPermissionMode = (mode) => {
+    defaultPermissionMode = mode;
+  };
+  ctx.ports.getDefaultPermissionProfile = () => defaultPermissionProfile;
+  ctx.ports.setDefaultPermissionProfile = (profile) => {
+    defaultPermissionProfile = profile;
+  };
+  const permissions = createPermissions(ctx, options);
+  const {
+    applyAgentPolicy,
+    agentPolicyLayer,
+    permissionProfileLayer,
+    reloadPermissionSettings,
+    isToolAllowed,
+    extensionEnabled,
+    extensionToolPermission,
+  } = permissions;
   const providerSelection = createProviderSelection(ctx, options);
   const {
     currentModelImageInput,
@@ -695,6 +736,7 @@ export function createRealRuntimeClient(
   ctx.ports.clientModelCatalog = clientModelCatalog;
   ctx.ports.selectRuntimeModel = selectRuntimeModel;
   ctx.ports.applyAgentProvider = applyAgentProvider;
+  ctx.ports.applyAgentPolicy = applyAgentPolicy;
   ctx.state.runtimeDiagnostics = runtimeDiagnostics;
   ctx.state.runtimeDiagnosticsBySession = runtimeDiagnosticsBySession;
   ctx.state.tools = tools;
@@ -2843,43 +2885,6 @@ export function createRealRuntimeClient(
    * The kernel is the sole catalogue: external and built-in plugins both
    * contribute through it, so a UI never merges parallel registries.
    */
-  function applyAgentPolicy() {
-    agentToolLayer = agentPolicyLayer(selectedAgent);
-    permissionProfileToolLayer = permissionProfileLayer(
-      selectedPermissionProfile,
-    );
-  }
-
-  function agentPolicyLayer(agent: AgentDefinition | undefined) {
-    const mode = tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
-    return toolPolicy!.createHookLayer(deriveAgentToolPolicy({ agent, mode }));
-  }
-
-  function permissionProfileLayer(profile: PermissionProfile | undefined) {
-    return toolPolicy!.createHookLayer(deriveProfileToolPolicy({ profile }));
-  }
-
-  /**
-   * Re-derives the permission mode and selected profile from the given config
-   * and rebuilds the tool policy layers. Called at initialize and on every
-   * config reload, so switching the default profile or flipping auto/ask in
-   * the settings dialog takes effect immediately instead of after a restart.
-   * A requested profile (options.permissionProfile) that vanished from disk
-   * keeps the current selection; the caller decides whether that is fatal.
-   */
-  function reloadPermissionSettings(config: ConfigV3) {
-    const derived = derivePermissionSettings({
-      config,
-      requestedProfile: options.permissionProfile,
-      optionMode: options.permissionMode,
-      permissionMode,
-    });
-    if (!derived.found) return;
-    selectedPermissionProfile = derived.selectedProfile;
-    permissionMode = derived.mode;
-    defaultPermissionMode = derived.defaultMode;
-    defaultPermissionProfile = derived.defaultProfile;
-  }
 
   function skillsPluginInput(config: ConfigV3) {
     if (
@@ -3116,67 +3121,6 @@ export function createRealRuntimeClient(
         return !builtin;
       }),
     );
-  }
-
-  function isToolAllowed(
-    toolName: string,
-    exec: SessionExecutionState | undefined = activeExec,
-  ) {
-    // The module completion tool is system control, not a capability: it must
-    // stay available even when a profile, agent or module allow-list forgets to
-    // mention it, otherwise the model can never report completion and every
-    // module stalls for a configuration reason nobody can see.
-    if (options.taskModuleContext && toolName === "flow_module_complete")
-      return true;
-    return (
-      toolLayer.isToolAllowed(toolName) &&
-      (exec
-        ? agentPolicyLayer(exec.selectedAgent).isToolAllowed(toolName)
-        : agentToolLayer.isToolAllowed(toolName)) &&
-      (exec
-        ? permissionProfileLayer(exec.permissionProfile).isToolAllowed(toolName)
-        : permissionProfileToolLayer.isToolAllowed(toolName)) &&
-      moduleToolLayer.isToolAllowed(toolName) &&
-      modulePermissionToolLayer.isToolAllowed(toolName) &&
-      extensionToolPermission(
-        toolName,
-        exec ? exec.permissionProfile : selectedPermissionProfile,
-      ).allowed
-    );
-  }
-
-  function extensionEnabled(
-    extension: "skills" | "mcp" | "plugins",
-    profile: PermissionProfile | undefined = selectedPermissionProfile,
-  ) {
-    return (
-      profile?.extensions?.[extension] !== false &&
-      options.taskModuleContext?.moduleExtensions?.[extension] !== false
-    );
-  }
-
-  function extensionToolPermission(
-    toolName: string,
-    profile: PermissionProfile | undefined = selectedPermissionProfile,
-  ) {
-    const extension =
-      toolName === "skill_load"
-        ? "skills"
-        : toolName.startsWith("mcp_")
-          ? "mcp"
-          : toolName.startsWith("plugin_")
-            ? "plugins"
-            : undefined;
-    if (!extension || extensionEnabled(extension, profile))
-      return { allowed: true, diagnostics: [] };
-    const source =
-      options.taskModuleContext?.moduleExtensions?.[extension] === false
-        ? "active module"
-        : "permission profile";
-    return {
-      allowed: false,
-      diagnostics: [`${extension} extensions are disabled by ${source}`],
-    };
   }
 
   function publish(event: RuntimeEvent) {

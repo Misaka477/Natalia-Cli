@@ -253,6 +253,31 @@ export type RuntimePorts = {
   ) => void;
   setRuntimeContextConfig: (config: RuntimeContextStatusConfig) => void;
   getRuntimeContextConfig: () => RuntimeContextStatusConfig;
+  getToolPolicy: () => ToolPolicyService | undefined;
+  getToolLayer: () => ToolPolicyHookLayer;
+  getAgentToolLayer: () => ToolPolicyHookLayer;
+  getPermissionProfileToolLayer: () => ToolPolicyHookLayer;
+  getModuleToolLayer: () => ToolPolicyHookLayer;
+  getModulePermissionToolLayer: () => ToolPolicyHookLayer;
+  setToolLayer: (layer: ToolPolicyHookLayer) => void;
+  setAgentToolLayer: (layer: ToolPolicyHookLayer) => void;
+  setPermissionProfileToolLayer: (layer: ToolPolicyHookLayer) => void;
+  getPermissionMode: () => RuntimeState["permissionMode"];
+  setPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
+  getSelectedPermissionProfile: () =>
+    | ConfigV3["permissionProfiles"][string]
+    | undefined;
+  setSelectedPermissionProfile: (
+    profile: ConfigV3["permissionProfiles"][string] | undefined,
+  ) => void;
+  getDefaultPermissionMode: () => "ask" | "auto" | "read_only";
+  setDefaultPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
+  getDefaultPermissionProfile: () =>
+    | ConfigV3["permissionProfiles"][string]
+    | undefined;
+  setDefaultPermissionProfile: (
+    profile: ConfigV3["permissionProfiles"][string] | undefined,
+  ) => void;
 };
 
 export type RuntimeContext = {
