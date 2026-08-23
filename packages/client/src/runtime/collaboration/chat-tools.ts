@@ -14,7 +14,7 @@ import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import { chatToolSummary } from "./chat-summary";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 
 const CHAT_READ_ONLY_TOOLS = new Set([
   "read_file",

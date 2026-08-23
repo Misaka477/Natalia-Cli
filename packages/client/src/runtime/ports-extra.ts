@@ -12,7 +12,7 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import type { RuntimeContextStatusConfig } from "./status-config";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 
 export type RuntimePortsExtra = {
   setLastSubmitted: (
@@ -89,7 +89,9 @@ export type RuntimePortsExtra = {
   setActiveExternalPluginConfigFingerprint: (
     fingerprint: string | undefined,
   ) => void;
-  buildBuiltinPluginCatalog: (config: ConfigV3) => unknown[];
+  buildBuiltinPluginCatalog: (
+    config: ConfigV3,
+  ) => import("./initialize-types").BuiltinPluginCatalog;
   refreshBuiltinServices: (
     selectedSkills?: Map<SessionID, string>,
   ) => Promise<void>;
@@ -226,7 +228,7 @@ export type RuntimePortsExtra = {
     text: string,
   ) => Promise<{ text: string; outputPath?: string }>;
   isManagedResourceTool: (toolName: string) => boolean;
-  tryParseToolArguments: (arguments_: string) => unknown;
+  tryParseToolArguments: (arguments_: string) => Record<string, unknown>;
   parseToolArguments: (arguments_: string) => unknown;
   validateToolParameters: (
     schema: import("@natalia/tools").ToolSchema,

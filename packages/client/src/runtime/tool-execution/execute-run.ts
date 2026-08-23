@@ -12,7 +12,7 @@ import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { buildToolExecutionContext } from "./execute-context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../../real-runtime";
 import type { RuntimeContext } from "../context";
 

@@ -14,7 +14,7 @@ import { derivePermissionSettings } from "../permission-settings";
 import type { AgentDefinition } from "@natalia/agent";
 import type { ConfigV3 } from "@natalia/contracts";
 import type { ToolPolicyHookLayer } from "@natalia/runtime-services";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "../real-runtime";
 

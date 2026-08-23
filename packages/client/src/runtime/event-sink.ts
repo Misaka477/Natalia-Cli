@@ -11,7 +11,7 @@ import { appendSessionEvent } from "@natalia/session";
 import { runtimeEventDurability } from "@natalia/contracts";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 import type { RealRuntimeClientOptions } from "../real-runtime";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {

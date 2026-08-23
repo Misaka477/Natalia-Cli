@@ -34,7 +34,7 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import type { RuntimeContextStatusConfig } from "./status-config";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 
 export type RuntimePorts = {
   publish: (event: RuntimeEvent) => void;
@@ -43,7 +43,7 @@ export type RuntimePorts = {
     event: RuntimeEvent,
   ) => void;
   scheduleRuntimeStatusSnapshot: () => void;
-  runtimeStatusSnapshot: () => Promise<unknown>;
+  runtimeStatusSnapshot: () => Promise<RuntimeEvent>;
   ensureExecution: (id: SessionID) => Promise<SessionExecutionState>;
   commandCatalogEntries: () => import("@natalia/plugin").PluginCommand[];
   skillService: () => SkillService | undefined;
@@ -254,6 +254,8 @@ export type RuntimePorts = {
   setToolLayer: (layer: ToolPolicyHookLayer) => void;
   setAgentToolLayer: (layer: ToolPolicyHookLayer) => void;
   setPermissionProfileToolLayer: (layer: ToolPolicyHookLayer) => void;
+  setModuleToolLayer: (layer: ToolPolicyHookLayer) => void;
+  setModulePermissionToolLayer: (layer: ToolPolicyHookLayer) => void;
   getPermissionMode: () => "ask" | "auto" | "read_only";
   setPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getSelectedPermissionProfile: () =>

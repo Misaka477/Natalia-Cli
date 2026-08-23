@@ -8,7 +8,7 @@
 import { mergeContributedToolSettings } from "../../capability-settings";
 import type { ToolHookEvent } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 
 export function createToolPolicySurface(ctx: RuntimeContext) {
   return {

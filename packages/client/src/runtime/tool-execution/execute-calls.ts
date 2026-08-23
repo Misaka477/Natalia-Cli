@@ -17,7 +17,7 @@ import type { ProviderToolCall, ProviderMessage } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../../real-runtime";
 
 /**

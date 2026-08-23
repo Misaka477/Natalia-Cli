@@ -12,7 +12,7 @@ import { buildMailboxQueued } from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 
 export function createMailboxPlans(ctx: RuntimeContext) {
   return {

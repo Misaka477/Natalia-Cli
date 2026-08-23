@@ -22,7 +22,7 @@ import { deriveModelRefKey } from "../model-ref-key";
 import type { AgentDefinition } from "@natalia/agent";
 import type { ConfigV3, ModelCapabilities } from "@natalia/contracts";
 import type { ContextWindowResolver } from "@natalia/runtime";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RealRuntimeClientOptions } from "../real-runtime";

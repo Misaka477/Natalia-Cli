@@ -10,7 +10,7 @@ import { buildSessionIntelligenceSnapshot } from "../session-intelligence";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { DurableInFlightOperation } from "@natalia/session";
 import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 
 export function createSnapshot(ctx: RuntimeContext) {
   let sessionSnapshotSequence = 0;

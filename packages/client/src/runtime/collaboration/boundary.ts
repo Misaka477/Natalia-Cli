@@ -11,7 +11,7 @@
 import { projectedMailboxMessages, projectedPlans } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   return {

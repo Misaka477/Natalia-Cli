@@ -21,7 +21,7 @@ import {
 import type { ProviderMessage, ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 
 const MAX_PROTOCOL_CORRECTIONS = 2;
 

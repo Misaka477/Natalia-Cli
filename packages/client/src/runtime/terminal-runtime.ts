@@ -14,7 +14,7 @@ import type {
 } from "@natalia/contracts";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 
 export function createTerminalRuntime(ctx: RuntimeContext) {
   return {

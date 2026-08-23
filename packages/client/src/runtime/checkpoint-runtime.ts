@@ -10,7 +10,7 @@ import {
   type CheckpointFactory,
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./context";
 
 export function createCheckpointRuntime(ctx: RuntimeContext) {
   return {

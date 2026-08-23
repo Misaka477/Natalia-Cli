@@ -10,7 +10,7 @@ import { projectInteractiveRequests } from "@natalia/session";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommand } from "@natalia/plugin";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 import { tryReadSlashCommand } from "./slash-read";
 import { tryActionSlashCommand } from "./slash-action";
 

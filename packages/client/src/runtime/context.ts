@@ -13,6 +13,21 @@ import type { createPluginsController } from "../plugins-controller";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RuntimePorts } from "./ports";
 import type { RuntimePortsExtra } from "./ports-extra";
+import type { RuntimeInitializePorts } from "./ports-initialize";
+import type { InitializeDependencies } from "./initialize-types";
+export type {
+  InitializeCatalogResult,
+  InitializeOptions,
+  SubagentSupport,
+} from "./initialize-types";
+export type { RuntimeEvent, SessionID } from "@natalia/contracts";
+export type { ProviderToolCall, StreamingProvider } from "@natalia/runtime";
+export type { RuntimeContextLedger } from "@natalia/runtime-services";
+export type {
+  RuntimeTool,
+  SubagentRunnerContext,
+  ToolHookEvent,
+} from "@natalia/tools";
 import type { ToolRegistry } from "@natalia/tools";
 import type {
   CapabilityHost,
@@ -61,6 +76,30 @@ import type {
   WorkspaceFilesController,
   WorkspaceWriteLock,
 } from "@natalia/runtime-services";
+export type {
+  AttachmentService,
+  CheckpointFactory,
+  CompactionService,
+  ContextLedgerFactory,
+  GovernanceLedgerController,
+  InteractiveWaiter,
+  McpService,
+  MutationRegistry,
+  ProviderModelController,
+  RetryService,
+  SandboxService,
+  SessionStoreController,
+  StatusSnapshotController,
+  SubagentsService,
+  TaskWorkflowController,
+  TerminalController,
+  ToolPolicyService,
+  TurnController,
+  WorkLedgerController,
+  WorkspaceFilesController,
+  WorkspaceWriteLock,
+} from "@natalia/runtime-services";
+export type { PermissionProfileCommandRules } from "@natalia/tools";
 import type {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
@@ -71,7 +110,8 @@ import type {
   ToolRegistry as ToolRegistryType,
 } from "@natalia/tools";
 import type { RuntimePerformanceTrace } from "../performance-trace";
-import type { SessionExecutionState } from "../real-runtime";
+import type { SessionExecutionState } from "./session-execution-state";
+export type { SessionExecutionState } from "./session-execution-state";
 
 type PermissionProfile = ConfigV3["permissionProfiles"][string];
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
@@ -83,6 +123,7 @@ type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
  * (`runtime/main.ts`) creates this once; modules read it through `ctx.state`.
  */
 export type RuntimeState = {
+  initialize: InitializeDependencies;
   workspaceRoot: string;
   sessionID: SessionID;
   sessionStoreController: SessionStoreController;
@@ -196,7 +237,7 @@ export type RuntimeState = {
  */
 export type RuntimeContext = {
   state: RuntimeState;
-  ports: RuntimePorts & RuntimePortsExtra;
+  ports: RuntimePorts & RuntimePortsExtra & RuntimeInitializePorts;
 };
 
 /** The resolved context window status carried by the runtime and each exec. */

@@ -11,7 +11,7 @@ import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../../real-runtime";
+import type { SessionExecutionState } from "../context";
 
 export type BuildContextInput = {
   exec: SessionExecutionState | undefined;
