@@ -24,7 +24,7 @@ test("the todo family describes the tools it ships", () => {
 test("the todo plugin owns its stable tools and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createTodoPlugin());
+  await registry.load(createTodoPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: TODO_PLUGIN_ID,
     scope: "session",

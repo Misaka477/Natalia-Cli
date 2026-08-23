@@ -63,12 +63,11 @@ export async function createWorkflowSchedulerPluginHost(
 
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    allowed: ["services"],
     registerOwner: () => owner,
     service: <T>(name: string) => capabilities.service<T>(name),
   });
   try {
-    await registry.loadBuiltin(createWorkflowSchedulerPlugin(options));
+    await registry.load(createWorkflowSchedulerPlugin(options));
   } catch (error) {
     await registry.unloadAll().catch(() => undefined);
     owner.release();

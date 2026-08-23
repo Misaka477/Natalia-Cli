@@ -4,10 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createToolRegistry } from "@natalia/tools";
 import { CapabilityRegistry } from "@natalia/capability";
-import {
-  createPluginsController,
-  pluginCapabilityID,
-} from "../src/plugins-controller";
+import { createPluginsController } from "../src/plugins-controller";
 import { createRuntimeConfigPlugin } from "@natalia/runtime-config-plugin";
 import {
   installPluginSdkLinks,
@@ -53,8 +50,6 @@ function makeController(
     capabilityRegistry,
     pluginPaths: () => [".natalia/plugins"],
     pluginEnabled: () => config.enabled,
-    pluginCapabilities: () => undefined,
-    pluginReadOnly: () => undefined,
     pluginSettings: () => config.settings,
     publish: () => undefined,
     syncGlobalCommands: () => {
@@ -78,12 +73,12 @@ test("plugins controller reconciles the configured external plugin set", async (
   config.enabled = { "demo.plugin": false };
   await controller.reconcile();
   expect(controller.list()).toHaveLength(0);
-  expect(kernel.has(pluginCapabilityID("demo.plugin"))).toBe(false);
+  expect(kernel.has("demo.plugin")).toBe(false);
 
   config.enabled = { "demo.plugin": true };
   await controller.reconcile();
   expect(controller.list().map((plugin) => plugin.id)).toEqual(["demo.plugin"]);
-  expect(kernel.has(pluginCapabilityID("demo.plugin"))).toBe(true);
+  expect(kernel.has("demo.plugin")).toBe(true);
   await controller.close();
 });
 
@@ -105,7 +100,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", vers
       .get()
       .commands()
       .map((command) => command.name),
-  ).toEqual(["plugin_demo_plugin_before"]);
+  ).toEqual(["before"]);
 
   config.settings = { "demo.plugin": "after" };
   await controller.reconcile();
@@ -114,7 +109,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", vers
       .get()
       .commands()
       .map((command) => command.name),
-  ).toEqual(["plugin_demo_plugin_after"]);
+  ).toEqual(["after"]);
   await controller.close();
 });
 
@@ -217,8 +212,6 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "${id}", version: "
       },
     }),
     pluginEnabled: () => undefined,
-    pluginCapabilities: () => undefined,
-    pluginReadOnly: () => undefined,
     pluginSettings: () => undefined,
     publish: () => undefined,
     syncGlobalCommands: () => undefined,
@@ -232,7 +225,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "${id}", version: "
       .get()
       .commands()
       .map((command) => command.name),
-  ).toEqual(["plugin_configured_plugin_configured"]);
+  ).toEqual(["configured"]);
   await controller.close();
 });
 
@@ -266,14 +259,12 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "scanner.plugin", v
 
   // The kernel owns the plugin's tool, named after the plugin, with the scope
   // the plugin declared — the same attribution a built-in family gets.
-  expect(kernel.ownerOf("tools", "plugin_scanner_plugin_scan")).toBe(
-    "plugin:scanner.plugin",
-  );
-  expect(kernel.scopeOf("plugin:scanner.plugin")).toBe("workspace");
+  expect(kernel.ownerOf("tools", "scan")).toBe("scanner.plugin");
+  expect(kernel.scopeOf("scanner.plugin")).toBe("workspace");
 
   await controller.unload("scanner.plugin");
-  expect(kernel.has("plugin:scanner.plugin")).toBe(false);
-  expect(kernel.ownerOf("tools", "plugin_scanner_plugin_scan")).toBeUndefined();
+  expect(kernel.has("scanner.plugin")).toBe(false);
+  expect(kernel.ownerOf("tools", "scan")).toBeUndefined();
   await controller.close();
 });
 
@@ -303,8 +294,6 @@ test("a failing plugin's diagnostic is attributed to the plugin", async () => {
     capabilityRegistry: new CapabilityRegistry(),
     pluginPaths: () => [".natalia/plugins"],
     pluginEnabled: () => undefined,
-    pluginCapabilities: () => undefined,
-    pluginReadOnly: () => undefined,
     pluginSettings: () => undefined,
     publish: (event) => {
       if (event.type === "diagnostic") diagnostics.push(event);
@@ -313,9 +302,9 @@ test("a failing plugin's diagnostic is attributed to the plugin", async () => {
   });
   await controller.init();
   expect(diagnostics.length).toBeGreaterThan(0);
-  expect(
-    diagnostics.some((entry) => entry.owner === "plugin:broken.plugin"),
-  ).toBe(true);
+  expect(diagnostics.some((entry) => entry.owner === "broken.plugin")).toBe(
+    true,
+  );
   await controller.close();
 });
 
@@ -336,13 +325,11 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", vers
       await controller.reload("demo.plugin");
     }
     const commands = controller.get().commands();
-    // Command names are namespaced to the plugin. The second immediate reload
-    // must expose v2 even when both calls happen within one clock tick.
-    expect(
-      commands.some(
-        (command) => command.name === "plugin_demo_plugin_reloaded_twice",
-      ),
-    ).toBe(true);
+    // The second immediate reload must expose v2 even when both calls happen
+    // within one clock tick.
+    expect(commands.some((command) => command.name === "reloaded_twice")).toBe(
+      true,
+    );
   } finally {
     await controller.close();
   }
@@ -382,28 +369,22 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "full.plugin", vers
   // The plugin capability owns every kind it registers — tools, commands and
   // listeners are all kernel contributions, the same single channel a built-in
   // tool family uses.
-  expect(kernel.ownerOf("tools", "plugin_full_plugin_run")).toBe(
-    "plugin:full.plugin",
-  );
-  expect(kernel.ownerOf("commands", "plugin_full_plugin_greet")).toBe(
-    "plugin:full.plugin",
-  );
+  expect(kernel.ownerOf("tools", "run")).toBe("full.plugin");
+  expect(kernel.ownerOf("commands", "greet")).toBe("full.plugin");
   expect(
     kernel
       .contributions("listeners")
       .some(
         (entry) =>
-          entry.capabilityID === "plugin:full.plugin" &&
-          entry.name.startsWith("plugin_full_plugin_listener_"),
+          entry.capabilityID === "full.plugin" &&
+          entry.name.startsWith("full.plugin:listener:"),
       ),
   ).toBe(true);
 
   // Unloading the plugin releases everything it owned, in every kind.
   await controller.unload("full.plugin");
-  expect(kernel.ownerOf("tools", "plugin_full_plugin_run")).toBeUndefined();
-  expect(
-    kernel.ownerOf("commands", "plugin_full_plugin_greet"),
-  ).toBeUndefined();
+  expect(kernel.ownerOf("tools", "run")).toBeUndefined();
+  expect(kernel.ownerOf("commands", "greet")).toBeUndefined();
   expect(kernel.contributions("listeners")).toHaveLength(0);
   await controller.close();
 });
@@ -440,7 +421,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "svc.plugin", versi
 
   // The plugin's service is a kernel-owned contribution, resolvable by name —
   // the first-class service surface a built-in capability has.
-  expect(kernel.ownerOf("services", "greeting")).toBe("plugin:svc.plugin");
+  expect(kernel.ownerOf("services", "greeting")).toBe("svc.plugin");
   expect(kernel.service<{ text: string }>("greeting")?.text).toBe("hello");
   await controller.unload("svc.plugin");
   expect(kernel.ownerOf("services", "greeting")).toBeUndefined();
@@ -713,8 +694,6 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "bad.plugin", versi
     capabilityRegistry: new CapabilityRegistry(),
     pluginPaths: () => [".natalia/plugins"],
     pluginEnabled: () => undefined,
-    pluginCapabilities: () => undefined,
-    pluginReadOnly: () => undefined,
     pluginSettings: () => undefined,
     publish: (event) => {
       if (event.type === "diagnostic") diagnostics.push(event.message);
@@ -766,7 +745,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "req.plugin", versi
   );
   await controller.loadLocal();
   // Plugin dependency ordering ensures the service is available before setup.
-  expect(kernel.has(pluginCapabilityID("req.plugin"))).toBe(true);
+  expect(kernel.has("req.plugin")).toBe(true);
   await controller.close();
 });
 

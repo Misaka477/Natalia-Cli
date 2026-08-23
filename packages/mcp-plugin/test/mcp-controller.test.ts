@@ -92,7 +92,7 @@ test("MCP plugin unload owns connection and tool teardown", async () => {
   expect(plugin.manifest).toMatchObject({
     integrationPoints: ["tools", "services"],
   });
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   expect(service).toBeDefined();
   await service?.reload();
   expect(tools.get("mcp_fixture_echo")).toBeDefined();

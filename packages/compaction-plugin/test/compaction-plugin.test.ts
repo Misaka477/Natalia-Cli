@@ -36,7 +36,6 @@ test("compaction service is owned and removed with its plugin", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -47,9 +46,9 @@ test("compaction service is owned and removed with its plugin", async () => {
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
 
-  await registry.loadBuiltin(createRetryPlugin({ policy: () => undefined }));
-  await registry.loadBuiltin(createContextLedgerPlugin());
-  await registry.loadBuiltin(createCompactionPlugin());
+  await registry.load(createRetryPlugin({ policy: () => undefined }));
+  await registry.load(createContextLedgerPlugin());
+  await registry.load(createCompactionPlugin());
   expect(services.get(COMPACTION_SERVICE)).toBeDefined();
   await registry.unload(COMPACTION_PLUGIN_ID);
   expect(services.has(COMPACTION_SERVICE)).toBe(false);

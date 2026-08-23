@@ -106,7 +106,6 @@ test("context ledger service is absent after plugin unload", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -117,7 +116,7 @@ test("context ledger service is absent after plugin unload", async () => {
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
 
-  await registry.loadBuiltin(createContextLedgerPlugin());
+  await registry.load(createContextLedgerPlugin());
   expect(services.get(CONTEXT_LEDGER_FACTORY_SERVICE)).toBeDefined();
   await registry.unload(CONTEXT_LEDGER_PLUGIN_ID);
   expect(services.has(CONTEXT_LEDGER_FACTORY_SERVICE)).toBe(false);

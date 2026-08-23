@@ -25,7 +25,7 @@ test("the fs-write family describes the write tools it ships", () => {
 test("the fs-write plugin owns its tools and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createFsWritePlugin());
+  await registry.load(createFsWritePlugin());
   expect(registry.list()[0]).toMatchObject({
     id: FS_WRITE_PLUGIN_ID,
     scope: "workspace",

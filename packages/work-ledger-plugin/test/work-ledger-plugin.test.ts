@@ -16,7 +16,6 @@ test("work ledger service exists only while the plugin is loaded", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -37,7 +36,7 @@ test("work ledger service exists only while the plugin is loaded", async () => {
   });
   expect(services.has(WORK_LEDGER_CONTROLLER_SERVICE)).toBe(false);
 
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   const controller = services.get(
     WORK_LEDGER_CONTROLLER_SERVICE,
   ) as WorkLedgerController;

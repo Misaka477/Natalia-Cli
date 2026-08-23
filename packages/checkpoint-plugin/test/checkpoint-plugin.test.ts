@@ -16,7 +16,6 @@ test("checkpoint factory exists only while the plugin is loaded", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -35,7 +34,7 @@ test("checkpoint factory exists only while the plugin is loaded", async () => {
   });
   expect(services.has(CHECKPOINT_FACTORY_SERVICE)).toBe(false);
 
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   expect(
     services.get(CHECKPOINT_FACTORY_SERVICE) as CheckpointFactory,
   ).toBeFunction();

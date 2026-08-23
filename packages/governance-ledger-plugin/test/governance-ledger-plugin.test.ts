@@ -21,7 +21,6 @@ test("governance ledger service is dependency-bound and removed on unload", asyn
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -48,11 +47,11 @@ test("governance ledger service is dependency-bound and removed on unload", asyn
     ],
   });
   expect(services.has(GOVERNANCE_LEDGER_CONTROLLER_SERVICE)).toBe(false);
-  await expect(registry.loadBuiltin(plugin)).rejects.toThrow(
+  await expect(registry.load(plugin)).rejects.toThrow(
     "plugin dependency unresolved",
   );
 
-  await registry.loadBuiltin({
+  await registry.load({
     manifest: {
       apiVersion: 2,
       id: WORK_LEDGER_PLUGIN_ID,
@@ -73,7 +72,7 @@ test("governance ledger service is dependency-bound and removed on unload", asyn
       api.services.provide(WORK_LEDGER_CONTROLLER_SERVICE, {});
     },
   });
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   const controller = services.get(
     GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   ) as GovernanceLedgerController;

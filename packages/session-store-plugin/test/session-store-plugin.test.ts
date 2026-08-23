@@ -57,7 +57,6 @@ test("session store service is dependency-bound and closes on unload", async () 
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -91,10 +90,10 @@ test("session store service is dependency-bound and closes on unload", async () 
   ]);
   expect(services.has(SESSION_STORE_CONTROLLER_SERVICE)).toBe(false);
 
-  await expect(registry.loadBuiltin(plugin)).rejects.toThrow(
+  await expect(registry.load(plugin)).rejects.toThrow(
     "plugin dependency unresolved",
   );
-  await registry.loadBuiltin({
+  await registry.load({
     manifest: {
       apiVersion: 2,
       id: "natalia-attachment",
@@ -118,7 +117,7 @@ test("session store service is dependency-bound and closes on unload", async () 
       );
     },
   });
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   const controller = services.get(
     SESSION_STORE_CONTROLLER_SERVICE,
   ) as SessionStoreController;

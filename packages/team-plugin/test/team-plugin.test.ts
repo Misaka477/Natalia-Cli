@@ -59,10 +59,9 @@ test("team plugin owns both tools and unload removes them", async () => {
   const registry = createPluginRegistry({
     tools,
     service: <T>(name: string) => services.get(name) as T | undefined,
-    registerOwner: (manifest, context) => ({
+    registerOwner: (manifest) => ({
       contribute: (kind, name, payload) => {
-        const owner = context.builtin ? manifest.id : `cap:${manifest.id}`;
-        owners.set(`${kind}:${name}`, owner);
+        owners.set(`${kind}:${name}`, manifest.id);
         if (kind === "services") services.set(name, payload);
         return () => {
           owners.delete(`${kind}:${name}`);
@@ -74,21 +73,21 @@ test("team plugin owns both tools and unload removes them", async () => {
   });
   const subagents = { enabled: () => false };
   const sandbox = { get: () => undefined };
-  await registry.loadBuiltin(
+  await registry.load(
     servicePlugin({
       id: SUBAGENTS_PLUGIN_ID,
       service: SUBAGENTS_SERVICE,
       value: subagents,
     }),
   );
-  await registry.loadBuiltin(
+  await registry.load(
     servicePlugin({
       id: SANDBOX_PLUGIN_ID,
       service: SANDBOX_SERVICE,
       value: sandbox,
     }),
   );
-  await registry.loadBuiltin(createTeamPlugin());
+  await registry.load(createTeamPlugin());
 
   expect([...tools.keys()]).toEqual(["team_fanout", "team_review"]);
   expect(owners.get("tools:team_fanout")).toBe(TEAM_PLUGIN_ID);

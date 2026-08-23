@@ -25,7 +25,7 @@ test("the fs-read family describes the read-only tools it ships", () => {
 test("the fs-read plugin owns its tools and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createFsReadPlugin());
+  await registry.load(createFsReadPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: FS_READ_PLUGIN_ID,
     scope: "workspace",

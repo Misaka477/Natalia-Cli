@@ -67,7 +67,7 @@ export async function createCliCommandAdapterHost(
       return owner;
     },
   });
-  await registry.loadBuiltin(createCliCommandAdapterPlugin(start));
+  await registry.load(createCliCommandAdapterPlugin(start));
   const materializer = createPluginAdapterMaterializer(kernel);
   let adapter: CliCommandAdapterInstance;
   try {

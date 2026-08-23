@@ -181,7 +181,7 @@ test("pdf_read truncates only at page boundaries", async () => {
 test("the PDF built-in plugin owns and releases its stable tool name", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createPdfPlugin());
+  await registry.load(createPdfPlugin());
   expect(registry.list().map((plugin) => plugin.id)).toEqual([PDF_PLUGIN_ID]);
   expect(tools.has("pdf_read")).toBe(true);
   expect(tools.has("plugin_natalia_tool_pdf_pdf_read")).toBe(false);

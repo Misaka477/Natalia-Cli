@@ -83,7 +83,7 @@ export async function createTuiAdapterHost(
       return owner;
     },
   });
-  await registry.loadBuiltin(createTuiAdapterPlugin(start));
+  await registry.load(createTuiAdapterPlugin(start));
   const materializer = createPluginAdapterMaterializer(kernel);
   let adapter: TuiAdapterInstance;
   try {

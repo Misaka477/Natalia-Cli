@@ -17,7 +17,6 @@ test("runtime UI service follows plugin load and unload", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -49,7 +48,7 @@ test("runtime UI service follows plugin load and unload", async () => {
   });
   expect(services.has(STATUS_SNAPSHOT_CONTROLLER_SERVICE)).toBe(false);
 
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   const controller = services.get(
     STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   ) as StatusSnapshotController;

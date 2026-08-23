@@ -21,7 +21,7 @@ test("the web family describes the tools it ships", () => {
 test("the web plugin owns its tools and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createWebPlugin());
+  await registry.load(createWebPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: WEB_PLUGIN_ID,
     scope: "session",

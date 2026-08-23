@@ -30,7 +30,7 @@ test("the process family describes the tools it ships", () => {
 test("the process plugin owns its tools and provides the registry service", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createProcessPlugin());
+  await registry.load(createProcessPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: PROCESS_PLUGIN_ID,
     scope: "session",

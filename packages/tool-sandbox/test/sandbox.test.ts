@@ -44,7 +44,7 @@ test("the sandbox family describes the tools it ships", () => {
 test("the sandbox plugin owns its tools and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createSandboxPlugin());
+  await registry.load(createSandboxPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: SANDBOX_PLUGIN_ID,
     scope: "workspace",

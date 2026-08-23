@@ -29,8 +29,6 @@ function host(workspaceRoot: string) {
     capabilityRegistry,
     pluginPaths: () => [],
     pluginEnabled: () => undefined,
-    pluginCapabilities: () => undefined,
-    pluginReadOnly: () => undefined,
     pluginSettings: () => undefined,
     publish: () => undefined,
     syncGlobalCommands: () => undefined,

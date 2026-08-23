@@ -24,7 +24,7 @@ test("runtime config service follows plugin setup and dispose", async () => {
     service: <T>(name: string) => capabilities.service<T>(name),
   });
   const config = { version: 3, defaultPermission: "ask" } as ConfigV3;
-  await registry.loadBuiltin(createRuntimeConfigPlugin(config));
+  await registry.load(createRuntimeConfigPlugin(config));
   expect(capabilities.service<ConfigV3>(RUNTIME_CONFIG_SERVICE)).toBe(config);
   await registry.unload(RUNTIME_CONFIG_PLUGIN_ID);
   expect(capabilities.service(RUNTIME_CONFIG_SERVICE)).toBeUndefined();

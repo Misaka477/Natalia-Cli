@@ -79,7 +79,7 @@ export async function createHttpTransportPluginHost(
       return owner;
     },
   });
-  await registry.loadBuiltin(createHttpTransportPlugin());
+  await registry.load(createHttpTransportPlugin());
   const materializer = createPluginAdapterMaterializer(kernel);
   let adapter: HttpTransportAdapter;
   try {

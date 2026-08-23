@@ -139,20 +139,26 @@ export type {
   ToolSettlement,
 } from "./invocation";
 export class ToolRegistry extends Map<string, RuntimeTool> {
-  private readonly aliases = new Map<string, string>();
+  private readonly aliases = new Map<string, { target: string }>();
 
   addAlias(alias: string, target: string) {
     if (!super.has(target))
       throw new Error(`cannot alias unknown tool: ${target}`);
-    this.aliases.set(alias, target);
+    if (super.has(alias) || this.aliases.has(alias))
+      throw new Error(`tool alias already registered: ${alias}`);
+    const registration = { target };
+    this.aliases.set(alias, registration);
+    return () => {
+      if (this.aliases.get(alias) === registration) this.aliases.delete(alias);
+    };
   }
 
   override get(name: string) {
-    return super.get(this.aliases.get(name) ?? name);
+    return super.get(this.aliases.get(name)?.target ?? name);
   }
 
   override has(name: string) {
-    return super.has(this.aliases.get(name) ?? name);
+    return super.has(this.aliases.get(name)?.target ?? name);
   }
 }
 

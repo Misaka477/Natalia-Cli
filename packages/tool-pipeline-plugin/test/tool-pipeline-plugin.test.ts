@@ -21,7 +21,7 @@ test("tool pipeline plugin owns the unique policy service", async () => {
     }),
   });
   const plugin = createToolPipelinePlugin();
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
 
   expect(plugin.manifest.id).toBe(TOOL_PIPELINE_PLUGIN_ID);
   expect(plugin.manifest.provides).toEqual([TOOL_POLICY_SERVICE]);

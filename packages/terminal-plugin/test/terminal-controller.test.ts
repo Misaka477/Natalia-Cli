@@ -72,7 +72,7 @@ test("terminal plugin unload preserves its host-owned external registry", async 
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-plugin-"));
   let disposals = 0;
   const registry = createPluginRegistry({ tools: createToolRegistry([]) });
-  await registry.loadBuiltin(
+  await registry.load(
     createTerminalControllerPlugin({
       workspaceRoot: root,
       publish: () => undefined,

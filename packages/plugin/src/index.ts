@@ -264,11 +264,6 @@ export type PluginContributionKind =
   | "adapters"
   | "schedulerJobs";
 
-export type PluginLoadContext = {
-  /** Built-ins keep stable public names; external plugins remain namespaced. */
-  builtin: boolean;
-};
-
 export type PluginContributionOwner = {
   contribute(
     kind: PluginContributionKind,
@@ -294,8 +289,6 @@ export type PluginStatus = {
 
 export function createPluginRegistry(input: {
   tools: ToolRegistry;
-  allowed?: string[];
-  readOnly?: Record<string, boolean>;
   onAudit?: (entry: PluginAudit) => void;
   /** Called after activation changes the registry's live contribution surface. */
   onChange?: () => void;
@@ -313,7 +306,6 @@ export function createPluginRegistry(input: {
    */
   registerOwner?: (
     manifest: PluginManifest,
-    context: PluginLoadContext,
   ) =>
     | PluginContributionOwner
     | Promise<PluginContributionOwner | undefined>
@@ -341,9 +333,7 @@ export function createPluginRegistry(input: {
   };
   type MountedPlugin = {
     plugin: Plugin;
-    allowedOverride: string[] | undefined;
     config: unknown;
-    loadContext: PluginLoadContext;
     status: PluginActivationStatus;
     missingServices: string[];
     requiredProviders: Map<string, unknown>;
@@ -355,7 +345,6 @@ export function createPluginRegistry(input: {
   const audit: PluginAudit[] = [];
   /** Command name -> owning plugin, so a collision names the current owner. */
   const commandOwners = new Map<string, string>();
-  const allowed = new Set(input.allowed ?? []);
   const writeAudit = (
     pluginID: string,
     action: PluginAudit["action"],
@@ -423,21 +412,14 @@ export function createPluginRegistry(input: {
   const assertCapability = (
     manifest: PluginManifest,
     capability: PluginIntegrationPoint,
-    allowedOverride?: string[],
   ) => {
-    const granted = allowedOverride ? new Set(allowedOverride) : allowed;
-    const constrained =
-      allowedOverride !== undefined || input.allowed !== undefined;
-    if (
-      !manifestIntegrationPoints(manifest).includes(capability) ||
-      (constrained && !granted.has(capability))
-    ) {
+    if (!manifestIntegrationPoints(manifest).includes(capability)) {
       writeAudit(manifest.id, "denied", capability);
       throw new Error(`plugin capability denied: ${manifest.id}/${capability}`);
     }
   };
   async function activate(entry: MountedPlugin) {
-    const { plugin, allowedOverride, loadContext } = entry;
+    const { plugin } = entry;
     const manifest = plugin.manifest;
     const snapshot = serviceSnapshot(manifest);
     entry.missingServices = snapshot.missingServices;
@@ -463,7 +445,7 @@ export function createPluginRegistry(input: {
     let listenerSequence = 0;
     let contributionOwner: PluginContributionOwner | undefined;
     try {
-      contributionOwner = await input.registerOwner?.(manifest, loadContext);
+      contributionOwner = await input.registerOwner?.(manifest);
     } catch (error) {
       entry.status = "failed";
       entry.error = error instanceof Error ? error.message : String(error);
@@ -474,19 +456,12 @@ export function createPluginRegistry(input: {
       config: entry.config,
       tools: {
         register(tool) {
-          assertCapability(manifest, "tools", allowedOverride);
-          const name = loadContext.builtin
-            ? tool.name
-            : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${tool.name}`;
-          // Dynamic plugin tools require approval unless the workspace explicitly
-          // trusts a plugin's own read-only side-effect declaration.
+          assertCapability(manifest, "tools");
+          const name = tool.name;
           const ownedTool = {
             ...tool,
             name,
-            requiresApproval:
-              loadContext.builtin || input.readOnly?.[manifest.id]
-                ? tool.requiresApproval
-                : true,
+            requiresApproval: tool.requiresApproval,
           };
           if (input.tools.get(name) !== undefined)
             throw new Error(`plugin tool already registered: ${name}`);
@@ -506,13 +481,10 @@ export function createPluginRegistry(input: {
           return dispose;
         },
         registerAlias(alias, target) {
-          assertCapability(manifest, "tools", allowedOverride);
-          const prefix = (name: string) =>
-            loadContext.builtin
-              ? name
-              : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${name}`;
-          input.tools.addAlias(prefix(alias), prefix(target));
-          return () => undefined;
+          assertCapability(manifest, "tools");
+          const dispose = once(input.tools.addAlias(alias, target));
+          disposers.push(dispose);
+          return dispose;
         },
       },
       services: {
@@ -521,7 +493,7 @@ export function createPluginRegistry(input: {
             throw new Error(
               `plugin ${manifest.id} provided undeclared service: ${name}`,
             );
-          assertCapability(manifest, "services", allowedOverride);
+          assertCapability(manifest, "services");
           const releaseKernel = contributionOwner?.contribute(
             "services",
             name,
@@ -554,7 +526,7 @@ export function createPluginRegistry(input: {
           typeOrListener: string | ((event: unknown) => void),
           typedListener?: (event: unknown) => void,
         ) {
-          assertCapability(manifest, "events", allowedOverride);
+          assertCapability(manifest, "events");
           const listener =
             typeof typeOrListener === "function"
               ? typeOrListener
@@ -567,7 +539,7 @@ export function createPluginRegistry(input: {
                   )
                     typedListener?.(event);
                 };
-          const contributionName = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_listener_${++listenerSequence}`;
+          const contributionName = `${manifest.id}:listener:${++listenerSequence}`;
           const releaseKernel = contributionOwner?.contribute(
             "listeners",
             contributionName,
@@ -584,12 +556,8 @@ export function createPluginRegistry(input: {
       },
       commands: {
         register(command) {
-          assertCapability(manifest, "commands", allowedOverride);
-          // Namespaced like plugin tools, so a plugin cannot shadow a built-in
-          // command by choosing its name.
-          const name = loadContext.builtin
-            ? command.name
-            : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${command.name}`;
+          assertCapability(manifest, "commands");
+          const name = command.name;
           if (commandOwners.has(name))
             throw new Error(`plugin command already registered: ${name}`);
           const ownedCommand: PluginCommand = {
@@ -650,7 +618,7 @@ export function createPluginRegistry(input: {
     ): PluginNamedContributionRegistry {
       return {
         register(contribution) {
-          assertCapability(manifest, point, allowedOverride);
+          assertCapability(manifest, point);
           if (!contribution.name)
             throw new Error(
               `plugin ${manifest.id} contributed unnamed ${kind}`,
@@ -729,12 +697,7 @@ export function createPluginRegistry(input: {
       await activate(entry);
   }
 
-  async function loadPlugin(
-    plugin: Plugin,
-    allowedOverride: string[] | undefined,
-    config: unknown,
-    loadContext: PluginLoadContext,
-  ) {
+  async function loadPlugin(plugin: Plugin, config: unknown) {
     const manifest = pluginManifestSchema.parse(plugin.manifest);
     if (plugins.has(manifest.id))
       throw new Error(`plugin already loaded: ${manifest.id}`);
@@ -769,9 +732,7 @@ export function createPluginRegistry(input: {
     const snapshot = serviceSnapshot(manifest);
     const entry: MountedPlugin = {
       plugin: { ...plugin, manifest },
-      allowedOverride,
       config: resolvedConfig,
-      loadContext,
       status: "pending",
       missingServices: snapshot.missingServices,
       requiredProviders: new Map(),
@@ -884,18 +845,8 @@ export function createPluginRegistry(input: {
   });
 
   return {
-    async load(plugin: Plugin, allowedOverride?: string[], config?: unknown) {
-      await loadPlugin(plugin, allowedOverride, config, { builtin: false });
-    },
-    async loadBuiltin(plugin: Plugin, config?: unknown) {
-      await loadPlugin(
-        plugin,
-        manifestIntegrationPoints(pluginManifestSchema.parse(plugin.manifest)),
-        config,
-        {
-          builtin: true,
-        },
-      );
+    async load(plugin: Plugin, config?: unknown) {
+      await loadPlugin(plugin, config);
     },
     async unload(id: string) {
       if (!plugins.has(id)) throw new Error(`plugin not found: ${id}`);
@@ -1144,7 +1095,6 @@ export async function loadLocalPlugins(input: {
   roots: string[];
   registry: ReturnType<typeof createPluginRegistry>;
   enabled?: Record<string, boolean>;
-  capabilities?: Record<string, string[]>;
   /** Per-plugin config, keyed by plugin id, validated by the plugin's schema. */
   settings?: Record<string, unknown>;
   onError?: (id: string, error: unknown) => void;
@@ -1160,7 +1110,6 @@ export async function loadLocalPlugins(input: {
 export async function loadPluginEntries(input: {
   entries: PluginManifestEntry[];
   registry: ReturnType<typeof createPluginRegistry>;
-  capabilities?: Record<string, string[]>;
   settings?: Record<string, unknown>;
   onError?: (id: string, error: unknown) => void;
 }) {
@@ -1192,7 +1141,6 @@ export async function loadPluginEntries(input: {
         throw new Error(`plugin module has no setup function: ${manifest.id}`);
       await input.registry.load(
         { ...candidate, manifest } as Plugin,
-        input.capabilities?.[manifest.id],
         input.settings?.[manifest.id],
       );
       loaded.push(manifest);
@@ -1232,16 +1180,13 @@ export function validatePluginPath(root: string, path: string) {
 
 export async function runPluginConformance(input: {
   plugin: Plugin;
-  allowed?: string[];
   /** Config to load with, validated by the plugin's own `configSchema`. */
   config?: unknown;
-  /** Workspace trust mark, same shape the registry accepts. */
-  readOnly?: Record<string, boolean>;
 }) {
   const tools = new Map<string, RuntimeTool>();
   // The kernel channel is captured, not wired to a real registry: conformance
-  // verifies that plugin tools are attributable to the plugin (namespaced names,
-  // released on unload) without needing the capability kernel at all.
+  // verifies that plugin tools are attributable to the plugin and released on
+  // unload without needing the capability kernel at all.
   const contributed: string[] = [];
   const releases: string[] = [];
   const registry = createPluginRegistry({
@@ -1256,8 +1201,6 @@ export async function runPluginConformance(input: {
         tools.delete(name);
       },
     } as ToolRegistry,
-    allowed: input.allowed,
-    readOnly: input.readOnly,
     registerOwner: () => ({
       contribute: (_kind, name) => {
         contributed.push(name);
@@ -1269,10 +1212,9 @@ export async function runPluginConformance(input: {
     }),
   });
   const result: Array<{ name: string; passed: boolean; detail?: string }> = [];
-  const manifest = input.plugin.manifest;
   let setupFailed: unknown;
   try {
-    await registry.load(input.plugin, undefined, input.config);
+    await registry.load(input.plugin, input.config);
   } catch (error) {
     setupFailed = error;
   }
@@ -1289,32 +1231,20 @@ export async function runPluginConformance(input: {
       : {}),
   });
   if (!setupFailed) {
-    // Every tool the plugin registered is namespaced to it, so a plugin cannot
-    // shadow a built-in by choosing a name, and it was offered to the kernel
-    // channel under that owned name.
-    const prefix = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_`;
     result.push({
       name: "tool-ownership",
       passed:
-        contributed.length > 0 &&
-        contributed.every((name) => name.startsWith(prefix)) &&
-        [...tools.keys()].every((name) => name.startsWith(prefix)),
+        contributed.length > 0 && contributed.every((name) => tools.has(name)),
       detail:
         contributed.length === 0 ? "plugin contributed no tools" : undefined,
     });
-    // Without the readOnly trust mark, dynamic plugin tools demand approval;
-    // with it, the plugin's own declaration is honoured.
     const sample = [...tools.entries()][0];
     result.push({
       name: "approval-boundary",
-      passed: sample
-        ? input.readOnly?.[manifest.id]
-          ? sample[1].requiresApproval === false
-          : sample[1].requiresApproval === true
-        : false,
+      passed: sample ? sample[1].requiresApproval === false : false,
       detail: sample ? undefined : "plugin contributed no tools to check",
     });
-    await registry.unload(manifest.id);
+    await registry.unload(input.plugin.manifest.id);
     result.push({
       name: "owned-registration-cleanup",
       passed:

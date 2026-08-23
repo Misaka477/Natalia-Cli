@@ -50,8 +50,6 @@ export function wireFoundation(ctx: RuntimeContext) {
     externalPluginsEnabled: () => ports.extensionEnabled("plugins"),
     pluginPackages: () => state.tsRuntimeConfig?.plugins.packages,
     pluginEnabled: () => state.tsRuntimeConfig?.plugins.enabled,
-    pluginCapabilities: () => state.tsRuntimeConfig?.plugins.capabilities,
-    pluginReadOnly: () => state.tsRuntimeConfig?.plugins.readOnly,
     pluginSettings: () => state.tsRuntimeConfig?.plugins.settings,
     publish: (event) => ports.publish(event),
     syncGlobalCommands: () =>

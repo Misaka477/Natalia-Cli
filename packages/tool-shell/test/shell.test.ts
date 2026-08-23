@@ -22,7 +22,7 @@ test("the shell family describes the tool it ships", () => {
 test("the shell plugin owns run_shell and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createShellPlugin());
+  await registry.load(createShellPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: SHELL_PLUGIN_ID,
     scope: "session",

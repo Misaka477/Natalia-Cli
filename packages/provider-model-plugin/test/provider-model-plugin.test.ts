@@ -67,7 +67,6 @@ test("provider model service is dependency-bound and disposed on unload", async 
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -90,19 +89,15 @@ test("provider model service is dependency-bound and disposed on unload", async 
     requires: [RETRY_SERVICE, ATTACHMENT_SERVICE, COMPACTION_SERVICE],
   });
   expect(services.has(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBe(false);
-  await expect(registry.loadBuiltin(plugin)).rejects.toThrow(
+  await expect(registry.load(plugin)).rejects.toThrow(
     "plugin dependency unresolved",
   );
   expect(initialized).toBe(0);
 
-  await registry.loadBuiltin(servicePlugin(RETRY_PLUGIN_ID, RETRY_SERVICE));
-  await registry.loadBuiltin(
-    servicePlugin(ATTACHMENT_PLUGIN_ID, ATTACHMENT_SERVICE),
-  );
-  await registry.loadBuiltin(
-    servicePlugin(COMPACTION_PLUGIN_ID, COMPACTION_SERVICE),
-  );
-  await registry.loadBuiltin(plugin);
+  await registry.load(servicePlugin(RETRY_PLUGIN_ID, RETRY_SERVICE));
+  await registry.load(servicePlugin(ATTACHMENT_PLUGIN_ID, ATTACHMENT_SERVICE));
+  await registry.load(servicePlugin(COMPACTION_PLUGIN_ID, COMPACTION_SERVICE));
+  await registry.load(plugin);
   const controller = services.get(
     PROVIDER_MODEL_CONTROLLER_SERVICE,
   ) as ProviderModelController;

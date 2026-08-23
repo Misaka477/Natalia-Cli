@@ -3403,7 +3403,7 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
             calls: [
               {
                 id: "plugin",
-                name: "plugin_demo_plugin_echo",
+                name: "echo",
                 arguments: "{}",
               },
             ],
@@ -3428,7 +3428,7 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
     events.some(
       (event) =>
         event.type === "tool.update" &&
-        event.name === "plugin_demo_plugin_echo" &&
+        event.name === "echo" &&
         event.status === "succeeded",
     ),
   ).toBe(true);
@@ -3472,9 +3472,7 @@ test("unloading a plugin publishes tool.unregistered and drops it from registere
 
   // The plugin tool is registered and reported.
   const before = await client.registeredTools!();
-  expect(before.some((tool) => tool.name === "plugin_demo_plugin_echo")).toBe(
-    true,
-  );
+  expect(before.some((tool) => tool.name === "echo")).toBe(true);
 
   const unloaded = await client.pluginUnload?.("demo.plugin");
   expect(unloaded?.unloaded).toBe(true);
@@ -3482,16 +3480,12 @@ test("unloading a plugin publishes tool.unregistered and drops it from registere
   // tool.unregistered was published for the removed tool.
   expect(
     events.some(
-      (event) =>
-        event.type === "tool.unregistered" &&
-        event.name === "plugin_demo_plugin_echo",
+      (event) => event.type === "tool.unregistered" && event.name === "echo",
     ),
   ).toBe(true);
   // The projected catalog no longer reports it.
   const after = await client.registeredTools!();
-  expect(after.some((tool) => tool.name === "plugin_demo_plugin_echo")).toBe(
-    false,
-  );
+  expect(after.some((tool) => tool.name === "echo")).toBe(false);
 
   await client.dispose?.();
 });
@@ -3681,7 +3675,7 @@ test("permission profile denies injected MCP tools before execution", async () =
   await client.dispose?.();
 });
 
-test("read-only runtime hides untrusted plugin tools from the provider", async () => {
+test("read-only runtime preserves a plugin tool approval declaration", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-read-only-"));
   const pluginRoot = join(root, ".natalia", "plugins", "unsafe");
   await mkdir(pluginRoot, { recursive: true });
@@ -3718,12 +3712,10 @@ test("read-only runtime hides untrusted plugin tools from the provider", async (
   client.start(() => undefined);
   await client.submit("inspect plugins");
 
-  expect(requests[0]?.tools?.map((tool) => tool.name)).not.toContain(
-    "plugin_unsafe_plugin_mutate",
-  );
+  expect(requests[0]?.tools?.map((tool) => tool.name)).toContain("mutate");
 });
 
-test("read-only runtime permits workspace trusted read-only plugin tools", async () => {
+test("workspace plugin trust does not alter an approval declaration", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-trusted-"));
   const pluginRoot = join(root, ".natalia", "plugins", "trusted");
   await mkdir(pluginRoot, { recursive: true });
@@ -3767,9 +3759,7 @@ test("read-only runtime permits workspace trusted read-only plugin tools", async
   client.start(() => undefined);
   await client.submit("inspect trusted plugins");
 
-  expect(requests[0]?.tools?.map((tool) => tool.name)).toContain(
-    "plugin_trusted_plugin_observe",
-  );
+  expect(requests[0]?.tools?.map((tool) => tool.name)).toContain("observe");
 });
 
 test("a plugin command reaches the command catalog and the palette bridge", async () => {
@@ -3809,18 +3799,15 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
 
   // The authoritative surface, which an external UI reads over RPC.
   const catalog = await client.commandCatalog?.();
-  expect(catalog?.map((command) => command.name)).toContain(
-    "plugin_palette_plugin_sync",
-  );
-  expect(
-    catalog?.find((command) => command.name === "plugin_palette_plugin_sync"),
-  ).toMatchObject({ title: "Sync everything", category: "Palette" });
+  expect(catalog?.map((command) => command.name)).toContain("sync");
+  expect(catalog?.find((command) => command.name === "sync")).toMatchObject({
+    title: "Sync everything",
+    category: "Palette",
+  });
 
   // The synchronous bridge the TUI palette renders from. It was permanently
   // empty before, so the palette could never show a plugin command.
-  expect(getPluginCommands().map((command) => command.name)).toContain(
-    "plugin_palette_plugin_sync",
-  );
+  expect(getPluginCommands().map((command) => command.name)).toContain("sync");
   await client.dispose?.();
 });
 

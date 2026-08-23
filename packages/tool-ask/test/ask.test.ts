@@ -18,7 +18,7 @@ test("the ask family describes the tool it ships", () => {
 test("the ask plugin owns its stable tool and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createAskPlugin());
+  await registry.load(createAskPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: ASK_PLUGIN_ID,
     scope: "session",

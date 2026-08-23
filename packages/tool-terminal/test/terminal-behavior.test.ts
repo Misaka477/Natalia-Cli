@@ -30,7 +30,7 @@ function terminalRegistry() {
 test("the terminal plugin owns its tools and aliases and unloads cleanly", async () => {
   const tools = new ToolRegistry();
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createTerminalPlugin());
+  await registry.load(createTerminalPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: TERMINAL_PLUGIN_ID,
     scope: "session",

@@ -36,7 +36,6 @@ test("turn controller service is dependency-bound and disposed on unload", async
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -64,11 +63,11 @@ test("turn controller service is dependency-bound and disposed on unload", async
     ],
   });
   expect(services.has(TURN_CONTROLLER_SERVICE)).toBe(false);
-  await expect(registry.loadBuiltin(plugin)).rejects.toThrow(
+  await expect(registry.load(plugin)).rejects.toThrow(
     "plugin dependency unresolved",
   );
 
-  await registry.loadBuiltin({
+  await registry.load({
     manifest: {
       apiVersion: 2,
       id: SESSION_STORE_PLUGIN_ID,
@@ -89,7 +88,7 @@ test("turn controller service is dependency-bound and disposed on unload", async
       api.services.provide(SESSION_STORE_CONTROLLER_SERVICE, {});
     },
   });
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   const controller = services.get(TURN_CONTROLLER_SERVICE) as TurnController;
   expect(controller).toBeDefined();
 

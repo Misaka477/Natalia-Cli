@@ -358,20 +358,20 @@ test("plugin registry enforces v2 dependencies and conflicts before setup", asyn
       setup() {},
     });
   await expect(
-    registry.loadBuiltin(
+    registry.load(
       plugin("consumer.plugin", {
         dependencies: [{ id: "provider.plugin", spec: "^1.0.0" }],
       }),
     ),
   ).rejects.toThrow("plugin dependency unresolved");
-  await registry.loadBuiltin(plugin("provider.plugin"));
-  await registry.loadBuiltin(
+  await registry.load(plugin("provider.plugin"));
+  await registry.load(
     plugin("consumer.plugin", {
       dependencies: [{ id: "provider.plugin", spec: "^1.0.0" }],
     }),
   );
   await expect(
-    registry.loadBuiltin(
+    registry.load(
       plugin("conflict.plugin", { conflicts: ["provider.plugin"] }),
     ),
   ).rejects.toThrow('conflicts with "provider.plugin"');
@@ -408,9 +408,9 @@ test("unloading a provider unloads required dependents first", async () => {
         cleanup.push(id);
       },
     });
-  await registry.loadBuiltin(plugin("provider.plugin"));
-  await registry.loadBuiltin(plugin("middle.plugin", ["provider.plugin"]));
-  await registry.loadBuiltin(plugin("consumer.plugin", ["middle.plugin"]));
+  await registry.load(plugin("provider.plugin"));
+  await registry.load(plugin("middle.plugin", ["provider.plugin"]));
+  await registry.load(plugin("consumer.plugin", ["middle.plugin"]));
   await registry.unload("provider.plugin");
   expect(cleanup).toEqual([
     "consumer.plugin",
@@ -424,7 +424,7 @@ test("batch unload isolates plugin cleanup failures", async () => {
   const cleanup: string[] = [];
   const registry = createPluginRegistry({ tools: createToolRegistry([]) });
   for (const id of ["first.plugin", "broken.plugin", "last.plugin"])
-    await registry.loadBuiltin(
+    await registry.load(
       definePlugin({
         manifest: {
           apiVersion: 1,
@@ -473,7 +473,7 @@ test("v2 contributions and typed services use the shared ownership channel", asy
       release: () => undefined,
     }),
   });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 2,
@@ -559,7 +559,7 @@ test("adapter contributions stay inert until materialized and dispose in reverse
       release: () => undefined,
     }),
   });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 2,
@@ -642,7 +642,7 @@ test("plugin cleanup is reverse ordered and isolates disposer failures", async (
       release: () => undefined,
     }),
   });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 2,
@@ -683,7 +683,7 @@ test("plugin dispose owns lifecycle before capability ownership is released", as
       release: () => lifecycle.push("owner.release"),
     }),
   });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 2,
@@ -732,7 +732,7 @@ test("missing required services leave the plugin mounted and pending", async () 
       };
     },
   });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 2,
@@ -800,7 +800,7 @@ test("required service availability drives serialized activation epochs", async 
       };
     },
   });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 2,
@@ -911,7 +911,7 @@ test("manual registration disposal releases local and kernel ownership", async (
       release: () => undefined,
     }),
   });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 1,
@@ -958,7 +958,7 @@ test("manual registration disposal releases local and kernel ownership", async (
   expect(registry.commands()).toEqual([]);
   expect(dispatches).toBe(0);
   expect(released).toEqual([
-    "listeners:plugin_natalia_dynamic_listener_1",
+    "listeners:natalia-dynamic:listener:1",
     "commands:dynamic_command",
     "tools:dynamic_tool",
   ]);
@@ -980,7 +980,7 @@ test("setup failure rolls back every registered contribution", async () => {
     }),
   });
   await expect(
-    registry.loadBuiltin(
+    registry.load(
       definePlugin({
         manifest: {
           apiVersion: 2,
@@ -1037,7 +1037,7 @@ test("plugin-owned effects are cancelled and settled before unload completes", a
     releaseSetup = resolve;
   });
   const registry = createPluginRegistry({ tools: createToolRegistry([]) });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 2,
@@ -1081,7 +1081,7 @@ test("plugin-owned effects are cancelled and settled before unload completes", a
 
 test("plugin registrations are capability-gated and removed on unload", async () => {
   const tools = createToolRegistry([]);
-  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const registry = createPluginRegistry({ tools });
   await registry.load(
     definePlugin({
       manifest: {
@@ -1109,19 +1109,71 @@ test("plugin registrations are capability-gated and removed on unload", async ()
       },
     }),
   );
-  expect(tools.has("plugin_demo_plugin_echo")).toBe(true);
+  expect(tools.has("echo")).toBe(true);
   await registry.unload("demo.plugin");
-  expect(tools.has("plugin_demo_plugin_echo")).toBe(false);
+  expect(tools.has("echo")).toBe(false);
   expect(registry.audit().map((entry) => entry.action)).toEqual([
     "loaded",
     "unloaded",
   ]);
 });
 
-test("built-in plugins use the same lifecycle with stable public names", async () => {
+test("plugin aliases are removed on unload and cannot shadow tools", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(
+  const aliasedPlugin = definePlugin({
+    manifest: {
+      apiVersion: 1,
+      id: "alias.plugin",
+      version: "1.0.0",
+      name: "Alias",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+      scope: "session",
+      provides: [],
+      requires: [],
+    },
+    setup(api) {
+      api.tools.register({
+        name: "target",
+        description: "Target",
+        requiresApproval: false,
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return "ok";
+        },
+      });
+      api.tools.registerAlias("shortcut", "target");
+    },
+  });
+
+  await registry.load(aliasedPlugin);
+  expect(tools.has("shortcut")).toBe(true);
+  expect(() => tools.addAlias("target", "target")).toThrow(
+    "tool alias already registered: target",
+  );
+  expect(() => tools.addAlias("shortcut", "target")).toThrow(
+    "tool alias already registered: shortcut",
+  );
+  const staleDispose = tools.addAlias("stale", "target");
+  staleDispose();
+  const currentDispose = tools.addAlias("stale", "target");
+  staleDispose();
+  expect(tools.has("stale")).toBe(true);
+  currentDispose();
+  await registry.unload("alias.plugin");
+  expect(tools.has("shortcut")).toBe(false);
+
+  await registry.load(aliasedPlugin);
+  expect(tools.has("shortcut")).toBe(true);
+  await registry.unload("alias.plugin");
+});
+
+test("plugins use their declared public names", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools });
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 1,
@@ -1158,7 +1210,7 @@ test("built-in plugins use the same lifecycle with stable public names", async (
 test("declared services must be provided before activation completes", async () => {
   const registry = createPluginRegistry({ tools: createToolRegistry([]) });
   await expect(
-    registry.loadBuiltin(
+    registry.load(
       definePlugin({
         manifest: {
           apiVersion: 1,
@@ -1188,7 +1240,7 @@ test("declared services must remain active through setup", async () => {
     }),
   });
   await expect(
-    registry.loadBuiltin(
+    registry.load(
       definePlugin({
         manifest: {
           apiVersion: 1,
@@ -1215,7 +1267,7 @@ test("declared services must remain active through setup", async () => {
 test("a failing plugin disposer cannot retain owned registrations", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(
+  await registry.load(
     definePlugin({
       manifest: {
         apiVersion: 1,
@@ -1253,23 +1305,18 @@ test("a failing plugin disposer cannot retain owned registrations", async () => 
   expect(registry.list()).toEqual([]);
 });
 
-test("plugin tools require approval unless workspace marks plugin read-only", async () => {
+test("plugin tools preserve their declared approval requirement", async () => {
   const safeTools = createToolRegistry([]);
   const safeRegistry = createPluginRegistry({
     tools: safeTools,
-    readOnly: { "safe.plugin": true },
   });
-  await safeRegistry.load(pluginWithReadOnlyTool("safe.plugin"));
-  expect(safeTools.get("plugin_safe_plugin_observe")?.requiresApproval).toBe(
-    false,
-  );
+  await safeRegistry.load(pluginWithApprovalTool("safe.plugin", false));
+  expect(safeTools.get("observe")?.requiresApproval).toBe(false);
 
   const guardedTools = createToolRegistry([]);
   const guardedRegistry = createPluginRegistry({ tools: guardedTools });
-  await guardedRegistry.load(pluginWithReadOnlyTool("guarded.plugin"));
-  expect(
-    guardedTools.get("plugin_guarded_plugin_observe")?.requiresApproval,
-  ).toBe(true);
+  await guardedRegistry.load(pluginWithApprovalTool("guarded.plugin", true));
+  expect(guardedTools.get("observe")?.requiresApproval).toBe(true);
 });
 
 test("plugin conformance harness verifies lifecycle cleanup", async () => {
@@ -1299,7 +1346,6 @@ test("plugin conformance harness verifies lifecycle cleanup", async () => {
         });
       },
     }),
-    allowed: ["tools"],
   });
   expect(results).toEqual([
     { name: "manifest-and-setup", passed: true, detail: undefined },
@@ -1312,7 +1358,6 @@ test("plugin conformance harness verifies lifecycle cleanup", async () => {
 test("plugin cannot use an undeclared capability", async () => {
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    allowed: ["tools"],
   });
   await expect(
     registry.load(
@@ -1337,41 +1382,42 @@ test("plugin cannot use an undeclared capability", async () => {
   ).rejects.toThrow("capability denied");
 });
 
-test("an explicit empty capability grant denies all plugin capabilities", async () => {
-  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
-  await expect(
-    registry.load(
-      definePlugin({
-        manifest: {
-          apiVersion: 1,
-          id: "restricted.plugin",
-          version: "1.0.0",
-          name: "Restricted",
-          description: "",
-          entry: "index.ts",
-          capabilities: ["tools"],
-          scope: "session",
-          provides: [] as string[],
-          requires: [] as string[],
-        },
-        setup(api) {
-          api.tools.register({
-            name: "echo",
-            description: "Echo",
-            requiresApproval: false,
-            parameters: { type: "object", properties: {} },
-            async execute() {
-              return "ok";
-            },
-          });
-        },
-      }),
-      [],
-    ),
-  ).rejects.toThrow("capability denied");
+test("a manifest-declared capability is authorized without a host whitelist", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({
+    tools,
+  });
+  await registry.load(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "declared.plugin",
+        version: "1.0.0",
+        name: "Declared",
+        description: "",
+        entry: "index.ts",
+        capabilities: ["tools"],
+        scope: "session",
+        provides: [] as string[],
+        requires: [] as string[],
+      },
+      setup(api) {
+        api.tools.register({
+          name: "echo",
+          description: "Echo",
+          requiresApproval: false,
+          parameters: { type: "object", properties: {} },
+          async execute() {
+            return "ok";
+          },
+        });
+      },
+    }),
+  );
+  expect(tools.has("echo")).toBe(true);
 });
 
-function pluginWithReadOnlyTool(id: string) {
+function pluginWithApprovalTool(id: string, requiresApproval: boolean) {
   return definePlugin({
     manifest: {
       apiVersion: 1,
@@ -1389,7 +1435,7 @@ function pluginWithReadOnlyTool(id: string) {
       api.tools.register({
         name: "observe",
         description: "Observe",
-        requiresApproval: false,
+        requiresApproval,
         parameters: { type: "object", properties: {} },
         async execute() {
           return "ok";
@@ -1399,9 +1445,9 @@ function pluginWithReadOnlyTool(id: string) {
   });
 }
 
-test("a plugin command is namespaced, listed, and removed on unload", async () => {
+test("a plugin command uses its declared name and is removed on unload", async () => {
   const tools = createToolRegistry([]);
-  const registry = createPluginRegistry({ tools, allowed: ["commands"] });
+  const registry = createPluginRegistry({ tools });
   const ran: string[] = [];
   await registry.load(
     definePlugin({
@@ -1431,8 +1477,7 @@ test("a plugin command is namespaced, listed, and removed on unload", async () =
 
   const commands = registry.commands();
   expect(commands).toHaveLength(1);
-  // Namespaced, so a plugin cannot shadow a built-in command by naming.
-  expect(commands[0]!.name).toBe("plugin_demo_plugin_sync");
+  expect(commands[0]!.name).toBe("sync");
   expect(commands[0]!.category).toBe("Demo");
   await commands[0]!.run();
   expect(ran).toEqual(["sync"]);
@@ -1443,7 +1488,7 @@ test("a plugin command is namespaced, listed, and removed on unload", async () =
 
 test("a plugin without the commands capability cannot register one", async () => {
   const tools = createToolRegistry([]);
-  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const registry = createPluginRegistry({ tools });
   await expect(
     registry.load(
       definePlugin({
@@ -1476,7 +1521,7 @@ test("a plugin without the commands capability cannot register one", async () =>
 
 test("two plugins cannot register the same command name", async () => {
   const tools = createToolRegistry([]);
-  const registry = createPluginRegistry({ tools, allowed: ["commands"] });
+  const registry = createPluginRegistry({ tools });
   const manifest = (id: string) => ({
     apiVersion: 1 as const,
     id,
@@ -1497,20 +1542,16 @@ test("two plugins cannot register the same command name", async () => {
       },
     }),
   );
-  // Same plugin id would collide; different ids are namespaced apart, so this
-  // asserts the namespacing actually separates them.
-  await registry.load(
-    definePlugin({
-      manifest: manifest("second.plugin"),
-      setup(api) {
-        api.commands.register({ name: "go", title: "Go", run: () => {} });
-      },
-    }),
-  );
-  expect(registry.commands().map((command) => command.name)).toEqual([
-    "plugin_first_plugin_go",
-    "plugin_second_plugin_go",
-  ]);
+  await expect(
+    registry.load(
+      definePlugin({
+        manifest: manifest("second.plugin"),
+        setup(api) {
+          api.commands.register({ name: "go", title: "Go", run: () => {} });
+        },
+      }),
+    ),
+  ).rejects.toThrow("plugin command already registered: go");
 });
 
 function configuredPlugin(input: {
@@ -1549,7 +1590,7 @@ function configuredPlugin(input: {
 
 test("a plugin receives its own config validated by its declared schema", async () => {
   const tools = createToolRegistry([]);
-  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const registry = createPluginRegistry({ tools });
   const seen: { config?: unknown } = {};
   await registry.load(
     configuredPlugin({
@@ -1560,17 +1601,16 @@ test("a plugin receives its own config validated by its declared schema", async 
         label: z.string(),
       }),
     }),
-    undefined,
     { label: "primary" },
   );
   // The parsed value reaches setup, so schema defaults are applied.
   expect(seen.config).toEqual({ retries: 3, label: "primary" });
-  expect(tools.has("plugin_configured_plugin_run")).toBe(true);
+  expect(tools.has("run")).toBe(true);
 });
 
 test("an invalid plugin config fails the load and registers nothing", async () => {
   const tools = createToolRegistry([]);
-  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const registry = createPluginRegistry({ tools });
   const seen: { config?: unknown } = {};
   await expect(
     registry.load(
@@ -1579,22 +1619,21 @@ test("an invalid plugin config fails the load and registers nothing", async () =
         seen,
         configSchema: z.object({ label: z.string() }),
       }),
-      undefined,
       { label: 42 },
     ),
   ).rejects.toThrow(/plugin config invalid: invalid.plugin/u);
   // Misconfiguration fails before setup runs, so nothing was contributed.
   expect(seen.config).toBeUndefined();
-  expect(tools.has("plugin_invalid_plugin_run")).toBe(false);
+  expect(tools.has("run")).toBe(false);
   expect(registry.list()).toEqual([]);
   expect(registry.audit().map((entry) => entry.action)).toEqual(["failed"]);
 });
 
 test("a plugin without a config schema keeps its config unchanged", async () => {
   const tools = createToolRegistry([]);
-  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const registry = createPluginRegistry({ tools });
   const seen: { config?: unknown } = {};
-  await registry.load(configuredPlugin({ id: "raw.plugin", seen }), undefined, {
+  await registry.load(configuredPlugin({ id: "raw.plugin", seen }), {
     anything: true,
   });
   expect(seen.config).toEqual({ anything: true });
@@ -1636,7 +1675,6 @@ test("conformance checks a plugin against the config it will be loaded with", as
   });
   const passed = await runPluginConformance({
     plugin,
-    allowed: ["tools"],
     config: { endpoint: "https://example.test" },
   });
   expect(passed.every((check) => check.passed)).toBe(true);
@@ -1646,7 +1684,6 @@ test("conformance checks a plugin against the config it will be loaded with", as
   // config contract is testable before the plugin ships.
   const failed = await runPluginConformance({
     plugin,
-    allowed: ["tools"],
     config: {},
   });
   expect(failed[0]?.passed).toBe(false);
@@ -1733,15 +1770,15 @@ test("plugin tools are offered to the kernel channel with the plugin's scope", a
       },
     }),
   );
-  // The kernel channel saw the owned, namespaced tool and the manifest it came
+  // The kernel channel saw the declared tool name and the manifest it came
   // from, so a host can attribute it and read the plugin's declared scope.
   expect(contributed).toHaveLength(1);
-  expect(contributed[0]!.name).toBe("plugin_owned_plugin_scan");
+  expect(contributed[0]!.name).toBe("scan");
   expect((contributed[0]!.manifest as { scope: string }).scope).toBe(
     "workspace",
   );
   await registry.unload("owned.plugin");
-  expect(released).toEqual(["plugin_owned_plugin_scan"]);
+  expect(released).toEqual(["scan"]);
   expect(unloaded).toBe("owned.plugin");
 });
 
@@ -1772,10 +1809,8 @@ test("conformance reports tool ownership and the approval boundary", async () =>
         });
       },
     }),
-    allowed: ["tools"],
   });
   const byName = new Map(results.map((check) => [check.name, check]));
-  // Without the readOnly trust mark the dynamic tool demands approval.
   expect(byName.get("tool-ownership")?.passed).toBe(true);
   expect(byName.get("approval-boundary")?.passed).toBe(true);
   expect(byName.get("owned-registration-cleanup")?.passed).toBe(true);

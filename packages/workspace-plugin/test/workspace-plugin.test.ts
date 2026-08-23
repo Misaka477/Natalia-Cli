@@ -24,7 +24,6 @@ test("workspace resources exist only while the plugin is loaded", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -53,7 +52,7 @@ test("workspace resources exist only while the plugin is loaded", async () => {
   expect(services.size).toBe(0);
 
   try {
-    await registry.loadBuiltin(plugin);
+    await registry.load(plugin);
     expect(
       services.get(WORKSPACE_WRITE_LOCK_SERVICE) as WorkspaceWriteLock,
     ).toHaveProperty("acquire");

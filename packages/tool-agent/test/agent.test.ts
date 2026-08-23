@@ -35,7 +35,7 @@ test("the subagent family describes the tools it ships", () => {
 test("the agent plugin owns its tools and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createAgentPlugin());
+  await registry.load(createAgentPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: AGENT_PLUGIN_ID,
     scope: "session",

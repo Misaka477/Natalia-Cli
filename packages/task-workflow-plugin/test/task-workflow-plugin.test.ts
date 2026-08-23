@@ -56,7 +56,6 @@ test("task workflow controller exists only while the plugin is loaded", async ()
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -84,7 +83,7 @@ test("task workflow controller exists only while the plugin is loaded", async ()
   });
   expect(services.has(TASK_WORKFLOW_CONTROLLER_SERVICE)).toBe(false);
 
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   expect(
     services.get(TASK_WORKFLOW_CONTROLLER_SERVICE) as TaskWorkflowController,
   ).toHaveProperty("documentCatalog");

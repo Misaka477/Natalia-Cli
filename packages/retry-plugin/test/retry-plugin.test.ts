@@ -13,7 +13,6 @@ test("retry plugin owns its service and removes it on unload", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -24,7 +23,7 @@ test("retry plugin owns its service and removes it on unload", async () => {
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
 
-  await registry.loadBuiltin(createRetryPlugin({ policy: () => undefined }));
+  await registry.load(createRetryPlugin({ policy: () => undefined }));
   expect(services.get(RETRY_SERVICE)).toBeDefined();
   await registry.unload(RETRY_PLUGIN_ID);
   expect(services.has(RETRY_SERVICE)).toBe(false);

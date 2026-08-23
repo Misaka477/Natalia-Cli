@@ -33,7 +33,7 @@ test("transport plugin registration does not create a server", async () => {
     creations += 1;
     throw new Error("must not materialize during setup");
   });
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   expect(creations).toBe(0);
   expect(
     kernel.contribution("adapters", "transport.http.server"),

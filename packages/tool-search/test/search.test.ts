@@ -21,7 +21,7 @@ test("the search family describes the tools it ships", () => {
 test("the search plugin owns its stable tools and unloads cleanly", async () => {
   const tools = createToolRegistry([]);
   const registry = createPluginRegistry({ tools });
-  await registry.loadBuiltin(createSearchPlugin());
+  await registry.load(createSearchPlugin());
   expect(registry.list()[0]).toMatchObject({
     id: SEARCH_PLUGIN_ID,
     scope: "workspace",

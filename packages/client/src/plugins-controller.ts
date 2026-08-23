@@ -12,16 +12,10 @@ import {
   resolveInstalledPluginEntries,
   validatePluginPath,
   type Plugin,
-  type PluginLoadContext,
   type PluginManifest,
 } from "@natalia/plugin";
 import type { ToolRegistry } from "@natalia/tools";
 import type { BuiltinPluginEntry } from "@natalia/builtin-plugins";
-
-/** The capability id a plugin is loaded as. */
-export function pluginCapabilityID(pluginID: string) {
-  return `plugin:${pluginID}`;
-}
 
 /**
  * The plugins resource controller — cut of the resource controllers split
@@ -32,7 +26,7 @@ export function pluginCapabilityID(pluginID: string) {
  * `syncGlobalCommands`, an accessor over the runtime's command catalog.
  *
  * Tool ownership goes through the capability kernel: each loaded plugin is one
- * capability (`plugin:<id>`) carrying the plugin's declared scope, and every
+ * capability carrying the plugin's declared id and scope, and every
  * tool the plugin registers is contributed under it. `tool.registered` then
  * reports the plugin as the owner with the scope it declared, exactly as it
  * does for a built-in tool family.
@@ -45,8 +39,6 @@ export function createPluginsController(input: {
   externalPluginsEnabled?(): boolean;
   pluginPackages?(): Record<string, PluginPackageConfig> | undefined;
   pluginEnabled(): Record<string, boolean> | undefined;
-  pluginCapabilities(): Record<string, string[]> | undefined;
-  pluginReadOnly(): Record<string, boolean> | undefined;
   /** Per-plugin config, keyed by plugin id; each plugin validates its own entry. */
   pluginSettings(): Record<string, unknown> | undefined;
   publish(event: RuntimeEvent): void;
@@ -71,7 +63,6 @@ export function createPluginsController(input: {
   async function init(options: { loadLocal?: boolean } = {}) {
     registry = createPluginRegistry({
       tools: input.tools,
-      readOnly: input.pluginReadOnly(),
       onAudit: (entry) => {
         if (builtinIDs.has(entry.pluginID)) return;
         input.publish({
@@ -82,8 +73,7 @@ export function createPluginsController(input: {
         });
       },
       onChange: input.syncGlobalCommands,
-      registerOwner: (manifest, context) => {
-        const capabilityID = capabilityIDFor(manifest.id, context);
+      registerOwner: (manifest) => {
         // The plugin's capability owns everything it registers — tools,
         // commands and event listeners all reach the kernel, the single
         // channel a built-in tool family uses. `events` maps to the kernel's
@@ -111,7 +101,7 @@ export function createPluginsController(input: {
           if (grant && !grants.includes(grant)) grants.push(grant);
         }
         const owner = input.capabilityRegistry.registerOwner({
-          id: capabilityID,
+          id: manifest.id,
           name: manifest.name,
           version: manifest.version,
           description: manifest.description,
@@ -141,13 +131,12 @@ export function createPluginsController(input: {
     await loadPluginEntries({
       entries: await externalEntries(),
       registry: current,
-      capabilities: input.pluginCapabilities(),
       settings: input.pluginSettings(),
       onError: (id, error) =>
         input.publish({
           type: "diagnostic",
           level: "warning",
-          owner: pluginCapabilityID(id),
+          owner: id,
           message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
         }),
     });
@@ -279,7 +268,7 @@ export function createPluginsController(input: {
     input.publish({
       type: "diagnostic",
       level: "warning",
-      owner: pluginCapabilityID(id),
+      owner: id,
       message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
     });
   }
@@ -308,7 +297,7 @@ export function createPluginsController(input: {
     const current = get();
     builtinIDs.add(plugin.manifest.id);
     try {
-      await current.loadBuiltin(plugin, config);
+      await current.load(plugin, config);
     } catch (error) {
       if (!current.status(plugin.manifest.id))
         builtinIDs.delete(plugin.manifest.id);
@@ -357,7 +346,6 @@ export function createPluginsController(input: {
         throw new Error(`plugin module has no setup function: ${id}`);
       await registry.load(
         { ...candidate, manifest } as Plugin,
-        input.pluginCapabilities()?.[id],
         input.pluginSettings()?.[id],
       );
       input.syncGlobalCommands();
@@ -376,9 +364,7 @@ export function createPluginsController(input: {
         input.publish({
           type: "diagnostic",
           level: "warning",
-          owner: builtinIDs.has(plugin.id)
-            ? plugin.id
-            : pluginCapabilityID(plugin.id),
+          owner: plugin.id,
           message: `plugin ${plugin.id} cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
@@ -408,10 +394,6 @@ export function createPluginsController(input: {
     close,
     dispatch,
   };
-}
-
-function capabilityIDFor(pluginID: string, context: PluginLoadContext) {
-  return context.builtin ? pluginID : pluginCapabilityID(pluginID);
 }
 
 function settingsFingerprint(value: unknown): string {

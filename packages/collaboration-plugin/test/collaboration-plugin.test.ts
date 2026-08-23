@@ -19,7 +19,6 @@ test("collaboration waiter exists only while the plugin is loaded", async () => 
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -53,7 +52,7 @@ test("collaboration waiter exists only while the plugin is loaded", async () => 
   });
   expect(services.has(COLLABORATION_WAITER_SERVICE)).toBe(false);
 
-  await registry.loadBuiltin(plugin);
+  await registry.load(plugin);
   const waiter = services.get(
     COLLABORATION_WAITER_SERVICE,
   ) as InteractiveWaiter;

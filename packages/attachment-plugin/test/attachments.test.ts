@@ -154,7 +154,6 @@ test("attachment service is absent after plugin unload", async () => {
       },
       delete() {},
     } as never,
-    allowed: ["services"],
     registerOwner: () => ({
       contribute: (kind, name, value) => {
         if (kind === "services") services.set(name, value);
@@ -166,7 +165,7 @@ test("attachment service is absent after plugin unload", async () => {
   });
 
   expect(services.has(ATTACHMENT_SERVICE)).toBe(false);
-  await registry.loadBuiltin(createAttachmentPlugin({ workspaceRoot: root }));
+  await registry.load(createAttachmentPlugin({ workspaceRoot: root }));
   expect(services.get(ATTACHMENT_SERVICE)).toBeDefined();
   await registry.unload(ATTACHMENT_PLUGIN_ID);
   expect(services.has(ATTACHMENT_SERVICE)).toBe(false);
