@@ -21,18 +21,6 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     set buildBuiltinPluginCatalog(value) {
       ctx.ports.setBuildBuiltinPluginCatalog(value);
     },
-    set builtinPluginIDs(value: Set<string>) {
-      ctx.ports.setBuiltinPluginIDs(value);
-    },
-    get builtinPluginIDs() {
-      return ctx.ports.getBuiltinPluginIDs();
-    },
-    set activeExternalPluginConfigFingerprint(value: string | undefined) {
-      ctx.ports.setActiveExternalPluginConfigFingerprint(value);
-    },
-    get activeExternalPluginConfigFingerprint() {
-      return ctx.ports.getActiveExternalPluginConfigFingerprint();
-    },
     set activeCheckpointFactory(
       value: import("@natalia/runtime-services").CheckpointFactory | undefined,
     ) {
@@ -351,7 +339,6 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     executionForTurn: ctx.ports.executionForTurn,
     extensionEnabled: ctx.ports.extensionEnabled,
     extensionToolPermission: ctx.ports.extensionToolPermission,
-    externalPluginConfigFingerprint: ctx.ports.externalPluginConfigFingerprint,
     pluginsController: ctx.ports.getPluginsController(),
     applyAgentPolicy: ctx.ports.applyAgentPolicy,
     applyAgentProvider: ctx.ports.applyAgentProvider,

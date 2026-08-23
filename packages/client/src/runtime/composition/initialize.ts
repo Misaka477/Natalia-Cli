@@ -62,7 +62,7 @@ import {
   evaluatePermissionProfileCommandRules,
 } from "@natalia/tools";
 import { effectiveFlowPermissions, moduleToolPolicy } from "@natalia/workflow";
-import { mountRuntimePlugins } from "../../builtin-mount";
+import { mountPlugins } from "../../builtin-mount";
 import { createInitialize } from "../initialize";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -108,7 +108,7 @@ export function wireInitialize(
       features.boundary.deliverQueuedMailboxAtBoundary,
     effectiveFlowPermissions,
     createRealRuntimeClient: createRuntimeClient,
-    mountRuntimePlugins,
+    mountPlugins,
     moduleToolPolicy,
     agentPolicyLayer: features.permissions.agentPolicyLayer,
     permissionProfileLayer: features.permissions.permissionProfileLayer,

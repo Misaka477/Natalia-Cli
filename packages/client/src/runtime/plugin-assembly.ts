@@ -1,11 +1,10 @@
 /**
- * Builtin plugin input assembly — runtime/plugin-assembly.ts.
+ * Default plugin input assembly — runtime/plugin-assembly.ts.
  *
- * Builds the input objects for every builtin plugin from the resolved config:
+ * Builds the input objects for runtime default plugins from resolved config:
  * skills, checkpoint, sandbox, terminal, workspace, provider-model, compaction,
- * MCP and local-tools inputs, plus the external-plugin config fingerprint and
- * the config selection split (tool/static/external). Reads host state through
- * `RuntimeContext` at call time.
+ * MCP and local-tools inputs. Reads host state through `RuntimeContext` at call
+ * time.
  */
 import { resolve } from "node:path";
 import { findWorkspaceFiles } from "@natalia/platform";
@@ -44,8 +43,6 @@ export function createPluginAssembly(
     compactionPluginInput,
     mcpPluginInput,
     localToolsPluginInput,
-    externalPluginConfigFingerprint,
-    selectPluginConfig,
   };
 
   function skillsPluginInput(config: ConfigV3) {
@@ -296,33 +293,5 @@ export function createPluginAssembly(
         }
       },
     };
-  }
-
-  function externalPluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      paths: config.plugins.paths,
-      packages: config.plugins.packages,
-      enabled: selectPluginConfig(config.plugins.enabled, "external"),
-      capabilities: config.plugins.capabilities,
-      readOnly: config.plugins.readOnly,
-      settings: selectPluginConfig(config.plugins.settings, "external"),
-    });
-  }
-
-  function selectPluginConfig<T>(
-    values: Record<string, T> | undefined,
-    kind: "tool" | "static" | "external",
-  ) {
-    const { getBuiltinPluginIDs, isBuiltinToolPlugin, isStaticBuiltinPlugin } =
-      ctx.ports;
-    return Object.fromEntries(
-      Object.entries(values ?? {}).filter(([id]) => {
-        const tool = isBuiltinToolPlugin(id);
-        const builtin = getBuiltinPluginIDs().has(id);
-        if (kind === "tool") return tool;
-        if (kind === "static") return builtin && isStaticBuiltinPlugin(id);
-        return !builtin;
-      }),
-    );
   }
 }

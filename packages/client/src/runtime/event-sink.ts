@@ -135,9 +135,12 @@ export function createEventSink(
       appendSessionEvent(exec.session, event);
       const sessionSnapshot = structuredClone(exec.session);
       const sessionPersistence = getSessionPersistence();
-      const sessionStoreController = getSessionStoreController();
       const next = sessionPersistence
-        .then(() => sessionStoreController?.appendEvent(sessionSnapshot, event))
+        .then(() => {
+          const sessionStoreController = getSessionStoreController();
+          if (sessionStoreController.status().initialized)
+            return sessionStoreController.appendEvent(sessionSnapshot, event);
+        })
         .catch((error) => {
           sink?.({
             type: "diagnostic",

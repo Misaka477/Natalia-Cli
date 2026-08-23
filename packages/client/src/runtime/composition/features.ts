@@ -1,8 +1,4 @@
 import { providerFromEnvironment } from "@natalia/runtime";
-import {
-  isBuiltinToolPlugin,
-  isStaticBuiltinPlugin,
-} from "@natalia/builtin-plugins";
 import { createTerminalRuntime } from "../terminal-runtime";
 import { createPermissions } from "../permissions";
 import { createCollaborationBoundary } from "../collaboration/boundary";
@@ -106,12 +102,8 @@ export function wireFeatures(
   ports.chatToolSummary = chatTools.chatToolSummary;
   ports.runChatTurnBody = createChatTurn(ctx).runChatTurnBody;
   ports.providerFromEnvironment = providerFromEnvironment;
-  ports.isBuiltinToolPlugin = isBuiltinToolPlugin;
-  ports.isStaticBuiltinPlugin = isStaticBuiltinPlugin;
 
   const pluginAssembly = createPluginAssembly(ctx, options);
-  ports.externalPluginConfigFingerprint =
-    pluginAssembly.externalPluginConfigFingerprint;
   ports.reloadPermissionSettings = permissions.reloadPermissionSettings;
   ports.setTsRuntimeConfig = (config) => {
     state.tsRuntimeConfig = config;
@@ -128,17 +120,9 @@ export function wireFeatures(
   ports.setAgentRegistry = (registry) => {
     state.agentRegistry = registry;
   };
-  ports.setBuiltinPluginIDs = (ids) => {
-    state.builtinPluginIDs = ids;
-  };
   ports.setBuildBuiltinPluginCatalog = (build) => {
     state.buildBuiltinPluginCatalog = build;
   };
-  ports.setActiveExternalPluginConfigFingerprint = (fingerprint) => {
-    state.activeExternalPluginConfigFingerprint = fingerprint;
-  };
-  ports.getActiveExternalPluginConfigFingerprint = () =>
-    state.activeExternalPluginConfigFingerprint;
   ports.buildBuiltinPluginCatalog = (config) =>
     state.buildBuiltinPluginCatalog(config) as ReturnType<
       typeof import("@natalia/builtin-plugins").builtinPluginCatalog

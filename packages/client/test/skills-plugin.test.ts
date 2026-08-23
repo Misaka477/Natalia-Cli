@@ -7,6 +7,8 @@ import { createToolRegistry } from "@natalia/tools";
 import { skillsPluginEntry, SKILLS_PLUGIN_ID } from "@natalia/builtin-plugins";
 import { SKILL_SERVICE, type SkillService } from "@natalia/runtime-services";
 import { createPluginsController } from "../src/plugins-controller";
+import { defaultDesiredEntries } from "../src/builtin-mount";
+import type { Plugin } from "@natalia/plugin";
 
 async function skillWorkspace() {
   const root = await mkdtemp(join(tmpdir(), "natalia-skills-plugin-"));
@@ -27,9 +29,6 @@ function host(workspaceRoot: string) {
     workspaceRoot,
     tools,
     capabilityRegistry,
-    pluginPaths: () => [],
-    pluginEnabled: () => undefined,
-    pluginSettings: () => undefined,
     publish: () => undefined,
     syncGlobalCommands: () => undefined,
   });
@@ -39,9 +38,10 @@ function host(workspaceRoot: string) {
 test("skills uses the same plugin activation path and owns its service and tool", async () => {
   const root = await skillWorkspace();
   const { capabilityRegistry, tools, controller } = host(root);
-  await controller.init({ loadLocal: false });
-  await controller.loadBuiltin(
-    skillsPluginEntry({ workspaceRoot: root }).create(),
+  controller.init();
+  await controller.reconcileDesired(
+    defaultDesiredEntries([skillsPluginEntry({ workspaceRoot: root })]),
+    {},
   );
 
   expect(capabilityRegistry.ownerOf("services", SKILL_SERVICE)).toBe(
@@ -57,7 +57,9 @@ test("skills uses the same plugin activation path and owns its service and tool"
       .map((skill) => skill.qualifiedName),
   ).toContain("project:review");
   expect(tools.has("skill_load")).toBe(true);
-  expect(controller.list()).toEqual([]);
+  expect(controller.list().map((plugin) => plugin.id)).toEqual([
+    SKILLS_PLUGIN_ID,
+  ]);
 
   await controller.close();
   expect(capabilityRegistry.has(SKILLS_PLUGIN_ID)).toBe(false);
@@ -65,28 +67,40 @@ test("skills uses the same plugin activation path and owns its service and tool"
   expect(tools.has("skill_load")).toBe(false);
 });
 
-test("failed built-in setup rolls back its capability", async () => {
+test("failed default setup rolls back its capability", async () => {
   const root = await skillWorkspace();
   const { capabilityRegistry, controller } = host(root);
-  await controller.init({ loadLocal: false });
+  controller.init();
+  const broken: Plugin = {
+    manifest: {
+      apiVersion: 1,
+      id: "natalia-broken",
+      version: "1.0.0",
+      name: "Broken",
+      description: "",
+      entry: "natalia:broken",
+      capabilities: ["tools"],
+      scope: "workspace",
+      provides: [],
+      requires: [],
+    },
+    setup() {
+      throw new Error("broken setup");
+    },
+  };
   await expect(
-    controller.loadBuiltin({
-      manifest: {
-        apiVersion: 1,
-        id: "natalia-broken",
-        version: "1.0.0",
-        name: "Broken",
-        description: "",
-        entry: "natalia:broken",
-        capabilities: ["tools"],
-        scope: "workspace",
-        provides: [],
-        requires: [],
-      },
-      setup() {
-        throw new Error("broken setup");
-      },
-    }),
+    controller.reconcileDesired(
+      [
+        {
+          id: broken.manifest.id,
+          enabled: true,
+          fingerprint: "broken",
+          manifest: broken.manifest,
+          load: async () => broken,
+        },
+      ],
+      {},
+    ),
   ).rejects.toThrow("broken setup");
   expect(capabilityRegistry.has("natalia-broken")).toBe(false);
 });

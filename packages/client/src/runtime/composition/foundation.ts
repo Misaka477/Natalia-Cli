@@ -46,11 +46,6 @@ export function wireFoundation(ctx: RuntimeContext) {
     workspaceRoot: state.workspaceRoot,
     tools: state.tools,
     capabilityRegistry: state.capabilityRegistry,
-    pluginPaths: () => state.tsRuntimeConfig?.plugins.paths ?? [],
-    externalPluginsEnabled: () => ports.extensionEnabled("plugins"),
-    pluginPackages: () => state.tsRuntimeConfig?.plugins.packages,
-    pluginEnabled: () => state.tsRuntimeConfig?.plugins.enabled,
-    pluginSettings: () => state.tsRuntimeConfig?.plugins.settings,
     publish: (event) => ports.publish(event),
     syncGlobalCommands: () =>
       setGlobalPluginCommands(ports.commandCatalogEntries()),
@@ -184,7 +179,6 @@ export function wireFoundation(ctx: RuntimeContext) {
   ports.setProviderSource = (source) => {
     state.providerSource = source;
   };
-  ports.getBuiltinPluginIDs = () => state.builtinPluginIDs;
   ports.getPluginsController = () => state.pluginsController;
   ports.requireTaskWorkflow = () => {
     if (!state.taskWorkflowController)

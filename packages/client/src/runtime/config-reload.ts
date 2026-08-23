@@ -3,7 +3,7 @@
  *
  * `applyConfigFromDisk` and `reloadConfigFromDisk` re-read the resolved config
  * and apply it live: runtime limits, permission settings, the agent registry,
- * the builtin plugin catalog and provider re-selection. Reads and writes host
+ * the default plugin catalog and provider re-selection. Reads and writes host
  * state through `RuntimeContext` ports.
  */
 import { agentsFromConfig } from "@natalia/agent";
@@ -13,11 +13,18 @@ import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
 import type { ConfigV3, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
+import { defaultDesiredEntries } from "../builtin-mount";
 
 export function createConfigReload(
   ctx: RuntimeContext,
   options: RealRuntimeClientOptions,
 ) {
+  let reloadQueue = Promise.resolve<{
+    read: boolean;
+    providerReconfigured: boolean;
+    reason?: string;
+  }>({ read: false, providerReconfigured: false });
+
   return {
     configReloadBlockedReason,
     applyConfigFromDisk,
@@ -75,6 +82,16 @@ export function createConfigReload(
     providerReconfigured: boolean;
     reason?: string;
   }> {
+    const reload = reloadQueue.then(applyReloadFromDisk, applyReloadFromDisk);
+    reloadQueue = reload;
+    return await reload;
+  }
+
+  async function applyReloadFromDisk(): Promise<{
+    read: boolean;
+    providerReconfigured: boolean;
+    reason?: string;
+  }> {
     const {
       getWorkspaceRoot,
       getExecutionBySession,
@@ -92,9 +109,6 @@ export function createConfigReload(
       setSelectedPermissionProfile,
       getTools,
       getPluginsController,
-      setBuiltinPluginIDs,
-      getActiveExternalPluginConfigFingerprint,
-      setActiveExternalPluginConfigFingerprint,
       applyAgentPolicy,
       setProvider,
       getProviderSource,
@@ -104,23 +118,15 @@ export function createConfigReload(
       modelRefKeyForSelection,
       refreshBuiltinServices,
       publishToolCatalogChanges,
-      externalPluginConfigFingerprint,
       buildBuiltinPluginCatalog,
     } = ctx.ports;
-    const activeExternalPluginConfigFingerprint =
-      getActiveExternalPluginConfigFingerprint();
     const workspaceRoot = getWorkspaceRoot();
+    const previous = captureReloadState();
     try {
       const tsConfig = await resolveConfig({
         workspaceRoot,
         globalPath: options.globalConfigPath,
       });
-      const nextExternalPluginConfigFingerprint =
-        externalPluginConfigFingerprint(tsConfig.config);
-      const reconcilePlugins =
-        activeExternalPluginConfigFingerprint !== undefined &&
-        nextExternalPluginConfigFingerprint !==
-          activeExternalPluginConfigFingerprint;
       setTsRuntimeConfig(tsConfig.config);
       setMaxSteps(tsConfig.config.runtime.maxStepsPerTurn);
       setRetryPolicy({
@@ -163,20 +169,15 @@ export function createConfigReload(
           exec.activeSkill ? [[id, exec.activeSkill.qualifiedName]] : [],
         ),
       );
-      const desiredBuiltins = buildBuiltinPluginCatalog(
-        tsConfig.config,
-      ) as Array<{ id: string }>;
-      setBuiltinPluginIDs(new Set(desiredBuiltins.map((entry) => entry.id)));
-      await getPluginsController().reconcileDesiredBuiltins(
-        desiredBuiltins as never,
-        tsConfig.config.plugins.settings,
+      const defaults = defaultDesiredEntries(
+        buildBuiltinPluginCatalog(tsConfig.config),
+      );
+      await getPluginsController().reconcileDesired(
+        defaults,
+        tsConfig.config.plugins,
       );
       await refreshBuiltinServices(selectedSkills);
-      if (reconcilePlugins) await getPluginsController().reconcile();
       publishToolCatalogChanges(toolsBeforeReconcile);
-      setActiveExternalPluginConfigFingerprint(
-        nextExternalPluginConfigFingerprint,
-      );
       applyAgentPolicy();
       if (
         selectedPermissionProfile?.commandRules &&
@@ -219,11 +220,96 @@ export function createConfigReload(
         await refreshExecutionContextConfig(exec);
       return { read: true, providerReconfigured: false };
     } catch (error) {
+      let rollbackError: unknown;
+      try {
+        await rollbackReload(previous);
+      } catch (failure) {
+        rollbackError = failure;
+      }
+      const reason = error instanceof Error ? error.message : String(error);
       return {
         read: true,
         providerReconfigured: false,
-        reason: `runtime config could not be applied: ${error instanceof Error ? error.message : String(error)}`,
+        reason: `runtime config could not be applied: ${reason}${
+          rollbackError === undefined
+            ? ""
+            : `; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+        }`,
       };
     }
+  }
+
+  function captureReloadState() {
+    const ports = ctx.ports;
+    return {
+      config: ports.getTsRuntimeConfig(),
+      maxSteps: ports.getMaxSteps(),
+      retryPolicy: ports.getRetryPolicy(),
+      limiter: ports.getProviderConcurrencyLimiter(),
+      agentRegistry: ports.getAgentRegistry(),
+      selectedAgent: ports.getSelectedAgent(),
+      permissionMode: ports.getPermissionMode(),
+      selectedPermissionProfile: ports.getSelectedPermissionProfile(),
+      defaultPermissionMode: ports.getDefaultPermissionMode(),
+      defaultPermissionProfile: ports.getDefaultPermissionProfile(),
+      provider: ports.getProvider(),
+      providerSource: ports.getProviderSource(),
+      runtimeContextConfig: ports.getRuntimeContextConfig(),
+      executions: new Map(
+        [...ports.getExecutionBySession()].map(([id, exec]) => [
+          id,
+          {
+            selectedAgent: exec.selectedAgent,
+            permissionMode: exec.permissionMode,
+            permissionProfile: exec.permissionProfile,
+            provider: exec.provider,
+            runtimeContextConfig: exec.runtimeContextConfig,
+            activeSkill: exec.activeSkill?.qualifiedName,
+          },
+        ]),
+      ),
+    };
+  }
+
+  async function rollbackReload(
+    previous: ReturnType<typeof captureReloadState>,
+  ) {
+    const ports = ctx.ports;
+    ports.setTsRuntimeConfig(previous.config);
+    ports.setMaxSteps(previous.maxSteps);
+    ports.setRetryPolicy(previous.retryPolicy);
+    ports.setProviderConcurrencyLimiter(previous.limiter);
+    if (previous.agentRegistry) ports.setAgentRegistry(previous.agentRegistry);
+    ports.setSelectedAgent(previous.selectedAgent);
+    ports.setPermissionMode(previous.permissionMode);
+    ports.setSelectedPermissionProfile(previous.selectedPermissionProfile);
+    ports.setDefaultPermissionMode(previous.defaultPermissionMode);
+    ports.setDefaultPermissionProfile(previous.defaultPermissionProfile);
+    ports.setProvider(previous.provider);
+    ports.setProviderSource(previous.providerSource);
+    ports.setRuntimeContextConfig(previous.runtimeContextConfig);
+    for (const [id, state] of previous.executions) {
+      const exec = ports.getExecutionBySession().get(id);
+      if (!exec) continue;
+      exec.selectedAgent = state.selectedAgent;
+      exec.permissionMode = state.permissionMode;
+      exec.permissionProfile = state.permissionProfile;
+      exec.provider = state.provider;
+      exec.runtimeContextConfig = state.runtimeContextConfig;
+    }
+    ports.applyAgentPolicy();
+    if (!previous.config) return;
+    const defaults = defaultDesiredEntries(
+      ports.buildBuiltinPluginCatalog(previous.config),
+    );
+    await ports
+      .getPluginsController()
+      .reconcileDesired(defaults, previous.config.plugins);
+    const selectedSkills = new Map(
+      [...previous.executions].flatMap(([id, state]) =>
+        state.activeSkill ? [[id, state.activeSkill]] : [],
+      ),
+    );
+    await ports.refreshBuiltinServices(selectedSkills);
   }
 }

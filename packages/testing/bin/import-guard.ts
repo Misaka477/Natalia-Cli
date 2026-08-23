@@ -171,22 +171,10 @@ const lineLimitExemptions = new Map<string, string>([
   ],
   ["packages/client/src/fixture.ts", "test fixture only"],
   [
-    "packages/client/src/plugins-controller.ts",
-    "legacy plugin host, phase 2 of convergence",
-  ],
-  [
     "packages/client/src/capabilities/tool-family-capabilities.ts",
     "legacy capability factory, phase 2",
   ],
-  [
-    "packages/plugin/src/index.ts",
-    "legacy plugin registry, phase 2 of convergence",
-  ],
   ["packages/capability/src/index.ts", "legacy kernel, out of phase 1 scope"],
-  [
-    "packages/builtin-plugins/src/index.ts",
-    "legacy builtin catalog, phase 2 of convergence",
-  ],
   ["packages/runtime/src/provider.ts", "legacy provider seam"],
   ["packages/runtime/src/checkpoint.ts", "legacy checkpoint seam"],
   ["packages/runtime-services/src/services.ts", "service port definitions"],
@@ -240,7 +228,6 @@ const lineLimitExemptions = new Map<string, string>([
   ["packages/tool-sandbox/src/index.ts", "sandbox tools"],
   ["packages/tool-process/src/index.ts", "process tools"],
   ["packages/tool-agent/src/index.ts", "agent tools"],
-  ["packages/testing/src/migrated-plugin-rules.ts", "import guard rules"],
   ["apps/cli/src/index.ts", "CLI entry"],
   ["apps/cli/src/command-dispatcher.ts", "CLI command dispatcher"],
   ["apps/tui/src/keymap.ts", "TUI keymap"],

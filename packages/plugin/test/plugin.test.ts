@@ -377,6 +377,57 @@ test("plugin registry enforces v2 dependencies and conflicts before setup", asyn
   ).rejects.toThrow('conflicts with "provider.plugin"');
 });
 
+test("failed mounted plugins conflict but cannot satisfy dependencies", async () => {
+  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
+  const plugin = (
+    id: string,
+    input: {
+      dependencies?: string[];
+      conflicts?: string[];
+      fails?: boolean;
+    } = {},
+  ) =>
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id,
+        version: "1.0.0",
+        name: id,
+        description: "",
+        entry: `natalia:${id}`,
+        scope: "workspace",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: input.conflicts ?? [],
+        dependencies: (input.dependencies ?? []).map((dependency) => ({
+          id: dependency,
+          spec: "*",
+          optional: false,
+          peer: false,
+        })),
+        hooks: {},
+        integrationPoints: [],
+      },
+      setup() {
+        if (input.fails) throw new Error("setup failed");
+      },
+    });
+  await expect(
+    registry.load(plugin("failed.provider", { fails: true })),
+  ).rejects.toThrow("setup failed");
+  await expect(
+    registry.load(
+      plugin("required.consumer", { dependencies: ["failed.provider"] }),
+    ),
+  ).rejects.toThrow('requires plugin "failed.provider"');
+  await expect(
+    registry.load(
+      plugin("conflicting.consumer", { conflicts: ["failed.provider"] }),
+    ),
+  ).rejects.toThrow('conflicts with "failed.provider"');
+});
+
 test("unloading a provider unloads required dependents first", async () => {
   const cleanup: string[] = [];
   const registry = createPluginRegistry({ tools: createToolRegistry([]) });

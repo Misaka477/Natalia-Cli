@@ -77,9 +77,6 @@ export type RuntimePortsExtra = {
     signal: AbortSignal,
   ) => Promise<{ text: string }>;
   wakeNavi: (exec: SessionExecutionState) => Promise<void>;
-  getBuiltinPluginIDs: () => Set<string>;
-  isBuiltinToolPlugin: (id: string) => boolean;
-  isStaticBuiltinPlugin: (id: string) => boolean;
   setTsRuntimeConfig: (config: ConfigV3 | undefined) => void;
   setMaxSteps: (steps: number | undefined) => void;
   setRetryPolicy: (
@@ -87,13 +84,9 @@ export type RuntimePortsExtra = {
   ) => void;
   setProviderConcurrencyLimiter: (limiter: ProviderConcurrencyLimiter) => void;
   setAgentRegistry: (registry: AgentRegistry) => void;
-  setBuiltinPluginIDs: (ids: Set<string>) => void;
   getPluginsController: () => ReturnType<
     typeof import("../plugins-controller").createPluginsController
   >;
-  setActiveExternalPluginConfigFingerprint: (
-    fingerprint: string | undefined,
-  ) => void;
   buildBuiltinPluginCatalog: (
     config: ConfigV3,
   ) => import("./initialize-types").BuiltinPluginCatalog;
@@ -101,8 +94,6 @@ export type RuntimePortsExtra = {
     selectedSkills?: Map<SessionID, string>,
   ) => Promise<void>;
   publishToolCatalogChanges: (before: Set<string>) => void;
-  externalPluginConfigFingerprint: (config: ConfigV3) => string;
-  getActiveExternalPluginConfigFingerprint: () => string | undefined;
   reloadPermissionSettings: (config: ConfigV3) => void;
   resolveContextStatusConfig: (
     config: ConfigV3,

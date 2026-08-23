@@ -39,7 +39,6 @@ export async function configureCatalog(
       ...deps.computeBuiltinFeatureGates({
         config: ctx.ports.getTsRuntimeConfig(),
         hasCustomTools: !!options.tools,
-        extensionEnabled: ctx.ports.extensionEnabled,
       }),
       ...(deps.skillsPluginInput(runtimeConfig)
         ? {
@@ -94,9 +93,7 @@ export async function configureCatalog(
       subagentsEnabled
         ? {
             team: {
-              enabled:
-                ctx.ports.extensionEnabled("plugins") ||
-                ctx.ports.extensionEnabled("skills"),
+              enabled: ctx.ports.extensionEnabled("skills"),
             },
           }
         : {}),

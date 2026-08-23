@@ -197,8 +197,6 @@ export type RuntimeState = {
   sessionPersistence: Promise<void>;
   nativeRuntimeID: string;
   tsRuntimeConfig?: ConfigV3;
-  activeExternalPluginConfigFingerprint?: string;
-  builtinPluginIDs: Set<string>;
   buildBuiltinPluginCatalog: (config: ConfigV3) => unknown[];
   contextWindowResolver: ContextWindowResolver;
   runtimeContextConfig: RuntimeContextStatusConfig;

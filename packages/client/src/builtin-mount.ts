@@ -2,28 +2,33 @@
  * Runtime plugin mount sequence.
  *
  * This is the one assembly seam the composition root delegates to: initialize
- * the plugin controller without local (external) plugins, mount the built-in
- * catalog in order, then load external plugins. Keeping this sequence in one
+ * the plugin controller and reconcile the complete desired catalog. Keeping
+ * this sequence in one
  * named function makes the bootstrap ordering explicit and testable, and keeps
  * the runtime's product behavior out of the mount bookkeeping.
  *
- * Order is significant: the registry is created first, then built-ins mount in
- * catalog order (later entries may depend on earlier services), then external
- * plugins load last.
+ * Defaults and discovered entries enter one source-neutral dependency catalog.
  */
-import type { BuiltinPluginEntry } from "@natalia/builtin-plugins";
+import type { DefaultPluginEntry } from "@natalia/builtin-plugins";
 import type { createPluginsController } from "./plugins-controller";
+import type { DesiredPluginEntry } from "./plugin-discovery";
 
-export async function mountRuntimePlugins(input: {
+export async function mountPlugins(input: {
   controller: ReturnType<typeof createPluginsController>;
-  builtins: BuiltinPluginEntry[];
-  settings: Record<string, unknown> | undefined;
-  loadExternal: boolean;
+  defaults: DesiredPluginEntry[];
+  config: import("./plugins-controller").PluginConfigSnapshot;
 }): Promise<void> {
-  await input.controller.init({ loadLocal: false });
-  await input.controller.reconcileDesiredBuiltins(
-    input.builtins,
-    input.settings,
-  );
-  if (input.loadExternal) await input.controller.loadLocal();
+  input.controller.init();
+  await input.controller.reconcileDesired(input.defaults, input.config);
+}
+
+export function defaultDesiredEntries(
+  entries: DefaultPluginEntry[],
+): DesiredPluginEntry[] {
+  return entries.map((entry) => {
+    return {
+      ...entry,
+      load: async () => entry.create(),
+    };
+  });
 }

@@ -1,120 +1,62 @@
-import { join, resolve } from "node:path";
 import type { PluginPackageConfig, RuntimeEvent } from "@natalia/contracts";
-import type {
-  CapabilityGrant,
-  CapabilityRegistryHost,
-} from "@natalia/capability";
-import {
-  createPluginRegistry,
-  discoverPluginManifests,
-  loadPluginEntries,
-  manifestIntegrationPoints,
-  resolveInstalledPluginEntries,
-  validatePluginPath,
-  type Plugin,
-  type PluginManifest,
-} from "@natalia/plugin";
+import type { CapabilityRegistryHost } from "@natalia/capability";
+import { createPluginRegistry, type PluginManifest } from "@natalia/plugin";
 import type { ToolRegistry } from "@natalia/tools";
-import type { BuiltinPluginEntry } from "@natalia/builtin-plugins";
+import {
+  discoverDesiredPluginEntries,
+  type DesiredPluginEntry,
+} from "./plugin-discovery";
+import {
+  resolveDesiredPluginCatalog,
+  type DesiredPluginCatalog,
+} from "./plugin-desired-catalog";
+import { registerPluginOwner } from "./plugin-owner";
+import {
+  hasLivePluginDependencies,
+  pluginSettingsFingerprint,
+} from "./plugin-live-dependencies";
 
-/**
- * The plugins resource controller — cut of the resource controllers split
- * (mainline plan §15). It owns the plugin registry and its lifecycle: loading
- * the configured plugins at startup, unloading and reloading individual
- * plugins (reload re-imports with a cache-busting query), and unloading every
- * plugin at dispose. The command palette bridge is synced through
- * `syncGlobalCommands`, an accessor over the runtime's command catalog.
- *
- * Tool ownership goes through the capability kernel: each loaded plugin is one
- * capability carrying the plugin's declared id and scope, and every
- * tool the plugin registers is contributed under it. `tool.registered` then
- * reports the plugin as the owner with the scope it declared, exactly as it
- * does for a built-in tool family.
- */
+type DesiredState = {
+  entry: DesiredPluginEntry;
+  fingerprint: string;
+  settingsFingerprint: string;
+  settings: unknown;
+  activatable: boolean;
+};
+
+export type PluginConfigSnapshot = {
+  paths?: string[];
+  packages?: Record<string, PluginPackageConfig>;
+  enabled?: Record<string, boolean>;
+  settings?: Record<string, unknown>;
+};
+
 export function createPluginsController(input: {
   workspaceRoot: string;
   tools: ToolRegistry;
   capabilityRegistry: CapabilityRegistryHost;
-  pluginPaths(): string[];
-  externalPluginsEnabled?(): boolean;
-  pluginPackages?(): Record<string, PluginPackageConfig> | undefined;
-  pluginEnabled(): Record<string, boolean> | undefined;
-  /** Per-plugin config, keyed by plugin id; each plugin validates its own entry. */
-  pluginSettings(): Record<string, unknown> | undefined;
+  discoverDesiredEntries?: typeof discoverDesiredPluginEntries;
   publish(event: RuntimeEvent): void;
   syncGlobalCommands(): void;
 }) {
   let registry: ReturnType<typeof createPluginRegistry> | undefined;
+  let desired = new Map<string, DesiredState>();
+  let reconcileQueue = Promise.resolve();
   let reloadSequence = 0;
-  const builtinIDs = new Set<string>();
-  let desiredBuiltins = new Map<
-    string,
-    { fingerprint: string; settingsFingerprint: string }
-  >();
-  let desiredReconcileQueue = Promise.resolve();
 
-  function roots() {
-    return [
-      join(input.workspaceRoot, ".natalia", "plugins"),
-      ...input.pluginPaths().map((path) => resolve(input.workspaceRoot, path)),
-    ];
-  }
-
-  async function init(options: { loadLocal?: boolean } = {}) {
+  function init() {
     registry = createPluginRegistry({
       tools: input.tools,
-      onAudit: (entry) => {
-        if (builtinIDs.has(entry.pluginID)) return;
+      onAudit: (entry) =>
         input.publish({
           type: "plugin.update",
           id: entry.pluginID,
           status: entry.action,
           detail: entry.detail,
-        });
-      },
+        }),
       onChange: input.syncGlobalCommands,
-      registerOwner: (manifest) => {
-        // The plugin's capability owns everything it registers — tools,
-        // commands and event listeners all reach the kernel, the single
-        // channel a built-in tool family uses. `events` maps to the kernel's
-        // `listeners` grant; execution stays in the registry, ownership is the
-        // kernel's.
-        const grants: CapabilityGrant[] = [];
-        const integrationPoints = manifestIntegrationPoints(manifest);
-        if (manifest.provides.length) grants.push("services");
-        const grantForPoint: Partial<
-          Record<(typeof integrationPoints)[number], CapabilityGrant>
-        > = {
-          tools: "tools",
-          commands: "commands",
-          events: "listeners",
-          services: "services",
-          resources: "resources",
-          projections: "projections",
-          workflows: "workflows",
-          settingsSchema: "settingsSchema",
-          adapters: "adapters",
-          schedulerJobs: "schedulerJobs",
-        };
-        for (const point of integrationPoints) {
-          const grant = grantForPoint[point];
-          if (grant && !grants.includes(grant)) grants.push(grant);
-        }
-        const owner = input.capabilityRegistry.registerOwner({
-          id: manifest.id,
-          name: manifest.name,
-          version: manifest.version,
-          description: manifest.description,
-          scope: manifest.scope,
-          grants,
-        });
-        return {
-          contribute: owner.contribute,
-          release: owner.release,
-        };
-      },
-      // The runtime's resolved config as a service: plugins read it by name,
-      // refreshed in place on config reload (the D2 change notify).
+      registerOwner: (manifest) =>
+        registerPluginOwner(manifest, input.capabilityRegistry),
       runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
       service: <T>(name: string) => input.capabilityRegistry.service<T>(name),
       serviceProvider: (name) =>
@@ -123,291 +65,334 @@ export function createPluginsController(input: {
         input.capabilityRegistry.onServiceUpdate(listener),
     });
     input.syncGlobalCommands();
-    if (options.loadLocal !== false) await loadLocal();
   }
 
-  async function loadLocal() {
-    const current = get();
-    await loadPluginEntries({
-      entries: await externalEntries(),
-      registry: current,
-      settings: input.pluginSettings(),
-      onError: (id, error) =>
-        input.publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: id,
-          message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
-        }),
+  async function desiredEntries(
+    defaults: DesiredPluginEntry[],
+    config: PluginConfigSnapshot,
+  ): Promise<DesiredPluginCatalog> {
+    const users = await (
+      input.discoverDesiredEntries ?? discoverDesiredPluginEntries
+    )({
+      workspaceRoot: input.workspaceRoot,
+      paths: config.paths ?? [],
+      packages: config.packages ?? {},
+      enabled: config.enabled,
+      declaredIDs: defaults.map((entry) => entry.id),
+      onError: publishLoadError,
     });
-    input.syncGlobalCommands();
+    return await resolveDesiredPluginCatalog({
+      entries: [...defaults, ...users],
+      previous: (id) => {
+        const state = desired.get(id);
+        return state
+          ? { fingerprint: state.fingerprint, manifest: state.entry.manifest }
+          : undefined;
+      },
+      onError: publishLoadError,
+    });
   }
 
-  async function reconcile() {
-    const current = get();
-    const external = current
-      .list()
-      .filter((manifest) => !builtinIDs.has(manifest.id))
-      .reverse();
-    for (const manifest of external)
-      try {
-        await current.unload(manifest.id);
-      } catch (error) {
-        publishLoadError(manifest.id, error);
-      }
-    await loadLocal();
-  }
-
-  async function reconcileDesiredBuiltins(
-    entries: BuiltinPluginEntry[],
-    settings: Record<string, unknown> | undefined,
+  async function reconcileDesired(
+    defaults: DesiredPluginEntry[],
+    config: PluginConfigSnapshot,
   ) {
-    const reconciliation = desiredReconcileQueue.then(
-      () => applyDesiredBuiltins(entries, settings),
-      () => applyDesiredBuiltins(entries, settings),
+    const snapshot = structuredClone(config);
+    const reconciliation = reconcileQueue.then(
+      async () =>
+        applyDesired(
+          await desiredEntries(defaults, snapshot),
+          snapshot.settings,
+        ),
+      async () =>
+        applyDesired(
+          await desiredEntries(defaults, snapshot),
+          snapshot.settings,
+        ),
     );
-    desiredReconcileQueue = reconciliation.then(
+    reconcileQueue = reconciliation.then(
       () => undefined,
       () => undefined,
     );
     await reconciliation;
   }
 
-  async function applyDesiredBuiltins(
-    entries: BuiltinPluginEntry[],
+  async function enqueueLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+    const lifecycle = reconcileQueue.then(operation, operation);
+    reconcileQueue = lifecycle.then(
+      () => undefined,
+      () => undefined,
+    );
+    return await lifecycle;
+  }
+
+  async function applyDesired(
+    catalog: DesiredPluginCatalog,
     settings: Record<string, unknown> | undefined,
   ) {
+    const { entries, blocked } = catalog;
     const current = get();
-    const entriesByID = new Map(entries.map((entry) => [entry.id, entry]));
-    if (entriesByID.size !== entries.length)
-      throw new Error("builtin desired catalog contains duplicate plugin ids");
-    for (const id of desiredBuiltins.keys()) {
+    const byID = new Map(entries.map((entry) => [entry.id, entry]));
+    if (
+      byID.size !== entries.length ||
+      entries.some((entry) => entry.manifest && entry.id !== entry.manifest.id)
+    )
+      throw new Error(
+        "desired catalog contains duplicate or mismatched plugin ids",
+      );
+    for (const id of desired.keys()) {
       const mounted = current.list().some((manifest) => manifest.id === id);
       if (!mounted && input.capabilityRegistry.has(id))
         throw new Error(
-          `builtin plugin ${id} has a capability owner but is not mounted`,
+          `plugin ${id} has a capability owner but is not mounted`,
         );
     }
-
-    const nextDesired = new Map(
+    const previousDesired = desired;
+    const next = new Map(
       entries.map((entry) => [
         entry.id,
         {
+          entry,
           fingerprint: entry.fingerprint,
-          settingsFingerprint: settingsFingerprint(settings?.[entry.id]),
+          settingsFingerprint: pluginSettingsFingerprint(settings?.[entry.id]),
+          settings: settings?.[entry.id],
+          activatable: !blocked.has(entry.id),
         },
       ]),
     );
-
+    desired = next;
     for (const manifest of current.list().reverse()) {
-      if (!builtinIDs.has(manifest.id)) continue;
-      const entry = entriesByID.get(manifest.id);
-      const previous = desiredBuiltins.get(manifest.id);
-      const next = nextDesired.get(manifest.id);
+      if (!current.list().some((entry) => entry.id === manifest.id)) continue;
+      const previous = previousDesired.get(manifest.id);
+      const wanted = next.get(manifest.id);
       if (
-        entry?.enabled &&
-        previous &&
-        next &&
-        previous?.fingerprint === next?.fingerprint &&
-        previous.settingsFingerprint === next.settingsFingerprint
+        wanted?.entry.enabled &&
+        wanted.activatable &&
+        previous?.fingerprint === wanted.fingerprint &&
+        previous.settingsFingerprint === wanted.settingsFingerprint &&
+        current.status(manifest.id)?.status !== "failed"
       )
         continue;
-      if (current.list().some((loaded) => loaded.id === manifest.id)) {
-        await current.unload(manifest.id);
-        if (input.capabilityRegistry.has(manifest.id))
-          throw new Error(
-            `plugin ${manifest.id} unloaded without releasing its capability owner`,
-          );
-      }
+      await current.unload(manifest.id);
+      if (input.capabilityRegistry.has(manifest.id))
+        throw new Error(
+          `plugin ${manifest.id} unloaded without releasing its capability owner`,
+        );
     }
-
-    for (const entry of entries)
+    let firstError: unknown;
+    for (const state of next.values())
       if (
-        entry.enabled &&
-        !current.list().some((manifest) => manifest.id === entry.id)
+        state.entry.enabled &&
+        state.activatable &&
+        !current.list().some((manifest) => manifest.id === state.entry.id)
       )
-        await loadBuiltin(entry.create(), settings?.[entry.id]);
-    builtinIDs.clear();
-    for (const entry of entries) builtinIDs.add(entry.id);
-    desiredBuiltins = nextDesired;
-    input.syncGlobalCommands();
-  }
-
-  async function externalEntries() {
-    if (input.externalPluginsEnabled?.() === false) return [];
-    const installed = await resolveInstalledPluginEntries({
-      workspaceRoot: input.workspaceRoot,
-      packages: input.pluginPackages?.() ?? {},
-      enabled: input.pluginEnabled(),
-    });
-    for (const failure of installed.errors)
-      publishLoadError(failure.id, failure.error);
-    const entries = [...installed.entries];
-    const known = new Set(Object.keys(input.pluginPackages?.() ?? {}));
-    for (const root of roots())
-      for (const entry of await discoverPluginManifests(root, {
-        nodeModules: false,
-      })) {
-        if (input.pluginEnabled()?.[entry.manifest.id] === false) continue;
-        if (known.has(entry.manifest.id)) {
-          publishLoadError(
-            entry.manifest.id,
-            new Error(
-              `plugin ${entry.manifest.id} is declared by more than one source`,
-            ),
-          );
-          continue;
+        try {
+          if (!hasLivePluginDependencies(current, state.entry.manifest))
+            continue;
+          const result = await loadOne(state.entry, state.settings);
+          if (!result.loaded && firstError === undefined)
+            firstError =
+              result.error ??
+              new Error(`plugin failed to load: ${state.entry.id}`);
+        } catch (error) {
+          firstError ??= error;
         }
-        known.add(entry.manifest.id);
-        entries.push(entry);
-      }
-    return entries;
+    input.syncGlobalCommands();
+    if (firstError !== undefined) throw firstError;
   }
 
-  function publishLoadError(id: string, error: unknown) {
-    input.publish({
-      type: "diagnostic",
-      level: "warning",
-      owner: id,
-      message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
-    });
-  }
-
-  function get(): ReturnType<typeof createPluginRegistry> {
-    if (!registry) throw new Error("plugins are not enabled in this runtime");
-    return registry;
-  }
-
-  /** The mounted external plugins, including pending and failed plugins. */
-  function list(): PluginManifest[] {
-    return (registry?.list() ?? []).filter(
-      (manifest) => !builtinIDs.has(manifest.id),
-    );
-  }
-
-  function status(id: string) {
-    return registry?.status(id);
-  }
-
-  function active(id: string) {
-    return registry?.active(id) ?? false;
-  }
-
-  async function loadBuiltin(plugin: Plugin, config?: unknown) {
-    const current = get();
-    builtinIDs.add(plugin.manifest.id);
+  async function loadOne(entry: DesiredPluginEntry, settings?: unknown) {
     try {
-      await current.load(plugin, config);
+      const plugin = await entry.load();
+      if (!plugin) return { loaded: false };
+      if (plugin.manifest.id !== entry.id)
+        throw new Error(
+          `plugin loader returned id ${plugin.manifest.id} for ${entry.id}`,
+        );
+      await get().load(plugin, settings);
     } catch (error) {
-      if (!current.status(plugin.manifest.id))
-        builtinIDs.delete(plugin.manifest.id);
-      throw error;
+      if (!entry.onError) throw error;
+      entry.onError(error);
+      return { loaded: false, error };
     }
     input.syncGlobalCommands();
+    return { loaded: true };
   }
 
-  async function unload(id: string) {
-    if (builtinIDs.has(id)) throw new Error(`plugin not found: ${id}`);
+  async function load(entry: DesiredPluginEntry, settings?: unknown) {
+    return await enqueueLifecycle(async () => {
+      const state = {
+        entry,
+        fingerprint: entry.fingerprint,
+        settingsFingerprint: pluginSettingsFingerprint(settings),
+        settings,
+        activatable: true,
+      };
+      desired.set(entry.id, state);
+      if (
+        get()
+          .list()
+          .some((manifest) => manifest.id === entry.id)
+      )
+        await unloadOne(entry.id);
+      return await loadOne(entry, settings);
+    });
+  }
+
+  async function unloadOne(id: string) {
     const current = registry;
-    if (current && current.list().some((manifest) => manifest.id === id))
+    if (current?.list().some((manifest) => manifest.id === id))
       await current.unload(id);
     input.syncGlobalCommands();
     return { unloaded: true };
   }
 
-  async function unloadBuiltin(id: string) {
-    const current = registry;
-    if (current?.list().some((manifest) => manifest.id === id))
-      await current.unload(id);
-    for (const builtinID of [...builtinIDs])
-      if (!current?.list().some((manifest) => manifest.id === builtinID))
-        builtinIDs.delete(builtinID);
+  async function unload(id: string) {
+    return await enqueueLifecycle(() => unloadOne(id));
+  }
+
+  async function reloadOne(id: string) {
+    const state = desired.get(id);
+    if (!state?.entry.enabled || !state.activatable)
+      throw new Error(`plugin not found: ${id}`);
+    await unloadOne(id);
+    let reloadError: unknown;
+    let rollbackError: unknown;
+    let restorationError: unknown;
+    try {
+      await loadReloadCandidate(
+        state,
+        `${Date.now()}-${reloadSequence++}`,
+        "reload",
+      );
+    } catch (error) {
+      reloadError = error;
+      await unloadOne(id);
+      try {
+        await loadReloadCandidate(state, undefined, "rollback");
+      } catch (rollbackFailure) {
+        rollbackError = rollbackFailure;
+        try {
+          await unloadOne(id);
+        } catch (unloadFailure) {
+          rollbackError = new AggregateError(
+            [rollbackFailure, unloadFailure],
+            `plugin ${id} rollback cleanup failed`,
+          );
+        }
+      }
+    }
+    for (const candidate of desired.values()) {
+      if (
+        candidate.entry.id === id ||
+        !candidate.entry.enabled ||
+        !candidate.activatable ||
+        (get()
+          .list()
+          .some((manifest) => manifest.id === candidate.entry.id) &&
+          get().status(candidate.entry.id)?.status !== "failed")
+      )
+        continue;
+      try {
+        if (get().status(candidate.entry.id)?.status === "failed")
+          await unloadOne(candidate.entry.id);
+        if (!hasLivePluginDependencies(get(), candidate.entry.manifest))
+          continue;
+        await loadReloadCandidate(candidate, undefined, "restore");
+      } catch (error) {
+        if (candidate.entry.id === id) rollbackError ??= error;
+        else restorationError ??= error;
+      }
+    }
     input.syncGlobalCommands();
+    if (reloadError !== undefined) throw reloadError;
+    if (rollbackError !== undefined) throw rollbackError;
+    if (restorationError !== undefined) throw restorationError;
+    return { reloaded: true };
+  }
+
+  async function loadReloadCandidate(
+    state: DesiredState,
+    cacheBust: string | undefined,
+    action: "reload" | "rollback" | "restore",
+  ) {
+    try {
+      const plugin = await state.entry.load(cacheBust);
+      if (!plugin)
+        throw new Error(`plugin failed to ${action}: ${state.entry.id}`);
+      if (plugin.manifest.id !== state.entry.id)
+        throw new Error(
+          `plugin loader returned id ${plugin.manifest.id} for ${state.entry.id}`,
+        );
+      await get().load(plugin, state.settings);
+    } catch (error) {
+      if (state.entry.onError) state.entry.onError(error);
+      else publishPluginError(state.entry.id, action, error);
+      throw error;
+    }
   }
 
   async function reload(id: string) {
+    return await enqueueLifecycle(() => reloadOne(id));
+  }
+
+  function publishLoadError(id: string, error: unknown) {
+    publishPluginError(id, "load", error);
+  }
+
+  function publishPluginError(id: string, action: string, error: unknown) {
+    input.publish({
+      type: "diagnostic",
+      level: "warning",
+      owner: id,
+      message: `plugin ${id} ${action} failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+
+  function get() {
     if (!registry) throw new Error("plugins are not enabled in this runtime");
-    for (const { manifest, path } of await externalEntries()) {
-      if (manifest.id !== id) continue;
-      if (input.pluginEnabled()?.[id] === false)
-        throw new Error(`plugin is disabled in config: ${id}`);
-      if (registry.list().some((loaded) => loaded.id === id))
-        await registry.unload(id);
-      const entry = validatePluginPath(resolve(path, ".."), manifest.entry);
-      // Bun ignores query strings on file:// URLs, but a plain path with a
-      // query is a fresh cache key — the reload must re-read the entry.
-      const module = (await import(
-        `${entry}?reload=${Date.now()}-${reloadSequence++}`
-      )) as {
-        default?: unknown;
-      };
-      const candidate = module.default as Partial<Plugin>;
-      if (!candidate.setup || typeof candidate.setup !== "function")
-        throw new Error(`plugin module has no setup function: ${id}`);
-      await registry.load(
-        { ...candidate, manifest } as Plugin,
-        input.pluginSettings()?.[id],
-      );
-      input.syncGlobalCommands();
-      return { reloaded: true };
-    }
-    throw new Error(`plugin not found: ${id}`);
+    return registry;
   }
-
-  async function close() {
-    const current = registry;
-    if (!current) return;
-    for (const plugin of current.list().reverse())
-      try {
-        await current.unload(plugin.id);
-      } catch (error) {
-        input.publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: plugin.id,
-          message: `plugin ${plugin.id} cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-        });
-      }
-    await current.close();
-    registry = undefined;
-    builtinIDs.clear();
-    desiredBuiltins.clear();
+  function list(): PluginManifest[] {
+    return registry?.list() ?? [];
   }
-
+  function status(id: string) {
+    return registry?.status(id);
+  }
+  function active(id: string) {
+    return registry?.active(id) ?? false;
+  }
   function dispatch(event: RuntimeEvent) {
     registry?.dispatch(event);
   }
 
+  async function closeOne() {
+    const current = registry;
+    if (!current) return;
+    try {
+      await current.close();
+    } catch (error) {
+      publishPluginError("plugins", "cleanup/close", error);
+    }
+    registry = undefined;
+    desired.clear();
+  }
+
+  async function close() {
+    await enqueueLifecycle(closeOne);
+  }
+
   return {
     init,
+    reconcileDesired,
     get,
     list,
     status,
     active,
-    loadBuiltin,
-    loadLocal,
-    reconcile,
-    reconcileDesiredBuiltins,
+    load,
     unload,
-    unloadBuiltin,
     reload,
     close,
     dispatch,
   };
-}
-
-function settingsFingerprint(value: unknown): string {
-  return JSON.stringify(normalizeSettings(value));
-}
-
-function normalizeSettings(value: unknown): unknown {
-  if (value === undefined) return null;
-  if (Array.isArray(value)) return value.map(normalizeSettings);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, child]) => [key, normalizeSettings(child)]),
-    );
-  return value;
 }

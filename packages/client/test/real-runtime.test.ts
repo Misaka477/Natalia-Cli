@@ -1347,7 +1347,79 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   await client.dispose?.();
 }, 60_000);
 
-test("external plugin config reload reconciles its lifecycle", async () => {
+test("failed config reload restores runtime config and plugin settings", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-config-rollback-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "rollback.plugin");
+  await mkdir(pluginRoot, { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "rollback.plugin",
+      version: "1.0.0",
+      name: "Rollback",
+      entry: "index.ts",
+      provides: ["rollback.value"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    `export default { setup(api) {
+      if (api.config?.fail) throw new Error("configured plugin failure");
+      api.services.provide("rollback.value", api.config?.value);
+    } };`,
+  );
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      defaultPermission: "ask",
+      plugins: {
+        paths: [".natalia/plugins"],
+        settings: { "rollback.plugin": { value: "old" } },
+      },
+    }),
+  );
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_config_rollback",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+  expect(kernel.service<string>("rollback.value")).toBe("old");
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      defaultPermission: "auto",
+      plugins: {
+        paths: [".natalia/plugins"],
+        settings: { "rollback.plugin": { value: "new", fail: true } },
+      },
+    }),
+  );
+  const result = await client.reloadConfig?.();
+  expect(result?.applied).toBe(false);
+  expect(result?.reason).toContain("configured plugin failure");
+  expect(
+    kernel.service<{ defaultPermission?: string }>("runtime.config")
+      ?.defaultPermission,
+  ).toBe("ask");
+  expect(kernel.service<string>("rollback.value")).toBe("old");
+  expect(
+    (await client.plugins?.())?.find(
+      (plugin) => plugin.id === "rollback.plugin",
+    )?.id,
+  ).toBe("rollback.plugin");
+  await client.dispose?.();
+}, 60_000);
+
+test("user plugin config reload reconciles its lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-config-reload-"));
   const pluginRoot = join(root, ".natalia", "plugins", "reload.plugin");
   await mkdir(pluginRoot, { recursive: true });
@@ -3490,7 +3562,7 @@ test("unloading a plugin publishes tool.unregistered and drops it from registere
   await client.dispose?.();
 });
 
-test("permission profile disables installed skills and plugins before discovery", async () => {
+test("permission profile extension rules do not gate desired plugins", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-profile-extensions-"));
   const pluginRoot = join(root, ".natalia", "plugins", "demo");
   const skillRoot = join(root, ".natalia", "skills", "review");
@@ -3538,7 +3610,9 @@ test("permission profile disables installed skills and plugins before discovery"
   client.start(() => undefined);
 
   expect(await client.skills?.()).toEqual([]);
-  expect(await client.plugins?.()).toEqual([]);
+  expect(
+    (await client.plugins?.())?.some((plugin) => plugin.id === "demo.plugin"),
+  ).toBe(true);
   expect(
     (await client.capabilities?.())?.some(
       (capability) => capability.id === "natalia-skills",
@@ -3553,12 +3627,12 @@ test("permission profile disables installed skills and plugins before discovery"
     (await client.capabilities?.())?.some(
       (capability) => capability.id === "natalia-tool-pdf",
     ),
-  ).toBe(false);
+  ).toBe(true);
   expect(
     (await client.registeredTools?.())?.some(
       (tool) => tool.name === "pdf_read",
     ),
-  ).toBe(false);
+  ).toBe(true);
   await client.dispose?.();
 });
 

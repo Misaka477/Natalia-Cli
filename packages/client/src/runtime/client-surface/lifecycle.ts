@@ -32,9 +32,7 @@ export function createLifecycleSurface(
           sessionRunCoordinator(id).interrupt(),
         ),
       );
-      await ctx.ports
-        .getPluginsController()
-        .unloadBuiltin(PROVIDER_MODEL_PLUGIN_ID);
+      await ctx.ports.getPluginsController().unload(PROVIDER_MODEL_PLUGIN_ID);
       ctx.ports.setProviderModelController(undefined);
       await Promise.allSettled([...ctx.ports.getInternalWakeTasks()]);
       // A committed selection and other durable controls must reach disk before

@@ -18,6 +18,7 @@ import type {
   WorkspaceWriteLock,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
+import { defaultDesiredEntries } from "../../builtin-mount";
 
 export async function configureRuntime(
   ctx: RuntimeContext,
@@ -25,15 +26,13 @@ export async function configureRuntime(
   { runtimeConfig, tsConfig }: InitializeCatalogResult,
 ) {
   const scope = createInitializeRuntime(ctx);
-  const builtinPlugins = scope.buildBuiltinPluginCatalog(runtimeConfig);
-  scope.builtinPluginIDs = new Set(builtinPlugins.map((entry) => entry.id));
-  scope.activeExternalPluginConfigFingerprint =
-    scope.externalPluginConfigFingerprint(tsConfig.config);
-  await scope.mountRuntimePlugins({
+  const defaults = defaultDesiredEntries(
+    scope.buildBuiltinPluginCatalog(runtimeConfig),
+  );
+  await scope.mountPlugins({
     controller: scope.pluginsController,
-    builtins: builtinPlugins,
-    settings: scope.tsRuntimeConfig?.plugins.settings,
-    loadExternal: scope.extensionEnabled("plugins"),
+    defaults,
+    config: tsConfig.config.plugins,
   });
   scope.activeCheckpointFactory =
     scope.capabilityRegistry.service<CheckpointFactory>(

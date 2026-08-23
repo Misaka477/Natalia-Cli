@@ -9,8 +9,12 @@ export type PluginDependencyResolution = {
 export function resolvePluginDependencies(
   manifests: PluginManifest[],
   active: PluginManifest[] = [],
+  mounted: PluginManifest[] = active,
 ): PluginDependencyResolution {
   const activeByID = new Map(active.map((manifest) => [manifest.id, manifest]));
+  const mountedByID = new Map(
+    mounted.map((manifest) => [manifest.id, manifest]),
+  );
   const byID = new Map<string, PluginManifest>();
   const denied: PluginDependencyResolution["denied"] = [];
   const pending: PluginDependencyResolution["pending"] = [];
@@ -38,10 +42,11 @@ export function resolvePluginDependencies(
     byID.set(manifest.id, manifest);
   }
   const available = new Map([...activeByID, ...byID]);
+  const conflictCandidates = new Map([...mountedByID, ...byID]);
 
   for (const manifest of manifests) {
     if (manifest.apiVersion !== 2 || blocked.has(manifest.id)) continue;
-    const conflict = [...available.values()].find(
+    const conflict = [...conflictCandidates.values()].find(
       (other) =>
         other.id !== manifest.id &&
         (manifest.conflicts.includes(other.id) ||

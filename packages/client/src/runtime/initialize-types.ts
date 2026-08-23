@@ -66,7 +66,7 @@ export type InitializeDependencies = {
     exec: SessionExecutionState,
   ) => Promise<boolean>;
   scheduleTitleGeneration: (sessionID: SessionID) => void;
-  mountRuntimePlugins: typeof import("../builtin-mount").mountRuntimePlugins;
+  mountPlugins: typeof import("../builtin-mount").mountPlugins;
   moduleToolPolicy: typeof import("@natalia/workflow").moduleToolPolicy;
   agentPolicyLayer: (
     agent?: AgentDefinition,

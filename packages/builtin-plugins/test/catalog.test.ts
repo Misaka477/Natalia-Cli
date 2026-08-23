@@ -8,8 +8,6 @@ import {
   computeBuiltinFeatureGates,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
-  isBuiltinToolPlugin,
-  isStaticBuiltinPlugin,
   MCP_PLUGIN_ID,
   mcpPluginEntry,
   PDF_PLUGIN_ID,
@@ -40,6 +38,69 @@ import { RUNTIME_UI_PLUGIN_ID } from "@natalia/runtime-ui-plugin";
 import { WORKSPACE_PLUGIN_ID } from "@natalia/workspace-plugin";
 import { LOCAL_TOOLS_PLUGIN_ID } from "@natalia/local-tools-plugin";
 import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
+import { pluginManifestSchema } from "@natalia/plugin";
+
+test("every static catalog manifest exactly matches its factory", () => {
+  const noop = () => undefined;
+  const catalog = builtinPluginCatalog({
+    agentEnabled: true,
+    askEnabled: true,
+    fsReadEnabled: true,
+    fsWriteEnabled: true,
+    pdfEnabled: true,
+    processEnabled: true,
+    sandboxEnabled: true,
+    searchEnabled: true,
+    shellEnabled: true,
+    terminalEnabled: true,
+    todoEnabled: true,
+    webEnabled: true,
+    skills: { workspaceRoot: "/tmp" },
+    taskModule: {} as never,
+    runtimeConfig: {} as never,
+    localTools: { roots: [] },
+    workspace: { workspaceRoot: "/tmp", listPaths: async () => [] },
+    terminal: {
+      workspaceRoot: "/tmp",
+      publish: noop,
+      onPerformance: noop,
+      runtimeID: () => "test",
+      userRuntimeHome: () => undefined,
+      windowMode: () => "auto",
+    },
+    sandbox: { workspaceRoot: "/tmp" },
+    mcp: {
+      servers: () => ({}),
+      workspaceRoot: "/tmp",
+      enabled: () => true,
+      publish: noop,
+    },
+    checkpoint: { workspaceRoot: "/tmp" },
+    subagents: { workDir: "/tmp" },
+    attachment: { enabled: true, workspaceRoot: "/tmp" },
+    sessionStore: {
+      workspaceRoot: "/tmp",
+      sessionID: () => "test" as never,
+    },
+    team: { enabled: true },
+    toolPipeline: { enabled: true },
+    collaboration: { waiter: {} as never },
+    retry: { enabled: true, policy: () => ({}) },
+    contextLedger: { enabled: true },
+    compaction: { enabled: true },
+    runtimeUi: { enabled: true, controller: {} as never },
+    providerModel: { enabled: true, controller: {} as never },
+    taskWorkflow: { enabled: true, controller: {} as never },
+    workLedger: { enabled: true, controller: {} as never },
+    governanceLedger: { enabled: true },
+    turnOrchestration: { enabled: true, controller: {} as never },
+  });
+
+  for (const entry of catalog)
+    expect(pluginManifestSchema.parse(entry.manifest)).toEqual(
+      pluginManifestSchema.parse(entry.create().manifest),
+    );
+});
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
@@ -84,6 +145,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
   expect(catalog.every((entry) => typeof entry.fingerprint === "string")).toBe(
     true,
   );
+  expect(catalog.every((entry) => entry.manifest.id === entry.id)).toBe(true);
   expect(catalog.find((entry) => entry.id === SKILLS_PLUGIN_ID)?.enabled).toBe(
     false,
   );
@@ -109,19 +171,10 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     expect(entry.create().manifest.id).toBe(entry.id);
 });
 
-test("built-in metadata classifies tool and static plugin ids", () => {
-  expect(isBuiltinToolPlugin(ASK_PLUGIN_ID)).toBe(true);
-  expect(isBuiltinToolPlugin(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
-  expect(isStaticBuiltinPlugin(RETRY_PLUGIN_ID)).toBe(true);
-  expect(isStaticBuiltinPlugin(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
-  expect(isStaticBuiltinPlugin("external-plugin")).toBe(false);
-});
-
 function featureGates(config: any, hasCustomTools = false) {
   return computeBuiltinFeatureGates({
     config,
     hasCustomTools,
-    extensionEnabled: () => true,
   });
 }
 
@@ -142,14 +195,13 @@ test("built-in feature gates honor custom registries and config switches", () =>
   expect(configured.searchEnabled).toBe(true);
 });
 
-test("PDF feature gate follows the plugins extension", () => {
+test("PDF feature gate follows only desired plugin config", () => {
   expect(
     computeBuiltinFeatureGates({
       config: { plugins: { enabled: { [PDF_PLUGIN_ID]: true } } } as any,
       hasCustomTools: false,
-      extensionEnabled: () => false,
     }).pdfEnabled,
-  ).toBe(false);
+  ).toBe(true);
 });
 
 test("skills catalog entry stays stable while disabled", () => {

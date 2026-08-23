@@ -53,7 +53,6 @@ export function createCompositionContext(
     runtimeDiagnostics,
     sessionPersistence: Promise.resolve(),
     nativeRuntimeID: randomUUID(),
-    builtinPluginIDs: new Set<string>(),
     contextWindowResolver: new ContextWindowResolver(),
     runtimeContextConfig: defaultContextStatusConfig(),
     providerConcurrencyLimiter: new ProviderConcurrencyLimiter({}),
