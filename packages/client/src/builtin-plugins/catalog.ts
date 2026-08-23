@@ -372,15 +372,7 @@ export function builtinPluginCatalog(input: {
           },
         ]
       : []),
-    ...(input.compaction
-      ? [
-          {
-            id: COMPACTION_PLUGIN_ID,
-            enabled: input.compaction.enabled,
-            create: () => createCompactionPlugin(),
-          },
-        ]
-      : []),
+    compactionPluginEntry(input.compaction),
     ...(input.runtimeUi
       ? [
           {
@@ -469,6 +461,19 @@ export function providerModelPluginEntry(
     create: () => {
       if (!input) throw new Error("provider-model plugin is disabled");
       return createProviderModelPlugin(input.controller);
+    },
+  };
+}
+
+export function compactionPluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["compaction"],
+): BuiltinPluginEntry {
+  return {
+    id: COMPACTION_PLUGIN_ID,
+    enabled: input?.enabled === true,
+    create: () => {
+      if (!input) throw new Error("compaction plugin is disabled");
+      return createCompactionPlugin();
     },
   };
 }

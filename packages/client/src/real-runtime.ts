@@ -188,6 +188,7 @@ import {
   builtinPluginCatalog,
   builtinToolPluginCatalog,
   checkpointPluginEntry,
+  compactionPluginEntry,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   localToolsPluginEntry,
@@ -246,6 +247,7 @@ import {
 } from "@natalia/task-workflow-plugin";
 import {
   CONTEXT_LEDGER_FACTORY_SERVICE,
+  CONTEXT_LEDGER_PLUGIN_ID,
   type ContextLedgerFactory,
   type RuntimeContextLedger,
 } from "@natalia/context-ledger-plugin";
@@ -723,6 +725,7 @@ export function createRealRuntimeClient(
   let activeSandboxPluginConfigFingerprint: string | undefined;
   let activeTerminalPluginConfigFingerprint: string | undefined;
   let activeWorkspacePluginConfigFingerprint: string | undefined;
+  let activeCompactionPluginConfigFingerprint: string | undefined;
   let activeProviderModelPluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
@@ -731,7 +734,7 @@ export function createRealRuntimeClient(
   let retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
   let retryService!: RetryService;
   let attachmentService!: AttachmentService;
-  let compactionService!: CompactionService;
+  let compactionService: CompactionService | undefined;
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   /** The selected model's declared image-input capability, from config. */
@@ -916,6 +919,8 @@ export function createRealRuntimeClient(
         terminalPluginConfigFingerprint(tsConfig.config);
       const nextWorkspacePluginConfigFingerprint =
         workspacePluginConfigFingerprint(tsConfig.config);
+      const nextCompactionPluginConfigFingerprint =
+        compactionPluginConfigFingerprint(tsConfig.config);
       const nextProviderModelPluginConfigFingerprint =
         providerModelPluginConfigFingerprint(tsConfig.config);
       const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
@@ -947,6 +952,10 @@ export function createRealRuntimeClient(
         activeWorkspacePluginConfigFingerprint !== undefined &&
         nextWorkspacePluginConfigFingerprint !==
           activeWorkspacePluginConfigFingerprint;
+      const reconcileCompaction =
+        activeCompactionPluginConfigFingerprint !== undefined &&
+        nextCompactionPluginConfigFingerprint !==
+          activeCompactionPluginConfigFingerprint;
       const reconcileProviderModel =
         activeProviderModelPluginConfigFingerprint !== undefined &&
         nextProviderModelPluginConfigFingerprint !==
@@ -1066,7 +1075,24 @@ export function createRealRuntimeClient(
             WORKSPACE_FILES_SERVICE,
           );
       }
-      if (reconcileProviderModel) {
+      if (reconcileCompaction) {
+        providerModelController = undefined;
+        compactionService = undefined;
+        await pluginsController.reconcileBuiltins(
+          [
+            compactionPluginEntry(compactionPluginInput(tsConfig.config)),
+            providerModelPluginEntry(providerModelPluginInput(tsConfig.config)),
+          ],
+          tsConfig.config.plugins.settings,
+        );
+        compactionService =
+          capabilityRegistry.service<CompactionService>(COMPACTION_SERVICE);
+        providerModelController =
+          capabilityRegistry.service<ProviderModelController>(
+            PROVIDER_MODEL_CONTROLLER_SERVICE,
+          );
+      }
+      if (reconcileProviderModel && !reconcileCompaction) {
         providerModelController = undefined;
         await pluginsController.reconcileBuiltins(
           [providerModelPluginEntry(providerModelPluginInput(tsConfig.config))],
@@ -1116,6 +1142,8 @@ export function createRealRuntimeClient(
         nextTerminalPluginConfigFingerprint;
       activeWorkspacePluginConfigFingerprint =
         nextWorkspacePluginConfigFingerprint;
+      activeCompactionPluginConfigFingerprint =
+        nextCompactionPluginConfigFingerprint;
       activeProviderModelPluginConfigFingerprint =
         nextProviderModelPluginConfigFingerprint;
       activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
@@ -1183,10 +1211,6 @@ export function createRealRuntimeClient(
       const attachmentEnabled = pluginEnabled("natalia-attachment");
       const retryEnabled = pluginEnabled("natalia-retry");
       const contextLedgerEnabled = pluginEnabled("natalia-context-ledger");
-      const compactionEnabled =
-        pluginEnabled("natalia-compaction") &&
-        retryEnabled &&
-        contextLedgerEnabled;
       const sessionStoreEnabled =
         pluginEnabled("natalia-session-store") && attachmentEnabled;
       const workLedgerEnabled = pluginEnabled("natalia-work-ledger");
@@ -1261,7 +1285,7 @@ export function createRealRuntimeClient(
         ...(retryEnabled
           ? { retry: { enabled: true, policy: () => retryPolicy } }
           : {}),
-        ...(compactionEnabled ? { compaction: { enabled: true } } : {}),
+        compaction: compactionPluginInput(runtimeConfig),
         providerModel: providerModelPluginInput(runtimeConfig),
         taskWorkflow: {
           enabled:
@@ -1427,6 +1451,8 @@ export function createRealRuntimeClient(
       activeWorkspacePluginConfigFingerprint = workspacePluginConfigFingerprint(
         tsConfig.config,
       );
+      activeCompactionPluginConfigFingerprint =
+        compactionPluginConfigFingerprint(tsConfig.config);
       activeProviderModelPluginConfigFingerprint =
         providerModelPluginConfigFingerprint(tsConfig.config);
       activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
@@ -1873,6 +1899,9 @@ export function createRealRuntimeClient(
       allowToolCalls = true,
     ) {
       const id = subagentTurnID(runner);
+      const compaction = compactionService;
+      if (!compaction)
+        throw new Error("compaction service unavailable (natalia-compaction)");
       const runStep = () =>
         retryService.run(
           { id, operation: "llm_step", step },
@@ -1946,7 +1975,7 @@ export function createRealRuntimeClient(
       let result;
       while (true) {
         runner.signal.throwIfAborted();
-        result = await compactionService.runWithContextLimitRecovery({
+        result = await compaction.runWithContextLimitRecovery({
           id,
           step,
           compactionID: `${id}:context-limit:${step}`,
@@ -3250,6 +3279,13 @@ export function createRealRuntimeClient(
     });
   }
 
+  function compactionPluginConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      enabled: config.plugins.enabled[COMPACTION_PLUGIN_ID],
+      settings: config.plugins.settings[COMPACTION_PLUGIN_ID],
+    });
+  }
+
   function builtinToolConfigFingerprint(config: ConfigV3) {
     return JSON.stringify({
       tools: config.tools,
@@ -3401,6 +3437,15 @@ export function createRealRuntimeClient(
     };
   }
 
+  function compactionPluginInput(config: ConfigV3) {
+    return {
+      enabled:
+        config.plugins.enabled[RETRY_PLUGIN_ID] !== false &&
+        config.plugins.enabled[CONTEXT_LEDGER_PLUGIN_ID] !== false &&
+        config.plugins.enabled[COMPACTION_PLUGIN_ID] !== false,
+    };
+  }
+
   function mcpPluginInput(config: ConfigV3) {
     if (
       config.plugins.enabled[MCP_PLUGIN_ID] === false ||
@@ -3506,6 +3551,7 @@ export function createRealRuntimeClient(
             id !== SANDBOX_CONTROLLER_PLUGIN_ID &&
             id !== TERMINAL_CONTROLLER_PLUGIN_ID &&
             id !== WORKSPACE_PLUGIN_ID &&
+            id !== COMPACTION_PLUGIN_ID &&
             id !== PROVIDER_MODEL_PLUGIN_ID
           );
         return !builtin;
@@ -4598,6 +4644,8 @@ export function createRealRuntimeClient(
   function providerRunnerInput(sessionID: SessionID): ProviderRunnerInput {
     const exec = executionBySession.get(sessionID);
     if (!exec) throw new Error(`no execution state for session ${sessionID}`);
+    if (!compactionService)
+      throw new Error("compaction service unavailable (natalia-compaction)");
     return {
       provider: () => exec.provider,
       session: () => exec.session,

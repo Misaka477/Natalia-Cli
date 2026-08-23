@@ -12,6 +12,7 @@ import {
   PDF_PLUGIN_ID,
   PROCESS_PLUGIN_ID,
   providerModelPluginEntry,
+  compactionPluginEntry,
   SANDBOX_PLUGIN_ID,
   sandboxPluginEntry,
   SEARCH_PLUGIN_ID,
@@ -73,6 +74,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     MCP_PLUGIN_ID,
     CHECKPOINT_PLUGIN_ID,
     TEAM_PLUGIN_ID,
+    COMPACTION_PLUGIN_ID,
     PROVIDER_MODEL_PLUGIN_ID,
   ]);
   expect(new Set(catalog.map((entry) => entry.id)).size).toBe(catalog.length);
@@ -213,6 +215,17 @@ test("provider-model catalog entry stays stable while disabled", () => {
   });
   expect(configured.enabled).toBe(false);
   expect(configured.create().manifest.id).toBe(PROVIDER_MODEL_PLUGIN_ID);
+});
+
+test("compaction catalog entry stays stable while disabled", () => {
+  const disabled = compactionPluginEntry(undefined);
+  expect(disabled.id).toBe(COMPACTION_PLUGIN_ID);
+  expect(disabled.enabled).toBe(false);
+  expect(() => disabled.create()).toThrow("compaction plugin is disabled");
+
+  const configured = compactionPluginEntry({ enabled: false });
+  expect(configured.enabled).toBe(false);
+  expect(configured.create().manifest.id).toBe(COMPACTION_PLUGIN_ID);
 });
 
 test("workspace catalog construction stays lazy", () => {
