@@ -8,6 +8,7 @@ import {
   defaultContextStatusConfig,
 } from "./runtime/provider-selection";
 import { createPermissions } from "./runtime/permissions";
+import { createSnapshot } from "./runtime/snapshot";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
@@ -605,7 +606,6 @@ export function createRealRuntimeClient(
    * instead of guessing.
    */
   const activeToolByTurn = new Map<string, string>();
-  let sessionSnapshotSequence = 0;
   let decisionSequence = 0;
   let evidenceSequence = 0;
   let mailboxSequence = 0;
@@ -646,7 +646,6 @@ export function createRealRuntimeClient(
   ctx.ports.skillsList = skillsList;
   ctx.ports.teamBehavior = teamBehavior;
   ctx.ports.providerRunnerInput = providerRunnerInput;
-  ctx.ports.setInFlightOperation = setInFlightOperation;
   ctx.ports.getStatusController = () => statusController;
   ctx.ports.getProviderSource = () => providerSource;
   ctx.ports.getWorkspaceRoot = () => workspaceRoot;
@@ -676,6 +675,12 @@ export function createRealRuntimeClient(
     runtimeContextConfig = value;
   };
   ctx.ports.getRuntimeContextConfig = () => runtimeContextConfig;
+  ctx.ports.setSessionPersistence = (next) => {
+    sessionPersistence = next;
+  };
+  ctx.ports.redactToolOutput = redactToolOutput;
+  ctx.state.activeToolByTurn = activeToolByTurn;
+  ctx.state.liveMainOutputByTurn = liveMainOutputByTurn;
   ctx.ports.getToolPolicy = () => toolPolicy;
   ctx.ports.getToolLayer = () => toolLayer;
   ctx.ports.getAgentToolLayer = () => agentToolLayer;
@@ -717,6 +722,17 @@ export function createRealRuntimeClient(
     extensionEnabled,
     extensionToolPermission,
   } = permissions;
+  const snapshot = createSnapshot(ctx);
+  const {
+    toolEventTurnID,
+    isSessionSnapshotTrigger,
+    currentSessionSnapshot,
+    publishSessionSnapshot,
+    runtimeEventFlushBarrier,
+    setInFlightOperation,
+    setInFlightOperationFor,
+  } = snapshot;
+  ctx.ports.setInFlightOperation = setInFlightOperation;
   const providerSelection = createProviderSelection(ctx, options);
   const {
     currentModelImageInput,
@@ -3436,141 +3452,6 @@ export function createRealRuntimeClient(
       }
       return confirmed;
     })();
-  }
-
-  /**
-   * The turn a tool event belongs to, from the `${turnID}:${callID}` id shape
-   * the runtime publishes (the call id is repeated in `callID`, so only a real
-   * suffix is stripped — the same normalisation the shared projection uses).
-   */
-  function toolEventTurnID(event: { id: string; callID?: string }): string {
-    const suffix = event.callID ? `:${event.callID}` : "";
-    return event.callID && event.id.endsWith(suffix)
-      ? event.id.slice(0, -suffix.length)
-      : event.id;
-  }
-
-  /** Work-state boundaries worth a fresh snapshot. */
-  function isSessionSnapshotTrigger(event: RuntimeEvent): boolean {
-    if (
-      event.type === "turn.submitted" ||
-      event.type === "turn.started" ||
-      event.type === "turn.finished" ||
-      event.type === "turn.cancelled"
-    )
-      return true;
-    if (event.type === "tool.update")
-      return (
-        event.status === "running" ||
-        ["succeeded", "failed", "rejected", "cancelled"].includes(event.status)
-      );
-    if (event.type === "sandbox.update")
-      return event.status === "created" || event.status === "deleted";
-    if (event.type === "terminal.timeline")
-      return (
-        event.action === "created" ||
-        event.action === "started" ||
-        event.action === "exit"
-      );
-    return false;
-  }
-
-  /**
-   * The session intelligence production writer: builds the latest snapshot from
-   * the journal-backed facts (changed files, validated changes, recent output,
-   * live PTY/sandbox) plus live state (active tool), and publishes it as a
-   * durable event so the `session.snapshot` read model answers real data.
-   *
-   * Agent status is derived from the journal rather than the live turn marker:
-   * by the time this runs after a `turn.finished`, the event is already
-   * appended, so `projectSession` reports the turn as complete — the snapshot
-   * for the finished turn says `idle`, not `running`. Deriving from the journal
-   * also makes the same snapshot reproducible from replay.
-   */
-  function currentSessionSnapshot(
-    exec: SessionExecutionState,
-    id: string,
-  ): Extract<RuntimeEvent, { type: "session.snapshot" }> {
-    const events = exec.session.events;
-    const projection = projectSession(exec.session);
-    const active = projection.activeTurnIDs.length > 0;
-    let agentStatus = "idle";
-    if (exec.paused) agentStatus = "paused";
-    else if (active) agentStatus = "running";
-    const step = exec.context.journalStatus().messageCount;
-    const activeTurnID = projection.activeTurnIDs[0];
-    const activeTool = activeTurnID
-      ? activeToolByTurn.get(activeTurnID)
-      : undefined;
-    const liveOutput = activeTurnID
-      ? redactToolOutput(liveMainOutputByTurn.get(activeTurnID) ?? "", true)
-          .trim()
-          .slice(-2000)
-      : "";
-    return buildSessionIntelligenceSnapshot({
-      id,
-      events,
-      live: {
-        agentStatus,
-        ...(active ? { currentStep: `step ${step}` } : {}),
-        ...(activeTool ? { activeTool } : {}),
-        ...(liveOutput ? { recentOutput: liveOutput } : {}),
-      },
-    });
-  }
-
-  function publishSessionSnapshot(exec?: SessionExecutionState) {
-    const target = exec ?? activeExec;
-    if (!target?.session) return;
-    publishForSession(
-      target,
-      currentSessionSnapshot(
-        target,
-        `snapshot:${target.session.id}:${sessionSnapshotSequence++}`,
-      ),
-    );
-  }
-
-  function runtimeEventFlushBarrier(event: RuntimeEvent) {
-    return (
-      event.type === "approval.response" ||
-      event.type === "question.response" ||
-      event.type === "turn.finished" ||
-      event.type === "turn.cancelled" ||
-      event.type === "context.checkpoint"
-    );
-  }
-
-  async function setInFlightOperation(
-    operation: DurableInFlightOperation | undefined,
-  ) {
-    if (!activeExec) return;
-    await setInFlightOperationFor(activeExec, operation);
-  }
-
-  async function setInFlightOperationFor(
-    exec: SessionExecutionState,
-    operation: DurableInFlightOperation | undefined,
-  ) {
-    const targetSession = exec.session;
-    targetSession.metadata = { ...targetSession.metadata };
-    if (operation) targetSession.metadata.inFlightOperation = operation;
-    else delete targetSession.metadata.inFlightOperation;
-    const sessionSnapshot = structuredClone(targetSession);
-    sessionPersistence = sessionPersistence
-      .then(() =>
-        sessionStoreController?.updateMetadata(sessionSnapshot, {
-          inFlightOperation: operation,
-        }),
-      )
-      .catch((error) =>
-        publishForSession(exec, {
-          type: "diagnostic",
-          level: "warning",
-          message: `in-flight operation audit persistence failed: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      );
-    await sessionPersistence;
   }
 
   /**
