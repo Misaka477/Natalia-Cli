@@ -26,6 +26,7 @@ import { createSessionAttach } from "./runtime/session-attach";
 import { createPluginAssembly } from "./runtime/plugin-assembly";
 import { createConfigReload } from "./runtime/config-reload";
 import { createToolPublish } from "./runtime/tool-publish";
+import { createServiceRefresh } from "./runtime/service-refresh";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -867,7 +868,6 @@ export function createRealRuntimeClient(
     activeExternalPluginConfigFingerprint;
   ctx.ports.buildBuiltinPluginCatalog = (config) =>
     buildBuiltinPluginCatalog(config);
-  ctx.ports.refreshBuiltinServices = refreshBuiltinServices;
   const configReload = createConfigReload(ctx, options);
   const {
     configReloadBlockedReason,
@@ -886,6 +886,73 @@ export function createRealRuntimeClient(
   ctx.ports.publishWorkGraphToolCall = publishWorkGraphToolCall;
   ctx.ports.hotReloadToolFamily = hotReloadToolFamily;
   ctx.ports.publishToolCatalogChanges = publishToolCatalogChanges;
+  ctx.ports.setWorkspaceWriteLock = (lock) => {
+    workspaceWriteLock = lock;
+  };
+  ctx.ports.setMutationRegistry = (registry) => {
+    mutationRegistry = registry;
+  };
+  ctx.ports.setWorkspaceFilesController = (controller) => {
+    workspaceFilesController = controller;
+  };
+  ctx.ports.setTerminalController = (controller) => {
+    terminalController = controller;
+  };
+  ctx.ports.setSandboxController = (controller) => {
+    sandboxController = controller;
+  };
+  ctx.ports.setMcpService = (service) => {
+    mcpService = service;
+  };
+  ctx.ports.setSubagentsController = (controller) => {
+    subagentsController = controller;
+  };
+  ctx.ports.setProviderModelController = (controller) => {
+    providerModelController = controller;
+  };
+  ctx.ports.setTaskWorkflowController = (controller) => {
+    taskWorkflowController = controller;
+  };
+  ctx.ports.setCompactionService = (service) => {
+    compactionService = service;
+  };
+  ctx.ports.setSessionStoreController = (controller) => {
+    sessionStoreController = controller;
+  };
+  ctx.ports.setToolPolicyService = (service) => {
+    toolPolicy = service;
+  };
+  ctx.ports.setInteractive = (waiter) => {
+    interactive = waiter;
+  };
+  ctx.ports.setAttachmentService = (service) => {
+    attachmentService = service;
+  };
+  ctx.ports.setRetryService = (service) => {
+    retryService = service;
+  };
+  ctx.ports.setContextLedgerFactory = (factory) => {
+    contextLedgerFactory = factory;
+  };
+  ctx.ports.setStatusController = (controller) => {
+    statusController = controller;
+  };
+  ctx.ports.setWorkLedgerController = (controller) => {
+    workLedgerController = controller;
+  };
+  ctx.ports.setGovernanceLedgerController = (controller) => {
+    governanceLedgerController = controller;
+  };
+  ctx.ports.setTurnController = (controller) => {
+    turnController = controller;
+  };
+  ctx.ports.setActiveCheckpointFactory = (factory) => {
+    activeCheckpointFactory = factory;
+  };
+  ctx.ports.getActiveCheckpointFactory = () => activeCheckpointFactory;
+  const serviceRefresh = createServiceRefresh(ctx);
+  const { refreshBuiltinServices } = serviceRefresh;
+  ctx.ports.refreshBuiltinServices = refreshBuiltinServices;
   const sessionExecution = createSessionExecution(ctx, options);
   const {
     drainSessionFor,
@@ -1052,118 +1119,6 @@ export function createRealRuntimeClient(
    * and a caller that only learns "false" cannot tell that from "the file could
    * not be read at all".
    */
-
-  async function refreshBuiltinServices(
-    selectedSkills: Map<SessionID, string> = new Map(),
-  ) {
-    const previousTerminal = terminalController;
-    const previousSandbox = sandboxController;
-    const previousMcp = mcpService;
-    const previousContextLedgerFactory = contextLedgerFactory;
-    const nextCheckpointFactory = capabilityRegistry.service<CheckpointFactory>(
-      CHECKPOINT_FACTORY_SERVICE,
-    );
-
-    workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
-      WORKSPACE_WRITE_LOCK_SERVICE,
-    );
-    mutationRegistry = capabilityRegistry.service<MutationRegistry>(
-      WORKSPACE_MUTATIONS_SERVICE,
-    );
-    workspaceFilesController =
-      capabilityRegistry.service<WorkspaceFilesController>(
-        WORKSPACE_FILES_SERVICE,
-      );
-    terminalController = capabilityRegistry.service<TerminalController>(
-      TERMINAL_CONTROLLER_SERVICE,
-    );
-    sandboxController =
-      capabilityRegistry.service<SandboxService>(SANDBOX_SERVICE);
-    mcpService = capabilityRegistry.service<McpService>(MCP_SERVICE);
-    subagentsController =
-      capabilityRegistry.service<SubagentsService>(SUBAGENTS_SERVICE);
-    providerModelController =
-      capabilityRegistry.service<ProviderModelController>(
-        PROVIDER_MODEL_CONTROLLER_SERVICE,
-      );
-    taskWorkflowController = capabilityRegistry.service<TaskWorkflowController>(
-      TASK_WORKFLOW_CONTROLLER_SERVICE,
-    );
-    compactionService =
-      capabilityRegistry.service<CompactionService>(COMPACTION_SERVICE);
-
-    const nextSessionStore = capabilityRegistry.service<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
-    );
-    if (nextSessionStore) sessionStoreController = nextSessionStore;
-    const nextToolPolicy =
-      capabilityRegistry.service<ToolPolicyService>(TOOL_POLICY_SERVICE);
-    if (nextToolPolicy) toolPolicy = nextToolPolicy;
-    const nextInteractive = capabilityRegistry.service<InteractiveWaiter>(
-      COLLABORATION_WAITER_SERVICE,
-    );
-    if (nextInteractive) interactive = nextInteractive;
-    const nextAttachment =
-      capabilityRegistry.service<AttachmentService>(ATTACHMENT_SERVICE);
-    if (nextAttachment) attachmentService = nextAttachment;
-    const nextRetry = capabilityRegistry.service<RetryService>(RETRY_SERVICE);
-    if (nextRetry) retryService = nextRetry;
-    const nextContextLedgerFactory =
-      capabilityRegistry.service<ContextLedgerFactory>(
-        CONTEXT_LEDGER_FACTORY_SERVICE,
-      );
-    if (nextContextLedgerFactory) {
-      contextLedgerFactory = nextContextLedgerFactory;
-      if (previousContextLedgerFactory !== nextContextLedgerFactory)
-        runtimeContext = nextContextLedgerFactory.create();
-    }
-    const nextStatusController =
-      capabilityRegistry.service<StatusSnapshotController>(
-        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-      );
-    if (nextStatusController) statusController = nextStatusController;
-    const nextWorkLedger = capabilityRegistry.service<WorkLedgerController>(
-      WORK_LEDGER_CONTROLLER_SERVICE,
-    );
-    if (nextWorkLedger) workLedgerController = nextWorkLedger;
-    const nextGovernance =
-      capabilityRegistry.service<GovernanceLedgerController>(
-        GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-      );
-    if (nextGovernance) governanceLedgerController = nextGovernance;
-    const nextTurnController = capabilityRegistry.service<TurnController>(
-      TURN_CONTROLLER_SERVICE,
-    );
-    if (nextTurnController) turnController = nextTurnController;
-
-    if (nextCheckpointFactory !== activeCheckpointFactory) {
-      checkpointControllerBySession.clear();
-      checkpointInitBySession.clear();
-      activeCheckpointFactory = nextCheckpointFactory;
-    }
-    if (mcpService && mcpService !== previousMcp) await mcpService.reload();
-    if (terminalController && terminalController !== previousTerminal) {
-      await terminalController.init();
-      terminalController.setActiveSession(sessionID);
-    }
-    if (sandboxController && sandboxController !== previousSandbox)
-      await sandboxController.init();
-
-    const registry = skillService();
-    for (const [id, exec] of executionBySession) {
-      const qualifiedName = selectedSkills.get(id);
-      if (!qualifiedName || !registry) {
-        exec.activeSkill = undefined;
-        continue;
-      }
-      try {
-        exec.activeSkill = registry.resolve(qualifiedName);
-      } catch {
-        exec.activeSkill = undefined;
-      }
-    }
-    activeSkill = activeExec?.activeSkill;
-  }
 
   async function initialize() {
     try {

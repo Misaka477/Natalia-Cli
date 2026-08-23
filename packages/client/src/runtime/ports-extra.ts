@@ -108,6 +108,82 @@ export type RuntimePortsExtra = {
     model: { modelID?: string; variant?: string } | undefined,
   ) => string | undefined;
   configReloadBlockedReason: () => string | undefined;
+  setWorkspaceWriteLock: (
+    lock: import("@natalia/runtime-services").WorkspaceWriteLock | undefined,
+  ) => void;
+  setMutationRegistry: (
+    registry: import("@natalia/runtime-services").MutationRegistry | undefined,
+  ) => void;
+  setWorkspaceFilesController: (
+    controller:
+      | import("@natalia/runtime-services").WorkspaceFilesController
+      | undefined,
+  ) => void;
+  setTerminalController: (
+    controller:
+      | import("@natalia/runtime-services").TerminalController
+      | undefined,
+  ) => void;
+  setSandboxController: (
+    controller: import("@natalia/runtime-services").SandboxService | undefined,
+  ) => void;
+  setMcpService: (
+    service: import("@natalia/runtime-services").McpService | undefined,
+  ) => void;
+  setSubagentsController: (
+    controller:
+      | import("@natalia/runtime-services").SubagentsService
+      | undefined,
+  ) => void;
+  setProviderModelController: (
+    controller:
+      | import("@natalia/runtime-services").ProviderModelController
+      | undefined,
+  ) => void;
+  setTaskWorkflowController: (
+    controller:
+      | import("@natalia/runtime-services").TaskWorkflowController
+      | undefined,
+  ) => void;
+  setCompactionService: (
+    service: import("@natalia/runtime-services").CompactionService | undefined,
+  ) => void;
+  setSessionStoreController: (
+    controller: import("@natalia/runtime-services").SessionStoreController,
+  ) => void;
+  setToolPolicyService: (
+    service: import("@natalia/runtime-services").ToolPolicyService | undefined,
+  ) => void;
+  setInteractive: (
+    waiter: import("@natalia/runtime-services").InteractiveWaiter,
+  ) => void;
+  setAttachmentService: (
+    service: import("@natalia/runtime-services").AttachmentService,
+  ) => void;
+  setRetryService: (
+    service: import("@natalia/runtime-services").RetryService,
+  ) => void;
+  setContextLedgerFactory: (
+    factory: import("@natalia/runtime-services").ContextLedgerFactory,
+  ) => void;
+  setStatusController: (
+    controller: import("@natalia/runtime-services").StatusSnapshotController,
+  ) => void;
+  setWorkLedgerController: (
+    controller: import("@natalia/runtime-services").WorkLedgerController,
+  ) => void;
+  setGovernanceLedgerController: (
+    controller: import("@natalia/runtime-services").GovernanceLedgerController,
+  ) => void;
+  setTurnController: (
+    controller: import("@natalia/runtime-services").TurnController,
+  ) => void;
+  setActiveCheckpointFactory: (
+    factory: import("@natalia/runtime-services").CheckpointFactory | undefined,
+  ) => void;
+  getActiveCheckpointFactory: () =>
+    | import("@natalia/runtime-services").CheckpointFactory
+    | undefined;
   toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
   authorizeWorkspaceRead: (
     input: { toolName: string; paths: string[] },
