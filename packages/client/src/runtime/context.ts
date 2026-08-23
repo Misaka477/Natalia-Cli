@@ -307,6 +307,16 @@ export type RuntimePorts = {
     exec: SessionExecutionState,
     input: import("@natalia/contracts").SubmitInput,
   ) => void;
+  chatSystemPrompt: (exec?: SessionExecutionState) => string;
+  chatTools: (
+    exec?: SessionExecutionState,
+  ) => import("@natalia/tools").RuntimeTool[];
+  effectiveMaxSteps: (exec?: SessionExecutionState) => number;
+  chatToolSummary: (
+    toolName: string,
+    args: Record<string, unknown>,
+    result: string,
+  ) => string;
   getSelectedAgent: () => AgentDefinition | undefined;
   getSelectedModel: () => { modelID?: string; variant?: string } | undefined;
   getProviderSource: () => RuntimeState["providerSource"];

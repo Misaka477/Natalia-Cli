@@ -1,0 +1,357 @@
+/**
+ * The Live Work Chat turn loop — runtime/collaboration/chat-turn.ts.
+ *
+ * `runChatTurnBody` drives a Chat provider turn: builds the message history and
+ * tool surface, streams the reply, enforces the native tool-call protocol,
+ * corrects missing direct chat replies, and settles the durable chat message.
+ * Reads live state through `RuntimeContext` at call time.
+ */
+import {
+  projectedChatMessages,
+  projectedCollabMessages,
+} from "@natalia/session";
+import { parseToolArguments, validateToolParameters } from "@natalia/tools";
+import {
+  MAX_STEPS_PROMPT,
+  MISSING_FINAL_RESPONSE_FALLBACK,
+  nativeToolCallCorrection,
+  normalizeRawToolCallProtocol,
+  requireNativeToolCallProtocol,
+} from "@natalia/runtime";
+import type { ProviderMessage, ProviderToolCall } from "@natalia/runtime";
+import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeContext } from "../context";
+import type { SessionExecutionState } from "../../real-runtime";
+
+const MAX_PROTOCOL_CORRECTIONS = 2;
+
+export function createChatTurn(ctx: RuntimeContext) {
+  return {
+    runChatTurnBody,
+  };
+
+  async function runChatTurnBody(
+    input: {
+      text: string;
+      responseMessageID: string;
+      exec: SessionExecutionState;
+      internal?: boolean;
+    },
+    signal: AbortSignal,
+  ) {
+    const {
+      publishForSession,
+      nextChatSequence,
+      chatSystemPrompt,
+      chatTools,
+      effectiveMaxSteps,
+      chatToolSummary,
+      redactToolOutput,
+      getWorkspaceRoot,
+    } = ctx.ports;
+    const activeProvider = input.exec.provider;
+    if (!activeProvider)
+      throw new Error("provider unavailable for live work chat");
+    const chatSequence = nextChatSequence;
+    try {
+      const history = projectedChatMessages(input.exec.session.events);
+      const messages: ProviderMessage[] = [
+        { role: "system", content: chatSystemPrompt(input.exec) },
+      ];
+      for (const message of history) {
+        if (message.messageID === input.responseMessageID) continue;
+        // Explicit source tags so Navi never mistakes her own past messages (or
+        // anyone else's) for words from the human user.
+        messages.push(
+          message.role === "user"
+            ? { role: "user", content: `[user] ${message.text}` }
+            : { role: "assistant", content: `[Navi] ${message.text}` },
+        );
+      }
+      if (input.internal) {
+        // A wake turn has no human prompt: tell Navi to answer her sister's
+        // pending collaboration messages (the questions are in her context).
+        messages.push({
+          role: "system",
+          content:
+            "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED must be answered with collab_chat using its exact messageID. Keep replies concise; set continueConversation only when another exchange is useful.",
+        });
+      }
+      const visibleTools = chatTools(input.exec);
+      const toolSchemas = visibleTools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      }));
+      let output = "";
+      let thinking = "";
+      let usedTools = false;
+      let finalResponse = "";
+      let ranFinalOnlyStep = false;
+      let step = 1;
+      let protocolCorrections = 0;
+      let phase: Extract<RuntimeEvent, { type: "chat.turn.phase" }>["phase"] =
+        "waiting";
+      const setPhase = (next: typeof phase, toolName?: string) => {
+        if (phase === next && next !== "using_tool") return;
+        phase = next;
+        publishForSession(input.exec, {
+          type: "chat.turn.phase",
+          id: `${input.responseMessageID}:phase:${chatSequence()}`,
+          messageID: input.responseMessageID,
+          phase: next,
+          ...(toolName ? { toolName } : {}),
+        });
+      };
+      const pendingNataliaChat = () =>
+        projectedCollabMessages(input.exec.session.events).find(
+          (message) =>
+            message.kind === "chat" &&
+            message.to === "live_chat" &&
+            message.status === "pending",
+        );
+      const correctMissingChatReply = (
+        message: { id: string; text: string },
+        assistantText: string,
+      ) => {
+        setPhase("waiting");
+        protocolCorrections += 1;
+        if (protocolCorrections > MAX_PROTOCOL_CORRECTIONS)
+          throw new Error(
+            `model repeatedly ended without replying to required chat message ${message.id}`,
+          );
+        messages.push({ role: "assistant", content: assistantText });
+        messages.push({
+          role: "system",
+          content: `REPLY_REQUIRED: You must call collab_chat now with messageID ${message.id}. A text response does not reply to Natalia's durable message. Her message: ${message.text}`,
+        });
+        publishForSession(input.exec, {
+          type: "diagnostic",
+          level: "warning",
+          message: `Correcting missing direct reply to chat message ${message.id} (attempt ${protocolCorrections})`,
+        });
+      };
+      const maxChatSteps = effectiveMaxSteps(input.exec);
+      while (step <= maxChatSteps) {
+        signal.throwIfAborted();
+        const requiredReply = pendingNataliaChat();
+        const reachedStepLimit =
+          Number.isFinite(maxChatSteps) && step >= maxChatSteps;
+        const finalOnlyStep = reachedStepLimit && !requiredReply;
+        ranFinalOnlyStep ||= finalOnlyStep;
+        const calls: ProviderToolCall[] = [];
+        let stepOutput = "";
+        let protocolViolation = "";
+        // Chat is an independent collaboration lane, not provider fan-out from
+        // the Main turn. Putting it behind the Main/subagent semaphore makes a
+        // configured cap of 1 block Chat until Main stops, defeating its core
+        // always-available contract. The chat controller still limits each session to
+        // one Chat stream at a time.
+        const stream = activeProvider.stream({
+          messages: finalOnlyStep
+            ? [
+                ...messages,
+                {
+                  role: "assistant",
+                  content: MAX_STEPS_PROMPT,
+                },
+              ]
+            : messages,
+          tools: finalOnlyStep ? undefined : toolSchemas,
+          toolChoice: finalOnlyStep ? "none" : undefined,
+          signal,
+        });
+        const normalized = finalOnlyStep
+          ? stream
+          : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(stream));
+        for await (const chunk of normalized) {
+          if (chunk.type === "thinking") {
+            setPhase("thinking");
+            thinking += chunk.text;
+            publishForSession(input.exec, {
+              type: "chat.thinking.delta",
+              id: `${input.responseMessageID}:thinking:${chatSequence()}`,
+              messageID: input.responseMessageID,
+              // Incremental, like the transcript's `thinking.delta`: the shared
+              // projection appends each chunk, so a full-accumulated payload
+              // would be re-appended every time and grow without bound.
+              text: chunk.text,
+            });
+            continue;
+          }
+          if (chunk.type === "content") {
+            setPhase("generating");
+            output += chunk.text;
+            stepOutput += chunk.text;
+            publishForSession(input.exec, {
+              type: "chat.message.delta",
+              id: `${input.responseMessageID}:delta:${chatSequence()}`,
+              messageID: input.responseMessageID,
+              text: chunk.text,
+            });
+          }
+          if (chunk.type === "tool_call") calls.push(...chunk.calls);
+          if (chunk.type === "tool_protocol_violation")
+            protocolViolation = chunk.text;
+        }
+        usedTools ||= calls.length > 0;
+        if (finalOnlyStep) {
+          const stillPendingNataliaChat = pendingNataliaChat();
+          if (stillPendingNataliaChat) {
+            correctMissingChatReply(stillPendingNataliaChat, stepOutput);
+            continue;
+          }
+          finalResponse = stepOutput;
+          if (calls.length)
+            publishForSession(input.exec, {
+              type: "diagnostic",
+              level: "warning",
+              message:
+                "Provider emitted a chat tool call after tools were disabled; ignored the call and finalized with text",
+            });
+          break;
+        }
+        if (protocolViolation) {
+          setPhase("waiting");
+          protocolCorrections += 1;
+          if (protocolCorrections > MAX_PROTOCOL_CORRECTIONS)
+            throw new Error(
+              "model repeatedly emitted malformed textual chat tool calls instead of the provider's native tool protocol",
+            );
+          messages.push({ role: "assistant", content: protocolViolation });
+          messages.push({
+            role: "system",
+            content: nativeToolCallCorrection(protocolCorrections),
+          });
+          publishForSession(input.exec, {
+            type: "diagnostic",
+            level: "warning",
+            message: `Correcting textual chat tool call; native tool calling required (attempt ${protocolCorrections})`,
+          });
+          continue;
+        }
+        if (!calls.length) {
+          const stillPendingNataliaChat = pendingNataliaChat();
+          if (stillPendingNataliaChat) {
+            correctMissingChatReply(stillPendingNataliaChat, stepOutput);
+            continue;
+          }
+          step += 1;
+          finalResponse = stepOutput;
+          break;
+        }
+        step += 1;
+        messages.push({
+          role: "assistant",
+          content: output,
+          toolCalls: calls,
+        });
+        for (const call of calls) {
+          const tool = visibleTools.find(
+            (candidate) => candidate.name === call.name,
+          );
+          if (!tool) {
+            // Hand the model the error instead of failing the turn: like the main
+            // agent, an unavailable or badly-formed call comes back as a tool
+            // result so the model can correct and retry on the next step.
+            messages.push({
+              role: "tool",
+              toolCallID: call.id,
+              toolName: call.name,
+              content: `ERROR: live work chat does not expose tool "${call.name}"`,
+            });
+            continue;
+          }
+          let parsed: unknown;
+          let paramErrors: Array<{ path: string; message: string }> = [];
+          try {
+            parsed = parseToolArguments(call.arguments);
+            paramErrors = validateToolParameters(tool.parameters, parsed);
+          } catch (cause) {
+            paramErrors = [{ path: "arguments", message: String(cause) }];
+          }
+          if (paramErrors.length) {
+            // The correct calling convention goes back to the model so it can
+            // retry with valid arguments (P8: Chat is a full agent, not a
+            // one-shot caller).
+            messages.push({
+              role: "tool",
+              toolCallID: call.id,
+              toolName: call.name,
+              content: `ERROR: parameter validation failed for ${call.name}: ${paramErrors
+                .map((error) => `${error.path}: ${error.message}`)
+                .join("; ")}. Expected arguments: ${JSON.stringify(
+                tool.parameters,
+              )}`,
+            });
+            continue;
+          }
+          let result: string;
+          setPhase("using_tool", tool.name);
+          try {
+            result = await tool.execute(parsed, {
+              workspaceRoot: getWorkspaceRoot(),
+              signal,
+              sessionID: input.exec.session.id,
+            });
+          } catch (cause) {
+            result = `ERROR: ${cause instanceof Error ? cause.message : String(cause)}`;
+          }
+          publishForSession(input.exec, {
+            type: "chat.tool.used",
+            id: `${input.responseMessageID}:tool:${chatSequence()}`,
+            messageID: input.responseMessageID,
+            toolName: tool.name,
+            status: result.startsWith("ERROR:") ? "failed" : "succeeded",
+            summary: chatToolSummary(
+              tool.name,
+              parsed as Record<string, unknown>,
+              result,
+            ),
+            result,
+            argumentsRaw: call.arguments,
+            at: new Date().toISOString(),
+          });
+          setPhase("waiting");
+          messages.push({
+            role: "tool",
+            content: result,
+            toolCallID: call.id,
+            toolName: call.name,
+          });
+        }
+      }
+      const unresolvedNataliaChat = pendingNataliaChat();
+      if (unresolvedNataliaChat)
+        throw new Error(
+          `chat turn reached its step limit without replying to required chat message ${unresolvedNataliaChat.id}`,
+        );
+      if ((usedTools || ranFinalOnlyStep) && !finalResponse.trim()) {
+        output += MISSING_FINAL_RESPONSE_FALLBACK;
+        setPhase("generating");
+        publishForSession(input.exec, {
+          type: "chat.message.delta",
+          id: `${input.responseMessageID}:delta:${chatSequence()}`,
+          messageID: input.responseMessageID,
+          text: MISSING_FINAL_RESPONSE_FALLBACK,
+        });
+        publishForSession(input.exec, {
+          type: "diagnostic",
+          level: "warning",
+          message:
+            "Provider omitted the required final chat response; emitted a deterministic fallback",
+        });
+      }
+      publishForSession(input.exec, {
+        type: "chat.message.added",
+        id: `${input.responseMessageID}:chat`,
+        messageID: input.responseMessageID,
+        role: "chat",
+        text: redactToolOutput(output.trim() || "(no reply)", true),
+        at: new Date().toISOString(),
+      });
+      return { text: output };
+    } finally {
+    }
+  }
+}
