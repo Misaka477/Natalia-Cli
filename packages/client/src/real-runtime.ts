@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createTitleGeneration } from "./runtime/title-generation";
+import { createCheckpointRuntime } from "./runtime/checkpoint-runtime";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
@@ -514,44 +515,6 @@ export function createRealRuntimeClient(
   const checkpointInitBySession = new Map<SessionID, Promise<void>>();
   let activeCheckpointFactory: CheckpointFactory | undefined;
 
-  function checkpointControllerFor(exec: SessionExecutionState) {
-    const id = exec.session.id;
-    const existing = checkpointControllerBySession.get(id);
-    if (existing) return existing;
-    const factory = capabilityRegistry.service<CheckpointFactory>(
-      CHECKPOINT_FACTORY_SERVICE,
-    );
-    if (!factory) return undefined;
-    const controller = factory({
-      sessionID: () => id,
-      checkpoint: () => tsRuntimeConfig?.checkpoint,
-      workspace: () => tsRuntimeConfig?.workspace,
-      publish: (event) => publishForSession(exec, event),
-      context: () => exec.context,
-      subagents: () =>
-        (subagentsController?.enabled() ?? false)
-          ? subagentsController
-          : undefined,
-      activeAbort: () => exec.activeAbort,
-      workLedger: () => workLedgerController,
-    });
-    checkpointControllerBySession.set(id, controller);
-    return controller;
-  }
-
-  async function initializeCheckpointController(exec: SessionExecutionState) {
-    const id = exec.session.id;
-    let pending = checkpointInitBySession.get(id);
-    if (!pending) {
-      const controller = checkpointControllerFor(exec);
-      if (!controller) return undefined;
-      pending = controller.init();
-      checkpointInitBySession.set(id, pending);
-    }
-    await pending;
-    return checkpointControllerFor(exec);
-  }
-
   function executionForTurn(turnID: string) {
     return executionBySession.get(turnSession.get(turnID) ?? sessionID);
   }
@@ -705,6 +668,70 @@ export function createRealRuntimeClient(
   const internalWakeTasks = new Set<Promise<unknown>>();
   let planSequence = 0;
   let completionSequence = 0;
+  // Architecture convergence: the single shared port bag every runtime module
+  // reads at call time. Modules never import one another; they communicate
+  // through this context. (convergence plan §3.1)
+  const ctx = {
+    state: {},
+    ports: {},
+  } as unknown as RuntimeContext;
+  let runtimeDisposed = false;
+  ctx.state.titleGenerationTasks = new Map<
+    SessionID,
+    {
+      input: string;
+      timer?: ReturnType<typeof setTimeout>;
+      controller?: AbortController;
+      promise?: Promise<void>;
+    }
+  >();
+  ctx.ports.isDisposed = () => runtimeDisposed;
+  ctx.ports.getSessionStoreController = () => sessionStoreController;
+  ctx.ports.getSessionPersistence = () => sessionPersistence;
+  ctx.ports.getProviderConcurrencyLimiter = () => providerConcurrencyLimiter;
+  ctx.ports.getExecutionBySession = () => executionBySession;
+  ctx.ports.getActiveExec = () => activeExec;
+  ctx.ports.publishForSession = publishForSession;
+  ctx.ports.publish = publish;
+  ctx.ports.scheduleRuntimeStatusSnapshot = scheduleRuntimeStatusSnapshot;
+  ctx.ports.runtimeStatusSnapshot = runtimeStatusSnapshot;
+  ctx.ports.ensureExecution = ensureExecution;
+  ctx.ports.skillService = skillService;
+  ctx.ports.skillsList = skillsList;
+  ctx.ports.teamBehavior = teamBehavior;
+  ctx.ports.providerRunnerInput = providerRunnerInput;
+  ctx.ports.setInFlightOperation = setInFlightOperation;
+  ctx.ports.getStatusController = () => statusController;
+  ctx.ports.getProviderSource = () => providerSource;
+  ctx.ports.getWorkspaceRoot = () => workspaceRoot;
+  ctx.ports.getSandboxController = () => sandboxController;
+  ctx.ports.getAgentRegistry = () => agentRegistry;
+  ctx.ports.setPaused = (value) => {
+    paused = value;
+  };
+  ctx.ports.getPaused = () => paused;
+  ctx.ports.getCapabilityRegistry = () => capabilityRegistry;
+  ctx.ports.clientModelCatalog = clientModelCatalog;
+  ctx.ports.selectRuntimeModel = selectRuntimeModel;
+  ctx.ports.submitInput = submitInput;
+  ctx.ports.applyAgentPolicy = applyAgentPolicy;
+  ctx.ports.applyAgentProvider = applyAgentProvider;
+  ctx.ports.getTsRuntimeConfig = () => tsRuntimeConfig;
+  ctx.ports.getSubagentsController = () => subagentsController;
+  ctx.ports.getWorkLedgerController = () => workLedgerController;
+  ctx.state.runtimeDiagnostics = runtimeDiagnostics;
+  ctx.state.runtimeDiagnosticsBySession = runtimeDiagnosticsBySession;
+  ctx.state.tools = tools;
+  ctx.state.checkpointControllerBySession = checkpointControllerBySession;
+  ctx.state.checkpointInitBySession = checkpointInitBySession;
+  const { checkpointControllerFor, initializeCheckpointController } =
+    createCheckpointRuntime(ctx);
+  ctx.ports.initializeCheckpointController = initializeCheckpointController;
+  const { rememberTitleInput, scheduleTitleGeneration, cancelTitleGeneration } =
+    createTitleGeneration(ctx);
+  const { isPendingInteractiveRequest, handleCommand, commandCatalogEntries } =
+    createCommands(ctx);
+  ctx.ports.commandCatalogEntries = commandCatalogEntries;
 
   /**
    * Re-reads the config and re-resolves the provider from it.
@@ -4044,64 +4071,6 @@ export function createRealRuntimeClient(
     await sessionPersistence;
     return submitted;
   }
-
-  // Architecture convergence: the single shared port bag every runtime module
-  // reads at call time. Modules never import one another; they communicate
-  // through this context. (convergence plan §3.1)
-  const ctx = {
-    state: {},
-    ports: {},
-  } as unknown as RuntimeContext;
-  let runtimeDisposed = false;
-  ctx.state.titleGenerationTasks = new Map<
-    SessionID,
-    {
-      input: string;
-      timer?: ReturnType<typeof setTimeout>;
-      controller?: AbortController;
-      promise?: Promise<void>;
-    }
-  >();
-  ctx.ports.isDisposed = () => runtimeDisposed;
-  ctx.ports.getSessionStoreController = () => sessionStoreController;
-  ctx.ports.getSessionPersistence = () => sessionPersistence;
-  ctx.ports.getProviderConcurrencyLimiter = () => providerConcurrencyLimiter;
-  ctx.ports.getExecutionBySession = () => executionBySession;
-  ctx.ports.getActiveExec = () => activeExec;
-  ctx.ports.publishForSession = publishForSession;
-  ctx.ports.publish = publish;
-  ctx.ports.scheduleRuntimeStatusSnapshot = scheduleRuntimeStatusSnapshot;
-  ctx.ports.runtimeStatusSnapshot = runtimeStatusSnapshot;
-  ctx.ports.ensureExecution = ensureExecution;
-  ctx.ports.skillService = skillService;
-  ctx.ports.skillsList = skillsList;
-  ctx.ports.teamBehavior = teamBehavior;
-  ctx.ports.providerRunnerInput = providerRunnerInput;
-  ctx.ports.setInFlightOperation = setInFlightOperation;
-  ctx.ports.getStatusController = () => statusController;
-  ctx.ports.getProviderSource = () => providerSource;
-  ctx.ports.getWorkspaceRoot = () => workspaceRoot;
-  ctx.ports.getSandboxController = () => sandboxController;
-  ctx.ports.getAgentRegistry = () => agentRegistry;
-  ctx.ports.setPaused = (value) => {
-    paused = value;
-  };
-  ctx.ports.getPaused = () => paused;
-  ctx.ports.getCapabilityRegistry = () => capabilityRegistry;
-  ctx.ports.initializeCheckpointController = initializeCheckpointController;
-  ctx.ports.clientModelCatalog = clientModelCatalog;
-  ctx.ports.selectRuntimeModel = selectRuntimeModel;
-  ctx.ports.submitInput = submitInput;
-  ctx.ports.applyAgentPolicy = applyAgentPolicy;
-  ctx.ports.applyAgentProvider = applyAgentProvider;
-  ctx.state.runtimeDiagnostics = runtimeDiagnostics;
-  ctx.state.runtimeDiagnosticsBySession = runtimeDiagnosticsBySession;
-  ctx.state.tools = tools;
-  const { rememberTitleInput, scheduleTitleGeneration, cancelTitleGeneration } =
-    createTitleGeneration(ctx);
-  const { isPendingInteractiveRequest, handleCommand, commandCatalogEntries } =
-    createCommands(ctx);
-  ctx.ports.commandCatalogEntries = commandCatalogEntries;
 
   function providerRunnerInput(sessionID: SessionID): ProviderRunnerInput {
     const exec = executionBySession.get(sessionID);

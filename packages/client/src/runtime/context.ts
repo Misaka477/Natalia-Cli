@@ -239,6 +239,9 @@ export type RuntimePorts = {
   applyAgentPolicy: () => void;
   applyAgentProvider: (exec: SessionExecutionState) => void;
   getCapabilityRegistry: () => CapabilityRegistryHost;
+  getTsRuntimeConfig: () => ConfigV3 | undefined;
+  getSubagentsController: () => SubagentsService | undefined;
+  getWorkLedgerController: () => WorkLedgerController;
 };
 
 export type RuntimeContext = {
