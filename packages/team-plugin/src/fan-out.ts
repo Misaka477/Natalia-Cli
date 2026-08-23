@@ -13,11 +13,11 @@
  * fan-out core.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { SubagentRegistry } from "@natalia/subagents-plugin";
 import type {
-  WorkspaceSandboxManager,
-  SandboxChange,
-} from "@natalia/sandbox-plugin";
+  SandboxChangeView,
+  SandboxToolService,
+  SubagentToolService,
+} from "@natalia/tools";
 
 export type FanOutTask = {
   id: string;
@@ -33,7 +33,7 @@ export type FanOutPR = {
   sandboxID: string;
   status: "completed" | "failed" | "stopped";
   /** The candidate's diff against its base — what a lead reviews. */
-  diff: SandboxChange[];
+  diff: SandboxChangeView[];
   result?: string;
   /**
    * Build evidence: a validation command run in the candidate worktree before
@@ -48,8 +48,8 @@ export type FanOutPR = {
  */
 export async function runFanOut(input: {
   tasks: FanOutTask[];
-  subagents: SubagentRegistry;
-  sandboxes: WorkspaceSandboxManager;
+  subagents: SubagentToolService;
+  sandboxes: SandboxToolService;
   publish?: (event: RuntimeEvent) => void;
   timeoutMs?: number;
   /**
@@ -92,7 +92,7 @@ export async function runFanOut(input: {
       status === "completed"
         ? await input.sandboxes
             .previewMerge(record.id)
-            .catch(() => [] as SandboxChange[])
+            .catch(() => [] as SandboxChangeView[])
         : [];
     const buildEvidence =
       status === "completed" && input.buildCommand
@@ -137,7 +137,7 @@ async function spawnWithConcurrency<T, R>(
 }
 
 async function waitForAllTerminal(
-  registry: SubagentRegistry,
+  registry: SubagentToolService,
   ids: string[],
   timeoutMs: number,
 ): Promise<void> {
@@ -196,7 +196,7 @@ export type PRReviewOutcome = {
   decision: "approve" | "request-changes";
   reason?: string;
   /** The promoted changes when approved and merged. */
-  merged?: SandboxChange[];
+  merged?: SandboxChangeView[];
 };
 
 /**
@@ -208,7 +208,7 @@ export type PRReviewOutcome = {
  */
 export async function reviewPRs(input: {
   prs: FanOutPR[];
-  sandboxes: WorkspaceSandboxManager;
+  sandboxes: SandboxToolService;
   workspaceRoot: string;
   decide: (pr: FanOutPR) => Promise<PRReviewDecision> | PRReviewDecision;
   publish?: (event: RuntimeEvent) => void;

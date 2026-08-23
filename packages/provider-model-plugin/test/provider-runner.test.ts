@@ -114,7 +114,7 @@ function makeHarness(
     attachmentReferences: () => new Map(),
     attachments: createAttachmentService("/tmp/ws"),
     compaction: createCompactionService({ retry }),
-    mcpAccess: () => [],
+    mcp: () => undefined,
     agentRegistry: () => undefined,
     activeAbort: () => activeAbort,
     setActiveAbort: (controller) => {

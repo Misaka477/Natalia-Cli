@@ -16,7 +16,7 @@ export type { TerminalController } from "./terminal-controller";
 export const TERMINAL_PLUGIN_ID = "natalia-terminal";
 export const TERMINAL_CONTROLLER_SERVICE = "terminal.controller";
 
-export function createTerminalControllerPlugin(input: {
+export type TerminalControllerPluginInput = {
   workspaceRoot: string;
   publish(event: RuntimeEvent): void;
   onPerformance(name: string, durationMs: number): void;
@@ -24,7 +24,11 @@ export function createTerminalControllerPlugin(input: {
   userRuntimeHome(): string | undefined;
   windowMode(): "auto" | "windowless" | "window";
   external?: NativeTerminalRegistry;
-}): Plugin {
+};
+
+export function createTerminalControllerPlugin(
+  input: TerminalControllerPluginInput,
+): Plugin {
   let controller: ReturnType<typeof createTerminalController> | undefined;
   return {
     manifest: {

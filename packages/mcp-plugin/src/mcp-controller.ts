@@ -1,5 +1,5 @@
-import type { RuntimeEvent } from "@natalia/contracts";
-import { loadNativeMCPTools, type MCPToolRegistrar } from "@natalia/mcp";
+import type { MCPCatalogSnapshot, RuntimeEvent } from "@natalia/contracts";
+import { loadNativeMCPTools, type MCPToolRegistrar } from "./mcp-runtime";
 import type { MCPServerConfig } from "@natalia/contracts";
 
 /**
@@ -20,21 +20,11 @@ export function createMcpController(input: {
   enabled(): boolean;
   publish(event: RuntimeEvent): void;
 }) {
-  const cleanup: Array<() => Promise<void>> = [];
-  const access: Array<{
-    catalog(): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
-    getPrompt(
-      server: string,
-      name: string,
-      arguments_?: Record<string, string>,
-    ): Promise<unknown>;
-    readResource(server: string, uri: string): Promise<unknown>;
-  }> = [];
+  let active: Awaited<ReturnType<typeof loadNativeMCPTools>> | undefined;
 
   async function reload() {
+    await closeActive();
     if (!input.enabled()) return;
-    await Promise.all(cleanup.splice(0).map((close) => close()));
-    access.length = 0;
     const nativeMCP = await loadNativeMCPTools({
       tools: input.tools,
       servers: input.servers(),
@@ -47,8 +37,7 @@ export function createMcpController(input: {
           message,
         }),
     });
-    cleanup.push(nativeMCP.close);
-    access.push(nativeMCP);
+    active = nativeMCP;
     for (const [server, status] of Object.entries(nativeMCP.statuses))
       input.publish({ type: "mcp.status", server, ...status });
     if (nativeMCP.loaded)
@@ -60,13 +49,41 @@ export function createMcpController(input: {
       });
   }
 
-  async function close() {
-    await Promise.all(cleanup.splice(0).map((close) => close()));
-    access.length = 0;
+  async function catalog(): Promise<MCPCatalogSnapshot> {
+    return active?.catalog() ?? { prompts: [], resources: [] };
   }
 
-  return { reload, close, access };
+  async function getPrompt(
+    server: string,
+    name: string,
+    arguments_?: Record<string, string>,
+  ) {
+    return await requireActive(server).getPrompt(server, name, arguments_);
+  }
+
+  async function readResource(server: string, uri: string) {
+    return await requireActive(server).readResource(server, uri);
+  }
+
+  async function close() {
+    await closeActive();
+  }
+
+  async function closeActive() {
+    const current = active;
+    active = undefined;
+    await current?.close();
+  }
+
+  function requireActive(server: string) {
+    if (!active) throw new Error(`MCP server is not connected: ${server}`);
+    return active;
+  }
+
+  return { reload, catalog, getPrompt, readResource, close };
 }
 
-export type McpController = ReturnType<typeof createMcpController>;
-export type McpAccess = McpController["access"];
+export type McpService = Pick<
+  ReturnType<typeof createMcpController>,
+  "reload" | "catalog" | "getPrompt" | "readResource"
+>;

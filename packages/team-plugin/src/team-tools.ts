@@ -14,13 +14,15 @@ import {
   validateOwnershipMap,
   type FanOutPR,
 } from "./fan-out";
-import type { RuntimeTool } from "@natalia/tools";
-import type { SubagentRegistry } from "@natalia/subagents-plugin";
-import type { WorkspaceSandboxManager } from "@natalia/sandbox-plugin";
+import type {
+  RuntimeTool,
+  SandboxToolService,
+  SubagentToolService,
+} from "@natalia/tools";
 
 export function createTeamFanoutTool(input: {
-  subagents: () => SubagentRegistry | undefined;
-  sandboxes: () => WorkspaceSandboxManager | undefined;
+  subagents: () => SubagentToolService | undefined;
+  sandboxes: () => SandboxToolService | undefined;
 }): RuntimeTool {
   return {
     name: "team_fanout",
@@ -94,7 +96,7 @@ export function createTeamFanoutTool(input: {
 }
 
 export function createTeamReviewTool(input: {
-  sandboxes: () => WorkspaceSandboxManager | undefined;
+  sandboxes: () => SandboxToolService | undefined;
 }): RuntimeTool {
   return {
     name: "team_review",

@@ -1,6 +1,7 @@
 export {
   createSessionStoreController,
   type SessionStoreController,
+  type SessionStoreRecoveryView,
 } from "./session-store-controller";
 export {
   createSessionStoreControllerPlugin,

@@ -1,8 +1,8 @@
 export {
   WorkflowExecutionRefusal,
-  WorkflowExecutionScheduler,
   type WorkflowExecutionEvent,
   type WorkflowExecutionHandle,
+  type WorkflowExecutionSchedulerService,
   type WorkflowExecutionStatus,
 } from "./workflow-execution-scheduler";
 export {

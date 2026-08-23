@@ -12,11 +12,11 @@ import {
   runTask,
   runTaskFromDocument,
   CapabilityExecutionHost,
-  createWorkflowSchedulerPluginHost,
   CapabilityHost,
   removeTaskSystemd,
   taskPermissionPreview,
 } from "@natalia/client";
+import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
 import type {
   EpisodeID,
   EvaluatorResult,
@@ -157,63 +157,66 @@ switch (subcommand) {
       string,
       { capabilities: CapabilityHost; executions: CapabilityExecutionHost }
     >();
-    const workspaceHost = (workspaceRoot: string) => {
-      const root = resolve(workspaceRoot);
-      const existing = workspaceHosts.get(root);
-      if (existing) return existing;
-      const capabilities = new CapabilityHost({ workspaceRoot: root });
-      const created = {
-        capabilities,
-        executions: new CapabilityExecutionHost(capabilities, {
-          scheduler: taskScheduler,
-        }),
+    try {
+      const workspaceHost = (workspaceRoot: string) => {
+        const root = resolve(workspaceRoot);
+        const existing = workspaceHosts.get(root);
+        if (existing) return existing;
+        const capabilities = new CapabilityHost({ workspaceRoot: root });
+        const created = {
+          capabilities,
+          executions: new CapabilityExecutionHost(capabilities, {
+            scheduler: taskScheduler,
+          }),
+        };
+        workspaceHosts.set(root, created);
+        return created;
       };
-      workspaceHosts.set(root, created);
-      return created;
-    };
-    const client = createRealRuntimeClient();
-    const transport = await createHttpTransportPluginHost({
-      client,
-      port,
-      token,
-      enabled: transportIsEnabled,
-      taskExecution: true,
-      // Delivery reuses the very same controller a one-shot run uses, so the
-      // resident path cannot drift from it or bypass its policy.
-      startTask: async (request) => {
-        const workspaceRoot = resolve(request.workspaceRoot ?? process.cwd());
-        const config = assertConfigApplied(
-          await resolveConfig({ workspaceRoot }),
-        );
-        return workspaceHost(workspaceRoot).executions.runTask({
-          workspaceRoot,
-          path: request.taskPath,
-          taskID: request.taskID,
-          idempotencyKey: request.idempotencyKey,
-          idempotencyFingerprint: JSON.stringify(request),
-          config,
-          json: request.json !== false,
-          requestedBy: { transport: "http" },
-        });
-      },
-    });
-    const { server } = transport;
-    await registerRuntimeDaemon(store, {
-      url: server.url,
-      pid: process.pid,
-      transport: "http",
-    });
-    console.log(JSON.stringify({ url: server.url }));
-    await waitSignal();
-    await transport.close();
-    // The daemon must dispose the runtime it started: the native input broker
-    // socket and the workspace watcher keep the process alive otherwise, and
-    // a daemon that survives SIGTERM holds its port forever (the zombie-daemon
-    // defect this closes). The smoke that delivers tasks also depends on this
-    // instead of its SIGKILL fallback.
-    await client.dispose?.();
-    await taskSchedulerHost.close();
-    for (const host of workspaceHosts.values()) host.capabilities.dispose();
+      const client = createRealRuntimeClient();
+      const transport = await createHttpTransportPluginHost({
+        client,
+        port,
+        token,
+        enabled: transportIsEnabled,
+        taskExecution: true,
+        // Delivery reuses the very same controller a one-shot run uses, so the
+        // resident path cannot drift from it or bypass its policy.
+        startTask: async (request) => {
+          const workspaceRoot = resolve(request.workspaceRoot ?? process.cwd());
+          const config = assertConfigApplied(
+            await resolveConfig({ workspaceRoot }),
+          );
+          return workspaceHost(workspaceRoot).executions.runTask({
+            workspaceRoot,
+            path: request.taskPath,
+            taskID: request.taskID,
+            idempotencyKey: request.idempotencyKey,
+            idempotencyFingerprint: JSON.stringify(request),
+            config,
+            json: request.json !== false,
+            requestedBy: { transport: "http" },
+          });
+        },
+      });
+      const { server } = transport;
+      await registerRuntimeDaemon(store, {
+        url: server.url,
+        pid: process.pid,
+        transport: "http",
+      });
+      console.log(JSON.stringify({ url: server.url }));
+      await waitSignal();
+      await transport.close();
+      // The daemon must dispose the runtime it started: the native input broker
+      // socket and the workspace watcher keep the process alive otherwise, and
+      // a daemon that survives SIGTERM holds its port forever (the zombie-daemon
+      // defect this closes). The smoke that delivers tasks also depends on this
+      // instead of its SIGKILL fallback.
+      await client.dispose?.();
+    } finally {
+      await taskSchedulerHost.close();
+      for (const host of workspaceHosts.values()) host.capabilities.dispose();
+    }
     break;
   }
 

@@ -17,10 +17,10 @@ import {
   requireObject,
   requireString,
 } from "@natalia/tools";
-import type { WorkspaceSandboxManager } from "@natalia/sandbox";
 import type { Plugin } from "@natalia/plugin";
 import type {
   RuntimeTool,
+  SandboxToolService,
   ToolExecutionContext,
   ToolFamily,
 } from "@natalia/tools";
@@ -318,7 +318,7 @@ function sandboxResourceStopTool(): RuntimeTool {
 function sandboxResourceReadTool(
   name: string,
   description: string,
-  action: (manager: WorkspaceSandboxManager, id: string) => string,
+  action: (manager: SandboxToolService, id: string) => string,
 ): RuntimeTool {
   return {
     name,
@@ -342,7 +342,7 @@ function sandboxResourceReadTool(
 function sandboxReadTool(
   name: string,
   description: string,
-  action: (manager: WorkspaceSandboxManager, id: string) => Promise<string>,
+  action: (manager: SandboxToolService, id: string) => Promise<string>,
   requiresApproval = false,
 ): RuntimeTool {
   return {

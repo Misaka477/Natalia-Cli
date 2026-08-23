@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { agentsFromConfig } from "@natalia/agent-plugin";
+import { agentsFromConfig } from "@natalia/agent";
 import { resolveEffectiveModel } from "@natalia/config";
 import type { CapabilityRegistryView } from "@natalia/capability";
 import type {

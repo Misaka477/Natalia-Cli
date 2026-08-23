@@ -10,6 +10,7 @@
     { "path": "../plugin" },
     { "path": "../sandbox-plugin" },
     { "path": "../subagents-plugin" },
+    { "path": "../testing" },
     { "path": "../tools" }
   ]
 }

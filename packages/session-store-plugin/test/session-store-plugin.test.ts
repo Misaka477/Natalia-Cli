@@ -91,9 +91,9 @@ test("session store service is dependency-bound and closes on unload", async () 
   ) as SessionStoreController;
   expect(controller).toBeDefined();
   await controller.init();
-  expect(controller.sqlite()).toBeDefined();
+  expect(controller.status()).toEqual({ initialized: true, mode: "sqlite" });
 
   await registry.unload(SESSION_STORE_PLUGIN_ID);
   expect(services.has(SESSION_STORE_CONTROLLER_SERVICE)).toBe(false);
-  expect(controller.sqlite()).toBeUndefined();
+  expect(controller.status()).toEqual({ initialized: false, mode: "sqlite" });
 });

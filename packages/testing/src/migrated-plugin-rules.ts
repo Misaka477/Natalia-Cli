@@ -10,6 +10,30 @@ export type MigratedPluginViolation = {
 };
 const forbiddenRepositoryPaths = new Map([
   [
+    "packages/agent-plugin/package.json",
+    "deleted agent re-export facade must not be recreated",
+  ],
+  [
+    "packages/agent-plugin/src/index.ts",
+    "deleted agent re-export facade must not be recreated",
+  ],
+  [
+    "packages/skills/package.json",
+    "merged skills implementation package must not be recreated",
+  ],
+  [
+    "packages/skills/src/index.ts",
+    "merged skills implementation package must not be recreated",
+  ],
+  [
+    "packages/mcp/package.json",
+    "merged MCP implementation package must not be recreated",
+  ],
+  [
+    "packages/mcp/src/index.ts",
+    "merged MCP implementation package must not be recreated",
+  ],
+  [
     "packages/client/src/runtime-assembly.ts",
     "deleted runtime assembly seam must not be recreated",
   ],
@@ -59,7 +83,7 @@ export function findClientToolDependencyViolation(
  * must not be added until the client no longer imports the package anywhere.
  */
 const clientProductPackages = [
-  "agent",
+  "agent-plugin",
   "mcp",
   "native-terminal",
   "sandbox",
@@ -111,7 +135,7 @@ export function findClientProductDependencyViolation(
  * client closure and must be rejected (Phase 4 dependency closure).
  */
 const clientClosureAllowlist = [
-  "agent-plugin",
+  "agent",
   "attachment-plugin",
   "builtin-tool-plugins",
   "capability",
@@ -517,17 +541,44 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-terminal",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/tools/src/types.ts",
+      "packages/tool-terminal/src/index.ts",
+      "packages/terminal-plugin/src/index.ts",
+    ],
     forbidden: [
       {
         description: "direct terminal controller construction",
         pattern: /\bcreateTerminalController\b/u,
       },
+      {
+        description: "concrete native terminal type in client composition",
+        pattern: /\b(?:NativeTerminalRegistry|NativeTerminalSession)\b/u,
+      },
+      {
+        description: "terminal controller backend escape hatch",
+        pattern: /\bterminalController\?*\.get\s*\(/u,
+      },
+      {
+        description: "client-owned native terminal session projection",
+        pattern: /\bpublicNativeTerminal\b/u,
+      },
     ],
   },
   {
     id: "natalia-sandbox",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/tools/src/types.ts",
+      "packages/tool-sandbox/src/index.ts",
+      "packages/team-plugin/src/fan-out.ts",
+      "packages/team-plugin/src/team-tools.ts",
+      "packages/team-plugin/src/team-plugin.ts",
+      "packages/sandbox-plugin/src/index.ts",
+    ],
     forbidden: [
       {
         description: "direct sandbox implementation import",
@@ -537,15 +588,89 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
         description: "direct sandbox controller construction",
         pattern: /\bcreateSandboxController\b/u,
       },
+      {
+        description: "concrete sandbox backend type in service consumers",
+        pattern:
+          /\b(?:WorkspaceSandboxManager|SnapshotSandboxManager|WorktreeSandboxManager)\b/u,
+      },
+      {
+        description: "sandbox controller backend escape hatch",
+        pattern: /\bsandboxController\?*\.get\s*\(/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-subagents",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/tools/src/types.ts",
+      "packages/tool-agent/src/index.ts",
+      "packages/team-plugin/src/fan-out.ts",
+      "packages/team-plugin/src/team-tools.ts",
+      "packages/team-plugin/src/team-plugin.ts",
+      "packages/subagents-plugin/src/index.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct subagent implementation import",
+        pattern: /from\s+["']@natalia\/subagent["']/u,
+      },
+      {
+        description: "concrete subagent backend type in service consumers",
+        pattern: /\bSubagentRegistry\b/u,
+      },
+      {
+        description: "subagents controller backend escape hatch",
+        pattern: /\bsubagentsController\?*\.get\s*\(\s*\)/u,
+      },
     ],
   },
   {
     id: "natalia-mcp",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/provider-model-plugin/src/provider-runner.ts",
+    ],
     forbidden: [
       {
         description: "direct mcp controller construction",
         pattern: /\bcreateMcpController\b/u,
+      },
+      {
+        description: "concrete mcp controller type outside its owner",
+        pattern: /\bMcpController\b/u,
+      },
+      {
+        description: "mcp access collection escape hatch",
+        pattern: /\b(?:McpAccess|mcpAccess)\b/u,
+      },
+      {
+        description: "legacy mcp controller service",
+        pattern: /\bMCP_CONTROLLER_SERVICE\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-mcp",
+    targets: [
+      "packages/mcp-plugin/src/index.ts",
+      "packages/mcp-plugin/src/mcp-controller-plugin.ts",
+    ],
+    forbidden: [
+      {
+        description: "concrete mcp controller exported by public barrel",
+        pattern:
+          /export\s+(?:type\s+)?\{[^}]*\b(?:McpAccess|McpController)\b[^}]*\}\s+from\s+["']\.\/mcp-controller["']/u,
+      },
+      {
+        description: "legacy mcp controller service exported publicly",
+        pattern: /\bMCP_CONTROLLER_SERVICE\b/u,
+      },
+      {
+        description: "legacy mcp controller plugin exported publicly",
+        pattern: /\bcreateMcpControllerPlugin\b/u,
       },
     ],
   },
@@ -553,7 +678,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     id: "natalia-mcp",
     targets: [
       "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/mcp/src/index.ts",
+      "packages/mcp-plugin/src/mcp-runtime.ts",
       "packages/mcp-plugin/src/mcp-controller.ts",
       "packages/mcp-plugin/src/mcp-controller-plugin.ts",
     ],
@@ -616,6 +741,42 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       {
         description: "direct session store controller construction",
         pattern: /\bcreateSessionStoreController\b/u,
+      },
+      {
+        description: "concrete session store type outside testing fixture",
+        pattern: /\b(?:JsonSessionStore|SqliteSessionStore)\b/u,
+      },
+      {
+        description: "session store backend accessor",
+        pattern: /\bsessionStoreController\?*\.(?:json|sqlite)\s*\(/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-session-store",
+    targets: [
+      "packages/client/test/real-runtime.test.ts",
+      "packages/client/test/session-store-controller.test.ts",
+    ],
+    forbidden: [
+      {
+        description: "concrete session store type outside testing fixture",
+        pattern: /\b(?:JsonSessionStore|SqliteSessionStore)\b/u,
+      },
+      {
+        description: "session store backend accessor",
+        pattern: /\bcontroller\.(?:json|sqlite)\s*\(/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-session-store",
+    targets: ["packages/session-store-plugin/src/index.ts"],
+    forbidden: [
+      {
+        description: "concrete session store exported by plugin barrel",
+        pattern:
+          /export\s+(?:type\s+)?\{[^}]*\b(?:JsonSessionStore|SqliteSessionStore)\b[^}]*\}/u,
       },
     ],
   },
@@ -780,6 +941,8 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       "packages/client/src/worker.ts",
       "packages/client/src/workflow-execution-scheduler.ts",
       "packages/client/src/builtin-plugins/workflow-scheduler-plugin.ts",
+      "packages/client/test/capability-execution-host.test.ts",
+      "packages/client/test/worker.test.ts",
       "apps/cli/src/command-dispatcher.ts",
       "apps/tui/src/runtime-worker.ts",
     ],
@@ -797,6 +960,40 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
         description: "client-owned workflow scheduler implementation",
         pattern:
           /export (?:class WorkflowExecutionScheduler|function createWorkflowSchedulerPlugin)\b/u,
+      },
+      {
+        description: "concrete workflow scheduler type outside its owner",
+        pattern: /\bWorkflowExecutionScheduler\b/u,
+      },
+      {
+        description: "workflow scheduler host imported through client facade",
+        pattern:
+          /import\s*\{[^}]*\bcreateWorkflowSchedulerPluginHost\b[^}]*\}\s*from\s*["']@natalia\/client["']/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-workflow-scheduler",
+    targets: [
+      "packages/client/src/index.ts",
+      "packages/workflow-scheduler-plugin/src/index.ts",
+      "packages/workflow-scheduler-plugin/src/workflow-scheduler-plugin.ts",
+    ],
+    forbidden: [
+      {
+        description: "workflow scheduler composition re-exported by client",
+        pattern:
+          /export\s+(?:type\s+)?\{[^}]*\b(?:createWorkflowSchedulerPluginHost|WORKFLOW_SCHEDULER_PLUGIN_ID|WORKFLOW_SCHEDULER_SERVICE)\b[^}]*\}\s+from\s+["']@natalia\/workflow-scheduler-plugin["']/u,
+      },
+      {
+        description: "concrete workflow scheduler exported by public barrel",
+        pattern:
+          /export\s+(?:type\s+)?\{[^}]*\bWorkflowExecutionScheduler\b[^}]*\}\s+from\s+["']\.\/workflow-execution-scheduler["']/u,
+      },
+      {
+        description: "workflow scheduler host generic service escape hatch",
+        pattern:
+          /return\s*\{\s*scheduler\s*,[\s\S]{0,200}?\bservice\s*:\s*<T>\s*\([^)]*\)\s*=>/u,
       },
     ],
   },

@@ -110,7 +110,7 @@ test("migrated plugin rules retain built-in plugin protections", () => {
 test("MCP migration rejects raw tool registry wiring", () => {
   for (const path of [
     "packages/client/src/builtin-plugins/catalog.ts",
-    "packages/mcp/src/index.ts",
+    "packages/mcp-plugin/src/mcp-runtime.ts",
     "packages/mcp-plugin/src/mcp-controller.ts",
     "packages/mcp-plugin/src/mcp-controller-plugin.ts",
   ])
@@ -120,6 +120,135 @@ test("MCP migration rejects raw tool registry wiring", () => {
         "const tools: ToolRegistry = registry",
       ),
     ).toContainEqual(expect.objectContaining({ pluginID: "natalia-mcp" }));
+});
+
+test("MCP migration keeps connection routing inside its operational service", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/real-runtime.ts",
+      'import type { McpController } from "@natalia/mcp-plugin"',
+    ],
+    [
+      "packages/client/src/real-runtime.ts",
+      "const mcpAccess: McpAccess = controller.access",
+    ],
+    [
+      "packages/provider-model-plugin/src/provider-runner.ts",
+      "for (const access of input.mcpAccess()) await access.readResource(server, uri)",
+    ],
+    [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "createMcpController({})",
+    ],
+    [
+      "packages/mcp-plugin/src/index.ts",
+      'export type { McpController, McpAccess } from "./mcp-controller"',
+    ],
+    [
+      "packages/mcp-plugin/src/mcp-controller-plugin.ts",
+      "export const MCP_CONTROLLER_SERVICE = 'mcp.controller'",
+    ],
+  ] as const)
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-mcp" }),
+    );
+
+  for (const [path, source] of [
+    [
+      "packages/client/src/real-runtime.ts",
+      'import type { McpService } from "@natalia/mcp-plugin"',
+    ],
+    [
+      "packages/provider-model-plugin/src/provider-runner.ts",
+      "const result = await input.mcp()?.readResource(server, uri)",
+    ],
+    [
+      "packages/mcp-plugin/src/index.ts",
+      'export type { McpService } from "./mcp-controller"',
+    ],
+  ] as const)
+    expect(findMigratedPluginViolations(path, source)).toEqual([]);
+});
+
+test("terminal migration rejects concrete native types in client composition", () => {
+  for (const source of [
+    'import type { NativeTerminalRegistry } from "@natalia/terminal-plugin"',
+    "function publicNativeTerminal(session: NativeTerminalSession) {}",
+  ])
+    expect(findMigratedPluginViolations(target, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-terminal" }),
+    );
+});
+
+test("terminal migration rejects backend leaks across service consumers", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/real-runtime.ts",
+      "const registry = terminalController?.get()",
+    ],
+    [
+      "packages/client/src/builtin-plugins/catalog.ts",
+      "external?: NativeTerminalRegistry",
+    ],
+    ["packages/tools/src/types.ts", "nativeTerminal?: NativeTerminalRegistry"],
+    [
+      "packages/tool-terminal/src/index.ts",
+      "function info(session: NativeTerminalSession) {}",
+    ],
+    [
+      "packages/terminal-plugin/src/index.ts",
+      "export { NativeTerminalRegistry } from '@natalia/native-terminal'",
+    ],
+  ] as const)
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-terminal" }),
+    );
+});
+
+test("sandbox migration rejects backend leaks across service consumers", () => {
+  for (const [path, source] of [
+    [
+      "packages/client/src/real-runtime.ts",
+      "const manager = sandboxController?.get()",
+    ],
+    ["packages/tools/src/types.ts", "sandboxes?: WorkspaceSandboxManager"],
+    [
+      "packages/tool-sandbox/src/index.ts",
+      "function use(manager: WorkspaceSandboxManager) {}",
+    ],
+    [
+      "packages/team-plugin/src/fan-out.ts",
+      "sandboxes: SnapshotSandboxManager",
+    ],
+    [
+      "packages/sandbox-plugin/src/index.ts",
+      "export { WorktreeSandboxManager } from '@natalia/sandbox'",
+    ],
+  ] as const)
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-sandbox" }),
+    );
+});
+
+test("subagents migration rejects backend leaks across service consumers", () => {
+  for (const [path, source] of [
+    [
+      "packages/tools/src/types.ts",
+      'import type { SubagentRegistry } from "@natalia/subagent"',
+    ],
+    [
+      "packages/tool-agent/src/index.ts",
+      "function execute(registry: SubagentRegistry) {}",
+    ],
+    ["packages/team-plugin/src/team-plugin.ts", "subagentsController?.get()"],
+    [
+      "packages/subagents-plugin/src/index.ts",
+      'export { SubagentRegistry } from "@natalia/subagent"',
+    ],
+  ] as const)
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-subagents" }),
+    );
 });
 
 test("local tools migration rejects client-owned implementations", () => {
@@ -385,6 +514,37 @@ test("session store migration rejects client-owned implementations", () => {
     findMigratedPluginViolations(
       "packages/client/src/real-runtime.ts",
       'import type { SessionStoreController } from "@natalia/session-store-plugin"',
+    ),
+  ).toEqual([]);
+
+  for (const [path, source] of [
+    [
+      "packages/client/src/real-runtime.ts",
+      'import { SqliteSessionStore } from "@natalia/session"',
+    ],
+    [
+      "packages/client/test/real-runtime.test.ts",
+      "const store = new JsonSessionStore()",
+    ],
+    ["packages/client/src/real-runtime.ts", "sessionStoreController?.sqlite()"],
+    ["packages/client/src/real-runtime.ts", "sessionStoreController.json()"],
+  ] as const)
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-session-store" }),
+    );
+
+  expect(
+    findMigratedPluginViolations(
+      "packages/session-store-plugin/src/index.ts",
+      'export { SqliteSessionStore } from "@natalia/session"',
+    ),
+  ).toContainEqual(
+    expect.objectContaining({ pluginID: "natalia-session-store" }),
+  );
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/test/real-runtime.test.ts",
+      'import { SessionStoreTestDatabase } from "@natalia/testing"',
     ),
   ).toEqual([]);
 });
@@ -792,7 +952,7 @@ test("client physical dependency guard excludes extracted product packages", () 
   expect(
     findClientProductDependencyViolation(
       "packages/client/src/real-runtime.ts",
-      'import { MCP_CONTROLLER_SERVICE } from "@natalia/mcp-plugin"',
+      'import { MCP_SERVICE } from "@natalia/mcp-plugin"',
     ),
   ).toBeUndefined();
   expect(
@@ -854,13 +1014,13 @@ test("client physical dependency guard excludes extracted product packages", () 
       "packages/client/src/real-runtime.ts",
       'import { agentsFromConfig } from "@natalia/agent"',
     ),
-  ).toBeString();
+  ).toBeUndefined();
   expect(
     findClientProductDependencyViolation(
       "packages/client/src/real-runtime.ts",
       'import { agentsFromConfig } from "@natalia/agent-plugin"',
     ),
-  ).toBeUndefined();
+  ).toBeString();
 });
 
 test("client dependency closure rejects any non-kernel package", () => {
@@ -874,6 +1034,12 @@ test("client dependency closure rejects any non-kernel package", () => {
     findClientClosureViolation(
       "packages/client/package.json",
       '"@natalia/capability": "workspace:*"',
+    ),
+  ).toBeUndefined();
+  expect(
+    findClientClosureViolation(
+      "packages/client/package.json",
+      '"@natalia/agent": "workspace:*"',
     ),
   ).toBeUndefined();
   expect(
@@ -1011,6 +1177,8 @@ test("workflow scheduler migration protects host construction sites", () => {
     "packages/client/src/real-runtime.ts",
     "packages/client/src/builtin-plugins/catalog.ts",
     "packages/client/src/capability-execution-host.ts",
+    "packages/client/test/capability-execution-host.test.ts",
+    "packages/client/test/worker.test.ts",
     "apps/cli/src/command-dispatcher.ts",
     "apps/tui/src/runtime-worker.ts",
   ])
@@ -1055,14 +1223,61 @@ test("workflow scheduler migration protects the extracted implementation", () =>
       "export function createWorkflowSchedulerPlugin() {}",
     ],
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-workflow-scheduler" }),
-    ]);
+    );
 
   expect(
     findMigratedPluginViolations(
       "packages/client/src/capability-execution-host.ts",
-      'import { WorkflowExecutionScheduler } from "@natalia/workflow-scheduler-plugin"',
+      'import type { WorkflowExecutionSchedulerService } from "@natalia/workflow-scheduler-plugin"',
     ),
   ).toEqual([]);
+
+  for (const source of [
+    'export { WorkflowExecutionScheduler } from "@natalia/workflow-scheduler-plugin"',
+    'export { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin"',
+  ])
+    expect(
+      findMigratedPluginViolations("packages/client/src/index.ts", source),
+    ).toContainEqual(
+      expect.objectContaining({ pluginID: "natalia-workflow-scheduler" }),
+    );
+
+  expect(
+    findMigratedPluginViolations(
+      "packages/workflow-scheduler-plugin/src/index.ts",
+      'export { WorkflowExecutionScheduler } from "./workflow-execution-scheduler"',
+    ),
+  ).toContainEqual(
+    expect.objectContaining({ pluginID: "natalia-workflow-scheduler" }),
+  );
+  expect(
+    findMigratedPluginViolations(
+      "packages/workflow-scheduler-plugin/src/index.ts",
+      'export type { WorkflowExecutionSchedulerService } from "./workflow-execution-scheduler"',
+    ),
+  ).toEqual([]);
+  expect(
+    findMigratedPluginViolations(
+      "apps/cli/src/command-dispatcher.ts",
+      'import { createWorkflowSchedulerPluginHost } from "@natalia/client"',
+    ),
+  ).toContainEqual(
+    expect.objectContaining({ pluginID: "natalia-workflow-scheduler" }),
+  );
+  expect(
+    findMigratedPluginViolations(
+      "apps/tui/src/runtime-worker.ts",
+      'import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin"',
+    ),
+  ).toEqual([]);
+  expect(
+    findMigratedPluginViolations(
+      "packages/workflow-scheduler-plugin/src/workflow-scheduler-plugin.ts",
+      "return { scheduler, service: <T>(name: string) => capabilities.service<T>(name) }",
+    ),
+  ).toContainEqual(
+    expect.objectContaining({ pluginID: "natalia-workflow-scheduler" }),
+  );
 });

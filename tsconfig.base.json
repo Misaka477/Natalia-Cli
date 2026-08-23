@@ -12,7 +12,6 @@
     "baseUrl": ".",
     "paths": {
       "@natalia/agent": ["packages/agent/src/index.ts"],
-      "@natalia/agent-plugin": ["packages/agent-plugin/src/index.ts"],
       "@natalia/attachment-plugin": ["packages/attachment-plugin/src/index.ts"],
       "@natalia/builtin-tool-plugins": [
         "packages/builtin-tool-plugins/src/index.ts"
@@ -35,7 +34,6 @@
       "@natalia/local-tools-plugin": [
         "packages/local-tools-plugin/src/index.ts"
       ],
-      "@natalia/mcp": ["packages/mcp/src/index.ts"],
       "@natalia/mcp-plugin": ["packages/mcp-plugin/src/index.ts"],
       "@natalia/object-store": ["packages/object-store/src/index.ts"],
       "@natalia/native-terminal": ["packages/native-terminal/src/index.ts"],

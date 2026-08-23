@@ -11,6 +11,9 @@
     },
     {
       "path": "../subagent"
+    },
+    {
+      "path": "../tools"
     }
   ]
 }

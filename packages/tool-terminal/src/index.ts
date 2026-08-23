@@ -24,24 +24,24 @@ import {
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
 } from "@natalia/tools";
-import type { NativeTerminalSession } from "@natalia/native-terminal";
 import type { Plugin } from "@natalia/plugin";
 import { truncateProcessOutput } from "@natalia/tools";
 import type {
   RuntimeTool,
+  TerminalSessionView,
   ToolExecutionContext,
   ToolFamily,
 } from "@natalia/tools";
 
 function requireNativeTerminal(context: ToolExecutionContext) {
-  if (!context.nativeTerminal)
+  if (!context.terminal)
     throw new Error(
       "Native Terminal Host is unavailable. Install the Natalia WezTerm distribution to start an interactive terminal.",
     );
-  return context.nativeTerminal;
+  return context.terminal;
 }
 
-function modelNativeTerminalInfo(session: NativeTerminalSession) {
+function modelNativeTerminalInfo(session: TerminalSessionView) {
   return {
     id: session.id,
     host: session.host,
@@ -672,7 +672,9 @@ function interactiveListTool(): RuntimeTool {
     parameters: { type: "object", properties: {}, additionalProperties: false },
     async execute(_input, context) {
       return JSON.stringify(
-        requireNativeTerminal(context).list().map(modelNativeTerminalInfo),
+        (await requireNativeTerminal(context).list()).map(
+          modelNativeTerminalInfo,
+        ),
         null,
         2,
       );

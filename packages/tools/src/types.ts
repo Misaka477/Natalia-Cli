@@ -10,9 +10,298 @@
  * implementation so a caller can reason about what a tool is allowed to do without
  * holding the code that does it.
  */
-import type { NativeTerminalRegistry } from "@natalia/native-terminal";
-import type { SandboxChange, WorkspaceSandboxManager } from "@natalia/sandbox";
-import type { SubagentRegistry } from "@natalia/subagent";
+import type {
+  ExecutionTarget,
+  RuntimeEvent,
+  SandboxDiffKind,
+} from "@natalia/contracts";
+
+export type SubagentStatusView =
+  | "idle"
+  | "running"
+  | "paused"
+  | "stopped"
+  | "completed"
+  | "failed";
+
+export type SubagentPhaseView =
+  | "idle"
+  | "queued"
+  | "provider"
+  | "tool"
+  | "retrying"
+  | "finalizing"
+  | "waiting";
+
+export type SubagentOutputView = {
+  step: number;
+  text: string;
+  timestamp: number;
+};
+
+export type SubagentRecordView = {
+  id: string;
+  task: string;
+  mode: string;
+  status: SubagentStatusView;
+  attached: boolean;
+  modelProfile: string;
+  allowedTools: string[];
+  excludeTools: string[];
+  writePaths?: string[];
+  outputs: SubagentOutputView[];
+  createdAt: number;
+  updatedAt: number;
+  parentSessionID?: string;
+  parentAgentID?: string;
+  continuation?: number;
+  phase: SubagentPhaseView;
+  lastActivityAt: number;
+  activityDetail: string;
+  startedAt: number;
+  endedAt?: number;
+};
+
+export type SubagentEventView = {
+  agentId: string;
+  event: string;
+  status: string;
+  attached: boolean;
+  text?: string;
+  timestamp: number;
+  parentSessionID?: string;
+  parentAgentID?: string;
+  continuation?: number;
+  phase?: SubagentPhaseView;
+  activityDetail?: string;
+  stopReason?: string;
+  requestedBy?: "model" | "user" | "parent" | "runtime";
+  force?: boolean;
+};
+
+export type SubagentSpawnOptions = {
+  mode?: string;
+  modelProfile?: string;
+  allowedTools?: string[];
+  excludeTools?: string[];
+  writePaths?: string[];
+  signal?: AbortSignal;
+  parentSessionID?: string;
+  parentAgentID?: string;
+  maxDepth?: number;
+};
+
+export type SubagentStopResult =
+  | { outcome: "stopped"; id: string }
+  | { outcome: "not_found"; id: string }
+  | { outcome: "not_running"; id: string; status: SubagentStatusView }
+  | {
+      outcome: "protected";
+      id: string;
+      health: "active" | "quiet";
+      retryAfterMs: number;
+    };
+
+export type SubagentRunnerContext = {
+  agentId: string;
+  log(text: string): void;
+  setStatus(status: string): void;
+  signal: AbortSignal;
+  reportActivity(phase: SubagentPhaseView, detail: string): void;
+};
+
+/** Operational subagent surface consumed by tools and hosts. */
+export type SubagentToolService = {
+  spawn(
+    task: string,
+    options?: SubagentSpawnOptions,
+  ): Promise<SubagentRecordView>;
+  list(): SubagentRecordView[];
+  runningCount(): number;
+  get(id: string): SubagentRecordView | undefined;
+  status(id: string): SubagentStatusView | undefined;
+  health(id: string): "active" | "quiet" | "stalled" | "terminal";
+  requestStop(id: string, reason: string, force?: boolean): SubagentStopResult;
+  stop(id: string): boolean;
+  resume(id: string): Promise<boolean>;
+  retry(id: string): Promise<SubagentRecordView | undefined>;
+  attach(id: string): boolean;
+  detach(id: string): boolean;
+  cleanup(dryRun?: boolean): string[];
+  audit(tail?: number, format?: string): string;
+  subscribe(fn: (event: SubagentEventView) => void): () => void;
+  formatList(): Promise<string>;
+  formatOutput(id: string, verbose?: boolean): Promise<string>;
+  formatStatus(id: string): Promise<string>;
+  wait(
+    ids: string[],
+    until: "all_terminal" | "any_terminal",
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<
+    Record<string, { status: SubagentStatusView; phase: SubagentPhaseView }>
+  >;
+};
+
+export type TerminalSessionView = {
+  id: string;
+  host: "wezterm";
+  paneID: number;
+  windowID: number;
+  muxWindowID: number;
+  tabID: number;
+  command: string;
+  cwd: string;
+  status: "running" | "exited";
+  startedAt: string;
+};
+
+/** Operational terminal surface consumed by tools, independent of its backend. */
+export type TerminalToolService = {
+  start(input: {
+    command: string;
+    cwd: string;
+    id?: string;
+    sessionID?: string;
+  }): Promise<TerminalSessionView>;
+  list(): TerminalSessionView[] | Promise<TerminalSessionView[]>;
+  reconcile(): Promise<TerminalSessionView[]>;
+  read(
+    id: string,
+    options?: { maxLines?: number; startLine?: number; endLine?: number },
+  ): Promise<{
+    text: string;
+    cursorX: number;
+    cursorY: number;
+    rows: number;
+    cols: number;
+  }>;
+  snapshot(id: string): Promise<{
+    text: string;
+    cursorX: number;
+    cursorY: number;
+    rows: number;
+    cols: number;
+    revision: number;
+    status: "running" | "exited";
+    inputOwner: "model" | "human";
+    highlightRanges: unknown[];
+  }>;
+  observe(
+    id: string,
+    afterRevision: number,
+    options?: { maxLines?: number; timeoutMs?: number },
+  ): Promise<{
+    session: { revision: number };
+    text: string;
+    cursorX: number;
+    cursorY: number;
+    rows: number;
+    cols: number;
+    afterRevision: number;
+    changed: boolean;
+    reason: "exited" | "screen_changed" | "session_activity" | "timeout";
+  }>;
+  session(id: string): { lastObservedText?: string };
+  markObserved(id: string, text: string, revision: number): void;
+  write(
+    id: string,
+    value: string,
+    options?: { idempotencyKey?: string },
+  ): Promise<{
+    writtenBytes: number;
+    delivery: "accepted" | "duplicate" | "cancelled";
+  }>;
+  resize(
+    id: string,
+    rows: number,
+    cols: number,
+    actor: "model" | "human",
+  ): Promise<TerminalSessionView>;
+  requestHuman(id: string, reason: string): Promise<TerminalSessionView>;
+  stop(
+    id: string,
+    actor: "model" | "human" | "system",
+  ): Promise<TerminalSessionView>;
+};
+
+export type SandboxChangeView = {
+  kind: SandboxDiffKind;
+  path: string;
+  oldPath?: string;
+  mode?: string;
+  content?: string;
+};
+
+export type SandboxManifestView = {
+  id: string;
+  root: string;
+  isolationLevel: "workspace" | "container" | "vm";
+  changedFiles: SandboxChangeView[];
+  runningResources: string[];
+  envAllowlist: string[];
+};
+
+export type SandboxResourceView = {
+  id: string;
+  sandboxID: string;
+  command: string;
+  pid: number;
+  status: "running" | "exited" | "failed" | "stopped";
+  outputPath: string;
+  startedAt: string;
+  endedAt?: string;
+};
+
+/** Operational sandbox surface consumed by tools, independent of its backend. */
+export type SandboxToolService = {
+  create(id: string): Promise<SandboxManifestView>;
+  list(): Promise<SandboxManifestView[]>;
+  execute(
+    id: string,
+    command: string,
+    options?: { signal?: AbortSignal; env?: NodeJS.ProcessEnv },
+  ): Promise<{ exitCode: number; output: string; target: ExecutionTarget }>;
+  write(
+    id: string,
+    path: string,
+    content: string,
+    mode?: string,
+  ): Promise<void>;
+  previewMerge(id: string): Promise<SandboxChangeView[]>;
+  merge(
+    id: string,
+    hostRoot: string,
+    authorize?: (paths: string[]) => Promise<void>,
+  ): Promise<SandboxChangeView[]>;
+  delete(id: string): Promise<{
+    pendingChanges: SandboxChangeView[];
+    runningResources: string[];
+  }>;
+  startResource(
+    id: string,
+    command: string,
+    resourceID?: string,
+  ): Promise<SandboxResourceView>;
+  resourcesFor(id: string): SandboxResourceView[];
+  resourceOutput(
+    id: string,
+    resourceID: string,
+    maxBytes?: number,
+  ): Promise<string>;
+  stopResource(id: string, resourceID: string): Promise<SandboxResourceView>;
+  validate(
+    id: string,
+    command: string,
+  ): Promise<{ ok: boolean; exitCode: number; output: string }>;
+  updateEvent(id: string): RuntimeEvent;
+  diffEvent(id: string): RuntimeEvent;
+  auditEvent(
+    id: string,
+    action: string,
+    approvalRequired?: boolean,
+  ): RuntimeEvent;
+};
 
 export type ToolExecutionBoundary = {
   name: string;
@@ -94,9 +383,9 @@ export type ToolExecutionContext = {
       custom?: boolean;
     }>;
   }) => Promise<string[][]>;
-  subagents?: SubagentRegistry;
-  nativeTerminal?: NativeTerminalRegistry;
-  sandboxes?: WorkspaceSandboxManager;
+  subagents?: SubagentToolService;
+  terminal?: TerminalToolService;
+  sandboxes?: SandboxToolService;
   workspaceReadAuthorize?: (input: {
     toolName: string;
     paths: string[];
@@ -124,7 +413,7 @@ export type ToolExecutionContext = {
     paths: string[];
   }) => Promise<void>;
   onSandboxEvent?: (event: { type: string; [key: string]: unknown }) => void;
-  onWorkspaceChange?: (changes: SandboxChange[]) => void;
+  onWorkspaceChange?: (changes: SandboxChangeView[]) => void;
   /**
    * The runtime's resolved config, by name (the D2 `runtime.config` service),
    * refreshed in place on config reload. A tool family reads values the

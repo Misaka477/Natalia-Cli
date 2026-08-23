@@ -4,15 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
-import {
-  createTerminalControllerPlugin,
-  resolveNataliaWezTermForkExecutable,
-  TERMINAL_PLUGIN_ID,
-} from "../src";
+import { resolveTerminalTestExecutable } from "@natalia/testing";
+import { createTerminalControllerPlugin, TERMINAL_PLUGIN_ID } from "../src";
 import { createTerminalController } from "../src/terminal-controller";
 
 test("terminal controller init without a host environment leaves the registry absent", async () => {
-  if (resolveNataliaWezTermForkExecutable()) {
+  if (resolveTerminalTestExecutable()) {
     // A managed WezTerm fork build exists in this environment, so the
     // "no host" precondition cannot be reproduced here. Mirrors the watcher
     // budget pattern: skip instead of failing on an environment fact.
@@ -34,7 +31,7 @@ test("terminal controller init without a host environment leaves the registry ab
   // No WezTerm host is available in tests; init must not throw and the
   // registry stays absent so members report "Native Terminal Host is
   // unavailable" instead of crashing.
-  expect(controller.get()).toBeUndefined();
+  expect(await controller.list()).toEqual([]);
   await controller.close();
 });
 
@@ -42,7 +39,9 @@ test("an externally provided registry is installed as-is and never rebuilt", asy
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-controller-2-"));
   let disposals = 0;
   const external = {
-    marker: "external",
+    async reconcile() {
+      return [];
+    },
     dispose: async () => {
       disposals += 1;
     },
@@ -57,11 +56,13 @@ test("an externally provided registry is installed as-is and never rebuilt", asy
     external,
   });
   await controller.init();
-  expect(controller.get()).toBe(external);
+  expect(await controller.list()).toEqual([]);
   await controller.close();
   await controller.close();
   expect(disposals).toBe(0);
-  expect(controller.get()).toBeUndefined();
+  await expect(controller.read("missing")).rejects.toThrow(
+    "Native Terminal Host is unavailable",
+  );
   await expect(controller.init()).rejects.toThrow(
     "terminal controller is closed",
   );

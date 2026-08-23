@@ -990,16 +990,21 @@ async function* eventStream(input: {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  while (true) {
-    const next = await reader.read();
-    if (next.done) break;
-    buffer += decoder.decode(next.value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      const event = parseRuntimeEvent(part);
-      if (event) yield event;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      buffer += decoder.decode(next.value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        const event = parseRuntimeEvent(part);
+        if (event) yield event;
+      }
     }
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
   }
 }
 

@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
 import {
   createWorkflowSchedulerPluginHost,
-  WorkflowExecutionScheduler,
   WORKFLOW_SCHEDULER_PLUGIN_ID,
   WORKFLOW_SCHEDULER_SERVICE,
 } from "../src";
@@ -20,13 +19,13 @@ test("workflow scheduler host owns and disposes the process service", async () =
   expect(WORKFLOW_SCHEDULER_SERVICE).toBe("workflow-execution.scheduler");
   expect(capabilities.has(WORKFLOW_SCHEDULER_PLUGIN_ID)).toBe(true);
   expect(capabilities.isPending(WORKFLOW_SCHEDULER_PLUGIN_ID)).toBe(false);
-  expect(
-    host.service<WorkflowExecutionScheduler>(WORKFLOW_SCHEDULER_SERVICE),
-  ).toBe(host.scheduler);
+  expect(capabilities.service<unknown>(WORKFLOW_SCHEDULER_SERVICE)).toBe(
+    host.scheduler,
+  );
 
   await host.close();
   expect(capabilities.has(WORKFLOW_SCHEDULER_PLUGIN_ID)).toBe(false);
-  expect(host.service(WORKFLOW_SCHEDULER_SERVICE)).toBeUndefined();
+  expect(capabilities.service(WORKFLOW_SCHEDULER_SERVICE)).toBeUndefined();
   expect(() =>
     host.scheduler.schedule({
       workspaceRoot: "/tmp/workflow-scheduler-plugin",

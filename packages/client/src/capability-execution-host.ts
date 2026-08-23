@@ -9,8 +9,8 @@ import { NataliaDocumentStore, type NataliaDocument } from "@natalia/workflow";
 import { runTaskFromDocument, type TaskRunResult } from "./task-controller";
 import { workflowContributionsProjection } from "@natalia/task-workflow-plugin";
 import {
-  WorkflowExecutionScheduler,
   type WorkflowExecutionHandle,
+  type WorkflowExecutionSchedulerService,
 } from "@natalia/workflow-scheduler-plugin";
 
 export type CapabilityTaskExecutionRequest = {
@@ -35,12 +35,12 @@ export type CapabilityTaskExecutionRequest = {
  * resolved again so queued work cannot start from a stale contribution snapshot.
  */
 export class CapabilityExecutionHost {
-  private readonly scheduler: WorkflowExecutionScheduler;
+  private readonly scheduler: WorkflowExecutionSchedulerService;
 
   constructor(
     private readonly capabilities: CapabilityHost,
     options: {
-      scheduler: WorkflowExecutionScheduler;
+      scheduler: WorkflowExecutionSchedulerService;
     },
   ) {
     this.scheduler = options.scheduler;

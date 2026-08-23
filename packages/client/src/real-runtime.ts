@@ -117,17 +117,15 @@ import {
   agentsFromConfig,
   type AgentDefinition,
   type AgentRegistry,
-} from "@natalia/agent-plugin";
+} from "@natalia/agent";
 import {
   appendSessionEvent,
-  createSessionRecord,
   admitInput,
   admissionCutoff,
   admittedInputs,
   promoteNextQueued,
   projectInteractiveRequests,
   projectSession,
-  projectSessionMessages,
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
@@ -155,6 +153,7 @@ import {
   ToolExecutionPipeline,
   validateToolParameters,
   type RuntimeTool,
+  type SubagentRunnerContext,
   type ToolExecutionContext,
   type ToolFamily,
   type ToolMaterialization,
@@ -166,8 +165,6 @@ import {
   type Skill,
   type SkillRegistry,
 } from "@natalia/skills-plugin";
-import type { SubagentRegistry } from "@natalia/subagents-plugin";
-import type { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import {
   foregroundProcessForTTY,
   globalConfigHome,
@@ -234,11 +231,7 @@ import {
   SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
   type SandboxController,
 } from "@natalia/sandbox-plugin";
-import {
-  MCP_CONTROLLER_SERVICE,
-  type McpAccess,
-  type McpController,
-} from "@natalia/mcp-plugin";
+import { MCP_SERVICE, type McpService } from "@natalia/mcp-plugin";
 import type { TaskModuleContext } from "@natalia/task-module-plugin";
 import {
   TASK_WORKFLOW_CONTROLLER_SERVICE,
@@ -389,30 +382,6 @@ function refusalFromRegistry(error: unknown): RuntimeRefusal {
   );
 }
 
-function publicNativeTerminal(
-  session: import("@natalia/terminal-plugin").NativeTerminalSession,
-) {
-  return {
-    id: session.id,
-    host: session.host,
-    paneID: session.paneID,
-    windowID: session.windowID,
-    muxWindowID: session.muxWindowID,
-    tabID: session.tabID,
-    command: session.command,
-    cwd: session.cwd,
-    status: session.status,
-    inputOwner: session.inputOwner,
-    geometryOwner: session.geometryOwner,
-    secureInput: session.secureInput,
-    rows: session.rows,
-    cols: session.cols,
-    startedAt: session.startedAt,
-    attached: session.attached,
-    mayWaitForHuman: session.mayWaitForHuman,
-  };
-}
-
 export type RealRuntimeClientOptions = {
   sessionID?: SessionID;
   episodeID?: import("@natalia/contracts").EpisodeID;
@@ -428,7 +397,9 @@ export type RealRuntimeClientOptions = {
   permissionMode?: "ask" | "auto" | "read_only";
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
-  nativeTerminal?: NativeTerminalRegistry;
+  nativeTerminal?: Parameters<
+    typeof import("@natalia/terminal-plugin").createTerminalControllerPlugin
+  >[0]["external"];
   taskModuleContext?: TaskModuleContext;
   /** Host-owned registry shared with task delivery and other capability consumers. */
   capabilityRegistry?: CapabilityRegistry;
@@ -505,7 +476,7 @@ export function createRealRuntimeClient(
     // input is refused when the host cannot answer at all.
     foregroundProgram: async (paneID) => {
       try {
-        const ttyName = await terminalController?.get()?.ttyName(paneID);
+        const ttyName = await terminalController?.ttyName(paneID);
         if (!ttyName)
           return {
             supported: false as const,
@@ -538,14 +509,13 @@ export function createRealRuntimeClient(
     return taskWorkflowController;
   }
   /**
-   * Controllers provided by the terminal/sandbox/mcp built-in plugins, resolved
+   * Services provided by the terminal/sandbox/mcp built-in plugins, resolved
    * after they load during `start`. All consumers run post-start, so the
    * services are in place by the time they are read.
    */
   let terminalController: TerminalController | undefined;
   let sandboxController: SandboxController | undefined;
-  let mcpController: McpController | undefined;
-  let mcpAccess: McpAccess = [];
+  let mcpService: McpService | undefined;
   const pluginsController = createPluginsController({
     workspaceRoot,
     tools,
@@ -642,7 +612,7 @@ export function createRealRuntimeClient(
       context: () => exec.context,
       subagents: () =>
         (subagentsController?.enabled() ?? false)
-          ? subagentsController!.get()
+          ? subagentsController
           : undefined,
       activeAbort: () => exec.activeAbort,
       workLedger: () => workLedgerController,
@@ -684,9 +654,8 @@ export function createRealRuntimeClient(
   }
   /** Sandbox RPCs need the controller; its absence is a host misconfiguration. */
   function requireSandboxes() {
-    const sandboxes = sandboxController?.get();
-    if (!sandboxes) throw new Error("sandbox controller unavailable");
-    return sandboxes;
+    if (!sandboxController) throw new Error("sandbox controller unavailable");
+    return sandboxController;
   }
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
@@ -1018,17 +987,13 @@ export function createRealRuntimeClient(
         );
       }
       if (reconcileMcp) {
-        mcpController = undefined;
-        mcpAccess = [];
+        mcpService = undefined;
         await pluginsController.reconcileBuiltins(
           [mcpPluginEntry(mcpPluginInput(tsConfig.config))],
           tsConfig.config.plugins.settings,
         );
-        mcpController = capabilityRegistry.service<McpController>(
-          MCP_CONTROLLER_SERVICE,
-        );
-        mcpAccess = mcpController?.access ?? [];
-        await mcpController?.reload();
+        mcpService = capabilityRegistry.service<McpService>(MCP_SERVICE);
+        await mcpService?.reload();
       }
       if (reconcileSandbox) {
         sandboxController = undefined;
@@ -1348,11 +1313,7 @@ export function createRealRuntimeClient(
               return sessionPersistence;
             },
             saveInbox: async (snapshot) => {
-              if (sessionStoreController?.sqlite())
-                sessionStoreController
-                  ?.sqlite()!
-                  .replaceInbox(snapshot.id, snapshot.inbox ?? []);
-              else await sessionStoreController?.json().save(snapshot);
+              await sessionStoreController?.saveInbox(snapshot);
             },
             flush: async () => {
               await sessionPersistence;
@@ -1482,10 +1443,7 @@ export function createRealRuntimeClient(
       sandboxController = capabilityRegistry.service<SandboxController>(
         SANDBOX_CONTROLLER_SERVICE,
       );
-      mcpController = capabilityRegistry.service<McpController>(
-        MCP_CONTROLLER_SERVICE,
-      );
-      mcpAccess = mcpController?.access ?? [];
+      mcpService = capabilityRegistry.service<McpService>(MCP_SERVICE);
       subagentsController = capabilityRegistry.service<SubagentsController>(
         SUBAGENTS_CONTROLLER_SERVICE,
       );
@@ -1826,10 +1784,10 @@ export function createRealRuntimeClient(
       }
     }
     function publishSubagentEvent(
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       event: RuntimeEvent,
     ) {
-      const parentSessionID = subagentsController?.get()?.get(runner.agentId)
+      const parentSessionID = subagentsController?.get(runner.agentId)
         ?.parentSessionID as SessionID | undefined;
       publishForSession(
         parentSessionID ? executionBySession.get(parentSessionID) : activeExec,
@@ -1838,21 +1796,19 @@ export function createRealRuntimeClient(
           : { ...event, agentID: runner.agentId },
       );
     }
-    function subagentTurnID(
-      runner: import("@natalia/subagents-plugin").RunnerContext,
-    ) {
+    function subagentTurnID(runner: SubagentRunnerContext) {
       const continuation =
-        subagentsController?.get()?.get(runner.agentId)?.continuation ?? 0;
+        subagentsController?.get(runner.agentId)?.continuation ?? 0;
       return continuation
         ? `subagent:${runner.agentId}:continuation:${continuation}`
         : `subagent:${runner.agentId}`;
     }
     function beginSubagentConversation(
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       task: string,
     ) {
       const id = subagentTurnID(runner);
-      const parentSessionID = subagentsController?.get()?.get(runner.agentId)
+      const parentSessionID = subagentsController?.get(runner.agentId)
         ?.parentSessionID as SessionID | undefined;
       if (parentSessionID) turnSession.set(id, parentSessionID);
       turnAgent.set(id, runner.agentId);
@@ -1867,7 +1823,7 @@ export function createRealRuntimeClient(
       publishSubagentEvent(runner, { type: "turn.started", id });
     }
     function finishSubagentConversation(
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       stopReason: "done" | "cancelled" | "error",
     ) {
       const id = subagentTurnID(runner);
@@ -1888,7 +1844,7 @@ export function createRealRuntimeClient(
     async function runSubagentProviderStep(
       ledger: RuntimeContextLedger,
       visibleTools: RuntimeTool[],
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       step: number,
       activeProvider: StreamingProvider,
       activeContextConfig: {
@@ -2025,7 +1981,7 @@ export function createRealRuntimeClient(
     }
     function appendSubagentAssistant(
       ledger: RuntimeContextLedger,
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       step: number,
       output: string,
       calls: ProviderToolCall[],
@@ -2046,7 +2002,7 @@ export function createRealRuntimeClient(
     }
     function appendSubagentToolResult(
       ledger: RuntimeContextLedger,
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       step: number,
       call: ProviderToolCall,
       content: string,
@@ -2061,7 +2017,7 @@ export function createRealRuntimeClient(
     async function executeSubagentToolCall(input: {
       call: ProviderToolCall;
       step: number;
-      runner: import("@natalia/subagents-plugin").RunnerContext;
+      runner: SubagentRunnerContext;
       visibleTools: RuntimeTool[];
       childWorkspaceRoot: string;
       repeatedCalls: Map<string, number>;
@@ -2149,9 +2105,9 @@ export function createRealRuntimeClient(
           throw new Error(
             `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
           );
-        const parentSessionID = subagentsController
-          ?.get()
-          ?.get(runner.agentId)?.parentSessionID;
+        const parentSessionID = subagentsController?.get(
+          runner.agentId,
+        )?.parentSessionID;
         const startedAt = Date.now();
         publishSubagentEvent(runner, {
           type: "tool.update",
@@ -2175,11 +2131,9 @@ export function createRealRuntimeClient(
               hookEvent.turnID,
               question,
             ),
-          subagents: subagentsController?.get(),
-          nativeTerminal: terminalController?.get(),
-          ...(input.exposeSandboxes
-            ? { sandboxes: sandboxController?.get() }
-            : {}),
+          subagents: subagentsController,
+          terminal: terminalController,
+          ...(input.exposeSandboxes ? { sandboxes: sandboxController } : {}),
           workspaceReadAuthorize: (request) =>
             authorizeWorkspaceRead(request, input.exec),
           ...(input.writeAuthorize
@@ -2233,7 +2187,7 @@ export function createRealRuntimeClient(
     }
     async function runSandboxedSubagent(
       task: string,
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       exec: SessionExecutionState,
       activeProvider: StreamingProvider,
     ) {
@@ -2246,17 +2200,17 @@ export function createRealRuntimeClient(
     }
     async function runSandboxedSubagentInner(
       task: string,
-      runner: import("@natalia/subagents-plugin").RunnerContext,
+      runner: SubagentRunnerContext,
       exec: SessionExecutionState,
       activeProvider: StreamingProvider,
     ) {
-      const record = subagentsController?.get()?.get(runner.agentId);
+      const record = subagentsController?.get(runner.agentId);
       if (!record)
         throw new Error(`subagent record not found: ${runner.agentId}`);
       const allowed = record.allowedTools ?? [];
       const excluded = new Set(record.excludeTools ?? []);
       // The sub-agent's own worktree, created through the sandbox backend.
-      const manifest = await sandboxController?.get()?.create(runner.agentId);
+      const manifest = await sandboxController?.create(runner.agentId);
       if (!manifest)
         throw new Error("sandbox controller unavailable for subagent worktree");
       const sandboxRoot = manifest.root;
@@ -2364,7 +2318,7 @@ export function createRealRuntimeClient(
     }
     await subagentsController?.init(async (task, runner) => {
       try {
-        const record = subagentsController?.get()?.get(runner.agentId);
+        const record = subagentsController?.get(runner.agentId);
         const exec = executionBySession.get(
           record?.parentSessionID as SessionID,
         );
@@ -2466,9 +2420,8 @@ export function createRealRuntimeClient(
         throw error;
       }
     });
-    const subagentRegistry = subagentsController!.get();
-    subagentRegistry.subscribe((event) => {
-      const record = subagentRegistry.get(event.agentId);
+    subagentsController!.subscribe((event) => {
+      const record = subagentsController!.get(event.agentId);
       const update = {
         type: "subagent.update",
         id: event.agentId,
@@ -2488,7 +2441,7 @@ export function createRealRuntimeClient(
         continuation: event.continuation,
         phase: event.phase ?? record?.phase,
         activityDetail: event.activityDetail ?? record?.activityDetail,
-        health: subagentRegistry.health(event.agentId),
+        health: subagentsController!.health(event.agentId),
         lastActivityAt: record?.lastActivityAt,
         startedAt: record?.startedAt,
         endedAt: record?.endedAt,
@@ -2507,7 +2460,7 @@ export function createRealRuntimeClient(
         scheduleRuntimeStatusSnapshot();
     });
     if (tsRuntimeConfig && extensionEnabled("mcp")) {
-      await mcpController?.reload();
+      await mcpService?.reload();
     }
     // Out-of-tree families declared by `tools.paths` join the built-ins through
     // the same kernel, so they own their tools the same way. They load here
@@ -2517,17 +2470,18 @@ export function createRealRuntimeClient(
     terminalController?.setActiveSession(sessionID);
 
     await sandboxController?.init();
-    session = sessionStoreController?.sqlite()
-      ? ((await sessionStoreController?.json().load(sessionID)) ??
-        createSessionRecord(sessionID, options.title ?? "New session"))
-      : await sessionStoreController
-          ?.json()
-          .loadOrCreate(sessionID, options.title ?? "New session");
+    const storedSession = await sessionStoreController?.load(sessionID, {
+      title: options.title,
+      create: true,
+      indexedRecovery: replayMode === "none",
+    });
+    session = storedSession?.session;
     if (!session) throw new Error("session initialization did not complete");
     if (options.title && !session.metadata?.titleSource) {
       session.metadata = { ...session.metadata, titleSource: "manual" };
-      if (!sessionStoreController?.sqlite())
-        await sessionStoreController?.json().save(session);
+      await sessionStoreController?.updateMetadata(session, {
+        titleSource: "manual",
+      });
     }
     // D2: the startup session is the first exec; the activity view (the
     // `session`/`runtimeContext` closures) aliases it until an attach switches.
@@ -2545,53 +2499,8 @@ export function createRealRuntimeClient(
     };
     activeExec = initialExec;
     executionBySession.set(sessionID, initialExec);
-    let sqliteRecovery:
-      | ReturnType<
-          NonNullable<
-            ReturnType<SessionStoreController["sqlite"]>
-          >["loadRecoveryProjection"]
-        >
-      | undefined;
-    let sqliteEpoch: ReturnType<
-      NonNullable<
-        ReturnType<SessionStoreController["sqlite"]>
-      >["loadContextEpoch"]
-    >;
-    let indexedPagedRecovery = false;
-    const sessionSqlite = sessionStoreController?.sqlite();
-    if (sessionSqlite) {
-      let durable = sessionSqlite.get(sessionID);
-      sqliteEpoch = sessionSqlite.loadContextEpoch(sessionID);
-      indexedPagedRecovery = replayMode === "none" && Boolean(sqliteEpoch);
-      let events = indexedPagedRecovery
-        ? []
-        : sessionSqlite.loadEvents(sessionID);
-      if (!events.length && !indexedPagedRecovery && session.events.length) {
-        // Migrate an existing JSON-only session once, before SQLite becomes the
-        // event authority. New SQLite sessions never mirror durable events back.
-        sessionSqlite.replace(session);
-        durable = sessionSqlite.get(sessionID);
-        events = sessionSqlite.loadEvents(sessionID);
-      }
-      if (durable) {
-        session = {
-          ...session,
-          title: durable.title,
-          createdAt: durable.createdAt,
-          cancelled: durable.cancelled,
-          resumable: durable.resumable,
-          metadata: durable.metadata,
-          // SQLite is the durable event authority in SQLite mode. Preserve a
-          // legacy JSON-only session only until it is explicitly imported.
-          events: events.length ? events : session.events,
-          inbox: sessionSqlite.loadInbox(sessionID).length
-            ? sessionSqlite.loadInbox(sessionID)
-            : session.inbox,
-        };
-      }
-      if (indexedPagedRecovery)
-        sqliteRecovery = sessionSqlite.loadRecoveryProjection(sessionID);
-    }
+    const sqliteRecovery = storedSession.recovery;
+    const sqliteEpoch = storedSession.contextEpoch;
     // The startup exec was created before durable recovery replaced the session
     // record. Point it at the recovered record, or per-session reads through the
     // exec (durable metadata like `pendingHumanTerminal`, the inbox, the event
@@ -2599,13 +2508,7 @@ export function createRealRuntimeClient(
     // state.
     if (activeExec) activeExec.session = session;
     await attachmentService
-      .cleanup(
-        sessionStoreController?.sqlite()
-          ? sessionStoreController?.sqlite()!.referencedAttachments()
-          : attachmentService.referencedForSessions(
-              await sessionStoreController?.json().list(),
-            ),
-      )
+      .cleanup(await sessionStoreController.referencedAttachments())
       .catch((error) =>
         publish({
           type: "diagnostic",
@@ -2631,14 +2534,12 @@ export function createRealRuntimeClient(
     );
     if (interruptedOperation) {
       delete session.metadata?.inFlightOperation;
-      sessionStoreController
-        ?.sqlite()
-        ?.updateMetadata(sessionID, { inFlightOperation: undefined });
+      await sessionStoreController?.updateMetadata(session, {
+        inFlightOperation: undefined,
+      });
     }
     if (interrupted.length || interruptedOperation) {
-      if (sessionStoreController?.sqlite())
-        sessionStoreController?.sqlite()!.appendEvents(sessionID, interrupted);
-      else await sessionStoreController?.json().save(session);
+      await sessionStoreController?.appendEvents(session, interrupted);
       publish({
         type: "diagnostic",
         level: "warning",
@@ -2704,9 +2605,7 @@ export function createRealRuntimeClient(
     contextLedgerFactory.restore(
       runtimeContext,
       sqliteEpoch
-        ? sessionStoreController
-            ?.sqlite()!
-            .loadEventsAfter(sessionID, sqliteEpoch.baselineSeq)
+        ? sessionStoreController.contextEventsAfter(sessionID, sqliteEpoch)!
         : modelVisibleEvents(projection.replayableEvents),
     );
     for (const [turnID, attachments] of sqliteRecovery?.attachments ?? [])
@@ -3850,18 +3749,9 @@ export function createRealRuntimeClient(
       runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(exec.session, event);
-      const sessionSnapshot = sessionStoreController?.sqlite()
-        ? undefined
-        : structuredClone(exec.session);
-      const execSessionID = exec.session.id;
+      const sessionSnapshot = structuredClone(exec.session);
       sessionPersistence = sessionPersistence
-        .then(async () => {
-          if (sessionStoreController?.sqlite())
-            await sessionStoreController
-              ?.sqlite()!
-              .appendEventAsync(execSessionID, event);
-          else await sessionStoreController?.json().save(sessionSnapshot!);
-        })
+        .then(() => sessionStoreController?.appendEvent(sessionSnapshot, event))
         .catch((error) => {
           sink?.({
             type: "diagnostic",
@@ -4210,17 +4100,13 @@ export function createRealRuntimeClient(
     targetSession.metadata = { ...targetSession.metadata };
     if (operation) targetSession.metadata.inFlightOperation = operation;
     else delete targetSession.metadata.inFlightOperation;
-    const sessionSnapshot = sessionStoreController?.sqlite()
-      ? undefined
-      : structuredClone(targetSession);
+    const sessionSnapshot = structuredClone(targetSession);
     sessionPersistence = sessionPersistence
-      .then(async () => {
-        if (sessionStoreController?.sqlite())
-          sessionStoreController?.sqlite()!.updateMetadata(targetSession.id, {
-            inFlightOperation: operation,
-          });
-        else await sessionStoreController?.json().save(sessionSnapshot!);
-      })
+      .then(() =>
+        sessionStoreController?.updateMetadata(sessionSnapshot, {
+          inFlightOperation: operation,
+        }),
+      )
       .catch((error) =>
         publishForSession(exec, {
           type: "diagnostic",
@@ -4249,18 +4135,14 @@ export function createRealRuntimeClient(
       reason: input.reason,
       since: new Date().toISOString(),
     };
-    const sessionSnapshot = sessionStoreController?.sqlite()
-      ? undefined
-      : structuredClone(targetSession);
+    const sessionSnapshot = structuredClone(targetSession);
     const pendingSnapshot = targetSession.metadata.pendingHumanTerminal;
     sessionPersistence = sessionPersistence
-      .then(async () => {
-        if (sessionStoreController?.sqlite())
-          sessionStoreController?.sqlite()!.updateMetadata(forSessionID, {
-            pendingHumanTerminal: pendingSnapshot,
-          });
-        else await sessionStoreController?.json().save(sessionSnapshot!);
-      })
+      .then(() =>
+        sessionStoreController?.updateMetadata(sessionSnapshot, {
+          pendingHumanTerminal: pendingSnapshot,
+        }),
+      )
       .catch((error) =>
         publishForSession(target, {
           type: "diagnostic",
@@ -4277,17 +4159,13 @@ export function createRealRuntimeClient(
     if (!targetSession?.metadata?.pendingHumanTerminal) return false;
     targetSession.metadata = { ...targetSession.metadata };
     delete targetSession.metadata.pendingHumanTerminal;
-    const sessionSnapshot = sessionStoreController?.sqlite()
-      ? undefined
-      : structuredClone(targetSession);
+    const sessionSnapshot = structuredClone(targetSession);
     sessionPersistence = sessionPersistence
-      .then(async () => {
-        if (sessionStoreController?.sqlite())
-          sessionStoreController?.sqlite()!.updateMetadata(forSessionID, {
-            pendingHumanTerminal: undefined,
-          });
-        else await sessionStoreController?.json().save(sessionSnapshot!);
-      })
+      .then(() =>
+        sessionStoreController?.updateMetadata(sessionSnapshot, {
+          pendingHumanTerminal: undefined,
+        }),
+      )
       .catch((error) =>
         publishForSession(target, {
           type: "diagnostic",
@@ -4584,8 +4462,7 @@ export function createRealRuntimeClient(
     if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
       return;
     const loadCurrent = async () =>
-      sessionStoreController?.sqlite()?.get(id) ??
-      (await sessionStoreController?.json().load(id));
+      (await sessionStoreController?.load(id)).session;
     try {
       await sessionPersistence;
       const current = await loadCurrent();
@@ -4654,7 +4531,7 @@ export function createRealRuntimeClient(
       attachmentReferences: () => exec.attachmentReferences,
       attachments: attachmentService,
       compaction: compactionService,
-      mcpAccess: () => mcpAccess,
+      mcp: () => mcpService,
       agentRegistry: () => agentRegistry,
       activeAbort: () => exec.activeAbort,
       setActiveAbort: (controller) => {
@@ -4825,30 +4702,7 @@ export function createRealRuntimeClient(
   }
 
   async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {
-    const loaded = await sessionStoreController?.json().load(id);
-    if (!loaded) throw new Error(`session not found: ${id}`);
-    const sessionSqlite = sessionStoreController?.sqlite();
-    if (!sessionSqlite) return loaded;
-    const durable = sessionSqlite.get(id);
-    if (!durable) {
-      // A JSON session can predate SQLite mode. Register it before attach so
-      // later durable publishes cannot target a missing SQLite session row.
-      sessionSqlite.replace(loaded);
-      return loaded;
-    }
-    const events = sessionSqlite.loadEvents(id);
-    return {
-      ...loaded,
-      title: durable.title,
-      createdAt: durable.createdAt,
-      cancelled: durable.cancelled,
-      resumable: durable.resumable,
-      metadata: durable.metadata,
-      events: events.length ? events : loaded.events,
-      inbox: sessionSqlite.loadInbox(id).length
-        ? sessionSqlite.loadInbox(id)
-        : loaded.inbox,
-    };
+    return (await sessionStoreController.load(id)).session;
   }
 
   /**
@@ -4862,16 +4716,16 @@ export function createRealRuntimeClient(
   ): Promise<SessionExecutionState> {
     const existing = executionBySession.get(sessionID);
     if (existing) return existing;
-    const loaded = await loadSessionForAttach(sessionID);
+    const stored = await sessionStoreController.load(sessionID);
+    const loaded = stored.session;
     const execContext = contextLedgerFactory.create();
     const projection = projectSession(loaded);
-    const sessionSqlite = sessionStoreController?.sqlite();
-    const epoch = sessionSqlite?.loadContextEpoch(sessionID);
+    const epoch = stored.contextEpoch;
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
     contextLedgerFactory.restore(
       execContext,
       epoch
-        ? sessionSqlite!.loadEventsAfter(sessionID, epoch.baselineSeq)
+        ? sessionStoreController.contextEventsAfter(sessionID, epoch)!
         : modelVisibleEvents(projection.replayableEvents),
     );
     const exec: SessionExecutionState = {
@@ -4914,7 +4768,7 @@ export function createRealRuntimeClient(
 
     // A replacement runtime can open the old session as soon as attach returns.
     await sessionPersistence;
-    await sessionStoreController?.sqlite()?.flushPendingWrites(sessionID);
+    await sessionStoreController?.flush(sessionID);
 
     // D2: the attached session becomes the activity exec. Its ledger is its
     // own — restoring into the shared one would clobber the previous session's
@@ -6287,29 +6141,16 @@ export function createRealRuntimeClient(
     submitInput,
     async history(options = {}) {
       await ready;
-      const after = Math.max(0, options.after ?? 0);
-      const limit = Math.min(500, Math.max(1, options.limit ?? 100));
-      if (sessionStoreController?.sqlite())
-        return sessionStoreController
-          ?.sqlite()!
-          .loadEventPage(sessionID, { after, limit });
-      const events = session?.events ?? [];
-      const page = events.slice(after, after + limit + 1);
-      return {
-        events: page
-          .slice(0, limit)
-          .map((event, index) => ({ seq: after + index + 1, event })),
-        hasMore: page.length > limit,
-      };
+      return await sessionStoreController.history(
+        sessionID,
+        session?.events ?? [],
+        options,
+      );
     },
     async messages(options = {}) {
       await ready;
       if (!session) throw new Error("session initialization did not complete");
-      if (sessionStoreController?.sqlite())
-        return sessionStoreController
-          ?.sqlite()!
-          .loadMessagePage(sessionID, options);
-      return projectSessionMessages(session, options);
+      return await sessionStoreController.messages(sessionID, session, options);
     },
     async pendingInteractive() {
       await ready;
@@ -6345,9 +6186,8 @@ export function createRealRuntimeClient(
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
       await Promise.all(
-        [...executionBySession.keys()].map(
-          async (id) =>
-            await sessionStoreController?.sqlite()?.flushPendingWrites(id),
+        [...executionBySession.keys()].map((id) =>
+          sessionStoreController?.flush(id),
         ),
       );
       await pluginsController.close();
@@ -6489,39 +6329,17 @@ export function createRealRuntimeClient(
       }));
     },
     async mcpCatalog() {
-      const catalogs = await Promise.all(
-        mcpAccess.map((access) => access.catalog()),
-      );
-      return {
-        prompts: catalogs.flatMap((catalog) => catalog.prompts),
-        resources: catalogs.flatMap((catalog) => catalog.resources),
-      };
+      return (await mcpService?.catalog()) ?? { prompts: [], resources: [] };
     },
     async getMcpPrompt(server, name, arguments_) {
-      for (const access of mcpAccess)
-        try {
-          return await access.getPrompt(server, name, arguments_);
-        } catch (error) {
-          if (
-            !(error instanceof Error) ||
-            !error.message.includes("not connected")
-          )
-            throw error;
-        }
-      throw new Error(`MCP server is not connected: ${server}`);
+      if (!mcpService)
+        throw new Error(`MCP server is not connected: ${server}`);
+      return await mcpService.getPrompt(server, name, arguments_);
     },
     async readMcpResource(server, uri) {
-      for (const access of mcpAccess)
-        try {
-          return await access.readResource(server, uri);
-        } catch (error) {
-          if (
-            !(error instanceof Error) ||
-            !error.message.includes("not connected")
-          )
-            throw error;
-        }
-      throw new Error(`MCP server is not connected: ${server}`);
+      if (!mcpService)
+        throw new Error(`MCP server is not connected: ${server}`);
+      return await mcpService.readResource(server, uri);
     },
     async plugins() {
       await ready;
@@ -6642,41 +6460,32 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalList() {
       await ready;
-      return ((await terminalController?.get()?.reconcile()) ?? []).map(
-        publicNativeTerminal,
-      );
+      return (await terminalController?.list()) ?? [];
     },
     async nativeTerminalRead(id) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new Error("Native Terminal Host is unavailable");
-      const { text } = await nativeTerminal.read(id, { maxLines: 200 });
+      const { text } = await terminalController.read(id, { maxLines: 200 });
       return { id, text };
     },
     async nativeTerminalOpenHub() {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new Error("Native Terminal Host is unavailable");
-      const hub = await nativeTerminal.openHub();
-      return { muxWindowID: hub.muxWindowID };
+      return await terminalController.openHub();
     },
     async nativeTerminalRevokeApprovalScope(id) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new Error("Native Terminal Host is unavailable");
       return interactive.revokeTerminalApprovalScope(id);
     },
     async nativeTerminalReleaseHumanControl(id) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new Error("Native Terminal Host is unavailable");
-      const sessionView = publicNativeTerminal(
-        nativeTerminal.releaseHumanControl(id),
-      );
+      const sessionView = terminalController.releaseHumanControl(id);
       // TERM-M.3 (c): the remote release path triggers the same continuation
       // as the local timeline-detach path.
       void maybeContinueAfterHumanInput(id);
@@ -6684,25 +6493,22 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalBeginSecureInput(id) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new Error("Native Terminal Host is unavailable");
-      return publicNativeTerminal(nativeTerminal.beginSecureInput(id));
+      return terminalController.beginSecureInput(id);
     },
     async nativeTerminalEndSecureInput(id) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new Error("Native Terminal Host is unavailable");
-      return publicNativeTerminal(nativeTerminal.endSecureInput(id));
+      return terminalController.endSecureInput(id);
     },
     async nativeTerminalStop(id) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new Error("Native Terminal Host is unavailable");
       return {
-        ...publicNativeTerminal(await nativeTerminal.stop(id, "human")),
+        ...(await terminalController.stop(id, "human")),
         status: "exited",
       };
     },
@@ -6713,29 +6519,25 @@ export function createRealRuntimeClient(
       await ready;
       const owner = activeExec;
       if (!owner) throw new RuntimeRefusal("session is not initialized");
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
-        return publicNativeTerminal(
-          await nativeTerminal.start({
-            command: input.command,
-            cwd: input.cwd ?? workspaceRoot,
-            id: input.id,
-            sessionID: owner.session.id,
-          }),
-        );
+        return await terminalController.start({
+          command: input.command,
+          cwd: input.cwd ?? workspaceRoot,
+          id: input.id,
+          sessionID: owner.session.id,
+        });
       } catch (error) {
         throw refusalFromRegistry(error);
       }
     },
     async nativeTerminalWrite(input) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
-        const result = await nativeTerminal.write(input.id, input.input, {
+        const result = await terminalController.write(input.id, input.input, {
           idempotencyKey: input.idempotencyKey,
         });
         return { id: input.id, ...result };
@@ -6745,17 +6547,14 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalResize(input) {
       await ready;
-      const nativeTerminal = terminalController?.get();
-      if (!nativeTerminal)
+      if (!terminalController)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
-        return publicNativeTerminal(
-          await nativeTerminal.resize(
-            input.id,
-            input.rows,
-            input.cols,
-            "model",
-          ),
+        return await terminalController.resize(
+          input.id,
+          input.rows,
+          input.cols,
+          "model",
         );
       } catch (error) {
         throw refusalFromRegistry(error);
@@ -8164,21 +7963,9 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/sessions") {
-      const store = sessionStoreController?.sqlite();
-      const listing = store
-        ? store
-            .list()
-            .map(
-              (item) =>
-                `${item.id}  ${item.title}  ${store.eventCount(item.id)} events`,
-            )
-            .join("\n")
-        : (await sessionStoreController?.json().list())
-            .map(
-              (item) =>
-                `${item.id}  ${item.title}  ${item.events.length} events`,
-            )
-            .join("\n");
+      const listing = (await sessionStoreController.list())
+        .map((item) => `${item.id}  ${item.title}  ${item.events} events`)
+        .join("\n");
       publish({
         type: "content.delta",
         id,
@@ -8780,7 +8567,7 @@ export function createRealRuntimeClient(
           const terminalID = tryParseToolArguments(call.arguments).id;
           if (typeof terminalID === "string") {
             try {
-              await terminalController?.get()?.write(terminalID, "\x15");
+              await terminalController?.write(terminalID, "\x15");
               publish({
                 type: "diagnostic",
                 level: "warning",
@@ -9029,9 +8816,9 @@ export function createRealRuntimeClient(
                   turnID,
                   question,
                 ),
-              subagents: subagentsController?.get(),
-              nativeTerminal: terminalController?.get(),
-              sandboxes: sandboxController?.get(),
+              subagents: subagentsController,
+              terminal: terminalController,
+              sandboxes: sandboxController,
               ...(attachImage ? { attachImage } : {}),
               ...(attachPdf ? { attachPdf } : {}),
               workspaceReadAuthorize: (request) =>

@@ -68,8 +68,7 @@ test("session store: JSON summaries project the pending human terminal", async (
   await controller.init();
   try {
     await controller.create({ id: "ses_wait", title: "Waiting" });
-    const store = controller.json();
-    const record = await store.load("ses_wait" as const);
+    const record = (await controller.load("ses_wait" as const)).session;
     record!.metadata = {
       pendingHumanTerminal: {
         terminalID: "tty_wait",
@@ -77,7 +76,7 @@ test("session store: JSON summaries project the pending human terminal", async (
         since: "2026-08-12T00:00:00.000Z",
       },
     };
-    await store.save(record!);
+    await controller.updateMetadata(record!, record!.metadata);
 
     const summary = (await controller.list()).find(
       (entry) => entry.id === "ses_wait",
@@ -89,7 +88,9 @@ test("session store: JSON summaries project the pending human terminal", async (
     });
 
     delete record!.metadata!.pendingHumanTerminal;
-    await store.save(record!);
+    await controller.updateMetadata(record!, {
+      pendingHumanTerminal: undefined,
+    });
     const after = await controller.list();
     expect(
       after.find((entry) => entry.id === "ses_wait")?.pendingHumanTerminal,
@@ -111,15 +112,16 @@ test("session store: SQLite summaries project the pending human terminal", async
   });
   await controller.init();
   try {
-    const store = controller.sqlite()!;
-    store.create("ses_wait_sqlite", "Waiting");
-    store.updateMetadata("ses_wait_sqlite", {
+    await controller.create({ id: "ses_wait_sqlite", title: "Waiting" });
+    const record = (await controller.load("ses_wait_sqlite" as const)).session;
+    record.metadata = {
       pendingHumanTerminal: {
         terminalID: "tty_wait_sqlite",
         reason: "needs the sudo password",
         since: "2026-08-12T00:00:00.000Z",
       },
-    });
+    };
+    await controller.updateMetadata(record, record.metadata);
 
     const summary = (await controller.list()).find(
       (entry) => entry.id === "ses_wait_sqlite",
@@ -129,7 +131,8 @@ test("session store: SQLite summaries project the pending human terminal", async
       reason: "needs the sudo password",
     });
 
-    store.updateMetadata("ses_wait_sqlite", {
+    delete record.metadata.pendingHumanTerminal;
+    await controller.updateMetadata(record, {
       pendingHumanTerminal: undefined,
     });
     const after = await controller.list();

@@ -11,4 +11,4 @@ export {
   runSkillScript,
   type Skill,
   type SkillRegistry,
-} from "@natalia/skills";
+} from "./skills";

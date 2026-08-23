@@ -6,7 +6,7 @@
   },
   "include": ["src", "test"],
   "references": [
-    { "path": "../agent-plugin" },
+    { "path": "../agent" },
     { "path": "../capability" },
     { "path": "../config" },
     { "path": "../contracts" },

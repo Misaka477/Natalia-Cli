@@ -9,6 +9,7 @@ import type {
   RuntimeDiagnostic,
   RuntimeEvent,
   RuntimeRPCError,
+  SubmittedTurn,
 } from "@natalia/contracts";
 import {
   createRealRuntimeClient,
@@ -729,17 +730,30 @@ async function collectEventsWhileTriggering(
   timeoutMs = 15_000,
 ): Promise<RuntimeEvent[]> {
   const collected: RuntimeEvent[] = [];
-  const iterator = sdk.events({ since: 0 })[Symbol.asyncIterator]();
+  const controller = new AbortController();
+  const iterator = sdk
+    .events({ since: 0, signal: controller.signal })
+    [Symbol.asyncIterator]();
   const deadline = Date.now() + timeoutMs;
-  const pending = iterator.next();
-  trigger();
-  let result = await withDeadline(pending, deadline);
-  while (!result.done && Date.now() < deadline) {
-    collected.push(result.value);
-    if (predicate(result.value)) break;
-    result = await withDeadline(iterator.next(), deadline);
+  try {
+    const pending = iterator.next();
+    trigger();
+    let result = await withDeadline(pending, deadline);
+    while (!result.done && Date.now() < deadline) {
+      collected.push(result.value);
+      if (predicate(result.value)) return collected;
+      result = await withDeadline(iterator.next(), deadline);
+    }
+    throw new Error("timed out waiting for the expected runtime event");
+  } finally {
+    controller.abort();
+    try {
+      await iterator.return?.();
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError"))
+        throw error;
+    }
   }
-  return collected;
 }
 
 /** An SSE stream stays open forever by design; reads must not hang a test. */
@@ -810,7 +824,7 @@ test("an external UI takes over approvals and answers questions", async () => {
     // Approve: the turn blocks on the request until the UI answers. The
     // prompt promise is saved so the test can await the turn *after* the
     // approval resolves — a second prompt would block on its own request.
-    let approvedTurn: Promise<unknown> | undefined;
+    let approvedTurn: Promise<SubmittedTurn> | undefined;
     const approvedEvents = await collectEventsWhileTriggering(
       sdk,
       () => {
@@ -830,14 +844,27 @@ test("an external UI takes over approvals and answers questions", async () => {
       decision: "once",
     });
     expect(outcome).toEqual({ accepted: true });
-    await approvedTurn;
+    if (!approvedTurn) throw new Error("approved turn was not submitted");
+    const approvedSubmission = await approvedTurn;
+    const finishedDeadline = Date.now() + 15_000;
+    let approvedFinished = false;
+    while (Date.now() < finishedDeadline) {
+      const history = await sdk.history({ limit: 500 });
+      approvedFinished = history.events.some(
+        ({ event }) =>
+          event.type === "turn.finished" && event.id === approvedSubmission.id,
+      );
+      if (approvedFinished) break;
+      await Bun.sleep(50);
+    }
+    expect(approvedFinished).toBe(true);
 
     // Reject: the model is told, via a policy.decision event, that the call
     // was refused — a rejection is an answer, not a silent drop. The order
     // matters: the UI answers the request first, then the decision event is
     // produced, so this phase waits for the request, answers it, and a second
     // phase collects the decision.
-    let rejectedTurn: Promise<unknown> | undefined;
+    let rejectedTurn: Promise<SubmittedTurn> | undefined;
     // Replay contains the first turn's approval.request; the live request for
     // this turn has a different id, so the predicate waits for that one.
     const rejectedEvents = await collectEventsWhileTriggering(
@@ -854,14 +881,6 @@ test("an external UI takes over approvals and answers questions", async () => {
           event.type === "approval.request",
       )
       .at(-1);
-    console.error(
-      "sdk-approval-debug",
-      request.id,
-      secondRequest?.id,
-      rejectedEvents
-        .filter((event) => event.type === "approval.request")
-        .map((event) => event.id),
-    );
     expect(secondRequest).toBeDefined();
     const refused = await sdk.respondApproval({
       requestID: secondRequest!.id,

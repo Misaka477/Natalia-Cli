@@ -13,6 +13,7 @@
     "@natalia/plugin": "workspace:*",
     "@natalia/sandbox-plugin": "workspace:*",
     "@natalia/subagents-plugin": "workspace:*",
+    "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*"
   }
 }

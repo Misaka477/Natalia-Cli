@@ -10,10 +10,10 @@
       "path": "../plugin"
     },
     {
-      "path": "../tools"
+      "path": "../testing"
     },
     {
-      "path": "../native-terminal"
+      "path": "../tools"
     }
   ]
 }

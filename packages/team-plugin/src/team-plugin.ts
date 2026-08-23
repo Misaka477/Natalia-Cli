@@ -61,20 +61,16 @@ export function createTeamPlugin(): Plugin {
             const controller = api.services.get<SubagentsController>(
               SUBAGENTS_CONTROLLER_SERVICE,
             );
-            return controller?.enabled() ? controller.get() : undefined;
+            return controller?.enabled() ? controller : undefined;
           },
           sandboxes: () =>
-            api.services
-              .get<SandboxController>(SANDBOX_CONTROLLER_SERVICE)
-              ?.get(),
+            api.services.get<SandboxController>(SANDBOX_CONTROLLER_SERVICE),
         }),
       );
       api.tools.register(
         createTeamReviewTool({
           sandboxes: () =>
-            api.services
-              .get<SandboxController>(SANDBOX_CONTROLLER_SERVICE)
-              ?.get(),
+            api.services.get<SandboxController>(SANDBOX_CONTROLLER_SERVICE),
         }),
       );
     },

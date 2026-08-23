@@ -16,7 +16,7 @@ import {
 import { createRealRuntimeClient } from "../src/real-runtime";
 import { CapabilityHost } from "@natalia/capability";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
-import { WorkflowExecutionScheduler } from "@natalia/workflow-scheduler-plugin";
+import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
 import { configV3Schema } from "@natalia/contracts";
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
@@ -615,64 +615,69 @@ test("the worker streams capability task execution", async () => {
       capabilityHost: capabilities,
     });
   const channel = new MessageChannel();
-  attachRuntimeClientWorker(channel.port1, createRuntime(), {
-    reload: createRuntime,
-    workflowExecution: new CapabilityExecutionHost(capabilities, {
-      scheduler: new WorkflowExecutionScheduler(),
-    }),
-    workflowConfig: async () => configV3Schema.parse({ version: 3 }),
-  });
-  const client = createWorkerRuntimeClient(channel.port2);
-  client.start(() => undefined);
-
-  const handle = client.runWorkflowTask({
-    workspaceRoot: root,
-    taskID: "task_doctor",
-    requestedBy: { sessionID: "ses_worker_workflow" },
-  });
-  const events = (async () => {
-    const seen = [];
-    for await (const event of handle.events) seen.push(event);
-    return seen;
-  })();
-  await expect(
-    Promise.race([
-      handle.result,
-      Bun.sleep(5_000).then(() => {
-        throw new Error("workflow result timed out");
+  const schedulerHost = await createWorkflowSchedulerPluginHost();
+  let client: ReturnType<typeof createWorkerRuntimeClient> | undefined;
+  try {
+    attachRuntimeClientWorker(channel.port1, createRuntime(), {
+      reload: createRuntime,
+      workflowExecution: new CapabilityExecutionHost(capabilities, {
+        scheduler: schedulerHost.scheduler,
       }),
-    ]),
-  ).resolves.toMatchObject({ status: "stalled" });
-  const seen = await Promise.race([
-    events,
-    Bun.sleep(5_000).then(() => {
-      throw new Error("workflow event stream timed out");
-    }),
-  ]);
-  expect(seen).toContainEqual(
-    expect.objectContaining({
-      type: "workflow.execution.resolved",
-      executionID: handle.executionID,
-      taskID: "task_doctor",
-      requestedBy: {
-        transport: "worker",
-        sessionID: "ses_worker_workflow",
-      },
-    }),
-  );
-  expect(
-    seen.some(
-      (event) =>
-        event.type === "workflow.execution.output" &&
-        event.line.includes('"taskID":"task_doctor"'),
-    ),
-  ).toBe(true);
-  expect(seen.at(-1)).toMatchObject({
-    type: "workflow.execution",
-    status: "completed",
-  });
+      workflowConfig: async () => configV3Schema.parse({ version: 3 }),
+    });
+    client = createWorkerRuntimeClient(channel.port2);
+    client.start(() => undefined);
 
-  await client.dispose?.();
+    const handle = client.runWorkflowTask({
+      workspaceRoot: root,
+      taskID: "task_doctor",
+      requestedBy: { sessionID: "ses_worker_workflow" },
+    });
+    const events = (async () => {
+      const seen = [];
+      for await (const event of handle.events) seen.push(event);
+      return seen;
+    })();
+    await expect(
+      Promise.race([
+        handle.result,
+        Bun.sleep(5_000).then(() => {
+          throw new Error("workflow result timed out");
+        }),
+      ]),
+    ).resolves.toMatchObject({ status: "stalled" });
+    const seen = await Promise.race([
+      events,
+      Bun.sleep(5_000).then(() => {
+        throw new Error("workflow event stream timed out");
+      }),
+    ]);
+    expect(seen).toContainEqual(
+      expect.objectContaining({
+        type: "workflow.execution.resolved",
+        executionID: handle.executionID,
+        taskID: "task_doctor",
+        requestedBy: {
+          transport: "worker",
+          sessionID: "ses_worker_workflow",
+        },
+      }),
+    );
+    expect(
+      seen.some(
+        (event) =>
+          event.type === "workflow.execution.output" &&
+          event.line.includes('"taskID":"task_doctor"'),
+      ),
+    ).toBe(true);
+    expect(seen.at(-1)).toMatchObject({
+      type: "workflow.execution",
+      status: "completed",
+    });
+  } finally {
+    await client?.dispose?.();
+    await schedulerHost.close();
+  }
 });
 
 test("worker cancellation is retained while workflow config is resolving", async () => {
@@ -681,30 +686,37 @@ test("worker cancellation is retained while workflow config is resolving", async
   const channel = new MessageChannel();
   let resolveConfig!: () => void;
   const configReady = new Promise<void>((resolve) => (resolveConfig = resolve));
-  attachRuntimeClientWorker(
-    channel.port1,
-    createRealRuntimeClient({ workspaceRoot: root }),
-    {
-      workflowExecution: new CapabilityExecutionHost(capabilities, {
-        scheduler: new WorkflowExecutionScheduler(),
-      }),
-      workflowConfig: async () => {
-        await configReady;
-        return configV3Schema.parse({ version: 3 });
+  const schedulerHost = await createWorkflowSchedulerPluginHost();
+  let client: ReturnType<typeof createWorkerRuntimeClient> | undefined;
+  try {
+    attachRuntimeClientWorker(
+      channel.port1,
+      createRealRuntimeClient({ workspaceRoot: root }),
+      {
+        workflowExecution: new CapabilityExecutionHost(capabilities, {
+          scheduler: schedulerHost.scheduler,
+        }),
+        workflowConfig: async () => {
+          await configReady;
+          return configV3Schema.parse({ version: 3 });
+        },
       },
-    },
-  );
-  const client = createWorkerRuntimeClient(channel.port2);
-  client.start(() => undefined);
-  const handle = client.runWorkflowTask({
-    workspaceRoot: root,
-    taskID: "task_never_started",
-  });
+    );
+    client = createWorkerRuntimeClient(channel.port2);
+    client.start(() => undefined);
+    const handle = client.runWorkflowTask({
+      workspaceRoot: root,
+      taskID: "task_never_started",
+    });
 
-  handle.cancel("cancelled before config");
-  resolveConfig();
-  await expect(handle.result).rejects.toThrow("cancelled before config");
-  await client.dispose?.();
+    handle.cancel("cancelled before config");
+    resolveConfig();
+    await expect(handle.result).rejects.toThrow("cancelled before config");
+  } finally {
+    resolveConfig();
+    await client?.dispose?.();
+    await schedulerHost.close();
+  }
 });
 
 test("worker disposal prevents workflow admission after config resolution", async () => {
@@ -712,42 +724,52 @@ test("worker disposal prevents workflow admission after config resolution", asyn
     join(tmpdir(), "natalia-worker-workflow-dispose-"),
   );
   const capabilities = new CapabilityHost({ workspaceRoot: root });
-  const scheduler = new WorkflowExecutionScheduler();
+  const schedulerHost = await createWorkflowSchedulerPluginHost();
+  const scheduler = schedulerHost.scheduler;
   const schedule = scheduler.schedule.bind(scheduler);
   let admissions = 0;
   scheduler.schedule = ((input) => {
     admissions += 1;
     return schedule(input);
   }) as typeof scheduler.schedule;
-  const channel = new MessageChannel();
-  let resolveConfig!: () => void;
-  const configReady = new Promise<void>((resolve) => (resolveConfig = resolve));
-  attachRuntimeClientWorker(
-    channel.port1,
-    createRealRuntimeClient({ workspaceRoot: root }),
-    {
-      workflowExecution: new CapabilityExecutionHost(capabilities, {
-        scheduler,
-      }),
-      workflowConfig: async () => {
-        await configReady;
-        return configV3Schema.parse({ version: 3 });
+  let client: ReturnType<typeof createWorkerRuntimeClient> | undefined;
+  try {
+    const channel = new MessageChannel();
+    let resolveConfig!: () => void;
+    const configReady = new Promise<void>(
+      (resolve) => (resolveConfig = resolve),
+    );
+    attachRuntimeClientWorker(
+      channel.port1,
+      createRealRuntimeClient({ workspaceRoot: root }),
+      {
+        workflowExecution: new CapabilityExecutionHost(capabilities, {
+          scheduler,
+        }),
+        workflowConfig: async () => {
+          await configReady;
+          return configV3Schema.parse({ version: 3 });
+        },
       },
-    },
-  );
-  const client = createWorkerRuntimeClient(channel.port2);
-  client.start(() => undefined);
-  const handle = client.runWorkflowTask({
-    workspaceRoot: root,
-    taskID: "task_never_started",
-  });
-  void handle.result.catch(() => undefined);
+    );
+    client = createWorkerRuntimeClient(channel.port2);
+    client.start(() => undefined);
+    const handle = client.runWorkflowTask({
+      workspaceRoot: root,
+      taskID: "task_never_started",
+    });
+    void handle.result.catch(() => undefined);
 
-  await client.dispose?.();
-  resolveConfig();
-  await Bun.sleep(10);
-  expect(admissions).toBe(0);
-  await scheduler.dispose();
+    await client.dispose?.();
+    client = undefined;
+    resolveConfig();
+    await Bun.sleep(10);
+    expect(admissions).toBe(0);
+  } finally {
+    scheduler.schedule = schedule;
+    await client?.dispose?.();
+    await schedulerHost.close();
+  }
 });
 
 test("a host-owned workflow contribution survives runtime replacement", async () => {

@@ -23,7 +23,6 @@ import type {
   RuntimeEvent,
 } from "@natalia/contracts";
 import type { SandboxBackend } from "@natalia/contracts";
-import type { NativeTerminalRegistry } from "@natalia/terminal-plugin";
 import {
   createTaskModulePlugin,
   TASK_MODULE_PLUGIN_ID,
@@ -44,12 +43,13 @@ import {
 import {
   createTerminalControllerPlugin,
   TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
+  type TerminalControllerPluginInput,
 } from "@natalia/terminal-plugin";
 import {
   createSandboxControllerPlugin,
   SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
 } from "@natalia/sandbox-plugin";
-import { createMcpControllerPlugin, MCP_PLUGIN_ID } from "@natalia/mcp-plugin";
+import { createMcpPlugin, MCP_PLUGIN_ID } from "@natalia/mcp-plugin";
 import {
   createCheckpointControllerPlugin,
   CHECKPOINT_PLUGIN_ID,
@@ -202,7 +202,7 @@ export function builtinPluginCatalog(input: {
     runtimeID(): string;
     userRuntimeHome(): string | undefined;
     windowMode(): "auto" | "windowless" | "window";
-    external?: NativeTerminalRegistry;
+    external?: TerminalControllerPluginInput["external"];
   };
   /** Sandbox controller. */
   sandbox?: {
@@ -538,7 +538,7 @@ export function mcpPluginEntry(
     enabled: input !== undefined,
     create: () => {
       if (!input) throw new Error("MCP plugin is disabled");
-      return createMcpControllerPlugin(input);
+      return createMcpPlugin(input);
     },
   };
 }

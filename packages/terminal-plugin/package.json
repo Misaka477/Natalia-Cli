@@ -12,6 +12,7 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/native-terminal": "workspace:*",
     "@natalia/plugin": "workspace:*",
+    "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*"
   }
 }

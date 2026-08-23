@@ -1,7 +1,10 @@
 import { CapabilityRegistry } from "@natalia/capability";
 import { createPluginRegistry, type Plugin } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
-import { WorkflowExecutionScheduler } from "./workflow-execution-scheduler";
+import {
+  WorkflowExecutionScheduler,
+  type WorkflowExecutionSchedulerService,
+} from "./workflow-execution-scheduler";
 
 export const WORKFLOW_SCHEDULER_PLUGIN_ID = "natalia-workflow-scheduler";
 export const WORKFLOW_SCHEDULER_SERVICE = "workflow-execution.scheduler";
@@ -89,9 +92,9 @@ export async function createWorkflowSchedulerPluginHost(
     capabilities.unload(WORKFLOW_SCHEDULER_PLUGIN_ID);
     throw error;
   }
-  const scheduler = capabilities.service(WORKFLOW_SCHEDULER_SERVICE) as
-    | WorkflowExecutionScheduler
-    | undefined;
+  const scheduler = capabilities.service<WorkflowExecutionSchedulerService>(
+    WORKFLOW_SCHEDULER_SERVICE,
+  );
   if (!scheduler) {
     await registry.unloadAll();
     throw new Error("workflow scheduler plugin failed to provide its service");
@@ -99,7 +102,6 @@ export async function createWorkflowSchedulerPluginHost(
   let closed = false;
   return {
     scheduler,
-    service: <T>(name: string) => capabilities.service<T>(name),
     close: async () => {
       if (closed) return;
       closed = true;

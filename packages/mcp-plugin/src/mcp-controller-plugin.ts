@@ -3,19 +3,19 @@
  *
  * Previously a visibility-only record; the controller now lives on the unified
  * plugin lifecycle. The plugin constructs it in `setup()` and provides it as the
- * `mcp.controller` service, so a disabled or absent plugin opens no MCP
+ * `mcp.service` operational service, so a disabled or absent plugin opens no MCP
  * connections and loads no MCP tools.
  */
 import type { Plugin } from "@natalia/plugin";
 import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
 import { createMcpController } from "./mcp-controller";
 
-export type { McpAccess, McpController } from "./mcp-controller";
+export type { McpService } from "./mcp-controller";
 
 export const MCP_PLUGIN_ID = "natalia-mcp";
-export const MCP_CONTROLLER_SERVICE = "mcp.controller";
+export const MCP_SERVICE = "mcp.service";
 
-export function createMcpControllerPlugin(input: {
+export function createMcpPlugin(input: {
   servers(): Record<string, MCPServerConfig>;
   workspaceRoot: string;
   enabled(): boolean;
@@ -31,7 +31,7 @@ export function createMcpControllerPlugin(input: {
       description: "Native MCP connections and their tools.",
       entry: "natalia:mcp",
       scope: "session",
-      provides: [MCP_CONTROLLER_SERVICE],
+      provides: [MCP_SERVICE],
       requires: [],
       optionalRequires: [],
       conflicts: [],
@@ -44,7 +44,7 @@ export function createMcpControllerPlugin(input: {
         ...input,
         tools: { register: (tool) => api.tools.register(tool) },
       });
-      api.services.provide(MCP_CONTROLLER_SERVICE, controller);
+      api.services.provide(MCP_SERVICE, controller);
     },
     async dispose() {
       await controller?.close();

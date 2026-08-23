@@ -47,6 +47,9 @@
     },
     {
       "path": "../../packages/workflow"
+    },
+    {
+      "path": "../../packages/workflow-scheduler-plugin"
     }
   ]
 }

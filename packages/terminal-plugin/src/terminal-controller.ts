@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type {
+  RuntimeEvent,
+  RuntimeNativeTerminalSession,
+} from "@natalia/contracts";
 import {
   NativeTerminalRegistry,
   createWezTermHost,
@@ -211,9 +214,121 @@ export function createTerminalController(input: {
     }
   }
 
-  /** The registry, or undefined when no native host is available. */
-  function get(): NativeTerminalRegistry | undefined {
+  function requireTerminal() {
+    if (!nativeTerminal) throw new Error("Native Terminal Host is unavailable");
     return nativeTerminal;
+  }
+
+  function publicSession(
+    session: ReturnType<NativeTerminalRegistry["session"]>,
+  ): RuntimeNativeTerminalSession {
+    return {
+      id: session.id,
+      host: session.host,
+      paneID: session.paneID,
+      windowID: session.windowID,
+      muxWindowID: session.muxWindowID,
+      tabID: session.tabID,
+      command: session.command,
+      cwd: session.cwd,
+      status: session.status,
+      inputOwner: session.inputOwner,
+      geometryOwner: session.geometryOwner,
+      secureInput: session.secureInput,
+      rows: session.rows,
+      cols: session.cols,
+      startedAt: session.startedAt,
+      attached: session.attached,
+      mayWaitForHuman: session.mayWaitForHuman,
+    };
+  }
+
+  async function reconcile() {
+    return (await requireTerminal().reconcile()).map(publicSession);
+  }
+
+  async function list() {
+    return nativeTerminal ? await reconcile() : [];
+  }
+
+  async function read(id: string, options?: { maxLines?: number }) {
+    return await requireTerminal().read(id, options);
+  }
+
+  async function openHub() {
+    const hub = await requireTerminal().openHub();
+    return { muxWindowID: hub.muxWindowID };
+  }
+
+  function releaseHumanControl(id: string) {
+    return publicSession(requireTerminal().releaseHumanControl(id));
+  }
+
+  function beginSecureInput(id: string) {
+    return publicSession(requireTerminal().beginSecureInput(id));
+  }
+
+  function endSecureInput(id: string) {
+    return publicSession(requireTerminal().endSecureInput(id));
+  }
+
+  async function stop(id: string, actor: "model" | "human" | "system") {
+    return publicSession(await requireTerminal().stop(id, actor));
+  }
+
+  async function start(input: {
+    command: string;
+    cwd: string;
+    id?: string;
+    sessionID?: string;
+  }) {
+    return publicSession(await requireTerminal().start(input));
+  }
+
+  async function write(
+    id: string,
+    value: string,
+    options?: { idempotencyKey?: string },
+  ) {
+    return await requireTerminal().write(id, value, options);
+  }
+
+  async function resize(
+    id: string,
+    rows: number,
+    cols: number,
+    actor: "model" | "human",
+  ) {
+    return publicSession(await requireTerminal().resize(id, rows, cols, actor));
+  }
+
+  async function ttyName(id: string) {
+    return await nativeTerminal?.ttyName(id);
+  }
+
+  async function snapshot(id: string) {
+    return await requireTerminal().snapshot(id);
+  }
+
+  async function observe(
+    id: string,
+    afterRevision: number,
+    options?: { maxLines?: number; timeoutMs?: number },
+  ) {
+    return await requireTerminal().observe(id, afterRevision, options);
+  }
+
+  function session(id: string) {
+    const { lastObservedText } = requireTerminal().session(id);
+    return { lastObservedText };
+  }
+
+  function markObserved(id: string, text: string, revision: number) {
+    requireTerminal().markObserved(id, text, revision);
+  }
+
+  async function requestHuman(id: string, reason: string) {
+    return publicSession(await requireTerminal().requestHuman(id, reason));
   }
 
   /**
@@ -233,7 +348,28 @@ export function createTerminalController(input: {
     nativeTerminal = undefined;
   }
 
-  return { init, get, setActiveSession, close };
+  return {
+    init,
+    list,
+    reconcile,
+    read,
+    openHub,
+    releaseHumanControl,
+    beginSecureInput,
+    endSecureInput,
+    stop,
+    start,
+    write,
+    resize,
+    snapshot,
+    observe,
+    session,
+    markObserved,
+    requestHuman,
+    ttyName,
+    setActiveSession,
+    close,
+  };
 }
 
 export type TerminalController = ReturnType<typeof createTerminalController>;

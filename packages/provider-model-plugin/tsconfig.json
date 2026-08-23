@@ -6,11 +6,12 @@
   },
   "include": ["src", "test"],
   "references": [
-    { "path": "../agent-plugin" },
+    { "path": "../agent" },
     { "path": "../attachment-plugin" },
     { "path": "../compaction-plugin" },
     { "path": "../config" },
     { "path": "../contracts" },
+    { "path": "../mcp-plugin" },
     { "path": "../plugin" },
     { "path": "../retry-plugin" },
     { "path": "../runtime" },

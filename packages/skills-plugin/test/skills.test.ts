@@ -11,7 +11,7 @@ import {
   resolveSkillResource,
   runSkillScript,
   pullRemoteSkills,
-} from "../src";
+} from "../src/skills";
 
 test("discovers native project skills and enforces policy", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-skills-"));

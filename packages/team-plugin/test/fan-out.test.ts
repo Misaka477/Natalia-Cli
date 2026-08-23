@@ -4,8 +4,11 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { SubagentRegistry } from "@natalia/subagents-plugin";
-import { SnapshotSandboxManager } from "@natalia/sandbox-plugin";
+import type { SubagentToolService } from "@natalia/tools";
+import {
+  SnapshotSandboxTestManager as SnapshotSandboxManager,
+  SubagentTestRegistry as SubagentRegistry,
+} from "@natalia/testing";
 import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/index";
 
 test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each", async () => {
@@ -227,7 +230,7 @@ test("runFanOut caps concurrent spawns with maxConcurrent", async () => {
       { id: "b", prompt: "b" },
       { id: "c", prompt: "c" },
     ],
-    subagents: counting as SubagentRegistry,
+    subagents: counting as SubagentToolService,
     sandboxes,
     maxConcurrent: 2,
     timeoutMs: 10_000,

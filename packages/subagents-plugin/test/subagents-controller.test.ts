@@ -8,7 +8,7 @@ test("subagents controller reports disabled before init", () => {
   const controller = createSubagentsController({ workDir: "/tmp/ws" });
   expect(controller.enabled()).toBe(false);
   expect(controller.runningCount()).toBe(0);
-  expect(() => controller.get()).toThrow(
+  expect(() => controller.list()).toThrow(
     "subagent registry is not initialized",
   );
 });
@@ -18,9 +18,9 @@ test("subagents controller inits with an injected runner and spawns", async () =
   const controller = createSubagentsController({ workDir: root });
   await controller.init(async () => {});
   expect(controller.enabled()).toBe(true);
-  const spawned = await controller.get().spawn("hello");
+  const spawned = await controller.spawn("hello");
   expect(spawned.id).toBe("a1");
-  const record = controller.get().get("a1");
+  const record = controller.get("a1");
   expect(record?.task).toBe("hello");
   expect(controller.runningCount()).toBe(0);
 });

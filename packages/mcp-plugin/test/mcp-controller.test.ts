@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import {
-  createMcpControllerPlugin,
-  MCP_CONTROLLER_SERVICE,
+  createMcpPlugin,
+  MCP_SERVICE,
   MCP_PLUGIN_ID,
-  type McpController,
+  type McpService,
 } from "../src";
 import { createMcpController } from "../src/mcp-controller";
 
@@ -29,6 +29,10 @@ lines.on("line", (line) => {
     result = {
       tools: [{ name: "echo", description: "echo", inputSchema: { type: "object" } }],
     };
+  } else if (message.method === "prompts/list") {
+    result = { prompts: [] };
+  } else if (message.method === "resources/list") {
+    result = { resources: [] };
   }
   console.log(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
 });
@@ -45,7 +49,10 @@ test("MCP controller reload is a no-op when the extension is disabled", async ()
     publish: (event) => events.push(event),
   });
   await controller.reload();
-  expect(controller.access).toHaveLength(0);
+  expect(await controller.catalog()).toEqual({ prompts: [], resources: [] });
+  await expect(
+    controller.readResource("missing", "file:///missing"),
+  ).rejects.toThrow("MCP server is not connected: missing");
   await controller.close();
   expect(events).toHaveLength(0);
 });
@@ -53,18 +60,18 @@ test("MCP controller reload is a no-op when the extension is disabled", async ()
 test("MCP plugin unload owns connection and tool teardown", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-mcp-plugin-"));
   const tools = createToolRegistry([]);
-  let controller: McpController | undefined;
+  let service: McpService | undefined;
   const contributions: Array<[kind: string, name: string]> = [];
   const registry = createPluginRegistry({
     tools,
     contribute: async () => (kind, name, payload) => {
       contributions.push([kind, name]);
-      if (kind === "services" && name === MCP_CONTROLLER_SERVICE)
-        controller = payload as McpController;
+      if (kind === "services" && name === MCP_SERVICE)
+        service = payload as McpService;
       return () => undefined;
     },
   });
-  const plugin = createMcpControllerPlugin({
+  const plugin = createMcpPlugin({
     servers: () => ({
       fixture: {
         type: "stdio",
@@ -87,12 +94,14 @@ test("MCP plugin unload owns connection and tool teardown", async () => {
     integrationPoints: ["tools", "services"],
   });
   await registry.loadBuiltin(plugin);
-  expect(controller).toBeDefined();
-  await controller?.reload();
+  expect(service).toBeDefined();
+  await service?.reload();
   expect(tools.get("mcp_fixture_echo")).toBeDefined();
-  expect(controller?.access).toHaveLength(1);
+  expect(await service?.catalog()).toEqual({ prompts: [], resources: [] });
   expect(contributions).toContainEqual(["tools", "mcp_fixture_echo"]);
   await registry.unload(MCP_PLUGIN_ID);
   expect(tools.get("mcp_fixture_echo")).toBeUndefined();
-  expect(controller?.access).toHaveLength(0);
+  await expect(
+    service?.readResource("fixture", "file:///missing"),
+  ).rejects.toThrow("MCP server is not connected: fixture");
 });

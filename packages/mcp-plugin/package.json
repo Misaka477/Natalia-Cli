@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@natalia/contracts": "workspace:*",
-    "@natalia/mcp": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/tools": "workspace:*"
   }

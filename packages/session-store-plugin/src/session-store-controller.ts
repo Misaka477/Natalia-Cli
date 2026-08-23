@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
+  LocalAttachment,
   RuntimeEvent,
+  RuntimeMessagePage,
   RuntimeSessionSummary,
   SessionID,
 } from "@natalia/contracts";
@@ -10,10 +12,23 @@ import {
   JsonSessionStore,
   SqliteSessionStore,
   createSessionRecord,
+  projectSessionMessages,
+  type SessionMetadata,
   type SessionRecord,
   type SessionRow,
+  type StoredContextEpoch,
 } from "@natalia/session";
 import type { AttachmentService } from "@natalia/attachment-plugin";
+
+export type SessionStoreRecoveryView = {
+  activeTurnIDs: string[];
+  approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
+  questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
+  selectedAgent?: string;
+  selectedModel?: { modelID?: string; variant?: string };
+  attachments: Map<string, LocalAttachment[]>;
+  diagnostics: Array<Extract<RuntimeEvent, { type: "diagnostic" }>>;
+};
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in
@@ -83,6 +98,7 @@ export function createSessionStoreController(input: {
   let sessionStore: JsonSessionStore;
   let sqliteStore: SqliteSessionStore | undefined;
   let sqliteStorePath: string | undefined;
+  let initialized = false;
 
   async function init() {
     sessionStore = new JsonSessionStore(
@@ -104,18 +120,14 @@ export function createSessionStoreController(input: {
           titleSource: "manual",
         });
     }
+    initialized = true;
   }
 
-  function json(): JsonSessionStore {
-    return sessionStore;
-  }
-
-  function sqlite(): SqliteSessionStore | undefined {
-    return sqliteStore;
-  }
-
-  function sqlitePath(): string | undefined {
-    return sqliteStorePath;
+  function status() {
+    return {
+      initialized,
+      mode: input.useSqliteStore ? ("sqlite" as const) : ("json" as const),
+    };
   }
 
   function summary(record: SessionRecord): RuntimeSessionSummary {
@@ -171,6 +183,127 @@ export function createSessionStoreController(input: {
     return await sessionStore.load(id as SessionID);
   }
 
+  async function load(
+    id: SessionID,
+    options: {
+      title?: string;
+      create?: boolean;
+      indexedRecovery?: boolean;
+    } = {},
+  ): Promise<{
+    session: SessionRecord;
+    contextEpoch?: StoredContextEpoch;
+    recovery?: SessionStoreRecoveryView;
+  }> {
+    const store = sqliteStore;
+    const legacy =
+      options.create && !store
+        ? await sessionStore.loadOrCreate(id, options.title ?? "New session")
+        : await sessionStore.load(id);
+    if (!store) {
+      if (!legacy) throw new Error(`session not found: ${id}`);
+      return { session: legacy };
+    }
+
+    let durable = store.get(id);
+    if (!durable && legacy) {
+      store.replace(legacy);
+      durable = store.get(id);
+    }
+    if (!durable) throw new Error(`session not found: ${id}`);
+    const contextEpoch = store.loadContextEpoch(id);
+    const indexedRecovery = options.indexedRecovery && Boolean(contextEpoch);
+    let events = indexedRecovery ? [] : store.loadEvents(id);
+    if (!events.length && !indexedRecovery && legacy?.events.length) {
+      store.replace(legacy);
+      durable = store.get(id)!;
+      events = store.loadEvents(id);
+    }
+    const inbox = store.loadInbox(id);
+    return {
+      session: {
+        ...(legacy ?? createSessionRecord(id, options.title ?? "New session")),
+        title: durable.title,
+        createdAt: durable.createdAt,
+        cancelled: durable.cancelled,
+        resumable: durable.resumable,
+        metadata: durable.metadata,
+        events: events.length ? events : (legacy?.events ?? []),
+        inbox: inbox.length ? inbox : legacy?.inbox,
+      },
+      contextEpoch,
+      ...(indexedRecovery
+        ? { recovery: store.loadRecoveryProjection(id) }
+        : {}),
+    };
+  }
+
+  async function saveInbox(session: SessionRecord) {
+    if (sqliteStore) sqliteStore.replaceInbox(session.id, session.inbox ?? []);
+    else await sessionStore.save(session);
+  }
+
+  async function appendEvent(session: SessionRecord, event: RuntimeEvent) {
+    if (sqliteStore) await sqliteStore.appendEventAsync(session.id, event);
+    else await sessionStore.save(session);
+  }
+
+  async function appendEvents(session: SessionRecord, events: RuntimeEvent[]) {
+    if (sqliteStore) sqliteStore.appendEvents(session.id, events);
+    else await sessionStore.save(session);
+  }
+
+  async function updateMetadata(
+    session: SessionRecord,
+    partial: Partial<SessionMetadata>,
+  ) {
+    if (sqliteStore) sqliteStore.updateMetadata(session.id, partial);
+    else await sessionStore.save(session);
+  }
+
+  function contextEventsAfter(id: SessionID, epoch?: StoredContextEpoch) {
+    return epoch && sqliteStore
+      ? sqliteStore.loadEventsAfter(id, epoch.baselineSeq)
+      : undefined;
+  }
+
+  async function referencedAttachments(): Promise<LocalAttachment[]> {
+    return sqliteStore
+      ? sqliteStore.referencedAttachments()
+      : input.attachments.referencedForSessions(await sessionStore.list());
+  }
+
+  async function history(
+    id: SessionID,
+    fallback: RuntimeEvent[],
+    options: { after?: number; limit?: number } = {},
+  ) {
+    if (sqliteStore) return sqliteStore.loadEventPage(id, options);
+    const after = Math.max(0, options.after ?? 0);
+    const limit = Math.min(500, Math.max(1, options.limit ?? 100));
+    const page = fallback.slice(after, after + limit + 1);
+    return {
+      events: page
+        .slice(0, limit)
+        .map((event, index) => ({ seq: after + index + 1, event })),
+      hasMore: page.length > limit,
+    };
+  }
+
+  async function messages(
+    id: SessionID,
+    fallback: SessionRecord,
+    options: { limit?: number; order?: "asc" | "desc"; cursor?: string } = {},
+  ): Promise<RuntimeMessagePage> {
+    return sqliteStore
+      ? sqliteStore.loadMessagePage(id, options)
+      : projectSessionMessages(fallback, options);
+  }
+
+  async function flush(id?: SessionID) {
+    await sqliteStore?.flushPendingWrites(id);
+  }
+
   // --- session management surface ---
 
   async function list(): Promise<RuntimeSessionSummary[]> {
@@ -186,6 +319,7 @@ export function createSessionStoreController(input: {
         pendingInputs: store.pendingInputCount(record.id),
         cancelled: record.cancelled,
         resumable: record.resumable,
+        archived: Boolean(record.metadata.archived),
         ...(pendingHumanTerminalOf(record.metadata)
           ? { pendingHumanTerminal: pendingHumanTerminalOf(record.metadata)! }
           : {}),
@@ -305,11 +439,10 @@ export function createSessionStoreController(input: {
   }
 
   async function archive(id: string) {
-    const record = await byIDOptional(id);
-    if (!record) throw new Error(`session not found: ${id}`);
+    const record = (await load(id as SessionID)).session;
     if (record.metadata?.archived) return { id, archived: true };
     record.metadata = { ...record.metadata, archived: true };
-    await sessionStore.save(record);
+    await updateMetadata(record, { archived: true });
     return { id, archived: true };
   }
 
@@ -320,8 +453,7 @@ export function createSessionStoreController(input: {
     archived: boolean;
     events: Array<{ seq: number; event: RuntimeEvent }>;
   }> {
-    const record = await byIDOptional(id);
-    if (!record) throw new Error(`session not found: ${id}`);
+    const record = (await load(id as SessionID)).session;
     return {
       sessionID: record.id,
       title: record.title,
@@ -338,17 +470,22 @@ export function createSessionStoreController(input: {
     if (sqliteStorePath) releaseSqliteStore(sqliteStorePath);
     sqliteStore = undefined;
     sqliteStorePath = undefined;
+    initialized = false;
   }
 
   return {
     init,
-    json,
-    sqlite,
-    sqlitePath,
-    summary,
-    sqliteSummary,
-    byID,
-    byIDOptional,
+    status,
+    load,
+    saveInbox,
+    appendEvent,
+    appendEvents,
+    updateMetadata,
+    contextEventsAfter,
+    referencedAttachments,
+    history,
+    messages,
+    flush,
     list,
     touch,
     rename,

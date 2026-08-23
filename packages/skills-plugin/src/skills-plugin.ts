@@ -1,9 +1,5 @@
 import type { Plugin } from "@natalia/plugin";
-import {
-  createSkillLoadTool,
-  discoverSkills,
-  type Skill,
-} from "@natalia/skills";
+import { createSkillLoadTool, discoverSkills, type Skill } from "./skills";
 import type { ToolExecutionContext } from "@natalia/tools";
 
 export const SKILLS_PLUGIN_ID = "natalia-skills";

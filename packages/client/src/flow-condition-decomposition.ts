@@ -1,4 +1,4 @@
-import { agentsFromConfig } from "@natalia/agent-plugin";
+import { agentsFromConfig } from "@natalia/agent";
 import {
   buildModelCatalog,
   modelSelectionStatus,

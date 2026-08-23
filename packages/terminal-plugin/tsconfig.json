@@ -16,6 +16,9 @@
       "path": "../plugin"
     },
     {
+      "path": "../testing"
+    },
+    {
       "path": "../tools"
     }
   ]

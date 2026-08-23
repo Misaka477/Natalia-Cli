@@ -14,18 +14,20 @@ import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@natalia/tools";
 import { getPluginCommands } from "@natalia/plugin";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
-import { SqliteSessionStore } from "@natalia/session";
+import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
   SANDBOX_CONTROLLER_SERVICE,
   SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
   type SandboxController,
-  WorkspaceSandboxManager,
 } from "@natalia/sandbox-plugin";
 import {
-  NativeTerminalRegistry,
   TERMINAL_CONTROLLER_SERVICE,
   TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
 } from "@natalia/terminal-plugin";
+import {
+  TerminalTestRegistry as NativeTerminalRegistry,
+  WorkspaceSandboxTestManager as WorkspaceSandboxManager,
+} from "@natalia/testing";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import {
   installPluginSdkLinks,
@@ -1887,9 +1889,8 @@ test("sandbox plugin config reload releases resources and reconciles team", asyn
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   const first = kernel.service<SandboxController>(SANDBOX_CONTROLLER_SERVICE)!;
-  const manager = first.get();
-  await manager.create("reload_box");
-  const resource = await manager.startResource(
+  await first.create("reload_box");
+  const resource = await first.startResource(
     "reload_box",
     "sleep 30",
     "reload_resource",
@@ -1902,7 +1903,9 @@ test("sandbox plugin config reload releases resources and reconciles team", asyn
   expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(false);
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
   expect(kernel.service(SANDBOX_CONTROLLER_SERVICE)).toBeUndefined();
-  expect(() => first.get()).toThrow("sandbox manager is not initialized");
+  await expect(first.list()).rejects.toThrow(
+    "sandbox manager is not initialized",
+  );
   expect(
     (await client.registeredTools?.())?.some((tool) =>
       tool.name.startsWith("team_"),
@@ -4879,7 +4882,9 @@ test("runtime session management keeps SQLite projection synchronized", async ()
   await client.sessionRename?.(duplicated!.id, "Renamed copy");
   await client.sessionTouch?.(duplicated!.id);
   const copyID = duplicated!.id as SessionID;
-  const store = new SqliteSessionStore(join(root, ".natalia", "sessions.db"));
+  const store = new SessionStoreTestDatabase(
+    join(root, ".natalia", "sessions.db"),
+  );
   expect(store.get(copyID)).toMatchObject({
     title: "Renamed copy",
     pinned: true,
@@ -4895,7 +4900,9 @@ test("runtime replaces a generated provider ID with a local SQLite title", async
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-title-id-"));
   const sessionID = "ses_runtime_title_id" as const;
   await mkdir(join(root, ".natalia"), { recursive: true });
-  const seeded = new SqliteSessionStore(join(root, ".natalia", "sessions.db"));
+  const seeded = new SessionStoreTestDatabase(
+    join(root, ".natalia", "sessions.db"),
+  );
   seeded.create(sessionID, "chatcmpl-tool-b10625d073fa5e8d");
   seeded.updateMetadata(sessionID, { titleSource: "generated" });
   seeded.close();
@@ -4932,7 +4939,7 @@ test("runtime replaces a generated provider ID with a local SQLite title", async
   });
   await client.dispose?.();
 
-  const persisted = new SqliteSessionStore(
+  const persisted = new SessionStoreTestDatabase(
     join(root, ".natalia", "sessions.db"),
   );
   expect(persisted.get(sessionID)).toMatchObject({
@@ -4946,7 +4953,7 @@ test("runtime rebuilds a missing JSON session from SQLite history", async () => 
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-sqlite-rebuild-"));
   const sessionID = "ses_runtime_sqlite_rebuild" as const;
   await mkdir(join(root, ".natalia"), { recursive: true });
-  const database = new SqliteSessionStore(
+  const database = new SessionStoreTestDatabase(
     join(root, ".natalia", "sessions.db"),
   );
   database.create(sessionID, "Recovered SQLite session");
@@ -6698,7 +6705,7 @@ test("SQLite indexed replay recovers pending interactive control state", async (
   const sessionID = "ses_ts7_sqlite_indexed_interactive" as SessionID;
   const databasePath = join(root, ".natalia", "sessions.db");
   await mkdir(join(root, ".natalia"), { recursive: true });
-  const store = new SqliteSessionStore(databasePath);
+  const store = new SessionStoreTestDatabase(databasePath);
   store.create(sessionID, "Indexed interactive");
   store.appendEvents(sessionID, [
     {
@@ -6762,7 +6769,7 @@ test("SQLite indexed replay recovers bounded durable diagnostics", async () => {
   const sessionID = "ses_ts7_sqlite_indexed_diagnostics" as SessionID;
   const databasePath = join(root, ".natalia", "sessions.db");
   await mkdir(join(root, ".natalia"), { recursive: true });
-  const store = new SqliteSessionStore(databasePath);
+  const store = new SessionStoreTestDatabase(databasePath);
   store.create(sessionID, "Indexed diagnostics");
   store.appendEvents(sessionID, [
     {
@@ -12006,7 +12013,7 @@ test("SQLite restart recovers the pending human terminal and resumes exactly onc
     expect(
       firstEvents.filter((event) => event.type === "turn.finished").at(-1),
     ).toMatchObject({ stopReason: "waiting_human" });
-    const durable = new SqliteSessionStore(databasePath);
+    const durable = new SessionStoreTestDatabase(databasePath);
     try {
       expect(
         durable.get(sessionID)?.metadata?.pendingHumanTerminal,
@@ -12076,7 +12083,7 @@ test("SQLite restart recovers the pending human terminal and resumes exactly onc
       reopenedEvents.filter((event) => event.type === "turn.submitted"),
     ).toHaveLength(1);
 
-    const after = new SqliteSessionStore(databasePath);
+    const after = new SessionStoreTestDatabase(databasePath);
     try {
       expect(
         after.get(sessionID)?.metadata?.pendingHumanTerminal,
@@ -12166,7 +12173,7 @@ test("capabilities() surfaces each capability's effective contributions", async 
       { kind: "tools", name: "flow_module_complete" },
     ]);
     // Terminal/sandbox/mcp are real plugins now; their contributions are the
-    // controller services they provide, not empty arrays.
+    // operational services they provide, not empty arrays.
     const terminal = records?.find(
       (record) => record.id === "natalia-terminal",
     );
@@ -12180,7 +12187,7 @@ test("capabilities() surfaces each capability's effective contributions", async 
     ]);
     const mcp = records?.find((record) => record.id === "natalia-mcp");
     expect(mcp?.contributions).toEqual([
-      { kind: "services", name: "mcp.controller" },
+      { kind: "services", name: "mcp.service" },
     ]);
     // The query is metadata only: no payload leaks through it.
     expect(JSON.stringify(taskModule?.contributions)).not.toContain("store");

@@ -9,6 +9,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*"
+    "@natalia/contracts": "workspace:*",
+    "@natalia/native-terminal": "workspace:*",
+    "@natalia/sandbox": "workspace:*",
+    "@natalia/session": "workspace:*",
+    "@natalia/subagent": "workspace:*"
   }
 }

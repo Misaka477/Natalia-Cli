@@ -7,7 +7,7 @@
  * agent/mode/profile precedence rules testable without the policy service.
  */
 import type { ConfigV3, PermissionProfile } from "@natalia/contracts";
-import type { AgentDefinition } from "@natalia/agent-plugin";
+import type { AgentDefinition } from "@natalia/agent";
 
 type RuntimeMode = ConfigV3["modes"][string];
 

@@ -15,10 +15,10 @@ import {
   requireObject,
   requireString,
 } from "@natalia/tools";
-import type { SubagentRegistry } from "@natalia/subagent";
 import type { Plugin } from "@natalia/plugin";
 import type {
   RuntimeTool,
+  SubagentToolService,
   ToolExecutionContext,
   ToolFamily,
   ToolOutputDefinition,
@@ -475,7 +475,7 @@ function agentRegistryTool(
   description: string,
   requiresApproval: boolean,
   action: (
-    registry: SubagentRegistry,
+    registry: SubagentToolService,
     args: Record<string, unknown>,
   ) => Promise<string>,
   requiresID = false,

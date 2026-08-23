@@ -102,15 +102,10 @@ export {
   workflowContributionsProjection,
   type WorkflowContributionsProjection,
 } from "@natalia/task-workflow-plugin";
-export {
-  WorkflowExecutionRefusal,
-  WorkflowExecutionScheduler,
-  type WorkflowExecutionEvent,
-  type WorkflowExecutionHandle,
-  type WorkflowExecutionStatus,
-  createWorkflowSchedulerPluginHost,
-  WORKFLOW_SCHEDULER_PLUGIN_ID,
-  WORKFLOW_SCHEDULER_SERVICE,
+export type {
+  WorkflowExecutionEvent,
+  WorkflowExecutionHandle,
+  WorkflowExecutionStatus,
 } from "@natalia/workflow-scheduler-plugin";
 export {
   CapabilityExecutionHost,

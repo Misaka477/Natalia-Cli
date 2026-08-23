@@ -9,11 +9,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/agent-plugin": "workspace:*",
+    "@natalia/agent": "workspace:*",
     "@natalia/attachment-plugin": "workspace:*",
     "@natalia/compaction-plugin": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
+    "@natalia/mcp-plugin": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/retry-plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",

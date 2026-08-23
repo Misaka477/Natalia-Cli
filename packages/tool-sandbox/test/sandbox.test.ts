@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  SnapshotSandboxManager,
-  WorktreeSandboxManager,
-  WorkspaceSandboxManager,
-} from "@natalia/sandbox";
+  SnapshotSandboxTestManager as SnapshotSandboxManager,
+  WorktreeSandboxTestManager as WorktreeSandboxManager,
+  WorkspaceSandboxTestManager as WorkspaceSandboxManager,
+} from "@natalia/testing";
 import { createPluginRegistry } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import {

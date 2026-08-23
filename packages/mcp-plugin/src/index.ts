@@ -1,6 +1,6 @@
 export {
-  createMcpControllerPlugin,
-  MCP_CONTROLLER_SERVICE,
+  createMcpPlugin,
+  MCP_SERVICE,
   MCP_PLUGIN_ID,
 } from "./mcp-controller-plugin";
-export type { McpAccess, McpController } from "./mcp-controller";
+export type { McpService } from "./mcp-controller";

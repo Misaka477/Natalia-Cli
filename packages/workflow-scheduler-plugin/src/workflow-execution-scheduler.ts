@@ -49,6 +49,26 @@ export type WorkflowExecutionHandle<T> = {
   cancel(reason?: string): void;
 };
 
+export interface WorkflowExecutionSchedulerService {
+  schedule<T>(input: {
+    workspaceRoot: string;
+    executionID?: string;
+    idempotencyKey?: string;
+    idempotencyFingerprint?: string;
+    run: (input: {
+      signal: AbortSignal;
+      publishOutput(line: string): void;
+      publishResolved(input: {
+        taskID: string;
+        flowID: string;
+        source: WorkflowExecutionResolvedEvent["source"];
+        requestedBy?: WorkflowExecutionResolvedEvent["requestedBy"];
+      }): void;
+    }) => Promise<T>;
+  }): WorkflowExecutionHandle<T>;
+  dispose(reason?: string): Promise<void>;
+}
+
 export class WorkflowExecutionRefusal extends Error {
   readonly code:
     | "global_queue_full"
@@ -103,7 +123,9 @@ type ScheduledExecution<T> = {
  * Queued work is not preflighted here: callers revalidate inside `run`, after
  * both gates are held.
  */
-export class WorkflowExecutionScheduler {
+export class WorkflowExecutionScheduler
+  implements WorkflowExecutionSchedulerService
+{
   private readonly globalConcurrency: number;
   private readonly workspaceConcurrency: number;
   private readonly globalQueueLimit: number;

@@ -6,12 +6,13 @@ import {
   WorkspaceSandboxManager,
 } from "@natalia/sandbox";
 import type { SandboxBackend } from "@natalia/contracts";
+import type { SandboxToolService } from "@natalia/tools";
 
 /**
  * The sandbox resource controller — second cut of the resource controllers
  * split (mainline plan §15). It owns the sandbox manager and its lifecycle;
- * the runtime's members and tool contexts reach the manager through `get()`,
- * and authorization stays in the shared pre-execute funnel
+ * the runtime's members and tool contexts use this controller's operational
+ * surface, and authorization stays in the shared pre-execute funnel
  * (`toolLayer.preExecute`), so there is exactly one policy path.
  *
  * The default backend is our own git-free snapshot manager: a sandbox is an
@@ -21,16 +22,21 @@ import type { SandboxBackend } from "@natalia/contracts";
  * (P9) is used instead, so a promoted sandbox change lands as a commit in the
  * user's own git history.
  *
- * Multi-session shape (plan §41.9): the controller exposes the manager by
- * accessor, and today it installs exactly one instance. When sessions become
- * per-session maps (D3 forces background sessions into sandboxes), only this
- * module's `init`/`get` implementations change.
+ * Multi-session shape (plan §41.9): today the controller owns one manager.
+ * When sessions become per-session maps, only this module's delegation changes.
  */
+export interface SandboxController extends SandboxToolService {
+  init(): Promise<void>;
+  close(): Promise<void>;
+  referencedObjectIDs(): Promise<Set<string> | undefined>;
+  runningResourceCount(): number;
+}
+
 export function createSandboxController(input: {
   workspaceRoot: string;
   /** Backend from `sandbox.backend`; absent defaults to our own snapshot. */
   backend?(): SandboxBackend | undefined;
-}) {
+}): SandboxController {
   let manager: WorkspaceSandboxManager | undefined;
   let initializing: Promise<void> | undefined;
   let closed = false;
@@ -63,14 +69,36 @@ export function createSandboxController(input: {
     if (closed) throw new Error("sandbox controller is closed");
   }
 
-  function get(): WorkspaceSandboxManager {
+  function requireManager(): WorkspaceSandboxManager {
     if (!manager) throw new Error("sandbox manager is not initialized");
     return manager;
   }
 
   return {
     init,
-    get,
+    create: async (id) => await requireManager().create(id),
+    list: async () => await requireManager().list(),
+    execute: async (id, command, options) =>
+      await requireManager().execute(id, command, options),
+    write: async (id, path, content, mode) =>
+      await requireManager().write(id, path, content, mode),
+    previewMerge: async (id) => await requireManager().previewMerge(id),
+    merge: async (id, hostRoot, authorize) =>
+      await requireManager().merge(id, hostRoot, authorize),
+    delete: async (id) => await requireManager().delete(id),
+    startResource: async (id, command, resourceID) =>
+      await requireManager().startResource(id, command, resourceID),
+    resourcesFor: (id) => requireManager().resourcesFor(id),
+    resourceOutput: async (id, resourceID, maxBytes) =>
+      await requireManager().resourceOutput(id, resourceID, maxBytes),
+    stopResource: async (id, resourceID) =>
+      await requireManager().stopResource(id, resourceID),
+    validate: async (id, command) =>
+      await requireManager().validate(id, command),
+    updateEvent: (id) => requireManager().updateEvent(id),
+    diffEvent: (id) => requireManager().diffEvent(id),
+    auditEvent: (id, action, approvalRequired) =>
+      requireManager().auditEvent(id, action, approvalRequired),
     async close() {
       if (closed) return;
       closed = true;
@@ -80,7 +108,7 @@ export function createSandboxController(input: {
       await current?.close();
     },
     async referencedObjectIDs() {
-      const current = get();
+      const current = requireManager();
       return current instanceof SnapshotSandboxManager
         ? await current.referencedObjectIDs()
         : undefined;
@@ -90,5 +118,3 @@ export function createSandboxController(input: {
     },
   };
 }
-
-export type SandboxController = ReturnType<typeof createSandboxController>;

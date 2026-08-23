@@ -36,6 +36,7 @@
         "@natalia/tools": "workspace:*",
         "@natalia/transport": "workspace:*",
         "@natalia/workflow": "workspace:*",
+        "@natalia/workflow-scheduler-plugin": "workspace:*",
       },
     },
     "apps/tui": {
@@ -52,6 +53,7 @@
         "@natalia/testing": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@natalia/view-store": "workspace:*",
+        "@natalia/workflow-scheduler-plugin": "workspace:*",
         "@opentui/core": "0.4.3",
         "@opentui/keymap": "0.4.3",
         "@opentui/solid": "0.4.3",
@@ -63,13 +65,6 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
-      },
-    },
-    "packages/agent-plugin": {
-      "name": "@natalia/agent-plugin",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/agent": "workspace:*",
       },
     },
     "packages/attachment-plugin": {
@@ -120,7 +115,7 @@
       "name": "@natalia/client",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/agent-plugin": "workspace:*",
+        "@natalia/agent": "workspace:*",
         "@natalia/attachment-plugin": "workspace:*",
         "@natalia/builtin-tool-plugins": "workspace:*",
         "@natalia/capability": "workspace:*",
@@ -236,20 +231,11 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/mcp": {
-      "name": "@natalia/mcp",
-      "version": "0.0.0-ts7",
-      "dependencies": {
-        "@natalia/config": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
     "packages/mcp-plugin": {
       "name": "@natalia/mcp-plugin",
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
-        "@natalia/mcp": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
@@ -281,11 +267,12 @@
       "name": "@natalia/provider-model-plugin",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/agent-plugin": "workspace:*",
+        "@natalia/agent": "workspace:*",
         "@natalia/attachment-plugin": "workspace:*",
         "@natalia/compaction-plugin": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/mcp-plugin": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/retry-plugin": "workspace:*",
         "@natalia/runtime": "workspace:*",
@@ -381,20 +368,12 @@
         "@natalia/session": "workspace:*",
       },
     },
-    "packages/skills": {
-      "name": "@natalia/skills",
-      "version": "0.0.0-ts7",
-      "dependencies": {
-        "@natalia/platform": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
     "packages/skills-plugin": {
       "name": "@natalia/skills-plugin",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
-        "@natalia/skills": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -408,6 +387,7 @@
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/subagent": "workspace:*",
+        "@natalia/tools": "workspace:*",
       },
     },
     "packages/task-module-plugin": {
@@ -425,7 +405,7 @@
       "name": "@natalia/task-workflow-plugin",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/agent-plugin": "workspace:*",
+        "@natalia/agent": "workspace:*",
         "@natalia/capability": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
@@ -442,6 +422,7 @@
         "@natalia/plugin": "workspace:*",
         "@natalia/sandbox-plugin": "workspace:*",
         "@natalia/subagents-plugin": "workspace:*",
+        "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -452,6 +433,7 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/native-terminal": "workspace:*",
         "@natalia/plugin": "workspace:*",
+        "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -460,6 +442,10 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/native-terminal": "workspace:*",
+        "@natalia/sandbox": "workspace:*",
+        "@natalia/session": "workspace:*",
+        "@natalia/subagent": "workspace:*",
       },
     },
     "packages/tool-agent": {
@@ -467,7 +453,6 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
-        "@natalia/subagent": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -529,7 +514,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
-        "@natalia/sandbox": "workspace:*",
+        "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -553,8 +538,8 @@
       "name": "@natalia/tool-terminal",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/native-terminal": "workspace:*",
         "@natalia/plugin": "workspace:*",
+        "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -580,10 +565,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
-        "@natalia/native-terminal": "workspace:*",
         "@natalia/platform": "workspace:*",
-        "@natalia/sandbox": "workspace:*",
-        "@natalia/subagent": "workspace:*",
       },
     },
     "packages/transport": {
@@ -744,8 +726,6 @@
 
     "@natalia/agent": ["@natalia/agent@workspace:packages/agent"],
 
-    "@natalia/agent-plugin": ["@natalia/agent-plugin@workspace:packages/agent-plugin"],
-
     "@natalia/attachment-plugin": ["@natalia/attachment-plugin@workspace:packages/attachment-plugin"],
 
     "@natalia/builtin-tool-plugins": ["@natalia/builtin-tool-plugins@workspace:packages/builtin-tool-plugins"],
@@ -773,8 +753,6 @@
     "@natalia/installer": ["@natalia/installer@workspace:packages/installer"],
 
     "@natalia/local-tools-plugin": ["@natalia/local-tools-plugin@workspace:packages/local-tools-plugin"],
-
-    "@natalia/mcp": ["@natalia/mcp@workspace:packages/mcp"],
 
     "@natalia/mcp-plugin": ["@natalia/mcp-plugin@workspace:packages/mcp-plugin"],
 
@@ -805,8 +783,6 @@
     "@natalia/session": ["@natalia/session@workspace:packages/session"],
 
     "@natalia/session-store-plugin": ["@natalia/session-store-plugin@workspace:packages/session-store-plugin"],
-
-    "@natalia/skills": ["@natalia/skills@workspace:packages/skills"],
 
     "@natalia/skills-plugin": ["@natalia/skills-plugin@workspace:packages/skills-plugin"],
 

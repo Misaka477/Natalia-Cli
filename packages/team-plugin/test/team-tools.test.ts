@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { SubagentRegistry } from "@natalia/subagents-plugin";
-import { SnapshotSandboxManager } from "@natalia/sandbox-plugin";
+import {
+  SnapshotSandboxTestManager as SnapshotSandboxManager,
+  SubagentTestRegistry as SubagentRegistry,
+} from "@natalia/testing";
 import { createTeamFanoutTool, createTeamReviewTool } from "../src/index";
 
 test("team_fanout + team_review drive a fan-out from a tool context", async () => {

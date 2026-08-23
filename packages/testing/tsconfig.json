@@ -3,5 +3,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "../.." },
   "include": ["src", "test", "bin"],
-  "references": [{ "path": "../contracts" }]
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../native-terminal" },
+    { "path": "../sandbox" },
+    { "path": "../session" },
+    { "path": "../subagent" }
+  ]
 }

@@ -9,7 +9,7 @@ import {
   loadNativeMCPTools,
   mcpToolToRuntimeTool,
   StdioMCPClient,
-} from "../src";
+} from "../src/mcp-runtime";
 
 function toolRegistrar(registry: ReturnType<typeof createToolRegistry>) {
   return {
@@ -416,7 +416,7 @@ pythonTest(
   "native MCP loader returns an idempotent lifecycle cleanup",
   async () => {
     const root = await mkdtemp(join(tmpdir(), "natalia-mcp-cleanup-"));
-    const loader = await import("../src");
+    const loader = await import("../src/mcp-runtime");
     const registry = createToolRegistry([]);
     const result = await loader.loadNativeMCPTools({
       tools: toolRegistrar(registry),

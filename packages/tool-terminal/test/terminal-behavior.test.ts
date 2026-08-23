@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { createPluginRegistry } from "@natalia/plugin";
+import { TerminalTestRegistry as NativeTerminalRegistry } from "@natalia/testing";
 import {
   encodeTerminalKey,
   nativeTerminalReadPage,
@@ -62,7 +62,7 @@ test("interactive Terminal tools keep model I/O on one native host pane", async 
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   const startResult = await tools
     .get("interactive_terminal_start")!
@@ -196,7 +196,7 @@ test("unified interactive terminal input tool sends text and key sequences", asy
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -269,7 +269,7 @@ test("interactive terminal snapshot returns cursor and revision without afterRev
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -316,7 +316,7 @@ test("terminal observe latest mode returns current state without waiting", async
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -363,7 +363,7 @@ test("terminal observe tail mode returns only recent lines", async () => {
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -413,7 +413,7 @@ test("terminal observe cursor mode returns lines around cursor", async () => {
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -456,7 +456,7 @@ test("terminal observe new_only mode returns only new text since last observatio
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -508,7 +508,7 @@ test("interactive terminal input paste mode wraps text in bracketed paste escape
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -547,7 +547,7 @@ test("terminal observe afterRevision is optional and defaults to current state",
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!
@@ -641,7 +641,7 @@ test("terminal_observe latest reports a point-in-time read, not a wait outcome",
     async resize() {},
     async stop() {},
   });
-  const context = { workspaceRoot: root, nativeTerminal };
+  const context = { workspaceRoot: root, terminal: nativeTerminal };
   const tools = terminalRegistry();
   await tools
     .get("interactive_terminal_start")!

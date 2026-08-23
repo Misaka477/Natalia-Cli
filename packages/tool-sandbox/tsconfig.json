@@ -10,10 +10,10 @@
       "path": "../plugin"
     },
     {
-      "path": "../tools"
+      "path": "../testing"
     },
     {
-      "path": "../sandbox"
+      "path": "../tools"
     }
   ]
 }

@@ -21,7 +21,7 @@ import {
   type StreamingProvider,
 } from "@natalia/runtime";
 import type { RetryService } from "@natalia/retry-plugin";
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent-plugin";
+import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
@@ -38,6 +38,7 @@ import {
 } from "@natalia/tools";
 import type { AttachmentService } from "@natalia/attachment-plugin";
 import type { CompactionService } from "@natalia/compaction-plugin";
+import type { McpService } from "@natalia/mcp-plugin";
 
 export function estimateProviderMessages(messages: ProviderMessage[]) {
   let tokens = 0;
@@ -87,9 +88,7 @@ export type ProviderRunnerInput = {
   attachmentReferences(): Map<string, LocalAttachment[]>;
   attachments: AttachmentService;
   compaction: CompactionService;
-  mcpAccess(): ReadonlyArray<{
-    readResource(server: string, uri: string): Promise<unknown>;
-  }>;
+  mcp(): Pick<McpService, "readResource"> | undefined;
   agentRegistry(): AgentRegistry | undefined;
   activeAbort(): AbortController | undefined;
   setActiveAbort(controller: AbortController | undefined): void;
@@ -335,26 +334,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       if (resources.length && user) {
         const contents = await Promise.all(
           resources.map(async (resource) => {
-            let result: unknown;
-            for (const access of input.mcpAccess()) {
-              try {
-                result = await access.readResource(
-                  resource.server,
-                  resource.uri,
-                );
-                break;
-              } catch (error) {
-                if (
-                  !(error instanceof Error) ||
-                  !error.message.includes("not connected")
-                )
-                  throw error;
-              }
-            }
-            if (result === undefined)
+            const mcp = input.mcp();
+            if (!mcp)
               throw new Error(
                 `MCP server is not connected: ${resource.server}`,
               );
+            const result = await mcp.readResource(
+              resource.server,
+              resource.uri,
+            );
             const contents =
               result && typeof result === "object" && "contents" in result
                 ? (result as { contents?: unknown }).contents

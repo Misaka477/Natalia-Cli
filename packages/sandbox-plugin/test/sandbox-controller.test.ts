@@ -2,23 +2,21 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  SnapshotSandboxManager,
-  WorktreeSandboxManager,
-} from "@natalia/sandbox";
 import { mkdir } from "node:fs/promises";
 import { createSandboxController } from "../src/sandbox-controller";
 
 test("sandbox controller initializes lazily and refuses before init", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-controller-"));
   const controller = createSandboxController({ workspaceRoot: root });
-  expect(() => controller.get()).toThrow("sandbox manager is not initialized");
+  await expect(controller.list()).rejects.toThrow(
+    "sandbox manager is not initialized",
+  );
   await expect(controller.referencedObjectIDs()).rejects.toThrow(
     "sandbox manager is not initialized",
   );
   expect(controller.runningResourceCount()).toBe(0);
   await controller.init();
-  expect(controller.get()).toBeDefined();
+  expect(await controller.list()).toEqual([]);
   expect(await controller.referencedObjectIDs()).toBeInstanceOf(Set);
   expect(controller.runningResourceCount()).toBe(0);
 });
@@ -27,9 +25,10 @@ test("sandbox controller init is idempotent", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-controller-2-"));
   const controller = createSandboxController({ workspaceRoot: root });
   await controller.init();
-  const first = controller.get();
   await controller.init();
-  expect(controller.get()).toBe(first);
+  await controller.create("idempotent");
+  await controller.init();
+  expect((await controller.list()).map(({ id }) => id)).toEqual(["idempotent"]);
 });
 
 test("sandbox controller close is lazy, idempotent, and final", async () => {
@@ -41,7 +40,9 @@ test("sandbox controller close is lazy, idempotent, and final", async () => {
   await expect(controller.init()).rejects.toThrow(
     "sandbox controller is closed",
   );
-  expect(() => controller.get()).toThrow("sandbox manager is not initialized");
+  await expect(controller.list()).rejects.toThrow(
+    "sandbox manager is not initialized",
+  );
 });
 
 test("sandbox controller close releases its initialized manager", async () => {
@@ -49,7 +50,9 @@ test("sandbox controller close releases its initialized manager", async () => {
   const controller = createSandboxController({ workspaceRoot: root });
   await controller.init();
   await controller.close();
-  expect(() => controller.get()).toThrow("sandbox manager is not initialized");
+  await expect(controller.list()).rejects.toThrow(
+    "sandbox manager is not initialized",
+  );
   await expect(controller.init()).rejects.toThrow(
     "sandbox controller is closed",
   );
@@ -62,8 +65,7 @@ test("the default sandbox backend is our own git-free snapshot manager", async (
   await mkdir(join(root, ".git"), { recursive: true });
   const controller = createSandboxController({ workspaceRoot: root });
   await controller.init();
-  expect(controller.get()).toBeInstanceOf(SnapshotSandboxManager);
-  expect(controller.get()).not.toBeInstanceOf(WorktreeSandboxManager);
+  expect(await controller.referencedObjectIDs()).toBeInstanceOf(Set);
 });
 
 test("sandbox.backend=worktree opts into the real-git backend when a repo exists", async () => {
@@ -74,6 +76,5 @@ test("sandbox.backend=worktree opts into the real-git backend when a repo exists
     backend: () => "worktree",
   });
   await controller.init();
-  expect(controller.get()).toBeInstanceOf(WorktreeSandboxManager);
   expect(await controller.referencedObjectIDs()).toBeUndefined();
 });

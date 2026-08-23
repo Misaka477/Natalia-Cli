@@ -3,9 +3,9 @@ import {
   assertConfigApplied,
   attachRuntimeClientWorker,
   CapabilityExecutionHost,
-  createWorkflowSchedulerPluginHost,
   createRealRuntimeClient,
 } from "@natalia/client";
+import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
 import { CapabilityHost } from "@natalia/capability";
 import { resolveConfig } from "@natalia/config";
 
@@ -30,15 +30,21 @@ const createRuntime = () =>
     capabilityHost,
   });
 
-attachRuntimeClientWorker(input.port, createRuntime(), {
-  reload: createRuntime,
-  workflowExecution,
-  workflowConfig: async () =>
-    assertConfigApplied(
-      await resolveConfig({ workspaceRoot: input.workspaceRoot }),
-    ),
-  disposeHost: async () => {
-    await workflowScheduler.close();
-    capabilityHost.dispose();
-  },
-});
+try {
+  attachRuntimeClientWorker(input.port, createRuntime(), {
+    reload: createRuntime,
+    workflowExecution,
+    workflowConfig: async () =>
+      assertConfigApplied(
+        await resolveConfig({ workspaceRoot: input.workspaceRoot }),
+      ),
+    disposeHost: async () => {
+      await workflowScheduler.close();
+      capabilityHost.dispose();
+    },
+  });
+} catch (error) {
+  await workflowScheduler.close();
+  capabilityHost.dispose();
+  throw error;
+}

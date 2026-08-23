@@ -4,13 +4,13 @@
   "compilerOptions": {
     "rootDir": "../.."
   },
-  "include": ["src"],
+  "include": ["src", "test"],
   "references": [
     {
       "path": "../plugin"
     },
     {
-      "path": "../skills"
+      "path": "../platform"
     },
     {
       "path": "../tools"

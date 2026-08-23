@@ -29,6 +29,7 @@
     "@natalia/session": "workspace:*",
     "@natalia/transport": "workspace:*",
     "@natalia/tools": "workspace:*",
-    "@natalia/workflow": "workspace:*"
+    "@natalia/workflow": "workspace:*",
+    "@natalia/workflow-scheduler-plugin": "workspace:*"
   }
 }
