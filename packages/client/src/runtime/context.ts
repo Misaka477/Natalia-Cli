@@ -14,6 +14,7 @@ import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RuntimePorts } from "./ports";
 import type { RuntimePortsExtra } from "./ports-extra";
 import type { RuntimeInitializePorts } from "./ports-initialize";
+import type { RuntimeClientSurfacePorts } from "./ports-client-surface";
 import type { InitializeDependencies } from "./initialize-types";
 export type {
   InitializeCatalogResult,
@@ -237,7 +238,10 @@ export type RuntimeState = {
  */
 export type RuntimeContext = {
   state: RuntimeState;
-  ports: RuntimePorts & RuntimePortsExtra & RuntimeInitializePorts;
+  ports: RuntimePorts &
+    RuntimePortsExtra &
+    RuntimeInitializePorts &
+    RuntimeClientSurfacePorts;
 };
 
 /** The resolved context window status carried by the runtime and each exec. */

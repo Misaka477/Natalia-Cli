@@ -1,0 +1,81 @@
+import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { updateConfigAtScope } from "@natalia/config";
+import { PROVIDER_MODEL_PLUGIN_ID } from "@natalia/builtin-plugins";
+import { sessionRunCoordinator } from "@natalia/session";
+import type { RuntimeContext } from "../context";
+import type { ClientSurfaceOptions } from "./types";
+type Surface = Pick<
+  RuntimeServiceClient,
+  "dispose" | "canReloadConfig" | "reloadConfig" | "updateConfig"
+>;
+export function createLifecycleSurface(
+  ctx: RuntimeContext,
+  options: ClientSurfaceOptions,
+): Surface {
+  return {
+    async dispose() {
+      ctx.ports.setDisposed(true);
+      await Promise.all(
+        [...ctx.state.titleGenerationTasks.keys()].map(
+          ctx.ports.cancelTitleGeneration,
+        ),
+      );
+      ctx.ports.getTerminalCommandBuffer().clearAll();
+      for (const exec of ctx.ports.getExecutionBySession().values()) {
+        exec.activeAbort?.abort(new Error("runtime disposed"));
+        exec.paused = false;
+        for (const resolveWaiter of exec.pauseWaiters) resolveWaiter();
+        exec.pauseWaiters = [];
+      }
+      await Promise.all(
+        [...ctx.ports.getExecutionBySession().keys()].map((id) =>
+          sessionRunCoordinator(id).interrupt(),
+        ),
+      );
+      await ctx.ports
+        .getPluginsController()
+        .unloadBuiltin(PROVIDER_MODEL_PLUGIN_ID);
+      ctx.ports.setProviderModelController(undefined);
+      await Promise.allSettled([...ctx.ports.getInternalWakeTasks()]);
+      // A committed selection and other durable controls must reach disk before
+      // a caller opens the same session in a replacement runtime.
+      await ctx.ports.getSessionPersistence();
+      await Promise.all(
+        [...ctx.ports.getExecutionBySession().keys()].map((id) =>
+          ctx.ports.getSessionStoreController()?.flush(id),
+        ),
+      );
+      await ctx.ports.getPluginsController().close();
+      await ctx.ports.getPerformanceTrace().stop();
+    },
+    async canReloadConfig() {
+      await ctx.ports.getReady();
+      const blocked = ctx.ports.configReloadBlockedReason();
+      return blocked ? { allowed: false, reason: blocked } : { allowed: true };
+    },
+    async reloadConfig() {
+      await ctx.ports.getReady();
+      // Re-checked here rather than trusting `canReloadConfig`: a turn can start
+      // between the two calls, and applying new policy underneath a running turn
+      // would change the rules it started under.
+      return await ctx.ports.applyConfigFromDisk();
+    },
+    async updateConfig(input) {
+      await ctx.ports.getReady();
+      // The TUI settings menu path, now a public surface: merge the patch onto
+      // disk, then apply. The file is written either way; whether it takes
+      // effect under a running turn is an ordinary answer, not an exception.
+      // Idempotent by patch: the same patch merged twice produces the same
+      // merged config.
+      await updateConfigAtScope(
+        ctx.ports.getWorkspaceRoot(),
+        input.patch as never,
+        input.scope ?? "project",
+        { globalPath: options.globalConfigPath },
+      );
+      // Applying is the same operation as a reload, with the same value-type
+      // refusal; share it so the two paths cannot drift.
+      return await ctx.ports.applyConfigFromDisk();
+    },
+  };
+}

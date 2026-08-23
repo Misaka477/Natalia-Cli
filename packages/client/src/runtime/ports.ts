@@ -43,7 +43,9 @@ export type RuntimePorts = {
     event: RuntimeEvent,
   ) => void;
   scheduleRuntimeStatusSnapshot: () => void;
-  runtimeStatusSnapshot: () => Promise<RuntimeEvent>;
+  runtimeStatusSnapshot: () => Promise<
+    Extract<RuntimeEvent, { type: "status.snapshot" }>
+  >;
   ensureExecution: (id: SessionID) => Promise<SessionExecutionState>;
   commandCatalogEntries: () => import("@natalia/plugin").PluginCommand[];
   skillService: () => SkillService | undefined;
@@ -75,7 +77,11 @@ export type RuntimePorts = {
   activateQueuedPlanAtBoundary: (exec?: SessionExecutionState) => void;
   reconcileWorkspaceObservation: (
     exec?: SessionExecutionState,
-  ) => Promise<unknown[]>;
+  ) => ReturnType<
+    NonNullable<
+      import("@natalia/contracts").RuntimeClient["confirmedWorkspaceChanges"]
+    >
+  >;
   toolEventTurnID: (event: { id: string; callID?: string }) => string;
   isSessionSnapshotTrigger: (event: RuntimeEvent) => boolean;
   publishSessionSnapshot: (exec?: SessionExecutionState) => void;
@@ -191,7 +197,7 @@ export type RuntimePorts = {
     Array<{ id: string; name: string; provider: string; variants: string[] }>
   >;
   selectRuntimeModel: (
-    modelID: string,
+    modelID: string | undefined,
     variant: string | undefined,
     exec?: SessionExecutionState,
   ) => Promise<void>;
