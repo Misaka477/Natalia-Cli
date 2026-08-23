@@ -9,10 +9,12 @@ type SubagentRunner = (
   context: SubagentRunnerContext,
 ) => void | Promise<void>;
 
-export interface SubagentsController extends SubagentToolService {
+export interface SubagentsService extends SubagentToolService {
   init(runner: SubagentRunner): Promise<void>;
   enabled(): boolean;
 }
+
+type SubagentsController = SubagentsService;
 
 export function createSubagentsController(input: {
   workDir: string;

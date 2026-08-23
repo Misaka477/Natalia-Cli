@@ -1,11 +1,8 @@
 import { expect, test } from "bun:test";
 import { createPluginRegistry, type Plugin } from "@natalia/plugin";
+import { SANDBOX_SERVICE, SANDBOX_PLUGIN_ID } from "@natalia/sandbox-plugin";
 import {
-  SANDBOX_CONTROLLER_SERVICE,
-  SANDBOX_PLUGIN_ID,
-} from "@natalia/sandbox-plugin";
-import {
-  SUBAGENTS_CONTROLLER_SERVICE,
+  SUBAGENTS_SERVICE,
   SUBAGENTS_PLUGIN_ID,
 } from "@natalia/subagents-plugin";
 import { createToolRegistry } from "@natalia/tools";
@@ -43,10 +40,7 @@ test("team plugin declares its service and package dependencies", () => {
   const manifest = createTeamPlugin().manifest;
   expect(manifest.apiVersion).toBe(2);
   if (manifest.apiVersion !== 2) throw new Error("team plugin must use v2");
-  expect(manifest.requires).toEqual([
-    SUBAGENTS_CONTROLLER_SERVICE,
-    SANDBOX_CONTROLLER_SERVICE,
-  ]);
+  expect(manifest.requires).toEqual([SUBAGENTS_SERVICE, SANDBOX_SERVICE]);
   expect(manifest.dependencies.map((dependency) => dependency.id)).toEqual([
     SUBAGENTS_PLUGIN_ID,
     SANDBOX_PLUGIN_ID,
@@ -78,14 +72,14 @@ test("team plugin owns both tools and unload removes them", async () => {
   await registry.loadBuiltin(
     servicePlugin({
       id: SUBAGENTS_PLUGIN_ID,
-      service: SUBAGENTS_CONTROLLER_SERVICE,
+      service: SUBAGENTS_SERVICE,
       value: subagents,
     }),
   );
   await registry.loadBuiltin(
     servicePlugin({
       id: SANDBOX_PLUGIN_ID,
-      service: SANDBOX_CONTROLLER_SERVICE,
+      service: SANDBOX_SERVICE,
       value: sandbox,
     }),
   );

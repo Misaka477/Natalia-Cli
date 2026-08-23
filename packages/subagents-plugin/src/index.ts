@@ -1,6 +1,6 @@
 export {
   createSubagentsControllerPlugin,
-  SUBAGENTS_CONTROLLER_SERVICE,
+  SUBAGENTS_SERVICE,
   SUBAGENTS_PLUGIN_ID,
 } from "./subagents-controller-plugin";
-export type { SubagentsController } from "./subagents-controller";
+export type { SubagentsService } from "./subagents-controller-plugin";

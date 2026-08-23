@@ -2,18 +2,18 @@
  * The sandbox controller built-in plugin.
  *
  * Previously a visibility-only record; the controller now lives on the unified
- * plugin lifecycle. The plugin constructs it in `setup()` and provides it as the
- * `sandbox.controller` service, so a disabled or absent plugin constructs no
+ * plugin lifecycle. The plugin constructs it in `setup()` and provides its
+ * operational `sandbox.service`, so a disabled or absent plugin constructs no
  * sandbox manager at all.
  */
 import type { Plugin } from "@natalia/plugin";
 import { createSandboxController } from "./sandbox-controller";
 import type { SandboxBackend } from "@natalia/contracts";
 
-export type { SandboxController } from "./sandbox-controller";
+export type { SandboxService } from "./sandbox-controller";
 
 export const SANDBOX_PLUGIN_ID = "natalia-sandbox";
-export const SANDBOX_CONTROLLER_SERVICE = "sandbox.controller";
+export const SANDBOX_SERVICE = "sandbox.service";
 
 export function createSandboxControllerPlugin(input: {
   workspaceRoot: string;
@@ -29,7 +29,7 @@ export function createSandboxControllerPlugin(input: {
       description: "Isolated workspaces for subagents and experiments.",
       entry: "natalia:sandbox",
       scope: "workspace",
-      provides: [SANDBOX_CONTROLLER_SERVICE],
+      provides: [SANDBOX_SERVICE],
       requires: [],
       optionalRequires: [],
       conflicts: [],
@@ -42,7 +42,7 @@ export function createSandboxControllerPlugin(input: {
         workspaceRoot: input.workspaceRoot,
         backend: input.backend,
       });
-      api.services.provide(SANDBOX_CONTROLLER_SERVICE, controller);
+      api.services.provide(SANDBOX_SERVICE, controller);
     },
     async dispose() {
       await controller?.close();

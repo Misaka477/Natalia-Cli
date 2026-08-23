@@ -224,6 +224,18 @@ test("sandbox migration rejects backend leaks across service consumers", () => {
       "packages/sandbox-plugin/src/index.ts",
       "export { WorktreeSandboxManager } from '@natalia/sandbox'",
     ],
+    [
+      "packages/team-plugin/src/team-plugin.ts",
+      'import type { SandboxController } from "@natalia/sandbox-plugin"',
+    ],
+    [
+      "packages/client/src/real-runtime.ts",
+      "kernel.service(SANDBOX_CONTROLLER_SERVICE)",
+    ],
+    [
+      "packages/sandbox-plugin/src/index.ts",
+      'export type { SandboxController } from "./sandbox-controller"',
+    ],
   ] as const)
     expect(findMigratedPluginViolations(path, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-sandbox" }),
@@ -244,6 +256,18 @@ test("subagents migration rejects backend leaks across service consumers", () =>
     [
       "packages/subagents-plugin/src/index.ts",
       'export { SubagentRegistry } from "@natalia/subagent"',
+    ],
+    [
+      "packages/team-plugin/src/team-plugin.ts",
+      'import type { SubagentsController } from "@natalia/subagents-plugin"',
+    ],
+    [
+      "packages/client/src/real-runtime.ts",
+      "kernel.service(SUBAGENTS_CONTROLLER_SERVICE)",
+    ],
+    [
+      "packages/subagents-plugin/src/index.ts",
+      'export type { SubagentsController } from "./subagents-controller"',
     ],
   ] as const)
     expect(findMigratedPluginViolations(path, source)).toContainEqual(

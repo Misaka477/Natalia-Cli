@@ -32,8 +32,10 @@ import {
   isInvalidGeneratedSessionTitle,
   sanitizeSessionTitleInput,
 } from "./session-title";
-import type { SubagentsController } from "@natalia/subagents-plugin";
-import { SUBAGENTS_CONTROLLER_SERVICE } from "@natalia/subagents-plugin";
+import {
+  SUBAGENTS_SERVICE,
+  type SubagentsService,
+} from "@natalia/subagents-plugin";
 import {
   CHECKPOINT_FACTORY_SERVICE,
   CHECKPOINT_PLUGIN_ID,
@@ -227,9 +229,9 @@ import {
   type TerminalController,
 } from "@natalia/terminal-plugin";
 import {
-  SANDBOX_CONTROLLER_SERVICE,
+  SANDBOX_SERVICE,
   SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
-  type SandboxController,
+  type SandboxService,
 } from "@natalia/sandbox-plugin";
 import { MCP_SERVICE, type McpService } from "@natalia/mcp-plugin";
 import type { TaskModuleContext } from "@natalia/task-module-plugin";
@@ -496,7 +498,7 @@ export function createRealRuntimeClient(
   let defaultPermissionMode = permissionMode;
   let defaultPermissionProfile: PermissionProfile | undefined;
   let maxSteps: number | undefined;
-  let subagentsController: SubagentsController | undefined;
+  let subagentsController: SubagentsService | undefined;
   let providerModelController: ProviderModelController | undefined;
   let taskWorkflowController: TaskWorkflowController | undefined;
   let contextLedgerFactory!: ContextLedgerFactory;
@@ -514,7 +516,7 @@ export function createRealRuntimeClient(
    * services are in place by the time they are read.
    */
   let terminalController: TerminalController | undefined;
-  let sandboxController: SandboxController | undefined;
+  let sandboxController: SandboxService | undefined;
   let mcpService: McpService | undefined;
   const pluginsController = createPluginsController({
     workspaceRoot,
@@ -1004,9 +1006,8 @@ export function createRealRuntimeClient(
           ],
           tsConfig.config.plugins.settings,
         );
-        sandboxController = capabilityRegistry.service<SandboxController>(
-          SANDBOX_CONTROLLER_SERVICE,
-        );
+        sandboxController =
+          capabilityRegistry.service<SandboxService>(SANDBOX_SERVICE);
         await sandboxController?.init();
       }
       if (reconcileTerminal) {
@@ -1440,13 +1441,11 @@ export function createRealRuntimeClient(
       terminalController = capabilityRegistry.service<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
-      sandboxController = capabilityRegistry.service<SandboxController>(
-        SANDBOX_CONTROLLER_SERVICE,
-      );
+      sandboxController =
+        capabilityRegistry.service<SandboxService>(SANDBOX_SERVICE);
       mcpService = capabilityRegistry.service<McpService>(MCP_SERVICE);
-      subagentsController = capabilityRegistry.service<SubagentsController>(
-        SUBAGENTS_CONTROLLER_SERVICE,
-      );
+      subagentsController =
+        capabilityRegistry.service<SubagentsService>(SUBAGENTS_SERVICE);
       const resolvedSessionStore =
         capabilityRegistry.service<SessionStoreController>(
           SESSION_STORE_CONTROLLER_SERVICE,

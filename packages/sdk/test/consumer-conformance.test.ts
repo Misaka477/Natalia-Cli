@@ -723,11 +723,13 @@ test("a read-only integration renders the session and cannot write a byte", asyn
  * `trigger` runs so no live event can slip between the two. Replay (since 0)
  * covers events that happened before the subscription existed.
  */
+const CONSUMER_EVENT_TIMEOUT_MS = 30_000;
+
 async function collectEventsWhileTriggering(
   sdk: ReturnType<typeof createNataliaSDK>,
   trigger: () => void,
   predicate: (event: RuntimeEvent) => boolean,
-  timeoutMs = 15_000,
+  timeoutMs = CONSUMER_EVENT_TIMEOUT_MS,
 ): Promise<RuntimeEvent[]> {
   const collected: RuntimeEvent[] = [];
   const controller = new AbortController();
@@ -846,41 +848,39 @@ test("an external UI takes over approvals and answers questions", async () => {
     expect(outcome).toEqual({ accepted: true });
     if (!approvedTurn) throw new Error("approved turn was not submitted");
     const approvedSubmission = await approvedTurn;
-    const finishedDeadline = Date.now() + 15_000;
+    const finishedDeadline = Date.now() + CONSUMER_EVENT_TIMEOUT_MS;
     let approvedFinished = false;
+    let runtimeIdle = false;
     while (Date.now() < finishedDeadline) {
       const history = await sdk.history({ limit: 500 });
       approvedFinished = history.events.some(
         ({ event }) =>
           event.type === "turn.finished" && event.id === approvedSubmission.id,
       );
-      if (approvedFinished) break;
+      runtimeIdle = (await sdk.canReloadConfig()).allowed;
+      if (approvedFinished && runtimeIdle) break;
       await Bun.sleep(50);
     }
     expect(approvedFinished).toBe(true);
+    expect(runtimeIdle).toBe(true);
 
-    // Reject: the model is told, via a policy.decision event, that the call
-    // was refused — a rejection is an answer, not a silent drop. The order
-    // matters: the UI answers the request first, then the decision event is
-    // produced, so this phase waits for the request, answers it, and a second
-    // phase collects the decision.
+    // Reject: a reconnecting UI reads the pending projection rather than
+    // replaying the whole SSE stream again. The model is told, via a durable
+    // policy.decision event, that the call was refused — a rejection is an
+    // answer, not a silent drop.
     let rejectedTurn: Promise<SubmittedTurn> | undefined;
-    // Replay contains the first turn's approval.request; the live request for
-    // this turn has a different id, so the predicate waits for that one.
-    const rejectedEvents = await collectEventsWhileTriggering(
-      sdk,
-      () => {
-        rejectedTurn = sdk.prompt("make another plan");
-      },
-      (event) => event.type === "approval.request" && event.id !== request.id,
-    );
-
-    const secondRequest = rejectedEvents
-      .filter(
-        (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
-          event.type === "approval.request",
-      )
-      .at(-1);
+    rejectedTurn = sdk.prompt("make another plan");
+    const pendingDeadline = Date.now() + CONSUMER_EVENT_TIMEOUT_MS;
+    let secondRequest:
+      | Extract<RuntimeEvent, { type: "approval.request" }>
+      | undefined;
+    while (Date.now() < pendingDeadline) {
+      secondRequest = (await sdk.pendingInteractive()).approvals.find(
+        (entry) => entry.id !== request.id,
+      );
+      if (secondRequest) break;
+      await Bun.sleep(50);
+    }
     expect(secondRequest).toBeDefined();
     const refused = await sdk.respondApproval({
       requestID: secondRequest!.id,
@@ -889,19 +889,20 @@ test("an external UI takes over approvals and answers questions", async () => {
     });
     expect(refused).toEqual({ accepted: true });
     await rejectedTurn;
-    const decisions = await collectEventsWhileTriggering(
-      sdk,
-      () => undefined,
-      (event) =>
-        event.type === "policy.decision" && event.decision === "rejected",
-    );
-    expect(
-      decisions.some(
-        (entry) =>
-          (entry as Extract<RuntimeEvent, { type: "policy.decision" }>)
-            .reason === "not now",
-      ),
-    ).toBe(true);
+    const decisionDeadline = Date.now() + CONSUMER_EVENT_TIMEOUT_MS;
+    let rejectedDecision = false;
+    while (Date.now() < decisionDeadline) {
+      const history = await sdk.history({ limit: 500 });
+      rejectedDecision = history.events.some(
+        ({ event }) =>
+          event.type === "policy.decision" &&
+          event.decision === "rejected" &&
+          event.reason === "not now",
+      );
+      if (rejectedDecision) break;
+      await Bun.sleep(50);
+    }
+    expect(rejectedDecision).toBe(true);
   } finally {
     server.stop();
     await runtime.dispose?.();

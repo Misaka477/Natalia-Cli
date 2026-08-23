@@ -2,21 +2,21 @@
  * The team built-in plugin: the fan-out + review collaboration lane.
  *
  * The team tools are the only built-in tools that combine two other plugin
- * services — `subagents.controller` (spawn per task) and `sandbox.controller`
+ * services — `subagents.service` (spawn per task) and `sandbox.service`
  * (one isolated worktree per candidate) — so this plugin declares both as
  * required services and the capability kernel holds it pending until they are
  * provided. A disabled team plugin registers no team tools at all.
  */
 import type { Plugin } from "@natalia/plugin";
-import type { SandboxController } from "@natalia/sandbox-plugin";
 import {
-  SANDBOX_CONTROLLER_SERVICE,
+  SANDBOX_SERVICE,
   SANDBOX_PLUGIN_ID,
+  type SandboxService,
 } from "@natalia/sandbox-plugin";
-import type { SubagentsController } from "@natalia/subagents-plugin";
 import {
-  SUBAGENTS_CONTROLLER_SERVICE,
+  SUBAGENTS_SERVICE,
   SUBAGENTS_PLUGIN_ID,
+  type SubagentsService,
 } from "@natalia/subagents-plugin";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 
@@ -34,7 +34,7 @@ export function createTeamPlugin(): Plugin {
       entry: "natalia:team",
       scope: "workspace",
       provides: [],
-      requires: [SUBAGENTS_CONTROLLER_SERVICE, SANDBOX_CONTROLLER_SERVICE],
+      requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],
       optionalRequires: [],
       conflicts: [],
       dependencies: [
@@ -58,19 +58,16 @@ export function createTeamPlugin(): Plugin {
       api.tools.register(
         createTeamFanoutTool({
           subagents: () => {
-            const controller = api.services.get<SubagentsController>(
-              SUBAGENTS_CONTROLLER_SERVICE,
-            );
-            return controller?.enabled() ? controller : undefined;
+            const service =
+              api.services.get<SubagentsService>(SUBAGENTS_SERVICE);
+            return service?.enabled() ? service : undefined;
           },
-          sandboxes: () =>
-            api.services.get<SandboxController>(SANDBOX_CONTROLLER_SERVICE),
+          sandboxes: () => api.services.get<SandboxService>(SANDBOX_SERVICE),
         }),
       );
       api.tools.register(
         createTeamReviewTool({
-          sandboxes: () =>
-            api.services.get<SandboxController>(SANDBOX_CONTROLLER_SERVICE),
+          sandboxes: () => api.services.get<SandboxService>(SANDBOX_SERVICE),
         }),
       );
     },

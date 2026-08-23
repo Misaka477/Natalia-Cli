@@ -16,9 +16,9 @@ import { getPluginCommands } from "@natalia/plugin";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
-  SANDBOX_CONTROLLER_SERVICE,
+  SANDBOX_SERVICE,
   SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
-  type SandboxController,
+  type SandboxService,
 } from "@natalia/sandbox-plugin";
 import {
   TERMINAL_CONTROLLER_SERVICE,
@@ -1881,14 +1881,14 @@ test("sandbox plugin config reload releases resources and reconciles team", asyn
 
   expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(false);
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(SANDBOX_CONTROLLER_SERVICE)).toBeUndefined();
+  expect(kernel.service(SANDBOX_SERVICE)).toBeUndefined();
   await expect(client.sandboxList?.()).rejects.toThrow(
     "sandbox controller unavailable",
   );
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  const first = kernel.service<SandboxController>(SANDBOX_CONTROLLER_SERVICE)!;
+  const first = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   await first.create("reload_box");
   const resource = await first.startResource(
     "reload_box",
@@ -1902,7 +1902,7 @@ test("sandbox plugin config reload releases resources and reconciles team", asyn
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(false);
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(SANDBOX_CONTROLLER_SERVICE)).toBeUndefined();
+  expect(kernel.service(SANDBOX_SERVICE)).toBeUndefined();
   await expect(first.list()).rejects.toThrow(
     "sandbox manager is not initialized",
   );
@@ -1920,7 +1920,7 @@ test("sandbox plugin config reload releases resources and reconciles team", asyn
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(true);
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
-  const second = kernel.service<SandboxController>(SANDBOX_CONTROLLER_SERVICE);
+  const second = kernel.service<SandboxService>(SANDBOX_SERVICE);
   expect(second).toBeDefined();
   expect(second).not.toBe(first);
   expect(await client.sandboxList?.()).toMatchObject([{ id: "reload_box" }]);
@@ -12183,7 +12183,7 @@ test("capabilities() surfaces each capability's effective contributions", async 
     expect(terminal?.scope).toBe("session");
     const sandbox = records?.find((record) => record.id === "natalia-sandbox");
     expect(sandbox?.contributions).toEqual([
-      { kind: "services", name: "sandbox.controller" },
+      { kind: "services", name: "sandbox.service" },
     ]);
     const mcp = records?.find((record) => record.id === "natalia-mcp");
     expect(mcp?.contributions).toEqual([

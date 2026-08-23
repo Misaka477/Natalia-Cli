@@ -597,6 +597,14 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
         description: "sandbox controller backend escape hatch",
         pattern: /\bsandboxController\?*\.get\s*\(/u,
       },
+      {
+        description: "concrete sandbox controller type outside its owner",
+        pattern: /\bSandboxController\b/u,
+      },
+      {
+        description: "legacy sandbox controller service",
+        pattern: /\bSANDBOX_CONTROLLER_SERVICE\b|["']sandbox\.controller["']/u,
+      },
     ],
   },
   {
@@ -623,6 +631,15 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       {
         description: "subagents controller backend escape hatch",
         pattern: /\bsubagentsController\?*\.get\s*\(\s*\)/u,
+      },
+      {
+        description: "concrete subagents controller type outside its owner",
+        pattern: /\bSubagentsController\b/u,
+      },
+      {
+        description: "legacy subagents controller service",
+        pattern:
+          /\bSUBAGENTS_CONTROLLER_SERVICE\b|["']subagents\.controller["']/u,
       },
     ],
   },

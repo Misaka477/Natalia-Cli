@@ -25,12 +25,14 @@ import type { SandboxToolService } from "@natalia/tools";
  * Multi-session shape (plan §41.9): today the controller owns one manager.
  * When sessions become per-session maps, only this module's delegation changes.
  */
-export interface SandboxController extends SandboxToolService {
+export interface SandboxService extends SandboxToolService {
   init(): Promise<void>;
   close(): Promise<void>;
   referencedObjectIDs(): Promise<Set<string> | undefined>;
   runningResourceCount(): number;
 }
+
+type SandboxController = SandboxService;
 
 export function createSandboxController(input: {
   workspaceRoot: string;
