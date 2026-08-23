@@ -290,7 +290,7 @@ export type RuntimePorts = {
     exec?: SessionExecutionState,
   ) => Promise<void>;
   submitInput: (
-    input: import("@natalia/contracts").SubmitInput,
+    input: import("@natalia/contracts").SubmitInput & { internal?: boolean },
     forSessionID?: SessionID,
   ) => Promise<import("@natalia/contracts").SubmittedTurn>;
   applyAgentPolicy: () => void;
@@ -299,6 +299,8 @@ export type RuntimePorts = {
   getTsRuntimeConfig: () => ConfigV3 | undefined;
   getSubagentsController: () => SubagentsService | undefined;
   getWorkLedgerController: () => WorkLedgerController;
+  getProviderModelController: () => ProviderModelController | undefined;
+  nextChatSequence: () => number;
   getSelectedAgent: () => AgentDefinition | undefined;
   getSelectedModel: () => { modelID?: string; variant?: string } | undefined;
   getProviderSource: () => RuntimeState["providerSource"];

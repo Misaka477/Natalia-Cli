@@ -13,6 +13,7 @@ import { createTerminalRuntime } from "./runtime/terminal-runtime";
 import { createCollaborationBoundary } from "./runtime/collaboration/boundary";
 import { createChatPrompt } from "./runtime/collaboration/chat-prompt";
 import { createChatTools } from "./runtime/collaboration/chat-tools";
+import { createCollaborationWake } from "./runtime/collaboration/wake";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -680,6 +681,9 @@ export function createRealRuntimeClient(
   ctx.ports.getRuntimeContextConfig = () => runtimeContextConfig;
   ctx.ports.getWorkspaceFilesController = () => workspaceFilesController;
   ctx.ports.nextMailboxSequence = () => mailboxSequence++;
+  ctx.ports.getProviderModelController = () => providerModelController;
+  ctx.ports.nextChatSequence = () => chatSequence++;
+  ctx.state.internalWakeTasks = internalWakeTasks;
   ctx.ports.setSessionPersistence = (next) => {
     sessionPersistence = next;
   };
@@ -770,7 +774,6 @@ export function createRealRuntimeClient(
   ctx.ports.publishSessionSnapshot = publishSessionSnapshot;
   ctx.ports.currentSessionSnapshot = currentSessionSnapshot;
   ctx.ports.nextCollabSequence = () => collabSequence++;
-  ctx.ports.wakeMainForCollaboration = wakeMainForCollaboration;
   ctx.ports.createCollabChatTool = createCollabChatTool;
   ctx.ports.enqueueMailboxMessage = enqueueMailboxMessage;
   ctx.ports.createPlanDraft = createPlanDraft;
@@ -779,6 +782,14 @@ export function createRealRuntimeClient(
     chatPrompt;
   const chatToolsModule = createChatTools(ctx);
   const { chatTools, chatToolSummary } = chatToolsModule;
+  const collaborationWake = createCollaborationWake(ctx);
+  const {
+    wakeMainForCollaboration,
+    scheduleInternalWake,
+    requestNaviWake,
+    wakeNavi,
+  } = collaborationWake;
+  ctx.ports.wakeMainForCollaboration = wakeMainForCollaboration;
   const eventSink = createEventSink(ctx, options);
   const { publish, publishForSession } = eventSink;
   ctx.ports.publish = publish;
@@ -3630,38 +3641,6 @@ export function createRealRuntimeClient(
     return tsRuntimeConfig?.runtime.collaboration.maxAutoRounds ?? 3;
   }
 
-  function wakeMainForCollaboration(
-    exec: SessionExecutionState,
-    sourceID: string,
-    kind: string,
-  ) {
-    if (runtimeDisposed) return;
-    const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
-    scheduleInternalWake(exec, {
-      id: `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
-      text: `(internal collaboration wake: Navi sent a ${kind}; read the collaboration context. This is not a user message.)`,
-      delivery: coordinator.active ? "queue" : "steer",
-    });
-  }
-
-  function scheduleInternalWake(
-    exec: SessionExecutionState,
-    input: SubmitInput,
-  ) {
-    if (runtimeDisposed) return;
-    const task = submitInput(
-      { ...input, internal: true },
-      exec.session.id as SessionID,
-    )
-      .catch(() => undefined)
-      .finally(() => internalWakeTasks.delete(task));
-    internalWakeTasks.add(task);
-  }
-
-  function requestNaviWake(exec: SessionExecutionState) {
-    providerModelController?.requestChatWake(exec.session.id as SessionID);
-  }
-
   function createCollabChatTool(
     sender: "main_agent" | "live_chat",
     boundExec?: SessionExecutionState,
@@ -4204,37 +4183,6 @@ export function createRealRuntimeClient(
       });
       return { text: output };
     } finally {
-    }
-  }
-
-  /**
-   * Wakes Navi to answer Natalia's collaboration messages when she is not
-   * mid-conversation with the user — the Live Work Chat's own round-robin:
-   * an idle Chat answers her sister immediately instead of holding the
-   * question until the user happens to chat again.
-   */
-  async function wakeNavi(exec: SessionExecutionState) {
-    const controller = providerModelController;
-    if (!exec.provider || !controller) return;
-    const responseMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
-    try {
-      await controller.runChatTurn({
-        sessionID: exec.session.id as SessionID,
-        text: "",
-        responseMessageID,
-        internal: true,
-      });
-    } catch (cause) {
-      publishForSession(exec, {
-        type: "chat.message.added",
-        id: `${responseMessageID}:chat`,
-        messageID: responseMessageID,
-        role: "chat",
-        text: `(live work chat error: ${
-          cause instanceof Error ? cause.message : String(cause)
-        })`,
-        at: new Date().toISOString(),
-      });
     }
   }
 
