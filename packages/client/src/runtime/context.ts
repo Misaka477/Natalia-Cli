@@ -230,6 +230,10 @@ export type RuntimePorts = {
   toolEventTurnID: (event: { id: string; callID?: string }) => string;
   isSessionSnapshotTrigger: (event: RuntimeEvent) => boolean;
   publishSessionSnapshot: (exec?: SessionExecutionState) => void;
+  currentSessionSnapshot: (
+    exec: SessionExecutionState,
+    id: string,
+  ) => Extract<RuntimeEvent, { type: "session.snapshot" }>;
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
   getExecutionBySession: () => Map<SessionID, SessionExecutionState>;
   getActiveExec: () => SessionExecutionState | undefined;
