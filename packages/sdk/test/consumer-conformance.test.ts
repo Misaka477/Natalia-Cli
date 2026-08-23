@@ -783,7 +783,7 @@ test("an external UI takes over approvals and answers questions", async () => {
   // when the answer took effect, and a `policy.decision` event when a
   // rejection is delivered back to the model.
   const root = await mkdtemp(join(tmpdir(), "natalia-approval-consumer-"));
-  let streamCalls = 0;
+  let planCalls = 0;
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
     globalConfigPath: join(root, "global.json"),
@@ -791,19 +791,23 @@ test("an external UI takes over approvals and answers questions", async () => {
     provider: {
       provider: "scripted",
       model: "scripted",
-      async *stream() {
-        // One provider serves both turns of this test. Session history carries
-        // the previous turn's tool result, so "has a tool message" cannot
-        // tell the turns apart; alternating per stream call can: every odd
-        // call asks for the plan tool (needing approval), every even call
-        // finishes the turn.
-        streamCalls++;
-        if (streamCalls % 2 === 1) {
+      async *stream(request) {
+        // Session title generation shares this provider but has no tool list.
+        // Keep it out of the turn script so background title work cannot alter
+        // which response a user turn receives.
+        if (!request.tools) {
+          yield { type: "content" as const, text: "Planning session" };
+          yield { type: "done" as const };
+          return;
+        }
+        const answered = request.messages.at(-1)?.role === "tool";
+        if (!answered) {
+          planCalls++;
           yield {
             type: "tool_call" as const,
             calls: [
               {
-                id: `call_plan_${streamCalls}`,
+                id: `call_plan_${planCalls}`,
                 name: "plan",
                 arguments: JSON.stringify({
                   items: [{ id: "step_1", text: "first step" }],
