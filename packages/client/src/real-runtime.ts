@@ -27,6 +27,7 @@ import { createPluginAssembly } from "./runtime/plugin-assembly";
 import { createConfigReload } from "./runtime/config-reload";
 import { createToolPublish } from "./runtime/tool-publish";
 import { createServiceRefresh } from "./runtime/service-refresh";
+import { createEnsureReady } from "./runtime/ensure-ready";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -953,6 +954,12 @@ export function createRealRuntimeClient(
   const serviceRefresh = createServiceRefresh(ctx);
   const { refreshBuiltinServices } = serviceRefresh;
   ctx.ports.refreshBuiltinServices = refreshBuiltinServices;
+  ctx.ports.setReady = (next) => {
+    ready = next;
+  };
+  ctx.ports.initialize = initialize;
+  const ensureReadyModule = createEnsureReady(ctx);
+  const { ensureReady } = ensureReadyModule;
   const sessionExecution = createSessionExecution(ctx, options);
   const {
     drainSessionFor,
@@ -2857,24 +2864,6 @@ export function createRealRuntimeClient(
     "plan_update",
     "plan_propose",
   ]);
-
-  function ensureReady() {
-    if (!ready) {
-      const initialization = initialize().catch((error) => {
-        const failure =
-          error instanceof Error ? error : new Error(String(error));
-        publish({
-          type: "diagnostic",
-          level: "error",
-          message: failure.message,
-        });
-        throw failure;
-      });
-      ready = initialization;
-      void ready.catch(() => undefined);
-    }
-    return ready;
-  }
 
   return {
     async service<T>(name: string) {

@@ -108,6 +108,8 @@ export type RuntimePortsExtra = {
     model: { modelID?: string; variant?: string } | undefined,
   ) => string | undefined;
   configReloadBlockedReason: () => string | undefined;
+  setReady: (ready: Promise<void> | undefined) => void;
+  initialize: () => Promise<void>;
   setWorkspaceWriteLock: (
     lock: import("@natalia/runtime-services").WorkspaceWriteLock | undefined,
   ) => void;
