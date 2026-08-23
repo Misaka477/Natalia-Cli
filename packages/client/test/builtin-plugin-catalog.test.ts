@@ -21,6 +21,7 @@ import {
   TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
+  workspacePluginEntry,
 } from "../src/builtin-plugins/catalog";
 import { PROVIDER_MODEL_PLUGIN_ID } from "@natalia/provider-model-plugin";
 import { CONTEXT_LEDGER_PLUGIN_ID } from "@natalia/context-ledger-plugin";
@@ -65,6 +66,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
     LOCAL_TOOLS_PLUGIN_ID,
+    WORKSPACE_PLUGIN_ID,
     "natalia-terminal",
     "natalia-sandbox",
     MCP_PLUGIN_ID,
@@ -77,6 +79,9 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
   );
   expect(
     catalog.find((entry) => entry.id === LOCAL_TOOLS_PLUGIN_ID)?.enabled,
+  ).toBe(false);
+  expect(
+    catalog.find((entry) => entry.id === WORKSPACE_PLUGIN_ID)?.enabled,
   ).toBe(false);
   expect(catalog.find((entry) => entry.id === MCP_PLUGIN_ID)?.enabled).toBe(
     false,
@@ -225,6 +230,20 @@ test("workspace catalog construction stays lazy", () => {
   expect(listed).toBe(0);
   expect(entry?.create().manifest.id).toBe(WORKSPACE_PLUGIN_ID);
   expect(listed).toBe(0);
+});
+
+test("workspace catalog entry stays stable while disabled", () => {
+  const disabled = workspacePluginEntry(undefined);
+  expect(disabled.id).toBe(WORKSPACE_PLUGIN_ID);
+  expect(disabled.enabled).toBe(false);
+  expect(() => disabled.create()).toThrow("workspace plugin is disabled");
+
+  const enabled = workspacePluginEntry({
+    workspaceRoot: "/tmp/workspace",
+    listPaths: async () => [],
+  });
+  expect(enabled.enabled).toBe(true);
+  expect(enabled.create().manifest.id).toBe(WORKSPACE_PLUGIN_ID);
 });
 
 test("ledger catalog entries stay lazy and preserve dependency order", () => {

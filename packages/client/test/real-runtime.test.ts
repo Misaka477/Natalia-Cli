@@ -41,6 +41,12 @@ import {
   TODO_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
 import { CHECKPOINT_PLUGIN_ID } from "@natalia/checkpoint-plugin";
+import {
+  WORKSPACE_FILES_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  WORKSPACE_PLUGIN_ID,
+  WORKSPACE_WRITE_LOCK_SERVICE,
+} from "@natalia/workspace-plugin";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -1383,6 +1389,70 @@ test("external plugin config reload reconciles its lifecycle", async () => {
   expect(
     (await client.plugins?.())?.some((plugin) => plugin.id === "reload.plugin"),
   ).toBe(false);
+  await client.dispose?.();
+}, 60_000);
+
+test("workspace plugin config reload reconciles its services", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-workspace-config-reload-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const configPath = join(root, ".natalia", "config.json");
+  const disabledConfig = {
+    version: 3,
+    plugins: { enabled: { [WORKSPACE_PLUGIN_ID]: false } },
+  };
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_workspace_config_reload",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.runtimeStatus?.();
+
+  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeUndefined();
+  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeUndefined();
+  expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeUndefined();
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(true);
+  const firstWriteLock = kernel.service(WORKSPACE_WRITE_LOCK_SERVICE);
+  const firstMutations = kernel.service(WORKSPACE_MUTATIONS_SERVICE);
+  const firstFiles = kernel.service(WORKSPACE_FILES_SERVICE);
+  expect(firstWriteLock).toBeDefined();
+  expect(firstMutations).toBeDefined();
+  expect(firstFiles).toBeDefined();
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: { settings: { [WORKSPACE_PLUGIN_ID]: { generation: 2 } } },
+    }),
+  );
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).not.toBe(firstWriteLock);
+  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).not.toBe(firstMutations);
+  expect(kernel.service(WORKSPACE_FILES_SERVICE)).not.toBe(firstFiles);
+
+  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeUndefined();
+  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeUndefined();
+  expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeUndefined();
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(true);
+  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeDefined();
+  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeDefined();
+  expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeDefined();
   await client.dispose?.();
 }, 60_000);
 

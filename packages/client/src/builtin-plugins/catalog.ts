@@ -289,19 +289,7 @@ export function builtinPluginCatalog(input: {
         ]
       : []),
     localToolsPluginEntry(input.localTools),
-    ...(input.workspace
-      ? [
-          {
-            id: WORKSPACE_PLUGIN_ID,
-            enabled: true,
-            create: () =>
-              createWorkspacePlugin({
-                workspaceRoot: input.workspace!.workspaceRoot,
-                listPaths: input.workspace!.listPaths,
-              }),
-          },
-        ]
-      : []),
+    workspacePluginEntry(input.workspace),
     terminalPluginEntry(input.terminal),
     sandboxPluginEntry(input.sandbox),
     mcpPluginEntry(input.mcp),
@@ -464,6 +452,19 @@ export function localToolsPluginEntry(
     create: () => {
       if (!input) throw new Error("local tools plugin is disabled");
       return createLocalToolsPlugin(input);
+    },
+  };
+}
+
+export function workspacePluginEntry(
+  input: Parameters<typeof builtinPluginCatalog>[0]["workspace"],
+): BuiltinPluginEntry {
+  return {
+    id: WORKSPACE_PLUGIN_ID,
+    enabled: input !== undefined,
+    create: () => {
+      if (!input) throw new Error("workspace plugin is disabled");
+      return createWorkspacePlugin(input);
     },
   };
 }

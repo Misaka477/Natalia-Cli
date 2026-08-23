@@ -53,6 +53,7 @@ import {
   searchWorkspaceFiles,
   WORKSPACE_FILES_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
+  WORKSPACE_PLUGIN_ID,
   WORKSPACE_WRITE_LOCK_SERVICE,
   type MutationRegistry,
   type WorkspaceFilesController,
@@ -201,6 +202,7 @@ import {
   TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
+  workspacePluginEntry,
 } from "./builtin-plugins/catalog";
 import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 import { computeBuiltinFeatureGates } from "./builtin-feature-gates";
@@ -712,6 +714,7 @@ export function createRealRuntimeClient(
   let activeMcpPluginConfigFingerprint: string | undefined;
   let activeSandboxPluginConfigFingerprint: string | undefined;
   let activeTerminalPluginConfigFingerprint: string | undefined;
+  let activeWorkspacePluginConfigFingerprint: string | undefined;
   let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
   const contextWindowResolver = new ContextWindowResolver();
@@ -902,6 +905,8 @@ export function createRealRuntimeClient(
       );
       const nextTerminalPluginConfigFingerprint =
         terminalPluginConfigFingerprint(tsConfig.config);
+      const nextWorkspacePluginConfigFingerprint =
+        workspacePluginConfigFingerprint(tsConfig.config);
       const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
@@ -927,6 +932,10 @@ export function createRealRuntimeClient(
         activeTerminalPluginConfigFingerprint !== undefined &&
         nextTerminalPluginConfigFingerprint !==
           activeTerminalPluginConfigFingerprint;
+      const reconcileWorkspace =
+        activeWorkspacePluginConfigFingerprint !== undefined &&
+        nextWorkspacePluginConfigFingerprint !==
+          activeWorkspacePluginConfigFingerprint;
       const reconcileBuiltinTools =
         activeBuiltinToolConfigFingerprint !== undefined &&
         nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
@@ -1023,6 +1032,25 @@ export function createRealRuntimeClient(
         await terminalController?.init();
         terminalController?.setActiveSession(sessionID);
       }
+      if (reconcileWorkspace) {
+        workspaceWriteLock = undefined;
+        mutationRegistry = undefined;
+        workspaceFilesController = undefined;
+        await pluginsController.reconcileBuiltins(
+          [workspacePluginEntry(workspacePluginInput(tsConfig.config))],
+          tsConfig.config.plugins.settings,
+        );
+        workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
+          WORKSPACE_WRITE_LOCK_SERVICE,
+        );
+        mutationRegistry = capabilityRegistry.service<MutationRegistry>(
+          WORKSPACE_MUTATIONS_SERVICE,
+        );
+        workspaceFilesController =
+          capabilityRegistry.service<WorkspaceFilesController>(
+            WORKSPACE_FILES_SERVICE,
+          );
+      }
       if (reconcileSkills) {
         const selectedSkills = new Map(
           [...executionBySession.entries()].flatMap(([id, exec]) =>
@@ -1060,6 +1088,8 @@ export function createRealRuntimeClient(
       activeSandboxPluginConfigFingerprint = nextSandboxPluginConfigFingerprint;
       activeTerminalPluginConfigFingerprint =
         nextTerminalPluginConfigFingerprint;
+      activeWorkspacePluginConfigFingerprint =
+        nextWorkspacePluginConfigFingerprint;
       activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
       // Publish the new config only after plugin lifecycle state agrees with it.
       // Newly loaded plugins still receive the parsed config through api.config;
@@ -1153,22 +1183,7 @@ export function createRealRuntimeClient(
           : {}),
         ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
         ...(localTools ? { localTools } : {}),
-        ...(pluginEnabled("natalia-workspace")
-          ? {
-              workspace: {
-                workspaceRoot,
-                listPaths: async () =>
-                  (
-                    await findWorkspaceFiles({
-                      workspaceRoot,
-                      limit: 1000,
-                    })
-                  )
-                    .filter((entry) => entry.type === "file")
-                    .map((entry) => entry.path),
-              },
-            }
-          : {}),
+        workspace: workspacePluginInput(runtimeConfig),
         terminal: terminalPluginInput(runtimeConfig),
         sandbox: sandboxPluginInput(runtimeConfig),
         ...(mcpPluginInput(runtimeConfig)
@@ -1412,6 +1427,9 @@ export function createRealRuntimeClient(
         tsConfig.config,
       );
       activeTerminalPluginConfigFingerprint = terminalPluginConfigFingerprint(
+        tsConfig.config,
+      );
+      activeWorkspacePluginConfigFingerprint = workspacePluginConfigFingerprint(
         tsConfig.config,
       );
       activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
@@ -3221,6 +3239,13 @@ export function createRealRuntimeClient(
     });
   }
 
+  function workspacePluginConfigFingerprint(config: ConfigV3) {
+    return JSON.stringify({
+      enabled: config.plugins.enabled[WORKSPACE_PLUGIN_ID],
+      settings: config.plugins.settings[WORKSPACE_PLUGIN_ID],
+    });
+  }
+
   function builtinToolConfigFingerprint(config: ConfigV3) {
     return JSON.stringify({
       tools: config.tools,
@@ -3312,6 +3337,23 @@ export function createRealRuntimeClient(
           windowMode: () =>
             tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
           external: options.nativeTerminal,
+        };
+  }
+
+  function workspacePluginInput(config: ConfigV3) {
+    return config.plugins.enabled[WORKSPACE_PLUGIN_ID] === false
+      ? undefined
+      : {
+          workspaceRoot,
+          listPaths: async () =>
+            (
+              await findWorkspaceFiles({
+                workspaceRoot,
+                limit: 1000,
+              })
+            )
+              .filter((entry) => entry.type === "file")
+              .map((entry) => entry.path),
         };
   }
 
@@ -3418,7 +3460,8 @@ export function createRealRuntimeClient(
             id !== CHECKPOINT_PLUGIN_ID &&
             id !== MCP_PLUGIN_ID &&
             id !== SANDBOX_CONTROLLER_PLUGIN_ID &&
-            id !== TERMINAL_CONTROLLER_PLUGIN_ID
+            id !== TERMINAL_CONTROLLER_PLUGIN_ID &&
+            id !== WORKSPACE_PLUGIN_ID
           );
         return !builtin;
       }),
