@@ -24,6 +24,7 @@ import { createTurnRunner } from "./runtime/turn-runner";
 import { createSessionAdmission } from "./runtime/session-admission";
 import { createSessionAttach } from "./runtime/session-attach";
 import { createPluginAssembly } from "./runtime/plugin-assembly";
+import { createConfigReload } from "./runtime/config-reload";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -839,6 +840,43 @@ export function createRealRuntimeClient(
     externalPluginConfigFingerprint,
     selectPluginConfig,
   } = pluginAssembly;
+  ctx.ports.externalPluginConfigFingerprint = externalPluginConfigFingerprint;
+  ctx.ports.reloadPermissionSettings = reloadPermissionSettings;
+  ctx.ports.setTsRuntimeConfig = (config) => {
+    tsRuntimeConfig = config;
+  };
+  ctx.ports.setMaxSteps = (steps) => {
+    maxSteps = steps;
+  };
+  ctx.ports.setRetryPolicy = (policy) => {
+    retryPolicy = policy;
+  };
+  ctx.ports.setProviderConcurrencyLimiter = (limiter) => {
+    providerConcurrencyLimiter = limiter;
+  };
+  ctx.ports.setAgentRegistry = (registry) => {
+    agentRegistry = registry;
+  };
+  ctx.ports.setBuiltinPluginIDs = (ids) => {
+    builtinPluginIDs = ids;
+  };
+  ctx.ports.getPluginsController = () => pluginsController;
+  ctx.ports.setActiveExternalPluginConfigFingerprint = (fingerprint) => {
+    activeExternalPluginConfigFingerprint = fingerprint;
+  };
+  ctx.ports.getActiveExternalPluginConfigFingerprint = () =>
+    activeExternalPluginConfigFingerprint;
+  ctx.ports.buildBuiltinPluginCatalog = (config) =>
+    buildBuiltinPluginCatalog(config);
+  ctx.ports.refreshBuiltinServices = refreshBuiltinServices;
+  ctx.ports.publishToolCatalogChanges = publishToolCatalogChanges;
+  const configReload = createConfigReload(ctx, options);
+  const {
+    configReloadBlockedReason,
+    applyConfigFromDisk,
+    reloadConfigFromDisk,
+  } = configReload;
+  ctx.ports.configReloadBlockedReason = configReloadBlockedReason;
   const sessionExecution = createSessionExecution(ctx, options);
   const {
     drainSessionFor,
@@ -968,6 +1006,8 @@ export function createRealRuntimeClient(
   ctx.ports.currentModelPdfInput = currentModelPdfInput;
   ctx.ports.mediaTypeForImage = mediaTypeForImage;
   ctx.ports.redactToolOutputEnabled = redactToolOutputEnabled;
+  ctx.ports.resolveContextStatusConfig = resolveContextStatusConfig;
+  ctx.ports.modelRefKeyForSelection = modelRefKeyForSelection;
   const executeCalls = createExecuteCalls(ctx, options);
   const { executeToolCalls, toolResultContent, checkConstitutionForTool } =
     executeCalls;
@@ -1003,161 +1043,6 @@ export function createRealRuntimeClient(
    * and a caller that only learns "false" cannot tell that from "the file could
    * not be read at all".
    */
-  /**
-   * Why a config reload cannot be applied at this instant, or nothing when it can.
-   * Shared by the query and the action so the two can never disagree.
-   */
-  function configReloadBlockedReason() {
-    if ([...executionBySession.values()].some((exec) => exec.activeTurnID))
-      return "runtime config cannot be applied while a turn is running";
-    if (interactive?.hasPendingWaiters())
-      return "runtime config cannot be applied while an approval or question is pending";
-    return undefined;
-  }
-
-  /**
-   * Reloads config from disk and applies it, answering value-style. Shared by
-   * `reloadConfig` and `updateConfig` so the two write-apply paths cannot
-   * drift.
-   */
-  async function applyConfigFromDisk(): Promise<{
-    applied: boolean;
-    reason?: string;
-  }> {
-    const blocked = configReloadBlockedReason();
-    if (blocked) return { applied: false, reason: blocked };
-    const reloaded = await reloadConfigFromDisk();
-    if (!reloaded.read) {
-      const reason = "runtime config on disk could not be read";
-      publish({ type: "diagnostic", level: "warning", message: reason });
-      return { applied: false, reason };
-    }
-    if (reloaded.reason) {
-      publish({
-        type: "diagnostic",
-        level: "warning",
-        message: reloaded.reason,
-      });
-      return { applied: false, reason: reloaded.reason };
-    }
-    publish({
-      type: "diagnostic",
-      level: "info",
-      message: reloaded.providerReconfigured
-        ? "runtime config reloaded; provider reconfigured from disk"
-        : "runtime config reloaded; provider unchanged",
-    });
-    scheduleRuntimeStatusSnapshot();
-    return { applied: true };
-  }
-
-  async function reloadConfigFromDisk(): Promise<{
-    read: boolean;
-    providerReconfigured: boolean;
-    reason?: string;
-  }> {
-    try {
-      const tsConfig = await resolveConfig({
-        workspaceRoot,
-        globalPath: options.globalConfigPath,
-      });
-      const nextExternalPluginConfigFingerprint =
-        externalPluginConfigFingerprint(tsConfig.config);
-      const reconcilePlugins =
-        activeExternalPluginConfigFingerprint !== undefined &&
-        nextExternalPluginConfigFingerprint !==
-          activeExternalPluginConfigFingerprint;
-      tsRuntimeConfig = tsConfig.config;
-      maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
-      retryPolicy = {
-        maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
-        initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
-        maxBackoffMs: tsConfig.config.runtime.retry.maxBackoffMs,
-        jitterMs: tsConfig.config.runtime.retry.jitterMs,
-      };
-      providerConcurrencyLimiter = new ProviderConcurrencyLimiter(
-        tsConfig.config.runtime.providerConcurrency ?? {},
-      );
-      const selectedAgentName = selectedAgent?.name;
-      agentRegistry = agentsFromConfig(tsConfig.config);
-      selectedAgent = selectedAgentName
-        ? (agentRegistry.select(selectedAgentName) ?? agentRegistry.default())
-        : agentRegistry.default();
-      for (const exec of executionBySession.values()) {
-        const name = exec.selectedAgent?.name;
-        exec.selectedAgent = name
-          ? (agentRegistry.select(name) ?? agentRegistry.default())
-          : agentRegistry.default();
-      }
-      // Permission changes (default profile switch, auto/ask flip, profile
-      // edits) apply immediately, not on the next restart.
-      reloadPermissionSettings(tsConfig.config);
-      for (const exec of executionBySession.values()) {
-        exec.permissionMode = permissionMode;
-        exec.permissionProfile = selectedPermissionProfile;
-      }
-      const toolsBeforeReconcile = new Set(tools.keys());
-      const selectedSkills = new Map(
-        [...executionBySession.entries()].flatMap(([id, exec]) =>
-          exec.activeSkill ? [[id, exec.activeSkill.qualifiedName]] : [],
-        ),
-      );
-      const desiredBuiltins = buildBuiltinPluginCatalog(tsConfig.config);
-      builtinPluginIDs = new Set(desiredBuiltins.map((entry) => entry.id));
-      await pluginsController.reconcileDesiredBuiltins(
-        desiredBuiltins,
-        tsConfig.config.plugins.settings,
-      );
-      await refreshBuiltinServices(selectedSkills);
-      if (reconcilePlugins) await pluginsController.reconcile();
-      publishToolCatalogChanges(toolsBeforeReconcile);
-      activeExternalPluginConfigFingerprint =
-        nextExternalPluginConfigFingerprint;
-      applyAgentPolicy();
-      if (
-        selectedPermissionProfile?.commandRules &&
-        selectedPermissionProfile.commandRules.mode !== "none"
-      )
-        await ensureBashCommandParser().catch(() => undefined);
-      if (!options.provider) {
-        const configured = providerForModel(
-          tsConfig.config,
-          selectedAgent?.model ?? tsConfig.config.defaultModel,
-          selectedAgent?.variant,
-        );
-        if (configured) {
-          provider = configured;
-          providerSource = "ts_config";
-          for (const exec of executionBySession.values())
-            applyAgentProvider(exec);
-          runtimeContextConfig = await resolveContextStatusConfig(
-            tsConfig.config,
-            provider,
-            contextWindowResolver,
-            modelRefKeyForSelection(selectedAgent, selectedModel),
-          );
-          for (const exec of executionBySession.values())
-            await refreshExecutionContextConfig(exec);
-          return { read: true, providerReconfigured: true };
-        }
-      }
-      runtimeContextConfig = await resolveContextStatusConfig(
-        tsConfig.config,
-        provider,
-        contextWindowResolver,
-        modelRefKeyForSelection(selectedAgent, selectedModel),
-      );
-      for (const exec of executionBySession.values())
-        await refreshExecutionContextConfig(exec);
-      return { read: true, providerReconfigured: false };
-    } catch (error) {
-      return {
-        read: true,
-        providerReconfigured: false,
-        reason: `runtime config could not be applied: ${error instanceof Error ? error.message : String(error)}`,
-      };
-    }
-  }
 
   async function refreshBuiltinServices(
     selectedSkills: Map<SessionID, string> = new Map(),

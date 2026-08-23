@@ -12,6 +12,7 @@
 import type { createPluginsController } from "../plugins-controller";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RuntimePorts } from "./ports";
+import type { RuntimePortsExtra } from "./ports-extra";
 import type { ToolRegistry } from "@natalia/tools";
 import type {
   CapabilityHost,
@@ -195,7 +196,7 @@ export type RuntimeState = {
  */
 export type RuntimeContext = {
   state: RuntimeState;
-  ports: RuntimePorts;
+  ports: RuntimePorts & RuntimePortsExtra;
 };
 
 /** The resolved context window status carried by the runtime and each exec. */
