@@ -238,7 +238,7 @@ export type RuntimePorts = {
   wakeMainForCollaboration: (
     exec: SessionExecutionState,
     id: string,
-    kind: "suggestion" | "answer" | "chat",
+    kind: string,
   ) => void;
   createCollabChatTool: (
     from: "live_chat" | "main_agent",
@@ -301,6 +301,12 @@ export type RuntimePorts = {
   getWorkLedgerController: () => WorkLedgerController;
   getProviderModelController: () => ProviderModelController | undefined;
   nextChatSequence: () => number;
+  nextPlanSequence: () => number;
+  requestNaviWake: (exec: SessionExecutionState) => void;
+  scheduleInternalWake: (
+    exec: SessionExecutionState,
+    input: import("@natalia/contracts").SubmitInput,
+  ) => void;
   getSelectedAgent: () => AgentDefinition | undefined;
   getSelectedModel: () => { modelID?: string; variant?: string } | undefined;
   getProviderSource: () => RuntimeState["providerSource"];
