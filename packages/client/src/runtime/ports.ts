@@ -291,4 +291,50 @@ export type RuntimePorts = {
   getExecutionForSession: (
     sessionID: SessionID,
   ) => SessionExecutionState | undefined;
+  toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
+  authorizeWorkspaceRead: (
+    input: { toolName: string; paths: string[] },
+    exec?: SessionExecutionState,
+  ) => Promise<void>;
+  authorizeSandboxMerge: (
+    input: { id: string; paths: string[] },
+    exec?: SessionExecutionState,
+  ) => Promise<void>;
+  authorizeSandboxManagement: (
+    toolName: "sandbox_merge" | "sandbox_delete" | "sandbox_resource_stop",
+    arguments_: Record<string, string>,
+    exec: SessionExecutionState,
+  ) => Promise<void>;
+  getTerminalController: () =>
+    | import("@natalia/runtime-services").TerminalController
+    | undefined;
+  getInteractive: () => import("@natalia/runtime-services").InteractiveWaiter;
+  getMutationRegistry: () =>
+    | import("@natalia/runtime-services").MutationRegistry
+    | undefined;
+  getTerminalCommandBuffer: () => import("@natalia/tools").TerminalCommandBuffer;
+  getSandboxResourcesByID: () => Map<string, number>;
+  getEndTurnWaitingHuman: () =>
+    | { terminalID: string; reason: string }
+    | undefined;
+  setEndTurnWaitingHuman: (marker: {
+    terminalID: string;
+    reason: string;
+  }) => void;
+  redactToolOutputEnabled: (exec?: SessionExecutionState) => boolean;
+  waitForToolExecution: <T>(
+    execution: Promise<T>,
+    signal?: AbortSignal,
+  ) => Promise<T>;
+  boundToolOutput: (
+    workspaceRoot: string,
+    text: string,
+  ) => Promise<{ text: string; outputPath?: string }>;
+  isManagedResourceTool: (toolName: string) => boolean;
+  tryParseToolArguments: (arguments_: string) => unknown;
+  parseToolArguments: (arguments_: string) => unknown;
+  validateToolParameters: (
+    schema: import("@natalia/tools").ToolSchema,
+    input: unknown,
+  ) => Array<{ path: string; message: string }>;
 };

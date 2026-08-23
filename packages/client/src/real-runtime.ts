@@ -19,6 +19,7 @@ import { createChatTurn } from "./runtime/collaboration/chat-turn";
 import { createSessionExecution } from "./runtime/session-execution";
 import { createToolPolicySurface } from "./runtime/tool-execution/policy";
 import { createExecuteCalls } from "./runtime/tool-execution/execute-calls";
+import { createExecuteOne } from "./runtime/tool-execution/execute-one";
 import { createTurnRunner } from "./runtime/turn-runner";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
@@ -694,6 +695,7 @@ export function createRealRuntimeClient(
   ctx.state.activeToolByTurn = activeToolByTurn;
   ctx.state.liveMainOutputByTurn = liveMainOutputByTurn;
   ctx.state.terminalStatusByID = terminalStatusByID;
+  ctx.state.sandboxResourcesByID = sandboxResourcesByID;
   ctx.state.turnSession = turnSession;
   ctx.state.pluginsController = pluginsController;
   ctx.state.performanceTrace = performanceTrace;
@@ -844,6 +846,25 @@ export function createRealRuntimeClient(
     toolSettings,
   } = toolPolicySurface;
   ctx.ports.waitIfPaused = waitIfPaused;
+  ctx.ports.toolSettings = toolSettings;
+  ctx.ports.authorizeWorkspaceRead = authorizeWorkspaceRead;
+  ctx.ports.authorizeSandboxMerge = authorizeSandboxMerge;
+  ctx.ports.authorizeSandboxManagement = authorizeSandboxManagement;
+  ctx.ports.getTerminalController = () => terminalController;
+  ctx.ports.getInteractive = () => interactive;
+  ctx.ports.getMutationRegistry = () => mutationRegistry;
+  ctx.ports.getTerminalCommandBuffer = () => terminalCommandBuffer;
+  ctx.ports.getSandboxResourcesByID = () => sandboxResourcesByID;
+  ctx.ports.getEndTurnWaitingHuman = () => endTurnWaitingHuman;
+  ctx.ports.setEndTurnWaitingHuman = (marker) => {
+    endTurnWaitingHuman = marker;
+  };
+  ctx.ports.waitForToolExecution = waitForToolExecution;
+  ctx.ports.boundToolOutput = boundToolOutput;
+  ctx.ports.isManagedResourceTool = isManagedResourceTool;
+  ctx.ports.tryParseToolArguments = tryParseToolArguments;
+  ctx.ports.parseToolArguments = parseToolArguments;
+  ctx.ports.validateToolParameters = validateToolParameters;
   const eventSink = createEventSink(ctx, options);
   const { publish, publishForSession } = eventSink;
   ctx.ports.publish = publish;
@@ -877,13 +898,16 @@ export function createRealRuntimeClient(
   ctx.ports.currentModelImageInput = currentModelImageInput;
   ctx.ports.currentModelPdfInput = currentModelPdfInput;
   ctx.ports.mediaTypeForImage = mediaTypeForImage;
+  ctx.ports.redactToolOutputEnabled = redactToolOutputEnabled;
   const executeCalls = createExecuteCalls(ctx, options);
   const { executeToolCalls, toolResultContent, checkConstitutionForTool } =
     executeCalls;
   ctx.ports.executeToolCalls = executeToolCalls;
-  ctx.ports.executeOneTool = executeOneTool;
   ctx.ports.toolResultContent = toolResultContent;
   ctx.ports.checkConstitutionForTool = checkConstitutionForTool;
+  const executeOne = createExecuteOne(ctx, options);
+  const { executeOneTool } = executeOne;
+  ctx.ports.executeOneTool = executeOneTool;
   ctx.state.runtimeDiagnostics = runtimeDiagnostics;
   ctx.state.runtimeDiagnosticsBySession = runtimeDiagnosticsBySession;
   ctx.state.tools = tools;
@@ -5199,543 +5223,7 @@ export function createRealRuntimeClient(
       return interactive.respondQuestion(response);
     },
   };
-
-  async function executeOneTool(
-    turnID: string,
-    call: ProviderToolCall,
-    tool: RuntimeTool,
-    attachImage?: (path: string) => Promise<void>,
-    attachPdf?: (path: string) => Promise<void>,
-  ) {
-    // D2: same shadowing as `executeToolCalls` — this segment's events and
-    // ledger belong to the turn's session.
-    const exec =
-      executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
-      activeExec;
-    const publish = (event: RuntimeEvent) => publishForSession(exec, event);
-    const execContext = exec?.context ?? runtimeContext;
-    const toolID = `${turnID}:${call.id}`;
-    const dedupKey = `${call.name}\u0000${call.arguments}`;
-    const sessionToolCalls = exec?.toolCalls ?? toolCalls;
-    const occurrences = (sessionToolCalls.get(dedupKey) ?? 0) + 1;
-    sessionToolCalls.set(dedupKey, occurrences);
-    if (occurrences > 12 && !WAITING_TOOLS.has(tool.name)) {
-      const message = `blocked repeated tool call after ${occurrences} identical attempts: ${tool.name}`;
-      publish({
-        type: "tool.update",
-        id: toolID,
-        name: tool.name,
-        callID: call.id,
-        status: "failed",
-        summary: message,
-        result: message,
-        endedAt: Date.now(),
-      });
-      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
-      return `ERROR: ${message}`;
-    }
-    const hookEvent: ToolHookEvent = {
-      turnID,
-      toolName: tool.name,
-      toolCallID: call.id,
-      arguments: call.arguments,
-    };
-    // The policy chain is a reorderable pipeline now: preExecute, read-only and
-    // constitution are pre stages (the first denial stops the run), and the
-    // approval-and-execution block below is the execute stage's content. The
-    // outcome is a frozen result the caller cannot rewrite.
-    const pipeline = toolPolicy!
-      .createExecutionPipeline()
-      .preStage(async () => {
-        const preResult = await toolLayer.preExecute(hookEvent);
-        for (const diagnostic of preResult.diagnostics) {
-          publishForSession(exec, {
-            type: "diagnostic",
-            level: "info",
-            message: diagnostic,
-          });
-        }
-        if (preResult.allowed) return { decision: "allow" as const };
-        if (preResult.clearTerminal) {
-          const terminalID = tryParseToolArguments(call.arguments).id;
-          if (typeof terminalID === "string") {
-            try {
-              await terminalController?.write(terminalID, "\x15");
-              publish({
-                type: "diagnostic",
-                level: "warning",
-                message: `cleared blocked terminal command buffer for ${terminalID}`,
-              });
-            } catch (error) {
-              publish({
-                type: "diagnostic",
-                level: "warning",
-                message: `could not clear blocked terminal command buffer for ${terminalID}: ${error instanceof Error ? error.message : String(error)}`,
-              });
-            }
-          }
-        }
-        const reason = preResult.diagnostics.join("; ");
-        publish({
-          type: "policy.decision",
-          turnID,
-          toolName: tool.name,
-          toolCallID: call.id,
-          decision: "deny",
-          reason,
-        });
-        publish({
-          type: "tool.update",
-          id: toolID,
-          name: tool.name,
-          callID: call.id,
-          status: "failed",
-          summary: reason,
-          result: reason,
-          endedAt: Date.now(),
-        });
-        publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
-        return { decision: "deny" as const, reason };
-      })
-      .preStage(() => {
-        if (!(exec?.permissionMode === "read_only" && tool.requiresApproval))
-          return { decision: "allow" as const };
-        const message = readOnlyToolMessage(tool.name);
-        publish({
-          type: "policy.decision",
-          turnID,
-          toolName: tool.name,
-          toolCallID: call.id,
-          decision: "deny",
-          reason: message,
-        });
-        publish({
-          type: "tool.update",
-          id: toolID,
-          name: tool.name,
-          callID: call.id,
-          status: "rejected",
-          summary: message,
-          result: message,
-          endedAt: Date.now(),
-        });
-        publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
-        return { decision: "deny" as const, reason: message };
-      })
-      .preStage(() => {
-        const blocked = checkConstitutionForTool(
-          turnID,
-          call.id,
-          tool.name,
-          tool.name,
-          // `apply_patch` reports the whole-workspace scope `"."` because it can
-          // touch many files; `write_file`/`edit_file` report their single path.
-          // Anything else has no path scope and falls through to "global".
-          toolPolicy!.workspaceWritePathForTool(
-            tool.name,
-            tryParseToolArguments(call.arguments),
-          ) ?? "global",
-          toolPolicy!.commandTextForTool(
-            tool.name,
-            tryParseToolArguments(call.arguments),
-          ),
-        );
-        if (!blocked) return { decision: "allow" as const };
-        publish({
-          type: "tool.update",
-          id: toolID,
-          name: tool.name,
-          callID: call.id,
-          status: "failed",
-          summary: blocked,
-          argumentsDelta: call.arguments,
-        });
-        publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
-        return { decision: "deny" as const, reason: blocked };
-      })
-      .execute(async () => {
-        publish({
-          type: "tool.update",
-          id: toolID,
-          name: tool.name,
-          callID: call.id,
-          status: tool.requiresApproval ? "awaiting_approval" : "queued",
-          summary: tool.requiresApproval ? "awaiting approval" : "queued",
-          argumentsDelta: call.arguments,
-        });
-        publish({
-          type: "policy.decision",
-          turnID,
-          toolName: tool.name,
-          toolCallID: call.id,
-          decision: tool.requiresApproval ? "approval_required" : "allow",
-        });
-        if (tool.requiresApproval) {
-          const refusal = await interactive.requireApproval(
-            toolID,
-            tool,
-            call,
-            turnID,
-          );
-          if (refusal) {
-            // Reported like a policy denial: the call did not run, the turn keeps
-            // going, and the model receives the reason as this call's result.
-            publish({
-              type: "tool.update",
-              id: toolID,
-              name: tool.name,
-              callID: call.id,
-              status: "rejected",
-              summary: refusal.reason,
-              result: refusal.reason,
-              endedAt: Date.now(),
-            });
-            publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
-            await toolLayer.postExecute({
-              ...hookEvent,
-              error: refusal.reason,
-            });
-            throw new Error(refusal.reason);
-          }
-        }
-        await waitIfPaused(exec);
-        publish({
-          type: "tool.update",
-          id: toolID,
-          name: tool.name,
-          callID: call.id,
-          status: "running",
-          summary: "running",
-          startedAt: Date.now(),
-          // The call card, when the tool declares one: the tool says what the call
-          // means (a file path, a command) without leaking raw arguments.
-          metadata: tool.output?.presentCall
-            ? {
-                call: tool.output.presentCall(
-                  tryParseToolArguments(call.arguments),
-                ),
-              }
-            : undefined,
-        });
-        let executionAudited = false;
-        let releaseWriteLock: (() => void) | undefined;
-        try {
-          const parsed = parseToolArguments(call.arguments);
-          const paramErrors = validateToolParameters(tool.parameters, parsed);
-          if (paramErrors.length) {
-            const detail = paramErrors
-              .map((e) => `${e.path}: ${e.message}`)
-              .join("; ");
-            throw new Error(
-              `tool "${tool.name}" parameter validation failed: ${detail}`,
-            );
-          }
-          if (!exec) throw new Error("session execution state unavailable");
-          await setInFlightOperationFor(exec, {
-            kind: "tool_execution",
-            turnID,
-            toolName: tool.name,
-            toolCallID: call.id,
-            startedAt: new Date().toISOString(),
-          });
-          executionAudited = true;
-          const executionController = new AbortController();
-          // The cancellation listener binds the turn's own exec, not the activity
-          // closure: a background turn's tool must stop when its session is
-          // cancelled, never when the attached session is.
-          const cancelExecution = () =>
-            executionController.abort(
-              exec?.activeAbort?.signal.reason ?? new Error("tool cancelled"),
-            );
-          const execSignal = exec?.activeAbort?.signal;
-          // A cancellation that already happened must not be missed. `running` is
-          // published before the durable in-flight write above, so a cancel can land
-          // while that write is in flight — and `addEventListener("abort")` never
-          // fires for an already-aborted signal. Without this check the tool ran on
-          // until its own timeout (or forever, when it declares none) even though the
-          // turn was cancelled.
-          if (execSignal?.aborted) cancelExecution();
-          else
-            execSignal?.addEventListener("abort", cancelExecution, {
-              once: true,
-            });
-          const timeoutTimer = tool.timeoutSec
-            ? setTimeout(
-                () =>
-                  executionController.abort(
-                    new Error(
-                      `tool ${tool.name} timed out after ${tool.timeoutSec}s`,
-                    ),
-                  ),
-                tool.timeoutSec * 1000,
-              )
-            : undefined;
-          const signal = executionController.signal;
-          // D2: workspace writes serialise across sessions. A background turn's
-          // write waits for the attached session's write (and vice versa), so two
-          // turns can never interleave edits to the same workspace.
-          releaseWriteLock = toolPolicy!.workspaceWritePathForTool(
-            tool.name,
-            parsed as Record<string, unknown>,
-          )
-            ? await requireWriteLock().acquire()
-            : undefined;
-          // WG4 Phase 3: register the expected mutation before the tool runs so the
-          // auditor can attribute a watcher-confirmed change to this call. Only
-          // workspace-writing tools register; the authorized path is the tool's own
-          // path argument (the same scope the write lock protects).
-          const writePath = toolPolicy!.workspaceWritePathForTool(
-            tool.name,
-            parsed as Record<string, unknown>,
-          );
-          if (writePath) {
-            mutationRegistry?.register({
-              sessionID: exec.session.id,
-              turnID,
-              callID: call.id,
-              toolName: tool.name,
-              authorizedPaths: [writePath],
-              expectedOperations: ["modified", "added", "deleted", "renamed"],
-            });
-          }
-          const completeResult = await waitForToolExecution(
-            tool.execute(parsed, {
-              workspaceRoot,
-              signal,
-              sessionID: exec?.session.id ?? sessionID,
-              askQuestion: async (question) =>
-                await interactive.requireQuestion(
-                  `${toolID}:question`,
-                  turnID,
-                  question,
-                ),
-              subagents: subagentsController,
-              terminal: terminalController,
-              sandboxes: sandboxController,
-              ...(attachImage ? { attachImage } : {}),
-              ...(attachPdf ? { attachPdf } : {}),
-              workspaceReadAuthorize: (request) =>
-                authorizeWorkspaceRead(request, exec),
-              sandboxMergeAuthorize: (request) =>
-                authorizeSandboxMerge(request, exec),
-              // The resolved config as a service: a tool family reads it by
-              // name (e.g. `sandbox.backend`) instead of re-parsing config.
-              runtimeConfig: () => capabilityRegistry.service("runtime.config"),
-              settings: toolSettings(exec),
-              // The turn's own session, not the attached one: a background turn's
-              // subagents and terminal starts belong to its session (I1/I3).
-              parentSessionID: exec?.session.id ?? sessionID,
-              maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-              onSandboxEvent: (event) => {
-                const update = event as Extract<
-                  RuntimeEvent,
-                  { type: "sandbox.update" }
-                >;
-                publish(update);
-                if (
-                  sandboxResourcesByID.get(update.id) !==
-                  update.runningResources
-                ) {
-                  sandboxResourcesByID.set(update.id, update.runningResources);
-                  scheduleRuntimeStatusSnapshot();
-                }
-              },
-              onWorkspaceChange: (changes) => {
-                // WG4 Phase 3: the tool settled successfully — the expected
-                // mutation stops matching unrelated later hints, but its identity
-                // stays available for attributing the change it caused.
-                mutationRegistry?.settle(call.id);
-                for (const change of changes) {
-                  publish(
-                    workLedgerController.workspaceChangeNode({
-                      turnID,
-                      path: change.path,
-                      toolName: tool.name,
-                      sessionID: exec.session.id,
-                    }),
-                  );
-                  publish(
-                    workLedgerController.workspaceChangeEdge({
-                      turnID,
-                      callID: call.id,
-                      path: change.path,
-                    }),
-                  );
-                }
-              },
-            }),
-            signal,
-          ).finally(() => {
-            if (timeoutTimer) clearTimeout(timeoutTimer);
-            exec?.activeAbort?.signal.removeEventListener(
-              "abort",
-              cancelExecution,
-            );
-          });
-          // The tool's own final content invariant runs exactly once, before
-          // redaction and bounding: what the model sees is the content the tool
-          // finalized (a fetched page without its scripts, a compacted dump).
-          const finalizedContent =
-            tool.output?.finalizeContent?.(completeResult) ?? completeResult;
-          const bounded = await boundToolOutput(
-            workspaceRoot,
-            redactToolOutput(finalizedContent, redactToolOutputEnabled(exec)),
-          );
-          const result = bounded.text;
-          // The tool's own output projection becomes part of the event metadata, so
-          // a client can draw the result as the card the tool described instead of
-          // guessing from the string.
-          const projectedRender = tool.output?.presentResult?.(
-            tryParseToolArguments(call.arguments),
-            result,
-          );
-          if (
-            options.taskModuleContext &&
-            tool.name !== "flow_module_complete"
-          ) {
-            options.taskModuleContext.store.recordModuleEvidence({
-              invocationID: options.taskModuleContext.invocationID,
-              attempt: options.taskModuleContext.attempt,
-              flowID: options.taskModuleContext.flowID,
-              moduleID: options.taskModuleContext.moduleID,
-              ref: `tool:${call.id}`,
-              tool: tool.name,
-            });
-          }
-          if (
-            tool.name === "interactive_terminal_start" ||
-            tool.name === "interactive_terminal_stop"
-          ) {
-            const terminalID = (parsed as Record<string, unknown>).id;
-            if (typeof terminalID === "string")
-              terminalCommandBuffer.clear(terminalID);
-          }
-          publish({
-            type: "tool.update",
-            id: toolID,
-            name: tool.name,
-            callID: call.id,
-            status: "succeeded",
-            summary: result.slice(0, 200),
-            result,
-            metadata: {
-              ...(bounded.outputPath ? { outputPath: bounded.outputPath } : {}),
-              ...(projectedRender ? { render: projectedRender } : {}),
-            },
-            endedAt: Date.now(),
-          });
-          publishWorkGraphToolCall(turnID, call.id, tool.name, "succeeded");
-          // Only after success: a write that failed did not change the workspace, and
-          // a graph that says otherwise sends a reader looking for a change that is
-          // not there.
-          const changedPath = toolPolicy!.workspaceWritePathForTool(
-            tool.name,
-            tryParseToolArguments(call.arguments),
-          );
-          if (changedPath) {
-            publish(
-              workLedgerController.workspaceChangeNode({
-                turnID,
-                path: changedPath,
-                toolName: tool.name,
-                sessionID: exec.session.id,
-              }),
-            );
-            publish(
-              workLedgerController.workspaceChangeEdge({
-                turnID,
-                callID: call.id,
-                path: changedPath,
-              }),
-            );
-          }
-          if (isManagedResourceTool(tool.name)) scheduleRuntimeStatusSnapshot();
-          // TERM-M.3 (c): request_human with endTurn=true ends the current turn as
-          // waiting_human; the runtime resumes with a new turn once the human
-          // releases the pane.
-          if (tool.name === "interactive_terminal_request_human") {
-            const requestArgs = tryParseToolArguments(call.arguments) as {
-              id?: unknown;
-              reason?: unknown;
-              endTurn?: unknown;
-            };
-            if (
-              requestArgs?.endTurn === true &&
-              typeof requestArgs.id === "string" &&
-              typeof requestArgs.reason === "string"
-            ) {
-              const marker = {
-                terminalID: requestArgs.id,
-                reason: requestArgs.reason,
-              };
-              if (exec) exec.endTurnWaitingHuman = marker;
-              else endTurnWaitingHuman = marker;
-            }
-          }
-          return result;
-        } catch (error) {
-          // WG4 Phase 3: a failed write did not change the workspace — drop the
-          // expected mutation so it cannot attribute a later unrelated hint.
-          if (
-            toolPolicy!.workspaceWritePathForTool(
-              tool.name,
-              tryParseToolArguments(call.arguments),
-            )
-          )
-            mutationRegistry?.forget(call.id);
-          const message =
-            error instanceof Error ? error.message : String(error);
-          publish({
-            type: "tool.update",
-            id: toolID,
-            name: tool.name,
-            callID: call.id,
-            status: "failed",
-            summary: message,
-            result: message,
-            endedAt: Date.now(),
-          });
-          // A failed call is as much a fact as a successful one; the error text stays
-          // out of the graph.
-          publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
-          await toolLayer.postExecute({ ...hookEvent, error: message });
-          throw new Error(message);
-        } finally {
-          releaseWriteLock?.();
-          if (executionAudited && exec)
-            await setInFlightOperationFor(exec, undefined);
-        }
-      })
-      .postStage(async (_input, content) => {
-        // postExecute-on-success is the post waterfall's accept stage; the
-        // error-reporting postExecute calls stay in the execute stage where
-        // they already fire.
-        await toolLayer.postExecute({ ...hookEvent, result: content });
-        return { decision: "accept" as const };
-      });
-    let run: Awaited<ReturnType<typeof pipeline.run>>;
-    try {
-      run = await pipeline.run({
-        name: tool.name,
-        args: tryParseToolArguments(call.arguments),
-        context: { workspaceRoot },
-      });
-    } catch (error) {
-      // The execute stage throws on refusal and on failure after publishing
-      // its own events; the caller turns the reason into the model-visible
-      // result. A cancellation is not a failure: it propagates so the turn
-      // coordinator settles the turn as cancelled.
-      if (exec?.activeAbort?.signal.aborted) throw error;
-      return `ERROR: ${error instanceof Error ? error.message : String(error)}`;
-    }
-    if (run.status === "denied") return `ERROR: ${run.reason}`;
-    if (run.status === "asking")
-      return `ERROR: ${run.decision.reason ?? "approval required"}`;
-    if (run.status === "blocked") return `ERROR: ${run.feedback}`;
-    return run.result.content;
-  }
 }
-
 function redactToolOutput(output: string, redact: boolean | undefined) {
   if (!redact) return output;
   return output.replace(
