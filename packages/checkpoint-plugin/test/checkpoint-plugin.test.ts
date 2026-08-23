@@ -2,10 +2,9 @@ import { expect, test } from "bun:test";
 import { createPluginRegistry } from "@natalia/plugin";
 import {
   CHECKPOINT_FACTORY_SERVICE,
-  CHECKPOINT_PLUGIN_ID,
-  createCheckpointControllerPlugin,
-  type CheckpointControllerFactory,
-} from "../src";
+  type CheckpointFactory,
+} from "@natalia/runtime-services";
+import { CHECKPOINT_PLUGIN_ID, createCheckpointControllerPlugin } from "../src";
 
 test("checkpoint factory exists only while the plugin is loaded", async () => {
   const services = new Map<string, unknown>();
@@ -18,10 +17,13 @@ test("checkpoint factory exists only while the plugin is loaded", async () => {
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
   const plugin = createCheckpointControllerPlugin({ workspaceRoot: "/tmp/ws" });
@@ -35,7 +37,7 @@ test("checkpoint factory exists only while the plugin is loaded", async () => {
 
   await registry.loadBuiltin(plugin);
   expect(
-    services.get(CHECKPOINT_FACTORY_SERVICE) as CheckpointControllerFactory,
+    services.get(CHECKPOINT_FACTORY_SERVICE) as CheckpointFactory,
   ).toBeFunction();
 
   await registry.unload(CHECKPOINT_PLUGIN_ID);

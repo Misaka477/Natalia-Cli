@@ -7,6 +7,40 @@ export {
 } from "./unified-patch";
 export { runShell } from "./run-shell";
 export {
+  commandHasPrefix,
+  ensureBashCommandParser,
+  parseBashCommandRule,
+  parseBashSimpleCommand,
+  type BashCommandParseResult,
+  type BashCommandRule,
+  type ParsedBashCommand,
+} from "./bash-command-policy";
+export { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
+export {
+  createToolPolicyHookLayer,
+  type ToolHookEvent,
+  type ToolHookResult,
+  type ToolHooks,
+  type ToolPolicy,
+  type ToolPolicyHookLayer,
+} from "./tool-policy";
+export {
+  commandTextForTool,
+  evaluatePermissionProfileCommandRules,
+  evaluatePermissionRules,
+  TerminalCommandBuffer,
+  workspaceWritePathForTool,
+  workspaceWritePathsForTool,
+  type ForegroundProgramProbe,
+  type InteractiveProgramAuthorization,
+  type PermissionCheck,
+  type PermissionProfileCommandRules,
+  type PermissionRules,
+  type ResourceRule,
+  type TerminalCommandBufferResult,
+  type TerminalPaneMode,
+} from "./permission-policy";
+export {
   boundToolOutput,
   cleanupToolOutput,
   MAX_TOOL_OUTPUT_BYTES,

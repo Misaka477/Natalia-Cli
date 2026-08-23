@@ -1,16 +1,15 @@
 import type { Plugin } from "@natalia/plugin";
+import { createTaskWorkflowController } from "./task-workflow-controller";
 import {
-  createTaskWorkflowController,
-  type TaskWorkflowController,
-} from "./task-workflow-controller";
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  type TaskWorkflowService,
+} from "@natalia/runtime-services";
 
 export const TASK_WORKFLOW_PLUGIN_ID = "natalia-task-workflow";
-export const TASK_WORKFLOW_CONTROLLER_SERVICE = "task-workflow.controller";
-
 export function createTaskWorkflowPlugin(
   input: Parameters<typeof createTaskWorkflowController>[0],
 ): Plugin {
-  let controller: TaskWorkflowController | undefined;
+  let controller: TaskWorkflowService | undefined;
   return {
     manifest: {
       apiVersion: 2,

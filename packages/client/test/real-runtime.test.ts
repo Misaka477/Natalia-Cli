@@ -16,14 +16,16 @@ import { getPluginCommands } from "@natalia/plugin";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
+  COMPACTION_SERVICE,
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
-  SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
-  type SandboxService,
-} from "@natalia/sandbox-plugin";
-import {
   TERMINAL_CONTROLLER_SERVICE,
-  TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
-} from "@natalia/terminal-plugin";
+  WORKSPACE_FILES_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  WORKSPACE_WRITE_LOCK_SERVICE,
+  type ProviderModelController,
+  type SandboxService,
+} from "@natalia/runtime-services";
 import {
   TerminalTestRegistry as NativeTerminalRegistry,
   WorkspaceSandboxTestManager as WorkspaceSandboxManager,
@@ -35,29 +37,19 @@ import {
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger-plugin";
-import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
 import {
+  CHECKPOINT_PLUGIN_ID,
+  COMPACTION_PLUGIN_ID,
   MCP_PLUGIN_ID,
   PDF_PLUGIN_ID,
-  SKILLS_PLUGIN_ID,
-  TODO_PLUGIN_ID,
-} from "../src/builtin-plugins/catalog";
-import { CHECKPOINT_PLUGIN_ID } from "@natalia/checkpoint-plugin";
-import {
-  COMPACTION_PLUGIN_ID,
-  COMPACTION_SERVICE,
-} from "@natalia/compaction-plugin";
-import {
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
   PROVIDER_MODEL_PLUGIN_ID,
-  type ProviderModelController,
-} from "@natalia/provider-model-plugin";
-import {
-  WORKSPACE_FILES_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
+  SANDBOX_CONTROLLER_PLUGIN_ID,
+  SKILLS_PLUGIN_ID,
+  TEAM_PLUGIN_ID,
+  TERMINAL_CONTROLLER_PLUGIN_ID,
+  TODO_PLUGIN_ID,
   WORKSPACE_PLUGIN_ID,
-  WORKSPACE_WRITE_LOCK_SERVICE,
-} from "@natalia/workspace-plugin";
+} from "@natalia/builtin-plugins";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -1318,14 +1310,19 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
     "natalia-runtime-config",
   );
 
-  // A config reload replaces the service and notifies subscribers.
-  const updates: Array<{ name: string; providerBefore?: string }> = [];
+  // A config reload runs a new plugin activation epoch: the old service leaves,
+  // then the new epoch provides its replacement.
+  const updates: Array<{
+    name: string;
+    provider?: string;
+    providerBefore?: string;
+  }> = [];
   const unsubscribe = kernel.onServiceUpdate((update) => updates.push(update));
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({ version: 3, defaultPermission: "auto" }),
   );
-  // Reload applies on demand, and the refresh replaces the service in place.
+  // Reload applies on demand through plugin dispose/setup.
   await client.reloadConfig?.();
   await waitFor(() => {
     const current = kernel.service<{ defaultPermission?: string }>(
@@ -1337,13 +1334,15 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
     kernel.service<{ defaultPermission?: string }>("runtime.config")
       ?.defaultPermission,
   ).toBe("auto");
-  expect(
-    updates.some(
-      (update) =>
-        update.name === "runtime.config" &&
-        update.providerBefore === "natalia-runtime-config",
-    ),
-  ).toBe(true);
+  expect(updates.filter((update) => update.name === "runtime.config")).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ provider: undefined }),
+      expect.objectContaining({ provider: "natalia-runtime-config" }),
+    ]),
+  );
+  expect(kernel.ownerOf("services", "runtime.config")).toBe(
+    "natalia-runtime-config",
+  );
   unsubscribe();
   await client.dispose?.();
 }, 60_000);
@@ -4794,9 +4793,9 @@ test("runtime skill catalog exposes discovery metadata without skill body", asyn
     ),
   ).toMatchObject({
     grants: ["services", "tools"],
-    provides: ["skills.registry"],
+    provides: ["skills.service"],
     contributions: [
-      { kind: "services", name: "skills.registry" },
+      { kind: "services", name: "skills.service" },
       { kind: "tools", name: "skill_load" },
     ],
   });
@@ -13979,5 +13978,51 @@ test("/team forces the agent-team directive into the turn context", async () => 
     ),
   );
   expect(sawDirective).toBe(true);
+  await client.dispose?.();
+}, 60_000);
+
+test("/team has no product behavior when the team plugin is disabled", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-team-disabled-cmd-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { [TEAM_PLUGIN_ID]: false } },
+    }),
+  );
+  let sawDirective = false;
+  let sawLiteralInput = false;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_team_disabled_cmd",
+    provider: {
+      provider: "scripted-team-disabled",
+      model: "scripted-team-disabled-model",
+      async *stream(request) {
+        sawDirective = request.messages.some(
+          (message) =>
+            message.role === "system" && message.content.includes("agent team"),
+        );
+        sawLiteralInput = request.messages.some(
+          (message) =>
+            message.role === "user" &&
+            message.content.includes("/team build the game"),
+        );
+        yield { type: "content", text: "ordinary turn" };
+        yield { type: "done" };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("/team build the game");
+  await waitFor(() =>
+    events.some(
+      (event) => event.type === "turn.finished" && event.stopReason === "done",
+    ),
+  );
+  expect(sawDirective).toBe(false);
+  expect(sawLiteralInput).toBe(true);
   await client.dispose?.();
 }, 60_000);

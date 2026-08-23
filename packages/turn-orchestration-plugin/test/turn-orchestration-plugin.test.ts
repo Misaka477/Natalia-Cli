@@ -2,14 +2,14 @@ import { expect, test } from "bun:test";
 import { createPluginRegistry } from "@natalia/plugin";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
-  SESSION_STORE_PLUGIN_ID,
-} from "@natalia/session-store-plugin";
-import {
-  createTurnOrchestrationPlugin,
   TURN_CONTROLLER_SERVICE,
-  TURN_ORCHESTRATION_PLUGIN_ID,
   type TurnController,
   type TurnControllerInput,
+} from "@natalia/runtime-services";
+import { SESSION_STORE_PLUGIN_ID } from "@natalia/session-store-plugin";
+import {
+  createTurnOrchestrationPlugin,
+  TURN_ORCHESTRATION_PLUGIN_ID,
 } from "../src";
 
 function controllerInput(): TurnControllerInput {
@@ -37,10 +37,13 @@ test("turn controller service is dependency-bound and disposed on unload", async
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
   const plugin = createTurnOrchestrationPlugin(controllerInput());

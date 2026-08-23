@@ -11,10 +11,6 @@ import {
 } from "@natalia/client";
 import { discoverLocalToolFamilies } from "@natalia/local-tools-plugin";
 import {
-  cleanupUnreferencedAttachments,
-  referencedAttachmentsForSessions,
-} from "@natalia/attachment-plugin";
-import {
   fingerprintFile,
   loadConfigFile,
   loadTrustStore,
@@ -29,13 +25,11 @@ import {
 import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextWindowResolver } from "@natalia/runtime";
 import {
-  JsonSessionStore,
-  SqliteSessionStore,
-  projectedWorkGraphEdges,
-  projectedWorkGraphNodes,
-} from "@natalia/session";
+  createLocalSessionService,
+  type LocalSessionRow,
+  type SessionMetadataBundle,
+} from "@natalia/session-store-plugin";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -90,154 +84,31 @@ export function plainEventLine(event: RuntimeEvent) {
   );
 }
 
-export type SessionListRow = {
-  id: string;
-  title: string;
-  createdAt: string;
-  lastAccessedAt?: string;
-  pinned: boolean;
-  events: number;
-  pendingInputs: number;
-};
+export type SessionListRow = LocalSessionRow;
 
 export async function listLocalSessions(workspaceRoot = process.cwd()) {
-  const root = resolve(workspaceRoot);
-  const jsonSessions = await new JsonSessionStore(
-    join(root, ".natalia", "sessions"),
-  ).list();
-  const sqlite = localSqliteSessionStore(root);
-  const sqliteSessions = sqlite
-    ? sqlite.list().map(
-        (session) =>
-          ({
-            id: session.id,
-            title: session.title,
-            createdAt: session.createdAt,
-            lastAccessedAt: session.metadata.lastAccessedAt as
-              | string
-              | undefined,
-            pinned: session.pinned,
-            events: sqlite.eventCount(session.id),
-            pendingInputs: sqlite.pendingInputCount(session.id),
-          }) satisfies SessionListRow,
-      )
-    : [];
-  sqlite?.close();
-  const sqliteIDs = new Set(sqliteSessions.map((session) => session.id));
-  const sessions = jsonSessions
-    .filter((session) => !sqliteIDs.has(session.id))
-    .map(
-      (session) =>
-        ({
-          id: session.id,
-          title: session.title,
-          createdAt: session.createdAt,
-          lastAccessedAt: session.metadata?.lastAccessedAt,
-          pinned: Boolean(session.metadata?.pinned),
-          events: session.events.length,
-          pendingInputs:
-            session.inbox?.filter((input) => !input.promotedAt).length ?? 0,
-        }) satisfies SessionListRow,
-    );
-  return [...sqliteSessions, ...sessions].sort((left, right) => {
-    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
-    return right.createdAt.localeCompare(left.createdAt);
-  });
+  return createLocalSessionService(workspaceRoot).list();
 }
 
 export async function deleteLocalSession(
   id: string,
   workspaceRoot = process.cwd(),
 ) {
-  const store = new JsonSessionStore(
-    join(resolve(workspaceRoot), ".natalia", "sessions"),
-  );
-  if (!(await store.load(id as import("@natalia/contracts").SessionID)))
-    throw new Error(`session not found: ${id}`);
-  await store.delete(id as import("@natalia/contracts").SessionID);
-  const removedAttachments = await cleanupUnreferencedAttachments({
-    workspaceRoot,
-    attachments: referencedAttachmentsForSessions(await store.list()),
-  });
-  return { id, deleted: true, removedAttachments: removedAttachments.length };
-}
-
-function localSessionStore(workspaceRoot = process.cwd()) {
-  return new JsonSessionStore(
-    join(resolve(workspaceRoot), ".natalia", "sessions"),
-  );
-}
-
-function localSqliteSessionStore(workspaceRoot = process.cwd()) {
-  const path = join(resolve(workspaceRoot), ".natalia", "sessions.db");
-  return existsSync(path) ? new SqliteSessionStore(path) : undefined;
+  return createLocalSessionService(workspaceRoot).delete(id);
 }
 
 export async function showLocalSession(
   id: string,
   workspaceRoot = process.cwd(),
 ) {
-  const sqlite = localSqliteSessionStore(workspaceRoot);
-  const sqliteSession = sqlite?.get(
-    id as import("@natalia/contracts").SessionID,
-  );
-  if (sqlite && sqliteSession) {
-    const result = {
-      id: sqliteSession.id,
-      title: sqliteSession.title,
-      createdAt: sqliteSession.createdAt,
-      pinned: sqliteSession.pinned,
-      lastAccessedAt: sqliteSession.metadata.lastAccessedAt as
-        | string
-        | undefined,
-      events: sqlite.eventCount(sqliteSession.id),
-      pendingInputs: sqlite.pendingInputCount(sqliteSession.id),
-      cancelled: sqliteSession.cancelled,
-      resumable: sqliteSession.resumable,
-    };
-    sqlite.close();
-    return result;
-  }
-  sqlite?.close();
-  const session = await localSessionStore(workspaceRoot).load(
-    id as import("@natalia/contracts").SessionID,
-  );
-  if (!session) throw new Error(`session not found: ${id}`);
-  return {
-    id: session.id,
-    title: session.title,
-    createdAt: session.createdAt,
-    pinned: Boolean(session.metadata?.pinned),
-    lastAccessedAt: session.metadata?.lastAccessedAt,
-    events: session.events.length,
-    pendingInputs:
-      session.inbox?.filter((input) => !input.promotedAt).length ?? 0,
-    cancelled: session.cancelled,
-    resumable: session.resumable,
-  };
+  return createLocalSessionService(workspaceRoot).show(id);
 }
 
 export async function localWorkGraph(
   sessionID: string,
   workspaceRoot = process.cwd(),
 ) {
-  const root = resolve(workspaceRoot);
-  const sqlite = localSqliteSessionStore(root);
-  const session = sqlite
-    ? sqlite.loadRecord(sessionID as import("@natalia/contracts").SessionID)
-    : undefined;
-  if (sqlite) sqlite.close();
-  const record =
-    session ??
-    (await localSessionStore(root).load(
-      sessionID as import("@natalia/contracts").SessionID,
-    ));
-  if (!record) throw new Error(`session not found: ${sessionID}`);
-  return {
-    sessionID: record.id,
-    nodes: projectedWorkGraphNodes(record.events),
-    edges: projectedWorkGraphEdges(record.events),
-  };
+  return createLocalSessionService(workspaceRoot).workGraph(sessionID);
 }
 
 export function workGraphLines(
@@ -262,11 +133,7 @@ export async function renameLocalSession(
   title: string,
   workspaceRoot = process.cwd(),
 ) {
-  const session = await localSessionStore(workspaceRoot).rename(
-    id as import("@natalia/contracts").SessionID,
-    title,
-  );
-  return { id: session.id, title: session.title };
+  return createLocalSessionService(workspaceRoot).rename(id, title);
 }
 
 export async function setLocalSessionPinned(
@@ -274,73 +141,33 @@ export async function setLocalSessionPinned(
   pinned: boolean,
   workspaceRoot = process.cwd(),
 ) {
-  const session = await localSessionStore(workspaceRoot).updateMetadata(
-    id as import("@natalia/contracts").SessionID,
-    { pinned },
-  );
-  return { id: session.id, pinned: Boolean(session.metadata?.pinned) };
+  return createLocalSessionService(workspaceRoot).setPinned(id, pinned);
 }
 
 export async function duplicateLocalSession(
   id: string,
   input: { title?: string; newID?: string; workspaceRoot?: string } = {},
 ) {
-  const session = await localSessionStore(input.workspaceRoot).duplicate(
-    id as import("@natalia/contracts").SessionID,
-    input.newID as import("@natalia/contracts").SessionID | undefined,
-    input.title,
-  );
-  return { id: session.id, title: session.title, duplicatedFrom: id };
+  return createLocalSessionService(input.workspaceRoot).duplicate(id, input);
 }
 
-export type SessionMetadataBundle = {
-  version: 1;
-  source: { id: string; createdAt: string };
-  title: string;
-  pinned: boolean;
-  cancelled: boolean;
-  resumable: boolean;
-};
+export type { SessionMetadataBundle };
 
 export async function exportLocalSessionMetadata(
   id: string,
   workspaceRoot = process.cwd(),
 ): Promise<SessionMetadataBundle> {
-  const session = await localSessionStore(workspaceRoot).load(
-    id as import("@natalia/contracts").SessionID,
-  );
-  if (!session) throw new Error(`session not found: ${id}`);
-  return {
-    version: 1,
-    source: { id: session.id, createdAt: session.createdAt },
-    title: session.title,
-    pinned: Boolean(session.metadata?.pinned),
-    cancelled: session.cancelled,
-    resumable: session.resumable,
-  };
+  return createLocalSessionService(workspaceRoot).exportMetadata(id);
 }
 
 export async function importLocalSessionMetadata(
   bundle: SessionMetadataBundle,
   input: { workspaceRoot?: string; id?: string; title?: string } = {},
 ) {
-  if (bundle.version !== 1 || !bundle.source?.id || !bundle.title)
-    throw new Error("invalid session metadata bundle");
-  const store = localSessionStore(input.workspaceRoot);
-  const id = (input.id ??
-    `ses_import_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}`) as import("@natalia/contracts").SessionID;
-  if (await store.load(id)) throw new Error(`session already exists: ${id}`);
-  const { createSessionRecord } = await import("@natalia/session");
-  const session = createSessionRecord(id, input.title ?? bundle.title);
-  session.cancelled = bundle.cancelled;
-  session.resumable = bundle.resumable;
-  session.metadata = { pinned: bundle.pinned, importedFrom: bundle.source.id };
-  await store.save(session);
-  return {
-    id: session.id,
-    title: session.title,
-    importedFrom: bundle.source.id,
-  };
+  return createLocalSessionService(input.workspaceRoot).importMetadata(
+    bundle,
+    input,
+  );
 }
 
 export async function doctorReport(input: {

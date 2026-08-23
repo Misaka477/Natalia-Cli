@@ -9,8 +9,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/runtime-services": "workspace:*",
     "@natalia/contracts": "workspace:*",
-    "@natalia/plugin": "workspace:*",
-    "fuzzysort": "3.1.0"
+    "@natalia/platform": "workspace:*",
+    "@natalia/plugin": "workspace:*"
   }
 }

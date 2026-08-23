@@ -1,22 +1,18 @@
 import type { Plugin } from "@natalia/plugin";
+import { createProviderModelController } from "./provider-model-controller";
+import { RETRY_PLUGIN_ID } from "@natalia/retry-plugin";
+import { ATTACHMENT_PLUGIN_ID } from "@natalia/attachment-plugin";
+import { COMPACTION_PLUGIN_ID } from "@natalia/compaction-plugin";
 import {
-  createProviderModelController,
+  ATTACHMENT_SERVICE,
+  COMPACTION_SERVICE,
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
+  RETRY_SERVICE,
   type ProviderModelController,
   type ProviderModelControllerInput,
-} from "./provider-model-controller";
-import { RETRY_PLUGIN_ID, RETRY_SERVICE } from "@natalia/retry-plugin";
-import {
-  ATTACHMENT_PLUGIN_ID,
-  ATTACHMENT_SERVICE,
-} from "@natalia/attachment-plugin";
-import {
-  COMPACTION_PLUGIN_ID,
-  COMPACTION_SERVICE,
-} from "@natalia/compaction-plugin";
+} from "@natalia/runtime-services";
 
 export const PROVIDER_MODEL_PLUGIN_ID = "natalia-provider-model";
-export const PROVIDER_MODEL_CONTROLLER_SERVICE = "provider-model.controller";
-
 export function createProviderModelPlugin(
   input: ProviderModelControllerInput,
 ): Plugin {

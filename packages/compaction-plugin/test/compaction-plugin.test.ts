@@ -1,17 +1,16 @@
 import { expect, test } from "bun:test";
 import {
-  CONTEXT_LEDGER_FACTORY_SERVICE,
   createContextLedgerFactory,
   createContextLedgerPlugin,
 } from "@natalia/context-ledger-plugin";
 import { createPluginRegistry } from "@natalia/plugin";
 import { createRetryPlugin } from "@natalia/retry-plugin";
 import {
-  COMPACTION_PLUGIN_ID,
   COMPACTION_SERVICE,
-  createCompactionPlugin,
+  CONTEXT_LEDGER_FACTORY_SERVICE,
   type CompactionService,
-} from "../src";
+} from "@natalia/runtime-services";
+import { COMPACTION_PLUGIN_ID, createCompactionPlugin } from "../src";
 
 test("compaction plugin requires retry and context-ledger plugins", () => {
   const manifest = createCompactionPlugin().manifest;
@@ -38,10 +37,13 @@ test("compaction service is owned and removed with its plugin", async () => {
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
 

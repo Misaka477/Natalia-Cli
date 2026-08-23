@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/runtime-services": "workspace:*",
     "@natalia/agent": "workspace:*",
     "@natalia/attachment-plugin": "workspace:*",
     "@natalia/compaction-plugin": "workspace:*",
@@ -19,7 +20,6 @@
     "@natalia/retry-plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
-    "@natalia/skills-plugin": "workspace:*",
     "@natalia/tools": "workspace:*"
   }
 }

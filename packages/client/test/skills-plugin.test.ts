@@ -4,12 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@natalia/tools";
-import type { SkillRegistry } from "@natalia/skills-plugin";
-import {
-  createSkillsPlugin,
-  SKILLS_PLUGIN_ID,
-  SKILLS_REGISTRY_SERVICE,
-} from "@natalia/skills-plugin";
+import { skillsPluginEntry, SKILLS_PLUGIN_ID } from "@natalia/builtin-plugins";
+import { SKILL_SERVICE, type SkillService } from "@natalia/runtime-services";
 import { createPluginsController } from "../src/plugins-controller";
 
 async function skillWorkspace() {
@@ -46,9 +42,11 @@ test("skills uses the same plugin activation path and owns its service and tool"
   const root = await skillWorkspace();
   const { capabilityRegistry, tools, controller } = host(root);
   await controller.init({ loadLocal: false });
-  await controller.loadBuiltin(createSkillsPlugin({ workspaceRoot: root }));
+  await controller.loadBuiltin(
+    skillsPluginEntry({ workspaceRoot: root }).create(),
+  );
 
-  expect(capabilityRegistry.ownerOf("services", SKILLS_REGISTRY_SERVICE)).toBe(
+  expect(capabilityRegistry.ownerOf("services", SKILL_SERVICE)).toBe(
     SKILLS_PLUGIN_ID,
   );
   expect(capabilityRegistry.ownerOf("tools", "skill_load")).toBe(
@@ -56,7 +54,7 @@ test("skills uses the same plugin activation path and owns its service and tool"
   );
   expect(
     capabilityRegistry
-      .service<SkillRegistry>(SKILLS_REGISTRY_SERVICE)
+      .service<SkillService>(SKILL_SERVICE)
       ?.list()
       .map((skill) => skill.qualifiedName),
   ).toContain("project:review");
@@ -65,7 +63,7 @@ test("skills uses the same plugin activation path and owns its service and tool"
 
   await controller.close();
   expect(capabilityRegistry.has(SKILLS_PLUGIN_ID)).toBe(false);
-  expect(capabilityRegistry.service(SKILLS_REGISTRY_SERVICE)).toBeUndefined();
+  expect(capabilityRegistry.service(SKILL_SERVICE)).toBeUndefined();
   expect(tools.has("skill_load")).toBe(false);
 });
 

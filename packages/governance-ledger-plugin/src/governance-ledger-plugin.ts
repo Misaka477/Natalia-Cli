@@ -1,17 +1,13 @@
 import type { Plugin } from "@natalia/plugin";
+import { createGovernanceLedgerController } from "./governance-ledger-controller";
+import { WORK_LEDGER_PLUGIN_ID } from "@natalia/work-ledger-plugin";
 import {
-  createGovernanceLedgerController,
-  type GovernanceLedgerController,
-} from "./governance-ledger-controller";
-import {
+  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  WORK_LEDGER_PLUGIN_ID,
-} from "@natalia/work-ledger-plugin";
+  type GovernanceLedgerController,
+} from "@natalia/runtime-services";
 
 export const GOVERNANCE_LEDGER_PLUGIN_ID = "natalia-governance-ledger";
-export const GOVERNANCE_LEDGER_CONTROLLER_SERVICE =
-  "governance-ledger.controller";
-
 export function createGovernanceLedgerPlugin(): Plugin {
   let controller: GovernanceLedgerController | undefined;
   return {

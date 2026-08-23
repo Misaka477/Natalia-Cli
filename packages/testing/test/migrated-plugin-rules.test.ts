@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 import {
+  findBuiltinCatalogOwnershipViolation,
   findClientClosureViolation,
+  findClientPluginSurfaceViolation,
   findClientProductDependencyViolation,
+  findClientServiceContractViolation,
   findClientToolDependencyViolation,
   findForbiddenRepositoryPathViolation,
   findMigratedPluginViolations,
@@ -9,6 +12,66 @@ import {
 } from "../src/migrated-plugin-rules";
 
 const target = "packages/client/src/real-runtime.ts";
+
+test("client service definitions come from runtime-services", () => {
+  expect(
+    findClientServiceContractViolation(
+      target,
+      'import { MCP_SERVICE } from "@natalia/mcp-plugin"',
+    ),
+  ).toBeDefined();
+  expect(
+    findClientServiceContractViolation(
+      target,
+      'import { MCP_SERVICE } from "@natalia/runtime-services"',
+    ),
+  ).toBeUndefined();
+});
+
+test("client pure surfaces come from domain packages", () => {
+  expect(
+    findClientPluginSurfaceViolation(
+      target,
+      'import { helper } from "@natalia/example-plugin"',
+    ),
+  ).toBe("client real-runtime must not import provider plugin packages");
+  expect(
+    findClientPluginSurfaceViolation(
+      target,
+      'import { PROVIDER_MODEL_PLUGIN_ID } from "@natalia/provider-model-plugin"',
+    ),
+  ).toBeDefined();
+  expect(
+    findClientPluginSurfaceViolation(
+      "packages/client/test/real-runtime.test.ts",
+      'import { TEAM_PLUGIN_ID } from "@natalia/team-plugin"',
+    ),
+  ).toBeDefined();
+  expect(
+    findClientPluginSurfaceViolation(
+      target,
+      'import { PROVIDER_MODEL_PLUGIN_ID } from "@natalia/builtin-plugins"',
+    ),
+  ).toBeUndefined();
+  expect(
+    findClientPluginSurfaceViolation(
+      target,
+      'import { parseToolArguments } from "@natalia/collaboration-plugin"',
+    ),
+  ).toBeDefined();
+  expect(
+    findClientPluginSurfaceViolation(
+      "packages/client/src/worker.ts",
+      'import type { WorkflowExecutionHandle } from "@natalia/workflow-scheduler-plugin"',
+    ),
+  ).toBeDefined();
+  expect(
+    findClientPluginSurfaceViolation(
+      target,
+      'import { parseToolArguments } from "@natalia/tools"',
+    ),
+  ).toBeUndefined();
+});
 
 test("migrated plugin rules retain built-in plugin protections", () => {
   for (const [pluginID, source] of [
@@ -326,7 +389,10 @@ test("task module migration rejects client-owned implementations", () => {
       "packages/client/src/builtin-plugins/catalog.ts",
       'import { createTaskModulePlugin } from "@natalia/task-module-plugin"',
     ),
-  ).toEqual([]);
+  ).toContainEqual({
+    pluginID: "natalia-task-module",
+    description: "direct task module plugin package import",
+  });
 });
 
 test("team migration rejects client-owned implementations", () => {
@@ -358,7 +424,10 @@ test("team migration rejects client-owned implementations", () => {
       "packages/client/src/builtin-plugins/catalog.ts",
       'import { createTeamPlugin } from "@natalia/team-plugin"',
     ),
-  ).toEqual([]);
+  ).toContainEqual({
+    pluginID: "natalia-team",
+    description: "direct team plugin package import",
+  });
 });
 
 test("tool pipeline migration rejects client-owned implementations", () => {
@@ -811,7 +880,10 @@ test("provider model migration protects the extracted implementation", () => {
       "packages/client/src/builtin-plugins/catalog.ts",
       'import { createProviderModelPlugin } from "@natalia/provider-model-plugin"',
     ),
-  ).toEqual([]);
+  ).toContainEqual({
+    pluginID: "natalia-provider-model",
+    description: "direct provider model plugin package import",
+  });
 });
 
 test("work ledger migration protects the extracted implementation", () => {
@@ -952,8 +1024,8 @@ test("client physical dependency guard excludes concrete tool packages", () => {
 
   expect(
     findClientToolDependencyViolation(
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { builtinToolPluginCatalog } from "@natalia/builtin-tool-plugins"',
+      "packages/client/src/real-runtime.ts",
+      'import { builtinPluginCatalog } from "@natalia/builtin-plugins"',
     ),
   ).toBeUndefined();
 });
@@ -1045,13 +1117,55 @@ test("client physical dependency guard excludes extracted product packages", () 
       'import { agentsFromConfig } from "@natalia/agent-plugin"',
     ),
   ).toBeString();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/src/task-controller.ts",
+      'import { createWorkflowStoreService } from "@natalia/task-workflow-plugin"',
+    ),
+  ).toBeString();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/package.json",
+      '"@natalia/task-workflow-plugin": "workspace:*"',
+    ),
+  ).toBeString();
+  expect(
+    findClientProductDependencyViolation(
+      "packages/client/tsconfig.json",
+      '"path": "../task-workflow-plugin"',
+    ),
+  ).toBeString();
 });
 
 test("client dependency closure rejects any non-kernel package", () => {
   expect(
     findClientClosureViolation(
       "packages/client/package.json",
+      '"@natalia/task-workflow-plugin": "workspace:*"',
+    ),
+  ).toBeString();
+  expect(
+    findClientClosureViolation(
+      "packages/client/tsconfig.json",
+      '"path": "../task-workflow-plugin"',
+    ),
+  ).toBeUndefined();
+  expect(
+    findClientClosureViolation(
+      "packages/client/package.json",
       '"@natalia/tool-shell": "workspace:*"',
+    ),
+  ).toBeString();
+  expect(
+    findClientClosureViolation(
+      "packages/client/package.json",
+      '"@natalia/builtin-plugins": "workspace:*"',
+    ),
+  ).toBeUndefined();
+  expect(
+    findClientClosureViolation(
+      "packages/client/package.json",
+      '"@natalia/builtin-tool-plugins": "workspace:*"',
     ),
   ).toBeString();
   expect(
@@ -1071,7 +1185,7 @@ test("client dependency closure rejects any non-kernel package", () => {
       "packages/client/tsconfig.json",
       '"path": "../transport"',
     ),
-  ).toBeString();
+  ).toBeUndefined();
   expect(
     findClientClosureViolation(
       "packages/client/tsconfig.json",
@@ -1081,73 +1195,18 @@ test("client dependency closure rejects any non-kernel package", () => {
   expect(
     findClientClosureViolation(
       "packages/client/package.json",
-      '"@natalia/retry-plugin": "workspace:*"',
+      JSON.stringify({
+        dependencies: { "@natalia/retry-plugin": "workspace:*" },
+      }),
     ),
-  ).toBeUndefined();
+  ).toBeString();
   expect(
     findClientClosureViolation(
       "packages/client/package.json",
-      '"@natalia/context-ledger-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/compaction-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/attachment-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/runtime-config-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/session-store-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/runtime-ui-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/turn-orchestration-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/provider-model-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/work-ledger-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/governance-ledger-plugin": "workspace:*"',
-    ),
-  ).toBeUndefined();
-  expect(
-    findClientClosureViolation(
-      "packages/client/package.json",
-      '"@natalia/collaboration-plugin": "workspace:*"',
+      JSON.stringify({
+        dependencies: { "@natalia/runtime-services": "workspace:*" },
+        devDependencies: { "@natalia/retry-plugin": "workspace:*" },
+      }),
     ),
   ).toBeUndefined();
   expect(

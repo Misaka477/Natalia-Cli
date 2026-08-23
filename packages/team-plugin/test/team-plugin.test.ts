@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
 import { createPluginRegistry, type Plugin } from "@natalia/plugin";
-import { SANDBOX_SERVICE, SANDBOX_PLUGIN_ID } from "@natalia/sandbox-plugin";
 import {
+  SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
-  SUBAGENTS_PLUGIN_ID,
-} from "@natalia/subagents-plugin";
+  TEAM_BEHAVIOR_SERVICE,
+  type TeamBehaviorService,
+} from "@natalia/runtime-services";
+import { SANDBOX_PLUGIN_ID } from "@natalia/sandbox-plugin";
+import { SUBAGENTS_PLUGIN_ID } from "@natalia/subagents-plugin";
 import { createToolRegistry } from "@natalia/tools";
 import { createTeamPlugin, TEAM_PLUGIN_ID } from "../src/index";
 
@@ -41,11 +44,12 @@ test("team plugin declares its service and package dependencies", () => {
   expect(manifest.apiVersion).toBe(2);
   if (manifest.apiVersion !== 2) throw new Error("team plugin must use v2");
   expect(manifest.requires).toEqual([SUBAGENTS_SERVICE, SANDBOX_SERVICE]);
+  expect(manifest.provides).toEqual([TEAM_BEHAVIOR_SERVICE]);
   expect(manifest.dependencies.map((dependency) => dependency.id)).toEqual([
     SUBAGENTS_PLUGIN_ID,
     SANDBOX_PLUGIN_ID,
   ]);
-  expect(manifest.integrationPoints).toEqual(["tools"]);
+  expect(manifest.integrationPoints).toEqual(["tools", "services"]);
 });
 
 test("team plugin owns both tools and unload removes them", async () => {
@@ -55,8 +59,8 @@ test("team plugin owns both tools and unload removes them", async () => {
   const registry = createPluginRegistry({
     tools,
     service: <T>(name: string) => services.get(name) as T | undefined,
-    contribute: (manifest, context) => {
-      return (kind, name, payload) => {
+    registerOwner: (manifest, context) => ({
+      contribute: (kind, name, payload) => {
         const owner = context.builtin ? manifest.id : `cap:${manifest.id}`;
         owners.set(`${kind}:${name}`, owner);
         if (kind === "services") services.set(name, payload);
@@ -64,8 +68,9 @@ test("team plugin owns both tools and unload removes them", async () => {
           owners.delete(`${kind}:${name}`);
           if (kind === "services") services.delete(name);
         };
-      };
-    },
+      },
+      release: () => undefined,
+    }),
   });
   const subagents = { enabled: () => false };
   const sandbox = { get: () => undefined };
@@ -87,7 +92,13 @@ test("team plugin owns both tools and unload removes them", async () => {
 
   expect([...tools.keys()]).toEqual(["team_fanout", "team_review"]);
   expect(owners.get("tools:team_fanout")).toBe(TEAM_PLUGIN_ID);
+  expect(
+    (services.get(TEAM_BEHAVIOR_SERVICE) as TeamBehaviorService)
+      .directive()
+      .includes("explicitly requested the agent team"),
+  ).toBe(true);
 
   await registry.unload(TEAM_PLUGIN_ID);
   expect([...tools.keys()]).toEqual([]);
+  expect(services.has(TEAM_BEHAVIOR_SERVICE)).toBe(false);
 });

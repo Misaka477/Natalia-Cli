@@ -14,9 +14,12 @@ import {
   evaluatePermissionRules,
   evaluatePermissionProfileCommandRules,
   TerminalCommandBuffer,
-} from "@natalia/tool-pipeline-plugin";
-import { parseBashSimpleCommand } from "@natalia/tool-pipeline-plugin";
-import { terminalApprovalScope, terminalInputRisk } from "../src/real-runtime";
+} from "@natalia/tools";
+import { parseBashSimpleCommand } from "@natalia/tools";
+import {
+  terminalApprovalScope,
+  terminalInputRisk,
+} from "@natalia/runtime-services";
 import type {
   ProviderStreamRequest,
   StreamingProvider,

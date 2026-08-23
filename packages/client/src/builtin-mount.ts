@@ -9,10 +9,9 @@
  *
  * Order is significant: the registry is created first, then built-ins mount in
  * catalog order (later entries may depend on earlier services), then external
- * plugins load last. Built-ins are instantiated lazily through `create()` so an
- * enabled flag can skip construction entirely.
+ * plugins load last.
  */
-import type { BuiltinPluginEntry } from "./builtin-plugins/catalog";
+import type { BuiltinPluginEntry } from "@natalia/builtin-plugins";
 import type { createPluginsController } from "./plugins-controller";
 
 export async function mountRuntimePlugins(input: {
@@ -22,12 +21,9 @@ export async function mountRuntimePlugins(input: {
   loadExternal: boolean;
 }): Promise<void> {
   await input.controller.init({ loadLocal: false });
-  for (const entry of input.builtins) {
-    if (!entry.enabled) continue;
-    await input.controller.loadBuiltin(
-      entry.create(),
-      input.settings?.[entry.id],
-    );
-  }
+  await input.controller.reconcileDesiredBuiltins(
+    input.builtins,
+    input.settings,
+  );
   if (input.loadExternal) await input.controller.loadLocal();
 }

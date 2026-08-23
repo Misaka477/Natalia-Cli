@@ -1,17 +1,12 @@
 import type { Plugin } from "@natalia/plugin";
+import { createCheckpointController } from "./checkpoint-controller";
 import {
-  createCheckpointController,
+  CHECKPOINT_FACTORY_SERVICE,
   type CheckpointController,
-  type CheckpointControllerAccessors,
-} from "./checkpoint-controller";
+  type CheckpointFactory,
+} from "@natalia/runtime-services";
 
 export const CHECKPOINT_PLUGIN_ID = "natalia-checkpoint";
-export const CHECKPOINT_FACTORY_SERVICE = "checkpoint.factory";
-
-export type CheckpointControllerFactory = (
-  accessors: CheckpointControllerAccessors,
-) => CheckpointController;
-
 export function createCheckpointControllerPlugin(input: {
   workspaceRoot: string;
 }): Plugin {
@@ -34,7 +29,7 @@ export function createCheckpointControllerPlugin(input: {
       integrationPoints: ["services"],
     },
     setup(api) {
-      const factory: CheckpointControllerFactory = (accessors) => {
+      const factory: CheckpointFactory = (accessors) => {
         const controller = createCheckpointController({
           workspaceRoot: input.workspaceRoot,
           ...accessors,

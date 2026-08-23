@@ -9,13 +9,10 @@
  * provider/agent loop.
  */
 import type { Plugin } from "@natalia/plugin";
+import { SUBAGENTS_SERVICE } from "@natalia/runtime-services";
 import { createSubagentsController } from "./subagents-controller";
 
-export type { SubagentsService } from "./subagents-controller";
-
 export const SUBAGENTS_PLUGIN_ID = "natalia-subagents";
-export const SUBAGENTS_SERVICE = "subagents.service";
-
 export function createSubagentsControllerPlugin(input: {
   workDir: string;
   sessionID?: () => string | undefined;

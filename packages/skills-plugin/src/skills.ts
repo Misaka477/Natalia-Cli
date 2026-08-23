@@ -10,30 +10,15 @@ import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { profileShellCommand } from "@natalia/platform";
 import type { RuntimeTool, ToolExecutionContext } from "@natalia/tools";
+import type {
+  SkillMetadata,
+  SkillPolicy,
+  SkillService,
+} from "@natalia/runtime-services";
 
-export type SkillMetadata = {
-  name: string;
-  description: string;
-  allowedTools: string[];
-  requireApproval: boolean;
-  sandboxRequired: boolean;
-  scripts: Record<string, string>;
-  resources: string[];
-};
+export type Skill = SkillMetadata;
 
-export type Skill = SkillMetadata & {
-  qualifiedName: string;
-  root: string;
-  body: string;
-  source: "project" | "user" | "remote";
-};
-
-export type SkillPolicy = {
-  mode: "default" | "restricted" | "sandbox" | "full";
-  allowedTools?: string[];
-};
-
-export class SkillRegistry {
+export class SkillRegistry implements SkillService {
   private skills = new Map<string, Skill>();
   private selected = new Map<string, Skill>();
 
@@ -57,6 +42,22 @@ export class SkillRegistry {
     return [...this.skills.values()].sort((a, b) =>
       a.qualifiedName.localeCompare(b.qualifiedName),
     );
+  }
+
+  authorizeTool(skill: Skill, tool: string, policy: SkillPolicy) {
+    return authorizeSkillTool(skill, tool, policy);
+  }
+
+  async readResource(skill: Skill, path: string) {
+    return await readSkillResource(skill, path);
+  }
+
+  async runScript(
+    skill: Skill,
+    name: string,
+    input: { signal?: AbortSignal } = {},
+  ) {
+    return await runSkillScript(skill, name, input);
   }
 }
 

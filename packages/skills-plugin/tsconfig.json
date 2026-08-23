@@ -13,6 +13,9 @@
       "path": "../platform"
     },
     {
+      "path": "../runtime-services"
+    },
+    {
       "path": "../tools"
     }
   ]

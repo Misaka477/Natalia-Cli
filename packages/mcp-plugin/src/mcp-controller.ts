@@ -1,6 +1,7 @@
 import type { MCPCatalogSnapshot, RuntimeEvent } from "@natalia/contracts";
 import { loadNativeMCPTools, type MCPToolRegistrar } from "./mcp-runtime";
 import type { MCPServerConfig } from "@natalia/contracts";
+import type { McpService } from "@natalia/runtime-services";
 
 /**
  * The MCP resource controller — fourth cut of the resource controllers
@@ -82,8 +83,3 @@ export function createMcpController(input: {
 
   return { reload, catalog, getPrompt, readResource, close };
 }
-
-export type McpService = Pick<
-  ReturnType<typeof createMcpController>,
-  "reload" | "catalog" | "getPrompt" | "readResource"
->;

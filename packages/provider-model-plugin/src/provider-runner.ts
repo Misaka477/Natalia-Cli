@@ -14,31 +14,21 @@ import {
   normalizeRawToolCallProtocol,
   requireNativeToolCallProtocol,
   type ContextEntry,
-  type CreateCheckpointInput,
   type ProviderMessage,
   type ProviderFinishReason,
   type ProviderToolCall,
   type StreamingProvider,
 } from "@natalia/runtime";
-import type { RetryService } from "@natalia/retry-plugin";
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
-import {
-  promoteSteers,
-  type DurableInFlightOperation,
-  type SessionRecord,
-} from "@natalia/session";
-import { authorizeSkillTool, type Skill } from "@natalia/skills-plugin";
-import {
-  materializeTools,
-  type ToolMaterialization,
-  type ToolRegistry,
-} from "@natalia/tools";
-import type { AttachmentService } from "@natalia/attachment-plugin";
-import type { CompactionService } from "@natalia/compaction-plugin";
-import type { McpService } from "@natalia/mcp-plugin";
+import { promoteSteers, type SessionRecord } from "@natalia/session";
+import { materializeTools } from "@natalia/tools";
+import type {
+  ProviderRunnerInput,
+  ProviderUsage,
+  SkillMetadata,
+} from "@natalia/runtime-services";
 
 export function estimateProviderMessages(messages: ProviderMessage[]) {
   let tokens = 0;
@@ -61,8 +51,6 @@ export function estimateProviderMessages(messages: ProviderMessage[]) {
   return tokens;
 }
 
-export type ProviderUsage = { inputTokens: number; outputTokens: number };
-
 type TsRuntimeConfig = Awaited<ReturnType<typeof resolveConfig>>["config"];
 type PermissionMode = "ask" | "auto" | "read_only";
 const maxProtocolCorrections = 2;
@@ -80,157 +68,6 @@ const maxProtocolCorrections = 2;
  * runtime on purpose: it is the canonical policy funnel, and moving it would
  * create a second policy path (resource-ownership observation 5).
  */
-export type ProviderRunnerInput = {
-  provider(): StreamingProvider | undefined;
-  session(): SessionRecord | undefined;
-  context(): ContextLedger;
-  tools(): ToolRegistry;
-  attachmentReferences(): Map<string, LocalAttachment[]>;
-  attachments: AttachmentService;
-  compaction: CompactionService;
-  mcp(): Pick<McpService, "readResource"> | undefined;
-  agentRegistry(): AgentRegistry | undefined;
-  activeAbort(): AbortController | undefined;
-  setActiveAbort(controller: AbortController | undefined): void;
-  activeTurnID(): string | undefined;
-  setActiveTurnID(id: string | undefined): void;
-  selectedAgent(): AgentDefinition | undefined;
-  setSelectedAgent(agent: AgentDefinition | undefined): void;
-  pendingAgent(): AgentDefinition | undefined;
-  setPendingAgent(agent: AgentDefinition | undefined): void;
-  selectedModel(): { modelID?: string; variant?: string } | undefined;
-  modelCapabilities(): ModelCapabilities;
-  setActiveModelCapabilities(capabilities: ModelCapabilities | undefined): void;
-  refreshContextConfig?(): Promise<void>;
-  permissionMode(): PermissionMode;
-  workspaceRoot(): string;
-  tsRuntimeConfig(): TsRuntimeConfig | undefined;
-  runtimeContextConfig(): {
-    max: number;
-    thresholdPercent: number;
-    reserved: number;
-  };
-  activeSkill(): Skill | undefined;
-  skillsList(): Skill[];
-  /**
-   * The Live Work Chat mailbox messages currently waiting for the main agent:
-   * delivered at the last safe boundary but not yet acknowledged. The runtime
-   * provides the projection; the runner renders them into the system prompt so
-   * the agent acts on user intents at the next turn.
-   */
-  mailboxMessages(): Array<{
-    messageID: string;
-    intent: string;
-    text: string;
-    priority: string;
-    source: "user_via_live_chat" | "system";
-  }>;
-  /**
-   * The Live Work Chat's (Navi's) pending suggestions: collaborator views the
-   * main agent has not yet adopted, rejected or deferred. The runner renders
-   * them into the system prompt so the agent sees them without the user
-   * prompting it to check (the 轮巡).
-   */
-  naviSuggestions(): Array<{
-    id: string;
-    suggestion: string;
-    priority: string;
-    rationale?: string;
-  }>;
-  /**
-   * Navi's answers to the questions the main agent asked her through the
-   * collaboration channel. Rendered as a `<navi_responses>` block so Natalia
-   * sees her sister's replies on her next turn (the round-robin), instead of a
-   * question hanging unanswered in the main agent's own context.
-   */
-  naviAnswers(): Array<{
-    questionID: string;
-    answer: string;
-  }>;
-  /** Recent informal collaboration messages between Navi and Natalia. */
-  naviChats?(): Array<{
-    id: string;
-    threadID: string;
-    from: "live_chat" | "main_agent";
-    text: string;
-    round: number;
-    expectsReply: boolean;
-    status: string;
-  }>;
-  /**
-   * Whether the Live Work Chat collaboration channel has any activity, so the
-   * runner can introduce Navi (Natalia's sister) in the system prompt only when
-   * the feature is actually in use — a session without Chat traffic pays no
-   * tokens for a block it never acts on.
-   */
-  naviIntro(): boolean;
-  /**
-   * The currently active plan, if any (P8 C4 NextPlanHandoff source). When a
-   * queued-next plan activates at the turn boundary, the next turn renders it
-   * as a structured handoff so the main agent knows the objective, constraints,
-   * steps and verification of the plan now in force.
-   */
-  activePlan():
-    | {
-        planID: string;
-        version: number;
-        title: string;
-        objective: string;
-        steps: Array<{
-          id: string;
-          title: string;
-          detail?: string;
-          verification?: string;
-        }>;
-        constraints: string[];
-        verification: string[];
-        riskNotes: string[];
-      }
-    | undefined;
-  retry: RetryService;
-  lastProviderUsage(): ProviderUsage | undefined;
-  setLastProviderUsage(usage: ProviderUsage | undefined): void;
-  taskModuleContext():
-    | {
-        moduleInstructions?: string;
-        moduleContinuation?: string;
-        flowID?: string;
-        moduleID?: string;
-        moduleConditions?: Array<{
-          id: string;
-          text: string;
-          kind: "minimum" | "ideal";
-        }>;
-      }
-    | undefined;
-  publish(event: RuntimeEvent): void;
-  applyAgentPolicy(): void;
-  applyAgentProvider(): void;
-  persistInboxPromotion(sessionID?: string): Promise<void>;
-  createTurnCheckpoint(input: CreateCheckpointInput): Promise<void>;
-  isToolAllowed(toolName: string): boolean;
-  setInFlightOperation(
-    operation: DurableInFlightOperation | undefined,
-  ): Promise<void>;
-  executeToolCalls(
-    turnID: string,
-    calls: ProviderToolCall[],
-    assistant: string,
-    materialized: ToolMaterialization,
-  ): Promise<ProviderMessage[]>;
-  reloadConfig(): Promise<{ providerReconfigured: boolean }>;
-  runtimeStatusSnapshot(): Promise<RuntimeEvent>;
-  effectiveMaxSteps(): number;
-  waitIfPaused(): Promise<void>;
-  /**
-   * TERM-M.3 (c): a marker set by the runtime when the model's
-   * `interactive_terminal_request_human` call ended the turn on purpose. When
-   * set, the turn finishes with `stopReason: "waiting_human"` instead of
-   * "done", and the runtime persists the pending-human state.
-   */
-  waitingHuman(): { terminalID: string; reason: string } | undefined;
-};
-
 export function createProviderRunner(input: ProviderRunnerInput) {
   async function runTurn(input: {
     id: string;
@@ -604,7 +441,10 @@ export function createProviderRunner(input: ProviderRunnerInput) {
             agent.mcpServers.some((server) =>
               name.startsWith(`mcp_${server}_`),
             )) &&
-          (!skill || authorizeSkillTool(skill, tool.name, { mode: "default" })),
+          (!skill ||
+            input.skillService?.()?.authorizeTool(skill, tool.name, {
+              mode: "default",
+            }) !== false),
       ),
     );
     const materialized = materializeTools(input.tools(), advertised);
@@ -982,8 +822,8 @@ function runtimeSystemPrompt(input: {
     text: string;
     kind: "minimum" | "ideal";
   }>;
-  skills?: Skill[];
-  activeSkill?: Skill;
+  skills?: SkillMetadata[];
+  activeSkill?: SkillMetadata;
   /**
    * Pending Live Work Chat mailbox messages. Rendered as a
    * `<pending_user_intents>` block so the main agent sees user intents at the

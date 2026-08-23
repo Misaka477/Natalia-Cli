@@ -1,15 +1,5 @@
-export {
-  createWorkspacePlugin,
-  WORKSPACE_FILES_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_PLUGIN_ID,
-  WORKSPACE_WRITE_LOCK_SERVICE,
-} from "./workspace-plugin";
-export {
-  createMutationRegistry,
-  type ExpectedMutation,
-  type MutationRegistry,
-} from "./mutation-registry";
+export { createWorkspacePlugin, WORKSPACE_PLUGIN_ID } from "./workspace-plugin";
+export { createMutationRegistry } from "./mutation-registry";
 export {
   createWorkspaceChangeAuditor,
   type WorkspaceChangeAuditor,
@@ -17,7 +7,6 @@ export {
 } from "./workspace-change-auditor";
 export {
   createWorkspaceFilesController,
-  type WorkspaceFilesController,
   type WorkspaceMutationIdentity,
 } from "./workspace-files-controller";
 export {
@@ -28,7 +17,7 @@ export {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
-} from "./workspace-files";
+} from "@natalia/platform";
 export {
   assertSecretSafeObservation,
   attributionFor,
@@ -36,7 +25,4 @@ export {
   operationCorrelation,
   turnCorrelation,
 } from "./workspace-observation";
-export {
-  createWorkspaceWriteLock,
-  type WorkspaceWriteLock,
-} from "./workspace-write-lock";
+export { createWorkspaceWriteLock } from "./workspace-write-lock";

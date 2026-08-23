@@ -1,73 +1,13 @@
 import { resolve } from "node:path";
-
-export type WorkflowExecutionStatus =
-  | "queued"
-  | "starting"
-  | "running"
-  | "cancelling"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export type WorkflowExecutionEvent =
-  | {
-      type: "workflow.execution";
-      executionID: string;
-      workspaceRoot: string;
-      status: WorkflowExecutionStatus;
-      at: string;
-      reason?: string;
-    }
-  | {
-      type: "workflow.execution.output";
-      executionID: string;
-      workspaceRoot: string;
-      line: string;
-      at: string;
-    }
-  | {
-      type: "workflow.execution.resolved";
-      executionID: string;
-      workspaceRoot: string;
-      taskID: string;
-      flowID: string;
-      source:
-        | { kind: "workspace" }
-        | { kind: "capability"; capabilityIDs: string[] };
-      requestedBy?: {
-        transport: "local" | "worker" | "http";
-        sessionID?: string;
-        credentialID?: string;
-      };
-      at: string;
-    };
-
-export type WorkflowExecutionHandle<T> = {
-  executionID: string;
-  events: AsyncIterable<WorkflowExecutionEvent>;
-  result: Promise<T>;
-  cancel(reason?: string): void;
-};
-
-export interface WorkflowExecutionSchedulerService {
-  schedule<T>(input: {
-    workspaceRoot: string;
-    executionID?: string;
-    idempotencyKey?: string;
-    idempotencyFingerprint?: string;
-    run: (input: {
-      signal: AbortSignal;
-      publishOutput(line: string): void;
-      publishResolved(input: {
-        taskID: string;
-        flowID: string;
-        source: WorkflowExecutionResolvedEvent["source"];
-        requestedBy?: WorkflowExecutionResolvedEvent["requestedBy"];
-      }): void;
-    }) => Promise<T>;
-  }): WorkflowExecutionHandle<T>;
-  dispose(reason?: string): Promise<void>;
-}
+import {
+  WorkflowExecutionEventStream,
+  type WorkflowExecutionEvent,
+  type WorkflowExecutionHandle,
+  type WorkflowExecutionResolvedEvent,
+  type WorkflowExecutionSchedulerService,
+  type WorkflowExecutionStatus,
+} from "@natalia/workflow";
+export type { WorkflowExecutionSchedulerService } from "@natalia/workflow";
 
 export class WorkflowExecutionRefusal extends Error {
   readonly code:
@@ -96,7 +36,7 @@ type ScheduledExecution<T> = {
   executionID: string;
   workspaceRoot: string;
   abort: AbortController;
-  stream: ExecutionEventStream;
+  stream: WorkflowExecutionEventStream;
   run: (input: {
     signal: AbortSignal;
     publishOutput(line: string): void;
@@ -200,7 +140,7 @@ export class WorkflowExecutionScheduler
         return existing.handle as WorkflowExecutionHandle<T>;
       }
     }
-    const stream = new ExecutionEventStream();
+    const stream = new WorkflowExecutionEventStream();
     const abort = new AbortController();
     let resolveResult!: (value: T) => void;
     let rejectResult!: (error: unknown) => void;
@@ -460,44 +400,6 @@ export class WorkflowExecutionScheduler
       at: new Date().toISOString(),
       ...input,
     });
-  }
-}
-
-type WorkflowExecutionResolvedEvent = Extract<
-  WorkflowExecutionEvent,
-  { type: "workflow.execution.resolved" }
->;
-
-class ExecutionEventStream implements AsyncIterable<WorkflowExecutionEvent> {
-  private readonly buffered: WorkflowExecutionEvent[] = [];
-  private readonly waiting: Array<
-    (value: IteratorResult<WorkflowExecutionEvent>) => void
-  > = [];
-  private closed = false;
-
-  publish(event: WorkflowExecutionEvent) {
-    if (this.closed) return;
-    const next = this.waiting.shift();
-    if (next) next({ done: false, value: event });
-    else this.buffered.push(event);
-  }
-
-  close() {
-    this.closed = true;
-    for (const next of this.waiting.splice(0))
-      next({ done: true, value: undefined });
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<WorkflowExecutionEvent> {
-    return {
-      next: () => {
-        const event = this.buffered.shift();
-        if (event) return Promise.resolve({ done: false, value: event });
-        if (this.closed)
-          return Promise.resolve({ done: true, value: undefined });
-        return new Promise((resolveNext) => this.waiting.push(resolveNext));
-      },
-    };
   }
 }
 

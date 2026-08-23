@@ -2,12 +2,11 @@ import type {
   NataliaFlowDocument,
   PermissionProfile,
 } from "@natalia/contracts";
-import { builtinToolNames } from "./capabilities/tool-family-capabilities";
 import {
   moduleToolPolicy,
   type NataliaFlowModuleType,
-} from "@natalia/workflow";
-import { createToolPolicyHookLayer } from "@natalia/tool-pipeline-plugin";
+} from "./natalia-module-policy";
+import { createToolPolicyHookLayer } from "@natalia/tools";
 
 /** The system control tool is always available and is not a capability. */
 const SYSTEM_MODULE_TOOL = "flow_module_complete";
@@ -256,5 +255,49 @@ function runtimeToolNames(capabilities: {
     SYSTEM_MODULE_TOOL,
     ...(capabilities.reportIssue ? ["report_issue"] : []),
     ...(capabilities.readDataSource ? ["read_data_source"] : []),
+  ];
+}
+
+function builtinToolNames(): string[] {
+  return [
+    "ask_user",
+    "plan",
+    "todo_read",
+    "todo_write",
+    "glob",
+    "grep",
+    "read_file",
+    "read_media_file",
+    "image_read",
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "web_fetch",
+    "web_search",
+    "browser_visit",
+    "browser_screenshot",
+    "run_shell",
+    "agent_spawn",
+    "interactive_terminal_start",
+    "interactive_terminal_read",
+    "interactive_terminal_search",
+    "interactive_terminal_write",
+    "interactive_terminal_send_line",
+    "interactive_terminal_keys",
+    "interactive_terminal_input",
+    "interactive_terminal_snapshot",
+    "interactive_terminal_resize",
+    "interactive_terminal_request_human",
+    "interactive_terminal_stop",
+    "interactive_terminal_list",
+    "terminal_observe",
+    "sandbox_create",
+    "sandbox_execute",
+    "sandbox_write",
+    "sandbox_diff",
+    "sandbox_merge",
+    "sandbox_delete",
+    "process_start",
+    "background_start",
   ];
 }

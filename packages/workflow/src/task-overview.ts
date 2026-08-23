@@ -16,16 +16,15 @@ export type {
   ScheduledTaskOverview,
   ScheduledTaskRow,
 } from "@natalia/contracts";
-import {
-  taskAlertSubscriptions,
-  NataliaDocumentStore,
-  type ContributedNataliaDocuments,
-  NataliaTaskAlertQueue,
-  NataliaTaskStateStore,
-  NataliaUnattendedStateStore,
-} from "@natalia/workflow";
+import { NataliaDocumentStore } from "./natalia-document-store";
+import type { ContributedNataliaDocuments } from "./natalia-document-store";
+import { taskAlertSubscriptions } from "./natalia-task-alert-queue";
+import { NataliaTaskAlertQueue } from "./natalia-task-alert-queue";
+import { NataliaTaskStateStore } from "./natalia-task-state-store";
+import { NataliaUnattendedStateStore } from "./natalia-unattended-state";
 import { nextSystemdRun } from "./systemd-adapter";
 import type { ResolveFlowPermissions } from "./flow-permissions";
+import { effectiveFlowPermissions } from "./effective-policy";
 
 /**
  * Everything a scheduled-task surface needs about every task in a workspace: how
@@ -40,7 +39,7 @@ export async function scheduledTaskOverview(input: {
   config: ConfigV3;
   readNextRun?: typeof nextSystemdRun;
   contributedDocuments?: ContributedNataliaDocuments;
-  resolveFlowPermissions: ResolveFlowPermissions;
+  resolveFlowPermissions?: ResolveFlowPermissions;
 }): Promise<ScheduledTaskOverview> {
   const documents = new NataliaDocumentStore(
     input.workspaceRoot,
@@ -137,7 +136,9 @@ export async function scheduledTaskOverview(input: {
             problems.push(
               `stage has no minimum completion condition: ${module.id}`,
             );
-        for (const blocked of input.resolveFlowPermissions({
+        for (const blocked of (
+          input.resolveFlowPermissions ?? effectiveFlowPermissions
+        )({
           profile,
           flow,
           taskCapabilities: {

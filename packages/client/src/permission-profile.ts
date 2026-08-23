@@ -1,10 +1,8 @@
-import { readdir } from "node:fs/promises";
 import type { ConfigV3 } from "@natalia/contracts";
-import {
-  isKnownModuleTool,
-  knownModuleTools,
-  NataliaDocumentStore,
-} from "@natalia/workflow";
+import { isKnownModuleTool, knownModuleTools } from "@natalia/workflow";
+import type { TaskWorkflowService } from "@natalia/runtime-services";
+import { TASK_WORKFLOW_CONTROLLER_SERVICE } from "@natalia/runtime-services";
+import { createRealRuntimeClient } from "./real-runtime";
 
 export type PermissionProfileUsage = Record<string, string[]>;
 
@@ -19,26 +17,18 @@ export type PermissionProfileUsage = Record<string, string[]>;
 export async function permissionProfileUsage(input: {
   workspaceRoot: string;
 }): Promise<PermissionProfileUsage> {
-  const documents = new NataliaDocumentStore(input.workspaceRoot);
-  let entries: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: input.workspaceRoot,
+  });
   try {
-    entries = (await readdir(documents.tasksDir)).filter((entry) =>
-      /\.ya?ml$/iu.test(entry),
+    const service = await client.service<TaskWorkflowService>(
+      TASK_WORKFLOW_CONTROLLER_SERVICE,
     );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    return {};
+    if (!service) throw new Error("task workflow service unavailable");
+    return await service.permissionProfileUsage(input);
+  } finally {
+    await client.dispose?.();
   }
-  const usage: PermissionProfileUsage = {};
-  for (const entry of entries.sort()) {
-    const task = await documents.loadTaskDocument(entry).catch(() => undefined);
-    if (!task) continue;
-    usage[task.permissionProfile] = [
-      ...(usage[task.permissionProfile] ?? []),
-      task.taskID,
-    ];
-  }
-  return usage;
 }
 
 /**

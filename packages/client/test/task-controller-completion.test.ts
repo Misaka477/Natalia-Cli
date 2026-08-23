@@ -4,7 +4,7 @@ import {
   moduleCompletionOperationProblem,
   newModuleCompletionOperations,
   trackModuleCompletionOperation,
-} from "../src/task-controller";
+} from "@natalia/workflow";
 
 const tool = (
   status: Extract<RuntimeEvent, { type: "tool.update" }>["status"],

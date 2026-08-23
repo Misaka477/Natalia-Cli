@@ -1,11 +1,7 @@
 import { expect, test } from "bun:test";
 import { createPluginRegistry } from "@natalia/plugin";
-import {
-  createRetryPlugin,
-  RETRY_PLUGIN_ID,
-  RETRY_SERVICE,
-  type RetryService,
-} from "../src";
+import { RETRY_SERVICE, type RetryService } from "@natalia/runtime-services";
+import { createRetryPlugin, RETRY_PLUGIN_ID } from "../src";
 
 test("retry plugin owns its service and removes it on unload", async () => {
   const services = new Map<string, unknown>();
@@ -18,10 +14,13 @@ test("retry plugin owns its service and removes it on unload", async () => {
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
 

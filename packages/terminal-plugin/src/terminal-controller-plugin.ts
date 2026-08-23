@@ -7,24 +7,14 @@
  * native terminal registry and starts no WezTerm watcher.
  */
 import type { Plugin } from "@natalia/plugin";
-import type { RuntimeEvent } from "@natalia/contracts";
 import type { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { createTerminalController } from "./terminal-controller";
-
-export type { TerminalController } from "./terminal-controller";
+import {
+  TERMINAL_CONTROLLER_SERVICE,
+  type TerminalControllerPluginInput,
+} from "@natalia/runtime-services";
 
 export const TERMINAL_PLUGIN_ID = "natalia-terminal";
-export const TERMINAL_CONTROLLER_SERVICE = "terminal.controller";
-
-export type TerminalControllerPluginInput = {
-  workspaceRoot: string;
-  publish(event: RuntimeEvent): void;
-  onPerformance(name: string, durationMs: number): void;
-  runtimeID(): string;
-  userRuntimeHome(): string | undefined;
-  windowMode(): "auto" | "windowless" | "window";
-  external?: NativeTerminalRegistry;
-};
 
 export function createTerminalControllerPlugin(
   input: TerminalControllerPluginInput,
@@ -48,7 +38,10 @@ export function createTerminalControllerPlugin(
       integrationPoints: ["services"],
     },
     setup(api) {
-      controller = createTerminalController(input);
+      controller = createTerminalController({
+        ...input,
+        external: input.external as NativeTerminalRegistry | undefined,
+      });
       api.services.provide(TERMINAL_CONTROLLER_SERVICE, controller);
     },
     async dispose() {

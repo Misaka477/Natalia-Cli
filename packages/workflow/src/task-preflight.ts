@@ -1,6 +1,6 @@
 import type { ConfigV3, NataliaTaskDocument } from "@natalia/contracts";
 import { resolveEffectiveModel } from "@natalia/config";
-import { taskAlertSubscriptions } from "@natalia/workflow";
+import { taskAlertSubscriptions } from "./natalia-task-alert-queue";
 
 /** Fails closed for every configured reference a task needs before execution. */
 export function assertTaskReferences(input: {

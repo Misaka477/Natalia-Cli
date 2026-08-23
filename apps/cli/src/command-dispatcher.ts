@@ -15,7 +15,14 @@ import {
   CapabilityHost,
   removeTaskSystemd,
   taskPermissionPreview,
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  type RuntimeServiceClient,
+  type TaskWorkflowService,
 } from "@natalia/client";
+import {
+  createWorkflowExecutionStoreService,
+  createWorkflowStoreService,
+} from "@natalia/task-workflow-plugin";
 import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
 import type {
   EpisodeID,
@@ -34,10 +41,6 @@ import {
   evaluateAndRecordModule,
   findingFingerprint,
   readDataSourceSince,
-  NataliaDocumentStore,
-  NataliaTaskAlertQueue,
-  NataliaTaskStateStore,
-  NataliaUnattendedStateStore,
   reconcileFinding,
   taskAlertEventKindForStatus,
   type EvaluatorModuleContext,
@@ -155,22 +158,40 @@ switch (subcommand) {
     const taskScheduler = taskSchedulerHost.scheduler;
     const workspaceHosts = new Map<
       string,
-      { capabilities: CapabilityHost; executions: CapabilityExecutionHost }
+      Promise<{
+        capabilities: CapabilityHost;
+        executions: CapabilityExecutionHost;
+        runtime: RuntimeServiceClient;
+      }>
     >();
     try {
-      const workspaceHost = (workspaceRoot: string) => {
+      const workspaceHost = async (workspaceRoot: string) => {
         const root = resolve(workspaceRoot);
         const existing = workspaceHosts.get(root);
         if (existing) return existing;
-        const capabilities = new CapabilityHost({ workspaceRoot: root });
-        const created = {
-          capabilities,
-          executions: new CapabilityExecutionHost(capabilities, {
-            scheduler: taskScheduler,
-          }),
-        };
+        const created = (async () => {
+          const capabilities = new CapabilityHost({ workspaceRoot: root });
+          const runtime = createRealRuntimeClient({
+            workspaceRoot: root,
+            capabilityHost: capabilities,
+          });
+          const taskWorkflowService =
+            await runtime.service<TaskWorkflowService>(
+              TASK_WORKFLOW_CONTROLLER_SERVICE,
+            );
+          if (!taskWorkflowService)
+            throw new Error("task workflow service unavailable");
+          return {
+            capabilities,
+            runtime,
+            executions: new CapabilityExecutionHost(capabilities, {
+              scheduler: taskScheduler,
+              taskWorkflowService,
+            }),
+          };
+        })();
         workspaceHosts.set(root, created);
-        return created;
+        return await created;
       };
       const client = createRealRuntimeClient();
       const transport = await createHttpTransportPluginHost({
@@ -186,7 +207,7 @@ switch (subcommand) {
           const config = assertConfigApplied(
             await resolveConfig({ workspaceRoot }),
           );
-          return workspaceHost(workspaceRoot).executions.runTask({
+          return (await workspaceHost(workspaceRoot)).executions.runTask({
             workspaceRoot,
             path: request.taskPath,
             taskID: request.taskID,
@@ -215,7 +236,11 @@ switch (subcommand) {
       await client.dispose?.();
     } finally {
       await taskSchedulerHost.close();
-      for (const host of workspaceHosts.values()) host.capabilities.dispose();
+      for (const hostPromise of workspaceHosts.values()) {
+        const host = await hostPromise;
+        await host.runtime.dispose?.();
+        host.capabilities.dispose();
+      }
     }
     break;
   }
@@ -361,7 +386,7 @@ switch (subcommand) {
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
     );
-    const store = new NataliaDocumentStore(workspaceRoot);
+    const store = createWorkflowStoreService({ workspaceRoot });
     const task =
       action === "run-id"
         ? await store.loadTaskByID(taskPath)
@@ -515,7 +540,7 @@ switch (subcommand) {
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
     );
-    const documents = new NataliaDocumentStore(workspaceRoot);
+    const documents = createWorkflowStoreService({ workspaceRoot });
     const flow = await documents.loadFlow(
       flowPath.startsWith(".natalia/")
         ? flowPath
@@ -990,12 +1015,10 @@ async function taskStatusReport(input: {
   task: NataliaTaskDocument;
   flow: NataliaFlowDocument;
 }) {
-  const state = await NataliaTaskStateStore.open(input.workspaceRoot);
-  const alerts = await NataliaTaskAlertQueue.open(input.workspaceRoot);
-  const crossExecution = await NataliaUnattendedStateStore.open(
-    input.workspaceRoot,
-    input.task.taskID,
-  );
+  const stores = createWorkflowExecutionStoreService(input.workspaceRoot);
+  const state = await stores.openTaskState();
+  const alerts = await stores.openAlertQueue();
+  const crossExecution = await stores.openUnattendedState(input.task.taskID);
   try {
     const invocations = state.invocations(input.task.taskID);
     const persisted = crossExecution.state();

@@ -1,4 +1,4 @@
-import type { ResolvedConfig } from "@natalia/config";
+import type { ResolvedConfig } from "./service";
 
 /** Refuse configuration files the loader rejected instead of using fallbacks. */
 export function assertConfigApplied(resolved: ResolvedConfig) {

@@ -43,12 +43,13 @@ export function registerBuiltinCapabilities(registry: CapabilityRegistryHost): {
   const loaded: CapabilityLoadedEvent[] = [];
   const failed: CapabilityFailedEvent[] = [];
   for (const registration of builtinCapabilities()) {
-    const result = registry.tryLoad(registration);
-    if (!result.ok) {
+    try {
+      registry.registerOwner(registration);
+    } catch (error) {
       failed.push({
         type: "capability.failed",
         id: `cap:${registration.id}`,
-        reason: result.reason,
+        reason: error instanceof Error ? error.message : String(error),
       });
       continue;
     }

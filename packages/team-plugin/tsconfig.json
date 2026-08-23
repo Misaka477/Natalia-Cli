@@ -8,6 +8,7 @@
   "references": [
     { "path": "../contracts" },
     { "path": "../plugin" },
+    { "path": "../runtime-services" },
     { "path": "../sandbox-plugin" },
     { "path": "../subagents-plugin" },
     { "path": "../testing" },

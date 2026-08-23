@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import { createPluginRegistry } from "@natalia/plugin";
 import {
+  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  WORK_LEDGER_PLUGIN_ID,
-} from "@natalia/work-ledger-plugin";
+  type GovernanceLedgerController,
+} from "@natalia/runtime-services";
+import { WORK_LEDGER_PLUGIN_ID } from "@natalia/work-ledger-plugin";
 import {
   createGovernanceLedgerPlugin,
-  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   GOVERNANCE_LEDGER_PLUGIN_ID,
-  type GovernanceLedgerController,
 } from "../src";
 
 test("governance ledger service is dependency-bound and removed on unload", async () => {
@@ -22,10 +22,13 @@ test("governance ledger service is dependency-bound and removed on unload", asyn
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
   const plugin = createGovernanceLedgerPlugin();

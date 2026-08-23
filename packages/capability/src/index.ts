@@ -1,39 +1,5 @@
-/**
- * The capability kernel.
- *
- * A capability declares what it is allowed to contribute (`grants`) and then
- * contributes it. The registry owns every contribution, which is what makes the
- * two properties that matter true:
- *
- *   1. A capability cannot contribute outside its grants. Enforcement happens at
- *      contribution time and throws, rather than being recorded and ignored.
- *   2. Unloading releases everything it contributed. There is no path where a
- *      capability is gone but its tools are still callable.
- *
- * Contribution payloads are opaque here on purpose. This package sits on the
- * consumer-contract side of the dependency rules and must not import
- * `@natalia/tools` or the runtime, so it stores payloads by kind and name and the
- * host reads them back with the concrete type it knows:
- *
- *     for (const entry of registry.contributions<RuntimeTool>("tools"))
- *       tools.set(entry.name, entry.payload);
- *
- * That indirection is the whole point: a new capability adds a file and a
- * registration, and the host's wiring never changes.
- */
-
 import { resolve } from "node:path";
 
-/**
- * Extension precedence and override contract.
- * Lower number = higher priority (applied first).
- *
- * Decided: precedence decides. A duplicate contribution name is resolved by
- * `precedence`: the higher value (applied later) replaces the lower one, and
- * the replacement is recorded so the runtime can surface it. Equal precedence
- * refuses the newcomer — the pre-protocol behaviour, kept. A capability that
- * declares no precedence is 0 and cannot replace anything.
- */
 export type ExtensionPrecedence = {
   base: number;
   overridable: boolean;
@@ -47,18 +13,12 @@ export const EXTENSION_PRECEDENCE = {
   workflow: 300,
 } as const;
 
-/**
- * What a capability may contribute. Deliberately identical to the grant names, so
- * "may I contribute this?" is a set membership test with nothing to interpret.
- */
 export type CapabilityGrant =
   | "tools"
   | "commands"
   | "settings"
   | "settingsSchema"
   | "workflows"
-  /** @deprecated Use `projections`; retained for v1 capability manifests. */
-  | "projection"
   | "projections"
   | "resources"
   | "adapters"
@@ -68,61 +28,21 @@ export type CapabilityGrant =
 
 export type CapabilityScope = "process" | "workspace" | "session";
 
-/** What a capability declares at registration time. */
+/** Metadata and contribution authority registered by the actual lifecycle owner. */
 export type CapabilityRegistration = {
   id: string;
   name: string;
   version: string;
   description?: string;
   scope: CapabilityScope;
-  /** Capability ids that must already be loaded. Refused if any is missing. */
-  dependencies?: string[];
   grants: CapabilityGrant[];
-  /**
-   * Rank against other capabilities for the same contribution name. Higher
-   * wins and replaces; equal or lower is refused. Absent means 0.
-   */
   precedence?: number;
-  /**
-   * Service names this capability provides. Each must be contributed as a
-   * `services` contribution during activation; a declared service that is never
-   * provided fails the load.
-   */
-  provides?: string[];
-  /**
-   * Service names that must exist before this capability activates. A load with
-   * unsatisfied requirements is held **pending** — the capability is loaded but
-   * its activation is deferred until every required service is provided.
-   */
-  requires?: string[];
 };
 
-/**
- * A service appearing, being replaced or disappearing.
- *
- * `provider` is the capability currently providing the service (undefined when
- * it just disappeared); `providerBefore` is present only on a replacement.
- */
 export type ServiceUpdate = {
   name: string;
   provider: string | undefined;
   providerBefore?: string;
-};
-
-/** Controlled API the runtime provides to each loaded capability. */
-export type CapabilityContext = {
-  id: string;
-  /**
-   * Registers one contribution. Throws when the capability lacks the matching
-   * grant, when the name is already taken, or when the capability is unloading.
-   */
-  contribute: (kind: CapabilityGrant, name: string, payload: unknown) => void;
-  /**
-   * Resolves a service by name. Returns the current value the providing
-   * capability contributed, or `undefined` while no one provides it.
-   */
-  service: <T>(name: string) => T | undefined;
-  onUnload: (fn: () => void) => void;
 };
 
 export type CapabilityContribution<T = unknown> = {
@@ -132,18 +52,23 @@ export type CapabilityContribution<T = unknown> = {
   payload: T;
 };
 
-type CapabilityInstance = {
-  registration: CapabilityRegistration;
-  context: CapabilityContext;
-  unloadFns: Array<() => void>;
-  contributions: CapabilityContribution[];
-  loadedAt: number;
-  sealed: boolean;
+/**
+ * An opaque authority issued once for an owner registration. The closures carry
+ * the registry's private token, so constructing a structurally similar object
+ * cannot mutate registry storage. Both contribution and owner release are
+ * idempotent.
+ */
+export type CapabilityOwnerHandle = {
+  readonly id: string;
+  contribute(kind: CapabilityGrant, name: string, payload: unknown): () => void;
+  release(): void;
 };
 
-type PendingActivation = {
-  instance: CapabilityInstance;
-  activate: ((context: CapabilityContext) => void) | undefined;
+type OwnerRecord = {
+  registration: CapabilityRegistration;
+  token: object;
+  contributions: Map<string, CapabilityContribution>;
+  released: boolean;
 };
 
 export class CapabilityLoadError extends Error {
@@ -155,19 +80,15 @@ export class CapabilityLoadError extends Error {
   }
 }
 
+/** Authorized contribution storage. It does not execute owner lifecycle code. */
 export class CapabilityRegistry {
-  private instances = new Map<string, CapabilityInstance>();
-  private byGrant = new Map<CapabilityGrant, Set<string>>();
-  /** `kind\u0000name` -> owning capability id, so collisions are cheap to detect. */
-  private owners = new Map<string, string>();
-  /** `kind\u0000name` -> precedence of the current owner. */
-  private ownerPrecedence = new Map<string, number>();
-  /** Capabilities waiting for required services before they can activate. */
-  private pending = new Map<string, PendingActivation>();
-  /** Service-change listeners; fired when a service appears, is replaced or disappears. */
-  private serviceListeners = new Set<(update: ServiceUpdate) => void>();
-  /** Every override that happened, in order: loser replaced by winner. */
-  private overrideLog: Array<{
+  private readonly ownersByID = new Map<string, OwnerRecord>();
+  private readonly effectiveOwners = new Map<string, string>();
+  private readonly effectivePrecedence = new Map<string, number>();
+  private readonly serviceListeners = new Set<
+    (update: ServiceUpdate) => void
+  >();
+  private readonly overrideLog: Array<{
     kind: CapabilityGrant;
     name: string;
     winner: string;
@@ -176,200 +97,182 @@ export class CapabilityRegistry {
     loserPrecedence: number;
   }> = [];
 
-  /**
-   * Registers a capability and runs `activate` to collect its contributions.
-   *
-   * `activate` runs inside the load, so a capability that throws half way through
-   * leaves nothing behind: every contribution it already made is released before
-   * the error propagates. Without that, a partial failure would leave orphan
-   * tools registered to a capability that is not loaded.
-   */
-  load(
-    registration: CapabilityRegistration,
-    activate?: (context: CapabilityContext) => void,
-  ): CapabilityContext {
-    if (this.instances.has(registration.id))
+  registerOwner(registration: CapabilityRegistration): CapabilityOwnerHandle {
+    if (this.ownersByID.has(registration.id))
       throw new CapabilityLoadError(
         registration.id,
-        `capability "${registration.id}" is already loaded`,
+        `capability owner "${registration.id}" is already registered`,
       );
-    for (const dependency of registration.dependencies ?? []) {
-      if (dependency === registration.id)
-        throw new CapabilityLoadError(
-          registration.id,
-          `capability "${registration.id}" depends on itself`,
-        );
-      if (!this.instances.has(dependency))
-        throw new CapabilityLoadError(
-          registration.id,
-          `capability "${registration.id}" requires "${dependency}", which is not loaded`,
-        );
-    }
-
-    const grants = new Set(registration.grants);
-    const instance: CapabilityInstance = {
+    const record: OwnerRecord = {
       registration,
-      context: undefined as unknown as CapabilityContext,
-      unloadFns: [],
-      contributions: [],
-      loadedAt: Date.now(),
-      sealed: false,
+      token: {},
+      contributions: new Map(),
+      released: false,
     };
-    const context: CapabilityContext = {
+    this.ownersByID.set(registration.id, record);
+    const handle: CapabilityOwnerHandle = {
       id: registration.id,
-      contribute: (kind, name, payload) => {
-        if (instance.sealed)
-          throw new CapabilityLoadError(
-            registration.id,
-            `capability "${registration.id}" cannot contribute after unload`,
-          );
-        if (!grants.has(kind))
-          throw new CapabilityLoadError(
-            registration.id,
-            `capability "${registration.id}" contributed ${kind} "${name}" without the "${kind}" grant`,
-          );
-        if (!name)
-          throw new CapabilityLoadError(
-            registration.id,
-            `capability "${registration.id}" contributed a ${kind} with no name`,
-          );
-        const key = contributionKey(kind, name);
-        const existing = this.owners.get(key);
-        if (existing !== undefined && existing === registration.id) {
-          // The same capability refreshing one of its own contributions — a
-          // service re-provided with a new value. The record is replaced in
-          // place, so `contributions()` still reports one effective entry, and
-          // service consumers hear the change.
-          const record = instance.contributions.find(
-            (contribution) =>
-              contribution.kind === kind && contribution.name === name,
-          );
-          if (record) record.payload = payload;
-          if (kind === "services") {
-            this.emitServiceUpdate(name, registration.id, existing);
-            this.wakePending();
-          }
-          return;
-        }
-        if (existing !== undefined) {
-          // Override protocol: the higher precedence wins and replaces, the
-          // equal or lower is refused. The loser's contribution stays on its
-          // instance record so unload still releases it — but only when it is
-          // still the owner.
-          const newPrecedence = registration.precedence ?? 0;
-          const existingPrecedence = this.ownerPrecedence.get(key) ?? 0;
-          if (newPrecedence <= existingPrecedence)
-            throw new CapabilityLoadError(
-              registration.id,
-              `capability "${registration.id}" cannot contribute ${kind} "${name}": already provided by "${existing}" at precedence ${existingPrecedence}`,
-            );
-          this.overrideLog.push({
-            kind,
-            name,
-            winner: registration.id,
-            winnerPrecedence: newPrecedence,
-            loser: existing,
-            loserPrecedence: existingPrecedence,
-          });
-        }
-        this.owners.set(key, registration.id);
-        this.ownerPrecedence.set(key, registration.precedence ?? 0);
-        instance.contributions.push({
-          capabilityID: registration.id,
-          kind,
-          name,
-          payload,
-        });
-        // A service appearing wakes every capability that was waiting for it.
-        if (kind === "services") {
-          this.emitServiceUpdate(name, registration.id, existing);
-          this.wakePending();
-        }
-      },
-      service: <T>(name: string) => this.service<T>(name),
-      onUnload: (fn) => {
-        instance.unloadFns.push(fn);
-      },
+      contribute: (kind, name, payload) =>
+        this.contribute(record, record.token, kind, name, payload),
+      release: () => this.releaseOwner(record, record.token),
     };
-    instance.context = context;
-
-    this.instances.set(registration.id, instance);
-    for (const grant of registration.grants) {
-      const holders = this.byGrant.get(grant) ?? new Set<string>();
-      holders.add(registration.id);
-      this.byGrant.set(grant, holders);
-    }
-
-    // A capability that requires services which are not there yet is held
-    // pending: loaded but not activated. It activates when the last required
-    // service appears (see `wakePending`).
-    const missing = (registration.requires ?? []).filter(
-      (name) => this.service(name) === undefined,
-    );
-    if (missing.length) {
-      this.pending.set(registration.id, { instance, activate });
-      return context;
-    }
-
-    this.activateInstance(instance, context, activate);
-    return context;
+    return Object.freeze(handle);
   }
 
-  /** Runs a stored activation and verifies the declared services were provided. */
-  private activateInstance(
-    instance: CapabilityInstance,
-    context: CapabilityContext,
-    activate: ((context: CapabilityContext) => void) | undefined,
-  ): void {
-    if (activate) {
-      try {
-        activate(context);
-      } catch (error) {
-        this.unload(instance.registration.id);
-        throw error instanceof CapabilityLoadError
-          ? error
-          : new CapabilityLoadError(
-              instance.registration.id,
-              `capability "${instance.registration.id}" failed to activate: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            );
-      }
-    }
-    // A declared service that was never provided is a lie: the capability said
-    // it provides something it does not, so it does not stay loaded.
-    for (const provided of instance.registration.provides ?? []) {
-      if (this.ownerOf("services", provided) !== instance.registration.id) {
-        this.unload(instance.registration.id);
-        throw new CapabilityLoadError(
-          instance.registration.id,
-          `capability "${instance.registration.id}" declared service "${provided}" but did not provide it`,
-        );
-      }
-    }
-  }
-
-  /** Activates every pending capability whose required services now exist. */
-  private wakePending(): void {
-    for (const [id, entry] of [...this.pending]) {
-      const missing = (entry.instance.registration.requires ?? []).filter(
-        (name) => this.service(name) === undefined,
+  private contribute(
+    record: OwnerRecord,
+    token: object,
+    kind: CapabilityGrant,
+    name: string,
+    payload: unknown,
+  ): () => void {
+    this.assertAuthority(record, token);
+    const registration = record.registration;
+    if (!registration.grants.includes(kind))
+      throw new CapabilityLoadError(
+        registration.id,
+        `capability owner "${registration.id}" contributed ${kind} "${name}" without the "${kind}" grant`,
       );
-      if (missing.length) continue;
-      this.pending.delete(id);
-      try {
-        this.activateInstance(
-          entry.instance,
-          entry.instance.context,
-          entry.activate,
+    if (!name)
+      throw new CapabilityLoadError(
+        registration.id,
+        `capability owner "${registration.id}" contributed a ${kind} with no name`,
+      );
+    const key = contributionKey(kind, name);
+    const existing = this.effectiveOwners.get(key);
+    const ownExisting = existing === registration.id;
+    if (existing !== undefined && !ownExisting) {
+      const nextPrecedence = registration.precedence ?? 0;
+      const previousPrecedence = this.effectivePrecedence.get(key) ?? 0;
+      if (nextPrecedence <= previousPrecedence)
+        throw new CapabilityLoadError(
+          registration.id,
+          `capability owner "${registration.id}" cannot contribute ${kind} "${name}": already provided by "${existing}" at precedence ${previousPrecedence}`,
         );
-      } catch {
-        // A pending capability that fails activation (or never provided its
-        // declared services) is removed — a lying capability is absent, not
-        // half-active. The failure is visible as the capability not being
-        // loaded.
-      }
+      this.overrideLog.push({
+        kind,
+        name,
+        winner: registration.id,
+        winnerPrecedence: nextPrecedence,
+        loser: existing,
+        loserPrecedence: previousPrecedence,
+      });
     }
+    const contribution: CapabilityContribution = {
+      capabilityID: registration.id,
+      kind,
+      name,
+      payload,
+    };
+    record.contributions.set(key, contribution);
+    this.effectiveOwners.set(key, registration.id);
+    this.effectivePrecedence.set(key, registration.precedence ?? 0);
+    if (kind === "services")
+      this.emitServiceUpdate(name, registration.id, existing);
+
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (record.released || record.token !== token) return;
+      if (record.contributions.get(key) !== contribution) return;
+      record.contributions.delete(key);
+      if (this.effectiveOwners.get(key) !== registration.id) return;
+      this.effectiveOwners.delete(key);
+      this.effectivePrecedence.delete(key);
+      if (kind === "services") this.emitServiceUpdate(name, undefined);
+    };
+  }
+
+  private releaseOwner(record: OwnerRecord, token: object): void {
+    if (record.released) return;
+    this.assertAuthority(record, token);
+    record.released = true;
+    for (const contribution of record.contributions.values()) {
+      const key = contributionKey(contribution.kind, contribution.name);
+      if (this.effectiveOwners.get(key) !== record.registration.id) continue;
+      this.effectiveOwners.delete(key);
+      this.effectivePrecedence.delete(key);
+      if (contribution.kind === "services")
+        this.emitServiceUpdate(contribution.name, undefined);
+    }
+    record.contributions.clear();
+    this.ownersByID.delete(record.registration.id);
+  }
+
+  private assertAuthority(record: OwnerRecord, token: object): void {
+    if (
+      record.token !== token ||
+      record.released ||
+      this.ownersByID.get(record.registration.id) !== record
+    )
+      throw new CapabilityLoadError(
+        record.registration.id,
+        `capability owner "${record.registration.id}" is released`,
+      );
+  }
+
+  list(): CapabilityRegistration[] {
+    return [...this.ownersByID.values()].map((owner) => owner.registration);
+  }
+
+  has(id: string): boolean {
+    return this.ownersByID.has(id);
+  }
+
+  scopeOf(id: string): CapabilityScope | undefined {
+    return this.ownersByID.get(id)?.registration.scope;
+  }
+
+  withGrant(grant: CapabilityGrant): string[] {
+    return [...this.ownersByID.values()]
+      .filter((owner) => owner.registration.grants.includes(grant))
+      .map((owner) => owner.registration.id);
+  }
+
+  overrides() {
+    return [...this.overrideLog];
+  }
+
+  contributions<T>(kind: CapabilityGrant): Array<CapabilityContribution<T>> {
+    const result: Array<CapabilityContribution<T>> = [];
+    for (const owner of this.ownersByID.values())
+      for (const contribution of owner.contributions.values())
+        if (
+          contribution.kind === kind &&
+          this.effectiveOwners.get(
+            contributionKey(contribution.kind, contribution.name),
+          ) === contribution.capabilityID
+        )
+          result.push(contribution as CapabilityContribution<T>);
+    return result;
+  }
+
+  contribution<T>(kind: CapabilityGrant, name: string): T | undefined {
+    const ownerID = this.ownerOf(kind, name);
+    if (!ownerID) return undefined;
+    return this.ownersByID
+      .get(ownerID)
+      ?.contributions.get(contributionKey(kind, name))?.payload as
+      | T
+      | undefined;
+  }
+
+  ownerOf(kind: CapabilityGrant, name: string): string | undefined {
+    return this.effectiveOwners.get(contributionKey(kind, name));
+  }
+
+  service<T>(name: string): T | undefined {
+    return this.contribution<T>("services", name);
+  }
+
+  services(): string[] {
+    return this.contributions("services").map((entry) => entry.name);
+  }
+
+  onServiceUpdate(listener: (update: ServiceUpdate) => void): () => void {
+    this.serviceListeners.add(listener);
+    return () => this.serviceListeners.delete(listener);
   }
 
   private emitServiceUpdate(
@@ -379,251 +282,14 @@ export class CapabilityRegistry {
   ): void {
     const update: ServiceUpdate = { name, provider };
     if (providerBefore !== undefined) update.providerBefore = providerBefore;
-    for (const listener of this.serviceListeners) {
+    for (const listener of this.serviceListeners)
       try {
         listener(update);
       } catch {
-        // A listener that throws must not break the rest of the notification.
+        // One observer cannot block storage updates or other observers.
       }
-    }
-  }
-
-  /**
-   * Attempts a load and reports why it failed instead of swallowing it. A silent
-   * failure here would leave a consumer believing a capability is present.
-   */
-  tryLoad(
-    registration: CapabilityRegistration,
-    activate?: (context: CapabilityContext) => void,
-  ):
-    | { ok: true; context: CapabilityContext; pending: boolean }
-    | { ok: false; reason: string; error: Error } {
-    try {
-      const context = this.load(registration, activate);
-      return { ok: true, context, pending: this.pending.has(registration.id) };
-    } catch (error) {
-      const wrapped = error instanceof Error ? error : new Error(String(error));
-      return { ok: false, reason: wrapped.message, error: wrapped };
-    }
-  }
-
-  /**
-   * Contributes to an already-loaded capability.
-   *
-   * Activation collects a capability's initial contributions, but some hosts
-   * learn their contributions later — a plugin's tools arrive during its setup,
-   * after the capability that owns them must already be loaded. This is the same
-   * gate the activate context enforces (grant check, sealed check, override
-   * protocol) on the capability's own contribution record, so the timing of the
-   * contribution cannot bypass the kernel's rules.
-   */
-  contribute(
-    capabilityID: string,
-    kind: CapabilityGrant,
-    name: string,
-    payload: unknown,
-  ): void {
-    const instance = this.instances.get(capabilityID);
-    if (!instance)
-      throw new CapabilityLoadError(
-        capabilityID,
-        `cannot contribute to "${capabilityID}": not loaded`,
-      );
-    instance.context.contribute(kind, name, payload);
-  }
-
-  /**
-   * Loads several capabilities, ordering them so dependencies come first and
-   * refusing a cycle rather than deadlocking or picking an arbitrary order.
-   */
-  loadAll(
-    entries: Array<{
-      registration: CapabilityRegistration;
-      activate?: (context: CapabilityContext) => void;
-    }>,
-  ): {
-    loaded: string[];
-    failed: Array<{ id: string; reason: string }>;
-  } {
-    const order = resolveLoadOrder(
-      entries.map((entry) => entry.registration),
-      (id) => this.instances.has(id),
-    );
-    const loaded: string[] = [];
-    const failed = [...order.unresolvable];
-    for (const id of order.order) {
-      const entry = entries.find((item) => item.registration.id === id);
-      if (!entry) continue;
-      const result = this.tryLoad(entry.registration, entry.activate);
-      if (result.ok) loaded.push(id);
-      else failed.push({ id, reason: result.reason });
-    }
-    return { loaded, failed };
-  }
-
-  /**
-   * Unloads a capability, releasing every contribution it made. Dependents are
-   * unloaded first, because leaving a capability whose dependency is gone is the
-   * same broken state as never having loaded it.
-   */
-  unload(id: string): boolean {
-    const instance = this.instances.get(id);
-    if (!instance) return false;
-
-    for (const dependent of this.dependentsOf(id)) this.unload(dependent);
-
-    instance.sealed = true;
-    for (const fn of instance.unloadFns) {
-      try {
-        fn();
-      } catch {
-        // A capability that throws while cleaning up must not prevent the rest of
-        // its contributions from being released.
-      }
-    }
-    for (const contribution of instance.contributions) {
-      const key = contributionKey(contribution.kind, contribution.name);
-      // An overridden contribution's owner is someone else now: unloading the
-      // loser must not delete the winner's record.
-      if (this.owners.get(key) === id) {
-        this.owners.delete(key);
-        this.ownerPrecedence.delete(key);
-        // A service disappearing is a change its consumers need to hear about.
-        if (contribution.kind === "services")
-          this.emitServiceUpdate(contribution.name, undefined);
-      }
-    }
-    this.pending.delete(id);
-    for (const grant of instance.registration.grants)
-      this.byGrant.get(grant)?.delete(id);
-    this.instances.delete(id);
-    return true;
-  }
-
-  /** Unloads every capability, in reverse load order. */
-  unloadAll(): void {
-    for (const id of [...this.instances.keys()].reverse()) this.unload(id);
-  }
-
-  /**
-   * Unloads every capability with this scope. This is what `scope` means
-   * operationally: when a session ends, its session-scoped capabilities and their
-   * contributions are gone.
-   */
-  unloadScope(scope: CapabilityScope): string[] {
-    const ids = [...this.instances.values()]
-      .filter((instance) => instance.registration.scope === scope)
-      .map((instance) => instance.registration.id)
-      .reverse();
-    const unloaded: string[] = [];
-    for (const id of ids) if (this.unload(id)) unloaded.push(id);
-    return unloaded;
-  }
-
-  list(): CapabilityRegistration[] {
-    return [...this.instances.values()].map(
-      (instance) => instance.registration,
-    );
-  }
-
-  has(id: string): boolean {
-    return this.instances.has(id);
-  }
-
-  scopeOf(id: string): CapabilityScope | undefined {
-    return this.instances.get(id)?.registration.scope;
-  }
-
-  /** Capability ids holding a grant. */
-  withGrant(grant: CapabilityGrant): string[] {
-    return [...(this.byGrant.get(grant) ?? [])];
-  }
-
-  /** What replaced what, in order. The runtime surfaces these so overrides stay visible. */
-  overrides() {
-    return [...this.overrideLog];
-  }
-
-  /**
-   * Every *effective* contribution of one kind, typed by the host that knows
-   * the payload. A contribution that lost an override stays on its instance
-   * record (so unload can release it) but is not effective: the winner is the
-   * owner, and only the owner's contribution is returned.
-   */
-  contributions<T>(kind: CapabilityGrant): Array<CapabilityContribution<T>> {
-    const all: Array<CapabilityContribution<T>> = [];
-    for (const instance of this.instances.values()) {
-      for (const contribution of instance.contributions) {
-        if (contribution.kind !== kind) continue;
-        const key = contributionKey(contribution.kind, contribution.name);
-        if (this.owners.get(key) !== contribution.capabilityID) continue;
-        all.push(contribution as CapabilityContribution<T>);
-      }
-    }
-    return all;
-  }
-
-  contribution<T>(kind: CapabilityGrant, name: string): T | undefined {
-    const owner = this.owners.get(contributionKey(kind, name));
-    if (owner === undefined) return undefined;
-    const instance = this.instances.get(owner);
-    const found = instance?.contributions.find(
-      (contribution) =>
-        contribution.kind === kind && contribution.name === name,
-    );
-    return found?.payload as T | undefined;
-  }
-
-  /** Which capability provides a contribution, for diagnostics and audit. */
-  ownerOf(kind: CapabilityGrant, name: string): string | undefined {
-    return this.owners.get(contributionKey(kind, name));
-  }
-
-  /** Resolves a service by name, from the capability currently providing it. */
-  service<T>(name: string): T | undefined {
-    return this.contribution<T>("services", name);
-  }
-
-  /** Every service currently provided, in provider order. */
-  services(): string[] {
-    return this.contributions("services").map(
-      (contribution) => contribution.name,
-    );
-  }
-
-  /**
-   * Subscribes to service changes. Fired when a service appears, is replaced
-   * by a higher-precedence provider, or disappears with its provider. Returns
-   * an unsubscribe function.
-   */
-  onServiceUpdate(listener: (update: ServiceUpdate) => void): () => void {
-    this.serviceListeners.add(listener);
-    return () => {
-      this.serviceListeners.delete(listener);
-    };
-  }
-
-  /** Whether a loaded capability is still waiting for required services. */
-  isPending(id: string): boolean {
-    return this.pending.has(id);
-  }
-
-  private dependentsOf(id: string): string[] {
-    return [...this.instances.values()]
-      .filter((instance) =>
-        (instance.registration.dependencies ?? []).includes(id),
-      )
-      .map((instance) => instance.registration.id);
   }
 }
-
-type HostedCapability = {
-  registration: CapabilityRegistration;
-  cleanup: Array<() => void>;
-  leases: number;
-  unloading: boolean;
-  cleaned: boolean;
-};
 
 export type CapabilityExecutionLease = {
   capabilityIDs: readonly string[];
@@ -646,21 +312,15 @@ export type CapabilityRegistryView = Pick<
 >;
 
 export type CapabilityRegistryHost = CapabilityRegistryView &
-  Pick<CapabilityRegistry, "tryLoad" | "contribute" | "unload" | "isPending">;
+  Pick<CapabilityRegistry, "registerOwner">;
 
-/**
- * Owns one workspace's capability registry and resource lifetime.
- *
- * Registry unload remains the visibility boundary: contributions disappear
- * synchronously. Cleanup registered through this host waits for active execution
- * leases, so a started invocation cannot lose dependency resources halfway
- * through while queued and future invocations already see the capability gone.
- */
-export class CapabilityHost {
+/** Adds execution leases to contribution storage without owning business cleanup. */
+export class CapabilityHost implements CapabilityRegistryHost {
   readonly workspaceRoot?: string;
   private readonly registry = new CapabilityRegistry();
   readonly view: CapabilityRegistryView;
-  private readonly hosted = new Map<string, HostedCapability>();
+  private readonly leases = new Map<string, number>();
+  private readonly handles = new Set<CapabilityOwnerHandle>();
   private disposed = false;
 
   constructor(options: { workspaceRoot?: string } = {}) {
@@ -668,205 +328,111 @@ export class CapabilityHost {
       ? resolve(options.workspaceRoot)
       : undefined;
     this.view = {
-      list: () => this.registry.list(),
-      has: (id) => this.registry.has(id),
-      scopeOf: (id) => this.registry.scopeOf(id),
-      withGrant: (grant) => this.registry.withGrant(grant),
-      overrides: () => this.registry.overrides(),
-      contributions: <T>(kind: CapabilityGrant) =>
-        this.registry.contributions<T>(kind),
+      list: () => this.list(),
+      has: (id) => this.has(id),
+      scopeOf: (id) => this.scopeOf(id),
+      withGrant: (grant) => this.withGrant(grant),
+      overrides: () => this.overrides(),
+      contributions: <T>(kind: CapabilityGrant) => this.contributions<T>(kind),
       contribution: <T>(kind: CapabilityGrant, name: string) =>
-        this.registry.contribution<T>(kind, name),
-      ownerOf: (kind, name) => this.registry.ownerOf(kind, name),
-      service: <T>(name: string) => this.registry.service<T>(name),
-      services: () => this.registry.services(),
-      onServiceUpdate: (listener) => this.registry.onServiceUpdate(listener),
+        this.contribution<T>(kind, name),
+      ownerOf: (kind, name) => this.ownerOf(kind, name),
+      service: <T>(name: string) => this.service<T>(name),
+      services: () => this.services(),
+      onServiceUpdate: (listener) => this.onServiceUpdate(listener),
     };
   }
 
-  load(
-    registration: CapabilityRegistration,
-    activate?: (context: CapabilityContext) => void,
-  ): CapabilityContext {
+  registerOwner(registration: CapabilityRegistration): CapabilityOwnerHandle {
     this.assertActive();
-    if (this.hosted.has(registration.id))
-      throw new CapabilityLoadError(
-        registration.id,
-        `capability "${registration.id}" is already loaded`,
-      );
-    const hosted: HostedCapability = {
-      registration,
-      cleanup: [],
-      leases: 0,
-      unloading: false,
-      cleaned: false,
-    };
-    this.hosted.set(registration.id, hosted);
-    try {
-      return this.registry.load(registration, (context) => {
-        // This callback runs before capability cleanup and is also reached by
-        // dependency-cascade unloads initiated inside the registry.
-        context.onUnload(() => this.onRegistryUnload(registration.id));
-        activate?.({
-          ...context,
-          onUnload: (fn) => {
-            if (hosted.unloading)
-              throw new CapabilityLoadError(
-                registration.id,
-                `capability "${registration.id}" cannot register cleanup after unload`,
-              );
-            hosted.cleanup.push(fn);
-          },
-        });
-      });
-    } catch (error) {
-      if (!hosted.unloading) this.hosted.delete(registration.id);
-      throw error;
-    }
+    const inner = this.registry.registerOwner(registration);
+    let released = false;
+    const handle: CapabilityOwnerHandle = Object.freeze({
+      id: inner.id,
+      contribute: inner.contribute,
+      release: () => {
+        if (released) return;
+        released = true;
+        inner.release();
+        this.handles.delete(handle);
+      },
+    });
+    this.handles.add(handle);
+    return handle;
   }
 
-  tryLoad(
-    registration: CapabilityRegistration,
-    activate?: (context: CapabilityContext) => void,
-  ):
-    | { ok: true; context: CapabilityContext; pending: boolean }
-    | { ok: false; reason: string; error: Error } {
-    try {
-      const context = this.load(registration, activate);
-      return {
-        ok: true,
-        context,
-        pending: this.registry.isPending(registration.id),
-      };
-    } catch (error) {
-      const wrapped = error instanceof Error ? error : new Error(String(error));
-      return { ok: false, reason: wrapped.message, error: wrapped };
-    }
-  }
-
-  unload(id: string): boolean {
-    return this.registry.unload(id);
-  }
-
-  unloadScope(scope: CapabilityScope): string[] {
-    return this.registry.unloadScope(scope);
-  }
-
-  /**
-   * Leases a capability and all of its transitive dependencies atomically.
-   * Every id must still be visible when the lease is acquired.
-   */
   acquireExecutionLease(
     capabilityIDs: string | readonly string[],
   ): CapabilityExecutionLease {
     this.assertActive();
-    const requested =
-      typeof capabilityIDs === "string" ? [capabilityIDs] : capabilityIDs;
+    const requested = [
+      ...new Set(
+        typeof capabilityIDs === "string" ? [capabilityIDs] : capabilityIDs,
+      ),
+    ];
     if (!requested.length)
       throw new CapabilityLoadError("", "capability lease requires an id");
-    const ordered: string[] = [];
-    const visiting = new Set<string>();
-    const collect = (id: string) => {
-      if (ordered.includes(id)) return;
-      const hosted = this.hosted.get(id);
-      if (!hosted || hosted.unloading || !this.registry.has(id))
+    for (const id of requested)
+      if (!this.registry.has(id))
         throw new CapabilityLoadError(
           id,
           `capability "${id}" is not visible for execution`,
         );
-      if (visiting.has(id))
-        throw new CapabilityLoadError(
-          id,
-          `capability "${id}" dependency cycle`,
-        );
-      visiting.add(id);
-      for (const dependency of hosted.registration.dependencies ?? [])
-        collect(dependency);
-      visiting.delete(id);
-      ordered.push(id);
-    };
-    for (const id of requested) collect(id);
-    for (const id of ordered) this.hosted.get(id)!.leases += 1;
-
+    for (const id of requested)
+      this.leases.set(id, (this.leases.get(id) ?? 0) + 1);
     let released = false;
     return {
-      capabilityIDs: [...ordered],
+      capabilityIDs: requested,
       release: () => {
         if (released) return;
         released = true;
-        for (const id of [...ordered].reverse()) {
-          const hosted = this.hosted.get(id);
-          if (!hosted) continue;
-          hosted.leases -= 1;
-          this.finalizeCleanup(id, hosted);
+        for (const id of requested) {
+          const remaining = (this.leases.get(id) ?? 1) - 1;
+          if (remaining) this.leases.set(id, remaining);
+          else this.leases.delete(id);
         }
       },
     };
   }
 
-  /** Immediately hides everything; leased resource cleanup finishes on release. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.registry.unloadAll();
+    for (const handle of [...this.handles].reverse()) handle.release();
   }
 
-  pendingCleanup(): string[] {
-    return [...this.hosted.entries()]
-      .filter(([, hosted]) => hosted.unloading && !hosted.cleaned)
-      .map(([id]) => id);
-  }
-
-  list(): CapabilityRegistration[] {
+  list() {
     return this.registry.list();
   }
-
-  has(id: string): boolean {
+  has(id: string) {
     return this.registry.has(id);
   }
-
-  scopeOf(id: string): CapabilityScope | undefined {
+  scopeOf(id: string) {
     return this.registry.scopeOf(id);
   }
-
-  withGrant(grant: CapabilityGrant): string[] {
+  withGrant(grant: CapabilityGrant) {
     return this.registry.withGrant(grant);
   }
-
-  overrides(): ReturnType<CapabilityRegistry["overrides"]> {
+  overrides() {
     return this.registry.overrides();
   }
-
-  contributions<T>(kind: CapabilityGrant): Array<CapabilityContribution<T>> {
+  contributions<T>(kind: CapabilityGrant) {
     return this.registry.contributions<T>(kind);
   }
-
-  contribution<T>(kind: CapabilityGrant, name: string): T | undefined {
+  contribution<T>(kind: CapabilityGrant, name: string) {
     return this.registry.contribution<T>(kind, name);
   }
-
-  ownerOf(kind: CapabilityGrant, name: string): string | undefined {
+  ownerOf(kind: CapabilityGrant, name: string) {
     return this.registry.ownerOf(kind, name);
   }
-
-  private onRegistryUnload(id: string) {
-    const hosted = this.hosted.get(id);
-    if (!hosted) return;
-    hosted.unloading = true;
-    this.finalizeCleanup(id, hosted);
+  service<T>(name: string) {
+    return this.registry.service<T>(name);
   }
-
-  private finalizeCleanup(id: string, hosted: HostedCapability) {
-    if (!hosted.unloading || hosted.leases || hosted.cleaned) return;
-    hosted.cleaned = true;
-    for (const fn of hosted.cleanup) {
-      try {
-        fn();
-      } catch {
-        // One broken cleanup cannot retain the rest of the capability resources.
-      }
-    }
-    this.hosted.delete(id);
+  services() {
+    return this.registry.services();
+  }
+  onServiceUpdate(listener: (update: ServiceUpdate) => void) {
+    return this.registry.onServiceUpdate(listener);
   }
 
   private assertActive() {
@@ -877,55 +443,4 @@ export class CapabilityHost {
 
 function contributionKey(kind: CapabilityGrant, name: string): string {
   return `${kind}\u0000${name}`;
-}
-
-/**
- * Orders registrations so every dependency precedes its dependents. Entries in a
- * cycle, or depending on something neither present nor already loaded, are
- * reported instead of being loaded in a guessed order.
- */
-export function resolveLoadOrder(
-  registrations: CapabilityRegistration[],
-  isLoaded: (id: string) => boolean = () => false,
-): { order: string[]; unresolvable: Array<{ id: string; reason: string }> } {
-  const pending = new Map(
-    registrations.map((registration) => [registration.id, registration]),
-  );
-  const order: string[] = [];
-  const unresolvable: Array<{ id: string; reason: string }> = [];
-  const placed = new Set<string>();
-
-  for (const registration of registrations) {
-    for (const dependency of registration.dependencies ?? []) {
-      if (!pending.has(dependency) && !isLoaded(dependency))
-        unresolvable.push({
-          id: registration.id,
-          reason: `requires "${dependency}", which is not available`,
-        });
-    }
-  }
-  const blocked = new Set(unresolvable.map((entry) => entry.id));
-
-  let progressed = true;
-  while (progressed) {
-    progressed = false;
-    for (const [id, registration] of pending) {
-      if (placed.has(id) || blocked.has(id)) continue;
-      const ready = (registration.dependencies ?? []).every(
-        (dependency) =>
-          placed.has(dependency) ||
-          isLoaded(dependency) ||
-          !pending.has(dependency),
-      );
-      if (!ready) continue;
-      placed.add(id);
-      order.push(id);
-      progressed = true;
-    }
-  }
-  for (const id of pending.keys()) {
-    if (placed.has(id) || blocked.has(id)) continue;
-    unresolvable.push({ id, reason: "dependency cycle" });
-  }
-  return { order, unresolvable };
 }

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import type { LocalAttachment, RuntimeEvent } from "@natalia/contracts";
 import { createPluginRegistry } from "@natalia/plugin";
+import { CONTEXT_LEDGER_FACTORY_SERVICE } from "@natalia/runtime-services";
 import {
-  CONTEXT_LEDGER_FACTORY_SERVICE,
   CONTEXT_LEDGER_PLUGIN_ID,
   createContextLedgerFactory,
   createContextLedgerPlugin,
@@ -107,10 +107,13 @@ test("context ledger service is absent after plugin unload", async () => {
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
 

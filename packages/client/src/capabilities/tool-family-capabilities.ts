@@ -329,14 +329,6 @@ export function toolFamilyRegistration(
     description: family.description,
     scope: family.scope,
     grants: ["tools"],
-    // A family's dependencies are the capabilities of the families it names, so
-    // the kernel refuses the load when one of them is missing — a disabled
-    // dependency is a missing capability, and the failure says so.
-    ...(family.dependencies?.length
-      ? {
-          dependencies: family.dependencies.map(toolFamilyCapabilityID),
-        }
-      : {}),
   };
 }
 
@@ -345,6 +337,11 @@ export type ToolFamilyLoadOutcome = {
   loaded: Array<{ registration: CapabilityRegistration; tools: string[] }>;
   failed: Array<{ id: string; reason: string }>;
 };
+
+const legacyToolFamilyOwners = new WeakMap<
+  CapabilityRegistryHost,
+  Map<string, import("@natalia/capability").CapabilityOwnerHandle>
+>();
 
 /**
  * Loads every built-in family into the kernel. A family that fails to load says
@@ -363,12 +360,20 @@ export function registerToolFamilyCapabilities(
   const failed: ToolFamilyLoadOutcome["failed"] = [];
   for (const family of orderedFamilies(families)) {
     const registration = toolFamilyRegistration(family);
-    const result = registry.tryLoad(registration, (capability) => {
+    let owner: import("@natalia/capability").CapabilityOwnerHandle | undefined;
+    try {
+      owner = registry.registerOwner(registration);
       for (const tool of family.tools)
-        capability.contribute("tools", tool.name, tool);
-    });
-    if (!result.ok) {
-      failed.push({ id: registration.id, reason: result.reason });
+        owner.contribute("tools", tool.name, tool);
+      const owners = legacyToolFamilyOwners.get(registry) ?? new Map();
+      owners.set(registration.id, owner);
+      legacyToolFamilyOwners.set(registry, owners);
+    } catch (error) {
+      owner?.release();
+      failed.push({
+        id: registration.id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
       continue;
     }
     loaded.push({
@@ -431,11 +436,19 @@ export function applyToolFamilyEnabledFilter(input: {
       .map((family) => family.id),
   );
   for (const family of input.families)
-    if (!enabledIDs.has(family.id))
-      input.registry.unload(toolFamilyCapabilityID(family.id));
-  // The kernel cascades an unload to dependents, so a family can be gone even
-  // though it was not itself disabled. What is actually loaded decides what
-  // stays in the executor registry.
+    if (!enabledIDs.has(family.id)) {
+      const id = toolFamilyCapabilityID(family.id);
+      legacyToolFamilyOwners.get(input.registry)?.get(id)?.release();
+      legacyToolFamilyOwners.get(input.registry)?.delete(id);
+    }
+  // Dependency policy belongs to this actual host, not contribution storage.
+  for (const family of input.families) {
+    if (!enabledIDs.has(family.id)) continue;
+    if ((family.dependencies ?? []).every((id) => enabledIDs.has(id))) continue;
+    const id = toolFamilyCapabilityID(family.id);
+    legacyToolFamilyOwners.get(input.registry)?.get(id)?.release();
+    legacyToolFamilyOwners.get(input.registry)?.delete(id);
+  }
   const loadedIDs = new Set(
     input.families
       .filter((family) => input.registry.has(toolFamilyCapabilityID(family.id)))

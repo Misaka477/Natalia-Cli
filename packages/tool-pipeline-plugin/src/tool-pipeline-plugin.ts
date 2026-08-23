@@ -14,16 +14,16 @@
  */
 import type { Plugin } from "@natalia/plugin";
 import {
+  commandTextForTool,
   createToolPolicyHookLayer,
   evaluatePermissionRules,
+  ToolExecutionPipeline,
   workspaceWritePathForTool,
   workspaceWritePathsForTool,
-  commandTextForTool,
-} from "./tool-policy";
+} from "@natalia/tools";
+import { TOOL_POLICY_SERVICE } from "@natalia/runtime-services";
 
 export const TOOL_PIPELINE_PLUGIN_ID = "natalia-tool-pipeline";
-export const TOOL_POLICY_SERVICE = "tool.policy";
-
 export function createToolPipelinePlugin(): Plugin {
   return {
     manifest: {
@@ -44,6 +44,7 @@ export function createToolPipelinePlugin(): Plugin {
     },
     setup(api) {
       api.services.provide(TOOL_POLICY_SERVICE, {
+        createExecutionPipeline: () => new ToolExecutionPipeline(),
         createHookLayer: createToolPolicyHookLayer,
         evaluatePermissionRules,
         workspaceWritePathForTool,

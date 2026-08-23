@@ -7,3 +7,4 @@ export * from "./setup";
 export * from "./service";
 export * from "./trust";
 export * from "./tui-config";
+export * from "./config-applied";

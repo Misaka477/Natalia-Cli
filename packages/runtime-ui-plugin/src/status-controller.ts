@@ -1,13 +1,9 @@
 import type { RuntimeEvent } from "@natalia/contracts";
-
-export type StatusProvider = {
-  provider: string;
-  model: string;
-};
-
-export type StatusContextLedger = {
-  journalStatus(): { tokenEstimate: number; messageCount: number };
-};
+import type {
+  StatusContextLedger,
+  StatusProvider,
+  StatusSnapshotController,
+} from "@natalia/runtime-services";
 
 export type RuntimeUiPluginInput = {
   provider(): StatusProvider | undefined;
@@ -18,7 +14,9 @@ export type RuntimeUiPluginInput = {
   publish(event: RuntimeEvent): void;
 };
 
-export function createStatusSnapshotController(input: RuntimeUiPluginInput) {
+export function createStatusSnapshotController(
+  input: RuntimeUiPluginInput,
+): StatusSnapshotController {
   let refreshQueued = false;
   let disposed = false;
 
@@ -72,10 +70,6 @@ export function createStatusSnapshotController(input: RuntimeUiPluginInput) {
     },
   };
 }
-
-export type StatusSnapshotController = ReturnType<
-  typeof createStatusSnapshotController
->;
 
 export function statusSnapshot(
   provider: StatusProvider | undefined,

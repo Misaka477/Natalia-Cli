@@ -18,6 +18,20 @@ import { CapabilityHost } from "@natalia/capability";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
 import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
 import { configV3Schema } from "@natalia/contracts";
+import {
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  type TaskWorkflowService,
+} from "@natalia/runtime-services";
+
+async function taskWorkflowService(
+  runtime: ReturnType<typeof createRealRuntimeClient>,
+) {
+  const service = await runtime.service<TaskWorkflowService>(
+    TASK_WORKFLOW_CONTROLLER_SERVICE,
+  );
+  if (!service) throw new Error("task workflow service unavailable");
+  return service;
+}
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
   const channel = new MessageChannel();
@@ -573,41 +587,37 @@ test("the worker channel routes workflow management catalogs", async () => {
 test("the worker streams capability task execution", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-worker-workflow-run-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
-  capabilities.load(
-    {
-      id: "doctor",
-      name: "Doctor",
-      version: "1",
-      scope: "workspace",
-      grants: ["workflows"],
-    },
-    (capability) => {
-      capability.contribute("workflows", "doctor-flow", {
-        kind: "natalia-flow",
-        version: 1,
-        flowID: "flow_doctor",
-        displayName: "Doctor flow",
-        modules: [
-          {
-            id: "read",
-            type: "read_search",
-            displayName: "Read",
-            minimumConditions: [{ id: "checked", text: "Run doctor" }],
-          },
-        ],
-      });
-      capability.contribute("workflows", "doctor-task", {
-        kind: "natalia-task",
-        version: 1,
-        taskID: "task_doctor",
-        displayName: "Doctor task",
-        schedule: "manual",
-        prompt: "/doctor",
-        permissionProfile: "auto",
-        flow: { flowID: "flow_doctor" },
-      });
-    },
-  );
+  const doctorOwner = capabilities.registerOwner({
+    id: "doctor",
+    name: "Doctor",
+    version: "1",
+    scope: "workspace",
+    grants: ["workflows"],
+  });
+  doctorOwner.contribute("workflows", "doctor-flow", {
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_doctor",
+    displayName: "Doctor flow",
+    modules: [
+      {
+        id: "read",
+        type: "read_search",
+        displayName: "Read",
+        minimumConditions: [{ id: "checked", text: "Run doctor" }],
+      },
+    ],
+  });
+  doctorOwner.contribute("workflows", "doctor-task", {
+    kind: "natalia-task",
+    version: 1,
+    taskID: "task_doctor",
+    displayName: "Doctor task",
+    schedule: "manual",
+    prompt: "/doctor",
+    permissionProfile: "auto",
+    flow: { flowID: "flow_doctor" },
+  });
   const createRuntime = () =>
     createRealRuntimeClient({
       workspaceRoot: root,
@@ -618,10 +628,12 @@ test("the worker streams capability task execution", async () => {
   const schedulerHost = await createWorkflowSchedulerPluginHost();
   let client: ReturnType<typeof createWorkerRuntimeClient> | undefined;
   try {
-    attachRuntimeClientWorker(channel.port1, createRuntime(), {
+    const runtime = createRuntime();
+    attachRuntimeClientWorker(channel.port1, runtime, {
       reload: createRuntime,
       workflowExecution: new CapabilityExecutionHost(capabilities, {
         scheduler: schedulerHost.scheduler,
+        taskWorkflowService: await taskWorkflowService(runtime),
       }),
       workflowConfig: async () => configV3Schema.parse({ version: 3 }),
     });
@@ -689,19 +701,17 @@ test("worker cancellation is retained while workflow config is resolving", async
   const schedulerHost = await createWorkflowSchedulerPluginHost();
   let client: ReturnType<typeof createWorkerRuntimeClient> | undefined;
   try {
-    attachRuntimeClientWorker(
-      channel.port1,
-      createRealRuntimeClient({ workspaceRoot: root }),
-      {
-        workflowExecution: new CapabilityExecutionHost(capabilities, {
-          scheduler: schedulerHost.scheduler,
-        }),
-        workflowConfig: async () => {
-          await configReady;
-          return configV3Schema.parse({ version: 3 });
-        },
+    const runtime = createRealRuntimeClient({ workspaceRoot: root });
+    attachRuntimeClientWorker(channel.port1, runtime, {
+      workflowExecution: new CapabilityExecutionHost(capabilities, {
+        scheduler: schedulerHost.scheduler,
+        taskWorkflowService: await taskWorkflowService(runtime),
+      }),
+      workflowConfig: async () => {
+        await configReady;
+        return configV3Schema.parse({ version: 3 });
       },
-    );
+    });
     client = createWorkerRuntimeClient(channel.port2);
     client.start(() => undefined);
     const handle = client.runWorkflowTask({
@@ -739,19 +749,17 @@ test("worker disposal prevents workflow admission after config resolution", asyn
     const configReady = new Promise<void>(
       (resolve) => (resolveConfig = resolve),
     );
-    attachRuntimeClientWorker(
-      channel.port1,
-      createRealRuntimeClient({ workspaceRoot: root }),
-      {
-        workflowExecution: new CapabilityExecutionHost(capabilities, {
-          scheduler,
-        }),
-        workflowConfig: async () => {
-          await configReady;
-          return configV3Schema.parse({ version: 3 });
-        },
+    const runtime = createRealRuntimeClient({ workspaceRoot: root });
+    attachRuntimeClientWorker(channel.port1, runtime, {
+      workflowExecution: new CapabilityExecutionHost(capabilities, {
+        scheduler,
+        taskWorkflowService: await taskWorkflowService(runtime),
+      }),
+      workflowConfig: async () => {
+        await configReady;
+        return configV3Schema.parse({ version: 3 });
       },
-    );
+    });
     client = createWorkerRuntimeClient(channel.port2);
     client.start(() => undefined);
     const handle = client.runWorkflowTask({
@@ -775,26 +783,23 @@ test("worker disposal prevents workflow admission after config resolution", asyn
 test("a host-owned workflow contribution survives runtime replacement", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-worker-workflow-reload-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
-  capabilities.load(
-    {
-      id: "review",
-      name: "Review",
-      version: "1",
-      scope: "workspace",
-      grants: ["workflows"],
-    },
-    (capability) =>
-      capability.contribute("workflows", "review-task", {
-        kind: "natalia-task",
-        version: 1,
-        taskID: "task_review",
-        displayName: "Review task",
-        schedule: "manual",
-        prompt: "Review.",
-        permissionProfile: "auto",
-        flow: { flowID: "flow_missing" },
-      }),
-  );
+  const reviewOwner = capabilities.registerOwner({
+    id: "review",
+    name: "Review",
+    version: "1",
+    scope: "workspace",
+    grants: ["workflows"],
+  });
+  reviewOwner.contribute("workflows", "review-task", {
+    kind: "natalia-task",
+    version: 1,
+    taskID: "task_review",
+    displayName: "Review task",
+    schedule: "manual",
+    prompt: "Review.",
+    permissionProfile: "auto",
+    flow: { flowID: "flow_missing" },
+  });
   const first = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_host_reload",
@@ -818,20 +823,16 @@ test("a host-owned workflow contribution survives runtime replacement", async ()
   await replacement.dispose?.();
 });
 
-test("worker teardown disposes the workspace capability host once", async () => {
+test("worker teardown releases workspace capability storage once", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-worker-host-dispose-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
-  const cleaned: string[] = [];
-  capabilities.load(
-    {
-      id: "review",
-      name: "Review",
-      version: "1",
-      scope: "workspace",
-      grants: [],
-    },
-    (capability) => capability.onUnload(() => cleaned.push("review")),
-  );
+  capabilities.registerOwner({
+    id: "review",
+    name: "Review",
+    version: "1",
+    scope: "workspace",
+    grants: [],
+  });
   const channel = new MessageChannel();
   attachRuntimeClientWorker(
     channel.port1,
@@ -842,7 +843,7 @@ test("worker teardown disposes the workspace capability host once", async () => 
   client.start(() => undefined);
 
   await client.dispose?.();
-  expect(cleaned).toEqual(["review"]);
+  expect(capabilities.has("review")).toBe(false);
 });
 
 test("the worker channel routes the sandbox, agent-select and fork surface", async () => {

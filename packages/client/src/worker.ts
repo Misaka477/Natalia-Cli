@@ -10,10 +10,11 @@ import type {
 } from "@natalia/contracts";
 import type { CapabilityExecutionHost } from "./capability-execution-host";
 import type { TaskRunResult } from "./task-controller";
-import type {
-  WorkflowExecutionEvent,
-  WorkflowExecutionHandle,
-} from "@natalia/workflow-scheduler-plugin";
+import {
+  WorkflowExecutionEventStream,
+  type WorkflowExecutionEvent,
+  type WorkflowExecutionHandle,
+} from "@natalia/workflow";
 
 /**
  * The worker channel's route table, mirroring `handleWorkerRequest` below.
@@ -276,7 +277,7 @@ export function createWorkerRuntimeClient(
   >();
   let sequence = 0;
   let sink: ((event: RuntimeEvent) => void) | undefined;
-  const workflowStreams = new Map<string, WorkerExecutionEventStream>();
+  const workflowStreams = new Map<string, WorkflowExecutionEventStream>();
   const onMessage = (event: MessageEvent<unknown>) => {
     const message = event.data as
       | WorkerResponse
@@ -367,7 +368,7 @@ export function createWorkerRuntimeClient(
     },
     runWorkflowTask(input) {
       const executionID = `exe_${crypto.randomUUID().replace(/-/gu, "")}`;
-      const events = new WorkerExecutionEventStream();
+      const events = new WorkflowExecutionEventStream();
       workflowStreams.set(executionID, events);
       const result = request("workflow.run", {
         ...input,
@@ -991,42 +992,6 @@ export function attachRuntimeClientWorker(
     }
   });
   port.start?.();
-}
-
-class WorkerExecutionEventStream
-  implements AsyncIterable<WorkflowExecutionEvent>
-{
-  private readonly buffered: WorkflowExecutionEvent[] = [];
-  private readonly waiting: Array<
-    (value: IteratorResult<WorkflowExecutionEvent>) => void
-  > = [];
-  private closed = false;
-
-  publish(event: WorkflowExecutionEvent) {
-    if (this.closed) return;
-    const next = this.waiting.shift();
-    if (next) next({ done: false, value: event });
-    else this.buffered.push(event);
-  }
-
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    for (const next of this.waiting.splice(0))
-      next({ done: true, value: undefined });
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<WorkflowExecutionEvent> {
-    return {
-      next: () => {
-        const event = this.buffered.shift();
-        if (event) return Promise.resolve({ done: false, value: event });
-        if (this.closed)
-          return Promise.resolve({ done: true, value: undefined });
-        return new Promise((resolveNext) => this.waiting.push(resolveNext));
-      },
-    };
-  }
 }
 
 export async function handleWorkerRequest(

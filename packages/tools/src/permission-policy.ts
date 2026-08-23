@@ -1,16 +1,20 @@
 import { isAbsolute, normalize, relative, resolve } from "node:path";
-import { parseUnifiedPatch } from "@natalia/tools";
+import { createToolPolicyHookLayer } from "./tool-policy";
 import {
   commandHasPrefix,
   parseBashCommandRule,
   parseBashSimpleCommand,
-  type BashCommandRule,
 } from "./bash-command-policy";
-
-export type ToolPolicy = {
-  allow?: string[];
-  exclude?: string[];
-};
+import { parseUnifiedPatch } from "./unified-patch";
+import type {
+  ToolHookEvent,
+  ToolHookResult,
+  ToolHooks,
+  ToolPolicy,
+  ToolPolicyHookLayer,
+} from "./tool-policy";
+export { createToolPolicyHookLayer } from "./tool-policy";
+import type { BashCommandRule } from "./bash-command-policy";
 
 export type ResourceRule = {
   pattern: string;
@@ -50,90 +54,6 @@ export type TerminalCommandBufferResult = PermissionCheck & {
 };
 
 const TERMINAL_COMMAND_BUFFER_LIMIT = 16 * 1024;
-
-export type ToolHookEvent = {
-  turnID: string;
-  toolName: string;
-  toolCallID: string;
-  arguments: string;
-};
-
-export type ToolHookResult = {
-  allowed: boolean;
-  diagnostics: string[];
-  clearTerminal?: boolean;
-};
-
-export type ToolHooks = {
-  preExecute?: (
-    event: ToolHookEvent,
-  ) => ToolHookResult | Promise<ToolHookResult>;
-  postExecute?: (
-    event: ToolHookEvent & { result?: string; error?: string },
-  ) => void | Promise<void>;
-};
-
-export type ToolPolicyHookLayer = {
-  isToolAllowed(toolName: string): boolean;
-  filterTools<T extends { name: string }>(tools: T[]): T[];
-  preExecute(event: ToolHookEvent): Promise<ToolHookResult>;
-  postExecute(
-    event: ToolHookEvent & { result?: string; error?: string },
-  ): Promise<void>;
-};
-
-export function createToolPolicyHookLayer(
-  policy?: ToolPolicy,
-  hooks?: ToolHooks,
-): ToolPolicyHookLayer {
-  const allowPatterns = compilePatterns(policy?.allow);
-  const excludePatterns = compilePatterns(policy?.exclude);
-
-  function isToolAllowed(toolName: string): boolean {
-    if (
-      allowPatterns.length > 0 &&
-      !allowPatterns.some((p) => p.test(toolName))
-    )
-      return false;
-    if (excludePatterns.some((p) => p.test(toolName))) return false;
-    return true;
-  }
-
-  function filterTools<T extends { name: string }>(tools: T[]): T[] {
-    return tools.filter((t) => isToolAllowed(t.name));
-  }
-
-  async function preExecute(event: ToolHookEvent): Promise<ToolHookResult> {
-    const diagnostics: string[] = [];
-    if (!isToolAllowed(event.toolName)) {
-      diagnostics.push(`blocked by policy: ${event.toolName}`);
-      return { allowed: false, diagnostics };
-    }
-    if (hooks?.preExecute) {
-      const result = await hooks.preExecute(event);
-      if (result) {
-        diagnostics.push(...result.diagnostics);
-        if (!result.allowed)
-          return {
-            allowed: false,
-            diagnostics,
-            clearTerminal: result.clearTerminal,
-          };
-      }
-    }
-    return { allowed: true, diagnostics };
-  }
-
-  async function postExecute(
-    event: ToolHookEvent & { result?: string; error?: string },
-  ): Promise<void> {
-    if (hooks?.postExecute) {
-      await hooks.postExecute(event);
-    }
-  }
-
-  return { isToolAllowed, filterTools, preExecute, postExecute };
-}
 
 export type PermissionCheck = {
   allowed: boolean;
@@ -953,11 +873,3 @@ function compilePatterns(patterns?: string[]): RegExp[] {
     return new RegExp(`^${escaped}$`, "u");
   });
 }
-
-export type ToolPolicyService = {
-  createHookLayer: typeof createToolPolicyHookLayer;
-  evaluatePermissionRules: typeof evaluatePermissionRules;
-  workspaceWritePathForTool: typeof workspaceWritePathForTool;
-  workspaceWritePathsForTool: typeof workspaceWritePathsForTool;
-  commandTextForTool: typeof commandTextForTool;
-};

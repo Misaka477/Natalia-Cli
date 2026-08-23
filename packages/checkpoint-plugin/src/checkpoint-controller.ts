@@ -8,29 +8,11 @@ import {
   CheckpointStore,
   type DurableContextCheckpoint,
 } from "@natalia/runtime";
-
-export type CheckpointSubagents = {
-  list(): Array<{
-    id: string;
-    task: string;
-    status: string;
-  }>;
-  stop(id: string): unknown;
-};
-
-export type CheckpointWorkLedger = {
-  checkpointNode(input: {
-    checkpointID: string;
-    reason: string;
-    sessionID: SessionID;
-    turnID?: string;
-  }): RuntimeEvent;
-  rollbackCheckpointEdge(input: {
-    checkpointID: string;
-    safetyCheckpointID: string;
-    sessionID: SessionID;
-  }): RuntimeEvent;
-};
+import type {
+  CheckpointController,
+  CheckpointSubagents,
+  CheckpointWorkLedger,
+} from "@natalia/runtime-services";
 
 /** Owns one session's durable checkpoint store and rollback policy. */
 export function createCheckpointController(input: {
@@ -43,7 +25,7 @@ export function createCheckpointController(input: {
   subagents(): CheckpointSubagents | undefined;
   activeAbort(): AbortController | undefined;
   workLedger(): CheckpointWorkLedger;
-}) {
+}): CheckpointController {
   let store: CheckpointStore | undefined;
 
   async function init() {
@@ -153,19 +135,3 @@ export function createCheckpointController(input: {
 
   return { init, get, isEnabled, resources, rollbackOptions };
 }
-
-export type CheckpointController = ReturnType<
-  typeof createCheckpointController
->;
-
-/** Per-session accessors supplied when the plugin factory creates a controller. */
-export type CheckpointControllerAccessors = {
-  sessionID(): SessionID;
-  checkpoint(): ConfigV3["checkpoint"] | undefined;
-  workspace(): ConfigV3["workspace"] | undefined;
-  publish(event: RuntimeEvent): void;
-  context(): import("@natalia/runtime").ContextLedger;
-  subagents(): CheckpointSubagents | undefined;
-  activeAbort(): AbortController | undefined;
-  workLedger(): CheckpointWorkLedger;
-};

@@ -18,7 +18,6 @@ test("workflow scheduler host owns and disposes the process service", async () =
   expect(WORKFLOW_SCHEDULER_PLUGIN_ID).toBe("natalia-workflow-scheduler");
   expect(WORKFLOW_SCHEDULER_SERVICE).toBe("workflow-execution.scheduler");
   expect(capabilities.has(WORKFLOW_SCHEDULER_PLUGIN_ID)).toBe(true);
-  expect(capabilities.isPending(WORKFLOW_SCHEDULER_PLUGIN_ID)).toBe(false);
   expect(capabilities.service<unknown>(WORKFLOW_SCHEDULER_SERVICE)).toBe(
     host.scheduler,
   );
@@ -37,7 +36,7 @@ test("workflow scheduler host owns and disposes the process service", async () =
 
 test("workflow scheduler host fails before plugin setup when capability loading fails", async () => {
   const capabilities = new CapabilityRegistry();
-  capabilities.load({
+  capabilities.registerOwner({
     id: WORKFLOW_SCHEDULER_PLUGIN_ID,
     name: "Existing owner",
     version: "1.0.0",
@@ -47,15 +46,23 @@ test("workflow scheduler host fails before plugin setup when capability loading 
 
   await expect(
     createWorkflowSchedulerPluginHost({}, { capabilityRegistry: capabilities }),
-  ).rejects.toThrow("workflow scheduler capability failed to load");
+  ).rejects.toThrow("already registered");
   expect(capabilities.has(WORKFLOW_SCHEDULER_PLUGIN_ID)).toBe(true);
   expect(capabilities.service(WORKFLOW_SCHEDULER_SERVICE)).toBeUndefined();
 });
 
 test("workflow scheduler host rolls back capability ownership when contribution fails", async () => {
   class RefusingCapabilityRegistry extends CapabilityRegistry {
-    override contribute(): void {
-      throw new Error("service contribution refused");
+    override registerOwner(
+      registration: Parameters<CapabilityRegistry["registerOwner"]>[0],
+    ) {
+      const owner = super.registerOwner(registration);
+      return {
+        ...owner,
+        contribute(): () => void {
+          throw new Error("service contribution refused");
+        },
+      };
     }
   }
   const capabilities = new RefusingCapabilityRegistry();

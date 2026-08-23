@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { buildMailboxQueued, buildMailboxStatus } from "../src/mailbox-ledger";
+import {
+  buildMailboxQueued,
+  buildMailboxStatus,
+} from "@natalia/runtime-services";
 
 test("buildMailboxQueued carries the durable intent fact", () => {
   const event = buildMailboxQueued({

@@ -1,8 +1,11 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  findBuiltinCatalogOwnershipViolation,
   findClientClosureViolation,
   findClientProductDependencyViolation,
+  findClientServiceContractViolation,
+  findClientPluginSurfaceViolation,
   findClientToolDependencyViolation,
   findForbiddenRepositoryPathViolation,
   findMigratedPluginViolations,
@@ -147,6 +150,74 @@ const forbiddenDeepImports = [
   /from\s+["'](?:\.\.\/){2,}packages\//u,
 ];
 
+/**
+ * Architecture convergence plan §3.5 gates.
+ *
+ * Line limit: a `src` file over `maxSourceLines` fails unless it is listed in
+ * `lineLimitExemptions`. The list holds only legacy god files with their
+ * convergence reason; new files are subject to the limit immediately. A legacy
+ * file must shrink or disappear as its planned refactor lands.
+ *
+ * Runtime module coupling: `packages/client/src/runtime/` modules may only talk
+ * to each other through `RuntimeContext` (`context`). A relative import that
+ * stays inside the runtime directory and does not name `context` is a direct
+ * cross-module reference and fails.
+ */
+const maxSourceLines = 400;
+const lineLimitExemptions = new Map<string, string>([
+  ["packages/client/src/real-runtime.ts", "convergence §3: split into runtime/ modules, removed in phase 1"],
+  ["packages/client/src/worker.ts", "legacy transport worker, not part of phase 1"],
+  ["packages/client/src/fixture.ts", "test fixture only"],
+  ["packages/client/src/plugins-controller.ts", "legacy plugin host, phase 2 of convergence"],
+  ["packages/client/src/capabilities/tool-family-capabilities.ts", "legacy capability factory, phase 2"],
+  ["packages/plugin/src/index.ts", "legacy plugin registry, phase 2 of convergence"],
+  ["packages/capability/src/index.ts", "legacy kernel, out of phase 1 scope"],
+  ["packages/builtin-plugins/src/index.ts", "legacy builtin catalog, phase 2 of convergence"],
+  ["packages/runtime/src/provider.ts", "legacy provider seam"],
+  ["packages/runtime/src/checkpoint.ts", "legacy checkpoint seam"],
+  ["packages/runtime-services/src/services.ts", "service port definitions"],
+  ["packages/provider-model-plugin/src/provider-runner.ts", "legacy provider runner"],
+  ["packages/native-terminal/src/index.ts", "native bindings"],
+  ["packages/contracts/src/events.ts", "generated event vocabulary"],
+  ["packages/contracts/src/schemas.ts", "config schemas"],
+  ["packages/contracts/src/refusals.ts", "refusal vocabulary"],
+  ["packages/contracts/src/capabilities.ts", "capability classification"],
+  ["packages/config/src/service.ts", "config service"],
+  ["packages/session/src/sqlite-store.ts", "sqlite store"],
+  ["packages/session/src/projector.ts", "session projector"],
+  ["packages/sdk/src/index.ts", "SDK client surface"],
+  ["packages/transport/src/rpc.ts", "RPC protocol"],
+  ["packages/transport/src/http.ts", "HTTP transport"],
+  ["packages/tools/src/types.ts", "tool types"],
+  ["packages/tools/src/permission-policy.ts", "permission policy"],
+  ["packages/platform/src/index.ts", "platform ports"],
+  ["packages/platform/src/workspace-files.ts", "workspace files API"],
+  ["packages/sandbox/src/workspace-manager.ts", "sandbox manager"],
+  ["packages/subagent/src/registry.ts", "subagent registry"],
+  ["packages/skills-plugin/src/skills.ts", "skills implementation"],
+  ["packages/session-store-plugin/src/session-store-controller.ts", "session store controller"],
+  ["packages/mcp-plugin/src/mcp-runtime.ts", "MCP runtime"],
+  ["packages/collaboration-plugin/src/interactive-waiter.ts", "interactive waiter"],
+  ["packages/task-workflow-plugin/src/task-execution-service.ts", "task execution service"],
+  ["packages/workflow/src/natalia-task-state-store.ts", "task state store"],
+  ["packages/workflow/src/natalia-task-alert-queue.ts", "task alert queue"],
+  ["packages/workflow/src/systemd-adapter.ts", "systemd adapter"],
+  ["packages/workflow-scheduler-plugin/src/workflow-execution-scheduler.ts", "scheduler"],
+  ["packages/view-store/src/state.ts", "view store state"],
+  ["packages/view-store/src/conversation.ts", "conversation view"],
+  ["packages/ui-model/src/tools.ts", "tool UI model"],
+  ["packages/tool-web/src/index.ts", "web tools"],
+  ["packages/tool-terminal/src/index.ts", "terminal tools"],
+  ["packages/tool-sandbox/src/index.ts", "sandbox tools"],
+  ["packages/tool-process/src/index.ts", "process tools"],
+  ["packages/tool-agent/src/index.ts", "agent tools"],
+  ["packages/testing/src/migrated-plugin-rules.ts", "import guard rules"],
+  ["apps/cli/src/index.ts", "CLI entry"],
+  ["apps/cli/src/command-dispatcher.ts", "CLI command dispatcher"],
+  ["apps/tui/src/keymap.ts", "TUI keymap"],
+]);
+const runtimeModuleRoots = ["packages/client/src/runtime"];
+
 const failures: string[] = [];
 for (const dir of dependencyGuarded)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
@@ -214,6 +285,24 @@ for (const dir of productionRoots)
       findForbiddenRepositoryPathViolation(relative);
     if (forbiddenPathViolation)
       failures.push(`${full}: ${forbiddenPathViolation}`);
+    const catalogOwnershipViolation = findBuiltinCatalogOwnershipViolation(
+      relative,
+      text,
+    );
+    if (catalogOwnershipViolation)
+      failures.push(`${full}: ${catalogOwnershipViolation}`);
+    const serviceContractViolation = findClientServiceContractViolation(
+      relative,
+      text,
+    );
+    if (serviceContractViolation)
+      failures.push(`${full}: ${serviceContractViolation}`);
+    const clientPluginSurfaceViolation = findClientPluginSurfaceViolation(
+      relative,
+      text,
+    );
+    if (clientPluginSurfaceViolation)
+      failures.push(`${full}: ${clientPluginSurfaceViolation}`);
     const clientToolViolation = findClientToolDependencyViolation(
       relative,
       text,
@@ -243,8 +332,62 @@ for (const dir of productionRoots)
   });
 
 /**
+ * Line limit: every shipped `src` TypeScript file stays within the bound unless
+ * it has an explicit convergence exemption. New files have no exemption, so a
+ * module that exceeds the limit fails immediately.
+ */
+for (const dir of productionRoots)
+  await scan(join(root, dir), /\.ts$/u, (full, text) => {
+    const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+    if (!relative.includes("/src/") || relative.includes("/test/")) return;
+    const reason = lineLimitExemptions.get(relative);
+    const lines = text.split("\n").length;
+    if (lines > maxSourceLines && reason === undefined)
+      failures.push(
+        `${relative}: ${lines} lines exceeds the ${maxSourceLines}-line source limit; split into bounded modules`,
+      );
+  });
+
+/**
+ * Runtime module coupling: modules under `packages/client/src/runtime/` talk to
+ * each other only through `RuntimeContext`. A relative import that stays inside
+ * the runtime directory and does not name `context` is a direct cross-module
+ * reference and fails.
+ */
+const runtimeRoot = join(root, "packages", "client", "src", "runtime");
+const runtimeImport = /from\s+["'](\.[^"']*)["']/gu;
+for (const dir of runtimeModuleRoots)
+  await scan(join(root, dir), /\.ts$/u, (full, text) => {
+    const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+    const imports = [...text.matchAll(runtimeImport)].map((match) => match[1]);
+    for (const specifier of imports) {
+      const resolved = resolveRuntimeSpecifier(full, specifier);
+      if (
+        resolved !== null &&
+        resolved.startsWith(runtimeRoot) &&
+        !resolved.endsWith("/context") &&
+        !resolved.endsWith("/context.ts") &&
+        !relative.includes("/test/")
+      )
+        failures.push(
+          `${relative}: runtime module imports another runtime module directly (${specifier}); communicate through RuntimeContext`,
+        );
+    }
+  });
+
+function resolveRuntimeSpecifier(
+  importerFile: string,
+  specifier: string,
+): string | null {
+  if (!specifier.startsWith(".")) return null;
+  const base = importerFile.slice(0, importerFile.lastIndexOf("/"));
+  const resolved = join(base, specifier);
+  if (resolved.startsWith(runtimeRoot)) return resolved;
+  return null;
+}
+
+/**
  * Every package that has tests must have them in the gate.
- *
  * A test directory missing from the root `test` script is worse than having no
  * tests: the tests exist, they are maintained, they look like coverage in review,
  * and nothing runs them. This has happened three times — twice with new packages,

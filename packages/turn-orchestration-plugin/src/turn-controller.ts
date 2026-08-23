@@ -10,33 +10,14 @@ import {
   promoteSteers,
   type SessionRecord,
 } from "@natalia/session";
+import type {
+  TurnController,
+  TurnControllerInput,
+} from "@natalia/runtime-services";
 
-export type TurnControllerInput = {
-  session(): SessionRecord | undefined;
-  activeAbort(): AbortController | undefined;
-  sessionFor(sessionID: string): SessionRecord | undefined;
-  activeAbortFor(sessionID: string): AbortController | undefined;
-  persist(fn: () => Promise<void>): Promise<void>;
-  saveInbox(snapshot: SessionRecord): Promise<void>;
-  flush(): Promise<void>;
-  runCommand(
-    id: string,
-    text: string,
-    signal: AbortSignal | undefined,
-    sessionID: string,
-  ): Promise<boolean>;
-  runTurn(input: {
-    id: string;
-    text: string;
-    sessionID: string;
-    attachments: LocalAttachment[];
-    resources: PromptResourceMention[];
-    agents: PromptAgentMention[];
-    internal?: boolean;
-  }): Promise<void>;
-};
-
-export function createTurnController(input: TurnControllerInput) {
+export function createTurnController(
+  input: TurnControllerInput,
+): TurnController {
   let disposed = false;
 
   function assertActive() {
@@ -153,5 +134,3 @@ export function createTurnController(input: TurnControllerInput) {
 
   return { drain, drainQueue, admit, persistPromotion, dispose };
 }
-
-export type TurnController = ReturnType<typeof createTurnController>;

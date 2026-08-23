@@ -1,5 +1,6 @@
 import type { LocalAttachment } from "@natalia/contracts";
 import type { SessionRecord } from "@natalia/session";
+import type { AttachmentService } from "@natalia/runtime-services";
 import {
   attachmentDataURL,
   attachmentText,
@@ -9,9 +10,9 @@ import {
   storeLocalAttachments,
 } from "./attachments";
 
-export type AttachmentService = ReturnType<typeof createAttachmentService>;
-
-export function createAttachmentService(workspaceRoot: string) {
+export function createAttachmentService(
+  workspaceRoot: string,
+): AttachmentService {
   return {
     store: (paths: string[]) => storeLocalAttachments({ workspaceRoot, paths }),
     dataURL: (attachment: LocalAttachment) =>

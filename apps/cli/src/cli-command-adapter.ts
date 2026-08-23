@@ -55,24 +55,17 @@ export async function createCliCommandAdapterHost(
   const kernel = new CapabilityRegistry();
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    contribute: (manifest) => {
-      const result = kernel.tryLoad({
+    registerOwner: (manifest) => {
+      const owner = kernel.registerOwner({
         id: manifest.id,
         name: manifest.name,
         version: manifest.version,
         description: manifest.description,
         scope: manifest.scope,
         grants: ["adapters"],
-        provides: [],
       });
-      if (!result.ok)
-        throw new Error(`CLI capability failed to load: ${result.reason}`);
-      return (kind, name, payload) => {
-        kernel.contribute(manifest.id, kind, name, payload);
-        return () => undefined;
-      };
+      return owner;
     },
-    onUnload: (pluginID) => kernel.unload(pluginID),
   });
   await registry.loadBuiltin(createCliCommandAdapterPlugin(start));
   const materializer = createPluginAdapterMaterializer(kernel);

@@ -52,44 +52,26 @@ export async function createWorkflowSchedulerPluginHost(
 ) {
   const capabilities =
     dependencies.capabilityRegistry ?? new CapabilityRegistry();
-  const loaded = capabilities.tryLoad({
+  const owner = capabilities.registerOwner({
     id: WORKFLOW_SCHEDULER_PLUGIN_ID,
     name: "Workflow Scheduler",
     version: "1.0.0",
     description: "Process-level workflow admission and concurrency gates.",
     scope: "process",
     grants: ["services"],
-    provides: [],
   });
-  if (!loaded.ok)
-    throw new Error(
-      `workflow scheduler capability failed to load: ${loaded.reason}`,
-    );
-  if (loaded.pending || !capabilities.has(WORKFLOW_SCHEDULER_PLUGIN_ID)) {
-    capabilities.unload(WORKFLOW_SCHEDULER_PLUGIN_ID);
-    throw new Error("workflow scheduler capability did not finish loading");
-  }
 
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
     allowed: ["services"],
-    contribute: () => (kind, name, payload) => {
-      capabilities.contribute(
-        WORKFLOW_SCHEDULER_PLUGIN_ID,
-        kind,
-        name,
-        payload,
-      );
-      return () => undefined;
-    },
-    onUnload: () => capabilities.unload(WORKFLOW_SCHEDULER_PLUGIN_ID),
+    registerOwner: () => owner,
     service: <T>(name: string) => capabilities.service<T>(name),
   });
   try {
     await registry.loadBuiltin(createWorkflowSchedulerPlugin(options));
   } catch (error) {
     await registry.unloadAll().catch(() => undefined);
-    capabilities.unload(WORKFLOW_SCHEDULER_PLUGIN_ID);
+    owner.release();
     throw error;
   }
   const scheduler = capabilities.service<WorkflowExecutionSchedulerService>(

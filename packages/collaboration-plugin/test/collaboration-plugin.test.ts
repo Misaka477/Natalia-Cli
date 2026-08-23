@@ -1,13 +1,12 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { createPluginRegistry } from "@natalia/plugin";
-import { createWorkLedgerController } from "@natalia/work-ledger-plugin";
 import {
-  createCollaborationPlugin,
-  COLLABORATION_PLUGIN_ID,
   COLLABORATION_WAITER_SERVICE,
   type InteractiveWaiter,
-} from "../src";
+} from "@natalia/runtime-services";
+import { createWorkLedgerController } from "@natalia/work-ledger-plugin";
+import { createCollaborationPlugin, COLLABORATION_PLUGIN_ID } from "../src";
 
 test("collaboration waiter exists only while the plugin is loaded", async () => {
   const services = new Map<string, unknown>();
@@ -21,10 +20,13 @@ test("collaboration waiter exists only while the plugin is loaded", async () => 
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
   const plugin = createCollaborationPlugin({

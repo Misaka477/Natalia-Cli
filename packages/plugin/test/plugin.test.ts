@@ -465,10 +465,13 @@ test("v2 contributions and typed services use the shared ownership channel", asy
         serviceListener = undefined;
       };
     },
-    contribute: () => (kind, name) => {
-      contributions.push({ kind, name });
-      return () => releases.push(`${kind}:${name}`);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name) => {
+        contributions.push({ kind, name });
+        return () => releases.push(`${kind}:${name}`);
+      },
+      release: () => undefined,
+    }),
   });
   await registry.loadBuiltin(
     definePlugin({
@@ -542,16 +545,19 @@ test("adapter contributions stay inert until materialized and dispose in reverse
   const lifecycle: string[] = [];
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    contribute: (manifest) => (kind, name, payload) => {
-      if (kind === "adapters") {
-        contributions.set(name, payload);
-        owners.set(name, manifest.id);
-      }
-      return () => {
-        contributions.delete(name);
-        owners.delete(name);
-      };
-    },
+    registerOwner: (manifest) => ({
+      contribute: (kind, name, payload) => {
+        if (kind === "adapters") {
+          contributions.set(name, payload);
+          owners.set(name, manifest.id);
+        }
+        return () => {
+          contributions.delete(name);
+          owners.delete(name);
+        };
+      },
+      release: () => undefined,
+    }),
   });
   await registry.loadBuiltin(
     definePlugin({
@@ -628,10 +634,13 @@ test("plugin cleanup is reverse ordered and isolates disposer failures", async (
   const cleanup: string[] = [];
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    contribute: () => (_kind, name) => () => {
-      cleanup.push(name);
-      if (name === "middle") throw new Error("middle cleanup failed");
-    },
+    registerOwner: () => ({
+      contribute: (_kind, name) => () => {
+        cleanup.push(name);
+        if (name === "middle") throw new Error("middle cleanup failed");
+      },
+      release: () => undefined,
+    }),
   });
   await registry.loadBuiltin(
     definePlugin({
@@ -665,6 +674,231 @@ test("plugin cleanup is reverse ordered and isolates disposer failures", async (
   expect(registry.list()).toEqual([]);
 });
 
+test("plugin dispose owns lifecycle before capability ownership is released", async () => {
+  const lifecycle: string[] = [];
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    registerOwner: () => ({
+      contribute: () => () => undefined,
+      release: () => lifecycle.push("owner.release"),
+    }),
+  });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-lifecycle-owner",
+        version: "1.0.0",
+        name: "Lifecycle Owner",
+        description: "",
+        entry: "natalia:lifecycle-owner",
+        scope: "workspace",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: ["resources"],
+      },
+      setup(api) {
+        lifecycle.push("plugin.setup");
+        api.resources.register({ name: "resource" });
+      },
+      dispose() {
+        lifecycle.push("plugin.dispose");
+      },
+    }),
+  );
+  await registry.unload("natalia-lifecycle-owner");
+  expect(lifecycle).toEqual([
+    "plugin.setup",
+    "plugin.dispose",
+    "owner.release",
+  ]);
+});
+
+test("missing required services leave the plugin mounted and pending", async () => {
+  let setupRan = false;
+  let ownerRegistered = false;
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    service: () => undefined,
+    registerOwner: () => {
+      ownerRegistered = true;
+      return {
+        contribute: () => () => undefined,
+        release: () => undefined,
+      };
+    },
+  });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-missing-service",
+        version: "1.0.0",
+        name: "Missing Service",
+        description: "",
+        entry: "natalia:missing-service",
+        scope: "workspace",
+        provides: [],
+        requires: ["missing.service"],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: [],
+      },
+      setup() {
+        setupRan = true;
+      },
+    }),
+  );
+  expect(setupRan).toBe(false);
+  expect(ownerRegistered).toBe(false);
+  expect(registry.list().map(({ id }) => id)).toEqual([
+    "natalia-missing-service",
+  ]);
+  expect(registry.status("natalia-missing-service")).toEqual({
+    id: "natalia-missing-service",
+    status: "pending",
+    missingServices: ["missing.service"],
+  });
+  expect(registry.active("natalia-missing-service")).toBe(false);
+});
+
+test("required service availability drives serialized activation epochs", async () => {
+  let serviceValue: object | undefined;
+  let provider: string | undefined;
+  let notify: ((update: { name: string }) => void) | undefined;
+  let epoch = 0;
+  const lifecycle: string[] = [];
+  const contributions = new Set<string>();
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    service: <T>() => serviceValue as T | undefined,
+    serviceProvider: () => provider,
+    onServiceUpdate(listener) {
+      notify = listener;
+      return () => {
+        notify = undefined;
+      };
+    },
+    registerOwner: () => {
+      const ownerEpoch = epoch + 1;
+      lifecycle.push(`owner:${ownerEpoch}`);
+      return {
+        contribute: (_kind, name) => {
+          contributions.add(name);
+          return () => {
+            lifecycle.push(`cleanup:${ownerEpoch}`);
+            contributions.delete(name);
+          };
+        },
+        release: () => lifecycle.push(`release:${ownerEpoch}`),
+      };
+    },
+  });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-epochs",
+        version: "1.0.0",
+        name: "Epochs",
+        description: "",
+        entry: "natalia:epochs",
+        scope: "workspace",
+        provides: [],
+        requires: ["required.service"],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: ["resources"],
+      },
+      setup(api) {
+        const current = ++epoch;
+        lifecycle.push(`setup:${current}`);
+        api.resources.register({ name: `resource:${current}` });
+        void api.effects.run(
+          (signal) =>
+            new Promise<void>((resolve) =>
+              signal.addEventListener(
+                "abort",
+                () => {
+                  lifecycle.push(`settled:${current}`);
+                  resolve();
+                },
+                { once: true },
+              ),
+            ),
+        );
+      },
+      dispose() {
+        lifecycle.push(`dispose:${epoch}`);
+      },
+    }),
+  );
+  expect(registry.status("natalia-epochs")?.status).toBe("pending");
+
+  serviceValue = {};
+  provider = "provider:a";
+  notify?.({ name: "required.service" });
+  await registry.whenIdle();
+  expect(registry.active("natalia-epochs")).toBe(true);
+  expect(contributions).toEqual(new Set(["resource:1"]));
+
+  serviceValue = undefined;
+  provider = undefined;
+  notify?.({ name: "required.service" });
+  await registry.whenIdle();
+  expect(registry.status("natalia-epochs")).toEqual({
+    id: "natalia-epochs",
+    status: "pending",
+    missingServices: ["required.service"],
+  });
+  expect(contributions.size).toBe(0);
+
+  serviceValue = {};
+  provider = "provider:a";
+  notify?.({ name: "required.service" });
+  await registry.whenIdle();
+  expect(contributions).toEqual(new Set(["resource:2"]));
+
+  serviceValue = {};
+  provider = "provider:b";
+  notify?.({ name: "required.service" });
+  await registry.whenIdle();
+  expect(registry.active("natalia-epochs")).toBe(true);
+  expect(contributions).toEqual(new Set(["resource:3"]));
+  expect(lifecycle).toEqual([
+    "owner:1",
+    "setup:1",
+    "dispose:1",
+    "settled:1",
+    "cleanup:1",
+    "release:1",
+    "owner:2",
+    "setup:2",
+    "dispose:2",
+    "settled:2",
+    "cleanup:2",
+    "release:2",
+    "owner:3",
+    "setup:3",
+  ]);
+  await registry.unload("natalia-epochs");
+  expect(lifecycle.slice(-4)).toEqual([
+    "dispose:3",
+    "settled:3",
+    "cleanup:3",
+    "release:3",
+  ]);
+  expect(registry.status("natalia-epochs")).toBeUndefined();
+});
+
 test("manual registration disposal releases local and kernel ownership", async () => {
   const tools = createToolRegistry([]);
   const released: string[] = [];
@@ -672,7 +906,10 @@ test("manual registration disposal releases local and kernel ownership", async (
   let dispose!: () => void;
   const registry = createPluginRegistry({
     tools,
-    contribute: () => (kind, name) => () => released.push(`${kind}:${name}`),
+    registerOwner: () => ({
+      contribute: (kind, name) => () => released.push(`${kind}:${name}`),
+      release: () => undefined,
+    }),
   });
   await registry.loadBuiltin(
     definePlugin({
@@ -735,10 +972,12 @@ test("setup failure rolls back every registered contribution", async () => {
   let unloaded = 0;
   const registry = createPluginRegistry({
     tools,
-    contribute: () => (kind, name) => () => cleanup.push(`${kind}:${name}`),
-    onUnload: () => {
-      unloaded += 1;
-    },
+    registerOwner: () => ({
+      contribute: (kind, name) => () => cleanup.push(`${kind}:${name}`),
+      release: () => {
+        unloaded += 1;
+      },
+    }),
   });
   await expect(
     registry.loadBuiltin(
@@ -782,7 +1021,7 @@ test("setup failure rolls back every registered contribution", async () => {
   ).rejects.toThrow("setup failed");
   expect(tools.has("rollback_tool")).toBe(false);
   expect(registry.commands()).toEqual([]);
-  expect(registry.list()).toEqual([]);
+  expect(registry.status("natalia-rollback")?.status).toBe("failed");
   expect(cleanup).toEqual([
     "resources:rollback_resource",
     "commands:rollback_command",
@@ -937,13 +1176,16 @@ test("declared services must be provided before activation completes", async () 
       }),
     ),
   ).rejects.toThrow("did not provide declared services");
-  expect(registry.list()).toEqual([]);
+  expect(registry.status("natalia-lying-service")?.status).toBe("failed");
 });
 
 test("declared services must remain active through setup", async () => {
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    contribute: () => () => () => {},
+    registerOwner: () => ({
+      contribute: () => () => {},
+      release: () => undefined,
+    }),
   });
   await expect(
     registry.loadBuiltin(
@@ -967,7 +1209,7 @@ test("declared services must remain active through setup", async () => {
       }),
     ),
   ).rejects.toThrow("did not provide declared services");
-  expect(registry.list()).toEqual([]);
+  expect(registry.status("natalia-disposed-service")?.status).toBe("failed");
 });
 
 test("a failing plugin disposer cannot retain owned registrations", async () => {
@@ -1227,9 +1469,9 @@ test("a plugin without the commands capability cannot register one", async () =>
       }),
     ),
   ).rejects.toThrow(/capability denied: sneaky.plugin\/commands/u);
-  // The refused load leaves nothing behind.
+  // The failed setup leaves no contributions but remains observable.
   expect(registry.commands()).toEqual([]);
-  expect(registry.list()).toEqual([]);
+  expect(registry.status("sneaky.plugin")?.status).toBe("failed");
 });
 
 test("two plugins cannot register the same command name", async () => {
@@ -1454,13 +1696,15 @@ test("plugin tools are offered to the kernel channel with the plugin's scope", a
   let unloaded: string | undefined;
   const registry = createPluginRegistry({
     tools,
-    contribute: (manifest) => (_kind, name, tool) => {
-      contributed.push({ name, tool, manifest });
-      return () => released.push(name);
-    },
-    onUnload: (id) => {
-      unloaded = id;
-    },
+    registerOwner: (manifest) => ({
+      contribute: (_kind, name, tool) => {
+        contributed.push({ name, tool, manifest });
+        return () => released.push(name);
+      },
+      release: () => {
+        unloaded = manifest.id;
+      },
+    }),
   });
   await registry.load(
     definePlugin({

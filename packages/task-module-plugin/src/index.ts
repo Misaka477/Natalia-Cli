@@ -3,10 +3,12 @@ export {
   createReadDataSourceTool,
   createReportIssueTool,
   taskModuleTools,
-  type TaskModuleContext,
-  type TaskReadDataSource,
-  type TaskReportIssue,
 } from "./task-module-tools";
+export type {
+  TaskModuleContext,
+  TaskReadDataSource,
+  TaskReportIssue,
+} from "@natalia/workflow";
 export {
   createTaskModulePlugin,
   TASK_MODULE_PLUGIN_ID,

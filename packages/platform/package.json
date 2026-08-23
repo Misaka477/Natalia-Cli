@@ -8,5 +8,8 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@natalia/contracts": "workspace:*",
+    "fuzzysort": "3.1.0"
+  }
 }

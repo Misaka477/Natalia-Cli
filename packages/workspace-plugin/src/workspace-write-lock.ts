@@ -7,7 +7,9 @@
  * so writers serialise in acquisition order while readers and everything else
  * stay parallel.
  */
-export function createWorkspaceWriteLock() {
+import type { WorkspaceWriteLock } from "@natalia/runtime-services";
+
+export function createWorkspaceWriteLock(): WorkspaceWriteLock {
   let chain: Promise<void> = Promise.resolve();
 
   /** Acquires the lock; resolves with the release function. */
@@ -23,5 +25,3 @@ export function createWorkspaceWriteLock() {
 
   return { acquire };
 }
-
-export type WorkspaceWriteLock = ReturnType<typeof createWorkspaceWriteLock>;

@@ -5,5 +5,9 @@
     "rootDir": "../.."
   },
   "include": ["src", "test"],
-  "references": [{ "path": "../plugin" }, { "path": "../tools" }]
+  "references": [
+    { "path": "../plugin" },
+    { "path": "../runtime-services" },
+    { "path": "../tools" }
+  ]
 }

@@ -42,6 +42,7 @@
         "packages/provider-model-plugin/src/index.ts"
       ],
       "@natalia/runtime": ["packages/runtime/src/index.ts"],
+      "@natalia/runtime-services": ["packages/runtime-services/src/index.ts"],
       "@natalia/retry-plugin": ["packages/retry-plugin/src/index.ts"],
       "@natalia/runtime-config-plugin": [
         "packages/runtime-config-plugin/src/index.ts"

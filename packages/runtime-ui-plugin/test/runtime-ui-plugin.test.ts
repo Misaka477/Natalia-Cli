@@ -1,11 +1,10 @@
 import { expect, test } from "bun:test";
 import { createPluginRegistry } from "@natalia/plugin";
 import {
-  createRuntimeUiPlugin,
-  RUNTIME_UI_PLUGIN_ID,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   type StatusSnapshotController,
-} from "../src";
+} from "@natalia/runtime-services";
+import { createRuntimeUiPlugin, RUNTIME_UI_PLUGIN_ID } from "../src";
 
 test("runtime UI service follows plugin load and unload", async () => {
   const events: unknown[] = [];
@@ -19,10 +18,13 @@ test("runtime UI service follows plugin load and unload", async () => {
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
   const plugin = createRuntimeUiPlugin({

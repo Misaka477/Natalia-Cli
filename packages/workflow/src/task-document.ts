@@ -3,7 +3,7 @@ import type {
   NataliaTaskDocumentInput,
 } from "@natalia/contracts";
 import { nataliaTaskDocumentSchema } from "@natalia/contracts";
-import { NataliaDocumentStore } from "@natalia/workflow";
+import { NataliaDocumentStore } from "./natalia-document-store";
 import {
   generateTaskUnits,
   installUserTaskUnits,

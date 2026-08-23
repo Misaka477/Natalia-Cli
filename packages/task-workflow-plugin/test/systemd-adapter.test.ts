@@ -11,7 +11,7 @@ import {
   nextSystemdRun,
   previewSystemdCalendar,
   removeTaskSystemd,
-} from "../src";
+} from "@natalia/workflow";
 import { NataliaDocumentStore } from "@natalia/workflow";
 
 function task(overrides: Record<string, unknown> = {}) {

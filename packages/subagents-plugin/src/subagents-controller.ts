@@ -3,16 +3,12 @@ import type {
   SubagentRunnerContext,
   SubagentToolService,
 } from "@natalia/tools";
+import type { SubagentsService } from "@natalia/runtime-services";
 
 type SubagentRunner = (
   task: string,
   context: SubagentRunnerContext,
 ) => void | Promise<void>;
-
-export interface SubagentsService extends SubagentToolService {
-  init(runner: SubagentRunner): Promise<void>;
-  enabled(): boolean;
-}
 
 type SubagentsController = SubagentsService;
 

@@ -29,24 +29,16 @@ test("the task module plugin owns its tools through the kernel", async () => {
   const kernel = new CapabilityRegistry();
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    contribute: (manifest, context) => {
+    registerOwner: (manifest, context) => {
       const capabilityID = context.builtin ? manifest.id : `cap:${manifest.id}`;
-      kernel.tryLoad({
+      return kernel.registerOwner({
         id: capabilityID,
         name: manifest.name,
         version: manifest.version,
         description: manifest.description,
         scope: manifest.scope,
         grants: ["tools"],
-        provides: [],
       });
-      return (kind, name, payload) => {
-        kernel.contribute(capabilityID, kind, name, payload);
-        return () => undefined;
-      };
-    },
-    onUnload: (pluginID, context) => {
-      kernel.unload(context.builtin ? pluginID : `cap:${pluginID}`);
     },
   });
   await registry.loadBuiltin(

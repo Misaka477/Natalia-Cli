@@ -12,12 +12,13 @@
  * until its session and wake dependencies have plugin service contracts.
  */
 import type { Plugin } from "@natalia/plugin";
-import type { InteractiveWaiterDeps } from "./interactive-waiter";
 import { createInteractiveWaiter } from "./interactive-waiter";
+import {
+  COLLABORATION_WAITER_SERVICE,
+  type InteractiveWaiterDeps,
+} from "@natalia/runtime-services";
 
 export const COLLABORATION_PLUGIN_ID = "natalia-collaboration";
-export const COLLABORATION_WAITER_SERVICE = "collaboration.waiter";
-
 export function createCollaborationPlugin(input: {
   waiter: InteractiveWaiterDeps;
 }): Plugin {

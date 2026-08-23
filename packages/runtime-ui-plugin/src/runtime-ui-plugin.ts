@@ -2,12 +2,13 @@ import type { Plugin } from "@natalia/plugin";
 import {
   createStatusSnapshotController,
   type RuntimeUiPluginInput,
-  type StatusSnapshotController,
 } from "./status-controller";
+import {
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  type StatusSnapshotController,
+} from "@natalia/runtime-services";
 
 export const RUNTIME_UI_PLUGIN_ID = "natalia-runtime-ui";
-export const STATUS_SNAPSHOT_CONTROLLER_SERVICE = "status.snapshot.controller";
-
 export function createRuntimeUiPlugin(input: RuntimeUiPluginInput): Plugin {
   let controller: StatusSnapshotController | undefined;
   return {

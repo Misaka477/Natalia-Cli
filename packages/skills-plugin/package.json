@@ -11,6 +11,7 @@
   "dependencies": {
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
+    "@natalia/runtime-services": "workspace:*",
     "@natalia/tools": "workspace:*"
   }
 }

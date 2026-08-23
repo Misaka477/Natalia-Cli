@@ -16,6 +16,7 @@
  * not a paste of the tool result.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
+import type { PlanLifecycleState } from "@natalia/runtime-services";
 
 export type ValidationOutcome = {
   command: string;
@@ -160,16 +161,6 @@ export function buildCompletionRecorded(input: {
  *   - plan superseded/archived:  evidence stays as recorded (a dead plan does
  *                                not promote its evidence)
  */
-export type PlanLifecycleState =
-  | "draft"
-  | "proposed"
-  | "accepted"
-  | "queued_next_plan"
-  | "active"
-  | "completed"
-  | "superseded"
-  | "archived";
-
 export type EvidenceRecordedStatus =
   | "planned"
   | "implemented"

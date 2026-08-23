@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@natalia/contracts": "workspace:*",
-    "@natalia/platform": "workspace:*"
+    "@natalia/platform": "workspace:*",
+    "@vscode/tree-sitter-wasm": "0.3.1",
+    "web-tree-sitter": "0.25.10"
   }
 }

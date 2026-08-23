@@ -3,13 +3,9 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
+import { MCP_SERVICE, type McpService } from "@natalia/runtime-services";
 import { createToolRegistry } from "@natalia/tools";
-import {
-  createMcpPlugin,
-  MCP_SERVICE,
-  MCP_PLUGIN_ID,
-  type McpService,
-} from "../src";
+import { createMcpPlugin, MCP_PLUGIN_ID } from "../src";
 import { createMcpController } from "../src/mcp-controller";
 
 const SERVER = String.raw`
@@ -64,12 +60,15 @@ test("MCP plugin unload owns connection and tool teardown", async () => {
   const contributions: Array<[kind: string, name: string]> = [];
   const registry = createPluginRegistry({
     tools,
-    contribute: async () => (kind, name, payload) => {
-      contributions.push([kind, name]);
-      if (kind === "services" && name === MCP_SERVICE)
-        service = payload as McpService;
-      return () => undefined;
-    },
+    registerOwner: async () => ({
+      contribute: (kind, name, payload) => {
+        contributions.push([kind, name]);
+        if (kind === "services" && name === MCP_SERVICE)
+          service = payload as McpService;
+        return () => undefined;
+      },
+      release: () => undefined,
+    }),
   });
   const plugin = createMcpPlugin({
     servers: () => ({

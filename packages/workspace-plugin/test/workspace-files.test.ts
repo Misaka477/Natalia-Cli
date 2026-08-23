@@ -12,7 +12,7 @@ import {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
-} from "../src/workspace-files";
+} from "@natalia/platform";
 
 /**
  * Symlink fixtures are skipped when the machine cannot create symlinks

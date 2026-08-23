@@ -1,17 +1,14 @@
 import type { Plugin } from "@natalia/plugin";
+import { SESSION_STORE_PLUGIN_ID } from "@natalia/session-store-plugin";
+import { createTurnController } from "./turn-controller";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
-  SESSION_STORE_PLUGIN_ID,
-} from "@natalia/session-store-plugin";
-import {
-  createTurnController,
+  TURN_CONTROLLER_SERVICE,
   type TurnController,
   type TurnControllerInput,
-} from "./turn-controller";
+} from "@natalia/runtime-services";
 
 export const TURN_ORCHESTRATION_PLUGIN_ID = "natalia-turn-orchestration";
-export const TURN_CONTROLLER_SERVICE = "turn.controller";
-
 export function createTurnOrchestrationPlugin(
   input: TurnControllerInput,
 ): Plugin {

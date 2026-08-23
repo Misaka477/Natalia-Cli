@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
-import type { ToolFamily } from "@natalia/tools";
+import { createToolRegistry, type ToolFamily } from "@natalia/tools";
 import {
   applyToolFamilyEnabledFilter,
   builtinToolFamilies,
@@ -102,11 +102,16 @@ test("every tool is owned by the family that contributed it", () => {
     expect(registry.ownerOf("tools", name)).toBeString();
 });
 
-test("unloading a family removes its tools from the kernel", () => {
+test("disabling a legacy family releases its owner", () => {
   const registry = new CapabilityRegistry();
   const family = syntheticFamily("alpha");
   createToolRegistryFromCapabilities({ registry, families: [family] });
-  expect(registry.unload(toolFamilyCapabilityID("alpha"))).toBe(true);
+  applyToolFamilyEnabledFilter({
+    registry,
+    tools: createToolRegistry([]),
+    families: [family],
+    enabled: { alpha: false },
+  });
   for (const tool of family.tools)
     expect(registry.ownerOf("tools", tool.name)).toBeUndefined();
   expect(registry.has(toolFamilyCapabilityID("alpha"))).toBe(false);
@@ -144,7 +149,7 @@ test("registering the same families twice is refused, not silently doubled", () 
   expect(second.loaded).toEqual([]);
   expect(second.failed.length).toBe(families.length);
   for (const failure of second.failed)
-    expect(failure.reason).toMatch(/already loaded/u);
+    expect(failure.reason).toMatch(/already registered/u);
 });
 
 test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {

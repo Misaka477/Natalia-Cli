@@ -274,6 +274,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "scanner.plugin", v
   await controller.unload("scanner.plugin");
   expect(kernel.has("plugin:scanner.plugin")).toBe(false);
   expect(kernel.ownerOf("tools", "plugin_scanner_plugin_scan")).toBeUndefined();
+  await controller.close();
 });
 
 test("a failing plugin's diagnostic is attributed to the plugin", async () => {
@@ -315,6 +316,7 @@ test("a failing plugin's diagnostic is attributed to the plugin", async () => {
   expect(
     diagnostics.some((entry) => entry.owner === "plugin:broken.plugin"),
   ).toBe(true);
+  await controller.close();
 });
 
 test("plugin reload re-reads the module after a file change (cache-bust)", async () => {
@@ -403,6 +405,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "full.plugin", vers
     kernel.ownerOf("commands", "plugin_full_plugin_greet"),
   ).toBeUndefined();
   expect(kernel.contributions("listeners")).toHaveLength(0);
+  await controller.close();
 });
 
 test("a plugin provides a service through the kernel, resolvable by name", async () => {
@@ -441,6 +444,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "svc.plugin", versi
   expect(kernel.service<{ text: string }>("greeting")?.text).toBe("hello");
   await controller.unload("svc.plugin");
   expect(kernel.ownerOf("services", "greeting")).toBeUndefined();
+  await controller.close();
 });
 
 test("the composition root can unload a builtin through its lifecycle", async () => {
@@ -477,6 +481,203 @@ test("the composition root can unload a builtin through its lifecycle", async ()
   await controller.unloadBuiltin("builtin.service");
   expect(kernel.service("builtin.greeting")).toBeUndefined();
   await controller.unloadBuiltin("builtin.service");
+  await controller.close();
+});
+
+test("desired builtin reconciliation diffs identity, settings and enabled state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-builtins-desired-"));
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel);
+  const lifecycle: string[] = [];
+  const entry = (fingerprint: string, enabled = true) => ({
+    id: "builtin.desired",
+    enabled,
+    fingerprint,
+    create: () => ({
+      manifest: {
+        apiVersion: 2 as const,
+        id: "builtin.desired",
+        version: "1.0.0",
+        name: "Desired",
+        description: "Desired state test builtin.",
+        entry: "natalia:test:desired",
+        scope: "workspace" as const,
+        provides: ["desired.value"],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: ["services" as const],
+      },
+      setup(
+        api: Parameters<
+          ReturnType<typeof createRuntimeConfigPlugin>["setup"]
+        >[0],
+      ) {
+        lifecycle.push("setup");
+        api.services.provide("desired.value", {});
+      },
+      dispose() {
+        lifecycle.push("dispose");
+      },
+    }),
+  });
+
+  await controller.init({ loadLocal: false });
+  await controller.reconcileDesiredBuiltins([entry("one")], {
+    "builtin.desired": { value: 1 },
+  });
+  await controller.reconcileDesiredBuiltins([entry("one")], {
+    "builtin.desired": { value: 1 },
+  });
+  expect(lifecycle).toEqual(["setup"]);
+
+  await controller.reconcileDesiredBuiltins([entry("two")], {
+    "builtin.desired": { value: 1 },
+  });
+  await controller.reconcileDesiredBuiltins([entry("two")], {
+    "builtin.desired": { value: 2 },
+  });
+  expect(lifecycle).toEqual(["setup", "dispose", "setup", "dispose", "setup"]);
+
+  await controller.reconcileDesiredBuiltins([entry("two", false)], {});
+  expect(kernel.service("desired.value")).toBeUndefined();
+  expect(lifecycle.at(-1)).toBe("dispose");
+  await controller.close();
+});
+
+test("desired builtin reconciliation restores dependency closure in catalog order", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-builtins-deps-"));
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel);
+  const lifecycle: string[] = [];
+  const catalog = (providerFingerprint: string) => [
+    {
+      id: "builtin.provider",
+      enabled: true,
+      fingerprint: providerFingerprint,
+      create: () => ({
+        manifest: {
+          apiVersion: 2 as const,
+          id: "builtin.provider",
+          version: "1.0.0",
+          name: "Provider",
+          description: "",
+          entry: "natalia:test:provider",
+          scope: "workspace" as const,
+          provides: [],
+          requires: [],
+          optionalRequires: [],
+          conflicts: [],
+          dependencies: [],
+          hooks: {},
+          integrationPoints: [],
+        },
+        setup() {
+          lifecycle.push(`provider:${providerFingerprint}`);
+        },
+      }),
+    },
+    {
+      id: "builtin.consumer",
+      enabled: true,
+      fingerprint: "stable",
+      create: () => ({
+        manifest: {
+          apiVersion: 2 as const,
+          id: "builtin.consumer",
+          version: "1.0.0",
+          name: "Consumer",
+          description: "",
+          entry: "natalia:test:consumer",
+          scope: "workspace" as const,
+          provides: [],
+          requires: [],
+          optionalRequires: [],
+          conflicts: [],
+          dependencies: [
+            {
+              id: "builtin.provider",
+              spec: "*",
+              optional: false,
+              peer: false,
+            },
+          ],
+          hooks: {},
+          integrationPoints: [],
+        },
+        setup() {
+          lifecycle.push("consumer");
+        },
+      }),
+    },
+  ];
+
+  await controller.init({ loadLocal: false });
+  await controller.reconcileDesiredBuiltins(catalog("one"), undefined);
+  await controller.reconcileDesiredBuiltins(catalog("two"), undefined);
+  expect(lifecycle).toEqual([
+    "provider:one",
+    "consumer",
+    "provider:two",
+    "consumer",
+  ]);
+  expect(controller.active("builtin.consumer")).toBe(true);
+  await controller.close();
+});
+
+test("concurrent desired builtin reconciliation serializes complete lifecycle changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-builtins-concurrent-"));
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel);
+  const lifecycle: string[] = [];
+  const entry = (fingerprint: string) => ({
+    id: "builtin.concurrent",
+    enabled: true,
+    fingerprint,
+    create: () => ({
+      manifest: {
+        apiVersion: 2 as const,
+        id: "builtin.concurrent",
+        version: "1.0.0",
+        name: "Concurrent",
+        description: "",
+        entry: "natalia:test:concurrent",
+        scope: "workspace" as const,
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: [],
+      },
+      async setup() {
+        lifecycle.push(`setup:${fingerprint}`);
+        await Promise.resolve();
+      },
+      async dispose() {
+        lifecycle.push(`dispose:${fingerprint}`);
+        await Promise.resolve();
+      },
+    }),
+  });
+
+  await controller.init({ loadLocal: false });
+  await controller.reconcileDesiredBuiltins([entry("one")], undefined);
+  await Promise.all([
+    controller.reconcileDesiredBuiltins([entry("two")], undefined),
+    controller.reconcileDesiredBuiltins([entry("three")], undefined),
+  ]);
+  expect(lifecycle).toEqual([
+    "setup:one",
+    "dispose:one",
+    "setup:two",
+    "dispose:two",
+    "setup:three",
+  ]);
+  expect(kernel.has("builtin.concurrent")).toBe(true);
   await controller.close();
 });
 
@@ -524,6 +725,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "bad.plugin", versi
   expect(
     diagnostics.some((message) => message.includes("undeclared service")),
   ).toBe(true);
+  await controller.close();
 });
 
 test("a plugin requiring a service waits for it before its setup runs", async () => {
@@ -563,7 +765,113 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "req.plugin", versi
     createRuntimeConfigPlugin({ runtime: {} } as never),
   );
   await controller.loadLocal();
-  // The capability activated (its requires satisfied) and setup ran.
-  expect(kernel.isPending(pluginCapabilityID("req.plugin"))).toBe(false);
+  // Plugin dependency ordering ensures the service is available before setup.
   expect(kernel.has(pluginCapabilityID("req.plugin"))).toBe(true);
+  await controller.close();
+});
+
+test("plugins controller reactivates a mounted plugin when service provider identity changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-epochs-"));
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel);
+  const lifecycle: string[] = [];
+  let epoch = 0;
+  await controller.init({ loadLocal: false });
+  await controller.loadBuiltin({
+    manifest: {
+      apiVersion: 2,
+      id: "builtin.consumer",
+      version: "1.0.0",
+      name: "Consumer",
+      description: "",
+      entry: "natalia:test:consumer",
+      scope: "workspace",
+      provides: [],
+      requires: ["test.provider"],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["resources"],
+    },
+    setup(api) {
+      const current = ++epoch;
+      lifecycle.push(`setup:${current}`);
+      api.resources.register({ name: "consumer.resource", epoch: current });
+    },
+    dispose() {
+      lifecycle.push(`dispose:${epoch}`);
+    },
+  });
+  expect(controller.status("builtin.consumer")?.status).toBe("pending");
+  expect(controller.active("builtin.consumer")).toBe(false);
+
+  const providerA = kernel.registerOwner({
+    id: "provider:a",
+    name: "Provider A",
+    version: "1.0.0",
+    scope: "workspace",
+    grants: ["services"],
+  });
+  providerA.contribute("services", "test.provider", {});
+  await controller.get().whenIdle();
+  expect(controller.active("builtin.consumer")).toBe(true);
+  expect(
+    kernel.contribution<{ epoch: number }>("resources", "consumer.resource")
+      ?.epoch,
+  ).toBe(1);
+
+  const providerB = kernel.registerOwner({
+    id: "provider:b",
+    name: "Provider B",
+    version: "1.0.0",
+    scope: "workspace",
+    grants: ["services"],
+    precedence: 1,
+  });
+  providerB.contribute("services", "test.provider", {});
+  await controller.get().whenIdle();
+  expect(controller.active("builtin.consumer")).toBe(true);
+  expect(
+    kernel.contribution<{ epoch: number }>("resources", "consumer.resource")
+      ?.epoch,
+  ).toBe(2);
+
+  providerB.release();
+  await controller.get().whenIdle();
+  expect(controller.status("builtin.consumer")?.status).toBe("pending");
+  expect(kernel.contribution("resources", "consumer.resource")).toBeUndefined();
+
+  const providerC = kernel.registerOwner({
+    id: "provider:c",
+    name: "Provider C",
+    version: "1.0.0",
+    scope: "workspace",
+    grants: ["services"],
+  });
+  providerC.contribute("services", "test.provider", {});
+  await controller.get().whenIdle();
+  expect(
+    kernel.contribution<{ epoch: number }>("resources", "consumer.resource")
+      ?.epoch,
+  ).toBe(3);
+  expect(lifecycle).toEqual([
+    "setup:1",
+    "dispose:1",
+    "setup:2",
+    "dispose:2",
+    "setup:3",
+  ]);
+  await controller.unloadBuiltin("builtin.consumer");
+  expect(lifecycle).toEqual([
+    "setup:1",
+    "dispose:1",
+    "setup:2",
+    "dispose:2",
+    "setup:3",
+    "dispose:3",
+  ]);
+  providerA.release();
+  providerC.release();
+  await controller.close();
 });

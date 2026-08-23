@@ -1,19 +1,18 @@
 import { expect, test } from "bun:test";
-import {
-  ATTACHMENT_PLUGIN_ID,
-  ATTACHMENT_SERVICE,
-} from "@natalia/attachment-plugin";
-import {
-  COMPACTION_PLUGIN_ID,
-  COMPACTION_SERVICE,
-} from "@natalia/compaction-plugin";
+import { ATTACHMENT_PLUGIN_ID } from "@natalia/attachment-plugin";
+import { COMPACTION_PLUGIN_ID } from "@natalia/compaction-plugin";
 import { createPluginRegistry, type Plugin } from "@natalia/plugin";
-import { RETRY_PLUGIN_ID, RETRY_SERVICE } from "@natalia/retry-plugin";
+import { RETRY_PLUGIN_ID } from "@natalia/retry-plugin";
+import {
+  ATTACHMENT_SERVICE,
+  COMPACTION_SERVICE,
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
+  RETRY_SERVICE,
+  type ProviderModelController,
+} from "@natalia/runtime-services";
 import {
   createProviderModelPlugin,
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
   PROVIDER_MODEL_PLUGIN_ID,
-  type ProviderModelController,
   type ProviderModelControllerInput,
 } from "../src";
 
@@ -69,10 +68,13 @@ test("provider model service is dependency-bound and disposed on unload", async 
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
   let initialized = 0;

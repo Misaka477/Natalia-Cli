@@ -10,15 +10,14 @@
 import type { Plugin } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
 import { createSessionStoreController } from "./session-store-controller";
+import { ATTACHMENT_PLUGIN_ID } from "@natalia/attachment-plugin";
 import {
-  ATTACHMENT_PLUGIN_ID,
   ATTACHMENT_SERVICE,
+  SESSION_STORE_CONTROLLER_SERVICE,
   type AttachmentService,
-} from "@natalia/attachment-plugin";
+} from "@natalia/runtime-services";
 
 export const SESSION_STORE_PLUGIN_ID = "natalia-session-store";
-export const SESSION_STORE_CONTROLLER_SERVICE = "session-store.controller";
-
 export function createSessionStoreControllerPlugin(input: {
   workspaceRoot: string;
   sessionID(): SessionID;

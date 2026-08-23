@@ -1,51 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/session-store-plugin";
-import {
-  TURN_CONTROLLER_SERVICE,
-  type TurnController,
-} from "@natalia/turn-orchestration-plugin";
-import {
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
-  PROVIDER_MODEL_PLUGIN_ID,
-  type ProviderModelController,
-  type ProviderModelControllerInput,
-  type ProviderRunnerInput,
-} from "@natalia/provider-model-plugin";
-import {
-  RETRY_PLUGIN_ID,
-  RETRY_SERVICE,
-  type RetryService,
-} from "@natalia/retry-plugin";
-import {
-  RUNTIME_UI_PLUGIN_ID,
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-  type StatusSnapshotController,
-} from "@natalia/runtime-ui-plugin";
-import {
-  fallbackSessionTitle,
-  generateSessionTitle,
-  isInvalidGeneratedSessionTitle,
-  sanitizeSessionTitleInput,
-} from "./session-title";
-import {
-  SUBAGENTS_SERVICE,
-  type SubagentsService,
-} from "@natalia/subagents-plugin";
-import {
-  CHECKPOINT_FACTORY_SERVICE,
-  CHECKPOINT_PLUGIN_ID,
-  type CheckpointController,
-  type CheckpointControllerFactory,
-} from "@natalia/checkpoint-plugin";
-import {
-  TEAM_MODE_DIRECTIVE,
-  sandboxedSubagentSystemPrompt,
-} from "@natalia/team-plugin";
+import { createTitleGeneration } from "./runtime/title-generation";
+import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
@@ -58,14 +15,7 @@ import {
   listWorkspaceFiles,
   readWorkspaceFile,
   searchWorkspaceFiles,
-  WORKSPACE_FILES_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_PLUGIN_ID,
-  WORKSPACE_WRITE_LOCK_SERVICE,
-  type MutationRegistry,
-  type WorkspaceFilesController,
-  type WorkspaceWriteLock,
-} from "@natalia/workspace-plugin";
+} from "@natalia/platform";
 import type {
   ApprovalResponse,
   RuntimeClient,
@@ -152,7 +102,6 @@ import {
   boundToolOutput,
   cleanupToolOutput,
   createToolRegistry,
-  ToolExecutionPipeline,
   validateToolParameters,
   type RuntimeTool,
   type SubagentRunnerContext,
@@ -160,13 +109,11 @@ import {
   type ToolFamily,
   type ToolMaterialization,
   type ToolRegistry,
+  ensureBashCommandParser,
+  evaluatePermissionProfileCommandRules,
+  TerminalCommandBuffer,
+  type PermissionProfileCommandRules,
 } from "@natalia/tools";
-import {
-  readSkillResource,
-  runSkillScript,
-  type Skill,
-  type SkillRegistry,
-} from "@natalia/skills-plugin";
 import {
   foregroundProcessForTTY,
   globalConfigHome,
@@ -179,39 +126,27 @@ import {
 } from "@natalia/plugin";
 import { moduleToolPolicy } from "@natalia/workflow";
 import { toolFamilyCapabilityID } from "./capabilities/tool-family-capabilities";
-import { refreshRuntimeConfigService } from "@natalia/runtime-config-plugin";
 import {
-  ASK_PLUGIN_ID,
-  AGENT_PLUGIN_ID,
-  builtinPdfPluginEntry,
+  ATTACHMENT_PLUGIN_ID,
   builtinPluginCatalog,
-  builtinToolPluginCatalog,
-  checkpointPluginEntry,
-  compactionPluginEntry,
-  FS_READ_PLUGIN_ID,
-  FS_WRITE_PLUGIN_ID,
-  localToolsPluginEntry,
+  CHECKPOINT_PLUGIN_ID,
+  COMPACTION_PLUGIN_ID,
+  computeBuiltinFeatureGates,
+  CONTEXT_LEDGER_PLUGIN_ID,
+  isBuiltinToolPlugin,
+  isStaticBuiltinPlugin,
+  LOCAL_TOOLS_PLUGIN_ID,
   MCP_PLUGIN_ID,
-  mcpPluginEntry,
-  PDF_PLUGIN_ID,
-  PROCESS_PLUGIN_ID,
-  providerModelPluginEntry,
-  SANDBOX_PLUGIN_ID,
-  sandboxPluginEntry,
-  SEARCH_PLUGIN_ID,
-  SHELL_PLUGIN_ID,
+  PROVIDER_MODEL_PLUGIN_ID,
+  RETRY_PLUGIN_ID,
+  RUNTIME_UI_PLUGIN_ID,
+  SANDBOX_CONTROLLER_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
-  SKILLS_REGISTRY_SERVICE,
-  skillsPluginEntry,
-  teamPluginEntry,
-  terminalPluginEntry,
-  TERMINAL_PLUGIN_ID,
-  TODO_PLUGIN_ID,
-  WEB_PLUGIN_ID,
-  workspacePluginEntry,
-} from "./builtin-plugins/catalog";
-import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
-import { computeBuiltinFeatureGates } from "./builtin-feature-gates";
+  TASK_WORKFLOW_PLUGIN_ID,
+  TEAM_PLUGIN_ID,
+  TERMINAL_CONTROLLER_PLUGIN_ID,
+  WORKSPACE_PLUGIN_ID,
+} from "@natalia/builtin-plugins";
 import { mountRuntimePlugins } from "./builtin-mount";
 import { derivePermissionSettings } from "./permission-settings";
 import { deriveModelRefKey } from "./model-ref-key";
@@ -220,98 +155,86 @@ import {
   deriveProfileToolPolicy,
 } from "./tool-policy-derivation";
 import {
-  LOCAL_TOOLS_PLUGIN_ID,
-  LOCAL_TOOLS_RELOAD_SERVICE,
-} from "@natalia/local-tools-plugin";
-import {
-  TERMINAL_CONTROLLER_SERVICE,
-  TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
-  type TerminalController,
-} from "@natalia/terminal-plugin";
-import {
-  SANDBOX_SERVICE,
-  SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
-  type SandboxService,
-} from "@natalia/sandbox-plugin";
-import { MCP_SERVICE, type McpService } from "@natalia/mcp-plugin";
-import type { TaskModuleContext } from "@natalia/task-module-plugin";
-import {
-  TASK_WORKFLOW_CONTROLLER_SERVICE,
-  TASK_WORKFLOW_PLUGIN_ID,
-  type TaskWorkflowController,
-} from "@natalia/task-workflow-plugin";
-import {
-  CONTEXT_LEDGER_FACTORY_SERVICE,
-  CONTEXT_LEDGER_PLUGIN_ID,
-  type ContextLedgerFactory,
-  type RuntimeContextLedger,
-} from "@natalia/context-ledger-plugin";
-import {
   buildMailboxQueued,
   buildMailboxStatus,
-  COLLABORATION_WAITER_SERVICE,
   createMailboxAcknowledgeTool,
   readOnlyToolMessage,
   terminalApprovalScope,
   terminalInputRisk,
-  type InteractiveWaiter,
-  type InteractiveWaiterDeps,
-} from "@natalia/collaboration-plugin";
+} from "@natalia/runtime-services";
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
-import { effectiveFlowPermissions } from "./effective-policy";
+import { effectiveFlowPermissions } from "@natalia/workflow";
 import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
-import {
-  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-  type GovernanceLedgerController,
-  type PlanLifecycleState,
-} from "@natalia/governance-ledger-plugin";
-import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
-  type WorkLedgerController,
-} from "@natalia/work-ledger-plugin";
-
-const BUILTIN_TOOL_PLUGIN_IDS = new Set([
-  ASK_PLUGIN_ID,
-  TODO_PLUGIN_ID,
-  SEARCH_PLUGIN_ID,
-  FS_READ_PLUGIN_ID,
-  FS_WRITE_PLUGIN_ID,
-  WEB_PLUGIN_ID,
-  SHELL_PLUGIN_ID,
-  AGENT_PLUGIN_ID,
-  TERMINAL_PLUGIN_ID,
-  SANDBOX_PLUGIN_ID,
-  PROCESS_PLUGIN_ID,
-  PDF_PLUGIN_ID,
-  LOCAL_TOOLS_PLUGIN_ID,
-  TEAM_PLUGIN_ID,
-]);
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
 export { terminalApprovalScope, terminalInputRisk };
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
-  ensureBashCommandParser,
-  evaluatePermissionProfileCommandRules,
-  TerminalCommandBuffer,
-  TOOL_POLICY_SERVICE,
-  type ToolHookEvent,
-  type ToolHooks,
-  type ToolPolicy,
-  type ToolPolicyHookLayer,
-  type ToolPolicyService,
-} from "@natalia/tool-pipeline-plugin";
-import {
-  ATTACHMENT_PLUGIN_ID,
   ATTACHMENT_SERVICE,
-  type AttachmentService,
-} from "@natalia/attachment-plugin";
-import {
-  COMPACTION_PLUGIN_ID,
+  CHECKPOINT_FACTORY_SERVICE,
+  COLLABORATION_WAITER_SERVICE,
   COMPACTION_SERVICE,
-  type CompactionService,
-} from "@natalia/compaction-plugin";
+  CONTEXT_LEDGER_FACTORY_SERVICE,
+  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+  LOCAL_TOOLS_RELOAD_SERVICE,
+  MCP_SERVICE,
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
+  RETRY_SERVICE,
+  SANDBOX_SERVICE,
+  SESSION_STORE_CONTROLLER_SERVICE,
+  SKILL_SERVICE,
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  SUBAGENTS_SERVICE,
+  TEAM_BEHAVIOR_SERVICE,
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  TERMINAL_CONTROLLER_SERVICE,
+  TOOL_POLICY_SERVICE,
+  TURN_CONTROLLER_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  WORKSPACE_FILES_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  WORKSPACE_WRITE_LOCK_SERVICE,
+} from "@natalia/runtime-services";
+import type {
+  AttachmentService,
+  CheckpointController,
+  CheckpointFactory,
+  CompactionService,
+  ContextLedgerFactory,
+  GovernanceLedgerController,
+  InteractiveWaiter,
+  InteractiveWaiterDeps,
+  McpService,
+  MutationRegistry,
+  PlanLifecycleState,
+  ProviderModelController,
+  ProviderModelControllerInput,
+  ProviderRunnerInput,
+  RetryService,
+  RuntimeServiceClient,
+  RuntimeContextLedger,
+  SandboxService,
+  SessionStoreController,
+  SkillMetadata,
+  SkillService,
+  StatusSnapshotController,
+  SubagentsService,
+  TeamBehaviorService,
+  TaskWorkflowController,
+  TerminalController,
+  TerminalControllerPluginInput,
+  ToolHookEvent,
+  ToolHooks,
+  ToolPolicy,
+  ToolPolicyHookLayer,
+  ToolPolicyService,
+  TurnController,
+  WorkLedgerController,
+  WorkspaceFilesController,
+  WorkspaceWriteLock,
+} from "@natalia/runtime-services";
+import type { TaskModuleContext } from "@natalia/workflow";
 
 type PermissionProfile = ConfigV3["permissionProfiles"][string];
 
@@ -399,9 +322,7 @@ export type RealRuntimeClientOptions = {
   permissionMode?: "ask" | "auto" | "read_only";
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
-  nativeTerminal?: Parameters<
-    typeof import("@natalia/terminal-plugin").createTerminalControllerPlugin
-  >[0]["external"];
+  nativeTerminal?: TerminalControllerPluginInput["external"];
   taskModuleContext?: TaskModuleContext;
   /** Host-owned registry shared with task delivery and other capability consumers. */
   capabilityRegistry?: CapabilityRegistry;
@@ -434,7 +355,7 @@ export type SessionExecutionState = {
   selectedModel?: { modelID?: string; variant?: string };
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
   lastProviderUsage?: { inputTokens: number; outputTokens: number };
-  activeSkill?: Skill;
+  activeSkill?: SkillMetadata;
   endTurnWaitingHuman?: { terminalID: string; reason: string };
   lastSubmitted?: SubmittedTurn;
   paused: boolean;
@@ -443,7 +364,7 @@ export type SessionExecutionState = {
 
 export function createRealRuntimeClient(
   options: RealRuntimeClientOptions = {},
-): RuntimeClient {
+): RuntimeServiceClient {
   let workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
   let sessionID: SessionID;
   let sessionStoreController!: SessionStoreController;
@@ -597,12 +518,13 @@ export function createRealRuntimeClient(
     CheckpointController
   >();
   const checkpointInitBySession = new Map<SessionID, Promise<void>>();
+  let activeCheckpointFactory: CheckpointFactory | undefined;
 
   function checkpointControllerFor(exec: SessionExecutionState) {
     const id = exec.session.id;
     const existing = checkpointControllerBySession.get(id);
     if (existing) return existing;
-    const factory = capabilityRegistry.service<CheckpointControllerFactory>(
+    const factory = capabilityRegistry.service<CheckpointFactory>(
       CHECKPOINT_FACTORY_SERVICE,
     );
     if (!factory) return undefined;
@@ -662,11 +584,12 @@ export function createRealRuntimeClient(
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
-  let readySettled = false;
-  const skillRegistry = () =>
-    capabilityRegistry.service<SkillRegistry>(SKILLS_REGISTRY_SERVICE);
-  const skillsList = () => skillRegistry()?.list() ?? [];
-  let activeSkill: Skill | undefined;
+  const skillService = () =>
+    capabilityRegistry.service<SkillService>(SKILL_SERVICE);
+  const skillsList = () => skillService()?.list() ?? [];
+  const teamBehavior = () =>
+    capabilityRegistry.service<TeamBehaviorService>(TEAM_BEHAVIOR_SERVICE);
+  let activeSkill: SkillMetadata | undefined;
   let attachmentReferences = new Map<
     string,
     import("@natalia/contracts").LocalAttachment[]
@@ -689,17 +612,10 @@ export function createRealRuntimeClient(
     | Awaited<ReturnType<typeof resolveConfig>>["config"]
     | undefined;
   let activeExternalPluginConfigFingerprint: string | undefined;
-  let activeBuiltinToolConfigFingerprint: string | undefined;
-  let activeSkillsPluginConfigFingerprint: string | undefined;
-  let activeCheckpointPluginConfigFingerprint: string | undefined;
-  let activeMcpPluginConfigFingerprint: string | undefined;
-  let activeSandboxPluginConfigFingerprint: string | undefined;
-  let activeTerminalPluginConfigFingerprint: string | undefined;
-  let activeWorkspacePluginConfigFingerprint: string | undefined;
-  let activeCompactionPluginConfigFingerprint: string | undefined;
-  let activeProviderModelPluginConfigFingerprint: string | undefined;
-  let activeBuiltinPluginConfigFingerprint: string | undefined;
   let builtinPluginIDs = new Set<string>();
+  let buildBuiltinPluginCatalog!: (
+    config: ConfigV3,
+  ) => ReturnType<typeof builtinPluginCatalog>;
   const contextWindowResolver = new ContextWindowResolver();
   let runtimeContextConfig = defaultContextStatusConfig();
   let retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
@@ -862,78 +778,8 @@ export function createRealRuntimeClient(
         workspaceRoot,
         globalPath: options.globalConfigPath,
       });
-      const nextBuiltinPluginConfigFingerprint = builtinPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      if (
-        activeBuiltinPluginConfigFingerprint !== undefined &&
-        nextBuiltinPluginConfigFingerprint !==
-          activeBuiltinPluginConfigFingerprint
-      )
-        return {
-          read: true,
-          providerReconfigured: false,
-          reason:
-            "built-in plugin configuration changes require a runtime restart",
-        };
       const nextExternalPluginConfigFingerprint =
         externalPluginConfigFingerprint(tsConfig.config);
-      const nextCheckpointPluginConfigFingerprint =
-        checkpointPluginConfigFingerprint(tsConfig.config);
-      const nextMcpPluginConfigFingerprint = mcpPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      const nextSandboxPluginConfigFingerprint = sandboxPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      const nextTerminalPluginConfigFingerprint =
-        terminalPluginConfigFingerprint(tsConfig.config);
-      const nextWorkspacePluginConfigFingerprint =
-        workspacePluginConfigFingerprint(tsConfig.config);
-      const nextCompactionPluginConfigFingerprint =
-        compactionPluginConfigFingerprint(tsConfig.config);
-      const nextProviderModelPluginConfigFingerprint =
-        providerModelPluginConfigFingerprint(tsConfig.config);
-      const nextSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      const nextBuiltinToolConfigFingerprint = builtinToolConfigFingerprint(
-        tsConfig.config,
-      );
-      const reconcileSkills =
-        activeSkillsPluginConfigFingerprint !== undefined &&
-        nextSkillsPluginConfigFingerprint !==
-          activeSkillsPluginConfigFingerprint;
-      const reconcileCheckpoint =
-        activeCheckpointPluginConfigFingerprint !== undefined &&
-        nextCheckpointPluginConfigFingerprint !==
-          activeCheckpointPluginConfigFingerprint;
-      const reconcileMcp =
-        activeMcpPluginConfigFingerprint !== undefined &&
-        nextMcpPluginConfigFingerprint !== activeMcpPluginConfigFingerprint;
-      const reconcileSandbox =
-        activeSandboxPluginConfigFingerprint !== undefined &&
-        nextSandboxPluginConfigFingerprint !==
-          activeSandboxPluginConfigFingerprint;
-      const reconcileTerminal =
-        activeTerminalPluginConfigFingerprint !== undefined &&
-        nextTerminalPluginConfigFingerprint !==
-          activeTerminalPluginConfigFingerprint;
-      const reconcileWorkspace =
-        activeWorkspacePluginConfigFingerprint !== undefined &&
-        nextWorkspacePluginConfigFingerprint !==
-          activeWorkspacePluginConfigFingerprint;
-      const reconcileCompaction =
-        activeCompactionPluginConfigFingerprint !== undefined &&
-        nextCompactionPluginConfigFingerprint !==
-          activeCompactionPluginConfigFingerprint;
-      const reconcileProviderModel =
-        activeProviderModelPluginConfigFingerprint !== undefined &&
-        nextProviderModelPluginConfigFingerprint !==
-          activeProviderModelPluginConfigFingerprint;
-      const reconcileBuiltinTools =
-        activeBuiltinToolConfigFingerprint !== undefined &&
-        nextBuiltinToolConfigFingerprint !== activeBuiltinToolConfigFingerprint;
       const reconcilePlugins =
         activeExternalPluginConfigFingerprint !== undefined &&
         nextExternalPluginConfigFingerprint !==
@@ -967,156 +813,23 @@ export function createRealRuntimeClient(
         exec.permissionMode = permissionMode;
         exec.permissionProfile = selectedPermissionProfile;
       }
-      const toolsBeforeReconcile =
-        reconcileBuiltinTools ||
-        reconcileSkills ||
-        reconcileMcp ||
-        reconcileSandbox ||
-        reconcilePlugins
-          ? new Set(tools.keys())
-          : undefined;
-      if (reconcileBuiltinTools)
-        await pluginsController.reconcileBuiltins(
-          builtinToolEntries(tsConfig.config),
-          tsConfig.config.plugins.settings,
-        );
-      if (reconcileCheckpoint) {
-        checkpointControllerBySession.clear();
-        checkpointInitBySession.clear();
-        await pluginsController.reconcileBuiltins(
-          [checkpointPluginEntry(checkpointPluginInput(tsConfig.config))],
-          tsConfig.config.plugins.settings,
-        );
-      }
-      if (reconcileMcp) {
-        mcpService = undefined;
-        await pluginsController.reconcileBuiltins(
-          [mcpPluginEntry(mcpPluginInput(tsConfig.config))],
-          tsConfig.config.plugins.settings,
-        );
-        mcpService = capabilityRegistry.service<McpService>(MCP_SERVICE);
-        await mcpService?.reload();
-      }
-      if (reconcileSandbox) {
-        sandboxController = undefined;
-        await pluginsController.reconcileBuiltins(
-          [
-            sandboxPluginEntry(sandboxPluginInput(tsConfig.config)),
-            teamPluginEntry(teamPluginEnabled(tsConfig.config)),
-          ],
-          tsConfig.config.plugins.settings,
-        );
-        sandboxController =
-          capabilityRegistry.service<SandboxService>(SANDBOX_SERVICE);
-        await sandboxController?.init();
-      }
-      if (reconcileTerminal) {
-        terminalController = undefined;
-        await pluginsController.reconcileBuiltins(
-          [terminalPluginEntry(terminalPluginInput(tsConfig.config))],
-          tsConfig.config.plugins.settings,
-        );
-        terminalController = capabilityRegistry.service<TerminalController>(
-          TERMINAL_CONTROLLER_SERVICE,
-        );
-        await terminalController?.init();
-        terminalController?.setActiveSession(sessionID);
-      }
-      if (reconcileWorkspace) {
-        workspaceWriteLock = undefined;
-        mutationRegistry = undefined;
-        workspaceFilesController = undefined;
-        await pluginsController.reconcileBuiltins(
-          [workspacePluginEntry(workspacePluginInput(tsConfig.config))],
-          tsConfig.config.plugins.settings,
-        );
-        workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
-          WORKSPACE_WRITE_LOCK_SERVICE,
-        );
-        mutationRegistry = capabilityRegistry.service<MutationRegistry>(
-          WORKSPACE_MUTATIONS_SERVICE,
-        );
-        workspaceFilesController =
-          capabilityRegistry.service<WorkspaceFilesController>(
-            WORKSPACE_FILES_SERVICE,
-          );
-      }
-      if (reconcileCompaction) {
-        providerModelController = undefined;
-        compactionService = undefined;
-        await pluginsController.reconcileBuiltins(
-          [
-            compactionPluginEntry(compactionPluginInput(tsConfig.config)),
-            providerModelPluginEntry(providerModelPluginInput(tsConfig.config)),
-          ],
-          tsConfig.config.plugins.settings,
-        );
-        compactionService =
-          capabilityRegistry.service<CompactionService>(COMPACTION_SERVICE);
-        providerModelController =
-          capabilityRegistry.service<ProviderModelController>(
-            PROVIDER_MODEL_CONTROLLER_SERVICE,
-          );
-      }
-      if (reconcileProviderModel && !reconcileCompaction) {
-        providerModelController = undefined;
-        await pluginsController.reconcileBuiltins(
-          [providerModelPluginEntry(providerModelPluginInput(tsConfig.config))],
-          tsConfig.config.plugins.settings,
-        );
-        providerModelController =
-          capabilityRegistry.service<ProviderModelController>(
-            PROVIDER_MODEL_CONTROLLER_SERVICE,
-          );
-      }
-      if (reconcileSkills) {
-        const selectedSkills = new Map(
-          [...executionBySession.entries()].flatMap(([id, exec]) =>
-            exec.activeSkill ? [[id, exec.activeSkill.qualifiedName]] : [],
-          ),
-        );
-        await pluginsController.reconcileBuiltins(
-          [skillsPluginEntry(skillsPluginInput(tsConfig.config))],
-          tsConfig.config.plugins.settings,
-        );
-        const registry = skillRegistry();
-        for (const [id, exec] of executionBySession) {
-          const qualifiedName = selectedSkills.get(id);
-          if (!qualifiedName || !registry) {
-            exec.activeSkill = undefined;
-            continue;
-          }
-          try {
-            exec.activeSkill = registry.resolve(qualifiedName);
-          } catch {
-            exec.activeSkill = undefined;
-          }
-        }
-        activeSkill = activeExec?.activeSkill;
-      }
+      const toolsBeforeReconcile = new Set(tools.keys());
+      const selectedSkills = new Map(
+        [...executionBySession.entries()].flatMap(([id, exec]) =>
+          exec.activeSkill ? [[id, exec.activeSkill.qualifiedName]] : [],
+        ),
+      );
+      const desiredBuiltins = buildBuiltinPluginCatalog(tsConfig.config);
+      builtinPluginIDs = new Set(desiredBuiltins.map((entry) => entry.id));
+      await pluginsController.reconcileDesiredBuiltins(
+        desiredBuiltins,
+        tsConfig.config.plugins.settings,
+      );
+      await refreshBuiltinServices(selectedSkills);
       if (reconcilePlugins) await pluginsController.reconcile();
-      if (toolsBeforeReconcile) publishToolCatalogChanges(toolsBeforeReconcile);
+      publishToolCatalogChanges(toolsBeforeReconcile);
       activeExternalPluginConfigFingerprint =
         nextExternalPluginConfigFingerprint;
-      activeBuiltinPluginConfigFingerprint = nextBuiltinPluginConfigFingerprint;
-      activeBuiltinToolConfigFingerprint = nextBuiltinToolConfigFingerprint;
-      activeCheckpointPluginConfigFingerprint =
-        nextCheckpointPluginConfigFingerprint;
-      activeMcpPluginConfigFingerprint = nextMcpPluginConfigFingerprint;
-      activeSandboxPluginConfigFingerprint = nextSandboxPluginConfigFingerprint;
-      activeTerminalPluginConfigFingerprint =
-        nextTerminalPluginConfigFingerprint;
-      activeWorkspacePluginConfigFingerprint =
-        nextWorkspacePluginConfigFingerprint;
-      activeCompactionPluginConfigFingerprint =
-        nextCompactionPluginConfigFingerprint;
-      activeProviderModelPluginConfigFingerprint =
-        nextProviderModelPluginConfigFingerprint;
-      activeSkillsPluginConfigFingerprint = nextSkillsPluginConfigFingerprint;
-      // Publish the new config only after plugin lifecycle state agrees with it.
-      // Newly loaded plugins still receive the parsed config through api.config;
-      // existing service consumers are notified once reconciliation completes.
-      refreshRuntimeConfigService(capabilityRegistry, tsConfig.config);
       applyAgentPolicy();
       if (
         selectedPermissionProfile?.commandRules &&
@@ -1154,10 +867,125 @@ export function createRealRuntimeClient(
       for (const exec of executionBySession.values())
         await refreshExecutionContextConfig(exec);
       return { read: true, providerReconfigured: false };
-    } catch {
-      /* config file not readable yet */
+    } catch (error) {
+      return {
+        read: true,
+        providerReconfigured: false,
+        reason: `runtime config could not be applied: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
-    return { read: false, providerReconfigured: false };
+  }
+
+  async function refreshBuiltinServices(
+    selectedSkills: Map<SessionID, string> = new Map(),
+  ) {
+    const previousTerminal = terminalController;
+    const previousSandbox = sandboxController;
+    const previousMcp = mcpService;
+    const previousContextLedgerFactory = contextLedgerFactory;
+    const nextCheckpointFactory = capabilityRegistry.service<CheckpointFactory>(
+      CHECKPOINT_FACTORY_SERVICE,
+    );
+
+    workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
+      WORKSPACE_WRITE_LOCK_SERVICE,
+    );
+    mutationRegistry = capabilityRegistry.service<MutationRegistry>(
+      WORKSPACE_MUTATIONS_SERVICE,
+    );
+    workspaceFilesController =
+      capabilityRegistry.service<WorkspaceFilesController>(
+        WORKSPACE_FILES_SERVICE,
+      );
+    terminalController = capabilityRegistry.service<TerminalController>(
+      TERMINAL_CONTROLLER_SERVICE,
+    );
+    sandboxController =
+      capabilityRegistry.service<SandboxService>(SANDBOX_SERVICE);
+    mcpService = capabilityRegistry.service<McpService>(MCP_SERVICE);
+    subagentsController =
+      capabilityRegistry.service<SubagentsService>(SUBAGENTS_SERVICE);
+    providerModelController =
+      capabilityRegistry.service<ProviderModelController>(
+        PROVIDER_MODEL_CONTROLLER_SERVICE,
+      );
+    taskWorkflowController = capabilityRegistry.service<TaskWorkflowController>(
+      TASK_WORKFLOW_CONTROLLER_SERVICE,
+    );
+    compactionService =
+      capabilityRegistry.service<CompactionService>(COMPACTION_SERVICE);
+
+    const nextSessionStore = capabilityRegistry.service<SessionStoreController>(
+      SESSION_STORE_CONTROLLER_SERVICE,
+    );
+    if (nextSessionStore) sessionStoreController = nextSessionStore;
+    const nextToolPolicy =
+      capabilityRegistry.service<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    if (nextToolPolicy) toolPolicy = nextToolPolicy;
+    const nextInteractive = capabilityRegistry.service<InteractiveWaiter>(
+      COLLABORATION_WAITER_SERVICE,
+    );
+    if (nextInteractive) interactive = nextInteractive;
+    const nextAttachment =
+      capabilityRegistry.service<AttachmentService>(ATTACHMENT_SERVICE);
+    if (nextAttachment) attachmentService = nextAttachment;
+    const nextRetry = capabilityRegistry.service<RetryService>(RETRY_SERVICE);
+    if (nextRetry) retryService = nextRetry;
+    const nextContextLedgerFactory =
+      capabilityRegistry.service<ContextLedgerFactory>(
+        CONTEXT_LEDGER_FACTORY_SERVICE,
+      );
+    if (nextContextLedgerFactory) {
+      contextLedgerFactory = nextContextLedgerFactory;
+      if (previousContextLedgerFactory !== nextContextLedgerFactory)
+        runtimeContext = nextContextLedgerFactory.create();
+    }
+    const nextStatusController =
+      capabilityRegistry.service<StatusSnapshotController>(
+        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+      );
+    if (nextStatusController) statusController = nextStatusController;
+    const nextWorkLedger = capabilityRegistry.service<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (nextWorkLedger) workLedgerController = nextWorkLedger;
+    const nextGovernance =
+      capabilityRegistry.service<GovernanceLedgerController>(
+        GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+      );
+    if (nextGovernance) governanceLedgerController = nextGovernance;
+    const nextTurnController = capabilityRegistry.service<TurnController>(
+      TURN_CONTROLLER_SERVICE,
+    );
+    if (nextTurnController) turnController = nextTurnController;
+
+    if (nextCheckpointFactory !== activeCheckpointFactory) {
+      checkpointControllerBySession.clear();
+      checkpointInitBySession.clear();
+      activeCheckpointFactory = nextCheckpointFactory;
+    }
+    if (mcpService && mcpService !== previousMcp) await mcpService.reload();
+    if (terminalController && terminalController !== previousTerminal) {
+      await terminalController.init();
+      terminalController.setActiveSession(sessionID);
+    }
+    if (sandboxController && sandboxController !== previousSandbox)
+      await sandboxController.init();
+
+    const registry = skillService();
+    for (const [id, exec] of executionBySession) {
+      const qualifiedName = selectedSkills.get(id);
+      if (!qualifiedName || !registry) {
+        exec.activeSkill = undefined;
+        continue;
+      }
+      try {
+        exec.activeSkill = registry.resolve(qualifiedName);
+      } catch {
+        exec.activeSkill = undefined;
+      }
+    }
+    activeSkill = activeExec?.activeSkill;
   }
 
   async function initialize() {
@@ -1172,252 +1000,231 @@ export function createRealRuntimeClient(
       // applied before the plugin catalog is assembled, or a disabled extension
       // would still load its plugin.
       reloadPermissionSettings(tsConfig.config);
-      const pluginEnabled = (id: string) =>
-        runtimeConfig.plugins.enabled[id] !== false;
-      const attachmentEnabled = pluginEnabled("natalia-attachment");
-      const retryEnabled = pluginEnabled("natalia-retry");
-      const contextLedgerEnabled = pluginEnabled("natalia-context-ledger");
-      const sessionStoreEnabled =
-        pluginEnabled("natalia-session-store") && attachmentEnabled;
-      const workLedgerEnabled = pluginEnabled("natalia-work-ledger");
-      const sandboxControllerEnabled = pluginEnabled(
-        SANDBOX_CONTROLLER_PLUGIN_ID,
-      );
-      const subagentsEnabled = pluginEnabled("natalia-subagents");
-      const localTools = localToolsPluginInput(runtimeConfig);
-      const builtinPlugins = builtinPluginCatalog({
-        ...computeBuiltinFeatureGates({
-          config: tsRuntimeConfig,
-          hasCustomTools: !!options.tools,
-          extensionEnabled,
-        }),
-        ...(skillsPluginInput(runtimeConfig)
-          ? {
-              skills: skillsPluginInput(runtimeConfig),
-            }
-          : {}),
-        ...(options.taskModuleContext
-          ? { taskModule: options.taskModuleContext }
-          : {}),
-        ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
-        ...(localTools ? { localTools } : {}),
-        workspace: workspacePluginInput(runtimeConfig),
-        terminal: terminalPluginInput(runtimeConfig),
-        sandbox: sandboxPluginInput(runtimeConfig),
-        ...(mcpPluginInput(runtimeConfig)
-          ? { mcp: mcpPluginInput(runtimeConfig) }
-          : {}),
-        ...(pluginEnabled("natalia-checkpoint")
-          ? { checkpoint: { workspaceRoot } }
-          : {}),
-        ...(subagentsEnabled
-          ? {
-              subagents: {
-                workDir: workspaceRoot,
-                sessionID: () => sessionID,
-              },
-            }
-          : {}),
-        ...(attachmentEnabled
-          ? { attachment: { enabled: true, workspaceRoot } }
-          : {}),
-        ...(sessionStoreEnabled
-          ? {
-              sessionStore: {
-                workspaceRoot,
-                sessionID: () => sessionID,
-                sessionDir: options.sessionDir,
-                useSqliteStore: options.useSqliteStore,
-                title: options.title,
-              },
-            }
-          : {}),
-        ...(pluginEnabled("natalia-team") &&
-        sandboxControllerEnabled &&
-        subagentsEnabled
-          ? {
-              team: {
-                enabled:
-                  extensionEnabled("plugins") || extensionEnabled("skills"),
-              },
-            }
-          : {}),
-        ...(pluginEnabled("natalia-tool-pipeline")
-          ? { toolPipeline: { enabled: true } }
-          : {}),
-        ...(pluginEnabled("natalia-collaboration")
-          ? { collaboration: { waiter: waiterDeps } }
-          : {}),
-        ...(retryEnabled
-          ? { retry: { enabled: true, policy: () => retryPolicy } }
-          : {}),
-        compaction: compactionPluginInput(runtimeConfig),
-        providerModel: providerModelPluginInput(runtimeConfig),
-        taskWorkflow: {
-          enabled:
-            tsRuntimeConfig.plugins.enabled[TASK_WORKFLOW_PLUGIN_ID] !== false,
-          controller: {
-            workspaceRoot,
-            globalConfigPath: options.globalConfigPath,
-            runtimeConfig: () => tsRuntimeConfig,
-            capabilityViews: () => [
-              capabilityRegistry,
-              ...(workspaceCapabilityView ? [workspaceCapabilityView] : []),
-            ],
-            publishDiagnostic: (message) =>
-              publish({ type: "diagnostic", level: "warning", message }),
-            resolveFlowPermissions: effectiveFlowPermissions,
-          },
-        },
-        ...(contextLedgerEnabled ? { contextLedger: { enabled: true } } : {}),
-        workLedger: {
-          enabled: workLedgerEnabled,
-          controller: {
-            openFindingIDs: () =>
-              new Set(
-                (session?.events ?? [])
-                  .filter(
-                    (
-                      event,
-                    ): event is Extract<
-                      RuntimeEvent,
-                      { type: "drift.finding_opened" }
-                    > => event.type === "drift.finding_opened",
-                  )
-                  .map((event) => event.findingID),
-              ),
-          },
-        },
-        ...(pluginEnabled("natalia-governance-ledger") && workLedgerEnabled
-          ? { governanceLedger: { enabled: true } }
-          : {}),
-        turnOrchestration: {
-          enabled:
-            sessionStoreEnabled &&
-            tsRuntimeConfig.plugins.enabled["natalia-turn-orchestration"] !==
-              false,
-          controller: {
-            session: () => session,
-            activeAbort: () => activeAbort,
-            sessionFor: (id) =>
-              executionBySession.get(id as SessionID)?.session ?? session,
-            activeAbortFor: (id) =>
-              executionBySession.get(id as SessionID)?.activeAbort,
-            persist: (fn) => {
-              sessionPersistence = sessionPersistence.then(fn).catch((error) =>
-                publish({
-                  type: "diagnostic",
-                  level: "warning",
-                  message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
-                }),
-              );
-              return sessionPersistence;
-            },
-            saveInbox: async (snapshot) => {
-              await sessionStoreController?.saveInbox(snapshot);
-            },
-            flush: async () => {
-              await sessionPersistence;
-            },
-            runCommand: async (id, text, signal, ownerID) => {
-              const owner = await ensureExecution(ownerID as SessionID);
-              publishForSession(owner, { type: "turn.started", id });
-              try {
-                return await handleCommand(id, text, signal, owner);
-              } catch (error) {
-                publishForSession(owner, {
-                  type: "turn.cancelled",
-                  id,
-                  reason:
-                    error instanceof Error ? error.message : String(error),
-                });
-                throw error;
-              } finally {
-                scheduleTitleGeneration(ownerID as SessionID);
+      buildBuiltinPluginCatalog = (runtimeConfig) => {
+        const pluginEnabled = (id: string) =>
+          runtimeConfig.plugins.enabled[id] !== false;
+        const attachmentEnabled = pluginEnabled("natalia-attachment");
+        const retryEnabled = pluginEnabled("natalia-retry");
+        const contextLedgerEnabled = pluginEnabled("natalia-context-ledger");
+        const sessionStoreEnabled =
+          pluginEnabled("natalia-session-store") && attachmentEnabled;
+        const workLedgerEnabled = pluginEnabled("natalia-work-ledger");
+        const sandboxControllerEnabled = pluginEnabled(
+          SANDBOX_CONTROLLER_PLUGIN_ID,
+        );
+        const subagentsEnabled = pluginEnabled("natalia-subagents");
+        const localTools = localToolsPluginInput(runtimeConfig);
+        return builtinPluginCatalog({
+          ...computeBuiltinFeatureGates({
+            config: tsRuntimeConfig,
+            hasCustomTools: !!options.tools,
+            extensionEnabled,
+          }),
+          ...(skillsPluginInput(runtimeConfig)
+            ? {
+                skills: skillsPluginInput(runtimeConfig),
               }
+            : {}),
+          ...(options.taskModuleContext
+            ? { taskModule: options.taskModuleContext }
+            : {}),
+          ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
+          ...(localTools ? { localTools } : {}),
+          workspace: workspacePluginInput(runtimeConfig),
+          terminal: terminalPluginInput(runtimeConfig),
+          sandbox: sandboxPluginInput(runtimeConfig),
+          ...(mcpPluginInput(runtimeConfig)
+            ? { mcp: mcpPluginInput(runtimeConfig) }
+            : {}),
+          ...(pluginEnabled("natalia-checkpoint")
+            ? { checkpoint: { workspaceRoot } }
+            : {}),
+          ...(subagentsEnabled
+            ? {
+                subagents: {
+                  workDir: workspaceRoot,
+                  sessionID: () => sessionID,
+                },
+              }
+            : {}),
+          ...(attachmentEnabled
+            ? { attachment: { enabled: true, workspaceRoot } }
+            : {}),
+          ...(sessionStoreEnabled
+            ? {
+                sessionStore: {
+                  workspaceRoot,
+                  sessionID: () => sessionID,
+                  sessionDir: options.sessionDir,
+                  useSqliteStore: options.useSqliteStore,
+                  title: options.title,
+                },
+              }
+            : {}),
+          ...(pluginEnabled("natalia-team") &&
+          sandboxControllerEnabled &&
+          subagentsEnabled
+            ? {
+                team: {
+                  enabled:
+                    extensionEnabled("plugins") || extensionEnabled("skills"),
+                },
+              }
+            : {}),
+          ...(pluginEnabled("natalia-tool-pipeline")
+            ? { toolPipeline: { enabled: true } }
+            : {}),
+          ...(pluginEnabled("natalia-collaboration")
+            ? { collaboration: { waiter: waiterDeps } }
+            : {}),
+          ...(retryEnabled
+            ? { retry: { enabled: true, policy: () => retryPolicy } }
+            : {}),
+          compaction: compactionPluginInput(runtimeConfig),
+          providerModel: providerModelPluginInput(runtimeConfig),
+          taskWorkflow: {
+            enabled:
+              runtimeConfig.plugins.enabled[TASK_WORKFLOW_PLUGIN_ID] !== false,
+            controller: {
+              workspaceRoot,
+              globalConfigPath: options.globalConfigPath,
+              runtimeConfig: () => tsRuntimeConfig,
+              capabilityViews: () => [
+                capabilityRegistry,
+                ...(workspaceCapabilityView ? [workspaceCapabilityView] : []),
+              ],
+              publishDiagnostic: (message) =>
+                publish({ type: "diagnostic", level: "warning", message }),
+              resolveFlowPermissions: effectiveFlowPermissions,
+              createRuntimeClient: (input) => createRealRuntimeClient(input),
             },
-            runTurn: async (input) => {
-              deliverQueuedMailboxAtBoundary(
-                executionBySession.get(input.sessionID as SessionID),
-              );
-              try {
-                if (providerModelController)
-                  await providerModelController.runTurn(
-                    input.sessionID as SessionID,
-                    input,
+          },
+          ...(contextLedgerEnabled ? { contextLedger: { enabled: true } } : {}),
+          workLedger: {
+            enabled: workLedgerEnabled,
+            controller: {
+              openFindingIDs: () =>
+                new Set(
+                  (session?.events ?? [])
+                    .filter(
+                      (
+                        event,
+                      ): event is Extract<
+                        RuntimeEvent,
+                        { type: "drift.finding_opened" }
+                      > => event.type === "drift.finding_opened",
+                    )
+                    .map((event) => event.findingID),
+                ),
+            },
+          },
+          ...(pluginEnabled("natalia-governance-ledger") && workLedgerEnabled
+            ? { governanceLedger: { enabled: true } }
+            : {}),
+          turnOrchestration: {
+            enabled:
+              sessionStoreEnabled &&
+              runtimeConfig.plugins.enabled["natalia-turn-orchestration"] !==
+                false,
+            controller: {
+              session: () => session,
+              activeAbort: () => activeAbort,
+              sessionFor: (id) =>
+                executionBySession.get(id as SessionID)?.session ?? session,
+              activeAbortFor: (id) =>
+                executionBySession.get(id as SessionID)?.activeAbort,
+              persist: (fn) => {
+                sessionPersistence = sessionPersistence
+                  .then(fn)
+                  .catch((error) =>
+                    publish({
+                      type: "diagnostic",
+                      level: "warning",
+                      message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
+                    }),
                   );
-                else {
-                  const exec = executionBySession.get(
-                    input.sessionID as SessionID,
-                  );
-                  publishForSession(exec, {
-                    type: "diagnostic",
-                    level: "error",
-                    message: "Provider/model plugin is disabled.",
+                return sessionPersistence;
+              },
+              saveInbox: async (snapshot) => {
+                await sessionStoreController?.saveInbox(snapshot);
+              },
+              flush: async () => {
+                await sessionPersistence;
+              },
+              runCommand: async (id, text, signal, ownerID) => {
+                const owner = await ensureExecution(ownerID as SessionID);
+                publishForSession(owner, { type: "turn.started", id });
+                try {
+                  return await handleCommand(id, text, signal, owner);
+                } catch (error) {
+                  publishForSession(owner, {
+                    type: "turn.cancelled",
+                    id,
+                    reason:
+                      error instanceof Error ? error.message : String(error),
                   });
-                  publishForSession(exec, {
-                    type: "turn.finished",
-                    id: input.id,
-                    stopReason: "error",
-                  });
+                  throw error;
+                } finally {
+                  scheduleTitleGeneration(ownerID as SessionID);
                 }
-              } finally {
-                scheduleTitleGeneration(input.sessionID as SessionID);
-              }
+              },
+              runTurn: async (input) => {
+                deliverQueuedMailboxAtBoundary(
+                  executionBySession.get(input.sessionID as SessionID),
+                );
+                try {
+                  if (providerModelController)
+                    await providerModelController.runTurn(
+                      input.sessionID as SessionID,
+                      input,
+                    );
+                  else {
+                    const exec = executionBySession.get(
+                      input.sessionID as SessionID,
+                    );
+                    publishForSession(exec, {
+                      type: "diagnostic",
+                      level: "error",
+                      message: "Provider/model plugin is disabled.",
+                    });
+                    publishForSession(exec, {
+                      type: "turn.finished",
+                      id: input.id,
+                      stopReason: "error",
+                    });
+                  }
+                } finally {
+                  scheduleTitleGeneration(input.sessionID as SessionID);
+                }
+              },
             },
           },
-        },
-        runtimeUi: {
-          enabled:
-            tsRuntimeConfig.plugins.enabled[RUNTIME_UI_PLUGIN_ID] !== false,
-          controller: {
-            provider: () => provider,
-            context: () => runtimeContext,
-            workspaceRoot,
-            permissionMode: () => permissionMode,
-            runningCount: async () =>
-              (subagentsController?.runningCount() ?? 0) +
-              (sandboxController?.runningResourceCount() ?? 0) +
-              ((await capabilityRegistry
-                .service<{
-                  runningCount(input: {
-                    workspaceRoot: string;
-                  }): Promise<number>;
-                }>("managedProcessRegistry")
-                ?.runningCount({ workspaceRoot })) ?? 0),
-            publish,
+          runtimeUi: {
+            enabled:
+              runtimeConfig.plugins.enabled[RUNTIME_UI_PLUGIN_ID] !== false,
+            controller: {
+              provider: () => provider,
+              context: () => runtimeContext,
+              workspaceRoot,
+              permissionMode: () => permissionMode,
+              runningCount: async () =>
+                (subagentsController?.runningCount() ?? 0) +
+                (sandboxController?.runningResourceCount() ?? 0) +
+                ((await capabilityRegistry
+                  .service<{
+                    runningCount(input: {
+                      workspaceRoot: string;
+                    }): Promise<number>;
+                  }>("managedProcessRegistry")
+                  ?.runningCount({ workspaceRoot })) ?? 0),
+              publish,
+            },
           },
-        },
-      });
+        });
+      };
+      const builtinPlugins = buildBuiltinPluginCatalog(runtimeConfig);
       builtinPluginIDs = new Set(builtinPlugins.map((entry) => entry.id));
       activeExternalPluginConfigFingerprint = externalPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      activeBuiltinPluginConfigFingerprint = builtinPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      activeBuiltinToolConfigFingerprint = builtinToolConfigFingerprint(
-        tsConfig.config,
-      );
-      activeCheckpointPluginConfigFingerprint =
-        checkpointPluginConfigFingerprint(tsConfig.config);
-      activeMcpPluginConfigFingerprint = mcpPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      activeSandboxPluginConfigFingerprint = sandboxPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      activeTerminalPluginConfigFingerprint = terminalPluginConfigFingerprint(
-        tsConfig.config,
-      );
-      activeWorkspacePluginConfigFingerprint = workspacePluginConfigFingerprint(
-        tsConfig.config,
-      );
-      activeCompactionPluginConfigFingerprint =
-        compactionPluginConfigFingerprint(tsConfig.config);
-      activeProviderModelPluginConfigFingerprint =
-        providerModelPluginConfigFingerprint(tsConfig.config);
-      activeSkillsPluginConfigFingerprint = skillsPluginConfigFingerprint(
         tsConfig.config,
       );
       await mountRuntimePlugins({
@@ -1426,6 +1233,9 @@ export function createRealRuntimeClient(
         settings: tsRuntimeConfig?.plugins.settings,
         loadExternal: extensionEnabled("plugins"),
       });
+      activeCheckpointFactory = capabilityRegistry.service<CheckpointFactory>(
+        CHECKPOINT_FACTORY_SERVICE,
+      );
       // The workspace built-in provides these services during its setup; every
       // consumer below runs after this point.
       workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
@@ -1550,11 +1360,8 @@ export function createRealRuntimeClient(
               [
                 profile?.commandRules,
                 options.taskModuleContext?.moduleCommandRules,
-              ].filter(
-                (
-                  rules,
-                ): rules is import("@natalia/tool-pipeline-plugin").PermissionProfileCommandRules =>
-                  Boolean(rules),
+              ].filter((rules): rules is PermissionProfileCommandRules =>
+                Boolean(rules),
               ),
               event.toolName,
               args,
@@ -1942,7 +1749,7 @@ export function createRealRuntimeClient(
           instruction: "Recover this subagent from the provider context limit.",
           signal: runner.signal,
           runStep,
-          onEvent: (event) => publishSubagentEvent(runner, event),
+          onEvent: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
         });
         if (!result.protocolViolation) break;
         correction += 1;
@@ -2239,7 +2046,8 @@ export function createRealRuntimeClient(
       runner.setStatus("running");
       beginSubagentConversation(runner, task);
       const ledger = createSubagentContext(
-        sandboxedSubagentSystemPrompt(writePaths),
+        teamBehavior()?.sandboxedSubagentSystemPrompt(writePaths) ??
+          "You are a focused Natalia TS/Bun subagent. Use the provided native tools to inspect, edit, and validate the workspace. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
         task,
       );
       const repeatedCalls = new Map<string, number>();
@@ -2621,9 +2429,9 @@ export function createRealRuntimeClient(
     const qualifiedName = activeSkillEntry?.id.match(
       /^skill:((?:project|remote|user):[^:]+):/u,
     )?.[1];
-    if (qualifiedName && skillRegistry()) {
+    if (qualifiedName && skillService()) {
       try {
-        activeSkill = skillRegistry()!.resolve(qualifiedName);
+        activeSkill = skillService()!.resolve(qualifiedName);
       } catch {
         // A removed skill must not prevent durable session recovery.
       }
@@ -3082,139 +2890,6 @@ export function createRealRuntimeClient(
     defaultPermissionProfile = derived.defaultProfile;
   }
 
-  function builtinPluginConfigFingerprint(config: ConfigV3) {
-    const permission = derivePermissionSettings({
-      config,
-      requestedProfile: options.permissionProfile,
-      optionMode: options.permissionMode,
-      permissionMode,
-    });
-    const {
-      skills: _skills,
-      mcp: _mcp,
-      ...extensions
-    } = permission.found && permission.selectedProfile?.extensions
-      ? permission.selectedProfile.extensions
-      : {};
-    return JSON.stringify({
-      enabled: selectPluginConfig(config.plugins.enabled, "static"),
-      settings: selectPluginConfig(config.plugins.settings, "static"),
-      extensions,
-      moduleExtensions: options.taskModuleContext?.moduleExtensions,
-    });
-  }
-
-  function skillsPluginConfigFingerprint(config: ConfigV3) {
-    const permission = derivePermissionSettings({
-      config,
-      requestedProfile: options.permissionProfile,
-      optionMode: options.permissionMode,
-      permissionMode,
-    });
-    return JSON.stringify({
-      enabled: config.plugins.enabled[SKILLS_PLUGIN_ID],
-      settings: config.plugins.settings[SKILLS_PLUGIN_ID],
-      skills: config.skills,
-      extension: permission.found
-        ? permission.selectedProfile?.extensions?.skills
-        : undefined,
-      moduleExtension: options.taskModuleContext?.moduleExtensions?.skills,
-    });
-  }
-
-  function checkpointPluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      enabled: config.plugins.enabled[CHECKPOINT_PLUGIN_ID],
-      settings: config.plugins.settings[CHECKPOINT_PLUGIN_ID],
-    });
-  }
-
-  function mcpPluginConfigFingerprint(config: ConfigV3) {
-    const permission = derivePermissionSettings({
-      config,
-      requestedProfile: options.permissionProfile,
-      optionMode: options.permissionMode,
-      permissionMode,
-    });
-    return JSON.stringify({
-      enabled: config.plugins.enabled[MCP_PLUGIN_ID],
-      settings: config.plugins.settings[MCP_PLUGIN_ID],
-      servers: config.mcpServers,
-      extension: permission.found
-        ? permission.selectedProfile?.extensions?.mcp
-        : undefined,
-      moduleExtension: options.taskModuleContext?.moduleExtensions?.mcp,
-    });
-  }
-
-  function sandboxPluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      enabled: config.plugins.enabled[SANDBOX_CONTROLLER_PLUGIN_ID],
-      settings: config.plugins.settings[SANDBOX_CONTROLLER_PLUGIN_ID],
-      sandbox: config.sandbox,
-    });
-  }
-
-  function terminalPluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      enabled: config.plugins.enabled[TERMINAL_CONTROLLER_PLUGIN_ID],
-      settings: config.plugins.settings[TERMINAL_CONTROLLER_PLUGIN_ID],
-      windowMode: config.runtime.terminal.windowMode,
-    });
-  }
-
-  function workspacePluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      enabled: config.plugins.enabled[WORKSPACE_PLUGIN_ID],
-      settings: config.plugins.settings[WORKSPACE_PLUGIN_ID],
-    });
-  }
-
-  function providerModelPluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      enabled: config.plugins.enabled[PROVIDER_MODEL_PLUGIN_ID],
-      settings: config.plugins.settings[PROVIDER_MODEL_PLUGIN_ID],
-    });
-  }
-
-  function compactionPluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      enabled: config.plugins.enabled[COMPACTION_PLUGIN_ID],
-      settings: config.plugins.settings[COMPACTION_PLUGIN_ID],
-    });
-  }
-
-  function builtinToolConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      tools: config.tools,
-      enabled: selectPluginConfig(config.plugins.enabled, "tool"),
-      settings: selectPluginConfig(config.plugins.settings, "tool"),
-    });
-  }
-
-  function builtinToolEntries(config: ConfigV3) {
-    const gates = computeBuiltinFeatureGates({
-      config,
-      hasCustomTools: !!options.tools,
-      extensionEnabled,
-    });
-    return [
-      ...builtinToolPluginCatalog(gates),
-      builtinPdfPluginEntry(gates.pdfEnabled),
-      localToolsPluginEntry(localToolsPluginInput(config)),
-      teamPluginEntry(teamPluginEnabled(config)),
-    ];
-  }
-
-  function teamPluginEnabled(config: ConfigV3) {
-    return (
-      config.plugins.enabled[TEAM_PLUGIN_ID] !== false &&
-      config.plugins.enabled[SANDBOX_CONTROLLER_PLUGIN_ID] !== false &&
-      config.plugins.enabled["natalia-subagents"] !== false &&
-      (extensionEnabled("plugins") || extensionEnabled("skills"))
-    );
-  }
-
   function skillsPluginInput(config: ConfigV3) {
     if (
       config.plugins.enabled[SKILLS_PLUGIN_ID] === false ||
@@ -3225,7 +2900,11 @@ export function createRealRuntimeClient(
       workspaceRoot,
       userRoot: userSkillRoot(),
       remoteURLs: config.skills.urls,
-      onLoad: (skill: Skill, output: string, context: ToolExecutionContext) => {
+      onLoad: (
+        skill: SkillMetadata,
+        output: string,
+        context: ToolExecutionContext,
+      ) => {
         const owner = context.sessionID
           ? executionBySession.get(context.sessionID as SessionID)
           : undefined;
@@ -3253,6 +2932,7 @@ export function createRealRuntimeClient(
       : {
           workspaceRoot,
           backend: () => tsRuntimeConfig?.sandbox.backend,
+          identity: config.sandbox,
         };
   }
 
@@ -3275,6 +2955,7 @@ export function createRealRuntimeClient(
           windowMode: () =>
             tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
           external: options.nativeTerminal,
+          identity: config.runtime.terminal.windowMode,
         };
   }
 
@@ -3355,6 +3036,7 @@ export function createRealRuntimeClient(
       workspaceRoot,
       enabled: () => extensionEnabled("mcp"),
       publish,
+      identity: config.mcpServers,
     };
   }
 
@@ -3436,22 +3118,10 @@ export function createRealRuntimeClient(
   ) {
     return Object.fromEntries(
       Object.entries(values ?? {}).filter(([id]) => {
-        const tool = BUILTIN_TOOL_PLUGIN_IDS.has(id);
+        const tool = isBuiltinToolPlugin(id);
         const builtin = builtinPluginIDs.has(id);
         if (kind === "tool") return tool;
-        if (kind === "static")
-          return (
-            builtin &&
-            !tool &&
-            id !== SKILLS_PLUGIN_ID &&
-            id !== CHECKPOINT_PLUGIN_ID &&
-            id !== MCP_PLUGIN_ID &&
-            id !== SANDBOX_CONTROLLER_PLUGIN_ID &&
-            id !== TERMINAL_CONTROLLER_PLUGIN_ID &&
-            id !== WORKSPACE_PLUGIN_ID &&
-            id !== COMPACTION_PLUGIN_ID &&
-            id !== PROVIDER_MODEL_PLUGIN_ID
-          );
+        if (kind === "static") return builtin && isStaticBuiltinPlugin(id);
         return !builtin;
       }),
     );
@@ -4306,13 +3976,14 @@ export function createRealRuntimeClient(
     // turn — the model must decompose and fan out instead of working
     // sequentially. Handled here (not as a slash command) so the turn runs
     // normally instead of nesting a submit inside a command.
-    if (text.trim().startsWith("/team")) {
+    const activeTeamBehavior = teamBehavior();
+    if (activeTeamBehavior && text.trim().startsWith("/team")) {
       const message = text.trim().slice("/team".length).trim();
       if (!message) throw new Error("/team requires a message after it");
       targetExec.context.add({
         id: `team-mode:${targetExec.context.journalStatus().journalOffset}`,
         role: "system",
-        content: TEAM_MODE_DIRECTIVE,
+        content: activeTeamBehavior.directive(),
       });
       text = message;
     }
@@ -4386,136 +4057,31 @@ export function createRealRuntimeClient(
     return submitted;
   }
 
-  type TitleGenerationTask = {
-    input: string;
-    timer?: ReturnType<typeof setTimeout>;
-    controller?: AbortController;
-    promise?: Promise<void>;
-  };
-  const titleGenerationTasks = new Map<SessionID, TitleGenerationTask>();
+  // Architecture convergence: the single shared port bag every runtime module
+  // reads at call time. Modules never import one another; they communicate
+  // through this context. (convergence plan §3.1)
+  const ctx = {
+    state: {},
+    ports: {},
+  } as unknown as RuntimeContext;
   let runtimeDisposed = false;
-
-  function rememberTitleInput(id: SessionID, text: string) {
-    const sanitized = sanitizeSessionTitleInput(text);
-    if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
-      return;
-    if (!titleGenerationTasks.has(id))
-      titleGenerationTasks.set(id, { input: text });
-  }
-
-  function scheduleTitleGeneration(id: SessionID) {
-    const task = titleGenerationTasks.get(id);
-    if (!task || task.timer || task.promise || runtimeDisposed) return;
-    task.timer = setTimeout(() => {
-      task.timer = undefined;
-      if (runtimeDisposed || titleGenerationTasks.get(id) !== task) return;
-      if (sessionRunCoordinator(id).active) {
-        scheduleTitleGeneration(id);
-        return;
-      }
-      const controller = new AbortController();
-      task.controller = controller;
-      task.promise = generateTitleForSession(id, task.input, controller.signal)
-        .catch(() => undefined)
-        .finally(() => {
-          if (titleGenerationTasks.get(id) === task)
-            titleGenerationTasks.delete(id);
-        });
-    }, 100);
-  }
-
-  async function cancelTitleGeneration(id: SessionID) {
-    const task = titleGenerationTasks.get(id);
-    if (!task) return;
-    titleGenerationTasks.delete(id);
-    if (task.timer) clearTimeout(task.timer);
-    task.controller?.abort(new Error("session title generation cancelled"));
-    await task.promise?.catch(() => undefined);
-  }
-  function applyGeneratedTitle(
-    id: SessionID,
-    updated: { title: string },
-    source: "generated" | "fallback",
-  ) {
-    const exec = executionBySession.get(id);
-    if (exec) {
-      exec.session.title = updated.title;
-      exec.session.metadata = {
-        ...exec.session.metadata,
-        titleSource: source,
-      };
+  ctx.state.titleGenerationTasks = new Map<
+    SessionID,
+    {
+      input: string;
+      timer?: ReturnType<typeof setTimeout>;
+      controller?: AbortController;
+      promise?: Promise<void>;
     }
-    publishForSession(exec, {
-      type: "session.title.updated",
-      sessionID: id,
-      title: updated.title,
-    });
-  }
-
-  async function generateTitleForSession(
-    id: SessionID,
-    text: string,
-    signal: AbortSignal,
-  ) {
-    const sanitized = sanitizeSessionTitleInput(text);
-    if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
-      return;
-    const loadCurrent = async () =>
-      (await sessionStoreController?.load(id)).session;
-    try {
-      await sessionPersistence;
-      const current = await loadCurrent();
-      if (
-        !current ||
-        (current.title !== "New session" &&
-          !isInvalidGeneratedSessionTitle(current.title)) ||
-        current.metadata?.titleSource === "manual"
-      )
-        return;
-      const titleProvider = executionBySession.get(id)?.provider;
-      const titleLimiter = providerConcurrencyLimiter;
-      const generated = titleProvider
-        ? await generateSessionTitle(titleProvider, sanitized, {
-            signal,
-            stream: (request) =>
-              withProviderConcurrency(
-                titleLimiter,
-                titleProvider.provider,
-                () => titleProvider.stream(request),
-                request.signal,
-              ),
-          })
-        : "";
-      if (signal.aborted) return;
-      const title = generated || fallbackSessionTitle(sanitized);
-      const source = generated ? "generated" : "fallback";
-      const updated = await sessionStoreController?.setAutoTitle(
-        id,
-        title,
-        source,
-      );
-      const committed = await loadCurrent();
-      if (
-        updated.title === title &&
-        committed?.title === title &&
-        committed.metadata?.titleSource === source
-      )
-        applyGeneratedTitle(id, updated, source);
-    } catch {
-      if (signal.aborted) return;
-      const fallback = fallbackSessionTitle(sanitized);
-      const updated = await sessionStoreController
-        ?.setAutoTitle(id, fallback, "fallback")
-        .catch(() => undefined);
-      const committed = await loadCurrent().catch(() => undefined);
-      if (
-        updated?.title === fallback &&
-        committed?.title === fallback &&
-        committed.metadata?.titleSource === "fallback"
-      )
-        applyGeneratedTitle(id, updated, "fallback");
-    }
-  }
+  >();
+  ctx.ports.isDisposed = () => runtimeDisposed;
+  ctx.ports.getSessionStoreController = () => sessionStoreController;
+  ctx.ports.getSessionPersistence = () => sessionPersistence;
+  ctx.ports.getProviderConcurrencyLimiter = () => providerConcurrencyLimiter;
+  ctx.ports.getExecutionBySession = () => executionBySession;
+  ctx.ports.publishForSession = publishForSession;
+  const { rememberTitleInput, scheduleTitleGeneration, cancelTitleGeneration } =
+    createTitleGeneration(ctx);
 
   function providerRunnerInput(sessionID: SessionID): ProviderRunnerInput {
     const exec = executionBySession.get(sessionID);
@@ -4564,6 +4130,7 @@ export function createRealRuntimeClient(
       runtimeContextConfig: () => exec.runtimeContextConfig,
       activeSkill: () => exec.activeSkill,
       skillsList,
+      skillService,
       mailboxMessages: () =>
         projectedMailboxMessages(exec.session.events)
           .filter((message) => message.status === "delivered")
@@ -6100,30 +5667,28 @@ export function createRealRuntimeClient(
   }
 
   function ensureReady() {
-    if (!ready || readySettled) {
-      readySettled = false;
-      ready = initialize().then(
-        () => {
-          readySettled = true;
-        },
-        (error) => {
-          readySettled = true;
-          const failure =
-            error instanceof Error ? error : new Error(String(error));
-          publish({
-            type: "diagnostic",
-            level: "error",
-            message: failure.message,
-          });
-          throw failure;
-        },
-      );
+    if (!ready) {
+      const initialization = initialize().catch((error) => {
+        const failure =
+          error instanceof Error ? error : new Error(String(error));
+        publish({
+          type: "diagnostic",
+          level: "error",
+          message: failure.message,
+        });
+        throw failure;
+      });
+      ready = initialization;
       void ready.catch(() => undefined);
     }
     return ready;
   }
 
   return {
+    async service<T>(name: string) {
+      await ensureReady();
+      return capabilityRegistry.service<T>(name);
+    },
     start(onEvent, startOptions) {
       sink = onEvent;
       replayMode = startOptions?.replay ?? "all";
@@ -6164,7 +5729,7 @@ export function createRealRuntimeClient(
     async dispose() {
       runtimeDisposed = true;
       await Promise.all(
-        [...titleGenerationTasks.keys()].map(cancelTitleGeneration),
+        [...ctx.state.titleGenerationTasks.keys()].map(cancelTitleGeneration),
       );
       terminalCommandBuffer.clearAll();
       for (const exec of executionBySession.values()) {
@@ -7773,27 +7338,30 @@ export function createRealRuntimeClient(
       return [
         ...(workspaceCapabilityView?.list() ?? []),
         ...capabilityRegistry.list(),
-      ].map((record) => ({
-        id: record.id,
-        name: record.name,
-        version: record.version,
-        scope: record.scope,
-        grants: record.grants,
-        dependencies: record.dependencies,
-        provides: record.provides,
-        requires: record.requires,
-        precedence: record.precedence,
+      ].map((record) => {
         // The effective contributions this capability owns, as metadata only.
         // Payloads stay on the host side: a tool definition or a settings value
         // must not leak through the query surface. Contributions that lost an
         // override are not effective and are omitted.
-        contributions: record.grants.flatMap((grant) =>
+        const contributions = record.grants.flatMap((grant) =>
           capabilityRegistry
             .contributions<unknown>(grant)
             .filter((entry) => entry.capabilityID === record.id)
             .map((entry) => ({ kind: entry.kind, name: entry.name })),
-        ),
-      }));
+        );
+        return {
+          id: record.id,
+          name: record.name,
+          version: record.version,
+          scope: record.scope,
+          grants: record.grants,
+          precedence: record.precedence,
+          provides: contributions
+            .filter((entry) => entry.kind === "services")
+            .map((entry) => entry.name),
+          contributions,
+        };
+      });
     },
     async workGraphNodes() {
       if (!session) return [];
@@ -8163,7 +7731,7 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed.startsWith("/skill ")) {
-      const skills = skillRegistry();
+      const skills = skillService();
       if (!skills) throw new Error("skill registry is not initialized");
       activeSkill = skills.resolve(trimmed.slice("/skill ".length).trim());
       commandExec.activeSkill = activeSkill;
@@ -8185,7 +7753,9 @@ export function createRealRuntimeClient(
     if (trimmed.startsWith("/skill-resource ")) {
       if (!activeSkill) throw new Error("no active skill");
       const resource = trimmed.slice("/skill-resource ".length).trim();
-      const content = await readSkillResource(activeSkill, resource);
+      const skills = skillService();
+      if (!skills) throw new Error("skill service is not initialized");
+      const content = await skills.readResource(activeSkill, resource);
       publish({ type: "content.delta", id, text: content });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });
@@ -8197,7 +7767,9 @@ export function createRealRuntimeClient(
       // A slash command runs inside the session's drain, so its cancellation
       // signal is the drain's, not the (never-assigned) activity closure: a
       // cancelled command aborts the skill script's child process.
-      const result = await runSkillScript(activeSkill, script, {
+      const skills = skillService();
+      if (!skills) throw new Error("skill service is not initialized");
+      const result = await skills.runScript(activeSkill, script, {
         signal: signal ?? commandExec.activeAbort?.signal,
       });
       publish({
@@ -8551,7 +8123,8 @@ export function createRealRuntimeClient(
     // constitution are pre stages (the first denial stops the run), and the
     // approval-and-execution block below is the execute stage's content. The
     // outcome is a frozen result the caller cannot rewrite.
-    const pipeline = new ToolExecutionPipeline()
+    const pipeline = toolPolicy!
+      .createExecutionPipeline()
       .preStage(async () => {
         const preResult = await toolLayer.preExecute(hookEvent);
         for (const diagnostic of preResult.diagnostics) {

@@ -13,19 +13,10 @@
       "path": "../attachment-plugin"
     },
     {
-      "path": "../builtin-tool-plugins"
+      "path": "../builtin-plugins"
     },
     {
       "path": "../capability"
-    },
-    {
-      "path": "../checkpoint-plugin"
-    },
-    {
-      "path": "../collaboration-plugin"
-    },
-    {
-      "path": "../compaction-plugin"
     },
     {
       "path": "../config"
@@ -34,25 +25,7 @@
       "path": "../contracts"
     },
     {
-      "path": "../context-ledger-plugin"
-    },
-    {
-      "path": "../governance-ledger-plugin"
-    },
-    {
-      "path": "../local-tools-plugin"
-    },
-    {
-      "path": "../mcp-plugin"
-    },
-    {
-      "path": "../terminal-plugin"
-    },
-    {
       "path": "../platform"
-    },
-    {
-      "path": "../provider-model-plugin"
     },
     {
       "path": "../plugin"
@@ -61,16 +34,10 @@
       "path": "../runtime"
     },
     {
-      "path": "../retry-plugin"
+      "path": "../runtime-services"
     },
     {
       "path": "../runtime-config-plugin"
-    },
-    {
-      "path": "../runtime-ui-plugin"
-    },
-    {
-      "path": "../sandbox-plugin"
     },
     {
       "path": "../session"
@@ -79,40 +46,16 @@
       "path": "../session-store-plugin"
     },
     {
-      "path": "../skills-plugin"
-    },
-    {
-      "path": "../subagents-plugin"
-    },
-    {
-      "path": "../task-module-plugin"
-    },
-    {
-      "path": "../task-workflow-plugin"
-    },
-    {
-      "path": "../team-plugin"
-    },
-    {
-      "path": "../tool-pipeline-plugin"
-    },
-    {
       "path": "../testing"
     },
     {
       "path": "../tools"
     },
     {
-      "path": "../turn-orchestration-plugin"
-    },
-    {
       "path": "../ui-model"
     },
     {
       "path": "../work-ledger-plugin"
-    },
-    {
-      "path": "../workspace-plugin"
     },
     {
       "path": "../workflow"

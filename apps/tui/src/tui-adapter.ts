@@ -71,24 +71,17 @@ export async function createTuiAdapterHost(
   const kernel = new CapabilityRegistry();
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    contribute: (manifest) => {
-      const result = kernel.tryLoad({
+    registerOwner: (manifest) => {
+      const owner = kernel.registerOwner({
         id: manifest.id,
         name: manifest.name,
         version: manifest.version,
         description: manifest.description,
         scope: manifest.scope,
         grants: ["adapters"],
-        provides: [],
       });
-      if (!result.ok)
-        throw new Error(`TUI capability failed to load: ${result.reason}`);
-      return (kind, name, payload) => {
-        kernel.contribute(manifest.id, kind, name, payload);
-        return () => undefined;
-      };
+      return owner;
     },
-    onUnload: (pluginID) => kernel.unload(pluginID),
   });
   await registry.loadBuiltin(createTuiAdapterPlugin(start));
   const materializer = createPluginAdapterMaterializer(kernel);

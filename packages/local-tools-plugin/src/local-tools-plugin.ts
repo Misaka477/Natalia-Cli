@@ -1,5 +1,6 @@
 import type { Plugin } from "@natalia/plugin";
 import type { ToolFamily } from "@natalia/tools";
+import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/runtime-services";
 import {
   loadLocalToolFamilies,
   reloadLocalToolFamily,
@@ -8,7 +9,6 @@ import {
 } from "./local-tool-families";
 
 export const LOCAL_TOOLS_PLUGIN_ID = "natalia-local-tools";
-export const LOCAL_TOOLS_RELOAD_SERVICE = "localTools.reload";
 
 export function createLocalToolsPlugin(input: {
   roots: string[];

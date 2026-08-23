@@ -4,15 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
 import {
-  createWorkspacePlugin,
   WORKSPACE_FILES_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_PLUGIN_ID,
   WORKSPACE_WRITE_LOCK_SERVICE,
   type MutationRegistry,
   type WorkspaceFilesController,
   type WorkspaceWriteLock,
-} from "../src";
+} from "@natalia/runtime-services";
+import { createWorkspacePlugin, WORKSPACE_PLUGIN_ID } from "../src";
 
 test("workspace resources exist only while the plugin is loaded", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-plugin-"));
@@ -26,10 +25,13 @@ test("workspace resources exist only while the plugin is loaded", async () => {
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
   const plugin = createWorkspacePlugin({

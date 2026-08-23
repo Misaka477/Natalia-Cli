@@ -9,7 +9,7 @@ import { agentsFromConfig } from "@natalia/agent";
 import { resolveEffectiveModel } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
 import { providerForModel } from "@natalia/runtime";
-import { NataliaDocumentStore } from "@natalia/workflow";
+import { NataliaDocumentStore } from "./natalia-document-store";
 import { readdir } from "node:fs/promises";
 
 function flowPath(path: string) {

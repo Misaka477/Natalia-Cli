@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteFlowDocument, loadFlowDocument, saveFlowDocument } from "../src";
+import {
+  deleteFlowDocument,
+  loadFlowDocument,
+  saveFlowDocument,
+} from "@natalia/workflow";
 import { NataliaDocumentStore } from "@natalia/workflow";
 
 test("flow document editor APIs atomically save and reload a stable definition", async () => {

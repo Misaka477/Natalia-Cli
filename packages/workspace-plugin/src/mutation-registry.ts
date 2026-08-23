@@ -17,27 +17,12 @@
  * no command text, no tool arguments or results ever enter it.
  */
 import type { WorkspaceOperation } from "@natalia/contracts";
+import type {
+  ExpectedMutation,
+  MutationRegistry,
+} from "@natalia/runtime-services";
 
-export type ExpectedMutation = {
-  /** Turn identity when a model tool call causes the change. */
-  sessionID?: string;
-  episodeID?: string;
-  turnID?: string;
-  callID?: string;
-  /** Non-turn operation identity (sandbox merge, checkpoint rollback, direct API). */
-  operationID?: string;
-  toolName: string;
-  /** Authorized path scope, workspace-relative; a path matches a prefix. */
-  authorizedPaths: string[];
-  /** Expected operation types; a hint matches any listed one. */
-  expectedOperations: WorkspaceOperation[];
-  /** When the tool settles, the record stays for attribution but stops matching. */
-  settled: boolean;
-};
-
-export type MutationRegistry = ReturnType<typeof createMutationRegistry>;
-
-export function createMutationRegistry() {
+export function createMutationRegistry(): MutationRegistry {
   const expected = new Map<string, ExpectedMutation>();
 
   /**

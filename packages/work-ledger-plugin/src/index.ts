@@ -14,13 +14,9 @@ export {
   type PlanDraftInput,
   type PlanStep,
 } from "./plan-ledger";
-export {
-  createWorkLedgerController,
-  type WorkLedgerController,
-} from "./work-ledger-controller";
+export { createWorkLedgerController } from "./work-ledger-controller";
 export {
   createWorkLedgerPlugin,
-  WORK_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_PLUGIN_ID,
 } from "./work-ledger-plugin";
 export {

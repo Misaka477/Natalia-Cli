@@ -16,7 +16,7 @@ import {
   type PluginManifest,
 } from "@natalia/plugin";
 import type { ToolRegistry } from "@natalia/tools";
-import type { BuiltinPluginEntry } from "./builtin-plugins/catalog";
+import type { BuiltinPluginEntry } from "@natalia/builtin-plugins";
 
 /** The capability id a plugin is loaded as. */
 export function pluginCapabilityID(pluginID: string) {
@@ -55,6 +55,11 @@ export function createPluginsController(input: {
   let registry: ReturnType<typeof createPluginRegistry> | undefined;
   let reloadSequence = 0;
   const builtinIDs = new Set<string>();
+  let desiredBuiltins = new Map<
+    string,
+    { fingerprint: string; settingsFingerprint: string }
+  >();
+  let desiredReconcileQueue = Promise.resolve();
 
   function roots() {
     return [
@@ -76,7 +81,8 @@ export function createPluginsController(input: {
           detail: entry.detail,
         });
       },
-      contribute: async (manifest, context) => {
+      onChange: input.syncGlobalCommands,
+      registerOwner: (manifest, context) => {
         const capabilityID = capabilityIDFor(manifest.id, context);
         // The plugin's capability owns everything it registers — tools,
         // commands and event listeners all reach the kernel, the single
@@ -104,68 +110,25 @@ export function createPluginsController(input: {
           const grant = grantForPoint[point];
           if (grant && !grants.includes(grant)) grants.push(grant);
         }
-        const provides: string[] = [];
-        const result = input.capabilityRegistry.tryLoad(
-          {
-            id: capabilityID,
-            name: manifest.name,
-            version: manifest.version,
-            description: manifest.description,
-            scope: manifest.scope,
-            grants,
-            provides,
-            // `requires` gates activation on the plugin's capability: its setup
-            // waits for the required services. `provides` is not declared on
-            // the registration — a plugin's services arrive during setup (post
-            // activation), and the declaration contract is enforced by
-            // `api.services.provide` (a declared name only).
-            ...(manifest.requires.length
-              ? { requires: manifest.requires }
-              : {}),
-          },
-          () => {},
-        );
-        if (!result.ok)
-          throw new Error(`plugin capability failed to load: ${result.reason}`);
-        // A plugin that requires services stays pending until they are
-        // provided; setup waits for the capability to activate — the same
-        // dependency-ordered activation a built-in capability gets.
-        if (manifest.requires.length) {
-          for (
-            let elapsed = 0;
-            elapsed < 10_000 &&
-            input.capabilityRegistry.isPending(capabilityID);
-            elapsed += 10
-          )
-            await Bun.sleep(10);
-          if (input.capabilityRegistry.isPending(capabilityID)) {
-            input.capabilityRegistry.unload(capabilityID);
-            throw new Error(
-              `plugin capability ${capabilityID} still pending: required services were not provided`,
-            );
-          }
-        }
-        return (kind, name, payload) => {
-          input.capabilityRegistry.contribute(
-            capabilityID,
-            kind,
-            name,
-            payload,
-          );
-          if (kind === "services" && !provides.includes(name))
-            provides.push(name);
-          // Kernel ownership is released when the plugin unloads (the whole
-          // capability goes), not per registration.
-          return () => {};
+        const owner = input.capabilityRegistry.registerOwner({
+          id: capabilityID,
+          name: manifest.name,
+          version: manifest.version,
+          description: manifest.description,
+          scope: manifest.scope,
+          grants,
+        });
+        return {
+          contribute: owner.contribute,
+          release: owner.release,
         };
-      },
-      onUnload: (pluginID, context) => {
-        input.capabilityRegistry.unload(capabilityIDFor(pluginID, context));
       },
       // The runtime's resolved config as a service: plugins read it by name,
       // refreshed in place on config reload (the D2 change notify).
       runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
       service: <T>(name: string) => input.capabilityRegistry.service<T>(name),
+      serviceProvider: (name) =>
+        input.capabilityRegistry.ownerOf("services", name),
       onServiceUpdate: (listener) =>
         input.capabilityRegistry.onServiceUpdate(listener),
     });
@@ -206,18 +169,78 @@ export function createPluginsController(input: {
     await loadLocal();
   }
 
-  async function reconcileBuiltins(
+  async function reconcileDesiredBuiltins(
+    entries: BuiltinPluginEntry[],
+    settings: Record<string, unknown> | undefined,
+  ) {
+    const reconciliation = desiredReconcileQueue.then(
+      () => applyDesiredBuiltins(entries, settings),
+      () => applyDesiredBuiltins(entries, settings),
+    );
+    desiredReconcileQueue = reconciliation.then(
+      () => undefined,
+      () => undefined,
+    );
+    await reconciliation;
+  }
+
+  async function applyDesiredBuiltins(
     entries: BuiltinPluginEntry[],
     settings: Record<string, unknown> | undefined,
   ) {
     const current = get();
-    const ids = new Set(entries.map((entry) => entry.id));
-    for (const manifest of current.list().reverse())
-      if (ids.has(manifest.id) && builtinIDs.has(manifest.id))
+    const entriesByID = new Map(entries.map((entry) => [entry.id, entry]));
+    if (entriesByID.size !== entries.length)
+      throw new Error("builtin desired catalog contains duplicate plugin ids");
+    for (const id of desiredBuiltins.keys()) {
+      const mounted = current.list().some((manifest) => manifest.id === id);
+      if (!mounted && input.capabilityRegistry.has(id))
+        throw new Error(
+          `builtin plugin ${id} has a capability owner but is not mounted`,
+        );
+    }
+
+    const nextDesired = new Map(
+      entries.map((entry) => [
+        entry.id,
+        {
+          fingerprint: entry.fingerprint,
+          settingsFingerprint: settingsFingerprint(settings?.[entry.id]),
+        },
+      ]),
+    );
+
+    for (const manifest of current.list().reverse()) {
+      if (!builtinIDs.has(manifest.id)) continue;
+      const entry = entriesByID.get(manifest.id);
+      const previous = desiredBuiltins.get(manifest.id);
+      const next = nextDesired.get(manifest.id);
+      if (
+        entry?.enabled &&
+        previous &&
+        next &&
+        previous?.fingerprint === next?.fingerprint &&
+        previous.settingsFingerprint === next.settingsFingerprint
+      )
+        continue;
+      if (current.list().some((loaded) => loaded.id === manifest.id)) {
         await current.unload(manifest.id);
+        if (input.capabilityRegistry.has(manifest.id))
+          throw new Error(
+            `plugin ${manifest.id} unloaded without releasing its capability owner`,
+          );
+      }
+    }
+
     for (const entry of entries)
-      if (entry.enabled)
+      if (
+        entry.enabled &&
+        !current.list().some((manifest) => manifest.id === entry.id)
+      )
         await loadBuiltin(entry.create(), settings?.[entry.id]);
+    builtinIDs.clear();
+    for (const entry of entries) builtinIDs.add(entry.id);
+    desiredBuiltins = nextDesired;
     input.syncGlobalCommands();
   }
 
@@ -266,11 +289,19 @@ export function createPluginsController(input: {
     return registry;
   }
 
-  /** The loaded plugins, or an empty list when plugins are not enabled. */
+  /** The mounted external plugins, including pending and failed plugins. */
   function list(): PluginManifest[] {
     return (registry?.list() ?? []).filter(
       (manifest) => !builtinIDs.has(manifest.id),
     );
+  }
+
+  function status(id: string) {
+    return registry?.status(id);
+  }
+
+  function active(id: string) {
+    return registry?.active(id) ?? false;
   }
 
   async function loadBuiltin(plugin: Plugin, config?: unknown) {
@@ -279,7 +310,8 @@ export function createPluginsController(input: {
     try {
       await current.loadBuiltin(plugin, config);
     } catch (error) {
-      builtinIDs.delete(plugin.manifest.id);
+      if (!current.status(plugin.manifest.id))
+        builtinIDs.delete(plugin.manifest.id);
       throw error;
     }
     input.syncGlobalCommands();
@@ -350,8 +382,10 @@ export function createPluginsController(input: {
           message: `plugin ${plugin.id} cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
+    await current.close();
     registry = undefined;
     builtinIDs.clear();
+    desiredBuiltins.clear();
   }
 
   function dispatch(event: RuntimeEvent) {
@@ -362,10 +396,12 @@ export function createPluginsController(input: {
     init,
     get,
     list,
+    status,
+    active,
     loadBuiltin,
     loadLocal,
     reconcile,
-    reconcileBuiltins,
+    reconcileDesiredBuiltins,
     unload,
     unloadBuiltin,
     reload,
@@ -376,4 +412,20 @@ export function createPluginsController(input: {
 
 function capabilityIDFor(pluginID: string, context: PluginLoadContext) {
   return context.builtin ? pluginID : pluginCapabilityID(pluginID);
+}
+
+function settingsFingerprint(value: unknown): string {
+  return JSON.stringify(normalizeSettings(value));
+}
+
+function normalizeSettings(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (Array.isArray(value)) return value.map(normalizeSettings);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, normalizeSettings(child)]),
+    );
+  return value;
 }

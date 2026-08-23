@@ -1,12 +1,13 @@
 import {
   NataliaDocumentStore,
   type ContributedNataliaDocuments,
-} from "@natalia/workflow";
+} from "./natalia-document-store";
 import { readdir } from "node:fs/promises";
 import type { ConfigV3 } from "@natalia/contracts";
 import { manualFlowTask } from "./flow-document";
 import { assertTaskReferences } from "./task-preflight";
 import type { ResolveFlowPermissions } from "./flow-permissions";
+import { effectiveFlowPermissions } from "./effective-policy";
 
 import type { WorkflowDocumentChoice } from "@natalia/contracts";
 export type { WorkflowDocumentChoice } from "@natalia/contracts";
@@ -120,9 +121,7 @@ async function taskLaunchReadiness(
       throw new Error(
         `stage has no minimum completion condition: ${conditionless.id}`,
       );
-    if (!resolveFlowPermissions)
-      throw new Error("flow permission resolver is unavailable");
-    const blocked = resolveFlowPermissions({
+    const blocked = (resolveFlowPermissions ?? effectiveFlowPermissions)({
       profile: config.permissionProfiles[task.permissionProfile],
       flow,
       taskCapabilities: {

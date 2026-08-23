@@ -1,18 +1,15 @@
-import {
-  CONTEXT_LEDGER_FACTORY_SERVICE,
-  CONTEXT_LEDGER_PLUGIN_ID,
-} from "@natalia/context-ledger-plugin";
+import { CONTEXT_LEDGER_PLUGIN_ID } from "@natalia/context-ledger-plugin";
 import type { Plugin } from "@natalia/plugin";
+import { RETRY_PLUGIN_ID } from "@natalia/retry-plugin";
 import {
-  RETRY_PLUGIN_ID,
+  COMPACTION_SERVICE,
+  CONTEXT_LEDGER_FACTORY_SERVICE,
   RETRY_SERVICE,
   type RetryService,
-} from "@natalia/retry-plugin";
+} from "@natalia/runtime-services";
 import { createCompactionService } from "./compaction-service";
 
 export const COMPACTION_PLUGIN_ID = "natalia-compaction";
-export const COMPACTION_SERVICE = "compaction.service";
-
 export function createCompactionPlugin(): Plugin {
   return {
     manifest: {

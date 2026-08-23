@@ -9,11 +9,9 @@
 import type { Plugin } from "@natalia/plugin";
 import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
 import { createMcpController } from "./mcp-controller";
-
-export type { McpService } from "./mcp-controller";
+import { MCP_SERVICE } from "@natalia/runtime-services";
 
 export const MCP_PLUGIN_ID = "natalia-mcp";
-export const MCP_SERVICE = "mcp.service";
 
 export function createMcpPlugin(input: {
   servers(): Record<string, MCPServerConfig>;

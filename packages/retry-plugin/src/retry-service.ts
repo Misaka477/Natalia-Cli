@@ -4,15 +4,7 @@ import {
   type RetryContext,
   type RetryRunnerOptions,
 } from "@natalia/runtime";
-
-export type RetryService = {
-  policy(): RetryRunnerOptions["policy"];
-  run<T>(
-    context: RetryContext,
-    fn: (attempt: RetryAttemptContext) => Promise<T>,
-    options?: Omit<RetryRunnerOptions, "policy">,
-  ): Promise<T>;
-};
+import type { RetryService } from "@natalia/runtime-services";
 
 export function createRetryService(input: {
   policy(): RetryRunnerOptions["policy"];

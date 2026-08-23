@@ -1,12 +1,11 @@
 import type { Plugin } from "@natalia/plugin";
+import { createWorkLedgerController } from "./work-ledger-controller";
 import {
-  createWorkLedgerController,
+  WORK_LEDGER_CONTROLLER_SERVICE,
   type WorkLedgerController,
-} from "./work-ledger-controller";
+} from "@natalia/runtime-services";
 
 export const WORK_LEDGER_PLUGIN_ID = "natalia-work-ledger";
-export const WORK_LEDGER_CONTROLLER_SERVICE = "work-ledger.controller";
-
 export function createWorkLedgerPlugin(
   input: Parameters<typeof createWorkLedgerController>[0],
 ): Plugin {

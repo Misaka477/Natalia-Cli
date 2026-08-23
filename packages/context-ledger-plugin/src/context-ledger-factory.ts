@@ -1,12 +1,9 @@
 import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger } from "@natalia/runtime";
-
-export type RuntimeContextLedger = ContextLedger;
-
-export type ContextLedgerFactory = {
-  create(): RuntimeContextLedger;
-  restore(context: RuntimeContextLedger, events: RuntimeEvent[]): void;
-};
+import type {
+  ContextLedgerFactory,
+  RuntimeContextLedger,
+} from "@natalia/runtime-services";
 
 export function createContextLedgerFactory(): ContextLedgerFactory {
   return {

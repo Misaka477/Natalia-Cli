@@ -10,15 +10,18 @@
 import type { Plugin } from "@natalia/plugin";
 import {
   SANDBOX_SERVICE,
-  SANDBOX_PLUGIN_ID,
-  type SandboxService,
-} from "@natalia/sandbox-plugin";
-import {
   SUBAGENTS_SERVICE,
-  SUBAGENTS_PLUGIN_ID,
+  TEAM_BEHAVIOR_SERVICE,
+  type SandboxService,
   type SubagentsService,
-} from "@natalia/subagents-plugin";
+} from "@natalia/runtime-services";
+import { SANDBOX_PLUGIN_ID } from "@natalia/sandbox-plugin";
+import { SUBAGENTS_PLUGIN_ID } from "@natalia/subagents-plugin";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
+import {
+  sandboxedSubagentSystemPrompt,
+  TEAM_MODE_DIRECTIVE,
+} from "./agent-team-prompts";
 
 export const TEAM_PLUGIN_ID = "natalia-team";
 
@@ -33,7 +36,7 @@ export function createTeamPlugin(): Plugin {
         "Parallel fan-out of sandboxed subagents and the lead reviewer's merge.",
       entry: "natalia:team",
       scope: "workspace",
-      provides: [],
+      provides: [TEAM_BEHAVIOR_SERVICE],
       requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],
       optionalRequires: [],
       conflicts: [],
@@ -52,9 +55,13 @@ export function createTeamPlugin(): Plugin {
         },
       ],
       hooks: {},
-      integrationPoints: ["tools"],
+      integrationPoints: ["tools", "services"],
     },
     setup(api) {
+      api.services.provide(TEAM_BEHAVIOR_SERVICE, {
+        directive: () => TEAM_MODE_DIRECTIVE,
+        sandboxedSubagentSystemPrompt,
+      });
       api.tools.register(
         createTeamFanoutTool({
           subagents: () => {

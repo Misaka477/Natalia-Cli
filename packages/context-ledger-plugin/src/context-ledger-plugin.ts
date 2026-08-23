@@ -1,12 +1,11 @@
 import type { Plugin } from "@natalia/plugin";
 import {
-  createContextLedgerFactory,
+  CONTEXT_LEDGER_FACTORY_SERVICE,
   type ContextLedgerFactory,
-} from "./context-ledger-factory";
+} from "@natalia/runtime-services";
+import { createContextLedgerFactory } from "./context-ledger-factory";
 
 export const CONTEXT_LEDGER_PLUGIN_ID = "natalia-context-ledger";
-export const CONTEXT_LEDGER_FACTORY_SERVICE = "context-ledger.factory";
-
 export function createContextLedgerPlugin(): Plugin {
   let factory: ContextLedgerFactory | undefined;
   return {

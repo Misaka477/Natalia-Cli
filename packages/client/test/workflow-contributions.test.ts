@@ -6,9 +6,9 @@ import { configV3Schema } from "@natalia/contracts";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createRealRuntimeClient } from "../src/real-runtime";
 import { runTaskFromDocument } from "../src/task-controller";
-import { flowOverview, scheduledTaskOverview } from "../src/task-overview";
-import { workflowContributionsProjection } from "@natalia/task-workflow-plugin";
-import { workflowDocumentCatalog } from "../src/workflow-document-catalog";
+import { flowOverview, scheduledTaskOverview } from "@natalia/workflow";
+import { workflowContributionsProjection } from "@natalia/workflow";
+import { workflowDocumentCatalog } from "@natalia/workflow";
 
 const flow = {
   kind: "natalia-flow" as const,
@@ -31,25 +31,21 @@ const task = {
 
 function registryWithDocuments() {
   const registry = new CapabilityRegistry();
-  registry.load(
-    {
-      id: "review",
-      name: "Review",
-      version: "1",
-      scope: "workspace",
-      grants: ["workflows"],
-    },
-    (capability) => {
-      capability.contribute("workflows", "review-flow", flow);
-      capability.contribute("workflows", "review-task", task);
-    },
-  );
-  return registry;
+  const owner = registry.registerOwner({
+    id: "review",
+    name: "Review",
+    version: "1",
+    scope: "workspace",
+    grants: ["workflows"],
+  });
+  owner.contribute("workflows", "review-flow", flow);
+  owner.contribute("workflows", "review-task", task);
+  return { registry, owner };
 }
 
 test("workflow contributions appear in catalog and both management overviews", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workflow-contributions-"));
-  const registry = registryWithDocuments();
+  const { registry } = registryWithDocuments();
   const projection = workflowContributionsProjection(registry);
   const config = configV3Schema.parse({ version: 3 });
 
@@ -115,22 +111,18 @@ test("flow overview associates a contributed task that references a virtual path
     join(tmpdir(), "natalia-workflow-contributions-path-"),
   );
   const registry = new CapabilityRegistry();
-  registry.load(
-    {
-      id: "review",
-      name: "Review",
-      version: "1",
-      scope: "workspace",
-      grants: ["workflows"],
-    },
-    (capability) => {
-      capability.contribute("workflows", "review-flow", flow);
-      capability.contribute("workflows", "review-task", {
-        ...task,
-        flow: { path: "cap:review/flow_capability.yaml" },
-      });
-    },
-  );
+  const owner = registry.registerOwner({
+    id: "review",
+    name: "Review",
+    version: "1",
+    scope: "workspace",
+    grants: ["workflows"],
+  });
+  owner.contribute("workflows", "review-flow", flow);
+  owner.contribute("workflows", "review-task", {
+    ...task,
+    flow: { path: "cap:review/flow_capability.yaml" },
+  });
 
   await expect(
     flowOverview({
@@ -143,17 +135,15 @@ test("flow overview associates a contributed task that references a virtual path
 });
 
 test("invalid contributions diagnose, scope unload removes documents", async () => {
-  const registry = registryWithDocuments();
-  registry.load(
-    {
-      id: "broken",
-      name: "Broken",
-      version: "1",
-      scope: "session",
-      grants: ["workflows"],
-    },
-    (capability) => capability.contribute("workflows", "bad", { kind: "nope" }),
-  );
+  const { registry, owner: reviewOwner } = registryWithDocuments();
+  const brokenOwner = registry.registerOwner({
+    id: "broken",
+    name: "Broken",
+    version: "1",
+    scope: "session",
+    grants: ["workflows"],
+  });
+  brokenOwner.contribute("workflows", "bad", { kind: "nope" });
 
   const projected = workflowContributionsProjection(registry);
   expect(Object.keys(projected.documents)).toEqual([
@@ -166,7 +156,7 @@ test("invalid contributions diagnose, scope unload removes documents", async () 
     ),
   ]);
 
-  registry.unloadScope("workspace");
+  reviewOwner.release();
   expect(workflowContributionsProjection(registry).documents).toEqual({});
 });
 
@@ -199,7 +189,7 @@ test("the runtime previews a contributed task through its virtual path", async (
   const root = await mkdtemp(
     join(tmpdir(), "natalia-workflow-contributions-preview-"),
   );
-  const registry = registryWithDocuments();
+  const { registry } = registryWithDocuments();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_workflow_contributions_preview",
@@ -227,40 +217,36 @@ test("task execution resolves current contributions and stops after scope unload
     join(tmpdir(), "natalia-workflow-contributions-run-"),
   );
   const registry = new CapabilityRegistry();
-  registry.load(
-    {
-      id: "doctor",
-      name: "Doctor",
-      version: "1",
-      scope: "workspace",
-      grants: ["workflows"],
-    },
-    (capability) => {
-      capability.contribute("workflows", "doctor-flow", {
-        ...flow,
-        flowID: "flow_doctor",
-        modules: [
-          {
-            ...flow.modules[0]!,
-            minimumConditions: [{ id: "checked", text: "Run doctor" }],
-          },
-        ],
-      });
-      capability.contribute("workflows", "doctor-task", {
-        ...task,
-        taskID: "task_doctor",
-        prompt: "/doctor",
-        flow: { flowID: "flow_doctor" },
-      });
-    },
-  );
+  const owner = registry.registerOwner({
+    id: "doctor",
+    name: "Doctor",
+    version: "1",
+    scope: "workspace",
+    grants: ["workflows"],
+  });
+  owner.contribute("workflows", "doctor-flow", {
+    ...flow,
+    flowID: "flow_doctor",
+    modules: [
+      {
+        ...flow.modules[0]!,
+        minimumConditions: [{ id: "checked", text: "Run doctor" }],
+      },
+    ],
+  });
+  owner.contribute("workflows", "doctor-task", {
+    ...task,
+    taskID: "task_doctor",
+    prompt: "/doctor",
+    flow: { flowID: "flow_doctor" },
+  });
   const output: string[] = [];
   const config = configV3Schema.parse({ version: 3 });
 
   const result = await runTaskFromDocument({
     workspaceRoot: root,
     taskID: "task_doctor",
-    capabilityRegistry: registry,
+    contributedDocuments: workflowContributionsProjection(registry).documents,
     config,
     json: true,
     emit: (line) => output.push(line),
@@ -270,12 +256,12 @@ test("task execution resolves current contributions and stops after scope unload
     true,
   );
 
-  registry.unloadScope("workspace");
+  owner.release();
   await expect(
     runTaskFromDocument({
       workspaceRoot: root,
       taskID: "task_doctor",
-      capabilityRegistry: registry,
+      contributedDocuments: workflowContributionsProjection(registry).documents,
       config,
       json: true,
       emit: () => undefined,

@@ -33,56 +33,20 @@ import {
   PERMISSION_FAMILIES,
 } from "@natalia/contracts";
 import type { ProviderToolCall } from "@natalia/runtime";
-import type { RuntimeTool } from "@natalia/tools";
+import { parseToolArguments, type RuntimeTool } from "@natalia/tools";
 import { projectInteractiveRequests } from "@natalia/session";
-import type { WorkLedgerController } from "@natalia/work-ledger-plugin";
-import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
+import type {
+  InteractiveWaiter,
+  InteractiveWaiterDeps,
+} from "@natalia/runtime-services";
+import {
+  readOnlyToolMessage,
+  terminalApprovalScope,
+} from "@natalia/runtime-services";
 
-export type InteractiveWaiterDeps = {
-  publish: (event: RuntimeEvent) => void;
-  sessionID: () => SessionID;
-  permissionMode: (turnID?: string) => "ask" | "auto" | "read_only";
-  /**
-   * The abort signal of the turn that issued the request, resolved per turn.
-   * Parallel sessions make this a per-turn fact: a background turn waiting for
-   * an approval must listen to its own session's signal, never to the
-   * currently attached session's — cancelling the foreground session must not
-   * abort a background turn's prompt.
-   */
-  abortSignal: (turnID: string) => AbortSignal | undefined;
-  activeTurnID: () => string | undefined;
-  /**
-   * Whether the runtime still considers this request open. Answered from the
-   * journal rather than from the maps below, so a response arriving after a reopen
-   * is judged against the durable record.
-   */
-  isPending: (
-    sessionID: SessionID,
-    id: string,
-    kind: "approval" | "question",
-  ) => boolean;
-  /**
-   * The session a turn belongs to. Parallel sessions make "the session" a
-   * per-turn fact: a background turn keeps running after the UI attaches to
-   * another session, and its approvals must be judged against the session it
-   * was submitted to, never the currently attached one.
-   */
-  sessionIDForTurn: (turnID: string) => SessionID;
-  /** The subagent that owns a child turn, when this is not a main-agent turn. */
-  agentIDForTurn?: (turnID: string) => string | undefined;
-  /**
-   * Publish into a specific session's exec (journal + stamp). Approval and
-   * question events belong to the turn's session, not whichever session the UI
-   * is attached to — a background turn's request must land in its own journal.
-   */
-  publishForSession: (sessionID: SessionID, event: RuntimeEvent) => void;
-  capabilityOwnerForTool?: (toolName: string) => string | undefined;
-  workLedger: () => WorkLedgerController;
-};
-
-export type InteractiveWaiter = ReturnType<typeof createInteractiveWaiter>;
-
-export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
+export function createInteractiveWaiter(
+  deps: InteractiveWaiterDeps,
+): InteractiveWaiter {
   const { publish } = deps;
   const pendingApprovals = new Map<string, ApprovalResponse>();
   const pendingApprovalRequests = new Set<string>();
@@ -543,59 +507,6 @@ function approvalPresentation(toolName: string, rawArguments: string) {
   return { preview, detail: rawArguments, keyArguments, sensitive };
 }
 
-export function terminalApprovalScope(toolName: string, rawArguments: string) {
-  const args = tryParseToolArguments(rawArguments);
-  const terminalID = typeof args.id === "string" ? args.id : undefined;
-  if (!terminalID) return undefined;
-  if (
-    ![
-      "interactive_terminal_write",
-      "interactive_terminal_send_line",
-      "interactive_terminal_keys",
-    ].includes(toolName)
-  )
-    return undefined;
-  const risk = terminalInputRisk(toolName, args);
-  return {
-    terminalID,
-    risk,
-    scope: `terminal:${terminalID}:${risk === "terminal_low" ? "low-risk" : "high-risk"}`,
-    ttlMs: 30 * 60 * 1_000,
-  } as const;
-}
-
-export function terminalInputRisk(
-  toolName: string,
-  args: Record<string, unknown>,
-) {
-  if (toolName === "interactive_terminal_keys") {
-    const keys = Array.isArray(args.keys)
-      ? args.keys
-      : args.key === undefined
-        ? []
-        : [{ key: args.key, modifiers: args.modifiers }];
-    return keys.every((value) => {
-      if (!value || typeof value !== "object") return false;
-      const key = value as Record<string, unknown>;
-      const modifiers = Array.isArray(key.modifiers) ? key.modifiers : [];
-      return (
-        modifiers.length === 0 &&
-        typeof key.key === "string" &&
-        /^[\p{L}\p{N}\p{P}\p{S}\s]$/u.test(key.key)
-      );
-    })
-      ? "terminal_low"
-      : "terminal_high";
-  }
-  const input = typeof args.text === "string" ? args.text : args.input;
-  if (typeof input !== "string") return "terminal_high";
-  return /(?:\brm\b|\bsudo\b|\bcurl\b|\bwget\b|\bssh\b|\bscp\b|\b(?:git\s+push|npm\s+publish)\b|>|\bchmod\b|\bkill\b)/iu.test(
-    input,
-  )
-    ? "terminal_high"
-    : "terminal_low";
-}
-
 function singleLine(value: string, max: number) {
   const compact = value.replace(/\s+/gu, " ").trim();
   const chars = Array.from(compact);
@@ -606,10 +517,6 @@ function singleLine(value: string, max: number) {
  * The refusal a read-only session reports. Exported because the executor refuses
  * the same way before a call ever reaches an approval.
  */
-export function readOnlyToolMessage(toolName: string) {
-  return `tool denied by read-only permission mode: ${toolName}`;
-}
-
 /**
  * The refusal the model reads. The reason has to be actionable, because the
  * turn continues: repeating the same call would only be refused again.

@@ -5,17 +5,7 @@ import {
   buildEvidenceRecorded,
   evidenceStatusForPlanState,
 } from "./evidence-ledger";
-
-export type { PlanLifecycleState } from "./evidence-ledger";
-
-export type GovernanceLedgerController = {
-  seedConstitutionRules: typeof seedConstitutionRules;
-  recordDecision: typeof recordDecision;
-  boundValidationOutcome: typeof boundValidationOutcome;
-  buildCompletionRecorded: typeof buildCompletionRecorded;
-  buildEvidenceRecorded: typeof buildEvidenceRecorded;
-  evidenceStatusForPlanState: typeof evidenceStatusForPlanState;
-};
+import type { GovernanceLedgerController } from "@natalia/runtime-services";
 
 export function createGovernanceLedgerController(): GovernanceLedgerController {
   return {

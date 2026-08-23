@@ -1,10 +1,9 @@
 import type { Plugin } from "@natalia/plugin";
 import type { RetryRunnerOptions } from "@natalia/runtime";
 import { createRetryService } from "./retry-service";
+import { RETRY_SERVICE } from "@natalia/runtime-services";
 
 export const RETRY_PLUGIN_ID = "natalia-retry";
-export const RETRY_SERVICE = "retry.service";
-
 export function createRetryPlugin(input: {
   policy(): RetryRunnerOptions["policy"];
 }): Plugin {

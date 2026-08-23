@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
 import { createPluginRegistry } from "@natalia/plugin";
+import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
 import {
   ATTACHMENT_PLUGIN_ID,
-  ATTACHMENT_SERVICE,
   attachmentDataURL,
   attachmentText,
   cleanupUnreferencedAttachments,
@@ -155,10 +155,13 @@ test("attachment service is absent after plugin unload", async () => {
       delete() {},
     } as never,
     allowed: ["services"],
-    contribute: () => (kind, name, value) => {
-      if (kind === "services") services.set(name, value);
-      return () => services.delete(name);
-    },
+    registerOwner: () => ({
+      contribute: (kind, name, value) => {
+        if (kind === "services") services.set(name, value);
+        return () => services.delete(name);
+      },
+      release: () => undefined,
+    }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
 

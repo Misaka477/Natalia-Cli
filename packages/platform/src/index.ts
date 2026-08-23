@@ -3,6 +3,16 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
+export {
+  findWorkspaceFiles,
+  globWorkspaceFiles,
+  invalidateWorkspaceFiles,
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  searchWorkspaceFiles,
+  watchWorkspaceFiles,
+} from "./workspace-files";
+
 /**
  * Host platform abstraction.
  *

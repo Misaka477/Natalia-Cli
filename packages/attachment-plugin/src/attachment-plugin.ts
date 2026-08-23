@@ -1,9 +1,8 @@
 import type { Plugin } from "@natalia/plugin";
 import { createAttachmentService } from "./attachment-service";
+import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
 
 export const ATTACHMENT_PLUGIN_ID = "natalia-attachment";
-export const ATTACHMENT_SERVICE = "attachment.service";
-
 export function createAttachmentPlugin(input: {
   workspaceRoot: string;
 }): Plugin {

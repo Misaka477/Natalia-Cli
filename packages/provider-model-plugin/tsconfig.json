@@ -6,6 +6,7 @@
   },
   "include": ["src", "test"],
   "references": [
+    { "path": "../runtime-services" },
     { "path": "../agent" },
     { "path": "../attachment-plugin" },
     { "path": "../compaction-plugin" },
@@ -16,7 +17,6 @@
     { "path": "../retry-plugin" },
     { "path": "../runtime" },
     { "path": "../session" },
-    { "path": "../skills-plugin" },
     { "path": "../tools" }
   ]
 }

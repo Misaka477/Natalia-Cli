@@ -1,38 +1,16 @@
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import {
-  createProviderRunner,
-  type ProviderRunnerInput,
-} from "./provider-runner";
-
-export type ProviderTurnInput = Parameters<
-  ReturnType<typeof createProviderRunner>["runTurn"]
->[0];
-
-export type ProviderChatTurnInput = {
-  sessionID: SessionID;
-  text: string;
-  responseMessageID: string;
-  internal?: boolean;
-};
-
-export type ProviderModelControllerInput = {
-  initialize(): void;
-  runnerInput(sessionID: SessionID): ProviderRunnerInput;
-  chat: {
-    available(sessionID: SessionID): boolean;
-    publish(sessionID: SessionID, event: RuntimeEvent): void;
-    runBody(input: ProviderChatTurnInput, signal: AbortSignal): Promise<void>;
-    wake(sessionID: SessionID): Promise<void>;
-  };
-};
-
-export type ProviderModelController = ReturnType<
-  typeof createProviderModelController
->;
+import type {
+  ProviderChatTurnInput,
+  ProviderModelController,
+  ProviderModelControllerInput,
+  ProviderRunnerInput,
+  ProviderTurnInput,
+} from "@natalia/runtime-services";
+import { createProviderRunner } from "./provider-runner";
 
 export function createProviderModelController(
   input: ProviderModelControllerInput,
-) {
+): ProviderModelController {
   const runners = new Map<SessionID, ReturnType<typeof createProviderRunner>>();
   const chatAborts = new Map<SessionID, AbortController>();
   const chatTasks = new Map<SessionID, Promise<void>>();

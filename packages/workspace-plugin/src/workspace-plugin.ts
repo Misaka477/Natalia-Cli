@@ -12,25 +12,22 @@
  *     mutation registry and reports un-attributed drift.
  */
 import type { Plugin } from "@natalia/plugin";
-import {
-  createMutationRegistry,
-  type MutationRegistry,
-} from "./mutation-registry";
+import { createMutationRegistry } from "./mutation-registry";
 import {
   createWorkspaceFilesController,
-  type WorkspaceFilesController,
   type WorkspaceMutationIdentity,
 } from "./workspace-files-controller";
+import { createWorkspaceWriteLock } from "./workspace-write-lock";
 import {
-  createWorkspaceWriteLock,
+  WORKSPACE_FILES_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  WORKSPACE_WRITE_LOCK_SERVICE,
+  type MutationRegistry,
+  type WorkspaceFilesController,
   type WorkspaceWriteLock,
-} from "./workspace-write-lock";
+} from "@natalia/runtime-services";
 
 export const WORKSPACE_PLUGIN_ID = "natalia-workspace";
-export const WORKSPACE_WRITE_LOCK_SERVICE = "workspace.writeLock";
-export const WORKSPACE_MUTATIONS_SERVICE = "workspace.mutations";
-export const WORKSPACE_FILES_SERVICE = "workspace.files";
-
 export function createWorkspacePlugin(input: {
   workspaceRoot: string;
   listPaths: () => Promise<string[]>;

@@ -1171,7 +1171,7 @@ test("an external integration configures the runtime the way the TUI does", asyn
         runtime: { maxStepsPerTurn: 7 },
       },
     });
-    expect(replayed.applied).toBe(true);
+    expect(replayed).toEqual({ applied: true });
 
     // A bad scope is invalid params, not a guess.
     const badScope = await sdk

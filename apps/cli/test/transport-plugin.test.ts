@@ -19,21 +19,14 @@ test("transport plugin registration does not create a server", async () => {
   const kernel = new CapabilityRegistry();
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
-    contribute: (manifest) => {
-      expect(
-        kernel.tryLoad({
-          id: manifest.id,
-          name: manifest.name,
-          version: manifest.version,
-          scope: manifest.scope,
-          grants: ["adapters"],
-          provides: [],
-        }).ok,
-      ).toBe(true);
-      return (kind, name, payload) => {
-        kernel.contribute(manifest.id, kind, name, payload);
-        return () => undefined;
-      };
+    registerOwner: (manifest) => {
+      return kernel.registerOwner({
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        scope: manifest.scope,
+        grants: ["adapters"],
+      });
     },
   });
   const plugin = createHttpTransportPlugin(() => {

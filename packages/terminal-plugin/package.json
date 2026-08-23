@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/runtime-services": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/native-terminal": "workspace:*",
     "@natalia/plugin": "workspace:*",

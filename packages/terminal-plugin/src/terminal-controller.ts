@@ -13,6 +13,7 @@ import {
   writeWezTermNativeDomainConfig,
   type NativeInputBroker,
 } from "@natalia/native-terminal";
+import type { TerminalController } from "@natalia/runtime-services";
 
 /**
  * The native terminal resource controller — cut of the resource controllers
@@ -35,7 +36,7 @@ export function createTerminalController(input: {
   /** How foreground terminal starts relate to the human window (§TERM-9). */
   windowMode(): "auto" | "windowless" | "window";
   external?: NativeTerminalRegistry;
-}) {
+}): TerminalController {
   let nativeTerminal: NativeTerminalRegistry | undefined = input.external;
   let nativeInputBroker: NativeInputBroker | undefined;
   let closed = false;
@@ -371,5 +372,3 @@ export function createTerminalController(input: {
     close,
   };
 }
-
-export type TerminalController = ReturnType<typeof createTerminalController>;

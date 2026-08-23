@@ -6,6 +6,7 @@
   },
   "include": ["src", "test"],
   "references": [
+    { "path": "../runtime-services" },
     { "path": "../contracts" },
     { "path": "../plugin" },
     { "path": "../runtime" },

@@ -1,9 +1,10 @@
 import type { Plugin } from "@natalia/plugin";
 import { createSkillLoadTool, discoverSkills, type Skill } from "./skills";
 import type { ToolExecutionContext } from "@natalia/tools";
+import { SKILL_SERVICE } from "@natalia/runtime-services";
 
 export const SKILLS_PLUGIN_ID = "natalia-skills";
-export const SKILLS_REGISTRY_SERVICE = "skills.registry";
+export const SKILLS_REGISTRY_SERVICE = SKILL_SERVICE;
 
 export function createSkillsPlugin(input: {
   workspaceRoot: string;

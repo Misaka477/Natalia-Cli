@@ -269,14 +269,39 @@ export type PluginLoadContext = {
   builtin: boolean;
 };
 
+export type PluginContributionOwner = {
+  contribute(
+    kind: PluginContributionKind,
+    name: string,
+    payload: unknown,
+  ): () => void;
+  release(): void;
+};
+
+export type PluginActivationStatus =
+  | "pending"
+  | "activating"
+  | "active"
+  | "deactivating"
+  | "failed";
+
+export type PluginStatus = {
+  id: string;
+  status: PluginActivationStatus;
+  missingServices: string[];
+  error?: string;
+};
+
 export function createPluginRegistry(input: {
   tools: ToolRegistry;
   allowed?: string[];
   readOnly?: Record<string, boolean>;
   onAudit?: (entry: PluginAudit) => void;
+  /** Called after activation changes the registry's live contribution surface. */
+  onChange?: () => void;
   /**
-   * Optional kernel channel. Called once per plugin load, before setup, with the
-   * validated manifest. It returns a contribution sink for that plugin's
+   * Optional kernel channel. Called once per activation epoch, before setup,
+   * with the validated manifest. It returns a contribution owner for that epoch's
    * registrations, or `undefined` to keep plugin registrations registry-only
    * (the standalone default).
    *
@@ -286,45 +311,47 @@ export function createPluginRegistry(input: {
    * the single channel — a plugin's capability owns everything it registers,
    * exactly like a built-in tool family.
    */
-  contribute?: (
+  registerOwner?: (
     manifest: PluginManifest,
     context: PluginLoadContext,
   ) =>
-    | ((
-        kind: PluginContributionKind,
-        name: string,
-        payload: unknown,
-      ) => () => void)
-    | Promise<
-        | ((
-            kind: PluginContributionKind,
-            name: string,
-            payload: unknown,
-          ) => () => void)
-        | undefined
-      >
+    | PluginContributionOwner
+    | Promise<PluginContributionOwner | undefined>
     | undefined;
-  /** Called when a plugin unloads, so the host can release kernel ownership. */
-  onUnload?: (pluginID: string, context: PluginLoadContext) => void;
   /** The runtime's resolved config accessor, exposed to plugins as `api.runtimeConfig`. */
   runtimeConfig?: () => unknown;
   service?: <T>(name: string) => T | undefined;
+  /** Stable provider identity, independent of the service value itself. */
+  serviceProvider?: (name: string) => unknown;
   onServiceUpdate?: (
-    listener: (update: { name: string }) => void,
+    listener: (update: {
+      name: string;
+      provider?: string;
+      providerBefore?: string;
+    }) => void,
   ) => () => void;
 }) {
-  const plugins = new Map<
-    string,
-    {
-      plugin: Plugin;
-      listeners: Set<(event: unknown) => void>;
-      commands: Map<string, PluginCommand>;
-      dispose: Array<() => void>;
-      abort: AbortController;
-      effects: Set<Promise<unknown>>;
-      loadContext: PluginLoadContext;
-    }
-  >();
+  type ActivationEpoch = {
+    listeners: Set<(event: unknown) => void>;
+    commands: Map<string, PluginCommand>;
+    dispose: Array<() => void>;
+    abort: AbortController;
+    effects: Set<Promise<unknown>>;
+    contributionOwner: PluginContributionOwner | undefined;
+  };
+  type MountedPlugin = {
+    plugin: Plugin;
+    allowedOverride: string[] | undefined;
+    config: unknown;
+    loadContext: PluginLoadContext;
+    status: PluginActivationStatus;
+    missingServices: string[];
+    requiredProviders: Map<string, unknown>;
+    lastAttemptedProviders: Map<string, unknown>;
+    error?: string;
+    epoch?: ActivationEpoch;
+  };
+  const plugins = new Map<string, MountedPlugin>();
   const audit: PluginAudit[] = [];
   /** Command name -> owning plugin, so a collision names the current owner. */
   const commandOwners = new Map<string, string>();
@@ -365,6 +392,34 @@ export function createPluginRegistry(input: {
       }
     return errors;
   };
+  let transitionQueue = Promise.resolve();
+  const enqueueTransition = <T>(transition: () => Promise<T>): Promise<T> => {
+    const result = transitionQueue.then(transition, transition);
+    transitionQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+  const serviceSnapshot = (manifest: PluginManifest) => {
+    const missingServices: string[] = [];
+    const providers = new Map<string, unknown>();
+    for (const name of manifest.requires) {
+      const value = input.service?.(name);
+      if (value === undefined) {
+        missingServices.push(name);
+        continue;
+      }
+      providers.set(name, input.serviceProvider?.(name) ?? value);
+    }
+    return { missingServices, providers };
+  };
+  const sameProviders = (
+    left: Map<string, unknown>,
+    right: Map<string, unknown>,
+  ) =>
+    left.size === right.size &&
+    [...left].every(([name, provider]) => Object.is(provider, right.get(name)));
   const assertCapability = (
     manifest: PluginManifest,
     capability: PluginIntegrationPoint,
@@ -381,45 +436,24 @@ export function createPluginRegistry(input: {
       throw new Error(`plugin capability denied: ${manifest.id}/${capability}`);
     }
   };
-  async function loadPlugin(
-    plugin: Plugin,
-    allowedOverride: string[] | undefined,
-    config: unknown,
-    loadContext: PluginLoadContext,
-  ) {
-    const manifest = pluginManifestSchema.parse(plugin.manifest);
-    if (plugins.has(manifest.id))
-      throw new Error(`plugin already loaded: ${manifest.id}`);
-    if (manifest.apiVersion === 2) {
-      const resolution = resolvePluginDependencies(
-        [manifest],
-        [...plugins.values()].map((entry) => entry.plugin.manifest),
-      );
-      const unresolved = [...resolution.denied, ...resolution.pending][0];
-      if (unresolved) {
-        writeAudit(
-          manifest.id,
-          resolution.denied.length ? "denied" : "failed",
-          unresolved.reason,
-        );
-        throw new Error(
-          `plugin dependency unresolved: ${manifest.id}: ${unresolved.reason}`,
-        );
-      }
+  async function activate(entry: MountedPlugin) {
+    const { plugin, allowedOverride, loadContext } = entry;
+    const manifest = plugin.manifest;
+    const snapshot = serviceSnapshot(manifest);
+    entry.missingServices = snapshot.missingServices;
+    if (snapshot.missingServices.length) {
+      entry.status = "pending";
+      entry.error = undefined;
+      return;
     }
-    // Validate before anything is registered: misconfiguration must fail
-    // loud at load, never reach `setup` as a half-applied config.
-    let resolvedConfig: unknown;
-    try {
-      resolvedConfig = resolvePluginConfig({ ...plugin, manifest }, config);
-    } catch (error) {
-      writeAudit(
-        manifest.id,
-        "failed",
-        error instanceof Error ? error.message : String(error),
-      );
-      throw error;
-    }
+    if (
+      entry.status === "failed" &&
+      sameProviders(entry.lastAttemptedProviders, snapshot.providers)
+    )
+      return;
+    entry.status = "activating";
+    entry.error = undefined;
+    entry.lastAttemptedProviders = snapshot.providers;
     const listeners = new Set<(event: unknown) => void>();
     const commands = new Map<string, PluginCommand>();
     const providedServices = new Map<string, number>();
@@ -427,29 +461,17 @@ export function createPluginRegistry(input: {
     const abort = new AbortController();
     const effects = new Set<Promise<unknown>>();
     let listenerSequence = 0;
-    // The kernel channel is resolved before setup: the plugin's capability
-    // loads (and, for a plugin that declares `requires`, waits for the
-    // required services to appear) so setup runs only once the capability is
-    // active — the same dependency-ordered activation a built-in family gets.
-    let pluginContribute:
-      | ((
-          kind: PluginContributionKind,
-          name: string,
-          payload: unknown,
-        ) => () => void)
-      | undefined;
+    let contributionOwner: PluginContributionOwner | undefined;
     try {
-      pluginContribute = await input.contribute?.(manifest, loadContext);
+      contributionOwner = await input.registerOwner?.(manifest, loadContext);
     } catch (error) {
-      writeAudit(
-        manifest.id,
-        "failed",
-        error instanceof Error ? error.message : String(error),
-      );
+      entry.status = "failed";
+      entry.error = error instanceof Error ? error.message : String(error);
+      writeAudit(manifest.id, "failed", entry.error);
       throw error;
     }
     const api: PluginAPI = {
-      config: resolvedConfig,
+      config: entry.config,
       tools: {
         register(tool) {
           assertCapability(manifest, "tools", allowedOverride);
@@ -468,7 +490,11 @@ export function createPluginRegistry(input: {
           };
           if (input.tools.get(name) !== undefined)
             throw new Error(`plugin tool already registered: ${name}`);
-          const releaseKernel = pluginContribute?.("tools", name, ownedTool);
+          const releaseKernel = contributionOwner?.contribute(
+            "tools",
+            name,
+            ownedTool,
+          );
           input.tools.set(name, ownedTool);
           const dispose = ownedDisposer(
             ...(releaseKernel ? [releaseKernel] : []),
@@ -496,7 +522,11 @@ export function createPluginRegistry(input: {
               `plugin ${manifest.id} provided undeclared service: ${name}`,
             );
           assertCapability(manifest, "services", allowedOverride);
-          const releaseKernel = pluginContribute?.("services", name, value);
+          const releaseKernel = contributionOwner?.contribute(
+            "services",
+            name,
+            value,
+          );
           providedServices.set(name, (providedServices.get(name) ?? 0) + 1);
           const dispose = ownedDisposer(
             ...(releaseKernel ? [releaseKernel] : []),
@@ -538,7 +568,7 @@ export function createPluginRegistry(input: {
                     typedListener?.(event);
                 };
           const contributionName = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_listener_${++listenerSequence}`;
-          const releaseKernel = pluginContribute?.(
+          const releaseKernel = contributionOwner?.contribute(
             "listeners",
             contributionName,
             listener,
@@ -567,7 +597,7 @@ export function createPluginRegistry(input: {
             name,
             category: command.category ?? manifest.name,
           };
-          const releaseKernel = pluginContribute?.(
+          const releaseKernel = contributionOwner?.contribute(
             "commands",
             name,
             ownedCommand,
@@ -626,8 +656,11 @@ export function createPluginRegistry(input: {
               `plugin ${manifest.id} contributed unnamed ${kind}`,
             );
           const dispose = once(
-            pluginContribute?.(kind, contribution.name, contribution) ??
-              (() => undefined),
+            contributionOwner?.contribute(
+              kind,
+              contribution.name,
+              contribution,
+            ) ?? (() => undefined),
           );
           disposers.push(dispose);
           return dispose;
@@ -644,11 +677,16 @@ export function createPluginRegistry(input: {
           `plugin ${manifest.id} did not provide declared services: ${missingServices.join(", ")}`,
         );
     } catch (error) {
+      try {
+        await plugin.dispose?.();
+      } catch {
+        // The setup error remains primary.
+      }
       abort.abort();
       await Promise.allSettled(effects);
       cleanup(disposers);
       try {
-        input.onUnload?.(manifest.id, loadContext);
+        contributionOwner?.release();
       } catch {
         // The setup error remains primary; host cleanup is best-effort here.
       }
@@ -657,38 +695,131 @@ export function createPluginRegistry(input: {
         "failed",
         error instanceof Error ? error.message : String(error),
       );
+      entry.epoch = undefined;
+      entry.status = "failed";
+      entry.error = error instanceof Error ? error.message : String(error);
       throw error;
     }
-    plugins.set(manifest.id, {
-      plugin: { ...plugin, manifest },
+    entry.epoch = {
       listeners,
       commands,
       dispose: disposers,
       abort,
       effects,
-      loadContext,
-    });
-    writeAudit(manifest.id, "loaded");
+      contributionOwner,
+    };
+    entry.requiredProviders = snapshot.providers;
+    entry.status = "active";
+    input.onChange?.();
   }
 
-  async function unloadOne(id: string) {
-    const entry = plugins.get(id);
-    if (!entry) throw new Error(`plugin not found: ${id}`);
+  async function reconcileEntry(entry: MountedPlugin) {
+    const snapshot = serviceSnapshot(entry.plugin.manifest);
+    entry.missingServices = snapshot.missingServices;
+    if (
+      entry.status === "active" &&
+      (snapshot.missingServices.length ||
+        !sameProviders(entry.requiredProviders, snapshot.providers))
+    )
+      await deactivate(entry);
+    if (
+      !snapshot.missingServices.length &&
+      (entry.status === "pending" || entry.status === "failed")
+    )
+      await activate(entry);
+  }
+
+  async function loadPlugin(
+    plugin: Plugin,
+    allowedOverride: string[] | undefined,
+    config: unknown,
+    loadContext: PluginLoadContext,
+  ) {
+    const manifest = pluginManifestSchema.parse(plugin.manifest);
+    if (plugins.has(manifest.id))
+      throw new Error(`plugin already loaded: ${manifest.id}`);
+    if (manifest.apiVersion === 2) {
+      const resolution = resolvePluginDependencies(
+        [manifest],
+        [...plugins.values()].map((entry) => entry.plugin.manifest),
+      );
+      const unresolved = [...resolution.denied, ...resolution.pending][0];
+      if (unresolved) {
+        writeAudit(
+          manifest.id,
+          resolution.denied.length ? "denied" : "failed",
+          unresolved.reason,
+        );
+        throw new Error(
+          `plugin dependency unresolved: ${manifest.id}: ${unresolved.reason}`,
+        );
+      }
+    }
+    let resolvedConfig: unknown;
+    try {
+      resolvedConfig = resolvePluginConfig({ ...plugin, manifest }, config);
+    } catch (error) {
+      writeAudit(
+        manifest.id,
+        "failed",
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+    const snapshot = serviceSnapshot(manifest);
+    const entry: MountedPlugin = {
+      plugin: { ...plugin, manifest },
+      allowedOverride,
+      config: resolvedConfig,
+      loadContext,
+      status: "pending",
+      missingServices: snapshot.missingServices,
+      requiredProviders: new Map(),
+      lastAttemptedProviders: new Map(),
+    };
+    plugins.set(manifest.id, entry);
+    writeAudit(manifest.id, "loaded");
+    try {
+      await enqueueTransition(() => reconcileEntry(entry));
+    } catch (error) {
+      if (entry.status !== "failed") plugins.delete(manifest.id);
+      throw error;
+    }
+  }
+
+  async function deactivate(entry: MountedPlugin) {
+    const epoch = entry.epoch;
+    if (!epoch) {
+      entry.status = "pending";
+      return [];
+    }
+    entry.status = "deactivating";
     const errors: unknown[] = [];
-    entry.abort.abort();
     try {
       await entry.plugin.dispose?.();
     } catch (error) {
       errors.push(error);
     }
-    await Promise.allSettled(entry.effects);
-    errors.push(...cleanup(entry.dispose));
-    plugins.delete(id);
+    epoch.abort.abort();
+    await Promise.allSettled(epoch.effects);
+    errors.push(...cleanup(epoch.dispose));
     try {
-      input.onUnload?.(id, entry.loadContext);
+      epoch.contributionOwner?.release();
     } catch (error) {
       errors.push(error);
     }
+    entry.epoch = undefined;
+    entry.requiredProviders.clear();
+    entry.status = "pending";
+    input.onChange?.();
+    return errors;
+  }
+
+  async function unloadOne(id: string) {
+    const entry = plugins.get(id);
+    if (!entry) throw new Error(`plugin not found: ${id}`);
+    const errors = await deactivate(entry);
+    plugins.delete(id);
     const error = errors[0];
     writeAudit(
       id,
@@ -740,6 +871,18 @@ export function createPluginRegistry(input: {
       throw new AggregateError(errors, "multiple plugins failed to unload");
   }
 
+  const unsubscribeServices = input.onServiceUpdate?.((update) => {
+    void enqueueTransition(async () => {
+      for (const entry of plugins.values())
+        if (entry.plugin.manifest.requires.includes(update.name))
+          try {
+            await reconcileEntry(entry);
+          } catch {
+            // Failed activation remains mounted and observable through status().
+          }
+    });
+  });
+
   return {
     async load(plugin: Plugin, allowedOverride?: string[], config?: unknown) {
       await loadPlugin(plugin, allowedOverride, config, { builtin: false });
@@ -756,25 +899,51 @@ export function createPluginRegistry(input: {
     },
     async unload(id: string) {
       if (!plugins.has(id)) throw new Error(`plugin not found: ${id}`);
-      await unloadMany([...dependentOrder(id), id]);
+      await enqueueTransition(() => unloadMany([...dependentOrder(id), id]));
     },
     async unloadAll() {
-      await unloadMany([...plugins.keys()].reverse());
+      await enqueueTransition(() => unloadMany([...plugins.keys()].reverse()));
+    },
+    async close() {
+      await enqueueTransition(async () => {
+        try {
+          await unloadMany([...plugins.keys()].reverse());
+        } finally {
+          unsubscribeServices?.();
+        }
+      });
     },
     dispatch(event: unknown) {
       for (const entry of plugins.values())
-        for (const listener of entry.listeners)
+        for (const listener of entry.epoch?.listeners ?? [])
           try {
             listener(event);
           } catch {}
     },
     list() {
+      // The registry lists mounted plugins, including pending and failed ones.
       return [...plugins.values()].map((entry) => entry.plugin.manifest);
+    },
+    status(id: string): PluginStatus | undefined {
+      const entry = plugins.get(id);
+      if (!entry) return undefined;
+      return {
+        id,
+        status: entry.status,
+        missingServices: [...entry.missingServices],
+        ...(entry.error ? { error: entry.error } : {}),
+      };
+    },
+    active(id: string) {
+      return plugins.get(id)?.status === "active";
+    },
+    whenIdle() {
+      return transitionQueue;
     },
     /** Every command currently contributed, in stable plugin order. */
     commands(): PluginCommand[] {
       return [...plugins.values()].flatMap((entry) => [
-        ...entry.commands.values(),
+        ...(entry.epoch?.commands.values() ?? []),
       ]);
     },
     audit() {
@@ -1089,12 +1258,15 @@ export async function runPluginConformance(input: {
     } as ToolRegistry,
     allowed: input.allowed,
     readOnly: input.readOnly,
-    contribute: (manifest) => (_kind, name) => {
-      contributed.push(name);
-      return () => {
-        releases.push(name);
-      };
-    },
+    registerOwner: () => ({
+      contribute: (_kind, name) => {
+        contributed.push(name);
+        return () => {
+          releases.push(name);
+        };
+      },
+      release: () => undefined,
+    }),
   });
   const result: Array<{ name: string; passed: boolean; detail?: string }> = [];
   const manifest = input.plugin.manifest;

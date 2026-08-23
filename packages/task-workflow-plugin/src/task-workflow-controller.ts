@@ -1,41 +1,38 @@
 import type { CapabilityRegistryView } from "@natalia/capability";
-import { resolveConfig } from "@natalia/config";
+import { assertConfigApplied, resolveConfig } from "@natalia/config";
 import { RuntimeRefusal, type RuntimeClient } from "@natalia/contracts";
-import { NataliaDocumentStore } from "@natalia/workflow";
-import { assertConfigApplied } from "./config-applied";
-import type { ResolveFlowPermissions } from "./flow-permissions";
-import { assertTaskReferences } from "./task-preflight";
 import {
-  deleteFlowDocument as deleteFlowDocumentFile,
-  saveFlowDocument as saveFlowDocumentFile,
-} from "./flow-document";
-import {
+  assertTaskReferences,
   configureTaskSystemd,
+  deleteFlowDocument as deleteFlowDocumentFile,
   deleteTaskDocument,
-  removeTaskSystemd,
-  saveTaskDocument,
-} from "./task-document";
-import {
   flowOverview as flowOverviewForWorkspace,
+  NataliaDocumentStore,
+  removeTaskSystemd,
+  saveFlowDocument as saveFlowDocumentFile,
+  saveTaskDocument,
   scheduledTaskOverview,
-} from "./task-overview";
-import { workflowContributionsProjection } from "./workflow-contributions";
-import { workflowDocumentCatalog } from "./workflow-document-catalog";
+  workflowDocumentCatalog,
+  type ResolveFlowPermissions,
+} from "@natalia/workflow";
+import { workflowContributionsProjection } from "@natalia/workflow";
+import type { TaskWorkflowService } from "@natalia/runtime-services";
+import {
+  runTask,
+  runTaskFromDocument,
+  taskPermissionPreviewForDocument,
+  type TaskRuntimeClientFactory,
+} from "./task-execution-service";
+import {
+  newHeadlessExecution,
+  plainRuntimeEvent,
+  taskPermissionPreview,
+  taskRetryMaxAttempts,
+} from "@natalia/workflow";
+import { createWorkflowStoreService } from "./workflow-store-service";
+import { runCapabilityTask } from "./capability-execution-service";
 
 type Method<K extends keyof RuntimeClient> = NonNullable<RuntimeClient[K]>;
-
-export type TaskWorkflowController = {
-  taskOverview: Method<"taskOverview">;
-  flowOverview: Method<"flowOverview">;
-  documentCatalog: Method<"documentCatalog">;
-  saveFlowDocument: Method<"saveFlowDocument">;
-  taskPermissionPreview: Method<"taskPermissionPreview">;
-  deleteFlowDocument: Method<"deleteFlowDocument">;
-  saveTaskDocument: Method<"saveTaskDocument">;
-  deleteTaskDocument: Method<"deleteTaskDocument">;
-  taskSchedule: Method<"taskSchedule">;
-  taskUnschedule: Method<"taskUnschedule">;
-};
 
 export function createTaskWorkflowController(input: {
   workspaceRoot: string;
@@ -44,7 +41,8 @@ export function createTaskWorkflowController(input: {
   capabilityViews(): CapabilityRegistryView[];
   publishDiagnostic(message: string): void;
   resolveFlowPermissions: ResolveFlowPermissions;
-}): TaskWorkflowController {
+  createRuntimeClient: TaskRuntimeClientFactory;
+}): TaskWorkflowService {
   const publishedDiagnostics = new Set<string>();
 
   function contributedDocuments() {
@@ -59,7 +57,36 @@ export function createTaskWorkflowController(input: {
     return Object.assign({}, ...projections.map((entry) => entry.documents));
   }
 
-  return {
+  const service: TaskWorkflowService = {
+    runTask: (request) =>
+      runTask({ ...request, createRuntimeClient: input.createRuntimeClient }),
+    runTaskFromDocument: (request) =>
+      runTaskFromDocument({
+        ...request,
+        contributedDocuments:
+          request.contributedDocuments ?? contributedDocuments(),
+        createRuntimeClient: input.createRuntimeClient,
+      }),
+    taskPermissionPreviewFor: taskPermissionPreview,
+    taskPermissionPreviewForDocument,
+    async permissionProfileUsage(request) {
+      const documents = createWorkflowStoreService(request);
+      const usage: Record<string, string[]> = {};
+      for (const { task } of await documents.taskDocuments())
+        usage[task.permissionProfile] = [
+          ...(usage[task.permissionProfile] ?? []),
+          task.taskID,
+        ];
+      return usage;
+    },
+    newHeadlessExecution,
+    plainRuntimeEvent,
+    taskRetryMaxAttempts,
+    runCapabilityTask: (request) =>
+      runCapabilityTask({
+        ...request,
+        runTaskFromDocument: (task) => service.runTaskFromDocument(task),
+      }),
     async taskOverview() {
       const config =
         input.runtimeConfig() ??
@@ -264,4 +291,5 @@ export function createTaskWorkflowController(input: {
       return { path: request.path, removed, commands: result.commands };
     },
   };
+  return service;
 }

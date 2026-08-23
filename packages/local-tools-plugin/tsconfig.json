@@ -8,6 +8,7 @@
   "references": [
     { "path": "../config" },
     { "path": "../plugin" },
+    { "path": "../runtime-services" },
     { "path": "../tools" }
   ]
 }

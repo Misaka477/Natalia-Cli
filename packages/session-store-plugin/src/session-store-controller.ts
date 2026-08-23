@@ -18,17 +18,11 @@ import {
   type SessionRow,
   type StoredContextEpoch,
 } from "@natalia/session";
-import type { AttachmentService } from "@natalia/attachment-plugin";
-
-export type SessionStoreRecoveryView = {
-  activeTurnIDs: string[];
-  approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
-  questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
-  selectedAgent?: string;
-  selectedModel?: { modelID?: string; variant?: string };
-  attachments: Map<string, LocalAttachment[]>;
-  diagnostics: Array<Extract<RuntimeEvent, { type: "diagnostic" }>>;
-};
+import type {
+  AttachmentService,
+  SessionStoreController,
+  SessionStoreRecoveryView,
+} from "@natalia/runtime-services";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in
@@ -94,7 +88,7 @@ export function createSessionStoreController(input: {
   useSqliteStore?: boolean;
   title?: string;
   attachments: AttachmentService;
-}) {
+}): SessionStoreController {
   let sessionStore: JsonSessionStore;
   let sqliteStore: SqliteSessionStore | undefined;
   let sqliteStorePath: string | undefined;
@@ -500,7 +494,3 @@ export function createSessionStoreController(input: {
     close,
   };
 }
-
-export type SessionStoreController = ReturnType<
-  typeof createSessionStoreController
->;

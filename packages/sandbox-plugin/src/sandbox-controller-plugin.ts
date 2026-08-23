@@ -7,14 +7,11 @@
  * sandbox manager at all.
  */
 import type { Plugin } from "@natalia/plugin";
+import { SANDBOX_SERVICE } from "@natalia/runtime-services";
 import { createSandboxController } from "./sandbox-controller";
 import type { SandboxBackend } from "@natalia/contracts";
 
-export type { SandboxService } from "./sandbox-controller";
-
 export const SANDBOX_PLUGIN_ID = "natalia-sandbox";
-export const SANDBOX_SERVICE = "sandbox.service";
-
 export function createSandboxControllerPlugin(input: {
   workspaceRoot: string;
   backend?(): SandboxBackend | undefined;

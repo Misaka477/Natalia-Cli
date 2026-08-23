@@ -4,7 +4,7 @@ export {
   parseBashSimpleCommand,
   type BashCommandParseResult,
   type BashCommandRule,
-} from "@natalia/tool-pipeline-plugin";
+} from "@natalia/tools";
 export { compactionDisplayLine } from "./compaction-display";
 export {
   installExampleDocuments,
@@ -13,9 +13,14 @@ export {
 export {
   workflowDocumentCatalog,
   type WorkflowDocumentChoice,
-} from "./workflow-document-catalog";
+} from "@natalia/workflow";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./real-runtime";
+export type { RuntimeServiceClient } from "@natalia/runtime-services";
+export {
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  type TaskWorkflowService,
+} from "@natalia/runtime-services";
 export {
   classifyPermissionFamily,
   PERMISSION_FAMILIES,
@@ -29,14 +34,14 @@ export {
   type FlowStageRow,
   type ScheduledTaskOverview,
   type ScheduledTaskRow,
-} from "./task-overview";
+} from "@natalia/workflow";
 export {
   deleteFlowDocument,
   loadFlowDocument,
   manualFlowTask,
   newFlowID,
   saveFlowDocument,
-} from "@natalia/task-workflow-plugin";
+} from "@natalia/workflow";
 export {
   decomposeFlowConditions,
   defaultExecutionProviderID,
@@ -45,26 +50,26 @@ export {
   type FlowConditionModel,
 } from "./flow-condition-decomposition";
 export {
-  newHeadlessExecution,
-  plainRuntimeEvent,
   runTask,
   runTaskFromDocument,
-  taskPermissionPreview,
   taskPermissionPreviewForDocument,
-  taskRetryMaxAttempts,
-  type HeadlessExecution,
   type TaskRunResult,
 } from "./task-controller";
 export {
-  assertConfigApplied,
-  assertTaskReferences,
-} from "@natalia/task-workflow-plugin";
+  newHeadlessExecution,
+  plainRuntimeEvent,
+  taskPermissionPreview,
+  taskRetryMaxAttempts,
+  type HeadlessExecution,
+} from "@natalia/workflow";
+export { assertConfigApplied } from "@natalia/config";
+export { assertTaskReferences } from "@natalia/workflow";
 export {
   effectiveFlowPermissions,
   effectiveModulePermissions,
   type EffectiveFlowPermissions,
   type EffectiveModulePermissions,
-} from "./effective-policy";
+} from "@natalia/workflow";
 export {
   configWithoutPermissionProfile,
   grantablePermissionTools,
@@ -81,7 +86,7 @@ export {
   newScheduledTaskID,
   removeTaskSystemd,
   saveTaskDocument,
-} from "@natalia/task-workflow-plugin";
+} from "@natalia/workflow";
 export {
   generateTaskUnits,
   installUserTaskUnits,
@@ -96,17 +101,17 @@ export {
   type SystemdCalendarPreview,
   type SystemdCommandRunner,
   writeGeneratedTaskUnits,
-} from "@natalia/task-workflow-plugin";
+} from "@natalia/workflow";
 export type { RealRuntimeClientOptions } from "./real-runtime";
 export {
   workflowContributionsProjection,
   type WorkflowContributionsProjection,
-} from "@natalia/task-workflow-plugin";
+} from "@natalia/workflow";
 export type {
   WorkflowExecutionEvent,
   WorkflowExecutionHandle,
   WorkflowExecutionStatus,
-} from "@natalia/workflow-scheduler-plugin";
+} from "@natalia/workflow";
 export {
   CapabilityExecutionHost,
   type CapabilityTaskExecutionRequest,
@@ -127,7 +132,7 @@ export {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
-} from "@natalia/workspace-plugin";
+} from "@natalia/platform";
 export {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
@@ -144,7 +149,7 @@ export {
   type ToolHooks,
   type ToolHookEvent,
   type ToolHookResult,
-} from "@natalia/tool-pipeline-plugin";
+} from "@natalia/tools";
 export type {
   RuntimeClient,
   RuntimeEvent,

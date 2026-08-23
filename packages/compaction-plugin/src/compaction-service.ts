@@ -1,6 +1,10 @@
-import type { RuntimeContextLedger } from "@natalia/context-ledger-plugin";
 import type { CompactionTrigger, RuntimeEvent } from "@natalia/contracts";
-import type { RetryService } from "@natalia/retry-plugin";
+import type {
+  CompactionBudget,
+  CompactionService,
+  RetryService,
+  RuntimeContextLedger,
+} from "@natalia/runtime-services";
 import {
   compactContext,
   compactionTrigger,
@@ -8,12 +12,6 @@ import {
   providerCompactor,
   type StreamingProvider,
 } from "@natalia/runtime";
-
-export type CompactionBudget = {
-  max: number;
-  thresholdPercent: number;
-  reserved: number;
-};
 
 export type CompactionOutcome = Awaited<ReturnType<typeof compactContext>>;
 
@@ -26,21 +24,6 @@ type CompactionOperation = {
   instruction: string;
   signal?: AbortSignal;
   onEvent?: (event: RuntimeEvent) => void;
-};
-
-export type CompactionService = {
-  compactBeforeProviderStep(
-    input: CompactionOperation & { usedTokens: number; enabled: boolean },
-  ): Promise<CompactionOutcome & { trigger?: CompactionTrigger }>;
-  runWithContextLimitRecovery<T>(
-    input: CompactionOperation & {
-      id: string;
-      step: number;
-      runStep(): Promise<T>;
-      beforeRetry?(outcome: CompactionOutcome): void | Promise<void>;
-      onCompacted?(outcome: CompactionOutcome): void | Promise<void>;
-    },
-  ): Promise<T>;
 };
 
 export function createCompactionService(input: {

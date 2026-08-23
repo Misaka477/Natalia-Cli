@@ -7,10 +7,19 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../agent"
+    },
+    {
+      "path": "../config"
+    },
+    {
       "path": "../contracts"
     },
     {
       "path": "../runtime"
+    },
+    {
+      "path": "../tools"
     }
   ]
 }

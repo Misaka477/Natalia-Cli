@@ -1,16 +1,8 @@
 export {
   createCollaborationPlugin,
   COLLABORATION_PLUGIN_ID,
-  COLLABORATION_WAITER_SERVICE,
 } from "./collaboration-plugin";
-export {
-  createInteractiveWaiter,
-  readOnlyToolMessage,
-  terminalApprovalScope,
-  terminalInputRisk,
-  type InteractiveWaiter,
-  type InteractiveWaiterDeps,
-} from "./interactive-waiter";
+export { createInteractiveWaiter } from "./interactive-waiter";
 export {
   buildMailboxQueued,
   buildMailboxStatus,
@@ -21,5 +13,10 @@ export {
   type MailboxStatus,
   type MailboxStatusEvent,
   type MailboxStatusTransition,
-} from "./mailbox-ledger";
-export { createMailboxAcknowledgeTool } from "./mailbox-tool";
+} from "@natalia/runtime-services";
+export {
+  createMailboxAcknowledgeTool,
+  readOnlyToolMessage,
+  terminalApprovalScope,
+  terminalInputRisk,
+} from "@natalia/runtime-services";

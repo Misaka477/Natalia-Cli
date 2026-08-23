@@ -27,6 +27,8 @@
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
+    "@natalia/session-store-plugin": "workspace:*",
+    "@natalia/task-workflow-plugin": "workspace:*",
     "@natalia/transport": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/workflow": "workspace:*",

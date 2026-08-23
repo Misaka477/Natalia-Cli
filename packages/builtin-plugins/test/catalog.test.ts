@@ -5,8 +5,11 @@ import {
   builtinPluginCatalog,
   CHECKPOINT_PLUGIN_ID,
   checkpointPluginEntry,
+  computeBuiltinFeatureGates,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
+  isBuiltinToolPlugin,
+  isStaticBuiltinPlugin,
   MCP_PLUGIN_ID,
   mcpPluginEntry,
   PDF_PLUGIN_ID,
@@ -24,7 +27,7 @@ import {
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
   workspacePluginEntry,
-} from "../src/builtin-plugins/catalog";
+} from "../src";
 import { PROVIDER_MODEL_PLUGIN_ID } from "@natalia/provider-model-plugin";
 import { CONTEXT_LEDGER_PLUGIN_ID } from "@natalia/context-ledger-plugin";
 import { WORK_LEDGER_PLUGIN_ID } from "@natalia/work-ledger-plugin";
@@ -78,6 +81,9 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     PROVIDER_MODEL_PLUGIN_ID,
   ]);
   expect(new Set(catalog.map((entry) => entry.id)).size).toBe(catalog.length);
+  expect(catalog.every((entry) => typeof entry.fingerprint === "string")).toBe(
+    true,
+  );
   expect(catalog.find((entry) => entry.id === SKILLS_PLUGIN_ID)?.enabled).toBe(
     false,
   );
@@ -103,6 +109,49 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     expect(entry.create().manifest.id).toBe(entry.id);
 });
 
+test("built-in metadata classifies tool and static plugin ids", () => {
+  expect(isBuiltinToolPlugin(ASK_PLUGIN_ID)).toBe(true);
+  expect(isBuiltinToolPlugin(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
+  expect(isStaticBuiltinPlugin(RETRY_PLUGIN_ID)).toBe(true);
+  expect(isStaticBuiltinPlugin(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
+  expect(isStaticBuiltinPlugin("external-plugin")).toBe(false);
+});
+
+function featureGates(config: any, hasCustomTools = false) {
+  return computeBuiltinFeatureGates({
+    config,
+    hasCustomTools,
+    extensionEnabled: () => true,
+  });
+}
+
+test("built-in feature gates honor custom registries and config switches", () => {
+  const custom = featureGates(
+    { tools: { enabled: {} }, plugins: { enabled: {} } },
+    true,
+  );
+  expect(custom.askEnabled).toBe(false);
+  expect(custom.pdfEnabled).toBe(true);
+
+  const configured = featureGates({
+    tools: { enabled: { ask: false } },
+    plugins: { enabled: { [TODO_PLUGIN_ID]: false } },
+  });
+  expect(configured.askEnabled).toBe(false);
+  expect(configured.todoEnabled).toBe(false);
+  expect(configured.searchEnabled).toBe(true);
+});
+
+test("PDF feature gate follows the plugins extension", () => {
+  expect(
+    computeBuiltinFeatureGates({
+      config: { plugins: { enabled: { [PDF_PLUGIN_ID]: true } } } as any,
+      hasCustomTools: false,
+      extensionEnabled: () => false,
+    }).pdfEnabled,
+  ).toBe(false);
+});
+
 test("skills catalog entry stays stable while disabled", () => {
   const disabled = skillsPluginEntry(undefined);
   expect(disabled.id).toBe(SKILLS_PLUGIN_ID);
@@ -112,6 +161,23 @@ test("skills catalog entry stays stable while disabled", () => {
   const enabled = skillsPluginEntry({ workspaceRoot: "/tmp/workspace" });
   expect(enabled.enabled).toBe(true);
   expect(enabled.create().manifest.id).toBe(SKILLS_PLUGIN_ID);
+});
+
+test("catalog fingerprints are stable and change with owner config identity", () => {
+  const first = skillsPluginEntry({
+    workspaceRoot: "/tmp/workspace",
+    remoteURLs: ["https://example.test/one"],
+  });
+  const same = skillsPluginEntry({
+    remoteURLs: ["https://example.test/one"],
+    workspaceRoot: "/tmp/workspace",
+  });
+  const changed = skillsPluginEntry({
+    workspaceRoot: "/tmp/workspace",
+    remoteURLs: ["https://example.test/two"],
+  });
+  expect(first.fingerprint).toBe(same.fingerprint);
+  expect(first.fingerprint).not.toBe(changed.fingerprint);
 });
 
 test("checkpoint catalog entry stays stable while disabled", () => {
