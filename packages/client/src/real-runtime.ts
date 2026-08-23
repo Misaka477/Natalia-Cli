@@ -19,6 +19,7 @@ import { createChatTurn } from "./runtime/collaboration/chat-turn";
 import { createSessionExecution } from "./runtime/session-execution";
 import { createToolPolicySurface } from "./runtime/tool-execution/policy";
 import { createExecuteCalls } from "./runtime/tool-execution/execute-calls";
+import { createTurnRunner } from "./runtime/turn-runner";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -652,7 +653,6 @@ export function createRealRuntimeClient(
   ctx.ports.skillService = skillService;
   ctx.ports.skillsList = skillsList;
   ctx.ports.teamBehavior = teamBehavior;
-  ctx.ports.providerRunnerInput = providerRunnerInput;
   ctx.ports.getStatusController = () => statusController;
   ctx.ports.getProviderSource = () => providerSource;
   ctx.ports.getWorkspaceRoot = () => workspaceRoot;
@@ -816,6 +816,25 @@ export function createRealRuntimeClient(
     ensureExecution,
   } = sessionExecution;
   ctx.ports.ensureExecution = ensureExecution;
+  ctx.ports.persistInboxPromotion = persistInboxPromotion;
+  ctx.ports.setActiveAbort = (controller) => {
+    activeAbort = controller;
+  };
+  ctx.ports.setActiveTurnID = (id) => {
+    activeTurnID = id;
+  };
+  ctx.ports.setSelectedAgent = (agent) => {
+    selectedAgent = agent;
+  };
+  ctx.ports.setPendingAgent = (agent) => {
+    pendingAgent = agent;
+  };
+  ctx.ports.getCompactionService = () => compactionService;
+  ctx.ports.getAttachmentService = () => attachmentService;
+  ctx.ports.getMcpService = () => mcpService;
+  ctx.ports.getRetryService = () => retryService;
+  ctx.ports.reloadConfigFromDisk = reloadConfigFromDisk;
+  ctx.ports.setInFlightOperationFor = setInFlightOperationFor;
   const toolPolicySurface = createToolPolicySurface(ctx);
   const {
     authorizeSandboxMerge,
@@ -824,6 +843,7 @@ export function createRealRuntimeClient(
     waitIfPaused,
     toolSettings,
   } = toolPolicySurface;
+  ctx.ports.waitIfPaused = waitIfPaused;
   const eventSink = createEventSink(ctx, options);
   const { publish, publishForSession } = eventSink;
   ctx.ports.publish = publish;
@@ -846,6 +866,10 @@ export function createRealRuntimeClient(
   } = providerSelection;
   ctx.ports.clientModelCatalog = clientModelCatalog;
   ctx.ports.effectiveMaxSteps = effectiveMaxSteps;
+  ctx.ports.modelCapabilitiesForExecution = modelCapabilitiesForExecution;
+  const turnRunner = createTurnRunner(ctx, options);
+  const { providerRunnerInput } = turnRunner;
+  ctx.ports.providerRunnerInput = providerRunnerInput;
   ctx.ports.selectRuntimeModel = selectRuntimeModel;
   ctx.ports.applyAgentProvider = applyAgentProvider;
   ctx.ports.refreshExecutionContextConfig = refreshExecutionContextConfig;
@@ -3341,149 +3365,6 @@ export function createRealRuntimeClient(
     await targetCoordinator().run(drainSessionFor(targetSessionID));
     await sessionPersistence;
     return submitted;
-  }
-
-  function providerRunnerInput(sessionID: SessionID): ProviderRunnerInput {
-    const exec = executionBySession.get(sessionID);
-    if (!exec) throw new Error(`no execution state for session ${sessionID}`);
-    if (!compactionService)
-      throw new Error("compaction service unavailable (natalia-compaction)");
-    return {
-      provider: () => exec.provider,
-      session: () => exec.session,
-      context: () => exec.context,
-      tools: () => tools,
-      attachmentReferences: () => exec.attachmentReferences,
-      attachments: attachmentService,
-      compaction: compactionService,
-      mcp: () => mcpService,
-      agentRegistry: () => agentRegistry,
-      activeAbort: () => exec.activeAbort,
-      setActiveAbort: (controller) => {
-        exec.activeAbort = controller;
-        if (exec === activeExec) activeAbort = controller;
-      },
-      activeTurnID: () => exec.activeTurnID,
-      setActiveTurnID: (id) => {
-        exec.activeTurnID = id;
-        if (exec === activeExec) activeTurnID = id;
-      },
-      selectedAgent: () => exec.selectedAgent,
-      setSelectedAgent: (agent) => {
-        exec.selectedAgent = agent;
-        if (exec === activeExec) selectedAgent = agent;
-      },
-      pendingAgent: () => exec.pendingAgent,
-      setPendingAgent: (agent) => {
-        exec.pendingAgent = agent;
-        if (exec === activeExec) pendingAgent = agent;
-      },
-      selectedModel: () => exec.selectedModel,
-      modelCapabilities: () => modelCapabilitiesForExecution(exec),
-      setActiveModelCapabilities: (capabilities) => {
-        exec.activeModelCapabilities = capabilities;
-      },
-      refreshContextConfig: () => refreshExecutionContextConfig(exec),
-      permissionMode: () => exec.permissionMode,
-      workspaceRoot: () => workspaceRoot,
-      tsRuntimeConfig: () => tsRuntimeConfig,
-      runtimeContextConfig: () => exec.runtimeContextConfig,
-      activeSkill: () => exec.activeSkill,
-      skillsList,
-      skillService,
-      mailboxMessages: () =>
-        projectedMailboxMessages(exec.session.events)
-          .filter((message) => message.status === "delivered")
-          .map((message) => ({
-            messageID: message.messageID,
-            intent: message.intent,
-            text: message.text,
-            priority: message.priority,
-            source: message.source,
-          })),
-      naviSuggestions: () =>
-        projectedCollabMessages(exec.session.events)
-          .filter(
-            (message) =>
-              message.kind === "suggestion" && message.status === "proposed",
-          )
-          .map((message) => ({
-            id: message.id,
-            suggestion: message.text,
-            priority: message.priority ?? "normal",
-          })),
-      naviAnswers: () =>
-        projectedCollabMessages(exec.session.events)
-          .filter((message) => message.kind === "answer")
-          .map((message) => ({
-            questionID: message.questionID ?? "",
-            answer: message.text,
-          })),
-      naviChats: () =>
-        projectedCollabMessages(exec.session.events)
-          .filter((message) => message.kind === "chat")
-          .map((message) => ({
-            id: message.id,
-            threadID: message.threadID ?? "",
-            from: message.from,
-            text: message.text,
-            round: message.round ?? 1,
-            expectsReply: message.expectsReply ?? false,
-            status: message.status,
-          })),
-      naviIntro: () => projectedCollabMessages(exec.session.events).length > 0,
-      activePlan: () => {
-        const plan = projectedPlans(exec.session.events).find(
-          (candidate) => candidate.status === "active",
-        );
-        if (!plan) return undefined;
-        return {
-          planID: plan.planID,
-          version: plan.version,
-          title: plan.title,
-          objective: plan.objective,
-          steps: plan.steps,
-          constraints: plan.constraints,
-          verification: plan.verification,
-          riskNotes: plan.riskNotes,
-        };
-      },
-      retry: retryService,
-      lastProviderUsage: () => exec.lastProviderUsage,
-      setLastProviderUsage: (usage) => {
-        exec.lastProviderUsage = usage;
-      },
-      taskModuleContext: () => options.taskModuleContext,
-      publish: (event) => publishForSession(exec, event),
-      applyAgentPolicy: () => {
-        if (exec === activeExec) applyAgentPolicy();
-      },
-      applyAgentProvider: () => applyAgentProvider(exec),
-      persistInboxPromotion: () => persistInboxPromotion(exec.session.id),
-      createTurnCheckpoint: async (input) => {
-        const controller = await initializeCheckpointController(exec);
-        if (controller?.isEnabled())
-          await controller.get().createCheckpoint(input);
-      },
-      isToolAllowed: (toolName) => isToolAllowed(toolName, exec),
-      setInFlightOperation: (operation) =>
-        setInFlightOperationFor(exec, operation),
-      executeToolCalls,
-      reloadConfig: async () => {
-        const result = await reloadConfigFromDisk();
-        if (result.providerReconfigured) applyAgentProvider(exec);
-        return result;
-      },
-      runtimeStatusSnapshot: () =>
-        statusController.snapshotFor({
-          provider: exec.provider,
-          context: exec.context,
-          permissionMode: exec.permissionMode,
-        }),
-      effectiveMaxSteps: () => effectiveMaxSteps(exec),
-      waitIfPaused: () => waitIfPaused(exec),
-      waitingHuman: () => exec.endTurnWaitingHuman,
-    };
   }
 
   async function drainSession(signal: AbortSignal) {

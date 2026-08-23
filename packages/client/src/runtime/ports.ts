@@ -53,6 +53,10 @@ export type RuntimePorts = {
   setInFlightOperation: (
     operation: import("@natalia/session").DurableInFlightOperation | undefined,
   ) => Promise<void>;
+  setInFlightOperationFor: (
+    exec: SessionExecutionState,
+    operation: import("@natalia/session").DurableInFlightOperation | undefined,
+  ) => Promise<void>;
   isDisposed: () => boolean;
   getSessionStoreController: () => SessionStoreController;
   getSessionPersistence: () => Promise<void>;
@@ -122,6 +126,9 @@ export type RuntimePorts = {
   getRuntimeContext: () => RuntimeContextLedger;
   currentModelImageInput: (exec?: SessionExecutionState) => boolean;
   currentModelPdfInput: (exec?: SessionExecutionState) => boolean;
+  modelCapabilitiesForExecution: (
+    exec: SessionExecutionState | undefined,
+  ) => import("@natalia/contracts").ModelCapabilities;
   mediaTypeForImage: (
     path: string,
   ) => "image/png" | "image/jpeg" | "image/webp" | "image/gif";
@@ -212,6 +219,7 @@ export type RuntimePorts = {
     exec?: SessionExecutionState,
   ) => import("@natalia/tools").RuntimeTool[];
   effectiveMaxSteps: (exec?: SessionExecutionState) => number;
+  waitIfPaused: (exec?: SessionExecutionState) => Promise<void>;
   chatToolSummary: (
     toolName: string,
     args: Record<string, unknown>,
@@ -262,4 +270,25 @@ export type RuntimePorts = {
   setDefaultPermissionProfile: (
     profile: ConfigV3["permissionProfiles"][string] | undefined,
   ) => void;
+  getCompactionService: () =>
+    | import("@natalia/runtime-services").CompactionService
+    | undefined;
+  getAttachmentService: () => import("@natalia/runtime-services").AttachmentService;
+  getMcpService: () =>
+    | import("@natalia/runtime-services").McpService
+    | undefined;
+  getRetryService: () => import("@natalia/runtime-services").RetryService;
+  setActiveAbort: (controller: AbortController | undefined) => void;
+  setActiveTurnID: (id: string | undefined) => void;
+  setSelectedAgent: (agent: AgentDefinition | undefined) => void;
+  setPendingAgent: (agent: AgentDefinition | undefined) => void;
+  persistInboxPromotion: (targetSessionID?: SessionID) => Promise<void>;
+  reloadConfigFromDisk: () => Promise<{
+    read: boolean;
+    providerReconfigured: boolean;
+    reason?: string;
+  }>;
+  getExecutionForSession: (
+    sessionID: SessionID,
+  ) => SessionExecutionState | undefined;
 };
