@@ -9,6 +9,7 @@ import {
 } from "./runtime/provider-selection";
 import { createPermissions } from "./runtime/permissions";
 import { createSnapshot } from "./runtime/snapshot";
+import { createCollaborationBoundary } from "./runtime/collaboration/boundary";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
@@ -675,6 +676,8 @@ export function createRealRuntimeClient(
     runtimeContextConfig = value;
   };
   ctx.ports.getRuntimeContextConfig = () => runtimeContextConfig;
+  ctx.ports.getWorkspaceFilesController = () => workspaceFilesController;
+  ctx.ports.nextMailboxSequence = () => mailboxSequence++;
   ctx.ports.setSessionPersistence = (next) => {
     sessionPersistence = next;
   };
@@ -722,6 +725,14 @@ export function createRealRuntimeClient(
     extensionEnabled,
     extensionToolPermission,
   } = permissions;
+  const collaborationBoundary = createCollaborationBoundary(ctx);
+  const {
+    settleMailboxAtBoundary,
+    acknowledgeDeliveredMailboxAtBoundary,
+    deliverQueuedMailboxAtBoundary,
+    activateQueuedPlanAtBoundary,
+    reconcileWorkspaceObservation,
+  } = collaborationBoundary;
   const snapshot = createSnapshot(ctx);
   const {
     toolEventTurnID,
@@ -3291,169 +3302,6 @@ export function createRealRuntimeClient(
       void reconcileWorkspaceObservation(exec);
     }
   }
-  /**
-   * P8 C3: settle the mailbox at the turn boundary. Already-delivered messages
-   * (injected into the turn that just finished) are acknowledged so they stop
-   * re-injecting; still-queued messages are delivered for the next turn. A turn
-   * that ends cancelled/aborted is NOT a settlement — the model did not finish
-   * the turn, so its delivered intents stay delivered for another chance.
-   */
-  function settleMailboxAtBoundary(exec?: SessionExecutionState) {
-    acknowledgeDeliveredMailboxAtBoundary(exec);
-    deliverQueuedMailboxAtBoundary(exec);
-  }
-  /**
-   * Acknowledge every message that is still `delivered` (it was injected into
-   * the turn that just finished, so the main agent has seen it). Acknowledged
-   * messages no longer appear in `<pending_user_intents>`.
-   */
-  function acknowledgeDeliveredMailboxAtBoundary(exec?: SessionExecutionState) {
-    const target = exec ?? activeExec;
-    if (!target?.session) return;
-    const delivered = projectedMailboxMessages(target.session.events).filter(
-      (message) => message.status === "delivered",
-    );
-    if (!delivered.length) return;
-    const at = new Date().toISOString();
-    for (const message of delivered)
-      publishForSession(
-        target,
-        buildMailboxStatus({
-          id: `${message.messageID}:acknowledged:${mailboxSequence++}`,
-          messageID: message.messageID,
-          status: "acknowledged",
-          at,
-        }),
-      );
-  }
-
-  /**
-   * The safe-boundary delivery half of the mailbox: every queued message moves
-   * to `delivered` at the safe point. The projection drives this — only
-   * messages still `queued` are delivered, so deferred/superseded messages are
-   * left alone, and a message that was already delivered is untouched.
-   */
-  function deliverQueuedMailboxAtBoundary(exec?: SessionExecutionState) {
-    const target = exec ?? activeExec;
-    if (!target?.session) return;
-    const queued = projectedMailboxMessages(target.session.events).filter(
-      (message) => message.status === "queued",
-    );
-    if (!queued.length) return;
-    const at = new Date().toISOString();
-    for (const message of queued)
-      publishForSession(
-        target,
-        buildMailboxStatus({
-          id: `${message.messageID}:delivered:${mailboxSequence++}`,
-          messageID: message.messageID,
-          status: "delivered",
-          at,
-        }),
-      );
-  }
-
-  /**
-   * P8 C4: promotes the queued-next plan to active at the turn safe boundary.
-   * §6.5: after the active plan reaches a safe finish, the accepted queued plan
-   * activates and the next Main Agent turn carries it. Projection-driven: only
-   * a plan still `queued_next_plan` is promoted, and one per boundary, so an
-   * already-active plan is never re-activated.
-   */
-  function activateQueuedPlanAtBoundary(exec?: SessionExecutionState) {
-    const target = exec ?? activeExec;
-    if (!target?.session) return;
-    const queued = projectedPlans(target.session.events).find(
-      (plan) => plan.status === "queued_next_plan",
-    );
-    if (!queued) return;
-    publishForSession(
-      target,
-      workLedgerController.buildPlanTransition({
-        id: `${queued.planID}:activated:${queued.version + 1}`,
-        planID: queued.planID,
-        version: queued.version + 1,
-        transition: "activated",
-        at: new Date().toISOString(),
-      }),
-    );
-  }
-
-  /**
-   * WG4: reconcile the watcher hints against the current workspace, graph any
-   * confirmed external changes as isolated nodes, and run them through the
-   * DriftEvaluator against the active plan (Phase 4 + Phase 5). This is both the
-   * `confirmedWorkspaceChanges()` read surface and the turn-end automatic
-   * reconcile — a finished turn reconciles so external edits are discovered,
-   * graphed and drift-checked without an explicit call.
-   */
-  function reconcileWorkspaceObservation(exec?: SessionExecutionState): Promise<
-    Array<{
-      id: string;
-      workspaceRoot: string;
-      path: string;
-      operation: "added" | "modified" | "deleted" | "renamed";
-      origin:
-        | "tool"
-        | "sandbox_merge"
-        | "checkpoint_rollback"
-        | "external"
-        | "unknown";
-      attribution: "attributed" | "unattributed" | "indeterminate";
-      correlation: {
-        sessionID?: string;
-        episodeID?: string;
-        turnID?: string;
-        callID?: string;
-        operationID?: string;
-      };
-      health: "healthy" | "degraded" | "unavailable";
-      at: string;
-    }>
-  > {
-    return (async () => {
-      const target = exec ?? activeExec;
-      if (!target?.session) return [];
-      const confirmed = (await workspaceFilesController?.reconcile()) ?? [];
-      for (const change of confirmed) {
-        if (change.attribution === "attributed") continue;
-        publishForSession(
-          target,
-          workLedgerController.externalWorkspaceChangeNode({
-            confirmedChangeID: change.id,
-            path: change.path,
-            sessionID: target.session.id,
-          }),
-        );
-      }
-      if (confirmed.length) {
-        const activePlan = projectedPlans(target.session.events).find(
-          (plan) => plan.status === "active",
-        );
-        const objective = activePlan?.objective ?? "";
-        const applicableConstraints = activePlan?.constraints ?? [];
-        if (objective || applicableConstraints.length) {
-          const findings = workLedgerController.evaluateDrift({
-            sessionID: target.session.id,
-            turnID: target.activeTurnID,
-            objective,
-            currentActivity: confirmed
-              .map((change) => `${change.operation}:${change.path}`)
-              .join(", "),
-            applicableConstraints,
-            changes: confirmed.map((change) => ({
-              path: change.path,
-              action: change.operation,
-            })),
-            evidenceRefs: [],
-          });
-          for (const finding of findings) publishForSession(target, finding);
-        }
-      }
-      return confirmed;
-    })();
-  }
-
   /**
    * TERM-M.3 (c): persist the typed pending-human state — a terminal the model
    * asked a human to take over, with the turn ended. Written exactly like the
