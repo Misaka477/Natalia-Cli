@@ -50,7 +50,7 @@ const capabilityRoots = ["packages/capability"];
  */
 const capabilityFactoryRoots = ["packages/client/src/capabilities"];
 const forbiddenCapabilityFactoryImports = [
-  /from\s+["']\.\.\/real-runtime["']/u,
+  /from\s+["']\.\.\/runtime\/main["']/u,
   /from\s+["']@natalia\/client["']/u,
   /from\s+["'](?:\.\.\/)+apps\//u,
   /from\s+["']@opentui\//u,
@@ -166,10 +166,6 @@ const forbiddenDeepImports = [
 const maxSourceLines = 400;
 const lineLimitExemptions = new Map<string, string>([
   [
-    "packages/client/src/real-runtime.ts",
-    "convergence §3: split into runtime/ modules, removed in phase 1",
-  ],
-  [
     "packages/client/src/worker.ts",
     "legacy transport worker, not part of phase 1",
   ],
@@ -250,6 +246,8 @@ const lineLimitExemptions = new Map<string, string>([
   ["apps/tui/src/keymap.ts", "TUI keymap"],
 ]);
 const runtimeModuleRoots = ["packages/client/src/runtime"];
+const runtimeCompositionRoot = "packages/client/src/runtime/main.ts";
+const runtimeCompositionDirectory = "packages/client/src/runtime/composition/";
 
 const failures: string[] = [];
 for (const dir of dependencyGuarded)
@@ -383,9 +381,9 @@ for (const dir of productionRoots)
 
 /**
  * Runtime module coupling: modules under `packages/client/src/runtime/` talk to
- * each other only through `RuntimeContext`. A relative import that stays inside
- * the runtime directory and does not name `context` is a direct cross-module
- * reference and fails.
+ * each other only through `RuntimeContext`. Neutral types may come from
+ * `options`; the explicit root and its internal composition modules may import
+ * factories. Other relative cross-module references fail.
  */
 const runtimeRoot = join(root, "packages", "client", "src", "runtime");
 const runtimeImport = /from\s+["'](\.[^"']*)["']/gu;
@@ -401,6 +399,10 @@ for (const dir of runtimeModuleRoots)
         resolved.startsWith(runtimeRoot) &&
         !resolved.endsWith("/context") &&
         !resolved.endsWith("/context.ts") &&
+        !resolved.endsWith("/options") &&
+        !resolved.endsWith("/options.ts") &&
+        relative !== runtimeCompositionRoot &&
+        !relative.startsWith(runtimeCompositionDirectory) &&
         // A feature split across files for size is internal composition: the
         // guard allows imports within one feature directory and blocks
         // cross-feature coupling.

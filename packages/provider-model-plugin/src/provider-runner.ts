@@ -56,7 +56,7 @@ type PermissionMode = "ask" | "auto" | "read_only";
 const maxProtocolCorrections = 2;
 
 /**
- * The provider runner — knife 7 of the real-runtime split (mainline plan
+ * The provider runner — knife 7 of the runtime composition split (mainline plan
  * §40.4, API plan §15). It owns the per-turn provider loop: message assembly,
  * the step loop, retry with context-limit recovery, usage recording and the
  * stop reason. Everything it needs from the runtime arrives as accessors and

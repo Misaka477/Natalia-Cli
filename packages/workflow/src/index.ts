@@ -3,7 +3,7 @@
  * executor. The former standalone `WorkflowRuntime` / `JsonlWorkflowStore`
  * engine (and its `workflow_run` / `workflow_status` / `workflow_events` tool
  * surface) was removed: the real execution path is the task controller plus
- * `real-runtime`, so every tool call already passes through the canonical
+ * the runtime composition root, so every tool call passes through the canonical
  * policy/approval/audit pipeline. Reintroducing a second executor would
  * reintroduce the direct `spawn` back door it carried.
  */

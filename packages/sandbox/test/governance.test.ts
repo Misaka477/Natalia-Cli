@@ -12,7 +12,7 @@ test("paths classify into risk tiers", () => {
   expect(riskTierForPath("packages/plugin/src/index.ts")).toBe("high");
   // Implementation source is medium.
   expect(riskTierForPath("packages/tool-fs/src/index.ts")).toBe("medium");
-  expect(riskTierForPath("packages/client/src/real-runtime.ts")).toBe("medium");
+  expect(riskTierForPath("packages/client/src/runtime/main.ts")).toBe("medium");
   // Data and config are low.
   expect(riskTierForPath(".natalia/config.json")).toBe("low");
   expect(riskTierForPath("docs/guide.md")).toBe("low");

@@ -11,7 +11,7 @@ import type { SessionRecord } from "@natalia/session";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 export function createSessionExecution(
   ctx: RuntimeContext,

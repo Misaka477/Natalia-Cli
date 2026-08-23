@@ -5,7 +5,7 @@
  * CST2 wired `constitution.check` into tool preflight. But `constitution.rule_added`
  * and `decision.recorded` had **zero production emit points**: the rule library
  * every query read stayed empty, and the only enforcement that ever ran was the
- * hard-coded `SELF_PROTECTION_PATTERNS` in `real-runtime.ts`. §5 of the mainline
+ * hard-coded `SELF_PROTECTION_PATTERNS` in the runtime tool-execution path. §5 of the mainline
  * plan calls this out: "当前实际规则应迁移为第一批 facts".
  *
  * This module is that migration's pure half, following the work-graph and
@@ -24,7 +24,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 /**
  * The built-in runtime self-protection rules, migrated verbatim from the
  * runtime's hard-coded matcher. This is the single source of truth for the rule
- * metadata; `real-runtime.ts` keeps the regex matcher and looks these up.
+ * metadata; the runtime tool-execution path keeps the regex matcher and looks these up.
  */
 export const SELF_PROTECTION_RULES: ReadonlyArray<{
   ruleID: string;

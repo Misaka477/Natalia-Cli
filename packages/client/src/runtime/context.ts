@@ -124,6 +124,7 @@ type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
  * (`runtime/main.ts`) creates this once; modules read it through `ctx.state`.
  */
 export type RuntimeState = {
+  runtimeDisposed: boolean;
   initialize: InitializeDependencies;
   workspaceRoot: string;
   sessionID: SessionID;

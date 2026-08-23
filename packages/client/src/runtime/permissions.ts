@@ -16,7 +16,7 @@ import type { ConfigV3 } from "@natalia/contracts";
 import type { ToolPolicyHookLayer } from "@natalia/runtime-services";
 import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 type PermissionProfile = ConfigV3["permissionProfiles"][string];
 

@@ -27,7 +27,7 @@ import {
 } from "@natalia/builtin-plugins";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 import type { SkillMetadata } from "@natalia/runtime-services";
 
 export function createPluginAssembly(

@@ -12,7 +12,7 @@ import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
 import type { ConfigV3, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 export function createConfigReload(
   ctx: RuntimeContext,

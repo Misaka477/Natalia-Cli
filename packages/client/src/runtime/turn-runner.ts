@@ -15,7 +15,7 @@ import {
 } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 export function createTurnRunner(
   ctx: RuntimeContext,

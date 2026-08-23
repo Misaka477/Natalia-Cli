@@ -11,7 +11,7 @@ import {
   type MigratedPluginRule,
 } from "../src/migrated-plugin-rules";
 
-const target = "packages/client/src/real-runtime.ts";
+const target = "packages/client/src/runtime/main.ts";
 
 test("client service definitions come from runtime-services", () => {
   expect(
@@ -34,7 +34,17 @@ test("client pure surfaces come from domain packages", () => {
       target,
       'import { helper } from "@natalia/example-plugin"',
     ),
-  ).toBe("client real-runtime must not import provider plugin packages");
+  ).toBe(
+    "client runtime composition root must not import provider plugin packages",
+  );
+  expect(
+    findClientPluginSurfaceViolation(
+      "packages/client/src/runtime/composition/services.ts",
+      'import { helper } from "@natalia/example-plugin"',
+    ),
+  ).toBe(
+    "client runtime composition root must not import provider plugin packages",
+  );
   expect(
     findClientPluginSurfaceViolation(
       target,
@@ -188,11 +198,11 @@ test("MCP migration rejects raw tool registry wiring", () => {
 test("MCP migration keeps connection routing inside its operational service", () => {
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { McpController } from "@natalia/mcp-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "const mcpAccess: McpAccess = controller.access",
     ],
     [
@@ -218,7 +228,7 @@ test("MCP migration keeps connection routing inside its operational service", ()
 
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { McpService } from "@natalia/mcp-plugin"',
     ],
     [
@@ -246,7 +256,7 @@ test("terminal migration rejects concrete native types in client composition", (
 test("terminal migration rejects backend leaks across service consumers", () => {
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "const registry = terminalController?.get()",
     ],
     [
@@ -271,7 +281,7 @@ test("terminal migration rejects backend leaks across service consumers", () => 
 test("sandbox migration rejects backend leaks across service consumers", () => {
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "const manager = sandboxController?.get()",
     ],
     ["packages/tools/src/types.ts", "sandboxes?: WorkspaceSandboxManager"],
@@ -292,7 +302,7 @@ test("sandbox migration rejects backend leaks across service consumers", () => {
       'import type { SandboxController } from "@natalia/sandbox-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "kernel.service(SANDBOX_CONTROLLER_SERVICE)",
     ],
     [
@@ -325,7 +335,7 @@ test("subagents migration rejects backend leaks across service consumers", () =>
       'import type { SubagentsController } from "@natalia/subagents-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "kernel.service(SUBAGENTS_CONTROLLER_SERVICE)",
     ],
     [
@@ -477,11 +487,11 @@ test("collaboration migration protects the extracted implementation", () => {
       'import { createCollaborationPlugin } from "./collaboration-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { InteractiveWaiter } from "./interactive-waiter"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { buildMailboxQueued } from "./mailbox-ledger"',
     ],
     [
@@ -495,7 +505,7 @@ test("collaboration migration protects the extracted implementation", () => {
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { InteractiveWaiter } from "@natalia/collaboration-plugin"',
     ),
   ).toEqual([]);
@@ -508,7 +518,7 @@ test("workspace migration protects the extracted implementation", () => {
       'import { createWorkspacePlugin } from "./workspace-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { WorkspaceWriteLock } from "./workspace-write-lock"',
     ],
     [
@@ -526,7 +536,7 @@ test("workspace migration protects the extracted implementation", () => {
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { WorkspaceWriteLock } from "@natalia/workspace-plugin"',
     ),
   ).toEqual([]);
@@ -539,7 +549,7 @@ test("task workflow migration protects the extracted implementation", () => {
       'import { createTaskWorkflowPlugin } from "./task-workflow-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { TaskWorkflowController } from "./task-workflow-controller"',
     ],
     [
@@ -557,7 +567,7 @@ test("task workflow migration protects the extracted implementation", () => {
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { TaskWorkflowController } from "@natalia/task-workflow-plugin"',
     ),
   ).toEqual([]);
@@ -570,7 +580,7 @@ test("runtime config migration rejects client-owned implementations", () => {
       'import { createRuntimeConfigPlugin } from "./runtime-config-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { refreshRuntimeConfigService } from "./builtin-plugins/runtime-config-plugin"',
     ],
   ])
@@ -579,7 +589,7 @@ test("runtime config migration rejects client-owned implementations", () => {
     ]);
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { refreshRuntimeConfigService } from "@natalia/runtime-config-plugin"',
     ),
   ).toEqual([]);
@@ -588,7 +598,7 @@ test("runtime config migration rejects client-owned implementations", () => {
 test("session store migration rejects client-owned implementations", () => {
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { SessionStoreController } from "./session-store-controller"',
     ],
     [
@@ -605,22 +615,22 @@ test("session store migration rejects client-owned implementations", () => {
     ]);
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { SessionStoreController } from "@natalia/session-store-plugin"',
     ),
   ).toEqual([]);
 
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { SqliteSessionStore } from "@natalia/session"',
     ],
     [
       "packages/client/test/real-runtime.test.ts",
       "const store = new JsonSessionStore()",
     ],
-    ["packages/client/src/real-runtime.ts", "sessionStoreController?.sqlite()"],
-    ["packages/client/src/real-runtime.ts", "sessionStoreController.json()"],
+    ["packages/client/src/runtime/main.ts", "sessionStoreController?.sqlite()"],
+    ["packages/client/src/runtime/main.ts", "sessionStoreController.json()"],
   ] as const)
     expect(findMigratedPluginViolations(path, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-session-store" }),
@@ -653,7 +663,7 @@ test("retry migration rejects client-owned retry implementations", () => {
       'import { createRetryPlugin } from "./retry-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { RETRY_SERVICE } from "./builtin-plugins/retry-plugin"',
     ],
   ])
@@ -671,7 +681,7 @@ test("retry migration rejects client-owned retry implementations", () => {
 test("context ledger migration rejects client-owned implementations", () => {
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { ContextLedgerFactory } from "./context-ledger-factory"',
     ],
     [
@@ -679,7 +689,7 @@ test("context ledger migration rejects client-owned implementations", () => {
       'import { createContextLedgerPlugin } from "./context-ledger-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { CONTEXT_LEDGER_FACTORY_SERVICE } from "./builtin-plugins/context-ledger-plugin"',
     ],
   ])
@@ -688,7 +698,7 @@ test("context ledger migration rejects client-owned implementations", () => {
     ]);
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { ContextLedgerFactory } from "@natalia/context-ledger-plugin"',
     ),
   ).toEqual([]);
@@ -715,7 +725,7 @@ test("attachment migration rejects client-owned implementations", () => {
       'import { createAttachmentPlugin } from "./attachment-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { ATTACHMENT_SERVICE } from "./builtin-plugins/attachment-plugin"',
     ],
   ])
@@ -733,7 +743,7 @@ test("attachment migration rejects client-owned implementations", () => {
 test("compaction migration protects both former consumers", () => {
   for (const path of [
     "packages/client/src/provider-runner.ts",
-    "packages/client/src/real-runtime.ts",
+    "packages/client/src/runtime/main.ts",
   ])
     expect(
       findMigratedPluginViolations(
@@ -754,7 +764,7 @@ test("compaction migration rejects client-owned implementations", () => {
       'import { createCompactionPlugin } from "./compaction-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { COMPACTION_SERVICE } from "./builtin-plugins/compaction-plugin"',
     ],
   ])
@@ -803,11 +813,11 @@ test("TUI adapter migration protects the executable bootstrap", () => {
 test("runtime UI migration protects the extracted implementation", () => {
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "createStatusSnapshotController(input)",
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { statusSnapshot } from "./status-controller"',
     ],
     [
@@ -833,7 +843,7 @@ test("runtime UI migration protects the extracted implementation", () => {
 
 test("turn orchestration migration protects the extracted implementation", () => {
   for (const [path, source] of [
-    ["packages/client/src/real-runtime.ts", "createTurnController(input)"],
+    ["packages/client/src/runtime/main.ts", "createTurnController(input)"],
     [
       "packages/client/src/builtin-plugins/catalog.ts",
       'import { createTurnOrchestrationPlugin } from "./turn-orchestration-plugin"',
@@ -857,7 +867,7 @@ test("turn orchestration migration protects the extracted implementation", () =>
 
 test("provider model migration protects the extracted implementation", () => {
   for (const [path, source] of [
-    ["packages/client/src/real-runtime.ts", "createProviderRunner(input)"],
+    ["packages/client/src/runtime/main.ts", "createProviderRunner(input)"],
     [
       "packages/client/src/builtin-plugins/catalog.ts",
       'import { createProviderModelPlugin } from "./provider-model-plugin"',
@@ -893,7 +903,7 @@ test("work ledger migration protects the extracted implementation", () => {
       'import { createWorkLedgerPlugin } from "./work-ledger-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { WorkLedgerController } from "./work-ledger-controller"',
     ],
     [
@@ -930,7 +940,7 @@ test("checkpoint migration protects the extracted implementation", () => {
       'import { createCheckpointControllerPlugin } from "./checkpoint-controller-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { CheckpointController } from "./checkpoint-controller"',
     ],
     [
@@ -961,7 +971,7 @@ test("governance ledger migration protects the extracted implementation", () => 
       'import { createGovernanceLedgerPlugin } from "./governance-ledger-plugin"',
     ],
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { GovernanceLedgerController } from "./governance-ledger-controller"',
     ],
     [
@@ -1024,7 +1034,7 @@ test("client physical dependency guard excludes concrete tool packages", () => {
 
   expect(
     findClientToolDependencyViolation(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { builtinPluginCatalog } from "@natalia/builtin-plugins"',
     ),
   ).toBeUndefined();
@@ -1033,7 +1043,7 @@ test("client physical dependency guard excludes concrete tool packages", () => {
 test("client physical dependency guard excludes extracted product packages", () => {
   for (const [path, source] of [
     [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { loadNativeMCPTools } from "@natalia/mcp"',
     ],
     [
@@ -1047,7 +1057,7 @@ test("client physical dependency guard excludes extracted product packages", () 
 
   expect(
     findClientProductDependencyViolation(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { MCP_SERVICE } from "@natalia/mcp-plugin"',
     ),
   ).toBeUndefined();
@@ -1089,7 +1099,7 @@ test("client physical dependency guard excludes extracted product packages", () 
   ).toBeString();
   expect(
     findClientProductDependencyViolation(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import type { NativeTerminalRegistry } from "@natalia/terminal-plugin"',
     ),
   ).toBeUndefined();
@@ -1107,13 +1117,13 @@ test("client physical dependency guard excludes extracted product packages", () 
   ).toBeUndefined();
   expect(
     findClientProductDependencyViolation(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { agentsFromConfig } from "@natalia/agent"',
     ),
   ).toBeUndefined();
   expect(
     findClientProductDependencyViolation(
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       'import { agentsFromConfig } from "@natalia/agent-plugin"',
     ),
   ).toBeString();
@@ -1232,7 +1242,13 @@ test("migrated plugin rules only protect declared composition roots", () => {
   ).toEqual([]);
   expect(
     findMigratedPluginViolations(
-      "packages\\client\\src\\real-runtime.ts",
+      "packages\\client\\src\\runtime\\main.ts",
+      "createPdfReadTool()",
+    ),
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-pdf" })]);
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/runtime/composition/features.ts",
       "createPdfReadTool()",
     ),
   ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-pdf" })]);
@@ -1257,7 +1273,7 @@ test("migrated plugin matcher accepts new declarative rules", () => {
 
 test("workflow scheduler migration protects host construction sites", () => {
   for (const path of [
-    "packages/client/src/real-runtime.ts",
+    "packages/client/src/runtime/main.ts",
     "packages/client/src/builtin-plugins/catalog.ts",
     "packages/client/src/capability-execution-host.ts",
     "packages/client/test/capability-execution-host.test.ts",
@@ -1287,7 +1303,7 @@ test("the deleted runtime assembly seam cannot be recreated", () => {
     ),
   ).toMatch(/must not be recreated/u);
   expect(
-    findForbiddenRepositoryPathViolation("packages/client/src/real-runtime.ts"),
+    findForbiddenRepositoryPathViolation("packages/client/src/runtime/main.ts"),
   ).toBeUndefined();
 });
 

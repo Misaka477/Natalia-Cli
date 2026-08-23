@@ -25,7 +25,7 @@ import type { ContextWindowResolver } from "@natalia/runtime";
 import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
 import type { RuntimeContextStatusConfig } from "./status-config";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 export function defaultContextStatusConfig(): RuntimeContextStatusConfig {
   return {

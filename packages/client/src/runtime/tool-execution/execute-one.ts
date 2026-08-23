@@ -13,7 +13,7 @@ import type { RuntimeTool, ToolMaterialization } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { runExecuteStage } from "./execute-run";
 import type { RuntimeContext } from "../context";
-import type { RealRuntimeClientOptions } from "../../real-runtime";
+import type { RealRuntimeClientOptions } from "../options";
 
 const WAITING_TOOLS = new Set(["terminal_observe"]);
 

@@ -7,7 +7,7 @@ import {
   TASK_WORKFLOW_CONTROLLER_SERVICE,
   type RuntimeServiceClient,
 } from "@natalia/runtime-services";
-import { createRealRuntimeClient } from "./real-runtime";
+import { createRealRuntimeClient } from "./runtime/main";
 
 async function withService<T>(
   input: { workspaceRoot: string },

@@ -15,7 +15,7 @@ export {
   type WorkflowDocumentChoice,
 } from "@natalia/workflow";
 export { createFakeBackend } from "./fixture";
-export { createRealRuntimeClient, EGRESS_ADVISORY } from "./real-runtime";
+export { createRealRuntimeClient, EGRESS_ADVISORY } from "./runtime/main";
 export type { RuntimeServiceClient } from "@natalia/runtime-services";
 export {
   TASK_WORKFLOW_CONTROLLER_SERVICE,
@@ -102,7 +102,7 @@ export {
   type SystemdCommandRunner,
   writeGeneratedTaskUnits,
 } from "@natalia/workflow";
-export type { RealRuntimeClientOptions } from "./real-runtime";
+export type { RealRuntimeClientOptions } from "./runtime/options";
 export {
   workflowContributionsProjection,
   type WorkflowContributionsProjection,

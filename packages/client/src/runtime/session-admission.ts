@@ -14,7 +14,7 @@ import {
 import { createHash } from "node:crypto";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 export function createSessionAdmission(
   ctx: RuntimeContext,

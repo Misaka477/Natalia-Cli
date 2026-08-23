@@ -8,7 +8,7 @@
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/runtime-services";
 import type { ToolFamily } from "@natalia/tools";
 import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 export function createToolPublish(
   ctx: RuntimeContext,

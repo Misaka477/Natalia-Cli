@@ -13,7 +13,7 @@ import {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
 } from "../src/worker";
-import { createRealRuntimeClient } from "../src/real-runtime";
+import { createRealRuntimeClient } from "../src/runtime/main";
 import { CapabilityHost } from "@natalia/capability";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
 import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";

@@ -15,6 +15,11 @@ import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
 
 export type RuntimePortsExtra = {
+  isPendingInteractiveRequest: (
+    sessionID: SessionID,
+    id: string,
+    kind: "approval" | "question",
+  ) => boolean;
   setLastSubmitted: (
     turn: import("@natalia/contracts").SubmittedTurn | undefined,
   ) => void;

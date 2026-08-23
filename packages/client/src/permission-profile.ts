@@ -2,7 +2,7 @@ import type { ConfigV3 } from "@natalia/contracts";
 import { isKnownModuleTool, knownModuleTools } from "@natalia/workflow";
 import type { TaskWorkflowService } from "@natalia/runtime-services";
 import { TASK_WORKFLOW_CONTROLLER_SERVICE } from "@natalia/runtime-services";
-import { createRealRuntimeClient } from "./real-runtime";
+import { createRealRuntimeClient } from "./runtime/main";
 
 export type PermissionProfileUsage = Record<string, string[]>;
 

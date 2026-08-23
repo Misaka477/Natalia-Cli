@@ -99,6 +99,15 @@ const clientProviderPluginIDImport = new RegExp(
   String.raw`(?:import|export)\s*(?:type\s*)?\{[^}]*\b[A-Z][A-Z0-9_]*_PLUGIN_ID\b[^}]*\}\s*from\s*["']@natalia\/[a-z-]+-plugin["']`,
   "u",
 );
+const runtimeCompositionRoot = "packages/client/src/runtime/main.ts";
+const runtimeCompositionDirectory = "packages/client/src/runtime/composition/";
+
+function isRuntimeCompositionPath(path: string) {
+  return (
+    path === runtimeCompositionRoot ||
+    path.startsWith(runtimeCompositionDirectory)
+  );
+}
 
 /** Pure contracts and helpers must not be sourced from provider packages. */
 export function findClientPluginSurfaceViolation(
@@ -106,12 +115,12 @@ export function findClientPluginSurfaceViolation(
   text: string,
 ): string | undefined {
   if (
-    path.replaceAll("\\", "/") === "packages/client/src/real-runtime.ts" &&
+    isRuntimeCompositionPath(path.replaceAll("\\", "/")) &&
     /(?:from\s+|import\s*\()\s*["']@natalia\/(?!builtin-plugins["'])[^"']*-plugin["']/u.test(
       text,
     )
   )
-    return "client real-runtime must not import provider plugin packages";
+    return "client runtime composition root must not import provider plugin packages";
   if (
     /packages\/client\/(?:src|test)\//u.test(path.replaceAll("\\", "/")) &&
     (migratedClientPluginSurface.test(text) ||
@@ -249,7 +258,7 @@ export function findClientClosureViolation(
 export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-skills",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "legacy skills controller",
@@ -271,7 +280,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-tool-pdf",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct PDF package import",
@@ -286,7 +295,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-ask",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -303,7 +312,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-todo",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -320,7 +329,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-search",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -337,7 +346,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-fs-read",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -354,7 +363,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-fs-write",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -372,7 +381,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-web",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -389,7 +398,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-shell",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -406,7 +415,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-agent",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -423,7 +432,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-terminal",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -441,7 +450,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-sandbox",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -458,7 +467,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-process",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
@@ -476,7 +485,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-task-module",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/task-module-plugin.ts",
       "packages/client/src/capabilities/task-module-tools.ts",
@@ -506,7 +515,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-runtime-config",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/runtime-config-plugin.ts",
     ],
@@ -526,7 +535,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-local-tools",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/local-tools-plugin.ts",
       "packages/client/src/capabilities/local-tool-families.ts",
@@ -551,7 +560,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-tool-plugins",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "legacy built-in tool-family bootstrap",
@@ -563,7 +572,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-workspace",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/workspace-plugin.ts",
       "packages/client/src/mutation-registry.ts",
@@ -594,7 +603,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-terminal",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/tools/src/types.ts",
       "packages/tool-terminal/src/index.ts",
@@ -622,7 +631,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-sandbox",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/tools/src/types.ts",
       "packages/tool-sandbox/src/index.ts",
@@ -662,7 +671,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-subagents",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/tools/src/types.ts",
       "packages/tool-agent/src/index.ts",
@@ -698,7 +707,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-mcp",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/provider-model-plugin/src/provider-runner.ts",
     ],
@@ -761,7 +770,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-checkpoint",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/checkpoint-controller-plugin.ts",
       "packages/client/src/checkpoint-controller.ts",
@@ -784,7 +793,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-subagents",
-    targets: ["packages/client/src/real-runtime.ts"],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct subagents controller construction",
@@ -795,7 +804,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-session-store",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/turn-orchestration-plugin.ts",
       "packages/client/src/session-store-controller.ts",
@@ -852,7 +861,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-team",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/index.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/team-plugin.ts",
@@ -884,7 +893,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-tool-pipeline",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/tool-pipeline-plugin.ts",
       "packages/client/src/tool-policy.ts",
@@ -911,7 +920,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-collaboration",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/collaboration-plugin.ts",
       "packages/client/src/interactive-waiter.ts",
@@ -938,7 +947,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-provider-model",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/provider-model-plugin.ts",
       "packages/client/src/provider-model-controller.ts",
@@ -979,7 +988,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-task-workflow",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/task-workflow-plugin.ts",
       "packages/client/src/task-workflow-controller.ts",
@@ -1012,7 +1021,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     id: "natalia-workflow-scheduler",
     targets: [
       "packages/client/src/index.ts",
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/capability-execution-host.ts",
       "packages/client/src/worker.ts",
@@ -1077,7 +1086,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-context-ledger",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/compaction-service.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/compaction-plugin.ts",
@@ -1101,7 +1110,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-work-ledger",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/interactive-waiter.ts",
       "packages/client/src/checkpoint-controller.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
@@ -1132,7 +1141,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-governance-ledger",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/governance-ledger-plugin.ts",
       "packages/client/src/governance-ledger-controller.ts",
@@ -1155,7 +1164,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-turn-orchestration",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/turn-orchestration-plugin.ts",
       "packages/client/src/turn-controller.ts",
@@ -1179,7 +1188,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-retry",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/provider-runner.ts",
       "packages/client/src/compaction-service.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
@@ -1201,7 +1210,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-attachment",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/provider-runner.ts",
       "packages/client/src/session-store-controller.ts",
       "packages/client/src/index.ts",
@@ -1221,7 +1230,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-attachment",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/provider-runner.ts",
       "packages/client/src/session-store-controller.ts",
     ],
@@ -1237,7 +1246,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     id: "natalia-compaction",
     targets: [
       "packages/client/src/provider-runner.ts",
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/provider-model-plugin.ts",
     ],
@@ -1292,7 +1301,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   {
     id: "natalia-runtime-ui",
     targets: [
-      "packages/client/src/real-runtime.ts",
+      "packages/client/src/runtime/main.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/runtime-ui-plugin.ts",
       "packages/client/src/status-controller.ts",
@@ -1323,7 +1332,14 @@ export function findMigratedPluginViolations(
   const normalized = path.replaceAll("\\", "/");
   const violations: MigratedPluginViolation[] = [];
   for (const rule of rules) {
-    if (!rule.targets.includes(normalized)) continue;
+    const protectsRuntimeComposition = rule.targets.includes(
+      runtimeCompositionRoot,
+    );
+    if (
+      !rule.targets.includes(normalized) &&
+      !(protectsRuntimeComposition && isRuntimeCompositionPath(normalized))
+    )
+      continue;
     for (const forbidden of rule.forbidden)
       if (forbidden.pattern.test(text))
         violations.push({

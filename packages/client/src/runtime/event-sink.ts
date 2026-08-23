@@ -12,7 +12,7 @@ import { runtimeEventDurability } from "@natalia/contracts";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
-import type { RealRuntimeClientOptions } from "../real-runtime";
+import type { RealRuntimeClientOptions } from "./options";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;

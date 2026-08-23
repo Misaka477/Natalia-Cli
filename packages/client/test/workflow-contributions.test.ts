@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configV3Schema } from "@natalia/contracts";
 import { CapabilityRegistry } from "@natalia/capability";
-import { createRealRuntimeClient } from "../src/real-runtime";
+import { createRealRuntimeClient } from "../src/runtime/main";
 import { runTaskFromDocument } from "../src/task-controller";
 import { flowOverview, scheduledTaskOverview } from "@natalia/workflow";
 import { workflowContributionsProjection } from "@natalia/workflow";
