@@ -25,6 +25,7 @@ import { createSessionAdmission } from "./runtime/session-admission";
 import { createSessionAttach } from "./runtime/session-attach";
 import { createPluginAssembly } from "./runtime/plugin-assembly";
 import { createConfigReload } from "./runtime/config-reload";
+import { createToolPublish } from "./runtime/tool-publish";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -638,7 +639,6 @@ export function createRealRuntimeClient(
   ctx.ports.getExecutionBySession = () => executionBySession;
   ctx.ports.getTurnSession = () => turnSession;
   ctx.ports.getRuntimeContext = () => runtimeContext;
-  ctx.ports.publishWorkGraphToolCall = publishWorkGraphToolCall;
   ctx.ports.executionForTurn = executionForTurn;
   ctx.ports.getTurnController = () => turnController;
   ctx.ports.getSessionID = () => sessionID;
@@ -799,6 +799,7 @@ export function createRealRuntimeClient(
     wakeNavi,
   } = collaborationWake;
   ctx.ports.wakeMainForCollaboration = wakeMainForCollaboration;
+  ctx.ports.wakeNavi = wakeNavi;
   ctx.ports.requestNaviWake = requestNaviWake;
   ctx.ports.scheduleInternalWake = scheduleInternalWake;
   const mailboxPlans = createMailboxPlans(ctx);
@@ -813,8 +814,6 @@ export function createRealRuntimeClient(
   const chatTurn = createChatTurn(ctx);
   const { runChatTurnBody } = chatTurn;
   ctx.ports.runChatTurnBody = runChatTurnBody;
-  ctx.ports.wakeNavi = wakeNavi;
-  ctx.ports.hotReloadToolFamily = hotReloadToolFamily;
   ctx.ports.providerFromEnvironment = providerFromEnvironment;
   ctx.ports.getPerformanceTrace = () => performanceTrace;
   ctx.ports.getNativeRuntimeID = () => nativeRuntimeID;
@@ -869,7 +868,6 @@ export function createRealRuntimeClient(
   ctx.ports.buildBuiltinPluginCatalog = (config) =>
     buildBuiltinPluginCatalog(config);
   ctx.ports.refreshBuiltinServices = refreshBuiltinServices;
-  ctx.ports.publishToolCatalogChanges = publishToolCatalogChanges;
   const configReload = createConfigReload(ctx, options);
   const {
     configReloadBlockedReason,
@@ -877,6 +875,17 @@ export function createRealRuntimeClient(
     reloadConfigFromDisk,
   } = configReload;
   ctx.ports.configReloadBlockedReason = configReloadBlockedReason;
+  const toolPublish = createToolPublish(ctx, options);
+  const {
+    publishBuiltinCapabilities,
+    hotReloadToolFamily,
+    publishRegisteredTools,
+    publishToolCatalogChanges,
+    publishWorkGraphToolCall,
+  } = toolPublish;
+  ctx.ports.publishWorkGraphToolCall = publishWorkGraphToolCall;
+  ctx.ports.hotReloadToolFamily = hotReloadToolFamily;
+  ctx.ports.publishToolCatalogChanges = publishToolCatalogChanges;
   const sessionExecution = createSessionExecution(ctx, options);
   const {
     drainSessionFor,
@@ -2874,139 +2883,6 @@ export function createRealRuntimeClient(
    * the journal, so a consumer projection sees what is loaded. Published after
    * the session exists, so the events land in the session's history.
    */
-  function publishBuiltinCapabilities() {
-    for (const record of capabilityRegistry.list()) {
-      publish({
-        type: "capability.loaded",
-        id: `cap:${record.id}`,
-        apiVersion: 1,
-        name: record.name,
-        version: record.version,
-        scope: record.scope,
-        grants: record.grants,
-      });
-    }
-  }
-
-  /**
-   * Records the effective tool catalogue once the runtime has assembled all
-   * built-ins and task-scoped contributions. This is metadata only: tool
-   * implementations and parameters never enter the journal.
-   *
-   * Owner and scope are read from the kernel, not asserted here: a tool the
-   * kernel owns reports the capability that contributed it and that capability's
-   * scope, so the journal says which family a tool came from and how long it
-   * lives. `natalia-runtime` is left for a tool the host injected directly (a
-   * caller-supplied registry and the mailbox/collaboration tools the runtime
-   * still registers after assembly).
-   */
-  /**
-   * Hot-reloads one out-of-tree family: re-imports its entry and re-registers
-   * it without a restart, publishing what changed in the projected tool
-   * catalog. Shared by the `toolFamilyReload` RPC and the family watcher — the
-   * "hot" half of HMR, what a self-modifying agent triggers after its change is
-   * promoted.
-   */
-  async function hotReloadToolFamily(familyID: string) {
-    if (options.tools || !tsRuntimeConfig)
-      throw new Error("tool family reload is not available");
-    // The local-tools plugin owns the family lifecycle; the host only asks it
-    // to swap the family and then reports what changed in the tool catalog.
-    const reload = capabilityRegistry.service<
-      (familyID: string) => Promise<ToolFamily>
-    >(LOCAL_TOOLS_RELOAD_SERVICE);
-    if (!reload)
-      throw new Error(
-        "local tool families are not loaded (natalia-local-tools)",
-      );
-    const before = new Set(tools.keys());
-    await reload(familyID);
-    // Publish what changed so the projected tool catalog stays honest.
-    for (const name of before) {
-      if (tools.has(name)) continue;
-      publish({ type: "tool.unregistered", id: `tool:${name}`, name });
-    }
-    for (const name of [...tools.keys()]) {
-      if (before.has(name)) continue;
-      const owner = capabilityRegistry.ownerOf("tools", name);
-      publish({
-        type: "tool.registered",
-        id: `tool:${name}`,
-        name,
-        owner: owner ?? "natalia-runtime",
-        scope: (owner && capabilityRegistry.scopeOf(owner)) || "session",
-        recovery: "fail_closed",
-        precedence: 0,
-        requiresApproval: tools.get(name)?.requiresApproval ?? false,
-      });
-    }
-    return { reloaded: true };
-  }
-
-  function publishRegisteredTools() {
-    for (const tool of tools.values()) {
-      const owner = capabilityRegistry.ownerOf("tools", tool.name);
-      publish({
-        type: "tool.registered",
-        id: `tool:${tool.name}`,
-        name: tool.name,
-        owner: owner ?? "natalia-runtime",
-        scope: (owner && capabilityRegistry.scopeOf(owner)) || "session",
-        recovery: "fail_closed",
-        precedence: 0,
-        requiresApproval: tool.requiresApproval,
-      });
-    }
-  }
-
-  function publishToolCatalogChanges(before: Set<string>) {
-    for (const name of before)
-      if (!tools.has(name))
-        publish({ type: "tool.unregistered", id: `tool:${name}`, name });
-    for (const tool of tools.values()) {
-      if (before.has(tool.name)) continue;
-      const owner = capabilityRegistry.ownerOf("tools", tool.name);
-      publish({
-        type: "tool.registered",
-        id: `tool:${tool.name}`,
-        name: tool.name,
-        owner: owner ?? "natalia-runtime",
-        scope: (owner && capabilityRegistry.scopeOf(owner)) || "session",
-        recovery: "fail_closed",
-        precedence: 0,
-        requiresApproval: tool.requiresApproval,
-      });
-    }
-  }
-
-  /**
-   * Records a settled tool call in the Work Graph, with the edge to the turn that
-   * caused it. Only settled calls: an in-flight call is not yet a fact. The tool
-   * name and status are recorded, never arguments or output.
-   */
-  function publishWorkGraphToolCall(
-    turnID: string,
-    callID: string,
-    toolName: string,
-    status: string,
-  ) {
-    const exec = executionForTurn(turnID) ?? activeExec;
-    const ownerSessionID = exec?.session.id ?? sessionID;
-    publishForSession(
-      exec,
-      workLedgerController.toolCallNode({
-        turnID,
-        callID,
-        toolName,
-        status,
-        sessionID: ownerSessionID,
-      }),
-    );
-    publishForSession(
-      exec,
-      workLedgerController.toolCallEdge({ turnID, callID }),
-    );
-  }
 
   async function drainSession(signal: AbortSignal) {
     await turnController.drain(signal, sessionID);
