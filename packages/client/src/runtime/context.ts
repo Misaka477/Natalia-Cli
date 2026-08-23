@@ -270,11 +270,20 @@ export type RuntimePorts = {
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
   getExecutionBySession: () => Map<SessionID, SessionExecutionState>;
   getActiveExec: () => SessionExecutionState | undefined;
+  getActiveTurnID: () => string | undefined;
+  getPauseWaiters: () => Array<() => void>;
   getStatusController: () => StatusSnapshotController;
   getWorkspaceRoot: () => string;
   getWorkspaceFilesController: () => WorkspaceFilesController | undefined;
   nextMailboxSequence: () => number;
   getSandboxController: () => SandboxService | undefined;
+  getWorkspaceWriteLock: () => WorkspaceWriteLock | undefined;
+  getWorkspaceCapabilityView: () =>
+    | import("@natalia/capability").CapabilityRegistryView
+    | undefined;
+  getTools: () => import("@natalia/tools").ToolRegistry;
+  requireWriteLock: () => WorkspaceWriteLock;
+  requireSandboxes: () => SandboxService;
   getAgentRegistry: () => AgentRegistry | undefined;
   setPaused: (paused: boolean) => void;
   getPaused: () => boolean;
