@@ -234,6 +234,39 @@ export type RuntimePorts = {
     exec: SessionExecutionState,
     id: string,
   ) => Extract<RuntimeEvent, { type: "session.snapshot" }>;
+  nextCollabSequence: () => number;
+  wakeMainForCollaboration: (
+    exec: SessionExecutionState,
+    id: string,
+    kind: "suggestion" | "answer" | "chat",
+  ) => void;
+  createCollabChatTool: (
+    from: "live_chat" | "main_agent",
+    exec: SessionExecutionState | undefined,
+  ) => import("@natalia/tools").RuntimeTool;
+  enqueueMailboxMessage: (
+    input: {
+      source?: "user_via_live_chat" | "system";
+      priority?: "normal" | "high" | "urgent";
+      intent: string;
+      text: string;
+      safeSummary?: string;
+      relatedPlanID?: string;
+      deliveryPolicy?: string;
+    },
+    targetExec?: SessionExecutionState,
+  ) => Promise<unknown>;
+  createPlanDraft: (
+    input: {
+      title: string;
+      objective: string;
+      steps: Array<{ id: string; title: string }>;
+      constraints?: string[];
+      verification?: string[];
+      riskNotes?: string[];
+    },
+    exec: SessionExecutionState | undefined,
+  ) => Promise<unknown>;
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
   getExecutionBySession: () => Map<SessionID, SessionExecutionState>;
   getActiveExec: () => SessionExecutionState | undefined;
