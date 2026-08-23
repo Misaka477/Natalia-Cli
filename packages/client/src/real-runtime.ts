@@ -9,6 +9,7 @@ import {
 } from "./runtime/provider-selection";
 import { createPermissions } from "./runtime/permissions";
 import { createSnapshot } from "./runtime/snapshot";
+import { createTerminalRuntime } from "./runtime/terminal-runtime";
 import { createCollaborationBoundary } from "./runtime/collaboration/boundary";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -684,6 +685,16 @@ export function createRealRuntimeClient(
   ctx.ports.redactToolOutput = redactToolOutput;
   ctx.state.activeToolByTurn = activeToolByTurn;
   ctx.state.liveMainOutputByTurn = liveMainOutputByTurn;
+  ctx.state.terminalStatusByID = terminalStatusByID;
+  const terminalRuntime = createTerminalRuntime(ctx);
+  const {
+    setPendingHumanTerminal,
+    clearPendingHumanTerminal,
+    maybeContinueAfterHumanInput,
+    publishTerminalSession,
+    terminalLiveUpdate,
+    publishTerminalViewer,
+  } = terminalRuntime;
   ctx.ports.getToolPolicy = () => toolPolicy;
   ctx.ports.getToolLayer = () => toolLayer;
   ctx.ports.getAgentToolLayer = () => agentToolLayer;
@@ -3301,179 +3312,6 @@ export function createRealRuntimeClient(
       // them against the active plan. No explicit call needed.
       void reconcileWorkspaceObservation(exec);
     }
-  }
-  /**
-   * TERM-M.3 (c): persist the typed pending-human state — a terminal the model
-   * asked a human to take over, with the turn ended. Written exactly like the
-   * in-flight operation audit so restart sees the same typed contract.
-   */
-  async function setPendingHumanTerminal(
-    forSessionID: SessionID,
-    input: { terminalID: string; reason: string },
-  ) {
-    const target = executionBySession.get(forSessionID);
-    const targetSession = target?.session;
-    if (!targetSession) return;
-    targetSession.metadata = { ...targetSession.metadata };
-    targetSession.metadata.pendingHumanTerminal = {
-      terminalID: input.terminalID,
-      reason: input.reason,
-      since: new Date().toISOString(),
-    };
-    const sessionSnapshot = structuredClone(targetSession);
-    const pendingSnapshot = targetSession.metadata.pendingHumanTerminal;
-    sessionPersistence = sessionPersistence
-      .then(() =>
-        sessionStoreController?.updateMetadata(sessionSnapshot, {
-          pendingHumanTerminal: pendingSnapshot,
-        }),
-      )
-      .catch((error) =>
-        publishForSession(target, {
-          type: "diagnostic",
-          level: "warning",
-          message: `pending human terminal persistence failed: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      );
-    await sessionPersistence;
-  }
-
-  async function clearPendingHumanTerminal(forSessionID: SessionID) {
-    const target = executionBySession.get(forSessionID);
-    const targetSession = target?.session;
-    if (!targetSession?.metadata?.pendingHumanTerminal) return false;
-    targetSession.metadata = { ...targetSession.metadata };
-    delete targetSession.metadata.pendingHumanTerminal;
-    const sessionSnapshot = structuredClone(targetSession);
-    sessionPersistence = sessionPersistence
-      .then(() =>
-        sessionStoreController?.updateMetadata(sessionSnapshot, {
-          pendingHumanTerminal: undefined,
-        }),
-      )
-      .catch((error) =>
-        publishForSession(target, {
-          type: "diagnostic",
-          level: "warning",
-          message: `pending human terminal clear failed: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      );
-    await sessionPersistence;
-    return true;
-  }
-
-  /**
-   * TERM-M.3 (c): when the human finishes the requested input on the pending
-   * terminal, a new turn resumes the task automatically. Idempotent by
-   * construction: the pending state is cleared first, so a second release
-   * cannot double-resume.
-   */
-  async function maybeContinueAfterHumanInput(
-    terminalID: string,
-    forSessionID?: SessionID,
-  ) {
-    const exec = forSessionID
-      ? executionBySession.get(forSessionID)
-      : activeExec;
-    if (!exec) return;
-    const pending = exec.session.metadata?.pendingHumanTerminal;
-    if (!pending || pending.terminalID !== terminalID) return;
-    await clearPendingHumanTerminal(exec.session.id);
-    publishForSession(exec, {
-      type: "diagnostic",
-      level: "info",
-      message: `human completed input on terminal ${terminalID}; continuing the task`,
-    });
-    await submitInput(
-      {
-        text: `[automated continuation] The human finished providing input on terminal ${terminalID}. Check the terminal output and continue the original task.`,
-        delivery: "steer",
-      },
-      exec.session.id,
-    );
-  }
-
-  function publishTerminalSession(
-    terminal: import("@natalia/contracts").RuntimeTerminalObservationSession,
-    action?: import("@natalia/contracts").TerminalAction,
-    redacted = false,
-  ) {
-    publish(terminalLiveUpdate(terminal, action));
-    if (action) {
-      publish({
-        type: "terminal.action",
-        id: terminal.id,
-        action,
-        redacted,
-        target: { kind: "host", cwd: terminal.cwd },
-      });
-      publish({
-        type: "terminal.timeline",
-        id: terminal.id,
-        actor: "user",
-        action,
-        status: "executed",
-        summary: redacted ? "sensitive input supplied" : `${action} executed`,
-        at: new Date().toISOString(),
-      });
-    }
-    if (terminalStatusByID.get(terminal.id) !== terminal.status) {
-      terminalStatusByID.set(terminal.id, terminal.status);
-      scheduleRuntimeStatusSnapshot();
-    }
-  }
-
-  function terminalLiveUpdate(
-    terminal: import("@natalia/contracts").RuntimeTerminalObservationSession,
-    action?: import("@natalia/contracts").TerminalAction,
-  ): Extract<
-    import("@natalia/contracts").RuntimeEvent,
-    { type: "terminal.update" }
-  > {
-    // Framebuffers and transcripts are read on demand. Sending either with every
-    // output revision makes the live event stream retain and clone large snapshots.
-    return {
-      type: "terminal.update",
-      id: terminal.id,
-      command: terminal.command,
-      cwd: terminal.cwd,
-      status: terminal.status,
-      attached: terminal.attached,
-      rows: terminal.rows,
-      cols: terminal.cols,
-      activity: terminal.status === "running" ? "running" : "waiting",
-      tail: terminal.tail,
-      lastAction: action,
-      target: { kind: "host", cwd: terminal.cwd },
-      ownership: terminal.inputOwner?.type === "viewer" ? "user" : "model",
-      revision: terminal.revision,
-      lastOutputAt: terminal.lastOutputAt,
-      viewers: terminal.viewers,
-      inputOwner: terminal.inputOwner,
-      geometryOwner: terminal.geometryOwner,
-    };
-  }
-
-  function publishTerminalViewer(
-    terminal: import("@natalia/contracts").RuntimeTerminalSession,
-    viewerID: string,
-    action: Extract<
-      import("@natalia/contracts").RuntimeEvent,
-      { type: "terminal.viewer" }
-    >["action"],
-    viewerKind?: "external" | "embedded",
-  ) {
-    publishTerminalSession(terminal);
-    publish({
-      type: "terminal.viewer",
-      id: terminal.id,
-      viewerID,
-      viewerKind,
-      action,
-      inputOwner: terminal.inputOwner ?? { type: "model" },
-      geometryOwner: terminal.geometryOwner ?? { type: "model" },
-      at: new Date().toISOString(),
-    });
   }
 
   async function submitInput(
