@@ -155,7 +155,7 @@ export type RuntimeState = {
   builtinPluginIDs: Set<string>;
   buildBuiltinPluginCatalog: (config: ConfigV3) => unknown[];
   contextWindowResolver: ContextWindowResolver;
-  runtimeContextConfig: ReturnType<typeof defaultContextStatusConfig>;
+  runtimeContextConfig: RuntimeContextStatusConfig;
   retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
   retryService: RetryService;
   attachmentService: AttachmentService;
@@ -215,7 +215,6 @@ export type RuntimePorts = {
   getExecutionBySession: () => Map<SessionID, SessionExecutionState>;
   getActiveExec: () => SessionExecutionState | undefined;
   getStatusController: () => StatusSnapshotController;
-  getProviderSource: () => RuntimeState["providerSource"];
   getWorkspaceRoot: () => string;
   getSandboxController: () => SandboxService | undefined;
   getAgentRegistry: () => AgentRegistry | undefined;
@@ -242,6 +241,18 @@ export type RuntimePorts = {
   getTsRuntimeConfig: () => ConfigV3 | undefined;
   getSubagentsController: () => SubagentsService | undefined;
   getWorkLedgerController: () => WorkLedgerController;
+  getSelectedAgent: () => AgentDefinition | undefined;
+  getSelectedModel: () => { modelID?: string; variant?: string } | undefined;
+  getProviderSource: () => RuntimeState["providerSource"];
+  getMaxSteps: () => number | undefined;
+  getReady: () => Promise<void> | undefined;
+  getContextWindowResolver: () => ContextWindowResolver;
+  setProvider: (provider: StreamingProvider | undefined) => void;
+  setSelectedModel: (
+    model: { modelID?: string; variant?: string } | undefined,
+  ) => void;
+  setRuntimeContextConfig: (config: RuntimeContextStatusConfig) => void;
+  getRuntimeContextConfig: () => RuntimeContextStatusConfig;
 };
 
 export type RuntimeContext = {
@@ -249,10 +260,9 @@ export type RuntimeContext = {
   ports: RuntimePorts;
 };
 
-export function defaultContextStatusConfig() {
-  return {
-    available: true,
-    maxContextTokens: 0,
-    usedTokens: 0,
-  } as const;
-}
+/** The resolved context window status carried by the runtime and each exec. */
+export type RuntimeContextStatusConfig = {
+  max: number;
+  thresholdPercent: number;
+  reserved: number;
+};

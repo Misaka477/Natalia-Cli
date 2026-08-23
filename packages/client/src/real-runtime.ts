@@ -3,6 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createTitleGeneration } from "./runtime/title-generation";
 import { createCheckpointRuntime } from "./runtime/checkpoint-runtime";
+import {
+  createProviderSelection,
+  defaultContextStatusConfig,
+} from "./runtime/provider-selection";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
@@ -339,7 +343,7 @@ export type SessionExecutionState = {
   >;
   toolCalls: Map<string, number>;
   provider?: StreamingProvider;
-  runtimeContextConfig: ReturnType<typeof defaultContextStatusConfig>;
+  runtimeContextConfig: import("./runtime/context").RuntimeContextStatusConfig;
   activeModelCapabilities?: ModelCapabilities;
   permissionMode: "ask" | "auto" | "read_only";
   permissionProfile?: PermissionProfile;
@@ -581,65 +585,6 @@ export function createRealRuntimeClient(
   let compactionService: CompactionService | undefined;
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
-  /** The selected model's declared image-input capability, from config. */
-  function currentModelImageInput(
-    exec: SessionExecutionState | undefined = activeExec,
-  ): boolean {
-    if (exec?.activeModelCapabilities)
-      return exec.activeModelCapabilities.imageInput;
-    const ref = modelRefKeyForSelection(
-      exec ? exec.selectedAgent : selectedAgent,
-      exec ? exec.selectedModel : selectedModel,
-    );
-    if (!ref || !tsRuntimeConfig) return false;
-    return (
-      resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities.imageInput ??
-      false
-    );
-  }
-  function currentModelPdfInput(
-    exec: SessionExecutionState | undefined = activeExec,
-  ): boolean {
-    if (exec?.activeModelCapabilities)
-      return exec.activeModelCapabilities.pdfInput;
-    const ref = modelRefKeyForSelection(
-      exec ? exec.selectedAgent : selectedAgent,
-      exec ? exec.selectedModel : selectedModel,
-    );
-    if (!ref || !tsRuntimeConfig) return false;
-    return (
-      resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities.pdfInput ??
-      false
-    );
-  }
-  function modelCapabilitiesForExecution(
-    exec: SessionExecutionState | undefined,
-  ): ModelCapabilities {
-    const agent = exec?.selectedAgent;
-    const model = exec?.selectedModel;
-    const ref = modelRefKeyForSelection(agent, model);
-    return (
-      (ref && tsRuntimeConfig
-        ? resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities
-        : undefined) ?? {
-        toolCall: true,
-        reasoning: true,
-        thinking: true,
-        imageInput: false,
-        pdfInput: false,
-        videoInput: false,
-      }
-    );
-  }
-  function mediaTypeForImage(
-    path: string,
-  ): "image/png" | "image/jpeg" | "image/webp" | "image/gif" {
-    const ext = path.split(".").pop()?.toLowerCase() ?? "";
-    if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
-    if (ext === "webp") return "image/webp";
-    if (ext === "gif") return "image/gif";
-    return "image/png";
-  }
   let statusController: StatusSnapshotController;
   async function runtimeStatusSnapshot() {
     return await statusController.snapshot();
@@ -711,14 +656,45 @@ export function createRealRuntimeClient(
   };
   ctx.ports.getPaused = () => paused;
   ctx.ports.getCapabilityRegistry = () => capabilityRegistry;
-  ctx.ports.clientModelCatalog = clientModelCatalog;
-  ctx.ports.selectRuntimeModel = selectRuntimeModel;
   ctx.ports.submitInput = submitInput;
   ctx.ports.applyAgentPolicy = applyAgentPolicy;
-  ctx.ports.applyAgentProvider = applyAgentProvider;
   ctx.ports.getTsRuntimeConfig = () => tsRuntimeConfig;
   ctx.ports.getSubagentsController = () => subagentsController;
   ctx.ports.getWorkLedgerController = () => workLedgerController;
+  ctx.ports.getSelectedAgent = () => selectedAgent;
+  ctx.ports.getSelectedModel = () => selectedModel;
+  ctx.ports.getMaxSteps = () => maxSteps;
+  ctx.ports.getReady = () => ready;
+  ctx.ports.getContextWindowResolver = () => contextWindowResolver;
+  ctx.ports.setProvider = (value) => {
+    provider = value;
+  };
+  ctx.ports.setSelectedModel = (value) => {
+    selectedModel = value;
+  };
+  ctx.ports.setRuntimeContextConfig = (value) => {
+    runtimeContextConfig = value;
+  };
+  ctx.ports.getRuntimeContextConfig = () => runtimeContextConfig;
+  const providerSelection = createProviderSelection(ctx, options);
+  const {
+    currentModelImageInput,
+    currentModelPdfInput,
+    modelCapabilitiesForExecution,
+    mediaTypeForImage,
+    applyAgentProvider,
+    refreshExecutionContextConfig,
+    modelRefKeyForSelection,
+    selectedModelRefKey,
+    effectiveMaxSteps,
+    redactToolOutputEnabled,
+    selectRuntimeModel,
+    clientModelCatalog,
+    resolveContextStatusConfig,
+  } = providerSelection;
+  ctx.ports.clientModelCatalog = clientModelCatalog;
+  ctx.ports.selectRuntimeModel = selectRuntimeModel;
+  ctx.ports.applyAgentProvider = applyAgentProvider;
   ctx.state.runtimeDiagnostics = runtimeDiagnostics;
   ctx.state.runtimeDiagnosticsBySession = runtimeDiagnosticsBySession;
   ctx.state.tools = tools;
@@ -3201,154 +3177,6 @@ export function createRealRuntimeClient(
       allowed: false,
       diagnostics: [`${extension} extensions are disabled by ${source}`],
     };
-  }
-
-  function applyAgentProvider(
-    exec: SessionExecutionState | undefined = activeExec,
-  ) {
-    if (options.provider || providerSource !== "ts_config" || !tsRuntimeConfig)
-      return;
-    const agent = exec ? exec.selectedAgent : selectedAgent;
-    const model = exec ? exec.selectedModel : selectedModel;
-    const ref = modelRefKeyForSelection(agent, model);
-    if (!ref) {
-      publishForSession(exec, {
-        type: "diagnostic",
-        level: "warning",
-        message: `agent ${agent?.name ?? "default"} model override is unavailable: model_not_configured; retaining current provider`,
-      });
-      return;
-    }
-    const next = providerForModel(
-      tsRuntimeConfig,
-      ref,
-      agent?.variant ?? model?.variant,
-      { reasoningEffort: exec?.reasoningEffort },
-    );
-    if (!next) {
-      const status = modelSelectionStatus(tsRuntimeConfig, ref);
-      publishForSession(exec, {
-        type: "diagnostic",
-        level: "warning",
-        message: `agent ${agent?.name ?? "default"} model override is unavailable: ${status.reason ?? "provider_not_configured"}; retaining current provider`,
-      });
-      return;
-    }
-    if (exec) exec.provider = next;
-    if (!exec || exec === activeExec) provider = next;
-  }
-
-  async function refreshExecutionContextConfig(exec: SessionExecutionState) {
-    if (!tsRuntimeConfig) return;
-    exec.runtimeContextConfig = await resolveContextStatusConfig(
-      tsRuntimeConfig,
-      exec.provider,
-      contextWindowResolver,
-      modelRefKeyForSelection(exec.selectedAgent, exec.selectedModel),
-    );
-    if (exec === activeExec) runtimeContextConfig = exec.runtimeContextConfig;
-  }
-
-  /** The canonical `provider/model` key of the effective model selection. */
-  function modelRefKeyForSelection(
-    agent: AgentDefinition | undefined,
-    model: { modelID?: string; variant?: string } | undefined,
-  ): string | undefined {
-    return deriveModelRefKey({
-      agent,
-      model,
-      defaultModel: tsRuntimeConfig?.defaultModel,
-    });
-  }
-
-  function selectedModelRefKey() {
-    return modelRefKeyForSelection(selectedAgent, selectedModel);
-  }
-
-  function effectiveMaxSteps(
-    exec: SessionExecutionState | undefined = activeExec,
-  ) {
-    return (
-      (exec ? exec.selectedAgent : selectedAgent)?.maxSteps ??
-      maxSteps ??
-      Number.POSITIVE_INFINITY
-    );
-  }
-
-  /**
-   * Redaction precedence, matching how the other boundaries resolve: an agent
-   * that states a value wins, then the workspace `security.redactToolOutput`
-   * setting, then the schema default.
-   *
-   * The global setting used to be read nowhere, so the only way to get
-   * redaction was to set it per agent, while the config schema and the settings
-   * toggle both presented it as on. A security switch that reports enabled
-   * while doing nothing is worse than having no switch, so the default follows
-   * what the schema already declares.
-   */
-  function redactToolOutputEnabled(
-    exec: SessionExecutionState | undefined = activeExec,
-  ) {
-    return (
-      (exec ? exec.selectedAgent : selectedAgent)?.permissions?.redactOutput ??
-      tsRuntimeConfig?.security.redactToolOutput ??
-      true
-    );
-  }
-
-  async function selectRuntimeModel(
-    modelID?: string,
-    variant?: string,
-    exec: SessionExecutionState | undefined = activeExec,
-  ) {
-    await ready;
-    if (!tsRuntimeConfig) throw new Error("runtime config is unavailable");
-    let ref: ModelRef | undefined;
-    if (modelID) {
-      ref = parseModelRef(modelID);
-      const status = modelSelectionStatus(tsRuntimeConfig, ref);
-      if (!status.selected)
-        throw new Error(`model is unavailable: ${status.reason ?? modelID}`);
-    } else if (variant) {
-      throw new Error("a variant requires a selected model");
-    }
-    // V3 dropped model variants: the variant is carried as an opaque label for
-    // event/selection compatibility but never validated against a model.
-    const nextSelection = ref
-      ? { modelID: modelRefKey(ref), variant }
-      : undefined;
-    if (exec) exec.selectedModel = nextSelection;
-    if (exec === activeExec) selectedModel = nextSelection;
-    applyAgentProvider(exec);
-    if (exec) await refreshExecutionContextConfig(exec);
-    publishForSession(exec, {
-      type: "model.selection",
-      modelID: ref ? modelRefKey(ref) : undefined,
-      variant,
-    });
-  }
-
-  async function clientModelCatalog() {
-    await ready;
-    const config = tsRuntimeConfig;
-    if (!config) return [];
-    return buildModelCatalog(config).flatMap((provider) =>
-      provider.models
-        .filter(
-          (entry) =>
-            modelSelectionStatus(
-              config,
-              modelRefKey({ provider: provider.id, model: entry.id }),
-            ).selected,
-        )
-        .map((entry) => ({
-          id: modelRefKey({ provider: provider.id, model: entry.id }),
-          name: entry.name,
-          provider: provider.id,
-          // V3 removed model variants; the catalog exposes none.
-          variants: [] as string[],
-        })),
-    );
   }
 
   function publish(event: RuntimeEvent) {
@@ -8367,98 +8195,6 @@ export function createRealRuntimeClient(
       ...(workspaceCapabilityView?.contributions("settings") ?? []),
       ...capabilityRegistry.contributions("settings"),
     ]);
-  }
-}
-
-function defaultContextStatusConfig() {
-  return {
-    max: Math.max(32_000, Number(process.env.NATALIA_CONTEXT_WINDOW ?? 32_000)),
-    thresholdPercent: Number(process.env.NATALIA_CONTEXT_THRESHOLD ?? 85),
-    reserved: Math.max(
-      1,
-      Number(process.env.NATALIA_CONTEXT_RESERVED ?? 20_000),
-    ),
-  };
-}
-
-async function resolveContextStatusConfig(
-  config: ConfigV3,
-  provider: StreamingProvider | undefined,
-  resolver: ContextWindowResolver,
-  selectedRef?: string,
-) {
-  if (!selectedRef && !config.defaultModel) return defaultContextStatusConfig();
-  const effective = resolveEffectiveModel(
-    config,
-    selectedRef ?? config.defaultModel!,
-  );
-  if (!effective) return defaultContextStatusConfig();
-  const executingModel = provider?.model ?? effective.ref.model;
-  const selectionMatchesProvider = executingModel === effective.ref.model;
-  const executingProvider = selectionMatchesProvider
-    ? effective.providerID
-    : (provider?.provider ?? effective.providerID);
-  const providerConfig = config.providers[executingProvider];
-  const canProbeExecutingProvider =
-    selectionMatchesProvider || !!providerConfig;
-  const contextWindow = await resolver.resolve({
-    provider: executingProvider,
-    model: executingModel,
-    baseURL: providerConfig?.connection?.baseURL,
-    apiKey: providerConfig?.connection?.apiKey,
-    explicitContextWindow: selectionMatchesProvider
-      ? effective.limits.contextWindow
-      : undefined,
-    providerAdapter:
-      config.context.autoDetectWindow &&
-      canProbeExecutingProvider &&
-      shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
-        ? provider
-        : undefined,
-    useModelsDevCatalog: config.context.autoDetectWindow,
-  });
-  const catalog = config.context.autoDetectWindow
-    ? await modelsDevModelLimits(executingProvider, executingModel)
-    : undefined;
-  const providerMetadata =
-    catalog ||
-    !canProbeExecutingProvider ||
-    !shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
-      ? undefined
-      : await provider?.listModels?.().catch(() => undefined);
-  const discoveredOutput = providerMetadata?.find(
-    (model) => model.id === executingModel,
-  )?.maxOutputTokens;
-  const reserved = resolveReservedOutputTokens({
-    configuredReserved: config.context.reservedOutputTokens,
-    explicitMaxOutputTokens: selectionMatchesProvider
-      ? effective.limits.maxOutputTokens
-      : undefined,
-    providerOutputLimit: discoveredOutput,
-    catalogOutputLimit: catalog?.maxOutputTokens,
-    contextWindow: contextWindow.tokens,
-  });
-  return {
-    max: contextWindow.tokens,
-    thresholdPercent: config.context.compactionThresholdPercent,
-    reserved: Math.min(
-      contextWindow.tokens,
-      reserved.source === "config"
-        ? reserved.tokens
-        : Math.min(20_000, reserved.tokens),
-    ),
-  };
-}
-
-function shouldProbeProviderMetadata(baseURL?: string) {
-  if (!baseURL) return true;
-  try {
-    const hostname = new URL(baseURL).hostname;
-    return (
-      hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "::1"
-    );
-  } catch {
-    return false;
   }
 }
 
