@@ -323,6 +323,35 @@ export type RuntimePorts = {
   getRuntimeDiagnostics: () => Array<
     Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
   >;
+  getPerformanceTrace: () => import("../performance-trace").RuntimePerformanceTrace;
+  getNativeRuntimeID: () => string;
+  getUserRuntimeHome: () => string | undefined;
+  getUserSkillRoot: () => string | undefined;
+  extensionEnabled: (
+    extension: "skills" | "mcp" | "plugins",
+    profile?: ConfigV3["permissionProfiles"][string],
+  ) => boolean;
+  hotReloadToolFamily: (familyID: string) => Promise<{ reloaded: boolean }>;
+  setProviderSource: (
+    source: "explicit" | "environment" | "ts_config" | "unconfigured",
+  ) => void;
+  providerFromEnvironment: () =>
+    | import("@natalia/runtime").StreamingProvider
+    | undefined;
+  runChatTurnBody: (
+    input: {
+      text: string;
+      responseMessageID: string;
+      exec: SessionExecutionState;
+      internal?: boolean;
+    },
+    signal: AbortSignal,
+  ) => Promise<{ text: string }>;
+  wakeNavi: (exec: SessionExecutionState) => Promise<void>;
+  getBuiltinPluginIDs: () => Set<string>;
+  isBuiltinToolPlugin: (id: string) => boolean;
+  isStaticBuiltinPlugin: (id: string) => boolean;
+  getOptions: () => import("../real-runtime").RealRuntimeClientOptions;
   toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
   authorizeWorkspaceRead: (
     input: { toolName: string; paths: string[] },

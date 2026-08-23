@@ -23,6 +23,7 @@ import { createExecuteOne } from "./runtime/tool-execution/execute-one";
 import { createTurnRunner } from "./runtime/turn-runner";
 import { createSessionAdmission } from "./runtime/session-admission";
 import { createSessionAttach } from "./runtime/session-attach";
+import { createPluginAssembly } from "./runtime/plugin-assembly";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -753,6 +754,7 @@ export function createRealRuntimeClient(
   } = permissions;
   ctx.ports.isToolAllowed = isToolAllowed;
   ctx.ports.extensionToolPermission = extensionToolPermission;
+  ctx.ports.extensionEnabled = extensionEnabled;
   const collaborationBoundary = createCollaborationBoundary(ctx);
   const {
     settleMailboxAtBoundary,
@@ -809,6 +811,35 @@ export function createRealRuntimeClient(
   ctx.ports.chatToolSummary = chatToolSummary;
   const chatTurn = createChatTurn(ctx);
   const { runChatTurnBody } = chatTurn;
+  ctx.ports.runChatTurnBody = runChatTurnBody;
+  ctx.ports.wakeNavi = wakeNavi;
+  ctx.ports.hotReloadToolFamily = hotReloadToolFamily;
+  ctx.ports.providerFromEnvironment = providerFromEnvironment;
+  ctx.ports.getPerformanceTrace = () => performanceTrace;
+  ctx.ports.getNativeRuntimeID = () => nativeRuntimeID;
+  ctx.ports.getUserRuntimeHome = () => userRuntimeHome();
+  ctx.ports.getUserSkillRoot = () => userSkillRoot();
+  ctx.ports.setProviderSource = (source) => {
+    providerSource = source;
+  };
+  ctx.ports.getBuiltinPluginIDs = () => builtinPluginIDs;
+  ctx.ports.isBuiltinToolPlugin = isBuiltinToolPlugin;
+  ctx.ports.isStaticBuiltinPlugin = isStaticBuiltinPlugin;
+  ctx.ports.getOptions = () => options;
+  const pluginAssembly = createPluginAssembly(ctx, options);
+  const {
+    skillsPluginInput,
+    checkpointPluginInput,
+    sandboxPluginInput,
+    terminalPluginInput,
+    workspacePluginInput,
+    providerModelPluginInput,
+    compactionPluginInput,
+    mcpPluginInput,
+    localToolsPluginInput,
+    externalPluginConfigFingerprint,
+    selectPluginConfig,
+  } = pluginAssembly;
   const sessionExecution = createSessionExecution(ctx, options);
   const {
     drainSessionFor,
@@ -3090,250 +3121,6 @@ export function createRealRuntimeClient(
     publishForSession(
       exec,
       workLedgerController.toolCallEdge({ turnID, callID }),
-    );
-  }
-
-  /**
-   * Every command a capability or plugin contributed.
-   *
-   * The kernel is the sole catalogue: external and built-in plugins both
-   * contribute through it, so a UI never merges parallel registries.
-   */
-
-  function skillsPluginInput(config: ConfigV3) {
-    if (
-      config.plugins.enabled[SKILLS_PLUGIN_ID] === false ||
-      !extensionEnabled("skills")
-    )
-      return undefined;
-    return {
-      workspaceRoot,
-      userRoot: userSkillRoot(),
-      remoteURLs: config.skills.urls,
-      onLoad: (
-        skill: SkillMetadata,
-        output: string,
-        context: ToolExecutionContext,
-      ) => {
-        const owner = context.sessionID
-          ? executionBySession.get(context.sessionID as SessionID)
-          : undefined;
-        if (!owner) return;
-        owner.activeSkill = skill;
-        if (owner === activeExec) activeSkill = skill;
-        owner.context.add({
-          id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
-          role: "system",
-          content: output,
-        });
-      },
-    };
-  }
-
-  function checkpointPluginInput(config: ConfigV3) {
-    return config.plugins.enabled[CHECKPOINT_PLUGIN_ID] === false
-      ? undefined
-      : { workspaceRoot };
-  }
-
-  function sandboxPluginInput(config: ConfigV3) {
-    return config.plugins.enabled[SANDBOX_CONTROLLER_PLUGIN_ID] === false
-      ? undefined
-      : {
-          workspaceRoot,
-          backend: () => tsRuntimeConfig?.sandbox.backend,
-          identity: config.sandbox,
-        };
-  }
-
-  function terminalPluginInput(config: ConfigV3) {
-    return config.plugins.enabled[TERMINAL_CONTROLLER_PLUGIN_ID] === false
-      ? undefined
-      : {
-          workspaceRoot,
-          publish: (event: RuntimeEvent) =>
-            publishForSession(
-              event.sessionID
-                ? executionBySession.get(event.sessionID as SessionID)
-                : undefined,
-              event,
-            ),
-          onPerformance: (name: string, durationMs: number) =>
-            performanceTrace.mark(name, durationMs),
-          runtimeID: () => nativeRuntimeID,
-          userRuntimeHome: () => userRuntimeHome(),
-          windowMode: () =>
-            tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
-          external: options.nativeTerminal,
-          identity: config.runtime.terminal.windowMode,
-        };
-  }
-
-  function workspacePluginInput(config: ConfigV3) {
-    return config.plugins.enabled[WORKSPACE_PLUGIN_ID] === false
-      ? undefined
-      : {
-          workspaceRoot,
-          listPaths: async () =>
-            (
-              await findWorkspaceFiles({
-                workspaceRoot,
-                limit: 1000,
-              })
-            )
-              .filter((entry) => entry.type === "file")
-              .map((entry) => entry.path),
-        };
-  }
-
-  function providerModelPluginInput(config: ConfigV3): {
-    enabled: boolean;
-    controller: ProviderModelControllerInput;
-  } {
-    const enabled =
-      config.plugins.enabled[ATTACHMENT_PLUGIN_ID] !== false &&
-      config.plugins.enabled[RETRY_PLUGIN_ID] !== false &&
-      config.plugins.enabled[COMPACTION_PLUGIN_ID] !== false &&
-      config.plugins.enabled[PROVIDER_MODEL_PLUGIN_ID] !== false;
-    return {
-      enabled,
-      controller: {
-        initialize: () => {
-          if (!provider && !options.provider) {
-            provider = providerFromEnvironment();
-            if (provider) providerSource = "environment";
-          }
-        },
-        runnerInput: providerRunnerInput,
-        chat: {
-          available: (id) => executionBySession.get(id)?.provider !== undefined,
-          publish: (id, event) =>
-            publishForSession(executionBySession.get(id), event),
-          runBody: async (input, signal) => {
-            const exec = executionBySession.get(input.sessionID);
-            if (!exec)
-              throw new Error(
-                `no execution state for session ${input.sessionID}`,
-              );
-            await runChatTurnBody({ ...input, exec }, signal);
-          },
-          wake: async (id) => {
-            const exec = executionBySession.get(id);
-            if (exec) await wakeNavi(exec);
-          },
-        },
-      },
-    };
-  }
-
-  function compactionPluginInput(config: ConfigV3) {
-    return {
-      enabled:
-        config.plugins.enabled[RETRY_PLUGIN_ID] !== false &&
-        config.plugins.enabled[CONTEXT_LEDGER_PLUGIN_ID] !== false &&
-        config.plugins.enabled[COMPACTION_PLUGIN_ID] !== false,
-    };
-  }
-
-  function mcpPluginInput(config: ConfigV3) {
-    if (
-      config.plugins.enabled[MCP_PLUGIN_ID] === false ||
-      !extensionEnabled("mcp")
-    )
-      return undefined;
-    return {
-      servers: () => tsRuntimeConfig?.mcpServers ?? {},
-      workspaceRoot,
-      enabled: () => extensionEnabled("mcp"),
-      publish,
-      identity: config.mcpServers,
-    };
-  }
-
-  function localToolsPluginInput(config: ConfigV3) {
-    if (
-      options.tools ||
-      !config.tools.paths.length ||
-      config.plugins.enabled[LOCAL_TOOLS_PLUGIN_ID] === false
-    )
-      return undefined;
-    return {
-      roots: config.tools.paths.map((path) => resolve(workspaceRoot, path)),
-      enabled: config.tools.enabled,
-      onError: (id: string, error: unknown) =>
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: "natalia-tools",
-          message: `tool family ${id} failed to load: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }),
-      trust: {
-        workspaceRoot,
-        verify: (key: string, entryPath: string) =>
-          verifyTrust(workspaceRoot, key, entryPath),
-      },
-      onChange: async (familyID: string, entryPath: string) => {
-        const verified = await verifyTrust(
-          workspaceRoot,
-          resolve(entryPath, ".."),
-          entryPath,
-        );
-        if (verified.expected && !verified.verified) {
-          publish({
-            type: "diagnostic",
-            level: "warning",
-            owner: toolFamilyCapabilityID(familyID),
-            message: `tool family ${familyID} changed on disk without a promotion — refusing to hot reload`,
-          });
-          return;
-        }
-        try {
-          await hotReloadToolFamily(familyID);
-          publish({
-            type: "diagnostic",
-            level: "info",
-            owner: toolFamilyCapabilityID(familyID),
-            message: `tool family ${familyID} hot-reloaded`,
-          });
-        } catch (error) {
-          publish({
-            type: "diagnostic",
-            level: "warning",
-            owner: toolFamilyCapabilityID(familyID),
-            message: `tool family ${familyID} hot reload failed: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          });
-        }
-      },
-    };
-  }
-
-  function externalPluginConfigFingerprint(config: ConfigV3) {
-    return JSON.stringify({
-      paths: config.plugins.paths,
-      packages: config.plugins.packages,
-      enabled: selectPluginConfig(config.plugins.enabled, "external"),
-      capabilities: config.plugins.capabilities,
-      readOnly: config.plugins.readOnly,
-      settings: selectPluginConfig(config.plugins.settings, "external"),
-    });
-  }
-
-  function selectPluginConfig<T>(
-    values: Record<string, T> | undefined,
-    kind: "tool" | "static" | "external",
-  ) {
-    return Object.fromEntries(
-      Object.entries(values ?? {}).filter(([id]) => {
-        const tool = isBuiltinToolPlugin(id);
-        const builtin = builtinPluginIDs.has(id);
-        if (kind === "tool") return tool;
-        if (kind === "static") return builtin && isStaticBuiltinPlugin(id);
-        return !builtin;
-      }),
     );
   }
 
