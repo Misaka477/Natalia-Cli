@@ -11,6 +11,7 @@ import { createPermissions } from "./runtime/permissions";
 import { createSnapshot } from "./runtime/snapshot";
 import { createTerminalRuntime } from "./runtime/terminal-runtime";
 import { createCollaborationBoundary } from "./runtime/collaboration/boundary";
+import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
@@ -453,7 +454,7 @@ export function createRealRuntimeClient(
     pluginCapabilities: () => tsRuntimeConfig?.plugins.capabilities,
     pluginReadOnly: () => tsRuntimeConfig?.plugins.readOnly,
     pluginSettings: () => tsRuntimeConfig?.plugins.settings,
-    publish,
+    publish: (event) => ctx.ports.publish(event),
     syncGlobalCommands: () => setGlobalPluginCommands(commandCatalogEntries()),
   });
   let toolCalls = new Map<string, number>();
@@ -639,8 +640,6 @@ export function createRealRuntimeClient(
   ctx.ports.getProviderConcurrencyLimiter = () => providerConcurrencyLimiter;
   ctx.ports.getExecutionBySession = () => executionBySession;
   ctx.ports.getActiveExec = () => activeExec;
-  ctx.ports.publishForSession = publishForSession;
-  ctx.ports.publish = publish;
   ctx.ports.scheduleRuntimeStatusSnapshot = scheduleRuntimeStatusSnapshot;
   ctx.ports.runtimeStatusSnapshot = runtimeStatusSnapshot;
   ctx.ports.ensureExecution = ensureExecution;
@@ -686,6 +685,10 @@ export function createRealRuntimeClient(
   ctx.state.activeToolByTurn = activeToolByTurn;
   ctx.state.liveMainOutputByTurn = liveMainOutputByTurn;
   ctx.state.terminalStatusByID = terminalStatusByID;
+  ctx.state.turnSession = turnSession;
+  ctx.state.pluginsController = pluginsController;
+  ctx.state.performanceTrace = performanceTrace;
+  ctx.ports.getSink = () => sink;
   const terminalRuntime = createTerminalRuntime(ctx);
   const {
     setPendingHumanTerminal,
@@ -755,6 +758,18 @@ export function createRealRuntimeClient(
     setInFlightOperationFor,
   } = snapshot;
   ctx.ports.setInFlightOperation = setInFlightOperation;
+  ctx.ports.setPendingHumanTerminal = setPendingHumanTerminal;
+  ctx.ports.maybeContinueAfterHumanInput = maybeContinueAfterHumanInput;
+  ctx.ports.settleMailboxAtBoundary = settleMailboxAtBoundary;
+  ctx.ports.activateQueuedPlanAtBoundary = activateQueuedPlanAtBoundary;
+  ctx.ports.reconcileWorkspaceObservation = reconcileWorkspaceObservation;
+  ctx.ports.toolEventTurnID = toolEventTurnID;
+  ctx.ports.isSessionSnapshotTrigger = isSessionSnapshotTrigger;
+  ctx.ports.publishSessionSnapshot = publishSessionSnapshot;
+  const eventSink = createEventSink(ctx, options);
+  const { publish, publishForSession } = eventSink;
+  ctx.ports.publish = publish;
+  ctx.ports.publishForSession = publishForSession;
   const providerSelection = createProviderSelection(ctx, options);
   const {
     currentModelImageInput,
@@ -3159,159 +3174,6 @@ export function createRealRuntimeClient(
         return !builtin;
       }),
     );
-  }
-
-  function publish(event: RuntimeEvent) {
-    publishForSession(activeExec, event);
-  }
-
-  function publishForSession(
-    exec: SessionExecutionState | undefined,
-    event: RuntimeEvent,
-  ) {
-    const publishStartedAt = performance.now();
-    if (options.episodeID && !event.episodeID)
-      event = { ...event, episodeID: options.episodeID };
-    // D6: while a session is active every event belongs to it. Events that
-    // already carry a session id keep their own; events published before the
-    // session exists are runtime-level and reach every subscriber. The stamp
-    // follows the exec the event is published for — a background turn stamps
-    // its own session even when the UI is attached to another.
-    if (exec?.session && event.sessionID === undefined)
-      event = { ...event, sessionID: exec.session.id };
-    if (event.type === "diagnostic")
-      event = { ...event, at: event.at ?? new Date().toISOString() };
-    if (event.type === "diagnostic") {
-      const diagnostic = {
-        ...event,
-        at: event.at ?? new Date().toISOString(),
-      } as RuntimeDiagnostic;
-      const bucketID = exec?.session.id ?? event.sessionID;
-      if (bucketID) {
-        const bucket = runtimeDiagnosticsBySession.get(bucketID) ?? [];
-        bucket.push(diagnostic);
-        if (bucket.length > 500) bucket.splice(0, 1);
-        runtimeDiagnosticsBySession.set(bucketID, bucket);
-      } else {
-        runtimeDiagnostics.push(diagnostic);
-        if (runtimeDiagnostics.length > 500) runtimeDiagnostics.splice(0, 1);
-      }
-    }
-    if (!event.agentID && event.type === "content.delta") {
-      const current = liveMainOutputByTurn.get(event.id) ?? "";
-      liveMainOutputByTurn.set(
-        event.id,
-        `${current}${event.text}`.slice(-8000),
-      );
-    }
-    // TERM-M.3 (c): a turn that ended as waiting_human persists the typed
-    // pending-human state and clears the turn-level marker.
-    if (
-      !event.agentID &&
-      event.type === "turn.finished" &&
-      event.stopReason === "waiting_human"
-    ) {
-      const pending = exec?.endTurnWaitingHuman;
-      if (exec) exec.endTurnWaitingHuman = undefined;
-      turnSession.delete(event.id);
-      if (pending && exec?.session)
-        void setPendingHumanTerminal(exec.session.id, pending);
-    } else if (!event.agentID && event.type === "turn.finished") {
-      // Any other settlement discards a stale marker: a request_human call
-      // from a turn that later failed must not bleed into the next turn.
-      if (exec) exec.endTurnWaitingHuman = undefined;
-      turnSession.delete(event.id);
-    }
-    // TERM-M.3 (c): when the human releases the requested pane, the runtime
-    // starts the continuation turn automatically. Replay never passes through
-    // publish, so a replayed detach cannot double-resume.
-    if (
-      !event.agentID &&
-      event.type === "terminal.timeline" &&
-      event.actor === "user" &&
-      event.action === "detach"
-    )
-      void maybeContinueAfterHumanInput(
-        event.id,
-        exec?.session.id ?? event.sessionID,
-      );
-    if (
-      exec?.session &&
-      !event.agentID &&
-      event.type !== "session.created" &&
-      event.type !== "session.ready" &&
-      runtimeEventDurability(event) === "durable"
-    ) {
-      appendSessionEvent(exec.session, event);
-      const sessionSnapshot = structuredClone(exec.session);
-      sessionPersistence = sessionPersistence
-        .then(() => sessionStoreController?.appendEvent(sessionSnapshot, event))
-        .catch((error) => {
-          sink?.({
-            type: "diagnostic",
-            level: "warning",
-            message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        });
-    }
-    const pluginStartedAt = performance.now();
-    if (!event.agentID) pluginsController.dispatch(event);
-    const pluginMs = performance.now() - pluginStartedAt;
-    const sinkStartedAt = performance.now();
-    sink?.(event);
-    const sinkMs = performance.now() - sinkStartedAt;
-    performanceTrace.record(event, {
-      publishMs: performance.now() - publishStartedAt,
-      pluginMs,
-      sinkMs,
-    });
-    // P8 C1 writer: keep the live work-state tracking current and publish a
-    // session intelligence snapshot at work-state boundaries. `session.snapshot`
-    // is not a trigger, so the snapshot's own publish cannot recurse here.
-    if (!event.agentID && event.type === "tool.update") {
-      const turnID = toolEventTurnID(event);
-      if (event.status === "running") activeToolByTurn.set(turnID, event.name);
-      else if (
-        ["succeeded", "failed", "rejected", "cancelled"].includes(event.status)
-      )
-        activeToolByTurn.delete(turnID);
-    }
-    if (!event.agentID && isSessionSnapshotTrigger(event))
-      publishSessionSnapshot(exec);
-    if (
-      !event.agentID &&
-      (event.type === "turn.finished" || event.type === "turn.cancelled")
-    )
-      liveMainOutputByTurn.delete(event.id);
-    // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
-    // "step complete"). Deliver every queued mailbox message so the main agent
-    // sees user intents at the boundary, never mid-token. `mailbox.delivered`
-    // is not a trigger, so this cannot recurse. Only a turn that finished on
-    // purpose is a settlement: a cancelled/aborted/error turn did not complete
-    // its context, so its delivered intents stay delivered for another chance.
-    if (
-      !event.agentID &&
-      event.type === "turn.finished" &&
-      event.stopReason === "done"
-    ) {
-      // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
-      // "step complete"). Delivery is consumption-driven, not model-discipline-
-      // driven: messages delivered at the previous boundary were injected into
-      // this turn's context, so a normal turn finish acknowledges them (they no
-      // longer re-inject); messages still queued are delivered for the next
-      // turn. The order matters — acknowledge the already-delivered batch before
-      // delivering the queued batch, so a fresh delivery is not mis-acked.
-      settleMailboxAtBoundary(exec);
-      // P8 C4: a finished turn is also the safe completion point for the active
-      // plan (§6.5 — "A reaches completed / paused / designated safe finish").
-      // Promote the queued-next plan to active so the next turn carries it.
-      // `plan.activated` is not a trigger, so this cannot recurse.
-      activateQueuedPlanAtBoundary(exec);
-      // WG4: a finished turn is a natural reconcile point — discover external
-      // edits the watcher saw, graph them as isolated nodes, and drift-check
-      // them against the active plan. No explicit call needed.
-      void reconcileWorkspaceObservation(exec);
-    }
   }
 
   async function submitInput(

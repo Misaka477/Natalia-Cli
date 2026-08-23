@@ -213,6 +213,23 @@ export type RuntimePorts = {
   getSessionPersistence: () => Promise<void>;
   setSessionPersistence: (next: Promise<void>) => void;
   redactToolOutput: (output: string, redact: boolean | undefined) => string;
+  getSink: () => ((event: RuntimeEvent) => void) | undefined;
+  setPendingHumanTerminal: (
+    forSessionID: SessionID,
+    input: { terminalID: string; reason: string },
+  ) => Promise<void>;
+  maybeContinueAfterHumanInput: (
+    terminalID: string,
+    forSessionID?: SessionID,
+  ) => Promise<void>;
+  settleMailboxAtBoundary: (exec?: SessionExecutionState) => void;
+  activateQueuedPlanAtBoundary: (exec?: SessionExecutionState) => void;
+  reconcileWorkspaceObservation: (
+    exec?: SessionExecutionState,
+  ) => Promise<unknown[]>;
+  toolEventTurnID: (event: { id: string; callID?: string }) => string;
+  isSessionSnapshotTrigger: (event: RuntimeEvent) => boolean;
+  publishSessionSnapshot: (exec?: SessionExecutionState) => void;
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
   getExecutionBySession: () => Map<SessionID, SessionExecutionState>;
   getActiveExec: () => SessionExecutionState | undefined;
