@@ -16,6 +16,7 @@ import { createChatTools } from "./runtime/collaboration/chat-tools";
 import { createCollaborationWake } from "./runtime/collaboration/wake";
 import { createMailboxPlans } from "./runtime/collaboration/mailbox-plans";
 import { createChatTurn } from "./runtime/collaboration/chat-turn";
+import { createSessionExecution } from "./runtime/session-execution";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -644,10 +645,14 @@ export function createRealRuntimeClient(
   ctx.ports.getSessionPersistence = () => sessionPersistence;
   ctx.ports.getProviderConcurrencyLimiter = () => providerConcurrencyLimiter;
   ctx.ports.getExecutionBySession = () => executionBySession;
+  ctx.ports.getTurnController = () => turnController;
+  ctx.ports.getSessionID = () => sessionID;
+  ctx.ports.getContextLedgerFactory = () => contextLedgerFactory;
+  ctx.ports.getProvider = () => provider;
+  ctx.state.executionBySession = executionBySession;
   ctx.ports.getActiveExec = () => activeExec;
   ctx.ports.scheduleRuntimeStatusSnapshot = scheduleRuntimeStatusSnapshot;
   ctx.ports.runtimeStatusSnapshot = runtimeStatusSnapshot;
-  ctx.ports.ensureExecution = ensureExecution;
   ctx.ports.skillService = skillService;
   ctx.ports.skillsList = skillsList;
   ctx.ports.teamBehavior = teamBehavior;
@@ -803,6 +808,16 @@ export function createRealRuntimeClient(
   ctx.ports.chatToolSummary = chatToolSummary;
   const chatTurn = createChatTurn(ctx);
   const { runChatTurnBody } = chatTurn;
+  const sessionExecution = createSessionExecution(ctx, options);
+  const {
+    drainSessionFor,
+    drainPendingQueue,
+    runAdmittedInput,
+    persistInboxPromotion,
+    loadSessionForAttach,
+    ensureExecution,
+  } = sessionExecution;
+  ctx.ports.ensureExecution = ensureExecution;
   const eventSink = createEventSink(ctx, options);
   const { publish, publishForSession } = eventSink;
   ctx.ports.publish = publish;
@@ -827,6 +842,7 @@ export function createRealRuntimeClient(
   ctx.ports.effectiveMaxSteps = effectiveMaxSteps;
   ctx.ports.selectRuntimeModel = selectRuntimeModel;
   ctx.ports.applyAgentProvider = applyAgentProvider;
+  ctx.ports.refreshExecutionContextConfig = refreshExecutionContextConfig;
   ctx.ports.applyAgentPolicy = applyAgentPolicy;
   ctx.state.runtimeDiagnostics = runtimeDiagnostics;
   ctx.state.runtimeDiagnosticsBySession = runtimeDiagnosticsBySession;
@@ -3456,100 +3472,6 @@ export function createRealRuntimeClient(
 
   async function drainSession(signal: AbortSignal) {
     await turnController.drain(signal, sessionID);
-  }
-
-  /**
-   * D2: the drain callback bound to one session. Each session's coordinator
-   * runs its own drains, so turns of different sessions proceed in parallel;
-   * everything the turn touches is resolved through that session's exec.
-   */
-  function drainSessionFor(sessionID: SessionID) {
-    return async (signal: AbortSignal) => {
-      await ensureExecution(sessionID);
-      await turnController.drain(signal, sessionID);
-    };
-  }
-
-  async function drainPendingQueue(signal?: AbortSignal) {
-    await turnController.drainQueue(signal, sessionID);
-  }
-
-  async function runAdmittedInput(
-    id: string,
-    text: string,
-    attachments: import("@natalia/contracts").LocalAttachment[] = [],
-    resources: import("@natalia/contracts").PromptResourceMention[] = [],
-    agents: import("@natalia/contracts").PromptAgentMention[] = [],
-  ) {
-    await turnController.admit(
-      sessionID,
-      id,
-      text,
-      attachments,
-      resources,
-      agents,
-    );
-  }
-
-  async function persistInboxPromotion(targetSessionID = sessionID) {
-    await turnController.persistPromotion(targetSessionID);
-  }
-
-  async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {
-    return (await sessionStoreController.load(id)).session;
-  }
-
-  /**
-   * D2: the execution state for a session — its record, its context ledger and
-   * its in-flight turn markers. Created lazily the first time the session runs
-   * work (init, attach or a background submission) and kept for the client's
-   * life, so a background turn of A survives attaching to B and back.
-   */
-  async function ensureExecution(
-    sessionID: SessionID,
-  ): Promise<SessionExecutionState> {
-    const existing = executionBySession.get(sessionID);
-    if (existing) return existing;
-    const stored = await sessionStoreController.load(sessionID);
-    const loaded = stored.session;
-    const execContext = contextLedgerFactory.create();
-    const projection = projectSession(loaded);
-    const epoch = stored.contextEpoch;
-    if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
-    contextLedgerFactory.restore(
-      execContext,
-      epoch
-        ? sessionStoreController.contextEventsAfter(sessionID, epoch)!
-        : modelVisibleEvents(projection.replayableEvents),
-    );
-    const exec: SessionExecutionState = {
-      session: loaded,
-      context: execContext,
-      attachmentReferences: new Map(
-        projection.replayableEvents.flatMap((event) =>
-          event.type === "turn.submitted" && event.attachments?.length
-            ? [[`${event.id}:user`, event.attachments] as const]
-            : [],
-        ),
-      ),
-      toolCalls: new Map(),
-      provider:
-        options.provider ??
-        (providerSource === "environment" ? provider : undefined),
-      runtimeContextConfig,
-      permissionMode: defaultPermissionMode,
-      permissionProfile: defaultPermissionProfile,
-      selectedAgent: projection.selectedAgent
-        ? agentRegistry?.select(projection.selectedAgent)
-        : undefined,
-      selectedModel: projection.selectedModel,
-      paused: false,
-      pauseWaiters: [],
-    };
-    executionBySession.set(sessionID, exec);
-    applyAgentProvider(exec);
-    await refreshExecutionContextConfig(exec);
-    return exec;
   }
 
   async function attachSession(id: string) {
