@@ -825,7 +825,6 @@ export function createRealRuntimeClient(
   ctx.ports.getBuiltinPluginIDs = () => builtinPluginIDs;
   ctx.ports.isBuiltinToolPlugin = isBuiltinToolPlugin;
   ctx.ports.isStaticBuiltinPlugin = isStaticBuiltinPlugin;
-  ctx.ports.getOptions = () => options;
   const pluginAssembly = createPluginAssembly(ctx, options);
   const {
     skillsPluginInput,

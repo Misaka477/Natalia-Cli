@@ -288,9 +288,6 @@ export type RuntimePorts = {
     providerReconfigured: boolean;
     reason?: string;
   }>;
-  getExecutionForSession: (
-    sessionID: SessionID,
-  ) => SessionExecutionState | undefined;
   setLastSubmitted: (
     turn: import("@natalia/contracts").SubmittedTurn | undefined,
   ) => void;
@@ -351,7 +348,6 @@ export type RuntimePorts = {
   getBuiltinPluginIDs: () => Set<string>;
   isBuiltinToolPlugin: (id: string) => boolean;
   isStaticBuiltinPlugin: (id: string) => boolean;
-  getOptions: () => import("../real-runtime").RealRuntimeClientOptions;
   toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
   authorizeWorkspaceRead: (
     input: { toolName: string; paths: string[] },
