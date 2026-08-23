@@ -22,6 +22,7 @@ import { createExecuteCalls } from "./runtime/tool-execution/execute-calls";
 import { createExecuteOne } from "./runtime/tool-execution/execute-one";
 import { createTurnRunner } from "./runtime/turn-runner";
 import { createSessionAdmission } from "./runtime/session-admission";
+import { createSessionAttach } from "./runtime/session-attach";
 import { createEventSink } from "./runtime/event-sink";
 import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
@@ -823,6 +824,40 @@ export function createRealRuntimeClient(
   ctx.ports.setLastSubmitted = (turn) => {
     lastSubmitted = turn;
   };
+  ctx.ports.setSessionID = (id) => {
+    sessionID = id;
+  };
+  ctx.ports.setSession = (record) => {
+    session = record;
+  };
+  ctx.ports.setRuntimeContext = (context) => {
+    runtimeContext = context;
+  };
+  ctx.ports.setActiveExec = (exec) => {
+    activeExec = exec;
+  };
+  ctx.ports.setAttachmentReferences = (refs) => {
+    attachmentReferences = refs;
+  };
+  ctx.ports.setToolCalls = (calls) => {
+    toolCalls = calls;
+  };
+  ctx.ports.setPauseWaiters = (waiters) => {
+    pauseWaiters = waiters;
+  };
+  ctx.ports.setActiveSkill = (skill) => {
+    activeSkill = skill;
+  };
+  ctx.ports.setLastProviderUsage = (usage) => {
+    lastProviderUsage = usage;
+  };
+  ctx.ports.clearRuntimeDiagnostics = () => {
+    runtimeDiagnostics.splice(0);
+  };
+  ctx.ports.getRuntimeDiagnosticsBySession = () => runtimeDiagnosticsBySession;
+  ctx.ports.getRuntimeDiagnostics = () => runtimeDiagnostics;
+  const sessionAttach = createSessionAttach(ctx);
+  const { attachSession } = sessionAttach;
   ctx.ports.setActiveAbort = (controller) => {
     activeAbort = controller;
   };
@@ -3304,90 +3339,6 @@ export function createRealRuntimeClient(
 
   async function drainSession(signal: AbortSignal) {
     await turnController.drain(signal, sessionID);
-  }
-
-  async function attachSession(id: string) {
-    await ready;
-    // D2: a running turn is no longer a reason to refuse. The turn belongs to
-    // its own session's exec and keeps running in the background; attach only
-    // switches which session the UI is attached to.
-    const nextID = id as SessionID;
-    if (nextID === sessionID) return { sessionID: nextID };
-
-    // A replacement runtime can open the old session as soon as attach returns.
-    await sessionPersistence;
-    await sessionStoreController?.flush(sessionID);
-
-    // D2: the attached session becomes the activity exec. Its ledger is its
-    // own — restoring into the shared one would clobber the previous session's
-    // ledger, which a background turn may still be writing to.
-    const exec = await ensureExecution(nextID);
-    if (exec.session.metadata?.archived)
-      throw new RuntimeRefusal("cannot attach an archived session");
-    sessionID = nextID;
-    session = exec.session;
-    runtimeContext = exec.context;
-    activeExec = exec;
-    attachmentReferences = exec.attachmentReferences;
-    toolCalls = exec.toolCalls;
-    terminalController?.setActiveSession(nextID);
-    lastSubmitted = exec.lastSubmitted;
-    activeAbort = exec.activeAbort;
-    activeTurnID = exec.activeTurnID;
-    paused = exec.paused;
-    pauseWaiters = exec.pauseWaiters;
-    activeSkill = undefined;
-    selectedAgent = undefined;
-    selectedModel = undefined;
-    pendingAgent = undefined;
-    lastProviderUsage = undefined;
-    runtimeDiagnostics.splice(0);
-    applyAgentPolicy();
-    applyAgentProvider();
-
-    const projection = projectSession(exec.session);
-    const diagnostics = runtimeDiagnosticsBySession.get(exec.session.id) ?? [];
-    for (const event of projection.replayableEvents) {
-      if (event.type === "diagnostic")
-        diagnostics.push({
-          ...event,
-          at: event.at ?? exec.session.createdAt,
-        });
-    }
-    runtimeDiagnosticsBySession.set(exec.session.id, diagnostics);
-    // The exec already restored its own ledger, agent and model selection
-    // (`ensureExecution`); here the activity closures take the same values so
-    // UI reads and the next attach start from them.
-    selectedAgent = exec.selectedAgent;
-    selectedModel = exec.selectedModel;
-    activeSkill = exec.activeSkill;
-    permissionMode = exec.permissionMode;
-    selectedPermissionProfile = exec.permissionProfile;
-    provider = exec.provider ?? provider;
-    if (selectedAgent) {
-      applyAgentPolicy();
-      applyAgentProvider();
-    } else if (selectedModel) {
-      applyAgentProvider();
-    }
-    await initializeCheckpointController(exec);
-    publishForSession(exec, {
-      type: "session.ready",
-      sessionID: exec.session.id,
-    });
-    publishForSession(
-      exec,
-      contextStatusEvent(exec.context.status(exec.runtimeContextConfig)),
-    );
-    publishForSession(
-      exec,
-      await statusController.snapshotFor({
-        provider: exec.provider,
-        context: exec.context,
-        permissionMode: exec.permissionMode,
-      }),
-    );
-    return { sessionID: exec.session.id };
   }
 
   // --- Live Work Chat (P8 C2) ---

@@ -200,7 +200,7 @@ export type RuntimePorts = {
     forSessionID?: SessionID,
   ) => Promise<import("@natalia/contracts").SubmittedTurn>;
   applyAgentPolicy: () => void;
-  applyAgentProvider: (exec: SessionExecutionState) => void;
+  applyAgentProvider: (exec?: SessionExecutionState) => void;
   refreshExecutionContextConfig: (exec: SessionExecutionState) => Promise<void>;
   getCapabilityRegistry: () => CapabilityRegistryHost;
   getTsRuntimeConfig: () => ConfigV3 | undefined;
@@ -291,11 +291,38 @@ export type RuntimePorts = {
   getExecutionForSession: (
     sessionID: SessionID,
   ) => SessionExecutionState | undefined;
-  setLastSubmitted: (turn: import("@natalia/contracts").SubmittedTurn) => void;
+  setLastSubmitted: (
+    turn: import("@natalia/contracts").SubmittedTurn | undefined,
+  ) => void;
   rememberTitleInput: (id: SessionID, text: string) => void;
   drainSessionFor: (
     sessionID: SessionID,
   ) => (signal: AbortSignal) => Promise<void>;
+  setSessionID: (id: SessionID) => void;
+  setSession: (session: import("@natalia/session").SessionRecord) => void;
+  setRuntimeContext: (
+    context: import("@natalia/runtime-services").RuntimeContextLedger,
+  ) => void;
+  setActiveExec: (exec: SessionExecutionState | undefined) => void;
+  setAttachmentReferences: (
+    refs: Map<string, import("@natalia/contracts").LocalAttachment[]>,
+  ) => void;
+  setToolCalls: (calls: Map<string, number>) => void;
+  setPauseWaiters: (waiters: Array<() => void>) => void;
+  setActiveSkill: (
+    skill: import("@natalia/runtime-services").SkillMetadata | undefined,
+  ) => void;
+  setLastProviderUsage: (
+    usage: { inputTokens: number; outputTokens: number } | undefined,
+  ) => void;
+  clearRuntimeDiagnostics: () => void;
+  getRuntimeDiagnosticsBySession: () => Map<
+    SessionID,
+    Array<Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }>
+  >;
+  getRuntimeDiagnostics: () => Array<
+    Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
+  >;
   toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
   authorizeWorkspaceRead: (
     input: { toolName: string; paths: string[] },
