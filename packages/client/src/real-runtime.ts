@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createTitleGeneration } from "./runtime/title-generation";
+import { createCommands } from "./runtime/commands";
 import type { RuntimeContext } from "./runtime/context";
 import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
@@ -254,17 +255,10 @@ function userSkillRoot() {
 const WAITING_TOOLS = new Set(["terminal_observe"]);
 const MAX_PROTOCOL_CORRECTIONS = 2;
 
-/**
- * The application-layer host allowlist is enforced where fetch-style tools
- * build their request URL; it cannot see traffic a shell command or terminal
- * keystroke opens on its own. Blocklisting `curl` would only be a false sense
- * of safety (`python -c`, `nc`, `/dev/tcp` remain), so the boundary is stated
- * plainly here instead and the real enforcement belongs to the operator's
- * firewall or container network. Runtime doctor and `natalia doctor` share this
- * one string so the two surfaces cannot drift apart.
- */
-export const EGRESS_ADVISORY =
-  "egress: the application-layer host allowlist only covers fetch-style tools; outbound traffic from run_shell and native terminal input is not constrained here, so configure egress in your firewall or container network";
+// The egress advisory moved to the commands module (runtime/commands.ts); this
+// file re-exports it so the existing surface (`runtime doctor`, tests) keeps the
+// one shared string.
+export { EGRESS_ADVISORY } from "./runtime/commands";
 
 /**
  * Self-protection rules only. These three exist so the agent cannot kill the
@@ -2846,12 +2840,6 @@ export function createRealRuntimeClient(
    * The kernel is the sole catalogue: external and built-in plugins both
    * contribute through it, so a UI never merges parallel registries.
    */
-  function commandCatalogEntries(): PluginCommand[] {
-    return capabilityRegistry
-      .contributions<PluginCommand>("commands")
-      .map((entry) => entry.payload);
-  }
-
   function applyAgentPolicy() {
     agentToolLayer = agentPolicyLayer(selectedAgent);
     permissionProfileToolLayer = permissionProfileLayer(
@@ -4079,9 +4067,41 @@ export function createRealRuntimeClient(
   ctx.ports.getSessionPersistence = () => sessionPersistence;
   ctx.ports.getProviderConcurrencyLimiter = () => providerConcurrencyLimiter;
   ctx.ports.getExecutionBySession = () => executionBySession;
+  ctx.ports.getActiveExec = () => activeExec;
   ctx.ports.publishForSession = publishForSession;
+  ctx.ports.publish = publish;
+  ctx.ports.scheduleRuntimeStatusSnapshot = scheduleRuntimeStatusSnapshot;
+  ctx.ports.runtimeStatusSnapshot = runtimeStatusSnapshot;
+  ctx.ports.ensureExecution = ensureExecution;
+  ctx.ports.skillService = skillService;
+  ctx.ports.skillsList = skillsList;
+  ctx.ports.teamBehavior = teamBehavior;
+  ctx.ports.providerRunnerInput = providerRunnerInput;
+  ctx.ports.setInFlightOperation = setInFlightOperation;
+  ctx.ports.getStatusController = () => statusController;
+  ctx.ports.getProviderSource = () => providerSource;
+  ctx.ports.getWorkspaceRoot = () => workspaceRoot;
+  ctx.ports.getSandboxController = () => sandboxController;
+  ctx.ports.getAgentRegistry = () => agentRegistry;
+  ctx.ports.setPaused = (value) => {
+    paused = value;
+  };
+  ctx.ports.getPaused = () => paused;
+  ctx.ports.getCapabilityRegistry = () => capabilityRegistry;
+  ctx.ports.initializeCheckpointController = initializeCheckpointController;
+  ctx.ports.clientModelCatalog = clientModelCatalog;
+  ctx.ports.selectRuntimeModel = selectRuntimeModel;
+  ctx.ports.submitInput = submitInput;
+  ctx.ports.applyAgentPolicy = applyAgentPolicy;
+  ctx.ports.applyAgentProvider = applyAgentProvider;
+  ctx.state.runtimeDiagnostics = runtimeDiagnostics;
+  ctx.state.runtimeDiagnosticsBySession = runtimeDiagnosticsBySession;
+  ctx.state.tools = tools;
   const { rememberTitleInput, scheduleTitleGeneration, cancelTitleGeneration } =
     createTitleGeneration(ctx);
+  const { isPendingInteractiveRequest, handleCommand, commandCatalogEntries } =
+    createCommands(ctx);
+  ctx.ports.commandCatalogEntries = commandCatalogEntries;
 
   function providerRunnerInput(sessionID: SessionID): ProviderRunnerInput {
     const exec = executionBySession.get(sessionID);
@@ -7395,398 +7415,6 @@ export function createRealRuntimeClient(
       return interactive.respondQuestion(response);
     },
   };
-
-  function isPendingInteractiveRequest(
-    forSessionID: SessionID,
-    id: string,
-    kind: "approval" | "question",
-  ) {
-    // D2: the request lives in the session whose turn issued it. A response
-    // arriving while the UI is attached to another session must be judged
-    // against that session's journal, never the attached one's.
-    const target = executionBySession.get(forSessionID)?.session;
-    const pending = projectInteractiveRequests(target?.events ?? []);
-    return kind === "approval"
-      ? pending.approvals.some((request) => request.id === id)
-      : pending.questions.some((request) => request.id === id);
-  }
-
-  async function handleCommand(
-    id: string,
-    text: string,
-    signal: AbortSignal | undefined,
-    commandExec: SessionExecutionState = activeExec!,
-  ) {
-    const commandSession = commandExec.session;
-    const commandContext = commandExec.context;
-    let commandAgent = commandExec.selectedAgent;
-    let commandSkill = commandExec.activeSkill;
-    const commandProvider = commandExec.provider;
-    const commandRuntimeStatusSnapshot = () =>
-      statusController.snapshotFor({
-        provider: commandProvider,
-        context: commandContext,
-        permissionMode: commandExec.permissionMode,
-      });
-    // Commands run inside a session's drain. Bind their output to that session
-    // even when the UI is attached elsewhere.
-    const publish = (event: RuntimeEvent) =>
-      publishForSession(commandExec, event);
-    const runtimeStatusSnapshot = commandRuntimeStatusSnapshot;
-    const runtimeContext = commandContext;
-    const session = commandSession;
-    const provider = commandProvider;
-    const selectedAgent = commandAgent;
-    let activeSkill = commandSkill;
-    const trimmed = text.trim();
-    if (!trimmed.startsWith("/")) return false;
-    if (trimmed === "/help") {
-      publish({
-        type: "content.delta",
-        id,
-        text: [
-          "Natalia TS7 agent shell commands:",
-          ...runtimeSlashCommands.map(
-            (command) =>
-              `/${command.name}${command.acceptsArguments ? " <args>" : ""} - ${command.description}`,
-          ),
-          "Use Ctrl-C to cancel an active turn and Ctrl-D on an empty composer to exit.",
-        ].join("\n"),
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed === "/doctor") {
-      const configured = provider
-        ? `${provider.provider}/${provider.model} (${providerSource})`
-        : "not configured";
-      publish({
-        type: "content.delta",
-        id,
-        text: [
-          "Natalia TS7 runtime doctor",
-          `provider: ${configured}`,
-          `workspace: ${workspaceRoot}`,
-          `session: ${commandSession.id}`,
-          `native tools: ${tools.size}`,
-          `agent: ${selectedAgent?.name ?? "default"}`,
-          `skills: ${skillsList().length}`,
-          provider
-            ? "provider check: configured; submit a short prompt to verify live streaming"
-            : "provider check: set NATALIA_OPENAI_API_KEY (or OPENAI_API_KEY), or configure a provider in .natalia/config.json, then restart the TUI",
-          "safety: write/shell/process actions require approval unless permissionMode=auto is explicitly configured by a caller",
-          EGRESS_ADVISORY,
-        ].join("\n"),
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      publish(await runtimeStatusSnapshot());
-      return true;
-    }
-    if (trimmed === "/status") {
-      const snapshot = await runtimeStatusSnapshot();
-      publish(snapshot);
-      publish({
-        type: "content.delta",
-        id,
-        text: [
-          `provider: ${snapshot.provider}/${snapshot.model} (${providerSource})`,
-          `context: ${snapshot.context}`,
-          `steps: ${snapshot.step}`,
-          `workspace: ${snapshot.cwd}`,
-          `background: ${snapshot.background}`,
-        ].join("\n"),
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed === "/diagnostics" || trimmed.startsWith("/diagnostics ")) {
-      const value = trimmed.slice("/diagnostics".length).trim();
-      const limit = value ? Number(value) : 20;
-      if (!Number.isInteger(limit) || limit < 1 || limit > 500)
-        throw new Error(
-          "diagnostics limit must be an integer between 1 and 500",
-        );
-      const entries = [
-        ...runtimeDiagnostics,
-        ...(runtimeDiagnosticsBySession.get(commandExec.session.id) ?? []),
-      ].slice(-limit);
-      publish({
-        type: "content.delta",
-        id,
-        text: entries.length
-          ? entries
-              .map(
-                (entry) =>
-                  `${entry.at}${entry.owner ? ` [${entry.owner}]` : ""} ${entry.level}: ${entry.message}`,
-              )
-              .join("\n")
-          : "no diagnostics recorded",
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed === "/sessions") {
-      const listing = (await sessionStoreController.list())
-        .map((item) => `${item.id}  ${item.title}  ${item.events} events`)
-        .join("\n");
-      publish({
-        type: "content.delta",
-        id,
-        text: listing || "no TS sessions found in this workspace",
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (/^\/(?:checkpoint|checkpoints|rollback)\b/u.test(trimmed)) {
-      const controller = await initializeCheckpointController(commandExec);
-      if (!controller)
-        throw new Error(
-          "checkpoint controller unavailable (natalia-checkpoint)",
-        );
-      if (!controller.isEnabled())
-        throw new Error("checkpoint store is not initialized");
-      const result = await runCheckpointCommand(
-        controller.get(),
-        runtimeContext,
-        trimmed,
-        controller.rollbackOptions(),
-        // The shared object library: the sandbox's snapshot indices are also
-        // owners, so checkpoint GC must never prune a live sandbox object.
-        async () => {
-          if (!sandboxController)
-            throw new Error("sandbox controller unavailable");
-          return await sandboxController.referencedObjectIDs();
-        },
-      );
-      publish({ type: "content.delta", id, text: result.output });
-      publish({ type: "content.done", id });
-      publish({
-        type: "turn.finished",
-        id,
-        stopReason: result.ok ? "done" : "error",
-      });
-      publish(await runtimeStatusSnapshot());
-      return true;
-    }
-    if (trimmed === "/skills") {
-      const skills = skillsList();
-      publish({
-        type: "content.delta",
-        id,
-        text: skills.length
-          ? skills
-              .map((skill) => `${skill.qualifiedName}: ${skill.description}`)
-              .join("\n")
-          : "no native skills discovered",
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed === "/models") {
-      const models = await clientModelCatalog();
-      publish({
-        type: "content.delta",
-        id,
-        text: models.length
-          ? models
-              .map(
-                (model) =>
-                  `${model.id}: ${model.name} @ ${model.provider}${model.variants.length ? ` (${model.variants.join(", ")})` : ""}`,
-              )
-              .join("\n")
-          : "no selectable models configured",
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed === "/files" || trimmed.startsWith("/files ")) {
-      const query = trimmed.slice("/files".length).trim();
-      const files = await findWorkspaceFiles({
-        workspaceRoot,
-        query: query || undefined,
-        limit: 50,
-      });
-      publish({
-        type: "content.delta",
-        id,
-        text: files.length
-          ? files.map((file) => file.path).join("\n")
-          : "no workspace files found",
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed.startsWith("/search ")) {
-      const query = trimmed.slice("/search ".length).trim();
-      const matches = await searchWorkspaceFiles({
-        workspaceRoot,
-        query,
-        limit: 50,
-      });
-      publish({
-        type: "content.delta",
-        id,
-        text: matches.length
-          ? matches
-              .map((match) => `${match.path}:${match.line}:${match.text}`)
-              .join("\n")
-          : "no workspace matches found",
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed.startsWith("/model ")) {
-      const [modelID, variant] = trimmed
-        .slice("/model ".length)
-        .trim()
-        .split(/\s+/u);
-      if (!modelID) throw new Error("model ID is required");
-      await selectRuntimeModel(modelID, variant, commandExec);
-      publish({
-        type: "content.delta",
-        id,
-        text: `selected model ${modelID}${variant ? ` (${variant})` : ""}`,
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed.startsWith("/attach ")) {
-      const [path, ...rest] = trimmed
-        .slice("/attach ".length)
-        .trim()
-        .split(/\s+/u);
-      if (!path || !rest.length)
-        throw new Error("usage: /attach <workspace-relative-image> <prompt>");
-      await submitInput(
-        { text: rest.join(" "), attachments: [path] },
-        commandExec.session.id,
-      );
-      return true;
-    }
-    if (trimmed === "/agents") {
-      const agents = agentRegistry?.selectable() ?? [];
-      publish({
-        type: "content.delta",
-        id,
-        text: agents.length
-          ? agents
-              .map((agent) => `${agent.name}: ${agent.description}`)
-              .join("\n")
-          : "no selectable agents configured",
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed.startsWith("/agent ")) {
-      const name = trimmed.slice("/agent ".length).trim();
-      if (!name) throw new Error("agent name is required");
-      const agent = agentRegistry?.select(name);
-      if (!agent) throw new Error(`agent not found: ${name}`);
-      commandExec.selectedAgent = agent;
-      commandAgent = agent;
-      if (commandExec === activeExec) {
-        applyAgentPolicy();
-      }
-      applyAgentProvider(commandExec);
-      publish({ type: "agent.selection", name: agent.name, pending: false });
-      publish({
-        type: "content.delta",
-        id,
-        text: `selected agent ${agent.name}`,
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed === "/pause") {
-      commandExec.paused = true;
-      if (commandExec === activeExec) paused = true;
-      publish({ type: "turn.paused", id, reason: "slash command" });
-      publish({ type: "content.delta", id, text: "runtime paused" });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed === "/resume") {
-      commandExec.paused = false;
-      if (commandExec === activeExec) paused = false;
-      const waiters = commandExec.pauseWaiters;
-      commandExec.pauseWaiters = [];
-      for (const resolveWaiter of waiters) resolveWaiter();
-      publish({ type: "turn.resumed", id });
-      publish({ type: "content.delta", id, text: "runtime resumed" });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed.startsWith("/skill ")) {
-      const skills = skillService();
-      if (!skills) throw new Error("skill registry is not initialized");
-      activeSkill = skills.resolve(trimmed.slice("/skill ".length).trim());
-      commandExec.activeSkill = activeSkill;
-      commandSkill = activeSkill;
-      commandContext.add({
-        id: `skill:${activeSkill.qualifiedName}:${commandContext.journalStatus().journalOffset}`,
-        role: "system",
-        content: `Active skill ${activeSkill.name}: ${activeSkill.description}\n${activeSkill.body}`,
-      });
-      publish({
-        type: "content.delta",
-        id,
-        text: `activated skill ${activeSkill.qualifiedName}`,
-      });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed.startsWith("/skill-resource ")) {
-      if (!activeSkill) throw new Error("no active skill");
-      const resource = trimmed.slice("/skill-resource ".length).trim();
-      const skills = skillService();
-      if (!skills) throw new Error("skill service is not initialized");
-      const content = await skills.readResource(activeSkill, resource);
-      publish({ type: "content.delta", id, text: content });
-      publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
-      return true;
-    }
-    if (trimmed.startsWith("/skill-script ")) {
-      if (!activeSkill) throw new Error("no active skill");
-      const script = trimmed.slice("/skill-script ".length).trim();
-      // A slash command runs inside the session's drain, so its cancellation
-      // signal is the drain's, not the (never-assigned) activity closure: a
-      // cancelled command aborts the skill script's child process.
-      const skills = skillService();
-      if (!skills) throw new Error("skill service is not initialized");
-      const result = await skills.runScript(activeSkill, script, {
-        signal: signal ?? commandExec.activeAbort?.signal,
-      });
-      publish({
-        type: "content.delta",
-        id,
-        text: JSON.stringify(result, null, 2),
-      });
-      publish({ type: "content.done", id });
-      publish({
-        type: "turn.finished",
-        id,
-        stopReason: result.exitCode === 0 ? "done" : "error",
-      });
-      return true;
-    }
-    return false;
-  }
 
   async function executeToolCalls(
     turnID: string,

@@ -165,18 +165,39 @@ const forbiddenDeepImports = [
  */
 const maxSourceLines = 400;
 const lineLimitExemptions = new Map<string, string>([
-  ["packages/client/src/real-runtime.ts", "convergence §3: split into runtime/ modules, removed in phase 1"],
-  ["packages/client/src/worker.ts", "legacy transport worker, not part of phase 1"],
+  [
+    "packages/client/src/real-runtime.ts",
+    "convergence §3: split into runtime/ modules, removed in phase 1",
+  ],
+  [
+    "packages/client/src/worker.ts",
+    "legacy transport worker, not part of phase 1",
+  ],
   ["packages/client/src/fixture.ts", "test fixture only"],
-  ["packages/client/src/plugins-controller.ts", "legacy plugin host, phase 2 of convergence"],
-  ["packages/client/src/capabilities/tool-family-capabilities.ts", "legacy capability factory, phase 2"],
-  ["packages/plugin/src/index.ts", "legacy plugin registry, phase 2 of convergence"],
+  [
+    "packages/client/src/plugins-controller.ts",
+    "legacy plugin host, phase 2 of convergence",
+  ],
+  [
+    "packages/client/src/capabilities/tool-family-capabilities.ts",
+    "legacy capability factory, phase 2",
+  ],
+  [
+    "packages/plugin/src/index.ts",
+    "legacy plugin registry, phase 2 of convergence",
+  ],
   ["packages/capability/src/index.ts", "legacy kernel, out of phase 1 scope"],
-  ["packages/builtin-plugins/src/index.ts", "legacy builtin catalog, phase 2 of convergence"],
+  [
+    "packages/builtin-plugins/src/index.ts",
+    "legacy builtin catalog, phase 2 of convergence",
+  ],
   ["packages/runtime/src/provider.ts", "legacy provider seam"],
   ["packages/runtime/src/checkpoint.ts", "legacy checkpoint seam"],
   ["packages/runtime-services/src/services.ts", "service port definitions"],
-  ["packages/provider-model-plugin/src/provider-runner.ts", "legacy provider runner"],
+  [
+    "packages/provider-model-plugin/src/provider-runner.ts",
+    "legacy provider runner",
+  ],
   ["packages/native-terminal/src/index.ts", "native bindings"],
   ["packages/contracts/src/events.ts", "generated event vocabulary"],
   ["packages/contracts/src/schemas.ts", "config schemas"],
@@ -195,14 +216,26 @@ const lineLimitExemptions = new Map<string, string>([
   ["packages/sandbox/src/workspace-manager.ts", "sandbox manager"],
   ["packages/subagent/src/registry.ts", "subagent registry"],
   ["packages/skills-plugin/src/skills.ts", "skills implementation"],
-  ["packages/session-store-plugin/src/session-store-controller.ts", "session store controller"],
+  [
+    "packages/session-store-plugin/src/session-store-controller.ts",
+    "session store controller",
+  ],
   ["packages/mcp-plugin/src/mcp-runtime.ts", "MCP runtime"],
-  ["packages/collaboration-plugin/src/interactive-waiter.ts", "interactive waiter"],
-  ["packages/task-workflow-plugin/src/task-execution-service.ts", "task execution service"],
+  [
+    "packages/collaboration-plugin/src/interactive-waiter.ts",
+    "interactive waiter",
+  ],
+  [
+    "packages/task-workflow-plugin/src/task-execution-service.ts",
+    "task execution service",
+  ],
   ["packages/workflow/src/natalia-task-state-store.ts", "task state store"],
   ["packages/workflow/src/natalia-task-alert-queue.ts", "task alert queue"],
   ["packages/workflow/src/systemd-adapter.ts", "systemd adapter"],
-  ["packages/workflow-scheduler-plugin/src/workflow-execution-scheduler.ts", "scheduler"],
+  [
+    "packages/workflow-scheduler-plugin/src/workflow-execution-scheduler.ts",
+    "scheduler",
+  ],
   ["packages/view-store/src/state.ts", "view store state"],
   ["packages/view-store/src/conversation.ts", "conversation view"],
   ["packages/ui-model/src/tools.ts", "tool UI model"],
@@ -359,6 +392,7 @@ const runtimeImport = /from\s+["'](\.[^"']*)["']/gu;
 for (const dir of runtimeModuleRoots)
   await scan(join(root, dir), /\.ts$/u, (full, text) => {
     const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+    const importerDir = full.slice(0, full.lastIndexOf("/"));
     const imports = [...text.matchAll(runtimeImport)].map((match) => match[1]);
     for (const specifier of imports) {
       const resolved = resolveRuntimeSpecifier(full, specifier);
@@ -367,6 +401,10 @@ for (const dir of runtimeModuleRoots)
         resolved.startsWith(runtimeRoot) &&
         !resolved.endsWith("/context") &&
         !resolved.endsWith("/context.ts") &&
+        // A feature split across files for size is internal composition: the
+        // guard allows imports within one feature directory and blocks
+        // cross-feature coupling.
+        resolved.slice(0, resolved.lastIndexOf("/")) !== importerDir &&
         !relative.includes("/test/")
       )
         failures.push(

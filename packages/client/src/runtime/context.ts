@@ -178,7 +178,12 @@ export type RuntimeState = {
   /** Title generation owned state (title-generation module). */
   titleGenerationTasks: Map<
     SessionID,
-    { input: string; timer?: ReturnType<typeof setTimeout>; controller?: AbortController; promise?: Promise<void> }
+    {
+      input: string;
+      timer?: ReturnType<typeof setTimeout>;
+      controller?: AbortController;
+      promise?: Promise<void>;
+    }
   >;
 };
 
@@ -201,14 +206,39 @@ export type RuntimePorts = {
   teamBehavior: () => TeamBehaviorService | undefined;
   providerRunnerInput: (sessionID: SessionID) => ProviderRunnerInput;
   setInFlightOperation: (
-    sessionID: SessionID,
-    op: import("@natalia/session").DurableInFlightOperation,
+    operation: import("@natalia/session").DurableInFlightOperation | undefined,
   ) => Promise<void>;
   isDisposed: () => boolean;
   getSessionStoreController: () => SessionStoreController;
   getSessionPersistence: () => Promise<void>;
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
   getExecutionBySession: () => Map<SessionID, SessionExecutionState>;
+  getActiveExec: () => SessionExecutionState | undefined;
+  getStatusController: () => StatusSnapshotController;
+  getProviderSource: () => RuntimeState["providerSource"];
+  getWorkspaceRoot: () => string;
+  getSandboxController: () => SandboxService | undefined;
+  getAgentRegistry: () => AgentRegistry | undefined;
+  setPaused: (paused: boolean) => void;
+  getPaused: () => boolean;
+  initializeCheckpointController: (
+    exec: SessionExecutionState,
+  ) => Promise<CheckpointController | undefined>;
+  clientModelCatalog: () => Promise<
+    Array<{ id: string; name: string; provider: string; variants: string[] }>
+  >;
+  selectRuntimeModel: (
+    modelID: string,
+    variant: string | undefined,
+    exec?: SessionExecutionState,
+  ) => Promise<void>;
+  submitInput: (
+    input: import("@natalia/contracts").SubmitInput,
+    forSessionID?: SessionID,
+  ) => Promise<import("@natalia/contracts").SubmittedTurn>;
+  applyAgentPolicy: () => void;
+  applyAgentProvider: (exec: SessionExecutionState) => void;
+  getCapabilityRegistry: () => CapabilityRegistryHost;
 };
 
 export type RuntimeContext = {

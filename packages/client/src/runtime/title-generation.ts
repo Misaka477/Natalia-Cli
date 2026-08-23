@@ -99,8 +99,13 @@ export function createTitleGeneration(ctx: RuntimeContext) {
     text: string,
     signal: AbortSignal,
   ) {
-    const { getSessionStoreController, getSessionPersistence, getProviderConcurrencyLimiter, getExecutionBySession, publishForSession } =
-      ctx.ports;
+    const {
+      getSessionStoreController,
+      getSessionPersistence,
+      getProviderConcurrencyLimiter,
+      getExecutionBySession,
+      publishForSession,
+    } = ctx.ports;
     const sanitized = sanitizeSessionTitleInput(text);
     if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
       return;
