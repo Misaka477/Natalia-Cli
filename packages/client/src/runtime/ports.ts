@@ -291,6 +291,11 @@ export type RuntimePorts = {
   getExecutionForSession: (
     sessionID: SessionID,
   ) => SessionExecutionState | undefined;
+  setLastSubmitted: (turn: import("@natalia/contracts").SubmittedTurn) => void;
+  rememberTitleInput: (id: SessionID, text: string) => void;
+  drainSessionFor: (
+    sessionID: SessionID,
+  ) => (signal: AbortSignal) => Promise<void>;
   toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
   authorizeWorkspaceRead: (
     input: { toolName: string; paths: string[] },

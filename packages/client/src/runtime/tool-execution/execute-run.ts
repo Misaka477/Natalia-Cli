@@ -11,6 +11,7 @@
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
+import { buildToolExecutionContext } from "./execute-context";
 import type { SessionExecutionState } from "../../real-runtime";
 import type { RealRuntimeClientOptions } from "../../real-runtime";
 import type { RuntimeContext } from "../context";
@@ -50,37 +51,23 @@ export async function runExecuteStage(
   const {
     publishWorkGraphToolCall,
     waitIfPaused,
-    toolSettings,
-    authorizeWorkspaceRead,
-    authorizeSandboxMerge,
     setInFlightOperationFor,
     requireWriteLock,
-    getTsRuntimeConfig,
-    getCapabilityRegistry,
-    getSubagentsController,
-    getTerminalController,
-    getSandboxController,
-    getInteractive,
     getToolLayer,
     getToolPolicy,
-    getWorkLedgerController,
-    getMutationRegistry,
     getTerminalCommandBuffer,
     setEndTurnWaitingHuman,
+    getInteractive,
+    getMutationRegistry,
+    getWorkLedgerController,
     scheduleRuntimeStatusSnapshot,
   } = ctx.ports;
-  const { sandboxResourcesByID } = ctx.state;
   const toolPolicy = getToolPolicy();
   const toolLayer = getToolLayer();
-  const interactive = getInteractive();
-  const terminalController = getTerminalController();
-  const sandboxController = getSandboxController();
-  const subagentsController = getSubagentsController();
-  const tsRuntimeConfig = getTsRuntimeConfig();
   const terminalCommandBuffer = getTerminalCommandBuffer();
+  const interactive = getInteractive();
   const mutationRegistry = getMutationRegistry();
   const workLedgerController = getWorkLedgerController();
-  const capabilityRegistry = getCapabilityRegistry();
   const redactToolOutput = ctx.ports.redactToolOutput;
   const redactToolOutputEnabled = ctx.ports.redactToolOutputEnabled;
   const waitForToolExecution = ctx.ports.waitForToolExecution;
@@ -223,68 +210,24 @@ export async function runExecuteStage(
       });
     }
     const completeResult = await waitForToolExecution(
-      tool.execute(parsed, {
-        workspaceRoot,
-        signal,
-        sessionID: exec?.session.id ?? sessionID,
-        askQuestion: async (question) =>
-          await interactive.requireQuestion(
-            `${toolID}:question`,
-            turnID,
-            question,
-          ),
-        subagents: subagentsController,
-        terminal: terminalController,
-        sandboxes: sandboxController,
-        ...(attachImage ? { attachImage } : {}),
-        ...(attachPdf ? { attachPdf } : {}),
-        workspaceReadAuthorize: (request) =>
-          authorizeWorkspaceRead(request, exec),
-        sandboxMergeAuthorize: (request) =>
-          authorizeSandboxMerge(request, exec),
-        // The resolved config as a service: a tool family reads it by
-        // name (e.g. `sandbox.backend`) instead of re-parsing config.
-        runtimeConfig: () => capabilityRegistry.service("runtime.config"),
-        settings: toolSettings(exec),
-        // The turn's own session, not the attached one: a background turn's
-        // subagents and terminal starts belong to its session (I1/I3).
-        parentSessionID: exec?.session.id ?? sessionID,
-        maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-        onSandboxEvent: (event) => {
-          const update = event as Extract<
-            RuntimeEvent,
-            { type: "sandbox.update" }
-          >;
-          publish(update);
-          if (sandboxResourcesByID.get(update.id) !== update.runningResources) {
-            sandboxResourcesByID.set(update.id, update.runningResources);
-            scheduleRuntimeStatusSnapshot();
-          }
-        },
-        onWorkspaceChange: (changes) => {
-          // WG4 Phase 3: the tool settled successfully — the expected
-          // mutation stops matching unrelated later hints, but its identity
-          // stays available for attributing the change it caused.
-          mutationRegistry?.settle(call.id);
-          for (const change of changes) {
-            publish(
-              workLedgerController.workspaceChangeNode({
-                turnID,
-                path: change.path,
-                toolName: tool.name,
-                sessionID: exec.session.id,
-              }),
-            );
-            publish(
-              workLedgerController.workspaceChangeEdge({
-                turnID,
-                callID: call.id,
-                path: change.path,
-              }),
-            );
-          }
-        },
-      }),
+      tool.execute(
+        parsed,
+        buildToolExecutionContext({
+          exec,
+          publish,
+          toolID,
+          tool,
+          call,
+          turnID,
+          attachImage,
+          attachPdf,
+          ctx,
+          sessionID,
+          workspaceRoot,
+          signal,
+          parsed,
+        }),
+      ),
       signal,
     ).finally(() => {
       if (timeoutTimer) clearTimeout(timeoutTimer);
