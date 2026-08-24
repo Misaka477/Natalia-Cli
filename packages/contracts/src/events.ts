@@ -6,6 +6,7 @@ import type {
 import type {
   AgentConfig,
   AgentPermissionRules,
+  ConfigV3,
   MCPServerConfig,
   PermissionProfile,
 } from "./schemas";
@@ -1640,6 +1641,8 @@ export type RuntimeClient = {
     patch: Record<string, unknown>;
     scope?: "project" | "global";
   }): Promise<{ applied: boolean; reason?: string }>;
+  /** Reads the fully resolved product configuration through the runtime. */
+  configGet?(): Promise<ConfigV3>;
   /**
    * The interface-preference settings (`tui.json`). The TUI used to own this
    * file privately; the runtime now serves it so any consumer reads and
@@ -2022,6 +2025,18 @@ export type RuntimeClient = {
     path: string;
     calendar: string;
     scope: "user" | "system";
+    /**
+     * The binary the generated systemd unit invokes. Defaults to the runtime
+     * host's own executable so a caller without CLI knowledge can still install
+     * a working timer.
+     */
+    executable?: string;
+    /**
+     * The CLI entry (a script path or installed command) passed after the
+     * executable. When the caller provides `executable`, an absent entry means
+     * "no entry"; otherwise it defaults to the runtime host's own entry.
+     */
+    cliEntry?: string;
   }): Promise<{
     path: string;
     taskID: string;
@@ -2055,6 +2070,60 @@ export type RuntimeClient = {
     problems: string[];
     valid: boolean;
   }>;
+  /**
+   * Full module-by-module effective permission preview for a task document,
+   * including profile and module path scopes. The summarized `taskPermissionPreview`
+   * reports readiness; this reports the actual policy layers a task run would
+   * enforce, so a UI can render the whole boundary.
+   */
+  taskPermissionPreviewDocument?(input: { path: string }): Promise<
+    import("./schemas").EffectiveFlowPermissions & {
+      taskID: string;
+      permissionProfile: string;
+    }
+  >;
+  /** Reads a single flow document by its `.natalia/flows` relative path. */
+  loadFlowDocument?(input: {
+    path: string;
+  }): Promise<import("./schemas").NataliaFlowDocument>;
+  /** Reads a single task document by its `.natalia/tasks` relative path. */
+  loadTaskDocument?(input: {
+    path: string;
+  }): Promise<import("./schemas").NataliaTaskDocument>;
+  /**
+   * Writes the bundled example flow and task documents into the workspace.
+   * Existing files are never overwritten; the result says what was installed
+   * and what was already present. A write.
+   */
+  installExampleDocuments?(input?: { includeTasks?: boolean }): Promise<{
+    installed: string[];
+    alreadyInstalled: string[];
+  }>;
+  /**
+   * Validates a systemd calendar expression and previews its next elapses via
+   * `systemd-analyze`, without touching any task state. Invalid calendars are
+   * refused with the analyzer's message.
+   */
+  previewSystemdCalendar?(input: { calendar: string }): Promise<{
+    normalized: string;
+    next: string[];
+  }>;
+  /**
+   * Which scheduled task IDs reference each permission profile. Read-only;
+   * unreadable task documents are skipped because the task overview already
+   * reports them.
+   */
+  permissionProfileUsage?(): Promise<Record<string, string[]>>;
+  /**
+   * Asks an evaluator model to split a completion objective into auditable
+   * conditions. The objective text leaves the workspace to the selected
+   * provider; the decomposed result is validated against the schema before it
+   * is returned.
+   */
+  decomposeFlowConditions?(input: {
+    modelID: string;
+    objective: string;
+  }): Promise<import("./schemas").FlowConditionDecomposition>;
   runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
   diagnostics?(limit?: number): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;

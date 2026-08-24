@@ -67,6 +67,16 @@ test("an open default-model picker reloads after configured models change", asyn
           workspaceRoot={root}
           globalPath={globalPath}
           configRevision={revision}
+          loadConfig={async () =>
+            (await resolveConfig({ workspaceRoot: root, globalPath })).config
+          }
+          onPersist={async (next) => {
+            await updateGlobalConfig(
+              { defaultModel: next.defaultModel },
+              globalPath,
+            );
+            return true;
+          }}
         />
       )),
     );

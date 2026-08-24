@@ -5,9 +5,8 @@ import {
 } from "@natalia/runtime-services";
 import { projectedPlans } from "@natalia/session";
 import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-import { redactToolOutput } from "./helpers";
-type Surface = Pick<
+
+type PlansRuntime = Pick<
   RuntimeServiceClient,
   | "planList"
   | "planCreate"
@@ -19,10 +18,21 @@ type Surface = Pick<
   | "planSupersede"
   | "planCompleted"
 >;
-export function createPlansSurface(
-  ctx: RuntimeContext,
-  options: ClientSurfaceOptions,
-): Surface {
+
+function redactReason(reason: string | undefined) {
+  if (!reason) return undefined;
+  return (
+    reason
+      .replace(
+        /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s]+/giu,
+        (match) =>
+          `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
+      )
+      .slice(0, 500) || undefined
+  );
+}
+
+export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
   function requireWorkLedger() {
     const ledger = ctx.ports.resolveService<WorkLedgerController>(
       WORK_LEDGER_CONTROLLER_SERVICE,
@@ -31,10 +41,12 @@ export function createPlansSurface(
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     return ledger;
   }
+
   return {
     async planList() {
-      if (!ctx.ports.getSession()) return [];
-      return projectedPlans(ctx.ports.getSession()!.events).map((plan) => ({
+      const session = ctx.ports.getSession();
+      if (!session) return [];
+      return projectedPlans(session.events).map((plan) => ({
         planID: plan.planID,
         version: plan.version,
         title: plan.title,
@@ -55,49 +67,18 @@ export function createPlansSurface(
         ...(plan.reason ? { reason: plan.reason } : {}),
       }));
     },
-    async planCreate(input: {
-      title: string;
-      author?: "user" | "live_chat" | "main_agent";
-      objective: string;
-      steps: Array<{
-        id: string;
-        title: string;
-        detail?: string;
-        verification?: string;
-      }>;
-      constraints?: string[];
-      verification?: string[];
-      riskNotes?: string[];
-      relatedMailboxMessageID?: string;
-      supersedesPlanID?: string;
-      taskID?: string;
-    }) {
+    async planCreate(input) {
       return ctx.ports.createPlanDraftForClient(input);
     },
-    async planUpdate(input: {
-      planID: string;
-      objective?: string;
-      steps?: Array<{
-        id: string;
-        title: string;
-        detail?: string;
-        verification?: string;
-      }>;
-      constraints?: string[];
-      verification?: string[];
-      riskNotes?: string[];
-      reason?: string;
-    }) {
-      if (
-        !ctx.ports.getSession() ||
-        typeof input.planID !== "string" ||
-        !input.planID
-      )
-        return { updated: false as const };
-      const plan = projectedPlans(ctx.ports.getSession()!.events).find(
-        (p) => p.planID === input.planID && p.status === "draft",
+    async planUpdate(input) {
+      const session = ctx.ports.getSession();
+      if (!session || typeof input.planID !== "string" || !input.planID)
+        return { updated: false };
+      const plan = projectedPlans(session.events).find(
+        (candidate) =>
+          candidate.planID === input.planID && candidate.status === "draft",
       );
-      if (!plan) return { updated: false as const };
+      if (!plan) return { updated: false };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
         requireWorkLedger().buildPlanTransition({
@@ -109,15 +90,17 @@ export function createPlansSurface(
           reason: input.reason,
         }),
       );
-      return { updated: true as const };
+      return { updated: true };
     },
-    async planPropose(planID: string) {
-      if (!ctx.ports.getSession() || typeof planID !== "string" || !planID)
-        return { proposed: false as const };
-      const plan = projectedPlans(ctx.ports.getSession()!.events).find(
-        (p) => p.planID === planID && p.status === "draft",
+    async planPropose(planID) {
+      const session = ctx.ports.getSession();
+      if (!session || typeof planID !== "string" || !planID)
+        return { proposed: false };
+      const plan = projectedPlans(session.events).find(
+        (candidate) =>
+          candidate.planID === planID && candidate.status === "draft",
       );
-      if (!plan) return { proposed: false as const };
+      if (!plan) return { proposed: false };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
         requireWorkLedger().buildPlanTransition({
@@ -128,21 +111,17 @@ export function createPlansSurface(
           at: new Date().toISOString(),
         }),
       );
-      return { proposed: true as const };
+      return { proposed: true };
     },
-    async planAccept(planID: string) {
+    async planAccept(planID) {
       const owner = ctx.ports.getActiveExec();
       if (!owner || typeof planID !== "string" || !planID)
-        return { accepted: false as const };
+        return { accepted: false };
       const plan = projectedPlans(owner.session.events).find(
-        (p) => p.planID === planID && p.status === "proposed",
+        (candidate) =>
+          candidate.planID === planID && candidate.status === "proposed",
       );
-      if (!plan) return { accepted: false as const };
-      // Acceptance is the user's decision (§6.2: "accepted = 用户接受计划内容").
-      // It goes through the same approval request/response machinery as tools:
-      // the runtime waits for a human approve before recording the acceptance,
-      // so a proposed plan cannot be silently accepted by the caller. A reject
-      // leaves the plan proposed.
+      if (!plan) return { accepted: false };
       const approvalID = `${planID}:accept:${plan.version + 1}:${crypto.randomUUID().replace(/-/gu, "").slice(0, 8)}`;
       const response = await ctx.ports.getInteractive().requirePlanAcceptance({
         approvalID,
@@ -154,7 +133,7 @@ export function createPlansSurface(
         signal: owner.activeAbort?.signal,
       });
       if (!response || response.decision === "reject")
-        return { accepted: false as const };
+        return { accepted: false };
       ctx.ports.publishForSession(
         owner,
         requireWorkLedger().buildPlanTransition({
@@ -165,15 +144,17 @@ export function createPlansSurface(
           at: new Date().toISOString(),
         }),
       );
-      return { accepted: true as const };
+      return { accepted: true };
     },
-    async planQueue(planID: string) {
-      if (!ctx.ports.getSession() || typeof planID !== "string" || !planID)
-        return { queued: false as const };
-      const plan = projectedPlans(ctx.ports.getSession()!.events).find(
-        (p) => p.planID === planID && p.status === "accepted",
+    async planQueue(planID) {
+      const session = ctx.ports.getSession();
+      if (!session || typeof planID !== "string" || !planID)
+        return { queued: false };
+      const plan = projectedPlans(session.events).find(
+        (candidate) =>
+          candidate.planID === planID && candidate.status === "accepted",
       );
-      if (!plan) return { queued: false as const };
+      if (!plan) return { queued: false };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
         requireWorkLedger().buildPlanTransition({
@@ -184,15 +165,18 @@ export function createPlansSurface(
           at: new Date().toISOString(),
         }),
       );
-      return { queued: true as const };
+      return { queued: true };
     },
-    async planActivate(planID: string) {
-      if (!ctx.ports.getSession() || typeof planID !== "string" || !planID)
-        return { activated: false as const };
-      const plan = projectedPlans(ctx.ports.getSession()!.events).find(
-        (p) => p.planID === planID && p.status === "queued_next_plan",
+    async planActivate(planID) {
+      const session = ctx.ports.getSession();
+      if (!session || typeof planID !== "string" || !planID)
+        return { activated: false };
+      const plan = projectedPlans(session.events).find(
+        (candidate) =>
+          candidate.planID === planID &&
+          candidate.status === "queued_next_plan",
       );
-      if (!plan) return { activated: false as const };
+      if (!plan) return { activated: false };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
         requireWorkLedger().buildPlanTransition({
@@ -203,18 +187,19 @@ export function createPlansSurface(
           at: new Date().toISOString(),
         }),
       );
-      return { activated: true as const };
+      return { activated: true };
     },
-    async planSupersede(planID: string, reason?: string) {
-      if (!ctx.ports.getSession() || typeof planID !== "string" || !planID)
-        return { superseded: false as const };
-      const plan = projectedPlans(ctx.ports.getSession()!.events).find(
-        (p) =>
-          p.planID === planID &&
-          p.status !== "completed" &&
-          p.status !== "archived",
+    async planSupersede(planID, reason) {
+      const session = ctx.ports.getSession();
+      if (!session || typeof planID !== "string" || !planID)
+        return { superseded: false };
+      const plan = projectedPlans(session.events).find(
+        (candidate) =>
+          candidate.planID === planID &&
+          candidate.status !== "completed" &&
+          candidate.status !== "archived",
       );
-      if (!plan) return { superseded: false as const };
+      if (!plan) return { superseded: false };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
         requireWorkLedger().buildPlanTransition({
@@ -223,20 +208,20 @@ export function createPlansSurface(
           version: plan.version + 1,
           transition: "superseded",
           at: new Date().toISOString(),
-          reason:
-            redactToolOutput(reason ?? "", true).slice(0, 500) || undefined,
+          reason: redactReason(reason),
         }),
       );
-      return { superseded: true as const };
+      return { superseded: true };
     },
-    async planCompleted(planID: string) {
-      if (!ctx.ports.getSession() || typeof planID !== "string" || !planID)
-        return { completed: false as const };
-      const plan = projectedPlans(ctx.ports.getSession()!.events).find(
+    async planCompleted(planID) {
+      const session = ctx.ports.getSession();
+      if (!session || typeof planID !== "string" || !planID)
+        return { completed: false };
+      const plan = projectedPlans(session.events).find(
         (candidate) =>
           candidate.planID === planID && candidate.status === "active",
       );
-      if (!plan) return { completed: false as const };
+      if (!plan) return { completed: false };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
         requireWorkLedger().buildPlanTransition({
@@ -247,7 +232,7 @@ export function createPlansSurface(
           at: new Date().toISOString(),
         }),
       );
-      return { completed: true as const };
+      return { completed: true };
     },
   };
 }

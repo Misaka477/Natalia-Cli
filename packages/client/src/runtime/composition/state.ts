@@ -44,8 +44,6 @@ export function createCompositionContext(
     liveMainOutputByTurn: new Map<string, string>(),
     turnAgent: new Map<string, string>(),
     executionBySession,
-    checkpointControllerBySession: new Map(),
-    checkpointInitBySession: new Map(),
     paused: false,
     pauseWaiters: [],
     attachmentReferences: new Map(),

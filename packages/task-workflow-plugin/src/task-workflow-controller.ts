@@ -113,6 +113,10 @@ export function createTaskWorkflowController(input: {
     taskPermissionPreviewFor: taskPermissionPreview,
     taskPermissionPreviewForDocument,
     async permissionProfileUsage(request) {
+      if (!request)
+        throw new RuntimeRefusal(
+          "permissionProfileUsage requires a workspaceRoot",
+        );
       const documents = createWorkflowStoreService(request);
       const usage: Record<string, string[]> = {};
       for (const { task } of await documents.taskDocuments())
@@ -242,6 +246,21 @@ export function createTaskWorkflowController(input: {
         valid: problems.length === 0,
       };
     },
+    async taskPermissionPreviewDocument(request) {
+      const config =
+        input.runtimeConfig() ??
+        assertConfigApplied(
+          await resolveConfig({
+            workspaceRoot: input.workspaceRoot,
+            globalPath: input.globalConfigPath,
+          }),
+        );
+      return service.taskPermissionPreviewForDocument({
+        workspaceRoot: input.workspaceRoot,
+        path: request.path,
+        config,
+      });
+    },
     async deleteFlowDocument(request) {
       if (request.path.startsWith("cap:"))
         throw new RuntimeRefusal(
@@ -306,8 +325,18 @@ export function createTaskWorkflowController(input: {
         path: request.path,
         calendar: request.calendar,
         scope: request.scope,
-        executable: process.execPath,
-        cliEntry: process.argv[1],
+        executable: request.executable ?? process.execPath,
+        // When the caller names the executable it also owns the entry: omitting
+        // it means "no entry" (for example an installed `natalia-ts` command).
+        // Without a caller override the host's own entry keeps daemon timers
+        // pointing at the running binary.
+        ...(request.cliEntry !== undefined
+          ? { cliEntry: request.cliEntry }
+          : request.executable !== undefined
+            ? {}
+            : process.argv[1]
+              ? { cliEntry: process.argv[1] }
+              : {}),
       });
       const task = await new NataliaDocumentStore(
         input.workspaceRoot,

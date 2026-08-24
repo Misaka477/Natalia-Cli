@@ -59,9 +59,6 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
     targets: [
       "packages/client/src/runtime/main.ts",
       "packages/client/src/runtime/commands/index.ts",
-      "packages/client/src/runtime/commands/slash-read.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/runtime-config-plugin.ts",
     ],
     forbidden: [
       {
@@ -78,18 +75,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-workspace",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/workspace-plugin.ts",
-      "packages/client/src/mutation-registry.ts",
-      "packages/client/src/workspace-change-auditor.ts",
-      "packages/client/src/workspace-files-controller.ts",
-      "packages/client/src/workspace-files.ts",
-      "packages/client/src/workspace-observation.ts",
-      "packages/client/src/workspace-write-lock.ts",
-      "packages/client/src/runtime/commands/slash-read.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct workspace component construction",
@@ -114,24 +100,9 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
     ],
   },
   {
-    id: "natalia-checkpoint",
-    targets: ["packages/client/src/runtime/commands/slash-read.ts"],
-    forbidden: [
-      {
-        description: "direct checkpoint command execution in the host",
-        pattern: /\brunCheckpointCommand\b/u,
-      },
-      {
-        description: "client-owned checkpoint command implementation",
-        pattern: /["']\/(?:checkpoint|checkpoints|rollback)\b/u,
-      },
-    ],
-  },
-  {
     id: "natalia-mcp",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
       "packages/provider-model-plugin/src/provider-runner.ts",
     ],
     forbidden: [
@@ -155,13 +126,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-session-store",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/turn-orchestration-plugin.ts",
-      "packages/client/src/session-store-controller.ts",
-      "packages/client/src/builtin-plugins/session-store-controller-plugin.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct session store implementation import",
@@ -186,11 +151,6 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
     id: "natalia-provider-model",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
-      "packages/client/src/provider-model-controller.ts",
-      "packages/client/src/provider-runner.ts",
-      "packages/client/src/runtime/commands/slash-read.ts",
       "packages/client/src/runtime/commands/slash-action.ts",
     ],
     forbidden: [
@@ -231,12 +191,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-context-ledger",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/compaction-service.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/compaction-plugin.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct context ledger implementation import",
@@ -255,14 +210,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-retry",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/provider-runner.ts",
-      "packages/client/src/compaction-service.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/compaction-plugin.ts",
-      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct retry implementation import",
@@ -287,12 +235,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-runtime-ui",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/runtime-ui-plugin.ts",
-      "packages/client/src/status-controller.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct status controller construction",

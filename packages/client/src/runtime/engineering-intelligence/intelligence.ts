@@ -15,9 +15,22 @@ import {
   projectedPlans,
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
+import type { EpisodeID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-import { redactToolOutput, runValidationCommand } from "./helpers";
+import { redactToolOutput } from "./redaction";
+import { runValidationCommand } from "./validation";
+
+/**
+ * The `ClientSurfaceOptions` the engineering-intelligence surface shares with
+ * the other client surfaces. Declared here (instead of importing the
+ * client-surface copy) so the runtime feature stays self-contained; the shape
+ * is the subset of runtime client options consumed by this feature.
+ */
+type ClientSurfaceOptions = {
+  episodeID?: EpisodeID;
+  globalConfigPath?: string;
+};
+
 type Surface = Pick<
   RuntimeServiceClient,
   | "constitutionRules"

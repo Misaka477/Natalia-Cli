@@ -38,16 +38,19 @@ export const CHECKPOINT_PLUGIN_MANIFEST: PluginManifest = {
 export function createCheckpointControllerPlugin(
   input: CheckpointPluginInput,
 ): Plugin {
-  const controllers = new Set<CheckpointController>();
+  const controllers = new Map<SessionID, CheckpointController>();
   return {
     manifest: CHECKPOINT_PLUGIN_MANIFEST,
     setup(api) {
       const factory: CheckpointFactory = (accessors) => {
+        const sessionID = accessors.sessionID();
+        const existing = controllers.get(sessionID);
+        if (existing) return existing;
         const controller = createCheckpointController({
           workspaceRoot: input.workspaceRoot,
           ...accessors,
         });
-        controllers.add(controller);
+        controllers.set(sessionID, controller);
         return controller;
       };
       api.services.provide(CHECKPOINT_FACTORY_SERVICE, factory);

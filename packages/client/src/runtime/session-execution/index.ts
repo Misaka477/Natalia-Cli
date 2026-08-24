@@ -1,5 +1,5 @@
 /**
- * Session execution state — runtime/session-execution.ts.
+ * Session execution state — runtime/session-execution/index.ts.
  *
  * `ensureExecution` creates a session's execution state lazily (its record,
  * context ledger and in-flight markers) and the drain/admit/persist/load
@@ -17,9 +17,9 @@ import {
 } from "@natalia/runtime-services";
 import type { SessionRecord } from "@natalia/session";
 import type { SessionID } from "@natalia/contracts";
-import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "./context";
-import type { RealRuntimeClientOptions } from "./options";
+import type { RuntimeContext } from "../context";
+import type { SessionExecutionState } from "../context";
+import type { RealRuntimeClientOptions } from "../options";
 
 export function createSessionExecution(
   ctx: RuntimeContext,

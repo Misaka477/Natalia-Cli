@@ -1,19 +1,19 @@
 /**
  * Checkpoint controllers per session — runtime/checkpoint-runtime module.
  *
- * `checkpointControllerFor` resolves and caches the checkpoint factory's
- * controller for a session; `initializeCheckpointController` drives its init
- * exactly once per factory. The cache is keyed by the resolved factory: a
- * plugin reload publishes a new factory, so the session gets a fresh
- * controller instead of reusing the old plugin's disposed instance. Reads
- * what it needs from `RuntimeContext` at call time.
+ * Resolves the checkpoint plugin service at call time. The plugin owns the
+ * per-session controller lifecycle; this runtime module never retains a
+ * concrete plugin controller.
  */
 import {
   CHECKPOINT_FACTORY_SERVICE,
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   SUBAGENTS_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type CheckpointFactory,
   type SubagentsService,
+  type RuntimeServiceClient,
+  type StatusSnapshotController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
@@ -23,25 +23,81 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
   return {
     checkpointControllerFor,
     initializeCheckpointController,
+    checkpointList,
+    checkpointPreview,
+    checkpointRollback,
   };
+
+  async function requireInitializedController() {
+    await ctx.ports.getReady();
+    const owner = ctx.ports.getActiveExec();
+    if (!owner) throw new Error("session is not initialized");
+    const controller = await initializeCheckpointController(owner);
+    if (!controller)
+      throw new Error("checkpoint controller unavailable (natalia-checkpoint)");
+    return { controller, owner };
+  }
+
+  async function checkpointList(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeServiceClient["checkpointList"]>>>
+  > {
+    const { controller } = await requireInitializedController();
+    return (await controller.list()).map((record) => ({
+      id: record.id,
+      sequence: record.sequence,
+      turnID: record.turnID,
+      stepID: record.stepID,
+      step: record.step,
+      reason: record.reason,
+      createdAt: record.createdAt,
+      complete: record.complete,
+      errors: record.errors,
+      files: Object.keys(record.manifest.entries).length,
+      changes: record.changes.length,
+      tokenEstimate: record.context.tokenEstimate,
+      diskUsageBytes: record.diskUsageBytes,
+    }));
+  }
+
+  async function checkpointPreview(id: string) {
+    const { controller } = await requireInitializedController();
+    return await controller.preview(id);
+  }
+
+  async function checkpointRollback(input: { id: string; dryRun?: boolean }) {
+    const { controller, owner } = await requireInitializedController();
+    const preview = await controller.rollback(input.id, {
+      dryRun: input.dryRun,
+    });
+    const status = ctx.ports.resolveService<StatusSnapshotController>(
+      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+    );
+    if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+    ctx.ports.publishForSession(
+      owner,
+      await status.snapshotFor({
+        provider: owner.provider,
+        context: owner.context,
+        permissionMode: owner.permissionMode,
+      }),
+    );
+    return preview;
+  }
 
   function checkpointControllerFor(exec: SessionExecutionState) {
     const { getTsRuntimeConfig, publishForSession } = ctx.ports;
-    const { checkpointControllerBySession } = ctx.state;
     const id = exec.session.id;
     const factory = ctx.ports.resolveService<CheckpointFactory>(
       CHECKPOINT_FACTORY_SERVICE,
     );
     if (!factory) return undefined;
-    const existing = checkpointControllerBySession.get(id);
-    if (existing?.factory === factory) return existing.controller;
     if (
       !ctx.ports.resolveService<WorkLedgerController>(
         WORK_LEDGER_CONTROLLER_SERVICE,
       )
     )
       throw new Error("work ledger unavailable (natalia-work-ledger)");
-    const controller = factory({
+    return factory({
       sessionID: () => id,
       checkpoint: () => getTsRuntimeConfig()?.checkpoint,
       workspace: () => getTsRuntimeConfig()?.workspace,
@@ -62,25 +118,12 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
         return workLedger;
       },
     });
-    checkpointControllerBySession.set(id, { factory, controller });
-    return controller;
   }
 
   async function initializeCheckpointController(exec: SessionExecutionState) {
-    const { checkpointInitBySession } = ctx.state;
-    const id = exec.session.id;
-    const factory = ctx.ports.resolveService<CheckpointFactory>(
-      CHECKPOINT_FACTORY_SERVICE,
-    );
-    if (!factory) return undefined;
-    let pending = checkpointInitBySession.get(id);
-    if (!pending || pending.factory !== factory) {
-      const controller = checkpointControllerFor(exec);
-      if (!controller) return undefined;
-      pending = { factory, promise: controller.init() };
-      checkpointInitBySession.set(id, pending);
-    }
-    await pending.promise;
-    return checkpointControllerFor(exec);
+    const controller = checkpointControllerFor(exec);
+    if (!controller) return undefined;
+    await controller.init();
+    return controller;
   }
 }

@@ -30,6 +30,13 @@ export const WORKER_ROUTE_MEMBERS = {
   "task.schedule": "taskSchedule",
   "task.unschedule": "taskUnschedule",
   "task.preview": "taskPermissionPreview",
+  "task.preview-document": "taskPermissionPreviewDocument",
+  "task.load": "loadTaskDocument",
+  "flow.load": "loadFlowDocument",
+  "flow.install-examples": "installExampleDocuments",
+  "task.preview-calendar": "previewSystemdCalendar",
+  "task.permission-usage": "permissionProfileUsage",
+  "flow.decompose-conditions": "decomposeFlowConditions",
   "task.overview": "taskOverview",
   "flow.overview": "flowOverview",
   "document.catalog": "documentCatalog",
@@ -42,6 +49,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "interactive.pending": "pendingInteractive",
   "config.reload": "reloadConfig",
   "config.update": "updateConfig",
+  "config.get": "configGet",
   dispose: "dispose",
   history: "history",
   diagnostics: "diagnostics",
@@ -130,6 +138,7 @@ type WorkerRequest = {
     | "interactive.pending"
     | "config.reload"
     | "config.update"
+    | "config.get"
     | "dispose"
     | "history"
     | "diagnostics"
@@ -201,6 +210,13 @@ type WorkerRequest = {
     | "task.schedule"
     | "task.unschedule"
     | "task.preview"
+    | "task.preview-document"
+    | "task.load"
+    | "flow.load"
+    | "flow.install-examples"
+    | "task.preview-calendar"
+    | "task.permission-usage"
+    | "flow.decompose-conditions"
     | "task.overview"
     | "flow.overview"
     | "document.catalog"
@@ -475,6 +491,41 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["taskPermissionPreview"]>>
       >;
     },
+    async taskPermissionPreviewDocument(input) {
+      return (await request("task.preview-document", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["taskPermissionPreviewDocument"]>>
+      >;
+    },
+    async loadTaskDocument(input) {
+      return (await request("task.load", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["loadTaskDocument"]>>
+      >;
+    },
+    async loadFlowDocument(input) {
+      return (await request("flow.load", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["loadFlowDocument"]>>
+      >;
+    },
+    async installExampleDocuments(input) {
+      return (await request("flow.install-examples", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["installExampleDocuments"]>>
+      >;
+    },
+    async previewSystemdCalendar(input) {
+      return (await request("task.preview-calendar", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["previewSystemdCalendar"]>>
+      >;
+    },
+    async permissionProfileUsage() {
+      return (await request("task.permission-usage")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["permissionProfileUsage"]>>
+      >;
+    },
+    async decomposeFlowConditions(input) {
+      return (await request("flow.decompose-conditions", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["decomposeFlowConditions"]>>
+      >;
+    },
     async taskOverview() {
       return (await request("task.overview")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["taskOverview"]>>
@@ -501,6 +552,11 @@ export function createWorkerRuntimeClient(
     async updateConfig(input) {
       return (await request("config.update", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["updateConfig"]>>
+      >;
+    },
+    async configGet() {
+      return (await request("config.get")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["configGet"]>>
       >;
     },
 
@@ -820,6 +876,8 @@ export function attachRuntimeClientWorker(
             scope?: "project" | "global";
           },
         );
+      } else if (request.method === "config.get") {
+        value = await activeClient.configGet?.();
       } else if (request.method === "dispose") {
         value = await activeClient.dispose?.();
         await options?.disposeHost?.();
@@ -1060,6 +1118,28 @@ export async function handleWorkerRequest(
   if (request.method === "task.preview")
     return await client.taskPermissionPreview?.(
       request.value as { path: string },
+    );
+  if (request.method === "task.preview-document")
+    return await client.taskPermissionPreviewDocument?.(
+      request.value as { path: string },
+    );
+  if (request.method === "task.load")
+    return await client.loadTaskDocument?.(request.value as { path: string });
+  if (request.method === "flow.load")
+    return await client.loadFlowDocument?.(request.value as { path: string });
+  if (request.method === "flow.install-examples")
+    return await client.installExampleDocuments?.(
+      request.value as { includeTasks?: boolean } | undefined,
+    );
+  if (request.method === "task.preview-calendar")
+    return await client.previewSystemdCalendar?.(
+      request.value as { calendar: string },
+    );
+  if (request.method === "task.permission-usage")
+    return await client.permissionProfileUsage?.();
+  if (request.method === "flow.decompose-conditions")
+    return await client.decomposeFlowConditions?.(
+      request.value as { modelID: string; objective: string },
     );
   if (request.method === "task.overview") return await client.taskOverview?.();
   if (request.method === "flow.overview") return await client.flowOverview?.();

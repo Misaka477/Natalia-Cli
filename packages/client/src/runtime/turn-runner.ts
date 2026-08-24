@@ -203,8 +203,7 @@ export function createTurnRunner(
       persistInboxPromotion: () => persistInboxPromotion(exec.session.id),
       createTurnCheckpoint: async (input) => {
         const controller = await initializeCheckpointController(exec);
-        if (controller?.isEnabled())
-          await controller.get().createCheckpoint(input);
+        if (controller?.isEnabled()) await controller.createCheckpoint(input);
       },
       isToolAllowed: (toolName) => isToolAllowed(toolName, exec),
       setInFlightOperation: (operation) =>

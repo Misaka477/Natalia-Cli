@@ -112,7 +112,19 @@ npm run ts:cli -- replay /tmp/natalia-cassette.json
 npm run ts:tui
 ```
 
-TUI controls and slash commands are documented in the main [README](../README.md#tui-controls). The canonical slash-command vocabulary is defined by `runtimeSlashCommands` in `packages/contracts/src/events.ts` and shared by runtime handling and TUI completion.
+TUI controls and slash commands are documented in the main [README](../README.md#tui-controls). The slash-command vocabulary is derived from the runtime command catalog, which is populated by plugin command contributions at runtime.
+
+## UI
+
+```bash
+npm run ts:cli -- ui
+npm run ts:cli -- ui <kind>
+```
+
+- `ui` lists the UI adapter kinds contributed by enabled installed and path plugins.
+- `ui <kind>` mounts that UI adapter in-process against a real runtime and waits for `SIGINT`/`SIGTERM`, then closes the adapter, the plugin registry, and the runtime.
+
+The TUI is one such UI (`ui.tui`). Every UI — the TUI or a freshly installed package — is launched through the same generic UI host (`createUiAdapterHost` in `@natalia/client`); see the [plugin guide](plugin-guide.md#6-ui-adapters).
 
 ## Current Help Behavior
 

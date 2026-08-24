@@ -227,18 +227,11 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     expect(entry.create().manifest.id).toBe(entry.id);
 });
 
-function featureGates(config: any, hasCustomTools = false) {
-  return computeBuiltinFeatureGates({
-    config,
-    hasCustomTools,
-  });
+function featureGates(config: any) {
+  return computeBuiltinFeatureGates(config);
 }
 
-test("built-in feature gates honor custom registries and config switches", () => {
-  const custom = featureGates({ plugins: { enabled: {} } }, true);
-  expect(custom.askEnabled).toBe(false);
-  expect(custom.pdfEnabled).toBe(true);
-
+test("built-in feature gates honor desired plugin config", () => {
   const configured = featureGates({
     plugins: {
       enabled: { [ASK_PLUGIN_ID]: false, [TODO_PLUGIN_ID]: false },
@@ -252,9 +245,8 @@ test("built-in feature gates honor custom registries and config switches", () =>
 test("PDF feature gate follows only desired plugin config", () => {
   expect(
     computeBuiltinFeatureGates({
-      config: { plugins: { enabled: { [PDF_PLUGIN_ID]: true } } } as any,
-      hasCustomTools: false,
-    }).pdfEnabled,
+      plugins: { enabled: { [PDF_PLUGIN_ID]: true } },
+    } as any).pdfEnabled,
   ).toBe(true);
 });
 

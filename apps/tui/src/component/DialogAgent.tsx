@@ -1,9 +1,4 @@
-import {
-  configPatch,
-  modelSelectionStatus,
-  resolveConfig,
-  updateConfig,
-} from "@natalia/config";
+import { configPatch, modelSelectionStatus } from "@natalia/config";
 import type { ConfigV3, RuntimeAgentCatalogEntry } from "@natalia/contracts";
 import { createMemo, createSignal, onMount } from "solid-js";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
@@ -60,6 +55,8 @@ export function DialogAgent(props: {
   current?: string;
   selectAgent(name: string): void;
   workspaceRoot: string;
+  loadConfig(): Promise<ConfigV3>;
+  persistConfig(patch: Record<string, unknown>): Promise<unknown>;
 }) {
   const dialog = useDialog();
   const local = useLocal();
@@ -72,7 +69,12 @@ export function DialogAgent(props: {
     const agent = props.agents.find((item) => item.name === option.value);
     if (!agent) return;
     dialog.push(() => (
-      <DialogAgentOverride workspaceRoot={props.workspaceRoot} agent={agent} />
+      <DialogAgentOverride
+        workspaceRoot={props.workspaceRoot}
+        agent={agent}
+        loadConfig={props.loadConfig}
+        persistConfig={props.persistConfig}
+      />
     ));
   };
   const details = (option: DialogSelectOption<string>) => {
@@ -169,13 +171,13 @@ function DialogAgentDetail(props: { agent: RuntimeAgentCatalogEntry }) {
 function DialogAgentOverride(props: {
   workspaceRoot: string;
   agent: RuntimeAgentCatalogEntry;
+  loadConfig(): Promise<ConfigV3>;
+  persistConfig(patch: Record<string, unknown>): Promise<unknown>;
 }) {
   const dialog = useDialog();
   const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
-    void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
-      ({ config }) => setConfig(config),
-    );
+    void props.loadConfig().then(setConfig);
   });
   const modelName = () =>
     props.agent.model ?? (config() ? defaultModelKey(config()!) : undefined);
@@ -228,6 +230,8 @@ function DialogAgentOverride(props: {
             <DialogAgentModel
               workspaceRoot={props.workspaceRoot}
               agent={props.agent}
+              loadConfig={props.loadConfig}
+              persistConfig={props.persistConfig}
             />
           ));
         else if (option.value === "variant")
@@ -236,6 +240,8 @@ function DialogAgentOverride(props: {
               workspaceRoot={props.workspaceRoot}
               agent={props.agent}
               modelName={modelName()!}
+              loadConfig={props.loadConfig}
+              persistConfig={props.persistConfig}
             />
           ));
         else
@@ -243,6 +249,8 @@ function DialogAgentOverride(props: {
             <DialogAgentField
               workspaceRoot={props.workspaceRoot}
               agent={props.agent}
+              loadConfig={props.loadConfig}
+              persistConfig={props.persistConfig}
               field={
                 option.value as "system" | "steps" | "allow" | "exclude" | "mcp"
               }
@@ -257,13 +265,13 @@ function DialogAgentField(props: {
   workspaceRoot: string;
   agent: RuntimeAgentCatalogEntry;
   field: "system" | "steps" | "allow" | "exclude" | "mcp";
+  loadConfig(): Promise<ConfigV3>;
+  persistConfig(patch: Record<string, unknown>): Promise<unknown>;
 }) {
   const dialog = useDialog();
   const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
-    void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
-      ({ config }) => setConfig(config),
-    );
+    void props.loadConfig().then(setConfig);
   });
   const title = {
     system: "Agent System Prompt",
@@ -303,27 +311,25 @@ function DialogAgentField(props: {
           : undefined
       }
       onConfirm={(value) => {
-        void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
-          async ({ config }) => {
-            const next = structuredClone(config);
-            const agent = next.agents[props.agent.name];
-            if (!agent) return;
-            if (props.field === "system") agent.systemPrompt = value.trim();
-            else if (props.field === "steps")
-              agent.maxSteps = value.trim() ? Number(value) : undefined;
-            else {
-              const list = value
-                .split(",")
-                .map((item) => item.trim())
-                .filter(Boolean);
-              if (props.field === "allow") agent.allowedTools = list;
-              else if (props.field === "exclude") agent.excludedTools = list;
-              else agent.mcpServers = list;
-            }
-            await updateConfig(props.workspaceRoot, configPatch(config, next));
-            dialog.pop();
-          },
-        );
+        void props.loadConfig().then(async (config) => {
+          const next = structuredClone(config);
+          const agent = next.agents[props.agent.name];
+          if (!agent) return;
+          if (props.field === "system") agent.systemPrompt = value.trim();
+          else if (props.field === "steps")
+            agent.maxSteps = value.trim() ? Number(value) : undefined;
+          else {
+            const list = value
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean);
+            if (props.field === "allow") agent.allowedTools = list;
+            else if (props.field === "exclude") agent.excludedTools = list;
+            else agent.mcpServers = list;
+          }
+          await props.persistConfig(configPatch(config, next));
+          dialog.pop();
+        });
       }}
     />
   );
@@ -332,13 +338,13 @@ function DialogAgentField(props: {
 function DialogAgentModel(props: {
   workspaceRoot: string;
   agent: RuntimeAgentCatalogEntry;
+  loadConfig(): Promise<ConfigV3>;
+  persistConfig(patch: Record<string, unknown>): Promise<unknown>;
 }) {
   const dialog = useDialog();
   const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
-    void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
-      ({ config }) => setConfig(config),
-    );
+    void props.loadConfig().then(setConfig);
   });
   const options = createMemo(() => {
     const value = config();
@@ -353,7 +359,7 @@ function DialogAgentModel(props: {
     agent.model = option.value || undefined;
     // Variants belong to a particular model and cannot outlive a model change.
     agent.variant = undefined;
-    await updateConfig(props.workspaceRoot, configPatch(resolved, next));
+    await props.persistConfig(configPatch(resolved, next));
     dialog.pop();
   };
   return (
@@ -370,13 +376,13 @@ function DialogAgentVariant(props: {
   workspaceRoot: string;
   agent: RuntimeAgentCatalogEntry;
   modelName: string;
+  loadConfig(): Promise<ConfigV3>;
+  persistConfig(patch: Record<string, unknown>): Promise<unknown>;
 }) {
   const dialog = useDialog();
   const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
-    void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
-      ({ config }) => setConfig(config),
-    );
+    void props.loadConfig().then(setConfig);
   });
   const options = createMemo(() => {
     const value = config();
@@ -389,7 +395,7 @@ function DialogAgentVariant(props: {
     const agent = next.agents[props.agent.name];
     if (!agent) return;
     agent.variant = option.value || undefined;
-    await updateConfig(props.workspaceRoot, configPatch(resolved, next));
+    await props.persistConfig(configPatch(resolved, next));
     dialog.pop();
   };
   return (

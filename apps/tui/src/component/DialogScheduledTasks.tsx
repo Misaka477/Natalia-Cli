@@ -2,15 +2,15 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
   ConfigV3,
+  FlowOverview,
   NataliaTaskDocument,
   NataliaTaskDocumentInput,
+  ScheduledTaskOverview,
+  ScheduledTaskRow,
 } from "@natalia/contracts";
 import {
   newScheduledTaskID,
   type EffectiveFlowPermissions,
-  type FlowOverview,
-  type ScheduledTaskOverview,
-  type ScheduledTaskRow,
 } from "@natalia/client";
 import { createSignal } from "solid-js";
 import { DialogPrompt } from "../dialog/DialogPrompt";

@@ -14,7 +14,6 @@ import { stringifyKeySequence } from "@opentui/keymap";
 import {
   batch,
   createEffect,
-  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -32,6 +31,10 @@ import type {
   UiAdapterMountInput,
 } from "@natalia/contracts";
 import type { ConfigV3 } from "@natalia/contracts";
+import {
+  createUiAdapterCommandHost,
+  createUiAdapterMountInput,
+} from "@natalia/plugin";
 import { buildKeybindMap, commands, composerKeyAction } from "../keymap";
 import { useKeybinds } from "../context/keybind";
 import {
@@ -74,7 +77,6 @@ import {
 import { DialogAgent } from "../component/DialogAgent";
 import { CommandPalette } from "../component/CommandPalette";
 import {
-  resolveConfig,
   configPatch,
   type ConfigPatch,
   type ConfigWriteScope,
@@ -169,13 +171,9 @@ export function App(props: {
       // Carry user-level team settings from the source workspace into the
       // global scope. Model configuration is already global-only.
       try {
-        const source = (
-          await resolveConfig({
-            workspaceRoot: workspaceRoot() ?? process.cwd(),
-          })
-        ).config;
+        const source = await previous.configGet?.();
         const userPatch: Record<string, unknown> = {};
-        if (source.team) userPatch.team = source.team;
+        if (source?.team) userPatch.team = source.team;
         if (Object.keys(userPatch).length)
           await previous.updateConfig?.({
             scope: "global",
@@ -223,7 +221,7 @@ export function App(props: {
                   commands={
                     activeBackend === props.backend
                       ? props.commands
-                      : runtimeCommandHost(activeBackend)
+                      : commandHostFor(activeBackend)
                   }
                   workspaceRoot={workspaceRoot()}
                   onSessionChange={(sessionID) => void changeSession(sessionID)}
@@ -288,21 +286,25 @@ export function App(props: {
   );
 }
 
-function runtimeCommandHost(
+const commandHostCache = new WeakMap<
+  RuntimeClient,
+  UiAdapterMountInput["commands"]
+>();
+/**
+ * The full adapter command host for a backend the app itself created (a worker
+ * after a session/workspace switch). Derived from `createUiAdapterMountInput`
+ * like the host derives it, but cached per backend: re-deriving would re-enter
+ * `runtime.start` and clobber the event sink the shell installs.
+ */
+function commandHostFor(
   runtime: RuntimeClient,
 ): UiAdapterMountInput["commands"] {
-  return {
-    list: async () => (await runtime.commandCatalog?.()) ?? [],
-    async execute(input) {
-      const command = (await runtime.commandCatalog?.())?.find(
-        (entry) => entry.name === input.name,
-      );
-      if (!command) throw new Error(`command unavailable: ${input.name}`);
-      if (!runtime.commandExecute)
-        throw new Error("runtime command execution unavailable");
-      await runtime.commandExecute(input);
-    },
-  };
+  let host = commandHostCache.get(runtime);
+  if (!host) {
+    host = createUiAdapterMountInput(runtime).commands;
+    commandHostCache.set(runtime, host);
+  }
+  return host;
 }
 
 async function hydrateRecentMessages(
@@ -618,6 +620,10 @@ function Shell(props: {
         selection={props.backend.modelSelection}
         selectRuntimeModel={props.backend.selectModel}
         configRevision={configRevision}
+        loadConfig={() =>
+          props.backend.configGet?.() ??
+          Promise.reject(new Error("runtime config read unavailable"))
+        }
         onPersist={persistConfig}
         onSelected={(selection) => {
           setQuickModel(selection);
@@ -790,7 +796,8 @@ function Shell(props: {
     }
     const commandMatch = control.match(/^\/(\S+)(?:\s+(.*))?$/u);
     if (commandMatch) {
-      const commandHost = props.commands ?? runtimeCommandHost(props.backend);
+      const commandHost =
+        props.commands ?? createUiAdapterCommandHost(props.backend);
       const name = commandMatch[1]!;
       if ((await commandHost.list()).some((entry) => entry.name === name)) {
         input?.clear();
@@ -1072,7 +1079,7 @@ function Shell(props: {
   function onCommand(command: string) {
     void runCommand(command, {
       backend: props.backend,
-      commands: props.commands ?? runtimeCommandHost(props.backend),
+      commands: props.commands ?? createUiAdapterCommandHost(props.backend),
       workspaceRoot: props.workspaceRoot,
       composer: () => composer(),
       setAttachmentPaths,
@@ -1630,7 +1637,10 @@ function Shell(props: {
                   agents={props.backend.agents}
                   mcpCatalog={props.backend.mcpCatalog}
                   commands={() =>
-                    (props.commands ?? runtimeCommandHost(props.backend))
+                    (
+                      props.commands ??
+                      createUiAdapterCommandHost(props.backend)
+                    )
                       .list()
                       .then((commands) => [
                         ...commands,

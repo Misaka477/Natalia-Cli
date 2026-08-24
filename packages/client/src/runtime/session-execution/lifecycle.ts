@@ -9,13 +9,19 @@ import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 type Surface = Pick<
   RuntimeServiceClient,
-  "dispose" | "canReloadConfig" | "reloadConfig" | "updateConfig"
+  "dispose" | "canReloadConfig" | "reloadConfig" | "updateConfig" | "configGet"
 >;
 export function createLifecycleSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
   return {
+    async configGet() {
+      await ctx.ports.getReady();
+      const config = ctx.ports.getTsRuntimeConfig();
+      if (!config) throw new Error("runtime configuration is not initialized");
+      return structuredClone(config);
+    },
     async dispose() {
       ctx.ports.setDisposed(true);
       await Promise.all(

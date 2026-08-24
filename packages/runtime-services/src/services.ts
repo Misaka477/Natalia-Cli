@@ -433,6 +433,15 @@ export type CheckpointWorkLedger = {
 export interface CheckpointController {
   init(): Promise<void>;
   get(): CheckpointStore;
+  list(): ReturnType<CheckpointStore["list"]>;
+  preview(id: string): ReturnType<CheckpointStore["previewRollback"]>;
+  rollback(
+    id: string,
+    options: { dryRun?: boolean },
+  ): ReturnType<CheckpointStore["rollbackTo"]>;
+  createCheckpoint(
+    input: import("@natalia/runtime").CreateCheckpointInput,
+  ): ReturnType<CheckpointStore["createCheckpoint"]>;
   isEnabled(): boolean;
   resources(): Array<{
     kind: "subagent" | "tool";
@@ -598,6 +607,10 @@ export type TaskWorkflowController = {
   deleteTaskDocument: RuntimeMethod<"deleteTaskDocument">;
   taskSchedule: RuntimeMethod<"taskSchedule">;
   taskUnschedule: RuntimeMethod<"taskUnschedule">;
+  taskPermissionPreviewDocument: RuntimeMethod<"taskPermissionPreviewDocument">;
+  permissionProfileUsage(input?: {
+    workspaceRoot: string;
+  }): Promise<Record<string, string[]>>;
 };
 export type TaskRunResult = {
   invocationID: string;
@@ -674,7 +687,7 @@ export interface TaskWorkflowService extends TaskWorkflowController {
     config: ConfigV3;
     contributedDocuments?: ContributedNataliaDocuments;
   }): Promise<ReturnType<TaskWorkflowService["taskPermissionPreviewFor"]>>;
-  permissionProfileUsage(input: {
+  permissionProfileUsage(input?: {
     workspaceRoot: string;
   }): Promise<Record<string, string[]>>;
   newHeadlessExecution(): HeadlessExecution;

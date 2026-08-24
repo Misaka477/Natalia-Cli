@@ -29,10 +29,7 @@ export async function configureCatalog(
     const gates = deps.computeBuiltinPluginGates(runtimeConfig);
     const localTools = deps.localToolsPluginInput(runtimeConfig);
     return deps.builtinPluginCatalog({
-      ...deps.computeBuiltinFeatureGates({
-        config: ctx.ports.getTsRuntimeConfig(),
-        hasCustomTools: !!options.tools,
-      }),
+      ...deps.computeBuiltinFeatureGates(ctx.ports.getTsRuntimeConfig()),
       ...(deps.skillsPluginInput(runtimeConfig)
         ? {
             skills: deps.skillsPluginInput(runtimeConfig),

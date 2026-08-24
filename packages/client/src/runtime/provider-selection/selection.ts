@@ -1,8 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { discoverProviderModels, updateConfigAtScope } from "@natalia/config";
 import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-import { isRuntimeReasoningEffort } from "./helpers";
+import type { RealRuntimeClientOptions } from "../options";
+type ClientSurfaceOptions = Pick<RealRuntimeClientOptions, "globalConfigPath">;
 type Surface = Pick<
   RuntimeServiceClient,
   | "agents"
@@ -233,4 +233,16 @@ export function createSelectionSurface(
       return { removed: true };
     },
   };
+}
+
+function isRuntimeReasoningEffort(
+  value: unknown,
+): value is import("@natalia/contracts").RuntimeReasoningEffort {
+  return (
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+  );
 }

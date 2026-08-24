@@ -1,4 +1,3 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
   findWorkspaceFiles,
   globWorkspaceFiles,
@@ -6,9 +5,10 @@ import {
   readWorkspaceFile,
   searchWorkspaceFiles,
 } from "@natalia/platform";
-import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-type Surface = Pick<
+import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeContext } from "./context";
+
+type WorkspaceRuntime = Pick<
   RuntimeServiceClient,
   | "workspaceFiles"
   | "workspaceSearch"
@@ -16,10 +16,8 @@ type Surface = Pick<
   | "workspaceRead"
   | "workspaceGlob"
 >;
-export function createWorkspaceSurface(
-  ctx: RuntimeContext,
-  options: ClientSurfaceOptions,
-): Surface {
+
+export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
   return {
     async workspaceFiles(input) {
       await ctx.ports.getReady();

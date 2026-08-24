@@ -5,8 +5,8 @@ import {
   type MCPResourceCatalog,
   type RuntimeAgentCatalogEntry,
   type RuntimeWorkspaceFileEntry,
+  type WorkflowDocumentChoice,
 } from "@natalia/contracts";
-import type { WorkflowDocumentChoice } from "@natalia/client";
 import {
   createEffect,
   createMemo,

@@ -4,6 +4,29 @@ import type {
   UiAdapterMountInput,
 } from "@natalia/contracts";
 
+/**
+ * The command half of a UI adapter mount input. Kept pure — it never calls
+ * `runtime.start` — so a consumer that already owns the event subscription (for
+ * example the TUI shell, which installs its own sink) can build the command
+ * host without disturbing it.
+ */
+export function createUiAdapterCommandHost(
+  runtime: RuntimeClient,
+): UiAdapterMountInput["commands"] {
+  return {
+    list: async () => (await runtime.commandCatalog?.()) ?? [],
+    async execute(input) {
+      const command = (await runtime.commandCatalog?.())?.find(
+        (entry) => entry.name === input.name,
+      );
+      if (!command) throw new Error(`command unavailable: ${input.name}`);
+      if (!runtime.commandExecute)
+        throw new Error("runtime command execution unavailable");
+      await runtime.commandExecute(input);
+    },
+  };
+}
+
 export function createUiAdapterMountInput(
   runtime: RuntimeClient,
 ): UiAdapterMountInput {
@@ -19,17 +42,6 @@ export function createUiAdapterMountInput(
         return () => listeners.delete(listener);
       },
     },
-    commands: {
-      list: async () => (await runtime.commandCatalog?.()) ?? [],
-      async execute(input) {
-        const command = (await runtime.commandCatalog?.())?.find(
-          (entry) => entry.name === input.name,
-        );
-        if (!command) throw new Error(`command unavailable: ${input.name}`);
-        if (!runtime.commandExecute)
-          throw new Error("runtime command execution unavailable");
-        await runtime.commandExecute(input);
-      },
-    },
+    commands: createUiAdapterCommandHost(runtime),
   };
 }

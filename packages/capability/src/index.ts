@@ -1,18 +1,5 @@
 import { resolve } from "node:path";
 
-export type ExtensionPrecedence = {
-  base: number;
-  overridable: boolean;
-  overrideOrigin?: string;
-};
-
-export const EXTENSION_PRECEDENCE = {
-  builtin: 0,
-  mcp: 100,
-  plugin: 200,
-  workflow: 300,
-} as const;
-
 export type CapabilityGrant =
   | "tools"
   | "commands"

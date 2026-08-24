@@ -54,12 +54,7 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-task-module",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/task-module-plugin.ts",
-      "packages/client/src/capabilities/task-module-tools.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "task module tool construction",
@@ -86,7 +81,6 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
     id: "natalia-sandbox",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
       "packages/tools/src/types.ts",
       "packages/tool-sandbox/src/index.ts",
       "packages/team-plugin/src/fan-out.ts",
@@ -126,9 +120,8 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
     id: "natalia-checkpoint",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/checkpoint-controller-plugin.ts",
-      "packages/client/src/checkpoint-controller.ts",
+      "packages/client/src/runtime/checkpoint-runtime.ts",
+      "packages/client/src/runtime/turn-runner.ts",
     ],
     forbidden: [
       {
@@ -144,6 +137,14 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
         description: "client-owned checkpoint plugin implementation",
         pattern: /export function createCheckpointControllerPlugin\b/u,
       },
+      {
+        description: "client-owned checkpoint controller cache",
+        pattern: /\b(?:controllerBySession|initBySession)\b/u,
+      },
+      {
+        description: "checkpoint controller backend escape hatch",
+        pattern: /\bcontroller\.get\(\)\./u,
+      },
     ],
   },
   {
@@ -151,11 +152,6 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
     targets: [
       "packages/client/src/runtime/main.ts",
       "packages/client/src/index.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/team-plugin.ts",
-      "packages/client/src/team-tools.ts",
-      "packages/client/src/fan-out.ts",
-      "packages/client/src/agent-team-prompts.ts",
     ],
     forbidden: [
       {
@@ -205,18 +201,7 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-work-ledger",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/interactive-waiter.ts",
-      "packages/client/src/checkpoint-controller.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/governance-ledger-plugin.ts",
-      "packages/client/src/builtin-plugins/work-ledger-plugin.ts",
-      "packages/client/src/work-ledger-controller.ts",
-      "packages/client/src/plan-ledger.ts",
-      "packages/client/src/drift-evaluator.ts",
-      "packages/client/src/work-graph.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct work ledger implementation import",
@@ -238,8 +223,6 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
     id: "natalia-attachment",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/provider-runner.ts",
-      "packages/client/src/session-store-controller.ts",
       "packages/client/src/runtime/commands/slash-action.ts",
     ],
     forbidden: [

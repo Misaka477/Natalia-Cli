@@ -6,16 +6,19 @@ import {
 import type { SessionID } from "@natalia/contracts";
 import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-import { redactToolOutput } from "./helpers";
 type Surface = Pick<
   RuntimeServiceClient,
   "chatSubmit" | "chatMessages" | "chatRollback"
 >;
-export function createChatSurface(
-  ctx: RuntimeContext,
-  options: ClientSurfaceOptions,
-): Surface {
+function redactToolOutput(output: string, redact: boolean | undefined) {
+  if (!redact) return output;
+  return output.replace(
+    /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s]+/giu,
+    (match) =>
+      `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
+  );
+}
+export function createChatSurface(ctx: RuntimeContext): Surface {
   return {
     async chatMessages() {
       if (!ctx.ports.getSession()) return [];

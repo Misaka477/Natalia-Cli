@@ -2,8 +2,6 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { projectedMailboxMessages } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-import { redactToolOutput } from "./helpers";
 type Surface = Pick<
   RuntimeServiceClient,
   | "mailboxList"
@@ -13,10 +11,15 @@ type Surface = Pick<
   | "mailboxDefer"
   | "mailboxSupersede"
 >;
-export function createMailboxSurface(
-  ctx: RuntimeContext,
-  options: ClientSurfaceOptions,
-): Surface {
+function redactToolOutput(output: string, redact: boolean | undefined) {
+  if (!redact) return output;
+  return output.replace(
+    /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s]+/giu,
+    (match) =>
+      `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
+  );
+}
+export function createMailboxSurface(ctx: RuntimeContext): Surface {
   return {
     async mailboxList() {
       if (!ctx.ports.getSession()) return [];

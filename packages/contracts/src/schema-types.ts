@@ -65,6 +65,34 @@ export type FlowConditionDecomposition = z.infer<
   typeof workflow.flowConditionDecompositionSchema
 >;
 export type EvaluatorResult = z.infer<typeof workflow.evaluatorResultSchema>;
+
+/**
+ * Effective permissions each flow module actually gets for a profile/flow
+ * combination. The runtime's `taskPermissionPreviewDocument` port returns this
+ * so a UI can preview the module-by-module policy without opening the flow
+ * definition itself. Mirror of the `@natalia/workflow` effective-policy shape.
+ */
+export type EffectiveModulePermissions = {
+  moduleID: string;
+  moduleType: NataliaFlowDocument["modules"][number]["type"];
+  displayName: string;
+  enabled: boolean;
+  tools: { allowed: string[]; denied: string[] };
+  commandRules: {
+    profile?: { mode: string; commands: string[] };
+    module?: { mode: string; commands: string[] };
+  };
+  interactivePrograms: string[] | "any";
+  extensions: { skills: boolean; mcp: boolean; plugins: boolean };
+  pathRules?: { read: string[]; write: string[] };
+  profilePathRules?: { read: string[]; write: string[] };
+  blocked?: string;
+};
+export type EffectiveFlowPermissions = {
+  flowID: string;
+  modules: EffectiveModulePermissions[];
+  blocked: Array<{ moduleID: string; reason: string }>;
+};
 export type ModeConfig = z.infer<typeof foundation.modeConfigSchema>;
 export type AgentConfig = z.infer<typeof workflow.agentConfigSchema>;
 export type AgentPermissionRules = z.infer<

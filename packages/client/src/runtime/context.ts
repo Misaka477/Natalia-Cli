@@ -9,7 +9,6 @@
  * cross-module function. Modules read what they need at call time (destructured
  * at the top of each function), so construction order never matters.
  */
-import type { createPluginsController } from "../plugins-controller";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RuntimePorts } from "./ports";
 import type { RuntimePortsExtra } from "./ports-extra";
@@ -46,9 +45,7 @@ import type {
 } from "@natalia/contracts";
 import type { SessionRecord } from "@natalia/session";
 import type {
-  CheckpointController,
   CheckpointFactory,
-  InteractiveWaiter,
   InteractiveWaiterDeps,
   ProviderRunnerInput,
   RuntimeContextLedger,
@@ -122,11 +119,8 @@ export type RuntimeState = {
   defaultPermissionMode: "ask" | "auto" | "read_only";
   defaultPermissionProfile?: PermissionProfile;
   maxSteps?: number;
-  pluginsController: ReturnType<typeof createPluginsController>;
   toolCalls: Map<string, number>;
-  runtimeContext: RuntimeContextLedger;
   waiterDeps: InteractiveWaiterDeps;
-  interactive: InteractiveWaiter;
   sink?: (event: RuntimeEvent) => void;
   replayMode: "all" | "none";
   session?: SessionRecord;
@@ -139,14 +133,6 @@ export type RuntimeState = {
   turnAgent: Map<string, string>;
   executionBySession: Map<SessionID, SessionExecutionState>;
   activeExec?: SessionExecutionState;
-  checkpointControllerBySession: Map<
-    SessionID,
-    { factory: CheckpointFactory; controller: CheckpointController }
-  >;
-  checkpointInitBySession: Map<
-    SessionID,
-    { factory: CheckpointFactory; promise: Promise<void> }
-  >;
   paused: boolean;
   pauseWaiters: Array<() => void>;
   ready?: Promise<void>;

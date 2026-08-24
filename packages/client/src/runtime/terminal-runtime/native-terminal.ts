@@ -5,8 +5,12 @@ import {
 } from "@natalia/runtime-services";
 import { RuntimeRefusal } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-import { refusalFromRegistry } from "./helpers";
+import type { RealRuntimeClientOptions } from "../options";
+
+type ClientSurfaceOptions = Pick<
+  RealRuntimeClientOptions,
+  "episodeID" | "globalConfigPath"
+>;
 type Surface = Pick<
   RuntimeServiceClient,
   | "nativeTerminalList"
@@ -21,6 +25,13 @@ type Surface = Pick<
   | "nativeTerminalWrite"
   | "nativeTerminalResize"
 >;
+
+function refusalFromRegistry(error: unknown): RuntimeRefusal {
+  return new RuntimeRefusal(
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
 export function createNativeTerminalSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,

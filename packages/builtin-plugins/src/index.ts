@@ -199,6 +199,7 @@ export { MCP_PLUGIN_ID };
 export {
   CLI_PLUGIN_MANIFEST,
   RUNTIME_DEFAULT_PLUGIN_MANIFESTS,
+  TUI_PLUGIN_MANIFEST,
 } from "./runtime-default-manifests";
 export { PRODUCT_PLUGIN_MANIFESTS } from "./product-manifests";
 
@@ -286,26 +287,23 @@ export function computeBuiltinPluginGates(
   };
 }
 
-export function computeBuiltinFeatureGates(input: {
-  config: ConfigV3 | undefined;
-  hasCustomTools: boolean;
-}): BuiltinFeatureGates {
-  const { config, hasCustomTools } = input;
-  const builtins = !hasCustomTools;
+export function computeBuiltinFeatureGates(
+  config: ConfigV3 | undefined,
+): BuiltinFeatureGates {
   const plugin = (id: string) => config?.plugins?.enabled?.[id] !== false;
 
   return {
-    askEnabled: builtins && plugin(ASK_PLUGIN_ID),
-    todoEnabled: builtins && plugin(TODO_PLUGIN_ID),
-    searchEnabled: builtins && plugin(SEARCH_PLUGIN_ID),
-    fsReadEnabled: builtins && plugin(FS_READ_PLUGIN_ID),
-    fsWriteEnabled: builtins && plugin(FS_WRITE_PLUGIN_ID),
-    webEnabled: builtins && plugin(WEB_PLUGIN_ID),
-    shellEnabled: builtins && plugin(SHELL_PLUGIN_ID),
-    agentEnabled: builtins && plugin(AGENT_PLUGIN_ID),
-    terminalEnabled: builtins && plugin(TERMINAL_PLUGIN_ID),
-    sandboxEnabled: builtins && plugin(SANDBOX_PLUGIN_ID),
-    processEnabled: builtins && plugin(PROCESS_PLUGIN_ID),
+    askEnabled: plugin(ASK_PLUGIN_ID),
+    todoEnabled: plugin(TODO_PLUGIN_ID),
+    searchEnabled: plugin(SEARCH_PLUGIN_ID),
+    fsReadEnabled: plugin(FS_READ_PLUGIN_ID),
+    fsWriteEnabled: plugin(FS_WRITE_PLUGIN_ID),
+    webEnabled: plugin(WEB_PLUGIN_ID),
+    shellEnabled: plugin(SHELL_PLUGIN_ID),
+    agentEnabled: plugin(AGENT_PLUGIN_ID),
+    terminalEnabled: plugin(TERMINAL_PLUGIN_ID),
+    sandboxEnabled: plugin(SANDBOX_PLUGIN_ID),
+    processEnabled: plugin(PROCESS_PLUGIN_ID),
     pdfEnabled: plugin(PDF_PLUGIN_ID),
   };
 }

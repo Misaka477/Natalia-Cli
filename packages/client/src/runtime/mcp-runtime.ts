@@ -1,8 +1,7 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { MCP_SERVICE, type McpService } from "@natalia/runtime-services";
 import { updateConfigAtScope } from "@natalia/config";
-import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
+import type { RuntimeContext } from "./context";
 type Surface = Pick<
   RuntimeServiceClient,
   | "mcpCatalog"
@@ -11,9 +10,9 @@ type Surface = Pick<
   | "mcpServerAdd"
   | "mcpServerRemove"
 >;
-export function createMcpSurface(
+export function createMcpRuntime(
   ctx: RuntimeContext,
-  options: ClientSurfaceOptions,
+  globalConfigPath?: string,
 ): Surface {
   return {
     async mcpCatalog() {
@@ -43,7 +42,7 @@ export function createMcpSurface(
           mcpServers: { [input.name]: input.config },
         } as never,
         "project",
-        { globalPath: options.globalConfigPath },
+        { globalPath: globalConfigPath },
       );
       await ctx.ports.applyConfigFromDisk();
       return { saved: true };
@@ -56,7 +55,7 @@ export function createMcpSurface(
           mcpServers: { [name]: undefined },
         } as never,
         "project",
-        { globalPath: options.globalConfigPath },
+        { globalPath: globalConfigPath },
       );
       await ctx.ports.applyConfigFromDisk();
       return { removed: true };

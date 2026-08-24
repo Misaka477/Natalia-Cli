@@ -11,15 +11,18 @@ import {
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 import { isManagedResourceTool, waitForToolExecution } from "./helpers";
+import {
+  COLLABORATION_WAITER_SERVICE,
+  type InteractiveWaiter,
+  type RuntimeContextLedger,
+} from "@natalia/runtime-services";
 
 export function wireServices(
   ctx: RuntimeContext,
   options: RealRuntimeClientOptions,
 ) {
   const { state, ports } = ctx;
-  ports.setInteractive = (value) => {
-    state.interactive = value;
-  };
+  let runtimeContext: RuntimeContextLedger | undefined;
   ports.runPluginLifecyclePostReconcile =
     createPluginLifecycle(ctx).runPluginLifecyclePostReconcile;
   ports.setReady = (value) => {
@@ -40,7 +43,12 @@ export function wireServices(
     state.session = value;
   };
   ports.setRuntimeContext = (value) => {
-    state.runtimeContext = value;
+    runtimeContext = value;
+  };
+  ports.getRuntimeContext = () => {
+    const context = state.activeExec?.context ?? runtimeContext;
+    if (!context) throw new Error("runtime context is not initialized");
+    return context;
   };
   ports.setActiveExec = (value) => {
     state.activeExec = value;
@@ -86,7 +94,16 @@ export function wireServices(
   ports.authorizeWorkspaceRead = policy.authorizeWorkspaceRead;
   ports.authorizeSandboxMerge = policy.authorizeSandboxMerge;
   ports.authorizeSandboxManagement = policy.authorizeSandboxManagement;
-  ports.getInteractive = () => state.interactive;
+  ports.getInteractive = () => {
+    const waiter = ports.resolveService<InteractiveWaiter>(
+      COLLABORATION_WAITER_SERVICE,
+    );
+    if (!waiter)
+      throw new Error(
+        "collaboration waiter unavailable (natalia-collaboration)",
+      );
+    return waiter;
+  };
   ports.getTerminalCommandBuffer = () => state.terminalCommandBuffer;
   ports.getSandboxResourcesByID = () => state.sandboxResourcesByID;
   ports.getEndTurnWaitingHuman = () => state.endTurnWaitingHuman;

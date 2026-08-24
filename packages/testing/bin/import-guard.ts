@@ -158,14 +158,36 @@ const forbiddenDeepImports = [
  * a module should be split; crossing an arbitrary line count does not.
  *
  * Runtime module coupling: `packages/client/src/runtime/` modules may only talk
- * to each other through `RuntimeContext` (`context`). A relative import that
- * stays inside the runtime directory and does not name `context` is a direct
- * cross-module reference and fails.
+ * to each other through `RuntimeContext` (`context`) and the type ports that
+ * describe it (`options`, `ports*`, `status-config`, `session-execution-state`,
+ * `initialize-types`). A relative import that resolves to another runtime
+ * module's implementation — including one in the same root directory — is a
+ * direct cross-module reference and fails. Feature subdirectories may split
+ * across files for size: the guard allows imports within one feature directory
+ * and blocks cross-feature coupling. The composition root (`main.ts`,
+ * `composition/`) and the RPC surface assembler (`client-surface.ts`)
+ * are the only modules allowed to import feature implementations.
  */
 const maxSourceLines = 400;
 const runtimeModuleRoots = ["packages/client/src/runtime"];
 const runtimeCompositionRoot = "packages/client/src/runtime/main.ts";
 const runtimeCompositionDirectory = "packages/client/src/runtime/composition/";
+/**
+ * Type-only ports that every runtime module may import. They carry the
+ * `RuntimeContext` shape and its cross-module surface definitions, never
+ * feature implementations.
+ */
+const runtimePortTargets = new Set([
+  "packages/client/src/runtime/context.ts",
+  "packages/client/src/runtime/options.ts",
+  "packages/client/src/runtime/ports.ts",
+  "packages/client/src/runtime/ports-extra.ts",
+  "packages/client/src/runtime/ports-initialize.ts",
+  "packages/client/src/runtime/ports-client-surface.ts",
+  "packages/client/src/runtime/status-config.ts",
+  "packages/client/src/runtime/session-execution-state.ts",
+  "packages/client/src/runtime/initialize-types.ts",
+]);
 
 const failures: string[] = [];
 for (const dir of dependencyGuarded)
@@ -295,11 +317,17 @@ for (const dir of productionRoots)
 
 /**
  * Runtime module coupling: modules under `packages/client/src/runtime/` talk to
- * each other only through `RuntimeContext`. Neutral types may come from
- * `options`; the explicit root and its internal composition modules may import
- * factories. Other relative cross-module references fail.
+ * each other only through `RuntimeContext`. Type ports (`context`, `options`,
+ * `ports*`, `status-config`, `session-execution-state`, `initialize-types`)
+ * may be imported by any module; the composition root (`main.ts`), its internal
+ * composition modules, and the RPC surface assembler (`client-surface.ts`)
+ * may import feature factories. Distinct root runtime modules must not import
+ * each other's implementations directly; feature subdirectories may split
+ * across files within one directory (internal composition) but must not reach
+ * into another feature.
  */
 const runtimeRoot = join(root, "packages", "client", "src", "runtime");
+const runtimeRootDir = runtimeRoot;
 const runtimeImport = /from\s+["'](\.[^"']*)["']/gu;
 for (const dir of runtimeModuleRoots)
   await scan(join(root, dir), /\.ts$/u, (full, text) => {
@@ -311,16 +339,19 @@ for (const dir of runtimeModuleRoots)
       if (
         resolved !== null &&
         resolved.startsWith(runtimeRoot) &&
-        !resolved.endsWith("/context") &&
-        !resolved.endsWith("/context.ts") &&
-        !resolved.endsWith("/options") &&
-        !resolved.endsWith("/options.ts") &&
+        !isRuntimePortTarget(resolved) &&
         relative !== runtimeCompositionRoot &&
+        relative !== "packages/client/src/runtime/client-surface.ts" &&
         !relative.startsWith(runtimeCompositionDirectory) &&
         // A feature split across files for size is internal composition: the
         // guard allows imports within one feature directory and blocks
-        // cross-feature coupling.
-        resolved.slice(0, resolved.lastIndexOf("/")) !== importerDir &&
+        // cross-feature coupling. The runtime root itself is not a feature
+        // directory: root modules are distinct modules and must not reach into
+        // each other directly.
+        !(
+          isRuntimeFeatureDirectory(importerDir) &&
+          sameDirectory(full, specifier)
+        ) &&
         !relative.includes("/test/")
       )
         failures.push(
@@ -328,6 +359,35 @@ for (const dir of runtimeModuleRoots)
         );
     }
   });
+
+/**
+ * True when the importer lives in a feature subdirectory (`runtime/<feature>/`)
+ * rather than the runtime root. Feature-internal file splits are allowed; the
+ * root level is one module per file.
+ */
+function isRuntimeFeatureDirectory(importerDir: string): boolean {
+  return importerDir.startsWith(runtimeRoot) && importerDir !== runtimeRootDir;
+}
+
+function sameDirectory(importerFile: string, specifier: string): boolean {
+  const base = importerFile.slice(0, importerFile.lastIndexOf("/"));
+  const resolved = join(base, specifier);
+  return resolved.slice(0, resolved.lastIndexOf("/")) === base;
+}
+
+/**
+ * A relative import resolves to a runtime type port when the resolved path
+ * names one of the port files, with or without an extension.
+ */
+function isRuntimePortTarget(resolved: string): boolean {
+  const relative = resolved.slice(runtimeRoot.length + 1).replaceAll("\\", "/");
+  const withoutExtension = relative.endsWith(".ts")
+    ? relative.slice(0, -3)
+    : relative;
+  return runtimePortTargets.has(
+    `packages/client/src/runtime/${withoutExtension}.ts`,
+  );
+}
 
 function resolveRuntimeSpecifier(
   importerFile: string,
@@ -338,6 +398,97 @@ function resolveRuntimeSpecifier(
   const resolved = join(base, specifier);
   if (resolved.startsWith(runtimeRoot)) return resolved;
   return null;
+}
+
+/**
+ * Runtime dependency direction must stay acyclic (plan §3.5). A value import
+ * from one runtime module into another creates a real initialization-order
+ * dependency; type-only imports are erased at compile time and cannot form a
+ * runtime cycle. The graph therefore uses only non-type relative imports that
+ * resolve inside the runtime directory.
+ */
+const runtimeValueImport =
+  /(?:^|[;"'\n])\s*(?:import|export)\s+(?!type\b)[^;]*?from\s+["'](\.[^"']*)["']/gu;
+const runtimeModuleFiles: string[] = [];
+for (const dir of runtimeModuleRoots)
+  await scan(join(root, dir), /\.ts$/u, (full) => {
+    const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+    if (!relative.includes("/test/")) runtimeModuleFiles.push(full);
+  });
+const runtimeModuleFileSet = new Set(runtimeModuleFiles);
+const runtimeEdges = new Map<string, string[]>();
+for (const full of runtimeModuleFiles) {
+  const text = await readFile(full, "utf8");
+  const targets: string[] = [];
+  for (const match of text.matchAll(runtimeValueImport)) {
+    const specifier = match[1];
+    const resolved = resolveRuntimeFile(full, specifier);
+    if (resolved !== null && runtimeModuleFileSet.has(resolved))
+      targets.push(resolved);
+  }
+  if (targets.length) runtimeEdges.set(full, targets);
+}
+const cycleFailures = findRuntimeCycles(runtimeEdges);
+for (const failure of cycleFailures) failures.push(failure);
+
+/**
+ * Resolves a relative specifier to a concrete file inside the runtime
+ * directory, honoring the extension-less module specifiers used across the
+ * codebase (including directory imports that resolve to an index module).
+ */
+function resolveRuntimeFile(
+  importerFile: string,
+  specifier: string,
+): string | null {
+  const base = importerFile.slice(0, importerFile.lastIndexOf("/"));
+  const joined = join(base, specifier);
+  if (!joined.startsWith(runtimeRoot)) return null;
+  for (const candidate of [
+    joined,
+    `${joined}.ts`,
+    join(joined, "index.ts"),
+    `${joined}.tsx`,
+    join(joined, "index.tsx"),
+  ]) {
+    if (runtimeModuleFileSet.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Reports every distinct cycle found in a directed graph of file paths. Each
+ * returned line names the cycle so a regression is actionable.
+ */
+function findRuntimeCycles(edges: Map<string, string[]>): string[] {
+  const reported = new Set<string>();
+  const state = new Map<string, 0 | 1 | 2>();
+  const stack: string[] = [];
+  const result: string[] = [];
+  const visit = (node: string): void => {
+    state.set(node, 1);
+    stack.push(node);
+    for (const next of edges.get(node) ?? []) {
+      const nextState = state.get(next) ?? 0;
+      if (nextState === 1) {
+        const cycleStart = stack.indexOf(next);
+        const cycle = [...stack.slice(cycleStart), next];
+        const label = cycle
+          .map((file) => file.slice(root.length + 1))
+          .join(" -> ");
+        if (!reported.has(label)) {
+          reported.add(label);
+          result.push(`runtime dependency cycle: ${label}`);
+        }
+        continue;
+      }
+      if (nextState === 0) visit(next);
+    }
+    stack.pop();
+    state.set(node, 2);
+  };
+  for (const node of edges.keys())
+    if ((state.get(node) ?? 0) === 0) visit(node);
+  return result;
 }
 
 /**

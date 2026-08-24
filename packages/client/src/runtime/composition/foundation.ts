@@ -22,7 +22,6 @@ import {
   type WorkspaceWriteLock,
 } from "@natalia/runtime-services";
 import { createPluginsController } from "../../plugins-controller";
-import { redactToolOutput } from "../client-surface/helpers";
 import type { RuntimeContext } from "../context";
 
 function userSkillRoot() {
@@ -30,8 +29,23 @@ function userSkillRoot() {
   return isAbsolute(root) ? root : undefined;
 }
 
+function redactToolOutput(output: string, redact: boolean | undefined) {
+  if (!redact) return output;
+  return output.replace(
+    /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s]+/giu,
+    (match) =>
+      `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
+  );
+}
+
 export function wireFoundation(ctx: RuntimeContext) {
   const { state, ports } = ctx;
+  const pluginsController = createPluginsController({
+    workspaceRoot: state.workspaceRoot,
+    tools: state.tools,
+    capabilityRegistry: state.capabilityRegistry,
+    publish: (event) => ports.publish(event),
+  });
   state.terminalCommandBuffer = new TerminalCommandBuffer({
     foregroundProgram: async (paneID) => {
       try {
@@ -52,12 +66,6 @@ export function wireFoundation(ctx: RuntimeContext) {
         };
       }
     },
-  });
-  state.pluginsController = createPluginsController({
-    workspaceRoot: state.workspaceRoot,
-    tools: state.tools,
-    capabilityRegistry: state.capabilityRegistry,
-    publish: (event) => ports.publish(event),
   });
   state.waiterDeps = {
     publish: (event) => ports.publish(event),
@@ -104,7 +112,6 @@ export function wireFoundation(ctx: RuntimeContext) {
   ports.getProviderConcurrencyLimiter = () => state.providerConcurrencyLimiter;
   ports.getExecutionBySession = () => state.executionBySession;
   ports.getTurnSession = () => state.turnSession;
-  ports.getRuntimeContext = () => state.runtimeContext;
   ports.getActiveSkill = () => state.activeSkill;
   ports.getTurnAgent = () => state.turnAgent;
   ports.getAttachmentReferences = () => state.attachmentReferences;
@@ -186,5 +193,5 @@ export function wireFoundation(ctx: RuntimeContext) {
   ports.setProviderSource = (source) => {
     state.providerSource = source;
   };
-  ports.getPluginsController = () => state.pluginsController;
+  ports.getPluginsController = () => pluginsController;
 }

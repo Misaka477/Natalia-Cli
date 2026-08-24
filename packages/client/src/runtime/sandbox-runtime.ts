@@ -1,16 +1,17 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { randomUUID } from "node:crypto";
+import type { EpisodeID } from "@natalia/contracts";
 import {
   SANDBOX_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
   type MutationRegistry,
+  type RuntimeServiceClient,
   type SandboxService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
-import { randomUUID } from "node:crypto";
-import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
-type Surface = Pick<
+import type { RuntimeContext } from "./context";
+
+type SandboxRuntime = Pick<
   RuntimeServiceClient,
   | "sandboxList"
   | "sandboxDiff"
@@ -20,15 +21,17 @@ type Surface = Pick<
   | "sandboxDelete"
   | "sandboxResourceStop"
 >;
-export function createSandboxSurface(
+
+export function createSandboxRuntime(
   ctx: RuntimeContext,
-  options: ClientSurfaceOptions,
-): Surface {
+  episodeID?: EpisodeID,
+): SandboxRuntime {
   function requireSandboxes() {
     const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
     if (!sandboxes) throw new Error("sandbox controller unavailable");
     return sandboxes;
   }
+
   function requireWorkLedger() {
     const ledger = ctx.ports.resolveService<WorkLedgerController>(
       WORK_LEDGER_CONTROLLER_SERVICE,
@@ -37,16 +40,17 @@ export function createSandboxSurface(
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     return ledger;
   }
+
   function mutationRegistry() {
     return ctx.ports.resolveService<MutationRegistry>(
       WORKSPACE_MUTATIONS_SERVICE,
     );
   }
+
   return {
     async sandboxList() {
       await ctx.ports.getReady();
-      const sandboxes = requireSandboxes();
-      return (await sandboxes.list()).map((sandbox) => ({
+      return (await requireSandboxes().list()).map((sandbox) => ({
         id: sandbox.id,
         root: sandbox.root,
         isolationLevel: sandbox.isolationLevel,
@@ -57,18 +61,15 @@ export function createSandboxSurface(
     },
     async sandboxDiff(id) {
       await ctx.ports.getReady();
-      const sandboxes = requireSandboxes();
-      return await sandboxes.previewMerge(id);
+      return await requireSandboxes().previewMerge(id);
     },
     async sandboxResources(id) {
       await ctx.ports.getReady();
-      const sandboxes = requireSandboxes();
-      return sandboxes.resourcesFor(id);
+      return requireSandboxes().resourcesFor(id);
     },
     async sandboxResourceOutput(input) {
       await ctx.ports.getReady();
-      const sandboxes = requireSandboxes();
-      return await sandboxes.resourceOutput(
+      return await requireSandboxes().resourceOutput(
         input.id,
         input.resourceID,
         input.maxBytes,
@@ -91,12 +92,9 @@ export function createSandboxSurface(
           await ctx.ports.authorizeSandboxMerge({ id, paths }, owner),
       );
       const operationID = `sandbox_merge:${id}:${randomUUID()}`;
-      // WG4 Phase 3: sandbox merge keeps its own operation provenance (not a
-      // tool call), but registers an expected mutation so the auditor can
-      // attribute merged paths to the merge operation.
       mutationRegistry()?.register({
         sessionID: owner.session.id,
-        episodeID: options.episodeID,
+        episodeID,
         operationID,
         toolName: "sandbox_merge",
         authorizedPaths: ["."],

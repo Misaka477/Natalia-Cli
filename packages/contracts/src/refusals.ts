@@ -113,6 +113,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "applied",
     note: "the file may be written while a running turn prevents application, and that is an ordinary answer",
   },
+  configGet: {
+    refusal: "error",
+    note: "pure read; an unavailable runtime configuration is an initialization error",
+  },
   settingsGet: {
     refusal: "error",
     note: "pure read; an unreadable settings file is a file error",
@@ -402,6 +406,34 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   taskPermissionPreview: {
     refusal: "error",
     note: "a path outside .natalia/tasks is refused unless it names a visible capability-owned cap: document; validation problems are a value in the result",
+  },
+  taskPermissionPreviewDocument: {
+    refusal: "error",
+    note: "a path outside .natalia/tasks is refused; the full effective module policy layers are returned on success",
+  },
+  loadFlowDocument: {
+    refusal: "error",
+    note: "a path outside .natalia/flows is refused; an unknown document is an argument error",
+  },
+  loadTaskDocument: {
+    refusal: "error",
+    note: "a path outside .natalia/tasks is refused; an unknown document is an argument error",
+  },
+  installExampleDocuments: {
+    refusal: "error",
+    note: "the install writes the bundled example documents; existing files are reported as already installed",
+  },
+  previewSystemdCalendar: {
+    refusal: "error",
+    note: "an invalid or multi-line calendar is refused with the analyzer's message",
+  },
+  permissionProfileUsage: {
+    refusal: "none",
+    note: "pure read of task documents",
+  },
+  decomposeFlowConditions: {
+    refusal: "error",
+    note: "a provider that cannot serve the requested model refuses before any objective text is sent",
   },
 
   // --- observability ---

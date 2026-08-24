@@ -15,21 +15,8 @@ import type {
 export interface ConfigPatch extends Record<string, unknown> {}
 import {
   configWithoutPermissionProfile,
-  deleteFlowDocument,
-  deleteTaskDocument,
-  configureTaskSystemd,
-  flowOverview,
-  installExampleDocuments,
   grantablePermissionTools,
-  loadTaskDocument,
   permissionProfileRemovalProblem,
-  permissionProfileUsage,
-  removeTaskSystemd,
-  previewSystemdCalendar,
-  saveTaskDocument,
-  scheduledTaskOverview,
-  taskPermissionPreviewForDocument,
-  type PermissionProfileUsage,
 } from "@natalia/client";
 
 /** Every editor the Settings menu can open. */
@@ -47,7 +34,7 @@ type SettingsAction =
   | "extensions"
   | "runtime"
   | "tui";
-import { resolveConfig, type ConfigWriteScope } from "@natalia/config";
+import type { ConfigWriteScope } from "@natalia/config";
 import {
   batch,
   createEffect,
@@ -170,6 +157,14 @@ export interface CommandContext {
   };
 }
 
+async function runtimeConfig(ctx: CommandContext) {
+  if (!ctx.backend.configGet)
+    throw new Error(
+      "This runtime transport does not support configuration reads",
+    );
+  return await ctx.backend.configGet();
+}
+
 export async function runCommand(command: string, ctx: CommandContext) {
   if (command === "palette.toggle") {
     ctx.dialog.replace(() => (
@@ -220,9 +215,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "provider.connect") {
-    resolveConfig({
-      workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
-    }).then(({ config: resolved }) => {
+    runtimeConfig(ctx).then((resolved) => {
       const base = structuredClone(resolved);
       ctx.dialog.push(() => (
         <DialogProviderManager
@@ -243,6 +236,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
         selection={ctx.backend.modelSelection}
         selectRuntimeModel={ctx.backend.selectModel}
         configRevision={ctx.configRevision}
+        loadConfig={() => runtimeConfig(ctx)}
         onPersist={ctx.persistConfig}
         onError={ctx.toast.error}
       />
@@ -427,6 +421,11 @@ export async function runCommand(command: string, ctx: CommandContext) {
             current={ctx.local.state.activeAgent}
             selectAgent={(name) => ctx.backend.selectAgent?.(name)}
             workspaceRoot={ctx.workspaceRoot ?? process.cwd()}
+            loadConfig={() => runtimeConfig(ctx)}
+            persistConfig={(patch) =>
+              ctx.backend.updateConfig?.({ patch, scope: "project" }) ??
+              Promise.reject(new Error("runtime config update unavailable"))
+            }
           />
         )),
       (error) => ctx.toast.error(error),
@@ -434,9 +433,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "team.concurrency") {
-    resolveConfig({
-      workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
-    }).then(async ({ config: resolved }) => {
+    runtimeConfig(ctx).then(async (resolved) => {
       const current = String(resolved.team?.maxConcurrent ?? 4);
       const v = await DialogPrompt.show(
         ctx.dialog,
@@ -456,9 +453,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "model.edit") {
-    resolveConfig({
-      workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
-    }).then(({ config: resolved }) => {
+    runtimeConfig(ctx).then((resolved) => {
       const base = structuredClone(resolved);
       ctx.dialog.push(() => (
         <DialogProviderManager
@@ -472,9 +467,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "mcp.list") {
-    resolveConfig({
-      workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
-    }).then(({ config: resolved }) => {
+    runtimeConfig(ctx).then((resolved) => {
       ctx.dialog.push(() => (
         <DialogMcp
           config={resolved}
@@ -493,9 +486,21 @@ export async function runCommand(command: string, ctx: CommandContext) {
     void (async () => {
       const workspaceRoot = ctx.workspaceRoot ?? process.cwd();
       if (command === "flow.manage") {
+        if (
+          !ctx.backend.flowOverview ||
+          !ctx.backend.deleteFlowDocument ||
+          !ctx.backend.loadFlowDocument ||
+          !ctx.backend.saveFlowDocument
+        ) {
+          ctx.toast.show({
+            variant: "warning",
+            message: "This runtime transport does not support flow management",
+          });
+          return;
+        }
         const [overview, resolved] = await Promise.all([
-          flowOverview({ workspaceRoot }),
-          resolveConfig({ workspaceRoot }),
+          ctx.backend.flowOverview(),
+          runtimeConfig(ctx),
         ]).catch((error: unknown) => {
           ctx.toast.error(
             error instanceof Error ? error.message : String(error),
@@ -510,12 +515,14 @@ export async function runCommand(command: string, ctx: CommandContext) {
         ctx.dialog.push(() => (
           <DialogFlows
             overview={flows()}
-            workspaceRoot={workspaceRoot}
-            config={resolved.config}
-            deleteFlow={(path) => deleteFlowDocument({ workspaceRoot, path })}
-            installExamples={() => installExampleDocuments({ workspaceRoot })}
+            config={resolved}
+            backend={ctx.backend}
+            deleteFlow={(path) =>
+              ctx.backend.deleteFlowDocument!({ path }).then(() => undefined)
+            }
+            installExamples={() => ctx.backend.installExampleDocuments!({})}
             reload={async () => {
-              setFlows(await flowOverview({ workspaceRoot }));
+              setFlows(await ctx.backend.flowOverview!());
             }}
             notify={(outcome) =>
               ctx.toast.show({
@@ -527,12 +534,25 @@ export async function runCommand(command: string, ctx: CommandContext) {
         ));
         return;
       }
-      const resolved = (await resolveConfig({ workspaceRoot })).config;
-      const loadOverview = () =>
-        scheduledTaskOverview({ workspaceRoot, config: resolved });
+      if (
+        !ctx.backend.taskOverview ||
+        !ctx.backend.flowOverview ||
+        !ctx.backend.loadTaskDocument ||
+        !ctx.backend.saveTaskDocument ||
+        !ctx.backend.deleteTaskDocument ||
+        !ctx.backend.taskPermissionPreviewDocument
+      ) {
+        ctx.toast.show({
+          variant: "warning",
+          message: "This runtime transport does not support task management",
+        });
+        return;
+      }
+      const resolved = await runtimeConfig(ctx);
+      const loadOverview = () => ctx.backend.taskOverview!();
       const [overview, initialFlows] = await Promise.all([
         loadOverview(),
-        flowOverview({ workspaceRoot }),
+        ctx.backend.flowOverview!(),
       ]).catch((error: unknown) => {
         ctx.toast.error(error instanceof Error ? error.message : String(error));
         return [undefined, undefined] as const;
@@ -551,7 +571,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
           reload={async () => {
             const [nextTasks, nextFlows] = await Promise.all([
               loadOverview(),
-              flowOverview({ workspaceRoot }),
+              ctx.backend.flowOverview!(),
             ]);
             setTasks(nextTasks);
             setFlows(nextFlows);
@@ -559,27 +579,24 @@ export async function runCommand(command: string, ctx: CommandContext) {
           runTask={(taskPath) =>
             runScheduledTaskProcess({ taskPath, workspaceRoot })
           }
-          loadTask={(path) => loadTaskDocument({ workspaceRoot, path })}
+          loadTask={(path) => ctx.backend.loadTaskDocument!({ path })}
           saveTask={(document, path) =>
-            saveTaskDocument({ workspaceRoot, document, path }).then(
+            ctx.backend.saveTaskDocument!({ path, document }).then(
               () => undefined,
             )
           }
-          deleteTask={(path) => deleteTaskDocument({ workspaceRoot, path })}
+          deleteTask={(path) =>
+            ctx.backend.deleteTaskDocument!({ path }).then(() => undefined)
+          }
           installExamples={() =>
-            installExampleDocuments({ workspaceRoot, includeTasks: true })
+            ctx.backend.installExampleDocuments!({ includeTasks: true })
           }
           previewPermissions={(path) =>
-            taskPermissionPreviewForDocument({
-              workspaceRoot,
-              path,
-              config: resolved,
-            })
+            ctx.backend.taskPermissionPreviewDocument!({ path })
           }
           configureSystemd={({ path, calendar, scope }) => {
             const cliEntry = resolveCliEntry();
-            return configureTaskSystemd({
-              workspaceRoot,
+            return ctx.backend.taskSchedule!({
               path,
               calendar,
               scope,
@@ -588,11 +605,13 @@ export async function runCommand(command: string, ctx: CommandContext) {
             }).then(({ commands }) => ({ commands }));
           }}
           removeSystemd={(path) =>
-            removeTaskSystemd({ workspaceRoot, path }).then(({ commands }) => ({
+            ctx.backend.taskUnschedule!({ path }).then(({ commands }) => ({
               commands,
             }))
           }
-          previewCalendar={(calendar) => previewSystemdCalendar(calendar)}
+          previewCalendar={(calendar) =>
+            ctx.backend.previewSystemdCalendar!({ calendar })
+          }
           notify={(outcome) =>
             ctx.toast.show({
               variant: outcome.ok ? "success" : "warning",
@@ -684,11 +703,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
         title="Settings"
         options={settingsOptions}
         onSelect={async (option) => {
-          const resolved = (
-            await resolveConfig({
-              workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
-            })
-          ).config;
+          const resolved = await runtimeConfig(ctx);
           // Settings editors mutate a resolved working copy. Keep the base
           // snapshot separate so configPatch writes the actual minimal delta.
           settingsBase = structuredClone(resolved);
@@ -732,6 +747,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                   selection={ctx.backend.modelSelection}
                   selectRuntimeModel={ctx.backend.selectModel}
                   configRevision={ctx.configRevision}
+                  loadConfig={() => runtimeConfig(ctx)}
                   onPersist={ctx.persistConfig}
                   onError={ctx.toast.error}
                 />
@@ -1305,9 +1321,10 @@ export async function runCommand(command: string, ctx: CommandContext) {
                 });
               };
               const removePermissionProfile = async (name: string) => {
-                const usage = await permissionProfileUsage({
-                  workspaceRoot,
-                }).catch(() => ({}) as PermissionProfileUsage);
+                const usage =
+                  (await ctx.backend
+                    .permissionProfileUsage?.()
+                    .catch(() => undefined)) ?? {};
                 const problem = permissionProfileRemovalProblem({
                   config: resolved,
                   name,

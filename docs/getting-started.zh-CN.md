@@ -141,6 +141,10 @@ bun run src/main.tsx --workspace /path/to/your/project
 由于启动目录固定，`--workspace` 决定 agent 在哪个项目上工作。不指定的话工作区
 就是 Natalia 仓库本身。
 
+TUI 与其它所有 UI 一样，通过同一个通用 UI adapter host
+（`@natalia/client` 的 `createUiAdapterHost`）挂载；已安装的 UI 包也可以用
+`natalia ui <kind>` 启动。
+
 | 参数                 | 作用                                                                             |
 | -------------------- | -------------------------------------------------------------------------------- |
 | `--workspace <目录>` | agent 读取、写入和做检查点的目录                                                 |

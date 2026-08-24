@@ -89,7 +89,13 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** Pausing and resuming a running turn. */
   turnControl: ["pause", "resume"],
   /** Lifecycle beyond a single session. */
-  lifecycle: ["dispose", "canReloadConfig", "reloadConfig", "updateConfig"],
+  lifecycle: [
+    "dispose",
+    "canReloadConfig",
+    "reloadConfig",
+    "updateConfig",
+    "configGet",
+  ],
   /** The interface-preference settings file served over RPC. */
   settings: ["settingsGet", "settingsSet"],
   /** Choosing the agent and model a turn runs as. */
@@ -182,6 +188,9 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "taskOverview",
     "flowOverview",
     "documentCatalog",
+    "loadFlowDocument",
+    "loadTaskDocument",
+    "installExampleDocuments",
     "saveFlowDocument",
     "deleteFlowDocument",
     "saveTaskDocument",
@@ -189,6 +198,10 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "taskSchedule",
     "taskUnschedule",
     "taskPermissionPreview",
+    "taskPermissionPreviewDocument",
+    "previewSystemdCalendar",
+    "permissionProfileUsage",
+    "decomposeFlowConditions",
   ],
   /** Runtime health and its own diagnostics. */
   observability: ["runtimeStatus", "diagnostics", "sessionSnapshot"],

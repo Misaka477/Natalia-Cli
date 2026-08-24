@@ -51,6 +51,7 @@ export function createEventSink(
       toolEventTurnID,
       isSessionSnapshotTrigger,
       publishSessionSnapshot,
+      getPluginsController,
     } = ctx.ports;
     const {
       runtimeDiagnosticsBySession,
@@ -58,7 +59,6 @@ export function createEventSink(
       liveMainOutputByTurn,
       turnSession,
       activeToolByTurn,
-      pluginsController,
       performanceTrace,
     } = ctx.state;
     const sink = getSink();
@@ -159,7 +159,7 @@ export function createEventSink(
       setSessionPersistence(next);
     }
     const pluginStartedAt = performance.now();
-    if (!event.agentID) pluginsController.dispatch(event);
+    if (!event.agentID) getPluginsController().dispatch(event);
     const pluginMs = performance.now() - pluginStartedAt;
     const sinkStartedAt = performance.now();
     sink?.(event);

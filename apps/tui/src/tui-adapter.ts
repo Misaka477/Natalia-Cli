@@ -1,19 +1,20 @@
-import { createFakeBackend, createWorkerRuntimeClient } from "@natalia/client";
-import { CapabilityRegistry } from "@natalia/capability";
-import type { RuntimeClient, UiAdapterMountInput } from "@natalia/contracts";
 import {
-  createPluginAdapterMaterializer,
-  createPluginRegistry,
-  createUiAdapterMountInput,
-  type Plugin,
-  type PluginAdapterInstance,
+  createFakeBackend,
+  createUiAdapterHost,
+  createWorkerRuntimeClient,
+} from "@natalia/client";
+import { TUI_PLUGIN_MANIFEST } from "@natalia/builtin-plugins";
+import type { RuntimeClient, UiAdapterMountInput } from "@natalia/contracts";
+import type {
+  DesiredPluginEntry,
+  Plugin,
+  PluginAdapterInstance,
 } from "@natalia/plugin";
 import { paste100KiB } from "@natalia/testing";
-import { createToolRegistry } from "@natalia/tools";
 import { MessageChannel, Worker } from "node:worker_threads";
 import { runTuiShell } from "./app/runtime";
 
-export const TUI_PLUGIN_ID = "natalia-tui";
+export const TUI_PLUGIN_ID = TUI_PLUGIN_MANIFEST.id;
 export const TUI_ADAPTER = "ui.tui";
 
 export type TuiAdapterOptions = {
@@ -39,22 +40,7 @@ export function createTuiAdapterPlugin(
 ): Plugin {
   let active: TuiAdapterInstance | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: TUI_PLUGIN_ID,
-      version: "1.0.0",
-      name: "TUI",
-      description: "Process-level terminal user interface adapter.",
-      entry: "natalia:tui",
-      scope: "process",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["adapters"],
-    },
+    manifest: TUI_PLUGIN_MANIFEST,
     setup(api) {
       api.adapters.registerUi({
         kind: TUI_ADAPTER,
@@ -81,53 +67,30 @@ export async function createTuiAdapterHost(
   if (options.enabled === false)
     throw new Error(`TUI plugin is disabled (${TUI_PLUGIN_ID})`);
   const { enabled: _, ...adapterOptions } = options;
-  const backend = createRuntime(adapterOptions);
-  const mountInput = createUiAdapterMountInput(backend);
-  const kernel = new CapabilityRegistry();
-  const registry = createPluginRegistry({
-    tools: createToolRegistry([]),
-    registerOwner: (manifest) => {
-      const owner = kernel.registerOwner({
-        id: manifest.id,
-        name: manifest.name,
-        version: manifest.version,
-        description: manifest.description,
-        scope: manifest.scope,
-        grants: ["adapters"],
-      });
-      return owner;
-    },
-  });
+  const runtime = createRuntime(adapterOptions);
   let adapter: TuiAdapterInstance | undefined;
-  await registry.load(
-    createTuiAdapterPlugin(adapterOptions, async (input, launchOptions) => {
-      adapter = await start(input, launchOptions);
-      return adapter;
-    }),
-  );
-  const materializer = createPluginAdapterMaterializer(kernel);
-  try {
-    await materializer.materialize(TUI_ADAPTER, mountInput);
-  } catch (error) {
-    await backend.dispose?.();
-    await registry.unloadAll();
-    throw error;
-  }
-  let closed = false;
+  const entry: DesiredPluginEntry = {
+    id: TUI_PLUGIN_ID,
+    enabled: true,
+    fingerprint: TUI_PLUGIN_MANIFEST.version,
+    manifest: TUI_PLUGIN_MANIFEST,
+    load: async () =>
+      createTuiAdapterPlugin(adapterOptions, async (input, launchOptions) => {
+        adapter = await start(input, launchOptions);
+        return adapter;
+      }),
+  };
+  const host = await createUiAdapterHost({
+    workspaceRoot: adapterOptions.workspaceRoot,
+    runtime,
+    kinds: [TUI_ADAPTER],
+    extraEntries: [entry],
+    report: (message) => process.stderr.write(`natalia: ${message}\n`),
+  });
   return {
     done: adapter!.done,
     async close() {
-      if (closed) return;
-      closed = true;
-      try {
-        await materializer.close();
-      } finally {
-        try {
-          await registry.unloadAll();
-        } finally {
-          await backend.dispose?.();
-        }
-      }
+      await host.close();
     },
   };
 }

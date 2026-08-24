@@ -1446,16 +1446,19 @@ test("user plugin config reload reconciles its lifecycle", async () => {
       plugins: { paths: [".natalia/plugins"] },
     }),
   );
+  const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_plugin_config_reload",
     provider: scriptedProvider("ready"),
+    capabilityRegistry: kernel,
   });
   client.start(() => undefined);
   await client.runtimeStatus?.();
   expect(
     (await client.plugins?.())?.some((plugin) => plugin.id === "reload.plugin"),
   ).toBe(true);
+  expect(kernel.ownerOf("commands", "reload")).toBe("reload.plugin");
 
   await writeFile(
     configPath,
@@ -1471,6 +1474,7 @@ test("user plugin config reload reconciles its lifecycle", async () => {
   expect(
     (await client.plugins?.())?.some((plugin) => plugin.id === "reload.plugin"),
   ).toBe(false);
+  expect(kernel.ownerOf("commands", "reload")).toBeUndefined();
   await client.dispose?.();
 }, 60_000);
 

@@ -1,18 +1,18 @@
-import type { ConfigV3, NataliaFlowDocument } from "@natalia/contracts";
+import type {
+  ConfigV3,
+  FlowOverview,
+  FlowRow,
+  FlowStageRow,
+  NataliaFlowDocument,
+  RuntimeClient,
+} from "@natalia/contracts";
 import { modelRefKey, parseModelRef } from "@natalia/contracts";
 import { modelSelectionStatus } from "@natalia/config";
 import { listModelConfigs } from "./DialogModel";
 import {
-  decomposeFlowConditions,
-  deleteFlowDocument,
   effectiveFlowPermissions,
-  loadFlowDocument,
   newFlowID,
-  saveFlowDocument,
-  type FlowOverview,
   type FlowConditionModel,
-  type FlowRow,
-  type FlowStageRow,
 } from "@natalia/client";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { useBindings } from "@opentui/keymap/solid";
@@ -297,6 +297,8 @@ export function flowConditionsFromLines(
 export function DialogFlows(props: {
   overview: FlowOverview;
   workspaceRoot?: string;
+  /** The runtime port backing the default document operations. */
+  backend?: RuntimeClient;
   config?: ConfigV3;
   reload?: () => Promise<void>;
   loadFlow?: (path: string) => Promise<NataliaFlowDocument>;
@@ -316,24 +318,38 @@ export function DialogFlows(props: {
     active = false;
   });
   const canEdit = Boolean(
-    props.reload && (props.workspaceRoot || (props.loadFlow && props.saveFlow)),
+    props.reload &&
+      (props.workspaceRoot ||
+        (props.loadFlow && props.saveFlow) ||
+        Boolean(props.backend)),
   );
   const load =
     props.loadFlow ??
-    (async (path: string) =>
-      loadFlowDocument({ workspaceRoot: props.workspaceRoot!, path }));
+    (async (path: string) => {
+      if (!props.backend?.loadFlowDocument)
+        throw new Error(
+          "this runtime transport does not support loading flow documents",
+        );
+      return props.backend.loadFlowDocument({ path });
+    });
   const save =
     props.saveFlow ??
-    (async (document: NataliaFlowDocument, path: string) =>
-      saveFlowDocument({
-        workspaceRoot: props.workspaceRoot!,
-        path,
-        document,
-      }).then(() => undefined));
+    (async (document: NataliaFlowDocument, path: string) => {
+      if (!props.backend?.saveFlowDocument)
+        throw new Error(
+          "this runtime transport does not support saving flow documents",
+        );
+      await props.backend.saveFlowDocument({ path, document });
+    });
   const remove =
     props.deleteFlow ??
-    (async (path: string) =>
-      deleteFlowDocument({ workspaceRoot: props.workspaceRoot!, path }));
+    (async (path: string) => {
+      if (!props.backend?.deleteFlowDocument)
+        throw new Error(
+          "this runtime transport does not support deleting flow documents",
+        );
+      await props.backend.deleteFlowDocument({ path });
+    });
 
   function openEditor(
     path: string,
@@ -352,11 +368,23 @@ export function DialogFlows(props: {
         notify={props.notify}
         screen={screen}
         deleteFlow={remove}
-        canDelete={existing && Boolean(props.workspaceRoot || props.deleteFlow)}
+        canDelete={
+          existing &&
+          Boolean(
+            props.workspaceRoot ||
+              props.deleteFlow ||
+              props.backend?.deleteFlowDocument,
+          )
+        }
         decomposeConditions={
           props.decomposeConditions ??
-          ((input) =>
-            decomposeFlowConditions({ ...input, config: props.config! }))
+          ((input) => {
+            if (!props.backend?.decomposeFlowConditions)
+              throw new Error(
+                "this runtime transport does not support condition decomposition",
+              );
+            return props.backend.decomposeFlowConditions(input);
+          })
         }
       />
     ));

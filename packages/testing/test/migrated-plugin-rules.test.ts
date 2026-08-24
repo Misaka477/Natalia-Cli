@@ -182,7 +182,6 @@ test("migrated plugin rules retain built-in plugin protections", () => {
 
 test("MCP migration rejects raw tool registry wiring", () => {
   for (const path of [
-    "packages/client/src/builtin-plugins/catalog.ts",
     "packages/mcp-plugin/src/mcp-runtime.ts",
     "packages/mcp-plugin/src/mcp-controller.ts",
     "packages/mcp-plugin/src/mcp-controller-plugin.ts",
@@ -209,10 +208,7 @@ test("MCP migration keeps connection routing inside its operational service", ()
       "packages/provider-model-plugin/src/provider-runner.ts",
       "for (const access of input.mcpAccess()) await access.readResource(server, uri)",
     ],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "createMcpController({})",
-    ],
+    ["packages/client/src/runtime/main.ts", "createMcpController({})"],
     [
       "packages/mcp-plugin/src/index.ts",
       'export type { McpController, McpAccess } from "./mcp-controller"',
@@ -260,7 +256,7 @@ test("terminal migration rejects backend leaks across service consumers", () => 
       "const registry = terminalController?.get()",
     ],
     [
-      "packages/client/src/builtin-plugins/catalog.ts",
+      "packages/client/src/runtime/main.ts",
       "external?: NativeTerminalRegistry",
     ],
     ["packages/tools/src/types.ts", "nativeTerminal?: NativeTerminalRegistry"],
@@ -349,54 +345,36 @@ test("subagents migration rejects backend leaks across service consumers", () =>
 });
 
 test("local tools migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createLocalToolsPlugin } from "./local-tools-plugin"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/local-tools-plugin.ts",
-      "export function createLocalToolsPlugin() {}",
-    ],
-    [
-      "packages/client/src/capabilities/local-tool-families.ts",
-      "export async function discoverLocalToolFamilies() {}",
-    ],
-  ] as const) {
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+  for (const source of [
+    'import { createLocalToolsPlugin } from "./local-tools-plugin"',
+    "export function createLocalToolsPlugin() {}",
+    "export async function discoverLocalToolFamilies() {}",
+  ]) {
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-local-tools" }),
     ]);
   }
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createLocalToolsPlugin } from "@natalia/local-tools-plugin"',
     ),
   ).toEqual([]);
 });
 
 test("task module migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createTaskModulePlugin } from "./task-module-plugin"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/task-module-plugin.ts",
-      "export function createTaskModulePlugin() {}",
-    ],
-    [
-      "packages/client/src/capabilities/task-module-tools.ts",
-      "export function createFlowModuleCompleteTool() {}",
-    ],
-  ] as const) {
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+  for (const source of [
+    'import { createTaskModulePlugin } from "./task-module-plugin"',
+    "export function createTaskModulePlugin() {}",
+    "export function createFlowModuleCompleteTool() {}",
+  ]) {
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-task-module" }),
     ]);
   }
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createTaskModulePlugin } from "@natalia/task-module-plugin"',
     ),
   ).toContainEqual({
@@ -406,32 +384,20 @@ test("task module migration rejects client-owned implementations", () => {
 });
 
 test("team migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createTeamPlugin } from "./team-plugin"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/team-plugin.ts",
-      "export function createTeamPlugin() {}",
-    ],
-    [
-      "packages/client/src/team-tools.ts",
-      "export function createTeamFanoutTool() {}",
-    ],
-    ["packages/client/src/fan-out.ts", "export async function runFanOut() {}"],
-    [
-      "packages/client/src/agent-team-prompts.ts",
-      'export const TEAM_MODE_DIRECTIVE = "team"',
-    ],
-  ] as const) {
-    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+  for (const source of [
+    'import { createTeamPlugin } from "./team-plugin"',
+    "export function createTeamPlugin() {}",
+    "export function createTeamFanoutTool() {}",
+    "export async function runFanOut() {}",
+    'export const TEAM_MODE_DIRECTIVE = "team"',
+  ]) {
+    expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-team" }),
     );
   }
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createTeamPlugin } from "@natalia/team-plugin"',
     ),
   ).toContainEqual({
@@ -441,31 +407,19 @@ test("team migration rejects client-owned implementations", () => {
 });
 
 test("tool pipeline migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createToolPipelinePlugin } from "./tool-pipeline-plugin"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/tool-pipeline-plugin.ts",
-      "export function createToolPipelinePlugin() {}",
-    ],
-    [
-      "packages/client/src/tool-policy.ts",
-      "export function evaluatePermissionRules() {}",
-    ],
-    [
-      "packages/client/src/bash-command-policy.ts",
-      "export async function parseBashSimpleCommand() {}",
-    ],
-  ] as const) {
-    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+  for (const source of [
+    'import { createToolPipelinePlugin } from "./tool-pipeline-plugin"',
+    "export function createToolPipelinePlugin() {}",
+    "export function evaluatePermissionRules() {}",
+    "export async function parseBashSimpleCommand() {}",
+  ]) {
+    expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-tool-pipeline" }),
     );
   }
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createToolPipelinePlugin } from "@natalia/tool-pipeline-plugin"',
     ),
   ).toEqual([]);
@@ -474,7 +428,7 @@ test("tool pipeline migration rejects client-owned implementations", () => {
 test("retry migration protects provider runner", () => {
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/provider-runner.ts",
+      target,
       "runStreamingWithRetry(context, operation)",
     ),
   ).toEqual([expect.objectContaining({ pluginID: "natalia-retry" })]);
@@ -501,29 +455,14 @@ test("provider model migration rejects client-owned slash commands", () => {
 });
 
 test("collaboration migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createCollaborationPlugin } from "./collaboration-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { InteractiveWaiter } from "./interactive-waiter"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import { buildMailboxQueued } from "./mailbox-ledger"',
-    ],
-    [
-      "packages/client/src/mailbox-tool.ts",
-      "export function createMailboxAcknowledgeTool() {}",
-    ],
-    [
-      "packages/client/src/runtime/initialize/collaboration-tools.ts",
-      'scope.tools.set("collab_ask", tool)',
-    ],
+  for (const source of [
+    'import { createCollaborationPlugin } from "./collaboration-plugin"',
+    'import type { InteractiveWaiter } from "./interactive-waiter"',
+    'import { buildMailboxQueued } from "./mailbox-ledger"',
+    "export function createMailboxAcknowledgeTool() {}",
+    'scope.tools.set("collab_ask", tool)',
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-collaboration" }),
     ]);
 
@@ -536,29 +475,14 @@ test("collaboration migration protects the extracted implementation", () => {
 });
 
 test("workspace migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createWorkspacePlugin } from "./workspace-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { WorkspaceWriteLock } from "./workspace-write-lock"',
-    ],
-    [
-      "packages/client/src/workspace-files-controller.ts",
-      'import { watchWorkspaceFiles } from "./workspace-files"',
-    ],
-    [
-      "packages/client/src/workspace-files.ts",
-      "export async function findWorkspaceFiles() {}",
-    ],
-    [
-      "packages/client/src/runtime/commands/slash-read.ts",
-      'if (trimmed === "/files") return true',
-    ],
+  for (const source of [
+    'import { createWorkspacePlugin } from "./workspace-plugin"',
+    'import type { WorkspaceWriteLock } from "./workspace-write-lock"',
+    'import { watchWorkspaceFiles } from "./workspace-files"',
+    "export async function findWorkspaceFiles() {}",
+    'if (trimmed === "/files") return true',
   ])
-    expect(findMigratedPluginViolations(path, source)).toContainEqual(
+    expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-workspace" }),
     );
 
@@ -571,25 +495,13 @@ test("workspace migration protects the extracted implementation", () => {
 });
 
 test("task workflow migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createTaskWorkflowPlugin } from "./task-workflow-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { TaskWorkflowController } from "./task-workflow-controller"',
-    ],
-    [
-      "packages/client/src/task-document.ts",
-      "export async function saveTaskDocument() {}",
-    ],
-    [
-      "packages/client/src/systemd-adapter.ts",
-      "export async function configureTaskSystemd() {}",
-    ],
+  for (const source of [
+    'import { createTaskWorkflowPlugin } from "./task-workflow-plugin"',
+    'import type { TaskWorkflowController } from "./task-workflow-controller"',
+    "export async function saveTaskDocument() {}",
+    "export async function configureTaskSystemd() {}",
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-task-workflow" }),
     ]);
 
@@ -602,17 +514,11 @@ test("task workflow migration protects the extracted implementation", () => {
 });
 
 test("runtime config migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createRuntimeConfigPlugin } from "./runtime-config-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import { refreshRuntimeConfigService } from "./builtin-plugins/runtime-config-plugin"',
-    ],
+  for (const source of [
+    'import { createRuntimeConfigPlugin } from "./runtime-config-plugin"',
+    'import { refreshRuntimeConfigService } from "./builtin-plugins/runtime-config-plugin"',
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-runtime-config" }),
     ]);
   expect(
@@ -624,21 +530,12 @@ test("runtime config migration rejects client-owned implementations", () => {
 });
 
 test("session store migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { SessionStoreController } from "./session-store-controller"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createSessionStoreControllerPlugin } from "./session-store-controller-plugin"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/turn-orchestration-plugin.ts",
-      'import { SESSION_STORE_PLUGIN_ID } from "./session-store-controller-plugin"',
-    ],
+  for (const source of [
+    'import type { SessionStoreController } from "./session-store-controller"',
+    'import { createSessionStoreControllerPlugin } from "./session-store-controller-plugin"',
+    'import { SESSION_STORE_PLUGIN_ID } from "./session-store-controller-plugin"',
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-session-store" }),
     ]);
   expect(
@@ -660,7 +557,7 @@ test("session store migration rejects client-owned implementations", () => {
     ["packages/client/src/runtime/main.ts", "sessionStoreController?.sqlite()"],
     ["packages/client/src/runtime/main.ts", "sessionStoreController.json()"],
     [
-      "packages/client/src/runtime/commands/slash-read.ts",
+      "packages/client/test/real-runtime.test.ts",
       'if (trimmed === "/sessions") return true',
     ],
   ] as const)
@@ -685,47 +582,29 @@ test("session store migration rejects client-owned implementations", () => {
 });
 
 test("retry migration rejects client-owned retry implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/provider-runner.ts",
-      'import type { RetryService } from "./retry-service"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createRetryPlugin } from "./retry-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import { RETRY_SERVICE } from "./builtin-plugins/retry-plugin"',
-    ],
+  for (const source of [
+    'import type { RetryService } from "./retry-service"',
+    'import { createRetryPlugin } from "./retry-plugin"',
+    'import { RETRY_SERVICE } from "./builtin-plugins/retry-plugin"',
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-retry" }),
     ]);
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/provider-runner.ts",
+      target,
       'import type { RetryService } from "@natalia/retry-plugin"',
     ),
   ).toEqual([]);
 });
 
 test("context ledger migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { ContextLedgerFactory } from "./context-ledger-factory"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createContextLedgerPlugin } from "./context-ledger-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import { CONTEXT_LEDGER_FACTORY_SERVICE } from "./builtin-plugins/context-ledger-plugin"',
-    ],
+  for (const source of [
+    'import type { ContextLedgerFactory } from "./context-ledger-factory"',
+    'import { createContextLedgerPlugin } from "./context-ledger-plugin"',
+    'import { CONTEXT_LEDGER_FACTORY_SERVICE } from "./builtin-plugins/context-ledger-plugin"',
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-context-ledger" }),
     ]);
   expect(
@@ -737,78 +616,66 @@ test("context ledger migration rejects client-owned implementations", () => {
 });
 
 test("attachment migration protects all former consumers", () => {
-  for (const path of [
-    "packages/client/src/provider-runner.ts",
-    "packages/client/src/session-store-controller.ts",
-  ])
-    expect(
-      findMigratedPluginViolations(path, "attachmentDataURL(root, attachment)"),
-    ).toEqual([expect.objectContaining({ pluginID: "natalia-attachment" })]);
+  expect(
+    findMigratedPluginViolations(target, "attachmentDataURL(root, attachment)"),
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-attachment" })]);
 });
 
 test("attachment migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/provider-runner.ts",
-      'import type { AttachmentService } from "./attachment-service"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createAttachmentPlugin } from "./attachment-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import { ATTACHMENT_SERVICE } from "./builtin-plugins/attachment-plugin"',
-    ],
+  for (const source of [
+    'import type { AttachmentService } from "./attachment-service"',
+    'import { createAttachmentPlugin } from "./attachment-plugin"',
+    'import { ATTACHMENT_SERVICE } from "./builtin-plugins/attachment-plugin"',
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-attachment" }),
     ]);
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/provider-runner.ts",
+      target,
       'import type { AttachmentService } from "@natalia/attachment-plugin"',
     ),
   ).toEqual([]);
 });
 
 test("compaction migration protects both former consumers", () => {
-  for (const path of [
-    "packages/client/src/provider-runner.ts",
-    "packages/client/src/runtime/main.ts",
-  ])
-    expect(
-      findMigratedPluginViolations(
-        path,
-        "compactContext(ledger, compactor, options)",
-      ),
-    ).toEqual([expect.objectContaining({ pluginID: "natalia-compaction" })]);
+  expect(
+    findMigratedPluginViolations(
+      target,
+      "compactContext(ledger, compactor, options)",
+    ),
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-compaction" })]);
 });
 
 test("compaction migration rejects client-owned implementations", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/provider-runner.ts",
-      'import type { CompactionService } from "./compaction-service"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createCompactionPlugin } from "./compaction-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import { COMPACTION_SERVICE } from "./builtin-plugins/compaction-plugin"',
-    ],
+  for (const source of [
+    'import type { CompactionService } from "./compaction-service"',
+    'import { createCompactionPlugin } from "./compaction-plugin"',
+    'import { COMPACTION_SERVICE } from "./builtin-plugins/compaction-plugin"',
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-compaction" }),
     ]);
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/provider-runner.ts",
+      target,
       'import type { CompactionService } from "@natalia/compaction-plugin"',
     ),
   ).toEqual([]);
+});
+
+test("checkpoint migration rejects client-owned controller state", () => {
+  for (const source of [
+    "const controllerBySession = new Map()",
+    "const initBySession = new Map()",
+    "await controller.get().list()",
+  ])
+    expect(
+      findMigratedPluginViolations(
+        "packages/client/src/runtime/checkpoint-runtime.ts",
+        source,
+      ),
+    ).toEqual([expect.objectContaining({ pluginID: "natalia-checkpoint" })]);
 });
 
 test("transport migration protects the CLI composition root", () => {
@@ -865,83 +732,56 @@ test("TUI command adapters cannot restore the process-global command bridge", ()
 });
 
 test("runtime UI migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/runtime/main.ts",
-      "createStatusSnapshotController(input)",
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import { statusSnapshot } from "./status-controller"',
-    ],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createRuntimeUiPlugin } from "./runtime-ui-plugin"',
-    ],
-    [
-      "packages/client/src/status-controller.ts",
-      "export function statusSnapshot() {}",
-    ],
+  for (const source of [
+    "createStatusSnapshotController(input)",
+    'import { statusSnapshot } from "./status-controller"',
+    'import { createRuntimeUiPlugin } from "./runtime-ui-plugin"',
+    "export function statusSnapshot() {}",
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-runtime-ui" }),
     ]);
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createRuntimeUiPlugin } from "@natalia/runtime-ui-plugin"',
     ),
   ).toEqual([]);
 });
 
 test("turn orchestration migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    ["packages/client/src/runtime/main.ts", "createTurnController(input)"],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createTurnOrchestrationPlugin } from "./turn-orchestration-plugin"',
-    ],
-    [
-      "packages/client/src/turn-controller.ts",
-      "export function createTurnController() {}",
-    ],
+  for (const source of [
+    "createTurnController(input)",
+    'import { createTurnOrchestrationPlugin } from "./turn-orchestration-plugin"',
+    "export function createTurnController() {}",
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-turn-orchestration" }),
     ]);
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createTurnOrchestrationPlugin } from "@natalia/turn-orchestration-plugin"',
     ),
   ).toEqual([]);
 });
 
 test("provider model migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    ["packages/client/src/runtime/main.ts", "createProviderRunner(input)"],
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createProviderModelPlugin } from "./provider-model-plugin"',
-    ],
-    [
-      "packages/client/src/provider-model-controller.ts",
-      "export function createProviderModelController() {}",
-    ],
-    [
-      "packages/client/src/provider-runner.ts",
-      "export function createProviderRunner() {}",
-    ],
+  for (const source of [
+    "createProviderRunner(input)",
+    'import { createProviderModelPlugin } from "./provider-model-plugin"',
+    "export function createProviderModelController() {}",
+    "export function createProviderRunner() {}",
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-provider-model" }),
     ]);
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createProviderModelPlugin } from "@natalia/provider-model-plugin"',
     ),
   ).toContainEqual({
@@ -951,99 +791,63 @@ test("provider model migration protects the extracted implementation", () => {
 });
 
 test("work ledger migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createWorkLedgerPlugin } from "./work-ledger-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { WorkLedgerController } from "./work-ledger-controller"',
-    ],
-    [
-      "packages/client/src/work-ledger-controller.ts",
-      "export function createWorkLedgerController() {}",
-    ],
-    [
-      "packages/client/src/drift-evaluator.ts",
-      "export function createDriftEvaluator() {}",
-    ],
-    ["packages/client/src/work-graph.ts", "export const WORK_GRAPH_KIND = {}"],
+  for (const source of [
+    'import { createWorkLedgerPlugin } from "./work-ledger-plugin"',
+    'import type { WorkLedgerController } from "./work-ledger-controller"',
+    "export function createWorkLedgerController() {}",
+    "export function createDriftEvaluator() {}",
+    "export const WORK_GRAPH_KIND = {}",
   ]) {
-    const violations = findMigratedPluginViolations(path, source);
+    const violations = findMigratedPluginViolations(target, source);
     expect(
       violations.some(
         (violation) => violation.pluginID === "natalia-work-ledger",
       ),
-      `${path}: ${source}`,
+      `${source}`,
     ).toBe(true);
   }
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createWorkLedgerPlugin } from "@natalia/work-ledger-plugin"',
     ),
   ).toEqual([]);
 });
 
 test("checkpoint migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createCheckpointControllerPlugin } from "./checkpoint-controller-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { CheckpointController } from "./checkpoint-controller"',
-    ],
-    [
-      "packages/client/src/checkpoint-controller.ts",
-      "export function createCheckpointController() {}",
-    ],
-    [
-      "packages/client/src/builtin-plugins/checkpoint-controller-plugin.ts",
-      "export function createCheckpointControllerPlugin() {}",
-    ],
+  for (const source of [
+    'import { createCheckpointControllerPlugin } from "./checkpoint-controller-plugin"',
+    'import type { CheckpointController } from "./checkpoint-controller"',
+    "export function createCheckpointController() {}",
+    "export function createCheckpointControllerPlugin() {}",
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-checkpoint" }),
     ]);
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createCheckpointControllerPlugin } from "@natalia/checkpoint-plugin"',
     ),
   ).toEqual([]);
 });
 
 test("governance ledger migration protects the extracted implementation", () => {
-  for (const [path, source] of [
-    [
-      "packages/client/src/builtin-plugins/catalog.ts",
-      'import { createGovernanceLedgerPlugin } from "./governance-ledger-plugin"',
-    ],
-    [
-      "packages/client/src/runtime/main.ts",
-      'import type { GovernanceLedgerController } from "./governance-ledger-controller"',
-    ],
-    [
-      "packages/client/src/constitution-ledger.ts",
-      "export function seedConstitutionRules() {}",
-    ],
-    [
-      "packages/client/src/evidence-ledger.ts",
-      "export function buildEvidenceRecorded() {}",
-    ],
+  for (const source of [
+    'import { createGovernanceLedgerPlugin } from "./governance-ledger-plugin"',
+    'import type { GovernanceLedgerController } from "./governance-ledger-controller"',
+    "export function seedConstitutionRules() {}",
+    "export function buildEvidenceRecorded() {}",
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-governance-ledger" }),
     ]);
 
   expect(
     findMigratedPluginViolations(
-      "packages/client/src/builtin-plugins/catalog.ts",
+      target,
       'import { createGovernanceLedgerPlugin } from "@natalia/governance-ledger-plugin"',
     ),
   ).toEqual([]);
@@ -1328,7 +1132,6 @@ test("migrated plugin matcher accepts new declarative rules", () => {
 test("workflow scheduler migration protects host construction sites", () => {
   for (const path of [
     "packages/client/src/runtime/main.ts",
-    "packages/client/src/builtin-plugins/catalog.ts",
     "packages/client/src/capability-execution-host.ts",
     "packages/client/test/capability-execution-host.test.ts",
     "packages/client/test/worker.test.ts",
@@ -1368,11 +1171,11 @@ test("workflow scheduler migration protects the extracted implementation", () =>
       'import { WorkflowExecutionScheduler } from "./workflow-execution-scheduler"',
     ],
     [
-      "packages/client/src/workflow-execution-scheduler.ts",
+      "packages/client/src/runtime/main.ts",
       "export class WorkflowExecutionScheduler {}",
     ],
     [
-      "packages/client/src/builtin-plugins/workflow-scheduler-plugin.ts",
+      "packages/client/src/runtime/main.ts",
       "export function createWorkflowSchedulerPlugin() {}",
     ],
   ])

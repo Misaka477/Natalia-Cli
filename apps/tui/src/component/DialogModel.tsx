@@ -1,9 +1,5 @@
 import { createEffect, createMemo, createSignal, onMount } from "solid-js";
-import {
-  modelSelectionStatus,
-  resolveConfig,
-  updateConfigAtScope,
-} from "@natalia/config";
+import { modelSelectionStatus } from "@natalia/config";
 import {
   modelRefKey,
   parseModelRef,
@@ -125,7 +121,8 @@ export function DialogModel(props: {
   selection?: () => Promise<RuntimeModelSelection>;
   selectRuntimeModel?: (modelID?: string, variant?: string) => Promise<void>;
   configRevision?: () => number;
-  onPersist?(next: ConfigV3, base: ConfigV3): Promise<boolean | void>;
+  loadConfig: () => Promise<ConfigV3>;
+  onPersist(next: ConfigV3, base: ConfigV3): Promise<boolean | void>;
   onSelected?(selection: RuntimeModelSelection): void;
   onError?(error: unknown): void;
 }) {
@@ -139,11 +136,9 @@ export function DialogModel(props: {
   createEffect(() => {
     props.configRevision?.();
     const load = ++configLoad;
-    void resolveConfig({
-      workspaceRoot: props.workspaceRoot,
-      globalPath: props.globalPath,
-    })
-      .then(({ config }) => {
+    void props
+      .loadConfig()
+      .then((config) => {
         if (load === configLoad) setConfig(config);
       })
       .catch((error) => (props.onError ?? toast.error)(error));
@@ -168,28 +163,14 @@ export function DialogModel(props: {
       return;
     const next = structuredClone(resolved);
     next.defaultModel = parseModelRef(option.value);
-    const persisted = props.onPersist
-      ? await props.onPersist(next, resolved)
-      : await updateConfigAtScope(
-          props.workspaceRoot,
-          { defaultModel: next.defaultModel },
-          "global",
-          { globalPath: props.globalPath },
-        );
+    const persisted = await props.onPersist(next, resolved);
     if (persisted === false) return;
     try {
       await props.selectRuntimeModel?.(option.value);
     } catch (error) {
       // Restore the previous config if runtime selection fails after the file
       // was written, keeping the picker from leaving the two states divergent.
-      if (props.onPersist) await props.onPersist(resolved, next);
-      else
-        await updateConfigAtScope(
-          props.workspaceRoot,
-          { defaultModel: resolved.defaultModel },
-          "global",
-          { globalPath: props.globalPath },
-        );
+      await props.onPersist(resolved, next);
       throw error;
     }
     setSelection({ modelID: option.value });

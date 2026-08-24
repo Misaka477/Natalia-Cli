@@ -15,6 +15,11 @@ export {
   type WorkflowDocumentChoice,
 } from "@natalia/workflow";
 export { createFakeBackend } from "./fixture";
+export {
+  createUiAdapterHost,
+  type UiAdapterHost,
+  type UiAdapterHostOptions,
+} from "./ui-host";
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./runtime/main";
 export type { RuntimeServiceClient } from "@natalia/runtime-services";
 export {

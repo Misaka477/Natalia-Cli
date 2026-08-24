@@ -122,6 +122,7 @@ export const RPC_ROUTE_MEMBERS = {
   "config.canReload": "canReloadConfig",
   "config.reload": "reloadConfig",
   "config.update": "updateConfig",
+  "config.get": "configGet",
   "settings.get": "settingsGet",
   "settings.set": "settingsSet",
   "agent.list": "agents",
@@ -242,6 +243,13 @@ export const RPC_ROUTE_MEMBERS = {
   "task.schedule": "taskSchedule",
   "task.unschedule": "taskUnschedule",
   "task.preview": "taskPermissionPreview",
+  "task.preview-document": "taskPermissionPreviewDocument",
+  "task.load": "loadTaskDocument",
+  "flow.load": "loadFlowDocument",
+  "flow.install-examples": "installExampleDocuments",
+  "task.preview-calendar": "previewSystemdCalendar",
+  "task.permission-usage": "permissionProfileUsage",
+  "flow.decompose-conditions": "decomposeFlowConditions",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /**
@@ -335,6 +343,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "task.delete",
   "task.schedule",
   "task.unschedule",
+  "flow.install-examples",
 ]);
 
 /**
@@ -1955,6 +1964,14 @@ export async function handleRPCMessage(
         }),
       };
     }
+    if (body.method === "config.get") {
+      optionsGuard(client, "configGet");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.configGet?.(),
+      };
+    }
     // --- P0-G follow-up: task document validation (previously CLI-only) ---
     if (body.method === "settings.get") {
       optionsGuard(client, "settingsGet");
@@ -1993,6 +2010,85 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.taskPermissionPreview?.({ path }),
+      };
+    }
+    if (body.method === "task.preview-document") {
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.taskPermissionPreviewDocument?.({ path }),
+      };
+    }
+    if (body.method === "task.load") {
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.loadTaskDocument?.({ path }),
+      };
+    }
+    if (body.method === "flow.load") {
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.loadFlowDocument?.({ path }),
+      };
+    }
+    if (body.method === "flow.install-examples") {
+      const params = body.params;
+      const includeTasks =
+        params && typeof params === "object"
+          ? typeof (params as { includeTasks?: unknown }).includeTasks ===
+            "boolean"
+            ? (params as { includeTasks: boolean }).includeTasks
+            : undefined
+          : undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.installExampleDocuments?.(
+          includeTasks === undefined ? undefined : { includeTasks },
+        ),
+      };
+    }
+    if (body.method === "task.preview-calendar") {
+      const calendar = stringParam(body.params, "calendar");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.previewSystemdCalendar?.({ calendar }),
+      };
+    }
+    if (body.method === "task.permission-usage") {
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.permissionProfileUsage?.(),
+      };
+    }
+    if (body.method === "flow.decompose-conditions") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams(
+          "flow.decompose-conditions.params must be an object",
+        );
+      const input = params as Record<string, unknown>;
+      if (
+        typeof input.modelID !== "string" ||
+        typeof input.objective !== "string"
+      )
+        throw invalidParams(
+          "flow.decompose-conditions requires modelID and objective",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.decomposeFlowConditions?.({
+          modelID: input.modelID,
+          objective: input.objective,
+        }),
       };
     }
     // --- P0-G: flow document writes (previously CLI-only) ---

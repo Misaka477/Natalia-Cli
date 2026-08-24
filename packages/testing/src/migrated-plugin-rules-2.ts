@@ -82,7 +82,6 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
     id: "natalia-terminal",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
       "packages/tools/src/types.ts",
       "packages/tool-terminal/src/index.ts",
       "packages/terminal-plugin/src/index.ts",
@@ -151,13 +150,7 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-tool-pipeline",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/tool-pipeline-plugin.ts",
-      "packages/client/src/tool-policy.ts",
-      "packages/client/src/bash-command-policy.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct policy construction in the host",
@@ -178,19 +171,7 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-task-workflow",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/task-workflow-plugin.ts",
-      "packages/client/src/task-workflow-controller.ts",
-      "packages/client/src/task-preflight.ts",
-      "packages/client/src/task-document.ts",
-      "packages/client/src/flow-document.ts",
-      "packages/client/src/task-overview.ts",
-      "packages/client/src/workflow-document-catalog.ts",
-      "packages/client/src/workflow-contributions.ts",
-      "packages/client/src/systemd-adapter.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct task/workflow implementation import",
@@ -210,14 +191,7 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-governance-ledger",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/governance-ledger-plugin.ts",
-      "packages/client/src/governance-ledger-controller.ts",
-      "packages/client/src/constitution-ledger.ts",
-      "packages/client/src/evidence-ledger.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct governance ledger implementation import",
@@ -235,12 +209,7 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
     id: "natalia-attachment",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/provider-runner.ts",
-      "packages/client/src/session-store-controller.ts",
       "packages/client/src/index.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
-      "packages/client/src/builtin-plugins/session-store-controller-plugin.ts",
       "apps/cli/src/index.ts",
     ],
     forbidden: [

@@ -5,7 +5,6 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
     id: "natalia-skills",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/runtime/commands/slash-read.ts",
       "packages/client/src/runtime/commands/slash-action.ts",
     ],
     forbidden: [
@@ -67,12 +66,7 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-local-tools",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/local-tools-plugin.ts",
-      "packages/client/src/capabilities/local-tool-families.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct local family loading",
@@ -95,7 +89,6 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
     id: "natalia-subagents",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
       "packages/tools/src/types.ts",
       "packages/tool-agent/src/index.ts",
       "packages/team-plugin/src/fan-out.ts",
@@ -130,7 +123,6 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
   {
     id: "natalia-mcp",
     targets: [
-      "packages/client/src/builtin-plugins/catalog.ts",
       "packages/mcp-plugin/src/mcp-runtime.ts",
       "packages/mcp-plugin/src/mcp-controller.ts",
       "packages/mcp-plugin/src/mcp-controller-plugin.ts",
@@ -147,7 +139,6 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
     targets: [
       "packages/client/test/real-runtime.test.ts",
       "packages/client/test/session-store-controller.test.ts",
-      "packages/client/src/runtime/commands/slash-read.ts",
     ],
     forbidden: [
       {
@@ -166,15 +157,7 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-collaboration",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/collaboration-plugin.ts",
-      "packages/client/src/interactive-waiter.ts",
-      "packages/client/src/mailbox-ledger.ts",
-      "packages/client/src/mailbox-tool.ts",
-      "packages/client/src/runtime/initialize/collaboration-tools.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct waiter construction in the host",
@@ -202,11 +185,8 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
     targets: [
       "packages/client/src/index.ts",
       "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/capability-execution-host.ts",
       "packages/client/src/worker.ts",
-      "packages/client/src/workflow-execution-scheduler.ts",
-      "packages/client/src/builtin-plugins/workflow-scheduler-plugin.ts",
       "packages/client/test/capability-execution-host.test.ts",
       "packages/client/test/worker.test.ts",
       "apps/cli/src/command-dispatcher.ts",
@@ -240,12 +220,7 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-turn-orchestration",
-    targets: [
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/turn-orchestration-plugin.ts",
-      "packages/client/src/turn-controller.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct turn controller implementation import",
@@ -264,12 +239,7 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-compaction",
-    targets: [
-      "packages/client/src/provider-runner.ts",
-      "packages/client/src/runtime/main.ts",
-      "packages/client/src/builtin-plugins/catalog.ts",
-      "packages/client/src/builtin-plugins/provider-model-plugin.ts",
-    ],
+    targets: ["packages/client/src/runtime/main.ts"],
     forbidden: [
       {
         description: "direct compaction implementation import",

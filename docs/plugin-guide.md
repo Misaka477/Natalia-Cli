@@ -233,6 +233,25 @@ The executable minimal package is
 `registerUi` port and materializer, so a new UI does not require a TUI-specific
 host branch.
 
+### Launching an installed UI
+
+A UI package is installed like any other plugin and launched by its adapter
+kind — one package, two commands:
+
+```bash
+natalia plugin install @yourco/natalia-ui-web
+natalia ui ui.web
+```
+
+`natalia ui <kind>` runs the UI in-process against a real runtime; `natalia ui`
+without a kind lists the available UI kinds from enabled installed and path
+plugins. The TUI and every installed UI share one generic host,
+`createUiAdapterHost` (`@natalia/client`): it resolves the workspace config,
+discovers enabled plugins, loads only adapter-capable process plugins into one
+process registry, and materializes the requested kind(s) against one shared
+`UiAdapterMountInput`. Closing is idempotent and fail-closed (materializer,
+then registry, then runtime).
+
 ## 7. Audit and testing
 
 The registry records `loaded`, `unloaded`, `denied`, and `failed` audit entries.

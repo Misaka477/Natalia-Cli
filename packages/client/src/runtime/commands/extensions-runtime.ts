@@ -1,7 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { manifestIntegrationPoints } from "@natalia/plugin";
 import type { RuntimeContext } from "../context";
-import type { ClientSurfaceOptions } from "./types";
 type Surface = Pick<
   RuntimeServiceClient,
   | "plugins"
@@ -12,10 +11,7 @@ type Surface = Pick<
   | "pluginReload"
   | "toolFamilyReload"
 >;
-export function createExtensionsSurface(
-  ctx: RuntimeContext,
-  options: ClientSurfaceOptions,
-): Surface {
+export function createExtensionsRuntime(ctx: RuntimeContext): Surface {
   return {
     async plugins() {
       await ctx.ports.getReady();

@@ -153,6 +153,10 @@ runtime from the current directory's `tsconfig.json` and only
 Because the start directory is fixed, `--workspace` decides which project the
 agent works on. Without it the workspace becomes the Natalia repository itself.
 
+The TUI mounts through the same generic UI adapter host as every other UI
+(`createUiAdapterHost` in `@natalia/client`); an installed UI package can be
+launched instead with `natalia ui <kind>`.
+
 | Flag                | Effect                                                                                                              |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `--workspace <dir>` | The directory the agent reads, writes, and checkpoints.                                                             |

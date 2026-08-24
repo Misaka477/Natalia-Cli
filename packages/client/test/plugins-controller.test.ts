@@ -474,6 +474,22 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "full.plugin", vers
       .some((entry) => entry.capabilityID === "default.plugin"),
   ).toBe(true);
 
+  await controller.unload("full.plugin");
+  await controller.unload("default.plugin");
+  expect(kernel.ownerOf("tools", "run")).toBeUndefined();
+  expect(kernel.ownerOf("commands", "greet")).toBeUndefined();
+  expect(kernel.ownerOf("services", "full.service")).toBeUndefined();
+  expect(kernel.ownerOf("tools", "default_tool")).toBeUndefined();
+  expect(kernel.ownerOf("commands", "default_command")).toBeUndefined();
+  expect(kernel.ownerOf("services", "default.service")).toBeUndefined();
+  expect(kernel.contributions("listeners")).toHaveLength(0);
+
+  await controller.reconcileDesired([defaultEntry], { enabled: {} });
+  expect(controller.list().map((plugin) => plugin.id)).toEqual([
+    "default.plugin",
+    "full.plugin",
+  ]);
+
   config.enabled = { "full.plugin": false };
   await controller.reconcileDesired(
     [{ ...defaultEntry, enabled: false, fingerprint: "disabled" }],

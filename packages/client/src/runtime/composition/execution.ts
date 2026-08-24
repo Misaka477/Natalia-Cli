@@ -46,6 +46,7 @@ export function wireExecution(
   ports.checkConstitutionForTool = executeCalls.checkConstitutionForTool;
   ports.executeOneTool = createExecuteOne(ctx, options).executeOneTool;
   const checkpoint = createCheckpointRuntime(ctx);
+  ports.getCheckpointRuntime = () => checkpoint;
   ports.initializeCheckpointController =
     checkpoint.initializeCheckpointController;
   const title = createTitleGeneration(ctx);

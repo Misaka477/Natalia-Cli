@@ -27,48 +27,52 @@ export function createCheckpointController(input: {
   workLedger(): CheckpointWorkLedger;
 }): CheckpointController {
   let store: CheckpointStore | undefined;
+  let initPromise: Promise<void> | undefined;
 
   async function init() {
-    const checkpoint = input.checkpoint();
-    store = await CheckpointStore.open({
-      sessionID: input.sessionID(),
-      workspaceRoot: input.workspaceRoot,
-      enabled: checkpoint?.enabled,
-      maxFiles: checkpoint?.maxFiles,
-      maxBytes: checkpoint?.maxBytes,
-      ignore: checkpoint?.ignore,
-      additionalDirs: [
-        ...(checkpoint?.additionalDirs ?? []),
-        ...(input.workspace()?.additionalDirs ?? []),
-      ],
-      onEvent: (event) => {
-        if (
-          event.type === "rollback.begin" ||
-          event.type === "rollback.end" ||
-          event.type === "rollback.failed"
-        )
-          event = { ...event, sessionID: input.sessionID() };
-        input.publish(event);
-        if (event.type === "checkpoint.created")
-          input.publish(
-            input.workLedger().checkpointNode({
-              checkpointID: event.id,
-              reason: event.reason,
-              sessionID: input.sessionID(),
-              turnID: event.turnID,
-            }),
-          );
-        if (event.type === "rollback.end")
-          input.publish(
-            input.workLedger().rollbackCheckpointEdge({
-              checkpointID: event.checkpointID,
-              safetyCheckpointID: event.safetyCheckpointID,
-              sessionID: input.sessionID(),
-            }),
-          );
-      },
-    });
-    if (store.isEnabled()) await store.ensureBaseline(input.context(), 0);
+    initPromise ??= (async () => {
+      const checkpoint = input.checkpoint();
+      store = await CheckpointStore.open({
+        sessionID: input.sessionID(),
+        workspaceRoot: input.workspaceRoot,
+        enabled: checkpoint?.enabled,
+        maxFiles: checkpoint?.maxFiles,
+        maxBytes: checkpoint?.maxBytes,
+        ignore: checkpoint?.ignore,
+        additionalDirs: [
+          ...(checkpoint?.additionalDirs ?? []),
+          ...(input.workspace()?.additionalDirs ?? []),
+        ],
+        onEvent: (event) => {
+          if (
+            event.type === "rollback.begin" ||
+            event.type === "rollback.end" ||
+            event.type === "rollback.failed"
+          )
+            event = { ...event, sessionID: input.sessionID() };
+          input.publish(event);
+          if (event.type === "checkpoint.created")
+            input.publish(
+              input.workLedger().checkpointNode({
+                checkpointID: event.id,
+                reason: event.reason,
+                sessionID: input.sessionID(),
+                turnID: event.turnID,
+              }),
+            );
+          if (event.type === "rollback.end")
+            input.publish(
+              input.workLedger().rollbackCheckpointEdge({
+                checkpointID: event.checkpointID,
+                safetyCheckpointID: event.safetyCheckpointID,
+                sessionID: input.sessionID(),
+              }),
+            );
+        },
+      });
+      if (store.isEnabled()) await store.ensureBaseline(input.context(), 0);
+    })();
+    await initPromise;
   }
 
   function get(): CheckpointStore {
@@ -78,6 +82,28 @@ export function createCheckpointController(input: {
 
   function isEnabled() {
     return store?.isEnabled() ?? false;
+  }
+
+  async function list() {
+    return await get().list();
+  }
+
+  async function preview(id: string) {
+    return await get().previewRollback(id, input.context(), resources(), true);
+  }
+
+  async function rollback(id: string, options: { dryRun?: boolean }) {
+    return await get().rollbackTo(id, {
+      context: input.context(),
+      dryRun: options.dryRun,
+      ...rollbackOptions(),
+    });
+  }
+
+  async function createCheckpoint(
+    checkpoint: import("@natalia/runtime").CreateCheckpointInput,
+  ) {
+    return await get().createCheckpoint(checkpoint);
   }
 
   function resources(): Array<{
@@ -133,5 +159,15 @@ export function createCheckpointController(input: {
     };
   }
 
-  return { init, get, isEnabled, resources, rollbackOptions };
+  return {
+    init,
+    get,
+    list,
+    preview,
+    rollback,
+    createCheckpoint,
+    isEnabled,
+    resources,
+    rollbackOptions,
+  };
 }

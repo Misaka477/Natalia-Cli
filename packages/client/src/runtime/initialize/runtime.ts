@@ -25,11 +25,6 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     get interactive() {
       return ctx.ports.getInteractive();
     },
-    set interactive(
-      value: import("@natalia/runtime-services").InteractiveWaiter,
-    ) {
-      ctx.ports.setInteractive(value);
-    },
     get retryPolicy() {
       return ctx.ports.getRetryPolicy();
     },

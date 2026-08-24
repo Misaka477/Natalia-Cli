@@ -108,9 +108,10 @@ export type RuntimePortsExtra = {
   configReloadBlockedReason: () => string | undefined;
   setReady: (ready: Promise<void> | undefined) => void;
   initialize: () => Promise<void>;
-  setInteractive: (
-    waiter: import("@natalia/runtime-services").InteractiveWaiter,
-  ) => void;
+  getCheckpointRuntime: () => Pick<
+    import("@natalia/runtime-services").RuntimeServiceClient,
+    "checkpointList" | "checkpointPreview" | "checkpointRollback"
+  >;
   toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
   authorizeWorkspaceRead: (
     input: { toolName: string; paths: string[] },

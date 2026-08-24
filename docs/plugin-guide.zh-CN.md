@@ -216,6 +216,22 @@ host materialize 对应 adapter 才创建 UI；卸载通过与其他 contributio
 `apps/tui/test/example-ui-plugin.test.ts`。生产 TUI 使用相同 `registerUi` 端口和
 materializer，因此新增 UI 不需要 TUI 专用 host 分支。
 
+### 启动已安装的 UI
+
+UI 包与普通插件一样安装，并按 adapter kind 启动——一个包、两条命令：
+
+```bash
+natalia plugin install @yourco/natalia-ui-web
+natalia ui ui.web
+```
+
+`natalia ui <kind>` 在进程内对真实 runtime 挂载该 UI；`natalia ui`（不带 kind）
+列出已启用已安装/path 插件贡献的可用 UI kind。TUI 与所有已安装 UI 共用同一个
+通用 host `createUiAdapterHost`（`@natalia/client`）：解析 workspace 配置、
+发现已启用插件、只把 adapter-capable 的 process 插件装入一个进程 registry，
+并对同一个共享 `UiAdapterMountInput` materialize 请求的 kind(s)。关闭幂等且
+fail-closed（先 materializer，再 registry，最后 runtime）。
+
 ## 7. 审计与测试
 
 registry 记录 `loaded`、`unloaded`、`denied`、`failed` audit，runtime diagnostic

@@ -1,7 +1,9 @@
 import {
   createRealRuntimeClient,
+  createUiAdapterHost,
   newHeadlessExecution,
   plainRuntimeEvent,
+  type UiAdapterHost,
 } from "@natalia/client";
 import { resolveConfig } from "@natalia/config";
 import { createRecordedFetch } from "@natalia/transport";
@@ -85,6 +87,33 @@ export async function handleRuntimeCommand(argv: string[]) {
       await client.dispose?.();
     }
     if (failed) process.exitCode = 1;
+    return true;
+  }
+  if (command === "ui") {
+    const kind = argv[1];
+    if (argv[1]?.startsWith("--"))
+      throw new Error(`ui requires a UI adapter kind, got flag ${argv[1]}`);
+    const client = createRealRuntimeClient();
+    const host: UiAdapterHost = await createUiAdapterHost({
+      workspaceRoot: process.cwd(),
+      runtime: client,
+      kinds: kind ? [kind] : [],
+      configPath: process.env.NATALIA_CONFIG,
+      report: (message) => console.error(`natalia: ${message}`),
+    });
+    try {
+      if (!kind) {
+        const available = [...host.availableKinds()].sort();
+        if (!available.length)
+          throw new Error("no UI adapters are installed or enabled");
+        console.log(available.join("\n"));
+        return true;
+      }
+      console.log(`natalia: ui adapter ${kind} mounted`);
+      await waitSignal();
+    } finally {
+      await host.close();
+    }
     return true;
   }
   if (command === "record") {
