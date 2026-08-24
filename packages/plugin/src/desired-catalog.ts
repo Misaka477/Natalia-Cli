@@ -1,8 +1,16 @@
-import {
-  resolvePluginDependencies,
-  type PluginManifest,
-} from "@natalia/plugin";
-import type { DesiredPluginEntry } from "./plugin-discovery";
+import { resolvePluginDependencies } from "./dependencies";
+import type { PluginManifest } from "./manifest";
+import type { Plugin } from "./types";
+
+export type DesiredPluginEntry = {
+  id: string;
+  enabled: boolean;
+  fingerprint: string;
+  manifest?: PluginManifest;
+  prepare?(): Promise<Plugin>;
+  load(cacheBust?: string): Promise<Plugin | undefined>;
+  onError?(error: unknown): void;
+};
 
 export type DesiredPluginCatalog = {
   entries: DesiredPluginEntry[];

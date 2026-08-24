@@ -5,20 +5,10 @@ import {
   discoverPluginManifests,
   resolveInstalledPluginEntries,
   validatePluginPath,
+  type DesiredPluginEntry,
   type Plugin,
-  type PluginManifest,
   type PluginManifestEntry,
 } from "@natalia/plugin";
-
-export type DesiredPluginEntry = {
-  id: string;
-  enabled: boolean;
-  fingerprint: string;
-  manifest?: PluginManifest;
-  prepare?(): Promise<Plugin>;
-  load(cacheBust?: string): Promise<Plugin | undefined>;
-  onError?(error: unknown): void;
-};
 
 export async function discoverDesiredPluginEntries(input: {
   workspaceRoot: string;

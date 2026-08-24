@@ -1,5 +1,11 @@
 import { CapabilityRegistry } from "@natalia/capability";
-import { createPluginRegistry, type Plugin } from "@natalia/plugin";
+import {
+  createDesiredPluginController,
+  createPluginRegistry,
+  resolveDesiredPluginCatalog,
+  type DesiredPluginEntry,
+  type Plugin,
+} from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import {
   WorkflowExecutionScheduler,
@@ -66,18 +72,41 @@ export async function createWorkflowSchedulerPluginHost(
     registerOwner: () => owner,
     service: <T>(name: string) => capabilities.service<T>(name),
   });
+  const controller = createDesiredPluginController({
+    registry,
+    assertOwnerReleased(id) {
+      if (capabilities.has(id))
+        throw new Error(
+          `plugin ${id} unloaded without releasing its capability owner`,
+        );
+    },
+  });
+  const plugin = createWorkflowSchedulerPlugin(options);
+  const entry: DesiredPluginEntry = {
+    id: plugin.manifest.id,
+    enabled: true,
+    fingerprint: `${plugin.manifest.id}@${plugin.manifest.version}`,
+    manifest: plugin.manifest,
+    load: async () => createWorkflowSchedulerPlugin(options),
+  };
   try {
-    await registry.load(createWorkflowSchedulerPlugin(options));
+    await controller.reconcileDesired(async () =>
+      resolveDesiredPluginCatalog({
+        entries: [entry],
+        previous: controller.previous,
+        onError: () => undefined,
+      }),
+    );
   } catch (error) {
-    await registry.unloadAll().catch(() => undefined);
-    owner.release();
+    await controller.close().catch(() => undefined);
+    if (capabilities.has(WORKFLOW_SCHEDULER_PLUGIN_ID)) owner.release();
     throw error;
   }
   const scheduler = capabilities.service<WorkflowExecutionSchedulerService>(
     WORKFLOW_SCHEDULER_SERVICE,
   );
   if (!scheduler) {
-    await registry.unloadAll();
+    await controller.close();
     throw new Error("workflow scheduler plugin failed to provide its service");
   }
   let closed = false;
@@ -86,7 +115,7 @@ export async function createWorkflowSchedulerPluginHost(
     close: async () => {
       if (closed) return;
       closed = true;
-      await registry.unloadAll();
+      await controller.close();
     },
   };
 }

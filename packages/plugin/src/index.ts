@@ -2,6 +2,8 @@ export * from "./adapter-materializer";
 export * from "./config";
 export * from "./conformance";
 export * from "./dependencies";
+export * from "./desired-catalog";
+export * from "./desired-controller";
 export * from "./discovery";
 export * from "./installed";
 export * from "./loading";

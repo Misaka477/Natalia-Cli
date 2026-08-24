@@ -10,8 +10,8 @@
  * Defaults and discovered entries enter one source-neutral dependency catalog.
  */
 import type { DefaultPluginEntry } from "@natalia/builtin-plugins";
+import type { DesiredPluginEntry } from "@natalia/plugin";
 import type { createPluginsController } from "./plugins-controller";
-import type { DesiredPluginEntry } from "./plugin-discovery";
 
 export async function mountPlugins(input: {
   controller: ReturnType<typeof createPluginsController>;

@@ -7,7 +7,7 @@ import { CapabilityRegistry } from "@natalia/capability";
 import { createPluginsController } from "../src/plugins-controller";
 import { createRuntimeConfigPlugin } from "@natalia/runtime-config-plugin";
 import type { Plugin } from "@natalia/plugin";
-import type { DesiredPluginEntry } from "../src/plugin-discovery";
+import type { DesiredPluginEntry } from "@natalia/plugin";
 import type { PluginConfigSnapshot } from "../src/plugins-controller";
 import { defaultDesiredEntries } from "../src/builtin-mount";
 import {
