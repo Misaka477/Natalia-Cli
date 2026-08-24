@@ -22,8 +22,6 @@ import {
 } from "@natalia/runtime";
 import {
   modelVisibleEvents,
-  projectedCollabMessages,
-  projectedMailboxMessages,
   projectInteractiveRequests,
   projectSession,
   sessionRunCoordinator,
@@ -31,8 +29,6 @@ import {
   settleInterruptedTurns,
 } from "@natalia/session";
 import {
-  buildMailboxStatus,
-  createMailboxAcknowledgeTool,
   readOnlyToolMessage,
   ATTACHMENT_SERVICE,
   CHECKPOINT_FACTORY_SERVICE,
@@ -137,10 +133,6 @@ export function wireInitialize(
     modelVisibleEvents,
     turnCoordinator: () => sessionRunCoordinator(state.sessionID),
     drainSession,
-    projectedMailboxMessages,
-    buildMailboxStatus,
-    createMailboxAcknowledgeTool,
-    projectedCollabMessages,
     projectInteractiveRequests,
     contextStatusEvent,
     publishBuiltinCapabilities: features.toolPublish.publishBuiltinCapabilities,

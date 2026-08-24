@@ -160,6 +160,7 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
       "packages/client/src/interactive-waiter.ts",
       "packages/client/src/mailbox-ledger.ts",
       "packages/client/src/mailbox-tool.ts",
+      "packages/client/src/runtime/initialize/collaboration-tools.ts",
     ],
     forbidden: [
       {
@@ -174,7 +175,12 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
       {
         description: "client-owned collaboration implementation",
         pattern:
-          /export function (?:createCollaborationPlugin|buildMailboxQueued|buildMailboxStatus|createMailboxAcknowledgeTool)\b/u,
+          /export (?:async )?function (?:createCollaborationPlugin|buildMailboxQueued|buildMailboxStatus|createMailboxAcknowledgeTool|registerCollaborationTools)\b/u,
+      },
+      {
+        description: "direct collaboration tool registration in the host",
+        pattern:
+          /\b(?:mailbox_acknowledge|collab_respond|collab_inbox|collab_ask)\b/u,
       },
     ],
   },

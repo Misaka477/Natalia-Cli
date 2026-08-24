@@ -84,7 +84,7 @@ test("every static catalog manifest exactly matches its factory", () => {
     },
     team: { enabled: true },
     toolPipeline: { enabled: true },
-    collaboration: { waiter: {} as never },
+    collaboration: { waiter: {} as never, tools: {} as never },
     retry: { enabled: true, policy: () => ({}) },
     contextLedger: { enabled: true },
     compaction: { enabled: true },

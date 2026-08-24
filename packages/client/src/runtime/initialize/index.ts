@@ -6,7 +6,6 @@ import { createSubagentSupport } from "./subagent-support";
 import { createSubagentTools } from "./subagent-tools";
 import { installSubagents } from "./subagent-runner";
 import { recoverSession } from "./session-recovery";
-import { registerCollaborationTools } from "./collaboration-tools";
 import { finalizeInitialize } from "./finalize";
 
 export function createInitialize(
@@ -30,7 +29,6 @@ export function createInitialize(
     const toolSupport = await createSubagentTools(ctx, options, support);
     await installSubagents(ctx, options, { ...support, ...toolSupport });
     const recovery = await recoverSession(ctx, options);
-    await registerCollaborationTools(ctx, options);
     await finalizeInitialize(ctx, options, recovery);
   }
 

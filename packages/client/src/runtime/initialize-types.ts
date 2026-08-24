@@ -104,10 +104,6 @@ export type InitializeDependencies = {
     typeof import("@natalia/session").sessionRunCoordinator
   >;
   drainSession: (signal: AbortSignal) => Promise<void>;
-  projectedMailboxMessages: typeof import("@natalia/session").projectedMailboxMessages;
-  buildMailboxStatus: typeof import("@natalia/runtime-services").buildMailboxStatus;
-  createMailboxAcknowledgeTool: typeof import("@natalia/runtime-services").createMailboxAcknowledgeTool;
-  projectedCollabMessages: typeof import("@natalia/session").projectedCollabMessages;
   projectInteractiveRequests: typeof import("@natalia/session").projectInteractiveRequests;
   contextStatusEvent: typeof import("@natalia/runtime").contextStatusEvent;
   publishBuiltinCapabilities: () => void;

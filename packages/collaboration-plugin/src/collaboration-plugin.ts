@@ -7,9 +7,8 @@
  * as the `collaboration.waiter` service, so a disabled or absent plugin
  * constructs no waiter at all (and therefore never blocks on a human).
  *
- * Mailbox projections and the mailbox_acknowledge tool also live in this
- * package. Provider-driven collaboration orchestration remains in the host
- * until its session and wake dependencies have plugin service contracts.
+ * Main-agent collaboration tools are owned by this plugin and disappear with
+ * it. Provider-driven chat turns remain behind narrow host ports for now.
  */
 import type { Plugin } from "@natalia/plugin";
 import { createInteractiveWaiter } from "./interactive-waiter";
@@ -17,11 +16,20 @@ import {
   COLLABORATION_WAITER_SERVICE,
   type InteractiveWaiterDeps,
 } from "@natalia/runtime-services";
+import {
+  collaborationTools,
+  type CollaborationToolPorts,
+} from "./collaboration-tools";
 
 export const COLLABORATION_PLUGIN_ID = "natalia-collaboration";
-export function createCollaborationPlugin(input: {
+export type CollaborationPluginInput = {
   waiter: InteractiveWaiterDeps;
-}): Plugin {
+  tools: CollaborationToolPorts;
+};
+
+export function createCollaborationPlugin(
+  input: CollaborationPluginInput,
+): Plugin {
   let waiter: ReturnType<typeof createInteractiveWaiter> | undefined;
   return {
     manifest: {
@@ -29,7 +37,7 @@ export function createCollaborationPlugin(input: {
       id: COLLABORATION_PLUGIN_ID,
       version: "1.0.0",
       name: "Collaboration",
-      description: "Interactive approval and question waiting.",
+      description: "Interactive waiting and Live Work Chat collaboration.",
       entry: "natalia:collaboration",
       scope: "workspace",
       provides: [COLLABORATION_WAITER_SERVICE],
@@ -38,11 +46,13 @@ export function createCollaborationPlugin(input: {
       conflicts: [],
       dependencies: [],
       hooks: {},
-      integrationPoints: ["services"],
+      integrationPoints: ["services", "tools"],
     },
     setup(api) {
       waiter = createInteractiveWaiter(input.waiter);
       api.services.provide(COLLABORATION_WAITER_SERVICE, waiter);
+      for (const tool of collaborationTools(input.tools))
+        api.tools.register(tool);
     },
     dispose() {
       waiter = undefined;

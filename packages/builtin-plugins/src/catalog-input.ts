@@ -4,9 +4,9 @@ import type {
   RuntimeEvent,
   SandboxBackend,
 } from "@natalia/contracts";
+import type { CollaborationPluginInput } from "@natalia/collaboration-plugin";
 import type { RetryRunnerOptions } from "@natalia/runtime";
 import type {
-  InteractiveWaiterDeps,
   ProviderModelControllerInput,
   SkillMetadata,
   TurnControllerInput,
@@ -89,7 +89,7 @@ export type BuiltinPluginCatalogInput = {
   };
   team?: { enabled: boolean };
   toolPipeline?: { enabled: boolean };
-  collaboration?: { waiter: InteractiveWaiterDeps };
+  collaboration?: CollaborationPluginInput;
   providerModel?: {
     enabled: boolean;
     controller: ProviderModelControllerInput;

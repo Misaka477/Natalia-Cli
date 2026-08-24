@@ -40,7 +40,7 @@ export const PRODUCT_PLUGIN_MANIFESTS: Record<string, PluginManifest> = {
     id: "natalia-collaboration",
     version: "1.0.0",
     name: "Collaboration",
-    description: "Interactive approval and question waiting.",
+    description: "Interactive waiting and Live Work Chat collaboration.",
     entry: "natalia:collaboration",
     scope: "workspace",
     provides: ["collaboration.waiter"],
@@ -49,7 +49,7 @@ export const PRODUCT_PLUGIN_MANIFESTS: Record<string, PluginManifest> = {
     conflicts: [],
     dependencies: [],
     hooks: {},
-    integrationPoints: ["services"],
+    integrationPoints: ["services", "tools"],
   },
   "natalia-compaction": {
     apiVersion: 2,

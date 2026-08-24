@@ -101,7 +101,31 @@ export async function configureCatalog(
         ? { toolPipeline: { enabled: true } }
         : {}),
       ...(pluginEnabled("natalia-collaboration")
-        ? { collaboration: { waiter: deps.waiterDeps } }
+        ? {
+            collaboration: {
+              waiter: deps.waiterDeps,
+              tools: {
+                events: (sessionID: SessionID) =>
+                  ctx.ports.getExecutionBySession().get(sessionID)?.session
+                    .events,
+                publish: (sessionID: SessionID, event: RuntimeEvent) => {
+                  const exec = ctx.ports.getExecutionBySession().get(sessionID);
+                  if (exec) ctx.ports.publishForSession(exec, event);
+                },
+                redact: (text: string) =>
+                  ctx.ports.redactToolOutput(text, true),
+                nextMailboxSequence: ctx.ports.nextMailboxSequence,
+                nextCollabSequence: ctx.ports.nextCollabSequence,
+                requestWake: (sessionID: SessionID) => {
+                  const exec = ctx.ports.getExecutionBySession().get(sessionID);
+                  if (exec) ctx.ports.requestNaviWake(exec);
+                },
+                maxAutoRounds: () =>
+                  ctx.ports.getTsRuntimeConfig()?.runtime.collaboration
+                    .maxAutoRounds ?? 3,
+              },
+            },
+          }
         : {}),
       ...(retryEnabled
         ? { retry: { enabled: true, policy: ctx.ports.getRetryPolicy } }

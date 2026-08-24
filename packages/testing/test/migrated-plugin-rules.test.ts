@@ -498,6 +498,10 @@ test("collaboration migration protects the extracted implementation", () => {
       "packages/client/src/mailbox-tool.ts",
       "export function createMailboxAcknowledgeTool() {}",
     ],
+    [
+      "packages/client/src/runtime/initialize/collaboration-tools.ts",
+      'scope.tools.set("collab_ask", tool)',
+    ],
   ])
     expect(findMigratedPluginViolations(path, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-collaboration" }),

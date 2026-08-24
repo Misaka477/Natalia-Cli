@@ -1,7 +1,12 @@
 export {
   createCollaborationPlugin,
   COLLABORATION_PLUGIN_ID,
+  type CollaborationPluginInput,
 } from "./collaboration-plugin";
+export {
+  collaborationTools,
+  type CollaborationToolPorts,
+} from "./collaboration-tools";
 export { createInteractiveWaiter } from "./interactive-waiter";
 export {
   buildMailboxQueued,

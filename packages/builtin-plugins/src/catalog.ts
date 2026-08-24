@@ -167,10 +167,7 @@ export function builtinPluginCatalog(
             {
               id: COLLABORATION_PLUGIN_ID,
               enabled: true,
-              create: () =>
-                createCollaborationPlugin({
-                  waiter: input.collaboration!.waiter,
-                }),
+              create: () => createCollaborationPlugin(input.collaboration!),
             },
             input.collaboration,
           ),
