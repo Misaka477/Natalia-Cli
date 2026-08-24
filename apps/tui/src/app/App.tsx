@@ -29,13 +29,13 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   RuntimeModelSelection,
+  UiAdapterMountInput,
 } from "@natalia/contracts";
 import type {
   WorkerRuntimeClient,
   WorkflowExecutionHandle,
 } from "@natalia/client";
 import type { ConfigV3 } from "@natalia/contracts";
-import { getPluginCommands } from "@natalia/plugin";
 import { buildKeybindMap, commands, composerKeyAction } from "../keymap";
 import { useKeybinds } from "../context/keybind";
 import {
@@ -127,6 +127,7 @@ type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export function App(props: {
   backend: TuiRuntimeClient;
+  commands?: UiAdapterMountInput["commands"];
   createBackend?: (sessionID?: string) => TuiRuntimeClient;
   onBackendChange?: (backend: RuntimeClient) => void;
   onWorkspaceRootChange?: (root: string) => void;
@@ -227,6 +228,11 @@ export function App(props: {
               <DialogProvider>
                 <Shell
                   backend={activeBackend}
+                  commands={
+                    activeBackend === props.backend
+                      ? props.commands
+                      : runtimeCommandHost(activeBackend)
+                  }
                   workspaceRoot={workspaceRoot()}
                   onSessionChange={(sessionID) => void changeSession(sessionID)}
                   onWorkspaceChange={
@@ -290,6 +296,21 @@ export function App(props: {
   );
 }
 
+function runtimeCommandHost(
+  runtime: RuntimeClient,
+): UiAdapterMountInput["commands"] {
+  return {
+    list: async () => (await runtime.commandCatalog?.()) ?? [],
+    async execute(name) {
+      const command = (await runtime.commandCatalog?.())?.find(
+        (entry) => entry.name === name,
+      );
+      if (!command) throw new Error(`command unavailable: ${name}`);
+      await runtime.submit(`/${name}`);
+    },
+  };
+}
+
 async function hydrateRecentMessages(
   backend: RuntimeClient,
   hydrateMessages: (
@@ -304,6 +325,7 @@ async function hydrateRecentMessages(
 
 function Shell(props: {
   backend: TuiRuntimeClient;
+  commands?: UiAdapterMountInput["commands"];
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
   onWorkspaceChange?: (root: string) => void;
@@ -1153,6 +1175,7 @@ function Shell(props: {
   function onCommand(command: string) {
     void runCommand(command, {
       backend: props.backend,
+      commands: props.commands ?? runtimeCommandHost(props.backend),
       workspaceRoot: props.workspaceRoot,
       composer: () => composer(),
       setAttachmentPaths,

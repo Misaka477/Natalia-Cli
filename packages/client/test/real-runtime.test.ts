@@ -12,7 +12,6 @@ import type {
 import { providerError } from "@natalia/runtime";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@natalia/tools";
-import { getPluginCommands } from "@natalia/plugin";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
@@ -3874,9 +3873,6 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
     category: "Palette",
   });
 
-  // The synchronous bridge the TUI palette renders from. It was permanently
-  // empty before, so the palette could never show a plugin command.
-  expect(getPluginCommands().map((command) => command.name)).toContain("sync");
   await client.submit("/sync alpha beta");
   expect(
     events.filter((event) => event.type === "content.delta").at(-1)?.text,

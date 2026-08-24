@@ -313,4 +313,22 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-ui-command-host",
+    targets: [
+      "apps/tui/src/app/App.tsx",
+      "apps/tui/src/app/command-controller.tsx",
+      "apps/tui/src/component/CommandPalette.tsx",
+    ],
+    forbidden: [
+      {
+        description: "process-global plugin command bridge",
+        pattern: /\b(?:getPluginCommands|setGlobalPluginCommands)\b/u,
+      },
+      {
+        description: "direct plugin command closure execution",
+        pattern: /\b(?:pluginCmd|cmd)\.run\s*\(/u,
+      },
+    ],
+  },
 ];

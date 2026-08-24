@@ -37,7 +37,6 @@ export function createPluginsController(input: {
   capabilityRegistry: CapabilityRegistryHost;
   discoverDesiredEntries?: typeof discoverDesiredPluginEntries;
   publish(event: RuntimeEvent): void;
-  syncGlobalCommands(): void;
 }) {
   let registry: ReturnType<typeof createPluginRegistry> | undefined;
   let desired = new Map<string, DesiredState>();
@@ -54,7 +53,6 @@ export function createPluginsController(input: {
           status: entry.action,
           detail: entry.detail,
         }),
-      onChange: input.syncGlobalCommands,
       registerOwner: (manifest) =>
         registerPluginOwner(manifest, input.capabilityRegistry),
       runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
@@ -64,7 +62,6 @@ export function createPluginsController(input: {
       onServiceUpdate: (listener) =>
         input.capabilityRegistry.onServiceUpdate(listener),
     });
-    input.syncGlobalCommands();
   }
 
   async function desiredEntries(
@@ -197,7 +194,6 @@ export function createPluginsController(input: {
         } catch (error) {
           firstError ??= error;
         }
-    input.syncGlobalCommands();
     if (firstError !== undefined) throw firstError;
   }
 
@@ -215,7 +211,6 @@ export function createPluginsController(input: {
       entry.onError(error);
       return { loaded: false, error };
     }
-    input.syncGlobalCommands();
     return { loaded: true };
   }
 
@@ -243,7 +238,6 @@ export function createPluginsController(input: {
     const current = registry;
     if (current?.list().some((manifest) => manifest.id === id))
       await current.unload(id);
-    input.syncGlobalCommands();
     return { unloaded: true };
   }
 
@@ -304,7 +298,6 @@ export function createPluginsController(input: {
         else restorationError ??= error;
       }
     }
-    input.syncGlobalCommands();
     if (reloadError !== undefined) throw reloadError;
     if (rollbackError !== undefined) throw rollbackError;
     if (restorationError !== undefined) throw restorationError;

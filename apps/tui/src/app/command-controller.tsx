@@ -9,6 +9,7 @@ import type {
   ConfigV3,
   MCPResourceCatalog,
   RuntimeClient,
+  UiAdapterMountInput,
 } from "@natalia/contracts";
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ConfigPatch extends Record<string, unknown> {}
@@ -46,7 +47,6 @@ type SettingsAction =
   | "extensions"
   | "runtime"
   | "tui";
-import { getPluginCommands } from "@natalia/plugin";
 import { resolveConfig, type ConfigWriteScope } from "@natalia/config";
 import {
   batch,
@@ -114,6 +114,7 @@ import { DialogToolMultiSelect } from "../component/DialogToolMultiSelect";
 
 export interface CommandContext {
   backend: RuntimeClient;
+  commands: UiAdapterMountInput["commands"];
   workspaceRoot?: string;
   composer: () => TextareaRenderable | undefined;
   setAttachmentPaths: (fn: (current: string[]) => string[]) => void;
@@ -172,7 +173,10 @@ export interface CommandContext {
 export async function runCommand(command: string, ctx: CommandContext) {
   if (command === "palette.toggle") {
     ctx.dialog.replace(() => (
-      <CommandPalette onRun={(cmd) => runCommand(cmd, ctx)} />
+      <CommandPalette
+        commands={ctx.commands}
+        onRun={(cmd) => runCommand(cmd, ctx)}
+      />
     ));
     return;
   }
@@ -2549,11 +2553,14 @@ export async function runCommand(command: string, ctx: CommandContext) {
     ctx.viewDock.focusMain();
     return;
   }
-  // Plugin commands
-  for (const pluginCmd of getPluginCommands()) {
-    if (pluginCmd.name === command) {
-      pluginCmd.run();
-      return;
+  if ((await ctx.commands.list()).some((entry) => entry.name === command)) {
+    try {
+      await ctx.commands.execute(command);
+    } catch (error) {
+      ctx.toast.show({
+        variant: "warning",
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

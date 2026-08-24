@@ -47,17 +47,13 @@ function makeController(
     settings?: Record<string, unknown>;
   } = {},
 ) {
-  let synced = 0;
   const controller = createPluginsController({
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry,
     publish: () => undefined,
-    syncGlobalCommands: () => {
-      synced++;
-    },
   });
-  return { controller, synced: () => synced };
+  return { controller };
 }
 
 async function initialize(
@@ -170,9 +166,8 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", vers
 
 test("plugins controller loads, unloads idempotently and reloads", async () => {
   const root = await pluginWorkspace();
-  const { controller, synced } = makeController(root);
+  const { controller } = makeController(root);
   await initialize(controller);
-  expect(synced()).toBeGreaterThan(0);
   expect(
     controller
       .get()
@@ -259,7 +254,6 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "${id}", version: "
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
     publish: () => undefined,
-    syncGlobalCommands: () => undefined,
   });
   await initialize(controller, [], {
     packages: {
@@ -348,7 +342,6 @@ test("a failing plugin's diagnostic is attributed to the plugin", async () => {
     publish: (event) => {
       if (event.type === "diagnostic") diagnostics.push(event);
     },
-    syncGlobalCommands: () => undefined,
   });
   await expect(initialize(controller)).rejects.toThrow("broken.plugin");
   expect(diagnostics.length).toBeGreaterThan(0);
@@ -760,7 +753,6 @@ test("a default plugin can depend on a discovered user plugin", async () => {
     capabilityRegistry: new CapabilityRegistry(),
     discoverDesiredEntries: async () => [user],
     publish: () => undefined,
-    syncGlobalCommands: () => undefined,
   });
   await initialize(controller, [defaultConsumer]);
   expect(lifecycle).toEqual(["user", "default"]);
@@ -804,7 +796,6 @@ test("default and user plugin conflicts deny both sources symmetrically", async 
     publish: (event) => {
       if (event.type === "diagnostic") diagnostics.push(event);
     },
-    syncGlobalCommands: () => undefined,
   });
   await initialize(controller, [defaultEntry]);
   expect(controller.list()).toEqual([]);
@@ -1187,7 +1178,6 @@ test("discovery and reconcile use queued immutable config snapshots", async () =
       return [];
     },
     publish: () => undefined,
-    syncGlobalCommands: () => undefined,
   });
   controller.init();
   const config: PluginConfigSnapshot = {
@@ -1373,7 +1363,6 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "bad.plugin", versi
     publish: (event) => {
       if (event.type === "diagnostic") diagnostics.push(event.message);
     },
-    syncGlobalCommands: () => undefined,
   });
   await expect(initialize(controller)).rejects.toThrow("bad.plugin");
   expect(

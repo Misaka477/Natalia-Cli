@@ -842,6 +842,20 @@ test("TUI adapter migration protects the executable bootstrap", () => {
     ).toEqual([expect.objectContaining({ pluginID: "natalia-tui" })]);
 });
 
+test("TUI command adapters cannot restore the process-global command bridge", () => {
+  for (const [path, source] of [
+    [
+      "apps/tui/src/app/App.tsx",
+      'import { getPluginCommands } from "@natalia/plugin"',
+    ],
+    ["apps/tui/src/app/command-controller.tsx", "pluginCmd.run()"],
+    ["apps/tui/src/component/CommandPalette.tsx", "cmd.run()"],
+  ])
+    expect(findMigratedPluginViolations(path, source)).toEqual([
+      expect.objectContaining({ pluginID: "natalia-ui-command-host" }),
+    ]);
+});
+
 test("runtime UI migration protects the extracted implementation", () => {
   for (const [path, source] of [
     [

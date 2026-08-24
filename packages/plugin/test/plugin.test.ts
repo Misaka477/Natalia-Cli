@@ -693,7 +693,10 @@ test("UI adapters receive host runtime ports and follow materializer lifecycle",
   const input = {
     runtime: {} as import("@natalia/contracts").RuntimeClient,
     events: { subscribe: () => () => undefined },
-    commands: { list: async () => [] },
+    commands: {
+      list: async () => [],
+      execute: async () => undefined,
+    },
   };
   await registry.load(
     definePlugin({

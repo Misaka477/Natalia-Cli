@@ -1,15 +1,19 @@
-import { createMemo } from "solid-js";
+import type { UiAdapterMountInput } from "@natalia/contracts";
+import { createMemo, createResource } from "solid-js";
 import { useKeymap, useKeymapSelector } from "@opentui/keymap/solid";
 import { stringifyKeySequence } from "@opentui/keymap";
 import { commands } from "../keymap";
-import { getPluginCommands } from "@natalia/plugin";
 import { useDialog, type DialogContext } from "../dialog/provider";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 
-export function CommandPalette(props: { onRun(command: string): void }) {
+export function CommandPalette(props: {
+  commands: UiAdapterMountInput["commands"];
+  onRun(command: string): void;
+}) {
   const dialog = useDialog();
   const keymap = useKeymap();
   const definitions = commands;
+  const [pluginCommands] = createResource(() => props.commands.list());
   const entries = useKeymapSelector((current) => {
     const commands_ = current.getCommandEntries({
       namespace: "palette",
@@ -66,14 +70,14 @@ export function CommandPalette(props: { onRun(command: string): void }) {
             props.onRun("diagnostics");
           },
         },
-        ...getPluginCommands().map((cmd) => ({
+        ...(pluginCommands() ?? []).map((cmd) => ({
           title: cmd.title,
           description: cmd.category ? `plugin · ${cmd.category}` : "plugin",
           value: cmd.name,
           category: cmd.category ?? "plugin",
           onSelect: (dialog: DialogContext) => {
             dialog.clear();
-            cmd.run();
+            props.onRun(cmd.name);
           },
         })),
       ] as DialogSelectOption<string>[],

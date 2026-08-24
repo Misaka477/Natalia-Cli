@@ -5,7 +5,6 @@ import {
   globalConfigHome,
   userRuntimeHome,
 } from "@natalia/platform";
-import { setGlobalPluginCommands } from "@natalia/plugin";
 import { TerminalCommandBuffer } from "@natalia/tools";
 import {
   SKILL_SERVICE,
@@ -47,8 +46,6 @@ export function wireFoundation(ctx: RuntimeContext) {
     tools: state.tools,
     capabilityRegistry: state.capabilityRegistry,
     publish: (event) => ports.publish(event),
-    syncGlobalCommands: () =>
-      setGlobalPluginCommands(ports.commandCatalogEntries()),
   });
   state.waiterDeps = {
     publish: (event) => ports.publish(event),

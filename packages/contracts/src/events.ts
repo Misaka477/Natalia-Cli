@@ -1264,6 +1264,7 @@ export type UiAdapterMountInput = {
   };
   commands: {
     list(): Promise<ContributedCommand[]>;
+    execute(name: string): Promise<void>;
   };
 };
 

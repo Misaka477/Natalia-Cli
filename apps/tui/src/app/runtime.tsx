@@ -4,7 +4,11 @@ import { KeymapProvider } from "@opentui/keymap/solid";
 import { render } from "@opentui/solid";
 import { createFakeBackend, createRealRuntimeClient } from "@natalia/client";
 import { resolveTuiConfig } from "../config";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type {
+  RuntimeClient,
+  RuntimeEvent,
+  UiAdapterMountInput,
+} from "@natalia/contracts";
 import { ClipboardProvider } from "../context/clipboard";
 import { ToastProvider } from "../context/toast";
 import { RuntimeProvider } from "../context/runtime";
@@ -40,6 +44,7 @@ export async function runTuiShell(
     onEvent?: (event: RuntimeEvent) => void;
     initialPrompt?: string;
     backend?: RuntimeClient;
+    commands?: UiAdapterMountInput["commands"];
     createBackend?: (sessionID?: string) => RuntimeClient;
     /** Re-points the workspace root before a fresh backend is created. */
     onWorkspaceRootChange?: (root: string) => void;
@@ -103,6 +108,7 @@ export async function runTuiShell(
                   <RouteProvider>
                     <App
                       backend={backend}
+                      commands={input.commands}
                       createBackend={input.createBackend}
                       onWorkspaceRootChange={input.onWorkspaceRootChange}
                       onBackendChange={(next) => {

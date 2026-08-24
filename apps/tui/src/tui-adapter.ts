@@ -157,6 +157,7 @@ async function startTuiAdapter(
           : undefined,
     fixture: options.smoke,
     backend: initialBackend,
+    commands: input.commands,
     createBackend: options.smoke ? undefined : createBackend,
     onWorkspaceRootChange: (nextRoot: string) => {
       currentWorkspaceRoot = nextRoot;

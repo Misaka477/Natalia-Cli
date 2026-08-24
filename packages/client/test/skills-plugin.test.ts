@@ -30,7 +30,6 @@ function host(workspaceRoot: string) {
     tools,
     capabilityRegistry,
     publish: () => undefined,
-    syncGlobalCommands: () => undefined,
   });
   return { capabilityRegistry, tools, controller };
 }
