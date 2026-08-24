@@ -6,7 +6,6 @@
  * router and return true when they handled the input.
  */
 import { runtimeSlashCommands } from "@natalia/contracts";
-import { runCheckpointCommand } from "@natalia/runtime";
 import { EGRESS_ADVISORY, type SlashDeps } from "./index";
 
 export async function tryReadSlashCommand(deps: SlashDeps): Promise<boolean> {
@@ -96,37 +95,6 @@ export async function tryReadSlashCommand(deps: SlashDeps): Promise<boolean> {
     });
     deps.publish({ type: "content.done", id: deps.id });
     deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
-    return true;
-  }
-  if (/^\/(?:checkpoint|checkpoints|rollback)\b/u.test(trimmed)) {
-    const controller = await deps.initializeCheckpointController(
-      deps.commandExec,
-    );
-    if (!controller)
-      throw new Error("checkpoint controller unavailable (natalia-checkpoint)");
-    if (!controller.isEnabled())
-      throw new Error("checkpoint store is not initialized");
-    const result = await runCheckpointCommand(
-      controller.get(),
-      deps.runtimeContext,
-      trimmed,
-      controller.rollbackOptions(),
-      // The shared object library: the sandbox's snapshot indices are also
-      // owners, so checkpoint GC must never prune a live sandbox object.
-      async () => {
-        if (!deps.sandboxController)
-          throw new Error("sandbox controller unavailable");
-        return await deps.sandboxController.referencedObjectIDs();
-      },
-    );
-    deps.publish({ type: "content.delta", id: deps.id, text: result.output });
-    deps.publish({ type: "content.done", id: deps.id });
-    deps.publish({
-      type: "turn.finished",
-      id: deps.id,
-      stopReason: result.ok ? "done" : "error",
-    });
-    deps.publish(await deps.runtimeStatusSnapshot());
     return true;
   }
   return false;

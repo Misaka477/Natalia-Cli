@@ -112,6 +112,20 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
     ],
   },
   {
+    id: "natalia-checkpoint",
+    targets: ["packages/client/src/runtime/commands/slash-read.ts"],
+    forbidden: [
+      {
+        description: "direct checkpoint command execution in the host",
+        pattern: /\brunCheckpointCommand\b/u,
+      },
+      {
+        description: "client-owned checkpoint command implementation",
+        pattern: /["']\/(?:checkpoint|checkpoints|rollback)\b/u,
+      },
+    ],
+  },
+  {
     id: "natalia-mcp",
     targets: [
       "packages/client/src/runtime/main.ts",

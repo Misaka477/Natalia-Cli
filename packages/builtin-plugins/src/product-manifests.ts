@@ -33,7 +33,7 @@ export const PRODUCT_PLUGIN_MANIFESTS: Record<string, PluginManifest> = {
     conflicts: [],
     dependencies: [],
     hooks: {},
-    integrationPoints: ["services"],
+    integrationPoints: ["services", "commands"],
   },
   "natalia-collaboration": {
     apiVersion: 2,

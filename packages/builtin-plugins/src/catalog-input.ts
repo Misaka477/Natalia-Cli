@@ -81,7 +81,7 @@ export type BuiltinPluginCatalogInput = {
     publish(event: RuntimeEvent): void;
     identity?: unknown;
   };
-  checkpoint?: { workspaceRoot: string };
+  checkpoint?: import("@natalia/checkpoint-plugin").CheckpointPluginInput;
   subagents?: { workDir: string; sessionID?: () => string | undefined };
   sessionStore?: {
     workspaceRoot: string;

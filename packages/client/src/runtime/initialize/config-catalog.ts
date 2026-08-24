@@ -59,7 +59,28 @@ export async function configureCatalog(
         ? { mcp: deps.mcpPluginInput(runtimeConfig) }
         : {}),
       ...(pluginEnabled("natalia-checkpoint")
-        ? { checkpoint: { workspaceRoot: ctx.ports.getWorkspaceRoot() } }
+        ? {
+            checkpoint: {
+              workspaceRoot: ctx.ports.getWorkspaceRoot(),
+              commands: {
+                controller: async (sessionID: SessionID) => {
+                  const exec = await ctx.ports.ensureExecution(sessionID);
+                  return await ctx.ports.initializeCheckpointController(exec);
+                },
+                context: (sessionID: SessionID) => {
+                  const exec = ctx.ports.getExecutionBySession().get(sessionID);
+                  if (!exec) throw new Error(`session not found: ${sessionID}`);
+                  return exec.context;
+                },
+                referencedObjectIDs: async () => {
+                  const sandbox = ctx.ports.getSandboxController();
+                  if (!sandbox)
+                    throw new Error("sandbox controller unavailable");
+                  return (await sandbox.referencedObjectIDs()) ?? new Set();
+                },
+              },
+            },
+          }
         : {}),
       ...(subagentsEnabled
         ? {

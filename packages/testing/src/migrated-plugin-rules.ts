@@ -307,6 +307,7 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
   migratedPluginRules3[10]!,
   migratedPluginRules2[13]!,
   migratedPluginRules4[11]!,
+  migratedPluginRules4[12]!,
 ];
 
 export function findMigratedPluginViolations(

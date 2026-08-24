@@ -25,7 +25,19 @@ test("checkpoint factory exists only while the plugin is loaded", async () => {
     }),
     service: <T>(name: string) => services.get(name) as T | undefined,
   });
-  const plugin = createCheckpointControllerPlugin({ workspaceRoot: "/tmp/ws" });
+  const plugin = createCheckpointControllerPlugin({
+    workspaceRoot: "/tmp/ws",
+    commands: {
+      controller: async () =>
+        ({
+          get: () => ({ list: async () => [] }),
+          isEnabled: () => true,
+          rollbackOptions: () => ({}),
+        }) as never,
+      context: () => ({}) as never,
+      referencedObjectIDs: async () => new Set(),
+    },
+  });
 
   expect(plugin.manifest).toMatchObject({
     id: CHECKPOINT_PLUGIN_ID,
@@ -38,7 +50,24 @@ test("checkpoint factory exists only while the plugin is loaded", async () => {
   expect(
     services.get(CHECKPOINT_FACTORY_SERVICE) as CheckpointFactory,
   ).toBeFunction();
+  expect(registry.commands().map((command) => command.name)).toEqual([
+    "checkpoint",
+    "checkpoints",
+    "rollback",
+  ]);
+  expect(
+    await registry
+      .commands()
+      .find((command) => command.name === "checkpoints")
+      ?.run({
+        raw: "/checkpoints",
+        args: [],
+        workspaceRoot: "/tmp/ws",
+        sessionID: "ses_test",
+      }),
+  ).toBe("");
 
   await registry.unload(CHECKPOINT_PLUGIN_ID);
   expect(services.has(CHECKPOINT_FACTORY_SERVICE)).toBe(false);
+  expect(registry.commands()).toHaveLength(0);
 });
