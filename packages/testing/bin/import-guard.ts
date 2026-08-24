@@ -153,10 +153,9 @@ const forbiddenDeepImports = [
 /**
  * Architecture convergence plan §3.5 gates.
  *
- * Line limit: a `src` file over `maxSourceLines` fails unless it is listed in
- * `lineLimitExemptions`. The list holds only legacy god files with their
- * convergence reason; new files are subject to the limit immediately. A legacy
- * file must shrink or disappear as its planned refactor lands.
+ * File size: line count is reported as a maintenance signal, not enforced as an
+ * architectural boundary. Cohesion and dependency direction determine whether
+ * a module should be split; crossing an arbitrary line count does not.
  *
  * Runtime module coupling: `packages/client/src/runtime/` modules may only talk
  * to each other through `RuntimeContext` (`context`). A relative import that
@@ -164,66 +163,6 @@ const forbiddenDeepImports = [
  * cross-module reference and fails.
  */
 const maxSourceLines = 400;
-const lineLimitExemptions = new Map<string, string>([
-  [
-    "packages/client/src/worker.ts",
-    "legacy transport worker, not part of phase 1",
-  ],
-  ["packages/client/src/fixture.ts", "test fixture only"],
-  ["packages/capability/src/index.ts", "legacy kernel, out of phase 1 scope"],
-  ["packages/runtime/src/provider.ts", "legacy provider seam"],
-  ["packages/runtime/src/checkpoint.ts", "legacy checkpoint seam"],
-  ["packages/runtime-services/src/services.ts", "service port definitions"],
-  [
-    "packages/provider-model-plugin/src/provider-runner.ts",
-    "legacy provider runner",
-  ],
-  ["packages/native-terminal/src/index.ts", "native bindings"],
-  ["packages/contracts/src/events.ts", "generated event vocabulary"],
-  ["packages/contracts/src/refusals.ts", "refusal vocabulary"],
-  ["packages/contracts/src/capabilities.ts", "capability classification"],
-  ["packages/session/src/sqlite-store.ts", "sqlite store"],
-  ["packages/session/src/projector.ts", "session projector"],
-  ["packages/sdk/src/index.ts", "SDK client surface"],
-  ["packages/transport/src/rpc.ts", "RPC protocol"],
-  ["packages/transport/src/http.ts", "HTTP transport"],
-  ["packages/tools/src/types.ts", "tool types"],
-  ["packages/tools/src/permission-policy.ts", "permission policy"],
-  ["packages/platform/src/index.ts", "platform ports"],
-  ["packages/platform/src/workspace-files.ts", "workspace files API"],
-  ["packages/sandbox/src/workspace-manager.ts", "sandbox manager"],
-  ["packages/subagent/src/registry.ts", "subagent registry"],
-  ["packages/skills-plugin/src/skills.ts", "skills implementation"],
-  [
-    "packages/session-store-plugin/src/session-store-controller.ts",
-    "session store controller",
-  ],
-  ["packages/mcp-plugin/src/mcp-runtime.ts", "MCP runtime"],
-  [
-    "packages/collaboration-plugin/src/interactive-waiter.ts",
-    "interactive waiter",
-  ],
-  [
-    "packages/task-workflow-plugin/src/task-execution-service.ts",
-    "task execution service",
-  ],
-  ["packages/workflow/src/natalia-task-state-store.ts", "task state store"],
-  ["packages/workflow/src/natalia-task-alert-queue.ts", "task alert queue"],
-  ["packages/workflow/src/systemd-adapter.ts", "systemd adapter"],
-  [
-    "packages/workflow-scheduler-plugin/src/workflow-execution-scheduler.ts",
-    "scheduler",
-  ],
-  ["packages/view-store/src/state.ts", "view store state"],
-  ["packages/view-store/src/conversation.ts", "conversation view"],
-  ["packages/ui-model/src/tools.ts", "tool UI model"],
-  ["packages/tool-web/src/index.ts", "web tools"],
-  ["packages/tool-terminal/src/index.ts", "terminal tools"],
-  ["packages/tool-sandbox/src/index.ts", "sandbox tools"],
-  ["packages/tool-process/src/index.ts", "process tools"],
-  ["packages/tool-agent/src/index.ts", "agent tools"],
-  ["apps/tui/src/keymap.ts", "TUI keymap"],
-]);
 const runtimeModuleRoots = ["packages/client/src/runtime"];
 const runtimeCompositionRoot = "packages/client/src/runtime/main.ts";
 const runtimeCompositionDirectory = "packages/client/src/runtime/composition/";
@@ -342,20 +281,16 @@ for (const dir of productionRoots)
   });
 
 /**
- * Line limit: every shipped `src` TypeScript file stays within the bound unless
- * it has an explicit convergence exemption. New files have no exemption, so a
- * module that exceeds the limit fails immediately.
+ * Report large shipped source files for review. This is deliberately advisory:
+ * splitting remains a design decision based on cohesion and ownership.
  */
+const largeSourceFiles: string[] = [];
 for (const dir of productionRoots)
   await scan(join(root, dir), /\.ts$/u, (full, text) => {
     const relative = full.slice(root.length + 1).replaceAll("\\", "/");
     if (!relative.includes("/src/") || relative.includes("/test/")) return;
-    const reason = lineLimitExemptions.get(relative);
     const lines = text.split("\n").length;
-    if (lines > maxSourceLines && reason === undefined)
-      failures.push(
-        `${relative}: ${lines} lines exceeds the ${maxSourceLines}-line source limit; split into bounded modules`,
-      );
+    if (lines > maxSourceLines) largeSourceFiles.push(`${relative} (${lines})`);
   });
 
 /**
@@ -444,6 +379,10 @@ if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
+if (largeSourceFiles.length)
+  console.warn(
+    `source files over ${maxSourceLines} lines (advisory):\n${largeSourceFiles.join("\n")}`,
+  );
 console.log("import guard passed");
 
 async function scan(

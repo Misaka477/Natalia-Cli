@@ -228,5 +228,5 @@ registry 记录 `loaded`、`unloaded`、`denied`、`failed` audit，runtime diag
    resource 或 UI surface。
 5. dispose 幂等，并释放事件订阅和进程。
 
-仓库内插件运行 `npm run typecheck`、`npm run test`、`npm run guard:imports`；所有
-`src/**/*.ts` 文件不得超过 400 行。
+仓库内插件运行 `npm run typecheck`、`npm run test`、`npm run guard:imports`。文件行数
+只作为评审提示；是否拆分以职责内聚、所有权边界和依赖方向为准，不为满足固定行数机械拆分。
