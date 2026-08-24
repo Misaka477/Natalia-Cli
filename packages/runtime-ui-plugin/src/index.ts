@@ -1,6 +1,7 @@
 export {
   createStatusSnapshotController,
   statusSnapshot,
+  type RuntimeUiCommandSession,
   type RuntimeUiPluginInput,
 } from "./status-controller";
 export {

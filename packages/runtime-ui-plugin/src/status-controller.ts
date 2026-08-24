@@ -1,4 +1,4 @@
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   StatusContextLedger,
   StatusProvider,
@@ -12,6 +12,25 @@ export type RuntimeUiPluginInput = {
   permissionMode(): "ask" | "auto" | "read_only";
   runningCount(): Promise<number>;
   publish(event: RuntimeEvent): void;
+  commands?: {
+    session(sessionID: SessionID): Promise<RuntimeUiCommandSession>;
+    publish(sessionID: SessionID, event: RuntimeEvent): void;
+    egressAdvisory: string;
+  };
+};
+
+export type RuntimeUiCommandSession = {
+  provider?: StatusProvider;
+  providerSource: string;
+  workspaceRoot: string;
+  sessionID: SessionID;
+  toolsSize: number;
+  selectedAgentName?: string;
+  skillsCount: number;
+  diagnostics: Array<
+    Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
+  >;
+  snapshot: Extract<RuntimeEvent, { type: "status.snapshot" }>;
 };
 
 export function createStatusSnapshotController(

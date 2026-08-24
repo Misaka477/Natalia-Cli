@@ -58,6 +58,8 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
     id: "natalia-runtime-config",
     targets: [
       "packages/client/src/runtime/main.ts",
+      "packages/client/src/runtime/commands/index.ts",
+      "packages/client/src/runtime/commands/slash-read.ts",
       "packages/client/src/builtin-plugins/catalog.ts",
       "packages/client/src/builtin-plugins/runtime-config-plugin.ts",
     ],
@@ -304,6 +306,10 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       {
         description: "client-owned runtime UI implementation",
         pattern: /export function (?:createRuntimeUiPlugin|statusSnapshot)\b/u,
+      },
+      {
+        description: "client-owned runtime UI command implementation",
+        pattern: /["']\/(?:help|doctor|status|diagnostics)\b/u,
       },
     ],
   },

@@ -5,6 +5,7 @@ import type {
   RuntimeEvent,
   SessionID,
 } from "../context";
+import { EGRESS_ADVISORY } from "../../egress-advisory";
 
 export async function configureCatalog(
   ctx: RuntimeContext,
@@ -295,6 +296,37 @@ export async function configureCatalog(
                 workspaceRoot: ctx.ports.getWorkspaceRoot(),
               })) ?? 0),
           publish: ctx.ports.publish,
+          commands: {
+            session: async (sessionID: SessionID) => {
+              const exec = ctx.state.executionBySession.get(sessionID);
+              if (!exec) throw new Error(`session not found: ${sessionID}`);
+              return {
+                provider: exec.provider,
+                providerSource: ctx.ports.getProviderSource(),
+                workspaceRoot: ctx.ports.getWorkspaceRoot(),
+                sessionID,
+                toolsSize: ctx.state.tools.size,
+                selectedAgentName: exec.selectedAgent?.name,
+                skillsCount: ctx.ports.skillsList().length,
+                diagnostics: [
+                  ...ctx.state.runtimeDiagnostics,
+                  ...(ctx.state.runtimeDiagnosticsBySession.get(sessionID) ??
+                    []),
+                ],
+                snapshot: await ctx.ports.getStatusController().snapshotFor({
+                  provider: exec.provider,
+                  context: exec.context,
+                  permissionMode: exec.permissionMode,
+                }),
+              };
+            },
+            publish: (sessionID: SessionID, event: RuntimeEvent) => {
+              const exec = ctx.state.executionBySession.get(sessionID);
+              if (!exec) throw new Error(`session not found: ${sessionID}`);
+              ctx.ports.publishForSession(exec, event);
+            },
+            egressAdvisory: EGRESS_ADVISORY,
+          },
         },
       },
     });

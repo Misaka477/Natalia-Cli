@@ -35,6 +35,30 @@ test("runtime UI service follows plugin load and unload", async () => {
     permissionMode: () => "read_only",
     runningCount: async () => 0,
     publish: (event) => events.push(event),
+    commands: {
+      session: async () => ({
+        provider: { provider: "openai", model: "gpt-test" },
+        providerSource: "config",
+        workspaceRoot: "/tmp/ws",
+        sessionID: "ses_test",
+        toolsSize: 3,
+        selectedAgentName: "reviewer",
+        skillsCount: 2,
+        diagnostics: [],
+        snapshot: {
+          type: "status.snapshot",
+          provider: "openai",
+          model: "gpt-test",
+          context: "10 tokens",
+          step: "2",
+          permissions: "read_only",
+          cwd: "/tmp/ws",
+          background: "0 running",
+        },
+      }),
+      publish: (_sessionID, event) => events.push(event),
+      egressAdvisory: "egress advisory",
+    },
   });
 
   expect(plugin.manifest).toMatchObject({
@@ -44,7 +68,7 @@ test("runtime UI service follows plugin load and unload", async () => {
     provides: [STATUS_SNAPSHOT_CONTROLLER_SERVICE],
     requires: [],
     dependencies: [],
-    integrationPoints: ["services"],
+    integrationPoints: ["services", "commands"],
   });
   expect(services.has(STATUS_SNAPSHOT_CONTROLLER_SERVICE)).toBe(false);
 
@@ -53,10 +77,30 @@ test("runtime UI service follows plugin load and unload", async () => {
     STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   ) as StatusSnapshotController;
   expect(controller).toBeDefined();
+  expect(registry.commands().map((command) => command.name)).toEqual([
+    "help",
+    "doctor",
+    "status",
+    "diagnostics",
+  ]);
+  expect(
+    await registry
+      .commands()
+      .find((command) => command.name === "status")
+      ?.run({
+        raw: "/status",
+        args: [],
+        workspaceRoot: "/tmp/ws",
+        sessionID: "ses_test",
+      }),
+  ).toContain("provider: openai/gpt-test (config)");
+  expect(events).toHaveLength(1);
+  events.length = 0;
   controller.schedule();
 
   await registry.unload(RUNTIME_UI_PLUGIN_ID);
   expect(services.has(STATUS_SNAPSHOT_CONTROLLER_SERVICE)).toBe(false);
+  expect(registry.commands()).toHaveLength(0);
   await Bun.sleep(10);
   expect(events).toEqual([]);
 });
