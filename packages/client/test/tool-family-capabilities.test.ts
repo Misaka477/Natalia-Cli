@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
 import type { ToolFamily } from "@natalia/tools";
 import {
-  builtinToolFamilies,
   builtinToolNames,
   createToolRegistryFromCapabilities,
   registerToolFamilyCapabilities,
@@ -36,9 +35,7 @@ function syntheticFamily(id: string): ToolFamily {
   };
 }
 
-test("the static built-in catalogue is empty after the plugin migration", () => {
-  expect(builtinToolFamilies()).toEqual([]);
-  // The effective built-in catalogue still names every migrated family tool.
+test("the effective tool catalogue names migrated plugin tools", () => {
   expect(builtinToolNames()).toContain("ask_user");
   expect(builtinToolNames()).toEqual(
     expect.arrayContaining(["plan", "todo_read", "todo_write"]),

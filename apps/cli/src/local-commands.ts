@@ -75,7 +75,6 @@ import {
   setLocalSessionPinned,
   sessionTable,
   promptArguments,
-  toolFamilyCatalogue,
   trustList,
   trustRemove,
   workspaceFilesystemCommand,
@@ -98,7 +97,6 @@ export async function handleLocalCommands(argv: string[]) {
       "session",
       "fs",
       "trust",
-      "tool",
       "replay",
     ]).has(subcommand ?? "")
   )
@@ -326,13 +324,6 @@ export async function handleLocalCommands(argv: string[]) {
         break;
       }
       throw new Error("trust requires list or remove");
-    }
-
-    case "tool": {
-      const action = argv[1] as "list" | undefined;
-      if (action !== "list") throw new Error("tool requires list");
-      console.log(JSON.stringify(toolFamilyCatalogue(), null, 2));
-      break;
     }
 
     case "replay": {

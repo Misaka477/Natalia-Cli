@@ -75,7 +75,6 @@ import {
   setLocalSessionPinned,
   sessionTable,
   promptArguments,
-  toolFamilyCatalogue,
   trustList,
   trustRemove,
   workspaceFilesystemCommand,

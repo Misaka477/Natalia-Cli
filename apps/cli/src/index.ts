@@ -1,10 +1,8 @@
 import {
-  builtinToolFamilies,
   checkpointDisplayLine,
   compactionDisplayLine,
   globWorkspaceFiles,
   listWorkspaceFiles,
-  migratedBuiltinToolFamilies,
   readWorkspaceFile,
   retryDisplayLine,
   searchWorkspaceFiles,
@@ -296,36 +294,6 @@ export async function workspaceFilesystemCommand(input: {
     include: input.include,
     limit: input.limit,
   });
-}
-
-/**
- * The families this CLI knows how to install and uninstall.
- *
- * This is the host's catalogue — the same `builtinToolFamilies` the runtime
- * loads — so the CLI and the runtime can never disagree about what a family id
- * means.
- */
-export function toolFamilyCatalogue(): Array<{
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  scope: string;
-  dependencies: readonly string[];
-  tools: readonly string[];
-}> {
-  return [
-    ...builtinToolFamilies().map((family) => ({
-      id: family.id,
-      name: family.name,
-      version: family.version,
-      description: family.description,
-      scope: family.scope,
-      dependencies: family.dependencies ?? [],
-      tools: family.tools.map((tool) => tool.name),
-    })),
-    ...migratedBuiltinToolFamilies,
-  ];
 }
 
 /** The trust database, for `natalia trust list`. */

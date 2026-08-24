@@ -17,6 +17,7 @@ if (!handled) {
     console.error("use 'natalia <subcommand>' instead of 'natalia <flag>'");
     process.exit(1);
   }
+  if (subcommand) throw new Error(`unknown command: ${subcommand}`);
   const configPath =
     process.env.NATALIA_CONFIG ?? `${process.cwd()}/.natalia/config.json`;
   console.log(JSON.stringify(await plainStatus(configPath), null, 2));

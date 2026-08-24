@@ -3834,7 +3834,7 @@ test("a bare alert channel stays silent on success and on a retried attempt", as
   alerts.close();
 });
 
-test("CLI tool list reports the built-in families", async () => {
+test("legacy tool list is absent after plugin lifecycle migration", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-tools-list-"));
   const child = Bun.spawnSync(
     [
@@ -3845,18 +3845,9 @@ test("CLI tool list reports the built-in families", async () => {
     ],
     { cwd: root, stdout: "pipe", stderr: "pipe" },
   );
-  expect(child.exitCode).toBe(0);
-  const catalogue = JSON.parse(
-    new TextDecoder().decode(child.stdout),
-  ) as Array<{ id: string; tools: string[] }>;
-  expect(catalogue.map((family) => family.id)).toContain("fs-read");
-  expect(catalogue.map((family) => family.id)).toContain("fs-write");
-  expect(catalogue.map((family) => family.id)).toContain("todo");
-  expect(catalogue.find((family) => family.id === "fs-read")?.tools).toContain(
-    "read_file",
-  );
-  expect(catalogue.find((family) => family.id === "fs-write")?.tools).toContain(
-    "write_file",
+  expect(child.exitCode).not.toBe(0);
+  expect(new TextDecoder().decode(child.stderr)).toContain(
+    "unknown command: tool",
   );
 });
 

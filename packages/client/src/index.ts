@@ -118,8 +118,6 @@ export {
 } from "./capability-execution-host";
 export { CapabilityHost } from "@natalia/capability";
 export {
-  builtinToolFamilies,
-  migratedBuiltinToolFamilies,
   toolFamilyCapabilityID,
   type ToolFamilyLoadOutcome,
 } from "./capabilities/tool-family-capabilities";

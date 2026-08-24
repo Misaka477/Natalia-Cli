@@ -81,20 +81,20 @@ npm run ts:cli -- fs search 'createRuntime' --include '*.ts' --limit 100
 
 The `fs` commands stay within the selected workspace and return JSON.
 
-## Tool Families
+## Plugins
 
 ```bash
-npm run ts:cli -- tool list
-npm run ts:cli -- install <family> --workspace <path>
-npm run ts:cli -- uninstall <family> --workspace <path>
+npm run ts:cli -- plugin list
+npm run ts:cli -- plugin install <spec>
+npm run ts:cli -- plugin uninstall <id>
+npm run ts:cli -- plugin enable <id>
+npm run ts:cli -- plugin disable <id>
 ```
 
-`tool list` prints the built-in tool families the runtime can load (id, name,
-scope, dependencies, tools). `install <family>` and `uninstall <family>` flip
-the family in the workspace config's `tools.enabled` — a family that is not
-enabled never reaches the registry, so its tools cannot be called. Uninstalling
-a family another enabled family depends on cascade-disables that family too,
-and both commands report such notes.
+`plugin list` reports runtime defaults and user-installed plugins through one
+catalogue. Install, uninstall, enable, and disable each perform the complete
+lifecycle operation in one command. All plugins use the same registry,
+permissions, naming, and cleanup path.
 
 ## Transport Recording
 
@@ -116,4 +116,4 @@ TUI controls and slash commands are documented in the main [README](../README.md
 
 ## Current Help Behavior
 
-The current CLI does not yet implement a generated `--help` command. Until that is added, this file is the canonical command-line reference. Unknown commands currently fall back to the plain status output.
+The current CLI does not yet implement a generated `--help` command. Until that is added, this file is the canonical command-line reference. Running the CLI without a command prints plain status; unknown commands fail explicitly.

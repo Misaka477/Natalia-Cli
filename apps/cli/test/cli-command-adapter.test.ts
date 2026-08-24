@@ -109,7 +109,7 @@ test("plugin maintenance can recover a disabled builtin CLI", async () => {
       CLI_PLUGIN_ID
     ],
   ).toBe(true);
-  expect(runCli(root, "tool", "list").exitCode).toBe(0);
+  expect(runCli(root, "trust", "list", "--workspace", root).exitCode).toBe(0);
 });
 
 test("builtin CLI uninstall durably disables the runtime default", async () => {

@@ -10,7 +10,6 @@ import {
 } from "@natalia/session";
 import { workGraphEdgeSchema, workGraphNodeSchema } from "@natalia/contracts";
 import { createRealRuntimeClient } from "../src";
-import { builtinToolFamilies } from "../src/capabilities/tool-family-capabilities";
 import {
   agentActionNodeID,
   approvalNodeID,
@@ -146,24 +145,6 @@ test("runtime startup records the effective tool catalogue as metadata", async (
       scope: "session",
     },
   );
-  // Every built-in tool is owned by its family. What is left on
-  // `natalia-runtime` is only what the host itself registers after assembly
-  // (skills, mailbox and collaboration tools), never a framework tool.
-  const familyOwned = new Map(
-    builtinToolFamilies().flatMap((family) =>
-      family.tools.map(
-        (tool) => [tool.name, `natalia-tool-${family.id}`] as const,
-      ),
-    ),
-  );
-  for (const event of registered) {
-    const expected = familyOwned.get(event.name);
-    if (expected) expect(event.owner).toBe(expected);
-  }
-  // …and every family tool really reached the catalogue, so the loop above is
-  // not vacuously true.
-  for (const name of familyOwned.keys())
-    expect(registered.some((event) => event.name === name)).toBe(true);
   expect(registered.some((event) => "description" in event)).toBe(false);
   expect(new Set(registered.map((event) => event.id)).size).toBe(
     registered.length,
