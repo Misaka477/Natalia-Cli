@@ -175,7 +175,7 @@ export const PRODUCT_PLUGIN_MANIFESTS: Record<string, PluginManifest> = {
       },
     ],
     hooks: {},
-    integrationPoints: ["services"],
+    integrationPoints: ["services", "commands"],
   },
   "natalia-retry": {
     apiVersion: 2,

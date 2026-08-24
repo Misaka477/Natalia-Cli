@@ -174,6 +174,8 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       "packages/client/src/builtin-plugins/provider-model-plugin.ts",
       "packages/client/src/provider-model-controller.ts",
       "packages/client/src/provider-runner.ts",
+      "packages/client/src/runtime/commands/slash-read.ts",
+      "packages/client/src/runtime/commands/slash-action.ts",
     ],
     forbidden: [
       {
@@ -204,6 +206,10 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       {
         description: "client-owned provider model controller",
         pattern: /export function createProviderModelController\b/u,
+      },
+      {
+        description: "client-owned provider model command implementation",
+        pattern: /["']\/(?:models|model)["']/u,
       },
     ],
   },

@@ -355,6 +355,16 @@ export type ProviderRunnerInput = {
 export type ProviderModelControllerInput = {
   initialize(): void;
   runnerInput(sessionID: SessionID): ProviderRunnerInput;
+  commands: {
+    catalog(): Promise<
+      Array<{ id: string; name: string; provider: string; variants: string[] }>
+    >;
+    select(
+      sessionID: SessionID,
+      modelID: string,
+      variant?: string,
+    ): Promise<void>;
+  };
   chat: {
     available(sessionID: SessionID): boolean;
     publish(sessionID: SessionID, event: RuntimeEvent): void;

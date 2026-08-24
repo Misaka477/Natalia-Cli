@@ -10,22 +10,6 @@ import type { SlashDeps } from "./index";
 export async function tryActionSlashCommand(deps: SlashDeps): Promise<boolean> {
   const trimmed = deps.text.trim();
   const commandExec = deps.commandExec;
-  if (trimmed.startsWith("/model ")) {
-    const [modelID, variant] = trimmed
-      .slice("/model ".length)
-      .trim()
-      .split(/\s+/u);
-    if (!modelID) throw new Error("model ID is required");
-    await deps.selectRuntimeModel(modelID, variant, commandExec);
-    deps.publish({
-      type: "content.delta",
-      id: deps.id,
-      text: `selected model ${modelID}${variant ? ` (${variant})` : ""}`,
-    });
-    deps.publish({ type: "content.done", id: deps.id });
-    deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
-    return true;
-  }
   if (trimmed.startsWith("/attach ")) {
     const [path, ...rest] = trimmed
       .slice("/attach ".length)

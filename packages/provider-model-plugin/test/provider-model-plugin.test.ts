@@ -48,6 +48,10 @@ function controllerInput(
     runnerInput: () => {
       throw new Error("runner input should remain lazy");
     },
+    commands: {
+      catalog: async () => [],
+      select: async () => undefined,
+    },
     chat: {
       available: () => false,
       publish() {},

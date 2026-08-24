@@ -181,6 +181,8 @@ export function createPluginAssembly(
       runChatTurnBody,
       wakeNavi,
       providerRunnerInput,
+      clientModelCatalog,
+      selectRuntimeModel,
     } = ctx.ports;
     const enabled =
       config.plugins.enabled[ATTACHMENT_PLUGIN_ID] !== false &&
@@ -200,6 +202,14 @@ export function createPluginAssembly(
           }
         },
         runnerInput: providerRunnerInput,
+        commands: {
+          catalog: clientModelCatalog,
+          select: async (sessionID, modelID, variant) => {
+            const exec = getExecutionBySession().get(sessionID);
+            if (!exec) throw new Error(`session not found: ${sessionID}`);
+            await selectRuntimeModel(modelID, variant, exec);
+          },
+        },
         chat: {
           available: (id) =>
             getExecutionBySession().get(id)?.provider !== undefined,

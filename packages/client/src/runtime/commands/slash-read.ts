@@ -129,23 +129,5 @@ export async function tryReadSlashCommand(deps: SlashDeps): Promise<boolean> {
     deps.publish(await deps.runtimeStatusSnapshot());
     return true;
   }
-  if (trimmed === "/models") {
-    const models = await deps.clientModelCatalog();
-    deps.publish({
-      type: "content.delta",
-      id: deps.id,
-      text: models.length
-        ? models
-            .map(
-              (model) =>
-                `${model.id}: ${model.name} @ ${model.provider}${model.variants.length ? ` (${model.variants.join(", ")})` : ""}`,
-            )
-            .join("\n")
-        : "no selectable models configured",
-    });
-    deps.publish({ type: "content.done", id: deps.id });
-    deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
-    return true;
-  }
   return false;
 }

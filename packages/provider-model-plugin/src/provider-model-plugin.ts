@@ -52,7 +52,7 @@ export function createProviderModelPlugin(
         },
       ],
       hooks: {},
-      integrationPoints: ["services"],
+      integrationPoints: ["services", "commands"],
     },
     setup(api) {
       if (!api.services.get(RETRY_SERVICE))
@@ -63,6 +63,37 @@ export function createProviderModelPlugin(
         throw new Error("compaction service unavailable (natalia-compaction)");
       controller = createProviderModelController(input);
       api.services.provide(PROVIDER_MODEL_CONTROLLER_SERVICE, controller);
+      api.commands.register({
+        name: "models",
+        title: "List models",
+        async run() {
+          const models = await input.commands.catalog();
+          return models.length
+            ? models
+                .map(
+                  (model) =>
+                    `${model.id}: ${model.name} @ ${model.provider}${model.variants.length ? ` (${model.variants.join(", ")})` : ""}`,
+                )
+                .join("\n")
+            : "no selectable models configured";
+        },
+      });
+      api.commands.register({
+        name: "model",
+        title: "Select model",
+        async run(invocation) {
+          const [modelID, variant] = invocation?.args ?? [];
+          if (!modelID) throw new Error("model ID is required");
+          if (!invocation?.sessionID)
+            throw new Error("model selection requires a session");
+          await input.commands.select(
+            invocation.sessionID as import("@natalia/contracts").SessionID,
+            modelID,
+            variant,
+          );
+          return `selected model ${modelID}${variant ? ` (${variant})` : ""}`;
+        },
+      });
     },
     async dispose() {
       await controller?.dispose();
