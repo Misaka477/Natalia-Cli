@@ -1,4 +1,3 @@
-import { resolveConfig, updateConfig } from "@natalia/config";
 import {
   doctorPlugins,
   installPlugin,
@@ -7,85 +6,107 @@ import {
   setPluginEnabled,
   uninstallPlugin,
 } from "@natalia/installer";
-import { CLI_PLUGIN_ID } from "./cli-command-adapter";
+import { TRANSPORT_PLUGIN_MANIFEST } from "./transport-plugin";
+
+const runtimeManifests = [TRANSPORT_PLUGIN_MANIFEST];
 
 export function isPluginMaintenanceCommand(argv: readonly string[]) {
   return argv[0] === "plugin";
 }
 
 export async function runPluginMaintenanceCommand(argv: readonly string[]) {
-  const action = argv[1];
-  const target = argv[2];
-  const workspaceRoot = valueAfter(argv, "--workspace") ?? process.cwd();
+  const { action, target, workspaceRoot } = parsePluginMaintenanceArgs(argv);
+  const config = process.env.NATALIA_CONFIG
+    ? { globalPath: process.env.NATALIA_CONFIG }
+    : {};
   const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 
   if (action === "install") {
-    if (!target) throw new Error("plugin install requires a package spec");
-    assertNotBuiltinPackageOperation(action, target);
-    print(await installPlugin({ workspaceRoot, spec: target }));
+    print(
+      await installPlugin({
+        workspaceRoot,
+        spec: target!,
+        config,
+        runtimeManifests,
+      }),
+    );
     return;
   }
   if (action === "enable" || action === "disable") {
-    if (!target) throw new Error(`plugin ${action} requires a plugin id`);
     const enabled = action === "enable";
-    if (target === CLI_PLUGIN_ID) {
-      const config = await updateConfig(
+    print(
+      await setPluginEnabled({
         workspaceRoot,
-        { plugins: { enabled: { [CLI_PLUGIN_ID]: enabled } } },
-        process.env.NATALIA_CONFIG
-          ? { globalPath: process.env.NATALIA_CONFIG }
-          : {},
-      );
-      print({ id: CLI_PLUGIN_ID, enabled, builtin: true, config });
-      return;
-    }
-    print(await setPluginEnabled({ workspaceRoot, pluginID: target, enabled }));
+        pluginID: target!,
+        enabled,
+        config,
+        runtimeManifests,
+      }),
+    );
     return;
   }
   if (action === "uninstall") {
-    if (!target) throw new Error("plugin uninstall requires a plugin id");
-    assertNotBuiltinPackageOperation(action, target);
-    print(await uninstallPlugin({ workspaceRoot, pluginID: target }));
+    print(
+      await uninstallPlugin({
+        workspaceRoot,
+        pluginID: target!,
+        config,
+        runtimeManifests,
+      }),
+    );
     return;
   }
-  if (action === "list" || action === "status") {
-    const resolved = await resolveConfig({
-      workspaceRoot,
-      ...(process.env.NATALIA_CONFIG
-        ? { globalPath: process.env.NATALIA_CONFIG }
-        : {}),
-    });
-    print([
-      {
-        id: CLI_PLUGIN_ID,
-        enabled: resolved.config.plugins.enabled[CLI_PLUGIN_ID] !== false,
-        builtin: true,
-      },
-      ...(await listInstalledPlugins(workspaceRoot)),
-    ]);
+  if (action === "list") {
+    print(
+      await listInstalledPlugins(workspaceRoot, {
+        ...config,
+        runtimeManifests,
+      }),
+    );
     return;
   }
   if (action === "reconcile") {
-    print(await reconcilePlugins(workspaceRoot));
+    print(await reconcilePlugins(workspaceRoot, undefined, config));
     return;
   }
   if (action === "doctor") {
-    print(await doctorPlugins(workspaceRoot));
+    print(await doctorPlugins(workspaceRoot, config));
     return;
   }
-  throw new Error(
-    "plugin requires install, enable, disable, uninstall, list, status, reconcile, or doctor",
-  );
+  throw new Error("unreachable plugin action");
 }
 
-function assertNotBuiltinPackageOperation(action: string, target: string) {
-  if (target === CLI_PLUGIN_ID)
+export function parsePluginMaintenanceArgs(argv: readonly string[]) {
+  const action = argv[1];
+  const targetActions = new Set(["install", "uninstall", "enable", "disable"]);
+  const noTargetActions = new Set(["list", "doctor", "reconcile"]);
+  if (!action || (!targetActions.has(action) && !noTargetActions.has(action)))
     throw new Error(
-      `plugin ${action} cannot operate on builtin ${CLI_PLUGIN_ID}`,
+      "plugin requires install, enable, disable, uninstall, list, reconcile, or doctor",
     );
-}
-
-function valueAfter(argv: readonly string[], flag: string) {
-  const index = argv.indexOf(flag);
-  return index >= 0 ? argv[index + 1] : undefined;
+  const positional: string[] = [];
+  let workspaceRoot = process.cwd();
+  let workspaceSeen = false;
+  for (let index = 2; index < argv.length; index += 1) {
+    const value = argv[index]!;
+    if (value === "--workspace") {
+      if (workspaceSeen)
+        throw new Error("--workspace may only be specified once");
+      workspaceSeen = true;
+      const workspace = argv[++index];
+      if (!workspace || workspace.startsWith("--"))
+        throw new Error("--workspace requires a value");
+      workspaceRoot = workspace;
+      continue;
+    }
+    if (value.startsWith("-")) throw new Error(`unknown flag: ${value}`);
+    positional.push(value);
+  }
+  if (targetActions.has(action) && positional.length !== 1)
+    throw new Error(
+      `plugin ${action} requires exactly one ${action === "install" ? "package spec" : "plugin id"}`,
+    );
+  if (noTargetActions.has(action) && positional.length)
+    throw new Error(`plugin ${action} does not accept a target`);
+  return { action, target: positional[0], workspaceRoot };
 }

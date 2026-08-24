@@ -243,7 +243,6 @@ export function createPluginAssembly(
       return undefined;
     return {
       roots: config.tools.paths.map((path) => resolve(workspaceRoot, path)),
-      enabled: config.tools.enabled,
       onError: (id: string, error: unknown) =>
         publish({
           type: "diagnostic",

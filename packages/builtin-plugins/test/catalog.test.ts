@@ -179,16 +179,14 @@ function featureGates(config: any, hasCustomTools = false) {
 }
 
 test("built-in feature gates honor custom registries and config switches", () => {
-  const custom = featureGates(
-    { tools: { enabled: {} }, plugins: { enabled: {} } },
-    true,
-  );
+  const custom = featureGates({ plugins: { enabled: {} } }, true);
   expect(custom.askEnabled).toBe(false);
   expect(custom.pdfEnabled).toBe(true);
 
   const configured = featureGates({
-    tools: { enabled: { ask: false } },
-    plugins: { enabled: { [TODO_PLUGIN_ID]: false } },
+    plugins: {
+      enabled: { [ASK_PLUGIN_ID]: false, [TODO_PLUGIN_ID]: false },
+    },
   });
   expect(configured.askEnabled).toBe(false);
   expect(configured.todoEnabled).toBe(false);

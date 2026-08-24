@@ -170,10 +170,6 @@ const lineLimitExemptions = new Map<string, string>([
     "legacy transport worker, not part of phase 1",
   ],
   ["packages/client/src/fixture.ts", "test fixture only"],
-  [
-    "packages/client/src/capabilities/tool-family-capabilities.ts",
-    "legacy capability factory, phase 2",
-  ],
   ["packages/capability/src/index.ts", "legacy kernel, out of phase 1 scope"],
   ["packages/runtime/src/provider.ts", "legacy provider seam"],
   ["packages/runtime/src/checkpoint.ts", "legacy checkpoint seam"],
@@ -184,10 +180,8 @@ const lineLimitExemptions = new Map<string, string>([
   ],
   ["packages/native-terminal/src/index.ts", "native bindings"],
   ["packages/contracts/src/events.ts", "generated event vocabulary"],
-  ["packages/contracts/src/schemas.ts", "config schemas"],
   ["packages/contracts/src/refusals.ts", "refusal vocabulary"],
   ["packages/contracts/src/capabilities.ts", "capability classification"],
-  ["packages/config/src/service.ts", "config service"],
   ["packages/session/src/sqlite-store.ts", "sqlite store"],
   ["packages/session/src/projector.ts", "session projector"],
   ["packages/sdk/src/index.ts", "SDK client surface"],
@@ -228,8 +222,6 @@ const lineLimitExemptions = new Map<string, string>([
   ["packages/tool-sandbox/src/index.ts", "sandbox tools"],
   ["packages/tool-process/src/index.ts", "process tools"],
   ["packages/tool-agent/src/index.ts", "agent tools"],
-  ["apps/cli/src/index.ts", "CLI entry"],
-  ["apps/cli/src/command-dispatcher.ts", "CLI command dispatcher"],
   ["apps/tui/src/keymap.ts", "TUI keymap"],
 ]);
 const runtimeModuleRoots = ["packages/client/src/runtime"];

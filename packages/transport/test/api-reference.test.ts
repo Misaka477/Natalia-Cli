@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { expect, test } from "bun:test";
 import {
   API_STABLE_SURFACE,
@@ -71,6 +71,32 @@ const MARKER =
   "transport and the contracts use. Regenerate with `npm run " +
   "docs:api-reference`. A hand edit inside this block, or any disagreement " +
   "with the code, turns `packages/transport/test/api-reference.test.ts` red.";
+const CONTRACT_SCHEMA_ENTRY = join(
+  process.cwd(),
+  "packages",
+  "contracts",
+  "src",
+  "schemas.ts",
+);
+
+function exportedModuleSources(entry: string): string[] {
+  const sources: string[] = [];
+  const visited = new Set<string>();
+  const visit = (path: string) => {
+    const resolved = extname(path) ? path : `${path}.ts`;
+    if (visited.has(resolved)) return;
+    visited.add(resolved);
+    const text = readFileSync(resolved, "utf8");
+    sources.push(text);
+    const exports = [...text.matchAll(/export \* from ["'](\.[^"']+)["'];?/gu)]
+      .map((match) => match[1] ?? "")
+      .filter(Boolean)
+      .sort();
+    for (const target of exports) visit(resolve(dirname(resolved), target));
+  };
+  visit(entry);
+  return sources;
+}
 
 function eventTypeCount(): number {
   const text = readFileSync(
@@ -1040,8 +1066,8 @@ function valueRefusalDictionary(): Array<{
 }
 
 /**
- * The config shape dictionary, parsed from the zod schemas in
- * `packages/contracts/src/schemas.ts` (`configV3Schema` validates
+ * The config shape dictionary, parsed from the zod schema export graph rooted
+ * at `packages/contracts/src/schemas.ts` (`configV3Schema` validates
  * `.natalia/config.json`). One row per schema field, dotted paths for nested
  * objects, `?` for optional fields and the default value where the schema
  * declares one. `z.record(X)` keys are arbitrary; the element type's own
@@ -1055,10 +1081,7 @@ function zodSchemaDictionary(): Array<{
   defaultValue: string;
 }> {
   const text = stripComments(
-    readFileSync(
-      join(process.cwd(), "packages", "contracts", "src", "schemas.ts"),
-      "utf8",
-    ),
+    exportedModuleSources(CONTRACT_SCHEMA_ENTRY).join("\n"),
   );
   const schemas = new Map<string, string>();
   for (const match of text.matchAll(
@@ -1557,7 +1580,7 @@ function renderTypesReferenceSections(): string {
 /**
  * The generated block for `docs/config-reference.md`: the shape of
  * `.natalia/config.json` and every schema it reaches, parsed from the zod
- * schemas in `packages/contracts/src/schemas.ts`. `?` marks optional fields;
+ * schema export graph rooted at `packages/contracts/src/schemas.ts`. `?` marks optional fields;
  * the Default column shows the schema's declared default. `z.record(X)` keys
  * are arbitrary — the element type's fields are on its own rows.
  */
@@ -1565,7 +1588,7 @@ function renderConfigReferenceSections(): string {
   const rows = zodSchemaDictionary();
   return (
     [
-      `## Config shape (source scan of the zod schemas in \`packages/contracts/src/schemas.ts\`)`,
+      `## Config shape (source scan of the zod schema graph rooted at \`packages/contracts/src/schemas.ts\`)`,
       ``,
       markdownTable(
         ["Schema", "Field", "Type", "Optional", "Default"],

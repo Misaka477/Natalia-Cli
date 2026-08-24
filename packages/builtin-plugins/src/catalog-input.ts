@@ -45,7 +45,6 @@ export type BuiltinPluginCatalogInput = {
   runtimeConfig?: ConfigV3;
   localTools?: {
     roots: string[];
-    enabled?: Record<string, boolean>;
     trust?: {
       workspaceRoot: string;
       verify: (

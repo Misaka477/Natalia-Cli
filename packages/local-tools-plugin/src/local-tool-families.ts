@@ -69,7 +69,6 @@ export async function discoverLocalToolFamilies(root: string) {
 
 export async function loadLocalToolFamilies(input: {
   roots: string[];
-  enabled?: Record<string, boolean>;
   onError?: (id: string, error: unknown) => void;
   trust?: LocalToolFamilyOptions["trust"];
 }): Promise<ToolFamily[]> {
@@ -78,7 +77,7 @@ export async function loadLocalToolFamilies(input: {
     const discovered = await discoverLocalToolFamilies(root);
     for (const { manifest, path } of discovered) {
       const imported = await importLocalToolFamily(manifest, path, input);
-      if (!imported || input.enabled?.[imported.family.id] === false) continue;
+      if (!imported) continue;
       families.push(imported.family);
     }
   }
@@ -88,12 +87,9 @@ export async function loadLocalToolFamilies(input: {
 export async function reloadLocalToolFamily(input: {
   roots: string[];
   familyID: string;
-  enabled?: Record<string, boolean>;
   onError?: (id: string, error: unknown) => void;
   trust?: LocalToolFamilyOptions["trust"];
 }): Promise<ToolFamily> {
-  if (input.enabled?.[input.familyID] === false)
-    throw new Error(`tool family is disabled in config: ${input.familyID}`);
   for (const root of input.roots) {
     const discovered = await discoverLocalToolFamilies(root);
     for (const { manifest, path } of discovered) {
@@ -154,7 +150,6 @@ function keyForPath(manifestPath: string) {
 
 export async function watchLocalToolFamilies(input: {
   roots: string[];
-  enabled?: Record<string, boolean>;
   onError?: (id: string, error: unknown) => void;
   trust?: LocalToolFamilyOptions["trust"];
   onChange: (familyID: string, entryPath: string) => void;
@@ -168,7 +163,7 @@ export async function watchLocalToolFamilies(input: {
     const discovered = await discoverLocalToolFamilies(root);
     for (const { manifest, path } of discovered) {
       const imported = await importLocalToolFamily(manifest, path, input);
-      if (!imported || input.enabled?.[imported.family.id] === false) continue;
+      if (!imported) continue;
       entries.push({
         familyID: imported.family.id,
         dir: resolve(path, ".."),

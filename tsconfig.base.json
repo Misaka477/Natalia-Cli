@@ -16,6 +16,7 @@
       "@natalia/builtin-tool-plugins": [
         "packages/builtin-tool-plugins/src/index.ts"
       ],
+      "@natalia/builtin-plugins": ["packages/builtin-plugins/src/index.ts"],
       "@natalia/capability": ["packages/capability/src/index.ts"],
       "@natalia/checkpoint-plugin": ["packages/checkpoint-plugin/src/index.ts"],
       "@natalia/collaboration-plugin": [

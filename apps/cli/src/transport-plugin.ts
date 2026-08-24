@@ -4,6 +4,7 @@ import {
   createPluginRegistry,
   type Plugin,
   type PluginAdapterInstance,
+  type PluginManifest,
 } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import {
@@ -14,6 +15,22 @@ import {
 
 export const TRANSPORT_PLUGIN_ID = "natalia-transport";
 export const HTTP_TRANSPORT_ADAPTER = "transport.http.server";
+export const TRANSPORT_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: TRANSPORT_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Transport",
+  description: "Process-level HTTP runtime transport provider.",
+  entry: "natalia:transport",
+  scope: "process",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["adapters"],
+};
 
 type HttpTransportAdapter = PluginAdapterInstance & {
   server: RuntimeHttpServer;
@@ -25,22 +42,7 @@ export function createHttpTransportPlugin(
   ) => RuntimeHttpServer = createRuntimeHttpServer,
 ): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: TRANSPORT_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Transport",
-      description: "Process-level HTTP runtime transport provider.",
-      entry: "natalia:transport",
-      scope: "process",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["adapters"],
-    },
+    manifest: TRANSPORT_PLUGIN_MANIFEST,
     setup(api) {
       api.adapters.register({
         name: HTTP_TRANSPORT_ADAPTER,

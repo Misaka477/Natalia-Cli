@@ -11,8 +11,15 @@ import {
   createHttpTransportPluginHost,
   TRANSPORT_PLUGIN_ID,
 } from "../src/transport-plugin";
+import { parseServePort } from "../src/runtime-commands";
 
 const client = {} as RuntimeClient;
+
+test("serve command parses positional ports in both command forms", () => {
+  expect(parseServePort(["serve", "9000"])).toBe(9000);
+  expect(parseServePort(["--serve", "9000"])).toBe(9000);
+  expect(parseServePort(["serve"])).toBe(8787);
+});
 
 test("transport plugin registration does not create a server", async () => {
   let creations = 0;

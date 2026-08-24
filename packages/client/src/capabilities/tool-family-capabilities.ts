@@ -15,16 +15,14 @@
  * The runtime still never names a tool: it asks for the families and moves what
  * the kernel accepted into the registry the executor reads.
  */
-import type {
-  CapabilityRegistration,
-  CapabilityRegistryHost,
-} from "@natalia/capability";
-import {
-  createToolRegistry,
-  type RuntimeTool,
-  type ToolFamily,
-  type ToolRegistry,
-} from "@natalia/tools";
+import type { ToolFamily } from "@natalia/tools";
+export {
+  createToolRegistryFromCapabilities,
+  registerToolFamilyCapabilities,
+  toolFamilyCapabilityID,
+  toolFamilyRegistration,
+  type ToolFamilyLoadOutcome,
+} from "./tool-family-registry";
 
 /**
  * The tool families this host loads, in the order their tools are advertised.
@@ -33,113 +31,100 @@ import {
  * catalog; this static assembly intentionally contributes nothing. It remains as
  * the kernel path used when a host passes its own `families`, and as the test
  * surface for family capability semantics.
- *
- * `enabled` is the config's `tools.enabled`: a family that is `false` does not
- * load, and a family that is absent or `true` loads.
  */
-export function builtinToolFamilies(
-  enabled?: Record<string, boolean>,
-): ToolFamily[] {
+export function builtinToolFamilies(): ToolFamily[] {
   return [];
 }
 
 /** Every built-in tool name, including the aliases a model may use. */
-export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
-  const names = builtinToolFamilies(enabled).flatMap((family) => [
+export function builtinToolNames(): string[] {
+  const names = builtinToolFamilies().flatMap((family) => [
     ...family.tools.map((tool) => tool.name),
     ...Object.keys(family.aliases ?? {}),
   ]);
-  if (enabled?.ask !== false) names.push("ask_user");
-  if (enabled?.todo !== false) names.push("plan", "todo_read", "todo_write");
-  if (enabled?.search !== false) names.push("glob", "grep");
-  if (enabled?.fs !== false && enabled?.["fs-read"] !== false)
-    names.push("read_file", "read_media_file", "image_read");
-  if (enabled?.fs !== false && enabled?.["fs-write"] !== false)
-    names.push("write_file", "edit_file", "apply_patch");
-  if (enabled?.web !== false)
-    names.push(
-      "web_fetch",
-      "web_search",
-      "browser_visit",
-      "browser_screenshot",
-    );
-  if (enabled?.shell !== false) names.push("run_shell");
-  if (enabled?.agent !== false)
-    names.push(
-      "agent_spawn",
-      "agent_list",
-      "agent_status",
-      "agent_output",
-      "agent_wait",
-      "agent_stop",
-      "agent_resume",
-      "agent_retry",
-      "agent_attach",
-      "agent_detach",
-      "agent_cleanup",
-      "agent_audit",
-    );
-  if (enabled?.terminal !== false)
-    names.push(
-      "interactive_terminal_start",
-      "interactive_terminal_read",
-      "interactive_terminal_search",
-      "interactive_terminal_write",
-      "interactive_terminal_send_line",
-      "interactive_terminal_keys",
-      "interactive_terminal_input",
-      "interactive_terminal_snapshot",
-      "interactive_terminal_resize",
-      "interactive_terminal_request_human",
-      "interactive_terminal_stop",
-      "interactive_terminal_list",
-      "terminal_observe",
-      "interactive_start",
-      "interactive_read",
-      "interactive_search",
-      "interactive_write",
-      "interactive_send_line",
-      "interactive_keys",
-      "interactive_input",
-      "interactive_snapshot",
-      "interactive_resize",
-      "interactive_stop",
-      "interactive_list",
-    );
-  if (enabled?.sandbox !== false)
-    names.push(
-      "sandbox_create",
-      "sandbox_execute",
-      "sandbox_write",
-      "sandbox_diff",
-      "sandbox_merge",
-      "sandbox_delete",
-      "sandbox_resource_start",
-      "sandbox_resource_list",
-      "sandbox_resource_output",
-      "sandbox_resource_stop",
-    );
-  if (enabled?.process !== false)
-    names.push(
-      "process_start",
-      "process_list",
-      "process_status",
-      "process_output",
-      "process_ready",
-      "process_stop",
-      "process_restart",
-      "process_attach",
-      "process_detach",
-      "process_cleanup",
-      "process_audit",
-      "background_start",
-      "background_list",
-      "background_output",
-      "background_stop",
-      "background_restart",
-      "background_cleanup",
-      "background_audit",
-    );
+  names.push(
+    "ask_user",
+    "plan",
+    "todo_read",
+    "todo_write",
+    "glob",
+    "grep",
+    "read_file",
+    "read_media_file",
+    "image_read",
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "web_fetch",
+    "web_search",
+    "browser_visit",
+    "browser_screenshot",
+    "run_shell",
+    "agent_spawn",
+    "agent_list",
+    "agent_status",
+    "agent_output",
+    "agent_wait",
+    "agent_stop",
+    "agent_resume",
+    "agent_retry",
+    "agent_attach",
+    "agent_detach",
+    "agent_cleanup",
+    "agent_audit",
+    "interactive_terminal_start",
+    "interactive_terminal_read",
+    "interactive_terminal_search",
+    "interactive_terminal_write",
+    "interactive_terminal_send_line",
+    "interactive_terminal_keys",
+    "interactive_terminal_input",
+    "interactive_terminal_snapshot",
+    "interactive_terminal_resize",
+    "interactive_terminal_request_human",
+    "interactive_terminal_stop",
+    "interactive_terminal_list",
+    "terminal_observe",
+    "interactive_start",
+    "interactive_read",
+    "interactive_search",
+    "interactive_write",
+    "interactive_send_line",
+    "interactive_keys",
+    "interactive_input",
+    "interactive_snapshot",
+    "interactive_resize",
+    "interactive_stop",
+    "interactive_list",
+    "sandbox_create",
+    "sandbox_execute",
+    "sandbox_write",
+    "sandbox_diff",
+    "sandbox_merge",
+    "sandbox_delete",
+    "sandbox_resource_start",
+    "sandbox_resource_list",
+    "sandbox_resource_output",
+    "sandbox_resource_stop",
+    "process_start",
+    "process_list",
+    "process_status",
+    "process_output",
+    "process_ready",
+    "process_stop",
+    "process_restart",
+    "process_attach",
+    "process_detach",
+    "process_cleanup",
+    "process_audit",
+    "background_start",
+    "background_list",
+    "background_output",
+    "background_stop",
+    "background_restart",
+    "background_cleanup",
+    "background_audit",
+  );
   return names;
 }
 
@@ -313,193 +298,3 @@ export const migratedBuiltinToolFamilies = [
     ],
   },
 ] as const;
-
-/** The capability id a family is loaded as. */
-export function toolFamilyCapabilityID(familyID: string) {
-  return `natalia-tool-${familyID}`;
-}
-
-export function toolFamilyRegistration(
-  family: ToolFamily,
-): CapabilityRegistration {
-  return {
-    id: toolFamilyCapabilityID(family.id),
-    name: family.name,
-    version: family.version,
-    description: family.description,
-    scope: family.scope,
-    grants: ["tools"],
-  };
-}
-
-export type ToolFamilyLoadOutcome = {
-  /** Families the kernel accepted, in registration order. */
-  loaded: Array<{ registration: CapabilityRegistration; tools: string[] }>;
-  failed: Array<{ id: string; reason: string }>;
-};
-
-const legacyToolFamilyOwners = new WeakMap<
-  CapabilityRegistryHost,
-  Map<string, import("@natalia/capability").CapabilityOwnerHandle>
->();
-
-/**
- * Loads every built-in family into the kernel. A family that fails to load says
- * why and does not leave half its tools behind — `tryLoad` rolls the activation
- * back — so the caller can report the loss instead of serving a partial family.
- *
- * Families are ordered by their dependencies first, so a dependent family is
- * never tried before the family it names: the kernel would otherwise refuse it
- * with "not loaded" even when everything is present.
- */
-export function registerToolFamilyCapabilities(
-  registry: CapabilityRegistryHost,
-  families: ToolFamily[],
-): ToolFamilyLoadOutcome {
-  const loaded: ToolFamilyLoadOutcome["loaded"] = [];
-  const failed: ToolFamilyLoadOutcome["failed"] = [];
-  for (const family of orderedFamilies(families)) {
-    const registration = toolFamilyRegistration(family);
-    let owner: import("@natalia/capability").CapabilityOwnerHandle | undefined;
-    try {
-      owner = registry.registerOwner(registration);
-      for (const tool of family.tools)
-        owner.contribute("tools", tool.name, tool);
-      const owners = legacyToolFamilyOwners.get(registry) ?? new Map();
-      owners.set(registration.id, owner);
-      legacyToolFamilyOwners.set(registry, owners);
-    } catch (error) {
-      owner?.release();
-      failed.push({
-        id: registration.id,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      continue;
-    }
-    loaded.push({
-      registration,
-      tools: family.tools.map((tool) => tool.name),
-    });
-  }
-  return { loaded, failed };
-}
-
-/** Dependencies first, stable otherwise, so tryLoad never races its own input. */
-function orderedFamilies(families: ToolFamily[]): ToolFamily[] {
-  const byID = new Map(families.map((family) => [family.id, family]));
-  const ordered: ToolFamily[] = [];
-  const visited = new Set<string>();
-  const visit = (family: ToolFamily) => {
-    if (visited.has(family.id)) return;
-    visited.add(family.id);
-    for (const dependency of family.dependencies ?? []) {
-      const dependencyFamily = byID.get(dependency);
-      if (dependencyFamily) visit(dependencyFamily);
-    }
-    ordered.push(family);
-  };
-  for (const family of families) visit(family);
-  return ordered;
-}
-
-/**
- * Builds the tool registry the executor reads from the families the kernel
- * accepted.
- *
- * Only kernel-owned contributions get in: a family that failed to load is absent
- * from the registry too, rather than being half-present because its tools were
- * also listed somewhere else. Aliases are applied per family, so an alias cannot
- * outlive the family that named it.
- */
-/**
- * Applies the config's `tools.enabled` to an already-assembled runtime.
- *
- * The full catalogue loads at construction (the executor registry and the
- * task-module collision check are built before config resolves), so a disabled
- * family is removed here instead: its capability is unloaded from the kernel —
- * which cascades to any family that depends on it — and its tools are dropped
- * from the executor registry, so they can never be called. `tool.registered` is
- * published after this runs, so a disabled family never appears in it.
- *
- * @returns the families that were enabled but cascade-disabled because a family
- * they depend on is disabled, each with the reason.
- */
-export function applyToolFamilyEnabledFilter(input: {
-  tools: ToolRegistry;
-  registry: CapabilityRegistryHost;
-  families: ToolFamily[];
-  enabled?: Record<string, boolean>;
-}): Array<{ id: string; reason: string }> {
-  const enabledIDs = new Set(
-    input.families
-      .filter((family) => input.enabled?.[family.id] !== false)
-      .map((family) => family.id),
-  );
-  for (const family of input.families)
-    if (!enabledIDs.has(family.id)) {
-      const id = toolFamilyCapabilityID(family.id);
-      legacyToolFamilyOwners.get(input.registry)?.get(id)?.release();
-      legacyToolFamilyOwners.get(input.registry)?.delete(id);
-    }
-  // Dependency policy belongs to this actual host, not contribution storage.
-  for (const family of input.families) {
-    if (!enabledIDs.has(family.id)) continue;
-    if ((family.dependencies ?? []).every((id) => enabledIDs.has(id))) continue;
-    const id = toolFamilyCapabilityID(family.id);
-    legacyToolFamilyOwners.get(input.registry)?.get(id)?.release();
-    legacyToolFamilyOwners.get(input.registry)?.delete(id);
-  }
-  const loadedIDs = new Set(
-    input.families
-      .filter((family) => input.registry.has(toolFamilyCapabilityID(family.id)))
-      .map((family) => family.id),
-  );
-  const loadedNames = new Set(
-    input.families
-      .filter((family) => loadedIDs.has(family.id))
-      .flatMap((family) => [
-        ...family.tools.map((tool) => tool.name),
-        ...Object.keys(family.aliases ?? {}),
-      ]),
-  );
-  for (const family of input.families)
-    for (const tool of family.tools)
-      if (!loadedNames.has(tool.name)) input.tools.delete(tool.name);
-  const cascaded: Array<{ id: string; reason: string }> = [];
-  for (const family of input.families) {
-    if (!enabledIDs.has(family.id)) continue;
-    if (loadedIDs.has(family.id)) continue;
-    const disabledDependencies = (family.dependencies ?? []).filter(
-      (dependency) => !enabledIDs.has(dependency),
-    );
-    cascaded.push({
-      id: family.id,
-      reason: `depends on disabled tool family: ${disabledDependencies.join(", ")}`,
-    });
-  }
-  return cascaded;
-}
-
-export function createToolRegistryFromCapabilities(input: {
-  registry: CapabilityRegistryHost;
-  families?: ToolFamily[];
-  /** Config `tools.enabled`: a family that is `false` does not load. */
-  enabled?: Record<string, boolean>;
-}): { tools: ToolRegistry; outcome: ToolFamilyLoadOutcome } {
-  const families = input.families ?? builtinToolFamilies(input.enabled);
-
-  const outcome = registerToolFamilyCapabilities(input.registry, families);
-  const tools = createToolRegistry([]);
-  const accepted = new Set(
-    outcome.loaded.map((entry) => entry.registration.id),
-  );
-  for (const contribution of input.registry.contributions<RuntimeTool>("tools"))
-    if (accepted.has(contribution.capabilityID))
-      tools.set(contribution.name, contribution.payload);
-  for (const family of families) {
-    if (!accepted.has(toolFamilyCapabilityID(family.id))) continue;
-    for (const [alias, target] of Object.entries(family.aliases ?? {}))
-      if (tools.has(target)) tools.addAlias(alias, target);
-  }
-  return { tools, outcome };
-}

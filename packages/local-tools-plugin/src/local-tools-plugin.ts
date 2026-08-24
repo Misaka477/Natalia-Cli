@@ -12,7 +12,6 @@ export const LOCAL_TOOLS_PLUGIN_ID = "natalia-local-tools";
 
 export function createLocalToolsPlugin(input: {
   roots: string[];
-  enabled?: Record<string, boolean>;
   trust?: LocalToolFamilyOptions["trust"];
   onError?: (id: string, error: unknown) => void;
   onChange?: (familyID: string, entryPath: string) => void;

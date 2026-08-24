@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/builtin-plugins": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/plugin": "workspace:*"

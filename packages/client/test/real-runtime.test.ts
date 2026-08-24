@@ -2021,7 +2021,10 @@ test("built-in tool plugin config reload reconciles its lifecycle", async () => 
 
   await writeFile(
     configPath,
-    JSON.stringify({ version: 3, tools: { enabled: { todo: false } } }),
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { [TODO_PLUGIN_ID]: false } },
+    }),
   );
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(TODO_PLUGIN_ID)).toBe(false);
@@ -2309,7 +2312,6 @@ async execute() { return "ok"; } }] };`,
 }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { todo: false } } }],
   ["plugin switch", { plugins: { enabled: { "natalia-tool-todo": false } } }],
 ] as const)
   test(`disabled todo ${label} leaves no tool, capability or persistence`, async () => {
@@ -2344,7 +2346,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { ask: false } } }],
   ["plugin switch", { plugins: { enabled: { "natalia-tool-ask": false } } }],
 ] as const)
   test(`disabled ask ${label} leaves no tool or capability`, async () => {
@@ -2375,7 +2376,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { search: false } } }],
   ["plugin switch", { plugins: { enabled: { "natalia-tool-search": false } } }],
 ] as const)
   test(`disabled search ${label} leaves no tool or capability`, async () => {
@@ -2409,7 +2409,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { fs: false } } }],
   [
     "plugin switch",
     {
@@ -2491,7 +2490,6 @@ test("disabling only the fs read plugin keeps the write tools", async () => {
 }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { web: false } } }],
   ["plugin switch", { plugins: { enabled: { "natalia-tool-web": false } } }],
 ] as const)
   test(`disabled web ${label} leaves no tool or capability`, async () => {
@@ -2526,7 +2524,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { shell: false } } }],
   ["plugin switch", { plugins: { enabled: { "natalia-tool-shell": false } } }],
 ] as const)
   test(`disabled shell ${label} leaves no tool or capability`, async () => {
@@ -2559,7 +2556,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { agent: false } } }],
   ["plugin switch", { plugins: { enabled: { "natalia-tool-agent": false } } }],
 ] as const)
   test(`disabled agent ${label} leaves no tool or capability`, async () => {
@@ -2592,7 +2588,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { terminal: false } } }],
   [
     "plugin switch",
     { plugins: { enabled: { "natalia-tool-terminal": false } } },
@@ -2631,7 +2626,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { sandbox: false } } }],
   [
     "plugin switch",
     { plugins: { enabled: { "natalia-tool-sandbox": false } } },
@@ -2667,7 +2661,6 @@ for (const [label, config] of [
   }, 60_000);
 
 for (const [label, config] of [
-  ["legacy family switch", { tools: { enabled: { process: false } } }],
   [
     "plugin switch",
     { plugins: { enabled: { "natalia-tool-process": false } } },

@@ -196,6 +196,11 @@ export {
   WORKSPACE_PLUGIN_ID,
 };
 export { MCP_PLUGIN_ID };
+export {
+  CLI_PLUGIN_MANIFEST,
+  RUNTIME_DEFAULT_PLUGIN_MANIFESTS,
+} from "./runtime-default-manifests";
+export { PRODUCT_PLUGIN_MANIFESTS } from "./product-manifests";
 
 export type BuiltinFeatureGates = {
   askEnabled: boolean;
@@ -218,22 +223,20 @@ export function computeBuiltinFeatureGates(input: {
 }): BuiltinFeatureGates {
   const { config, hasCustomTools } = input;
   const builtins = !hasCustomTools;
-  const tool = (name: keyof NonNullable<ConfigV3["tools"]["enabled"]>) =>
-    builtins && config?.tools?.enabled?.[name] !== false;
   const plugin = (id: string) => config?.plugins?.enabled?.[id] !== false;
 
   return {
-    askEnabled: tool("ask") && plugin(ASK_PLUGIN_ID),
-    todoEnabled: tool("todo") && plugin(TODO_PLUGIN_ID),
-    searchEnabled: tool("search") && plugin(SEARCH_PLUGIN_ID),
-    fsReadEnabled: tool("fs") && plugin(FS_READ_PLUGIN_ID),
-    fsWriteEnabled: tool("fs") && plugin(FS_WRITE_PLUGIN_ID),
-    webEnabled: tool("web") && plugin(WEB_PLUGIN_ID),
-    shellEnabled: tool("shell") && plugin(SHELL_PLUGIN_ID),
-    agentEnabled: tool("agent") && plugin(AGENT_PLUGIN_ID),
-    terminalEnabled: tool("terminal") && plugin(TERMINAL_PLUGIN_ID),
-    sandboxEnabled: tool("sandbox") && plugin(SANDBOX_PLUGIN_ID),
-    processEnabled: tool("process") && plugin(PROCESS_PLUGIN_ID),
+    askEnabled: builtins && plugin(ASK_PLUGIN_ID),
+    todoEnabled: builtins && plugin(TODO_PLUGIN_ID),
+    searchEnabled: builtins && plugin(SEARCH_PLUGIN_ID),
+    fsReadEnabled: builtins && plugin(FS_READ_PLUGIN_ID),
+    fsWriteEnabled: builtins && plugin(FS_WRITE_PLUGIN_ID),
+    webEnabled: builtins && plugin(WEB_PLUGIN_ID),
+    shellEnabled: builtins && plugin(SHELL_PLUGIN_ID),
+    agentEnabled: builtins && plugin(AGENT_PLUGIN_ID),
+    terminalEnabled: builtins && plugin(TERMINAL_PLUGIN_ID),
+    sandboxEnabled: builtins && plugin(SANDBOX_PLUGIN_ID),
+    processEnabled: builtins && plugin(PROCESS_PLUGIN_ID),
     pdfEnabled: plugin(PDF_PLUGIN_ID),
   };
 }

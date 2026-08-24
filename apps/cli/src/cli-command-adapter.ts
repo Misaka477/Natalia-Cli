@@ -6,6 +6,7 @@ import {
   type PluginAdapterInstance,
 } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
+import { CLI_PLUGIN_MANIFEST } from "@natalia/builtin-plugins";
 
 export const CLI_PLUGIN_ID = "natalia-cli";
 export const CLI_COMMAND_ADAPTER = "command.cli";
@@ -20,22 +21,7 @@ export function createCliCommandAdapterPlugin(
   start: StartCliCommandAdapter = startCliCommandAdapter,
 ): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: CLI_PLUGIN_ID,
-      version: "1.0.0",
-      name: "CLI",
-      description: "Process-level command-line interface adapter.",
-      entry: "natalia:cli",
-      scope: "process",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["adapters"],
-    },
+    manifest: CLI_PLUGIN_MANIFEST,
     setup(api) {
       api.adapters.register({
         name: CLI_COMMAND_ADAPTER,

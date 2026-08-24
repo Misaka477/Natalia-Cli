@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
-import { createToolRegistry, type ToolFamily } from "@natalia/tools";
+import type { ToolFamily } from "@natalia/tools";
 import {
-  applyToolFamilyEnabledFilter,
   builtinToolFamilies,
   builtinToolNames,
   createToolRegistryFromCapabilities,
@@ -57,21 +56,6 @@ test("the static built-in catalogue is empty after the plugin migration", () => 
   expect(builtinToolNames()).toContain("sandbox_create");
   expect(builtinToolNames()).toContain("process_start");
   expect(builtinToolNames()).toContain("background_start");
-  // Family switches gate the names independently.
-  expect(builtinToolNames({ ask: false })).not.toContain("ask_user");
-  expect(builtinToolNames({ todo: false })).not.toContain("todo_read");
-  expect(builtinToolNames({ search: false })).not.toContain("glob");
-  expect(builtinToolNames({ fs: false })).not.toContain("read_file");
-  expect(builtinToolNames({ "fs-read": false })).not.toContain("read_file");
-  expect(builtinToolNames({ "fs-write": false })).not.toContain("apply_patch");
-  expect(builtinToolNames({ web: false })).not.toContain("web_search");
-  expect(builtinToolNames({ shell: false })).not.toContain("run_shell");
-  expect(builtinToolNames({ agent: false })).not.toContain("agent_retry");
-  expect(builtinToolNames({ terminal: false })).not.toContain(
-    "terminal_observe",
-  );
-  expect(builtinToolNames({ sandbox: false })).not.toContain("sandbox_merge");
-  expect(builtinToolNames({ process: false })).not.toContain("process_start");
 });
 
 test("each family declares exactly the tools grant", () => {
@@ -100,21 +84,6 @@ test("every tool is owned by the family that contributed it", () => {
   // never accepted must not be callable.
   for (const name of tools.keys())
     expect(registry.ownerOf("tools", name)).toBeString();
-});
-
-test("disabling a legacy family releases its owner", () => {
-  const registry = new CapabilityRegistry();
-  const family = syntheticFamily("alpha");
-  createToolRegistryFromCapabilities({ registry, families: [family] });
-  applyToolFamilyEnabledFilter({
-    registry,
-    tools: createToolRegistry([]),
-    families: [family],
-    enabled: { alpha: false },
-  });
-  for (const tool of family.tools)
-    expect(registry.ownerOf("tools", tool.name)).toBeUndefined();
-  expect(registry.has(toolFamilyCapabilityID("alpha"))).toBe(false);
 });
 
 test("a family that fails to load leaves none of its tools callable", () => {
@@ -152,53 +121,7 @@ test("registering the same families twice is refused, not silently doubled", () 
     expect(failure.reason).toMatch(/already registered/u);
 });
 
-test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {
-  const registry = new CapabilityRegistry();
-  const family = syntheticFamily("alpha");
-  const { tools } = createToolRegistryFromCapabilities({
-    registry,
-    families: [family],
-  });
-  expect(tools.has("alpha_run")).toBe(true);
-  const cascaded = applyToolFamilyEnabledFilter({
-    tools,
-    registry,
-    families: [family],
-    enabled: { alpha: false },
-  });
-  expect(cascaded).toEqual([]);
-  for (const tool of family.tools) expect(tools.has(tool.name)).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("alpha"))).toBe(false);
-});
-
-test("a family that depends on a disabled one is cascade-disabled with a reason", () => {
-  const registry = new CapabilityRegistry();
-  const dependent: ToolFamily = {
-    ...syntheticFamily("dependent"),
-    dependencies: ["base"],
-  };
-  const base = syntheticFamily("base");
-  const { tools } = createToolRegistryFromCapabilities({
-    registry,
-    families: [base, dependent],
-  });
-  expect(tools.has("dependent_run")).toBe(true);
-
-  const cascaded = applyToolFamilyEnabledFilter({
-    tools,
-    registry,
-    families: [base, dependent],
-    enabled: { base: false },
-  });
-  expect(cascaded).toEqual([
-    { id: "dependent", reason: expect.stringContaining("base") as string },
-  ]);
-  expect(tools.has("base_run")).toBe(false);
-  expect(tools.has("dependent_run")).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("dependent"))).toBe(false);
-});
-
-test("dependency ordering lets a dependent load after its dependency", () => {
+test("dependency ordering registers a dependent after its dependency", () => {
   const registry = new CapabilityRegistry();
   const dependent: ToolFamily = {
     ...syntheticFamily("later"),
@@ -206,11 +129,17 @@ test("dependency ordering lets a dependent load after its dependency", () => {
   };
   const earlier = syntheticFamily("earlier");
   // Dependent listed first on purpose: ordering must fix it, not the caller.
-  const outcome = registerToolFamilyCapabilities(registry, [
-    dependent,
-    earlier,
-  ]);
+  const { tools, outcome } = createToolRegistryFromCapabilities({
+    registry,
+    families: [dependent, earlier],
+  });
   expect(outcome.failed).toEqual([]);
+  expect(outcome.loaded.map((entry) => entry.registration.id)).toEqual([
+    toolFamilyCapabilityID("earlier"),
+    toolFamilyCapabilityID("later"),
+  ]);
+  expect(tools.has("earlier_run")).toBe(true);
+  expect(tools.has("later_run")).toBe(true);
   expect(registry.has(toolFamilyCapabilityID("later"))).toBe(true);
   expect(registry.has(toolFamilyCapabilityID("earlier"))).toBe(true);
 });

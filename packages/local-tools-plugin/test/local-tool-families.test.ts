@@ -60,16 +60,6 @@ test("loadLocalToolFamilies imports and instantiates the families", async () => 
   expect(a.scope).toBe("session");
 });
 
-test("tools.enabled=false keeps an out-of-tree family out", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-enabled-"));
-  await fixtureFamily(root, "fixture.a");
-  const families = await loadLocalToolFamilies({
-    roots: [root],
-    enabled: { "fixture.a": false },
-  });
-  expect(families).toEqual([]);
-});
-
 test("a broken entry is reported and does not stop the rest", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-broken-"));
   await fixtureFamily(root, "fixture.a");
@@ -149,38 +139,6 @@ export default (): ToolFamily => ({
   expect(reloaded.tools[0]!.name).toBe("fixture.a_run_v2");
 });
 
-test("reloadLocalToolFamily refuses a disabled family", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-reload-disabled-"));
-  await fixtureFamily(root, "fixture.a");
-  await expect(
-    reloadLocalToolFamily({
-      roots: [root],
-      familyID: "fixture.a",
-      enabled: { "fixture.a": false },
-    }),
-  ).rejects.toThrow(/disabled in config/u);
-});
-
-test("reloadLocalToolFamily does not import a disabled family", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-disabled-import-"));
-  const dir = await fixtureFamily(root, "fixture.a");
-  const marker = join(root, "imported.txt");
-  await writeFile(
-    join(dir, "index.ts"),
-    `import { writeFileSync } from "node:fs";
-writeFileSync(${JSON.stringify(marker)}, "imported");
-export default { id: "fixture.a", tools: [] };`,
-  );
-  await expect(
-    reloadLocalToolFamily({
-      roots: [root],
-      familyID: "fixture.a",
-      enabled: { "fixture.a": false },
-    }),
-  ).rejects.toThrow(/disabled in config/u);
-  await expect(readFile(marker, "utf8")).rejects.toThrow();
-});
-
 test("watchLocalToolFamilies reports a family entry change (debounced)", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-watch-"));
   const dir = await fixtureFamily(root, "fixture.a");
@@ -195,23 +153,6 @@ test("watchLocalToolFamilies reports a family entry change (debounced)", async (
   await Bun.sleep(200);
   expect(fired.some(([familyID]) => familyID === "fixture.a")).toBe(true);
   expect(fired[0]![1]).toBe(entry);
-  await close();
-});
-
-test("watchLocalToolFamilies ignores disabled families", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-watch-disabled-"));
-  const dir = await fixtureFamily(root, "fixture.a");
-  const entry = join(dir, "index.ts");
-  const fired: string[] = [];
-  const close = await watchLocalToolFamilies({
-    roots: [root],
-    enabled: { "fixture.a": false },
-    debounceMs: 20,
-    onChange: (familyID) => fired.push(familyID),
-  });
-  await writeFile(entry, "// touch\n" + (await readFile(entry, "utf8")));
-  await Bun.sleep(100);
-  expect(fired).toEqual([]);
   await close();
 });
 

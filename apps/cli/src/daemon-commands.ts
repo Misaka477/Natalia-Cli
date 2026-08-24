@@ -1,0 +1,261 @@
+import {
+  assertConfigApplied,
+  assertTaskReferences,
+  configureTaskSystemd,
+  scheduledTaskOverview,
+  type ScheduledTaskOverview,
+  createRealRuntimeClient,
+  EGRESS_ADVISORY,
+  newHeadlessExecution,
+  plainRuntimeEvent,
+  manualFlowTask,
+  runTask,
+  runTaskFromDocument,
+  CapabilityExecutionHost,
+  CapabilityHost,
+  removeTaskSystemd,
+  taskPermissionPreview,
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  type RuntimeServiceClient,
+  type TaskWorkflowService,
+} from "@natalia/client";
+import {
+  createWorkflowExecutionStoreService,
+  createWorkflowStoreService,
+} from "@natalia/task-workflow-plugin";
+import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
+import type {
+  EpisodeID,
+  EvaluatorResult,
+  NataliaFlowDocument,
+  NataliaTaskDocument,
+  RuntimeEvent,
+  SessionID,
+} from "@natalia/contracts";
+import { resolveConfig } from "@natalia/config";
+import { agentsFromConfig } from "@natalia/agent";
+import { userStateHome } from "@natalia/platform";
+import {
+  createIssueTarget,
+  deliverPendingTaskAlerts,
+  evaluateAndRecordModule,
+  findingFingerprint,
+  readDataSourceSince,
+  reconcileFinding,
+  taskAlertEventKindForStatus,
+  type EvaluatorModuleContext,
+  type NataliaTaskAttemptStatus,
+  type NataliaPlannedFlowModule,
+  type NataliaTaskInvocation,
+} from "@natalia/workflow";
+import { providerForModel } from "@natalia/runtime";
+import { createRecordedFetch, readCassette } from "@natalia/transport";
+import {
+  createRuntimeDaemonStore,
+  daemonToken,
+  registerRuntimeDaemon,
+  runtimeDaemonStatus,
+  stopRuntimeDaemon,
+} from "@natalia/transport/host";
+import {
+  createHttpTransportPluginHost,
+  TRANSPORT_PLUGIN_ID,
+} from "./transport-plugin";
+import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import {
+  deleteLocalSession,
+  duplicateLocalSession,
+  exportLocalSessionMetadata,
+  importLocalSessionMetadata,
+  doctorReport,
+  listLocalSessions,
+  plainStatus,
+  renameLocalSession,
+  setLocalSessionPinned,
+  sessionTable,
+  promptArguments,
+  toolFamilyCatalogue,
+  trustList,
+  trustRemove,
+  workspaceFilesystemCommand,
+  showLocalSession,
+  startupDiagnostics,
+  localWorkGraph,
+  workGraphLines,
+} from "./index";
+import { valueAfter, daemonDir, waitSignal } from "./command-helpers";
+
+export async function handleDaemonCommands(argv: string[]) {
+  const subcommand = argv[0];
+  if (
+    !new Set([
+      "daemon",
+      "--daemon-serve",
+      "daemon-status",
+      "--daemon-status",
+      "daemon-stop",
+      "--daemon-stop",
+    ]).has(subcommand ?? "")
+  )
+    return false;
+  const configPath =
+    process.env.NATALIA_CONFIG ?? `${process.cwd()}/.natalia/config.json`;
+  switch (subcommand) {
+    case "daemon":
+    case "--daemon-serve": {
+      const store = createRuntimeDaemonStore({
+        dir: valueAfter(argv, "--daemon-dir") ?? daemonDir(),
+      });
+      // The port is the first argument after the subcommand. It used to be read one
+      // position further along, so neither form could actually choose a port.
+      const requestedPort = valueAfter(argv, subcommand);
+      const port = Number(requestedPort ?? "8787");
+      if (!Number.isInteger(port) || port < 0 || port > 65535)
+        throw new Error("daemon requires a valid port");
+      const transportIsEnabled = await transportEnabled();
+      const token = await daemonToken(store);
+      const maxConcurrentTasks = Number(
+        valueAfter(argv, "--max-concurrent-tasks") ?? "1",
+      );
+      if (!Number.isInteger(maxConcurrentTasks) || maxConcurrentTasks <= 0)
+        throw new Error("daemon requires a positive --max-concurrent-tasks");
+      const taskSchedulerHost = await createWorkflowSchedulerPluginHost({
+        globalConcurrency: maxConcurrentTasks,
+        workspaceConcurrency: 1,
+        queueTimeoutMs: Number(
+          valueAfter(argv, "--queue-timeout-ms") ?? "300000",
+        ),
+      });
+      const taskScheduler = taskSchedulerHost.scheduler;
+      const workspaceHosts = new Map<
+        string,
+        Promise<{
+          capabilities: CapabilityHost;
+          executions: CapabilityExecutionHost;
+          runtime: RuntimeServiceClient;
+        }>
+      >();
+      try {
+        const workspaceHost = async (workspaceRoot: string) => {
+          const root = resolve(workspaceRoot);
+          const existing = workspaceHosts.get(root);
+          if (existing) return existing;
+          const created = (async () => {
+            const capabilities = new CapabilityHost({ workspaceRoot: root });
+            const runtime = createRealRuntimeClient({
+              workspaceRoot: root,
+              capabilityHost: capabilities,
+            });
+            const taskWorkflowService =
+              await runtime.service<TaskWorkflowService>(
+                TASK_WORKFLOW_CONTROLLER_SERVICE,
+              );
+            if (!taskWorkflowService)
+              throw new Error("task workflow service unavailable");
+            return {
+              capabilities,
+              runtime,
+              executions: new CapabilityExecutionHost(capabilities, {
+                scheduler: taskScheduler,
+                taskWorkflowService,
+              }),
+            };
+          })();
+          workspaceHosts.set(root, created);
+          return await created;
+        };
+        const client = createRealRuntimeClient();
+        const transport = await createHttpTransportPluginHost({
+          client,
+          port,
+          token,
+          enabled: transportIsEnabled,
+          taskExecution: true,
+          // Delivery reuses the very same controller a one-shot run uses, so the
+          // resident path cannot drift from it or bypass its policy.
+          startTask: async (request) => {
+            const workspaceRoot = resolve(
+              request.workspaceRoot ?? process.cwd(),
+            );
+            const config = assertConfigApplied(
+              await resolveConfig({ workspaceRoot }),
+            );
+            return (await workspaceHost(workspaceRoot)).executions.runTask({
+              workspaceRoot,
+              path: request.taskPath,
+              taskID: request.taskID,
+              idempotencyKey: request.idempotencyKey,
+              idempotencyFingerprint: JSON.stringify(request),
+              config,
+              json: request.json !== false,
+              requestedBy: { transport: "http" },
+            });
+          },
+        });
+        const { server } = transport;
+        await registerRuntimeDaemon(store, {
+          url: server.url,
+          pid: process.pid,
+          transport: "http",
+        });
+        console.log(JSON.stringify({ url: server.url }));
+        await waitSignal();
+        await transport.close();
+        // The daemon must dispose the runtime it started: the native input broker
+        // socket and the workspace watcher keep the process alive otherwise, and
+        // a daemon that survives SIGTERM holds its port forever (the zombie-daemon
+        // defect this closes). The smoke that delivers tasks also depends on this
+        // instead of its SIGKILL fallback.
+        await client.dispose?.();
+      } finally {
+        await taskSchedulerHost.close();
+        for (const hostPromise of workspaceHosts.values()) {
+          const host = await hostPromise;
+          await host.runtime.dispose?.();
+          host.capabilities.dispose();
+        }
+      }
+      break;
+    }
+
+    case "daemon-status":
+    case "--daemon-status": {
+      console.log(
+        JSON.stringify(
+          await runtimeDaemonStatus(
+            createRuntimeDaemonStore({ dir: daemonDir() }),
+          ),
+          null,
+          2,
+        ),
+      );
+      break;
+    }
+
+    case "daemon-stop":
+    case "--daemon-stop": {
+      console.log(
+        JSON.stringify(
+          await stopRuntimeDaemon(
+            createRuntimeDaemonStore({ dir: daemonDir() }),
+          ),
+          null,
+          2,
+        ),
+      );
+      break;
+    }
+  }
+  return true;
+}
+
+async function transportEnabled() {
+  const resolved = await resolveConfig({
+    workspaceRoot: process.cwd(),
+    ...(process.env.NATALIA_CONFIG
+      ? { globalPath: process.env.NATALIA_CONFIG }
+      : {}),
+  });
+  return resolved.config.plugins.enabled[TRANSPORT_PLUGIN_ID] !== false;
+}

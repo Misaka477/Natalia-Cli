@@ -3860,193 +3860,22 @@ test("CLI tool list reports the built-in families", async () => {
   );
 });
 
-test("CLI install and uninstall flip tools.enabled in the workspace config", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-cli-tools-toggle-"));
-  const uninstall = Bun.spawnSync(
-    [
-      process.execPath,
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "uninstall",
-      "todo",
-      "--workspace",
-      root,
-    ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
-  );
-  expect(uninstall.exitCode).toBe(0);
-  expect(JSON.parse(new TextDecoder().decode(uninstall.stdout))).toMatchObject({
-    uninstalled: true,
-  });
-  const afterUninstall = JSON.parse(
-    await readFile(join(root, ".natalia", "config.json"), "utf8"),
-  ) as { tools?: { enabled?: Record<string, boolean> } };
-  expect(afterUninstall.tools?.enabled?.todo).toBe(false);
-
-  const install = Bun.spawnSync(
-    [
-      process.execPath,
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "install",
-      "todo",
-      "--workspace",
-      root,
-    ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
-  );
-  expect(install.exitCode).toBe(0);
-  const afterInstall = JSON.parse(
-    await readFile(join(root, ".natalia", "config.json"), "utf8"),
-  ) as { tools?: { enabled?: Record<string, boolean> } };
-  expect(afterInstall.tools?.enabled?.todo).toBe(true);
-});
-
-test("CLI install refuses an unknown family", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-cli-tools-unknown-"));
-  const child = Bun.spawnSync(
-    [
-      process.execPath,
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "install",
-      "not.a.family",
-      "--workspace",
-      root,
-    ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
-  );
-  expect(child.exitCode).not.toBe(0);
-  expect(new TextDecoder().decode(child.stderr)).toContain(
-    "unknown tool family",
-  );
-});
-
-test("CLI install <dir> records trust and enables an out-of-tree family", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-cli-install-dir-"));
-  const familyDir = join(root, "extra.family");
-  await mkdir(familyDir, { recursive: true });
-  await writeFile(
-    join(familyDir, "natalia.tool.json"),
-    JSON.stringify({ entry: "index.ts" }),
-  );
-  await writeFile(
-    join(familyDir, "index.ts"),
-    `import type { ToolFamily } from "@natalia/tools";
-export default (): ToolFamily => ({
-  id: "extra.family", name: "Extra", version: "1.0.0",
-  description: "Out-of-tree family", scope: "session",
-  tools: [{ name: "extra_run", description: "Run", requiresApproval: false,
-    parameters: { type: "object", properties: {} }, async execute() { return "ok"; } }],
-});
-`,
-  );
-  const install = Bun.spawnSync(
-    [
-      process.execPath,
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "install",
-      "extra.family",
-      "--workspace",
-      root,
-    ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
-  );
-  expect(install.exitCode).toBe(0);
-  expect(JSON.parse(new TextDecoder().decode(install.stdout))).toMatchObject({
-    installed: true,
-    familyID: "extra.family",
-  });
-
-  // The trust record exists and the config enables the family.
-  const trust = JSON.parse(
-    await readFile(join(root, ".natalia", "trust.json"), "utf8"),
-  ) as Record<string, { source: string; fingerprint?: string }>;
-  const record = Object.values(trust)[0];
-  expect(record?.source).toContain("extra.family");
-  expect(record?.fingerprint).toBeString();
-  const config = JSON.parse(
-    await readFile(join(root, ".natalia", "config.json"), "utf8"),
-  ) as { tools?: { enabled?: Record<string, boolean>; paths?: string[] } };
-  expect(config.tools?.enabled?.["extra.family"]).toBe(true);
-
-  const list = Bun.spawnSync(
-    [
-      process.execPath,
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "trust",
-      "list",
-      "--workspace",
-      root,
-    ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
-  );
-  expect(list.exitCode).toBe(0);
-  expect(new TextDecoder().decode(list.stdout)).toContain("extra.family");
-});
-
-test("CLI install <pkg> forwards to npm and registers the installed family", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-cli-install-pkg-"));
-  // A packaged family: an installable package (package.json) carrying a
-  // natalia.tool.json, exactly what publishing @natalia/tool-* would produce.
-  const pkg = join(root, "tool-fixture-pkg");
-  await mkdir(pkg, { recursive: true });
-  await writeFile(
-    join(pkg, "package.json"),
-    JSON.stringify({
-      name: "@natalia/tool-fixture",
-      version: "1.0.0",
-      type: "module",
-    }),
-  );
-  await writeFile(
-    join(pkg, "natalia.tool.json"),
-    JSON.stringify({ entry: "index.ts" }),
-  );
-  await writeFile(
-    join(pkg, "index.ts"),
-    `import type { ToolFamily } from "@natalia/tools";
-export default (): ToolFamily => ({
-  id: "fixture.pkg", name: "Fixture Pkg", version: "1.0.0",
-  description: "Installed fixture family", scope: "session",
-  tools: [{ name: "pkg_run", description: "Run", requiresApproval: false,
-    parameters: { type: "object", properties: {} }, async execute() { return "ok"; } }],
-});
-`,
-  );
-
-  const install = Bun.spawnSync(
-    [
-      process.execPath,
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "install",
-      `file:${pkg}`,
-      "--workspace",
-      root,
-    ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
-  );
-  expect(install.exitCode).toBe(0);
-  expect(JSON.parse(new TextDecoder().decode(install.stdout))).toMatchObject({
-    installed: true,
-    familyID: "fixture.pkg",
-  });
-
-  // The package landed under .natalia/tools/node_modules (the package
-  // manager's layout), trust was recorded, and config enables + scans it.
-  expect(
-    existsSync(
-      join(
+test("old top-level install and uninstall no longer write tool activation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-old-install-"));
+  for (const command of ["install", "uninstall"]) {
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        command,
+        "todo",
+        "--workspace",
         root,
-        ".natalia",
-        "tools",
-        "node_modules",
-        "@natalia",
-        "tool-fixture",
-        "natalia.tool.json",
-      ),
-    ),
-  ).toBe(true);
-  const config = JSON.parse(
-    await readFile(join(root, ".natalia", "config.json"), "utf8"),
-  ) as { tools?: { enabled?: Record<string, boolean>; paths?: string[] } };
-  expect(config.tools?.enabled?.["fixture.pkg"]).toBe(true);
-  expect(config.tools?.paths).toContain(join(root, ".natalia", "tools"));
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(child.exitCode).not.toBe(0);
+  }
+  expect(existsSync(join(root, ".natalia", "config.json"))).toBe(false);
+  expect(existsSync(join(root, ".natalia", "tools"))).toBe(false);
 });

@@ -1,0 +1,162 @@
+import {
+  createRealRuntimeClient,
+  newHeadlessExecution,
+  plainRuntimeEvent,
+} from "@natalia/client";
+import { resolveConfig } from "@natalia/config";
+import { createRecordedFetch } from "@natalia/transport";
+import {
+  createHttpTransportPluginHost,
+  TRANSPORT_PLUGIN_ID,
+} from "./transport-plugin";
+import { promptArguments } from "./index";
+import { valueAfter, waitSignal, withoutOption } from "./command-helpers";
+
+export async function handleRuntimeCommand(argv: string[]) {
+  const command = argv[0];
+  if (command === "serve" || command === "--serve") {
+    const port = parseServePort(argv);
+    const client = createRealRuntimeClient();
+    const transport = await createHttpTransportPluginHost({
+      client,
+      port,
+      token: process.env.NATALIA_TRANSPORT_TOKEN,
+      enabled: await transportEnabled(),
+    });
+    console.log(
+      JSON.stringify({
+        url: transport.server.url,
+        auth: process.env.NATALIA_TRANSPORT_TOKEN
+          ? "bearer required"
+          : "disabled",
+      }),
+    );
+    await waitSignal();
+    await transport.close();
+    await client.dispose?.();
+    return true;
+  }
+  if (command === "run" || command === "--once") {
+    const permission = valueAfter(argv, "--permission");
+    if (argv.includes("--permission") && !permission)
+      throw new Error("--permission requires a profile name");
+    const { text, attachments } = promptArguments(
+      withoutOption(argv.slice(1), "--permission"),
+    );
+    if (!text) throw new Error("run requires a prompt");
+    await runOnce(text, argv.includes("--json"), attachments, permission);
+    return true;
+  }
+  if (command === "eval" || command === "--stdio") {
+    const client = createRealRuntimeClient(newHeadlessExecution());
+    let failed = false;
+    try {
+      client.start((event) => {
+        if (event.type === "turn.finished" && event.stopReason === "error")
+          failed = true;
+        console.log(JSON.stringify(event));
+      });
+      for (const line of (await Bun.stdin.text()).split(/\r?\n/u)) {
+        if (!line.trim()) continue;
+        const request = JSON.parse(line) as {
+          prompt?: string;
+          delivery?: "steer" | "queue";
+          attachments?: string[];
+          cancel?: string;
+          pause?: string;
+          resume?: boolean;
+        };
+        if (request.cancel) client.cancel(request.cancel);
+        if (request.pause) client.pause?.(request.pause);
+        if (request.resume) client.resume?.();
+        if (
+          request.prompt &&
+          client.submitInput &&
+          (request.delivery === "queue" || request.attachments?.length)
+        )
+          await client.submitInput({
+            text: request.prompt,
+            delivery: request.delivery,
+            attachments: request.attachments,
+          });
+        else if (request.prompt) await client.submit(request.prompt);
+      }
+    } finally {
+      await client.dispose?.();
+    }
+    if (failed) process.exitCode = 1;
+    return true;
+  }
+  if (command === "record") {
+    const cassettePath = argv[1];
+    if (!cassettePath) throw new Error("record requires a cassette path");
+    const client = createRealRuntimeClient();
+    const transport = await createHttpTransportPluginHost({
+      client,
+      port: Number(argv[2] ?? "8787"),
+      enabled: await transportEnabled(),
+    });
+    globalThis.fetch = createRecordedFetch({
+      mode: "record",
+      cassettePath,
+    }) as typeof fetch;
+    console.log(
+      JSON.stringify({ url: transport.server.url, cassette: cassettePath }),
+    );
+    await waitSignal();
+    await transport.close();
+    await client.dispose?.();
+    return true;
+  }
+  return false;
+}
+
+export function parseServePort(argv: string[]) {
+  const port = Number(argv[1] ?? "8787");
+  if (!Number.isInteger(port) || port <= 0 || port > 65535)
+    throw new Error("serve requires a valid port");
+  return port;
+}
+
+async function runOnce(
+  prompt: string,
+  json: boolean,
+  attachments: string[],
+  permissionProfile?: string,
+) {
+  const client = createRealRuntimeClient({
+    ...newHeadlessExecution(),
+    permissionProfile,
+  });
+  let text = "";
+  let failed = false;
+  try {
+    client.start((event) => {
+      if (event.type === "turn.finished" && event.stopReason === "error")
+        failed = true;
+      if (json) console.log(JSON.stringify(event));
+      else {
+        if (event.type === "content.delta") text += event.text;
+        const line = plainRuntimeEvent(event);
+        if (line) console.log(line);
+      }
+    });
+    if (attachments.length && client.submitInput)
+      await client.submitInput({ text: prompt, attachments });
+    else await client.submit(prompt);
+    if (!json && text) console.log(text);
+  } finally {
+    await client.dispose?.();
+  }
+  if (failed) process.exitCode = 1;
+}
+
+async function transportEnabled() {
+  const resolved = await resolveConfig({
+    workspaceRoot: process.cwd(),
+    ...(process.env.NATALIA_CONFIG
+      ? { globalPath: process.env.NATALIA_CONFIG }
+      : {}),
+  });
+  return resolved.config.plugins.enabled[TRANSPORT_PLUGIN_ID] !== false;
+}
