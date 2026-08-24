@@ -1,9 +1,10 @@
-import { createWorkerRuntimeClient } from "@natalia/client";
+import { createFakeBackend, createWorkerRuntimeClient } from "@natalia/client";
 import { CapabilityRegistry } from "@natalia/capability";
-import type { RuntimeClient } from "@natalia/contracts";
+import type { RuntimeClient, UiAdapterMountInput } from "@natalia/contracts";
 import {
   createPluginAdapterMaterializer,
   createPluginRegistry,
+  createUiAdapterMountInput,
   type Plugin,
   type PluginAdapterInstance,
 } from "@natalia/plugin";
@@ -28,12 +29,15 @@ type TuiAdapterInstance = PluginAdapterInstance & {
 };
 
 type StartTuiAdapter = (
+  input: UiAdapterMountInput,
   options: TuiAdapterOptions,
 ) => Promise<TuiAdapterInstance>;
 
 export function createTuiAdapterPlugin(
+  options: TuiAdapterOptions,
   start: StartTuiAdapter = startTuiAdapter,
 ): Plugin {
+  let active: TuiAdapterInstance | undefined;
   return {
     manifest: {
       apiVersion: 2,
@@ -52,10 +56,15 @@ export function createTuiAdapterPlugin(
       integrationPoints: ["adapters"],
     },
     setup(api) {
-      api.adapters.register({
-        name: TUI_ADAPTER,
-        adapterType: "ui",
-        create: start,
+      api.adapters.registerUi({
+        kind: TUI_ADAPTER,
+        async mount(input) {
+          active = await start(input, options);
+        },
+        async dispose() {
+          await active?.dispose();
+          active = undefined;
+        },
       });
     },
   };
@@ -64,10 +73,16 @@ export function createTuiAdapterPlugin(
 export async function createTuiAdapterHost(
   options: TuiAdapterOptions & { enabled?: boolean },
   start: StartTuiAdapter = startTuiAdapter,
+  createRuntime: (options: TuiAdapterOptions) => RuntimeClient = (input) =>
+    input.smoke
+      ? createFakeBackend()
+      : createWorkerBackend(input.workspaceRoot, input.sessionID),
 ) {
   if (options.enabled === false)
     throw new Error(`TUI plugin is disabled (${TUI_PLUGIN_ID})`);
   const { enabled: _, ...adapterOptions } = options;
+  const backend = createRuntime(adapterOptions);
+  const mountInput = createUiAdapterMountInput(backend);
   const kernel = new CapabilityRegistry();
   const registry = createPluginRegistry({
     tools: createToolRegistry([]),
@@ -83,57 +98,55 @@ export async function createTuiAdapterHost(
       return owner;
     },
   });
-  await registry.load(createTuiAdapterPlugin(start));
+  let adapter: TuiAdapterInstance | undefined;
+  await registry.load(
+    createTuiAdapterPlugin(adapterOptions, async (input, launchOptions) => {
+      adapter = await start(input, launchOptions);
+      return adapter;
+    }),
+  );
   const materializer = createPluginAdapterMaterializer(kernel);
-  let adapter: TuiAdapterInstance;
   try {
-    adapter = await materializer.materialize<
-      TuiAdapterOptions,
-      TuiAdapterInstance
-    >(TUI_ADAPTER, adapterOptions);
+    await materializer.materialize(TUI_ADAPTER, mountInput);
   } catch (error) {
+    await backend.dispose?.();
     await registry.unloadAll();
     throw error;
   }
   let closed = false;
   return {
-    done: adapter.done,
+    done: adapter!.done,
     async close() {
       if (closed) return;
       closed = true;
       try {
         await materializer.close();
       } finally {
-        await registry.unloadAll();
+        try {
+          await registry.unloadAll();
+        } finally {
+          await backend.dispose?.();
+        }
       }
     },
   };
 }
 
 async function startTuiAdapter(
+  input: UiAdapterMountInput,
   options: TuiAdapterOptions,
 ): Promise<TuiAdapterInstance> {
   let currentWorkspaceRoot = options.workspaceRoot;
-  const launchSessionID = options.sessionID ?? newSessionID();
   const createBackend = (nextSessionID?: string) => {
-    const channel = new MessageChannel();
-    const worker = new Worker(new URL("./runtime-worker.ts", import.meta.url), {
-      workerData: {
-        port: channel.port1,
-        workspaceRoot: currentWorkspaceRoot,
-        sessionID: nextSessionID ?? launchSessionID,
-      },
-      transferList: [channel.port1],
-    });
-    const client = createWorkerRuntimeClient(channel.port2);
-    const dispose = client.dispose;
-    client.dispose = async () => {
-      await dispose?.();
-      await worker.terminate();
-    };
-    return client;
+    return createWorkerBackend(currentWorkspaceRoot, nextSessionID);
   };
-  const initialBackend = options.smoke ? undefined : createBackend();
+  const initialBackend: RuntimeClient = {
+    ...input.runtime,
+    start(listener) {
+      input.events.subscribe(listener);
+    },
+    dispose: async () => undefined,
+  };
   const handle = await runTuiShell({
     initialPrompt: options.smoke
       ? process.env.NATALIA_TUI_SMOKE_PROMPT || paste100KiB()
@@ -151,9 +164,6 @@ async function startTuiAdapter(
     workspaceRoot: currentWorkspaceRoot,
     closeAfterInitialTurn:
       options.doctor || options.diagnostics ? false : undefined,
-  }).catch(async (error) => {
-    await initialBackend?.dispose?.();
-    throw error;
   });
   let stopping = false;
   const stop = () => {
@@ -191,6 +201,24 @@ async function startTuiAdapter(
       }
     },
   };
+}
+
+function createWorkerBackend(
+  workspaceRoot: string,
+  sessionID = newSessionID(),
+) {
+  const channel = new MessageChannel();
+  const worker = new Worker(new URL("./runtime-worker.ts", import.meta.url), {
+    workerData: { port: channel.port1, workspaceRoot, sessionID },
+    transferList: [channel.port1],
+  });
+  const client = createWorkerRuntimeClient(channel.port2);
+  const dispose = client.dispose;
+  client.dispose = async () => {
+    await dispose?.();
+    await worker.terminate();
+  };
+  return client;
 }
 
 function newSessionID() {

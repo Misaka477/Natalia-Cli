@@ -1,4 +1,5 @@
 import type { PluginIntegrationPoint } from "./manifest";
+import type { UiAdapterMountInput } from "@natalia/contracts";
 import type { MountedPlugin, RegistryState } from "./registry-state";
 import type {
   PluginAPI,
@@ -208,10 +209,22 @@ export async function activatePlugin(
     projections: namedRegistry("projections", "projections"),
     workflows: namedRegistry("workflows", "workflows"),
     settingsSchema: namedRegistry("settingsSchema", "settingsSchema"),
-    adapters: namedRegistry(
-      "adapters",
-      "adapters",
-    ) as PluginAdapterContributionRegistry,
+    adapters: (() => {
+      const registry = namedRegistry(
+        "adapters",
+        "adapters",
+      ) as PluginAdapterContributionRegistry;
+      registry.registerUi = (contribution) =>
+        registry.register({
+          name: contribution.kind,
+          adapterType: "ui",
+          async create(input: UiAdapterMountInput) {
+            await contribution.mount(input);
+            return { dispose: contribution.dispose };
+          },
+        });
+      return registry;
+    })(),
     scheduler: {
       add: namedRegistry("schedulerJobs", "schedulerJobs").register,
     },

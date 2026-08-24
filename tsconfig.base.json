@@ -31,6 +31,7 @@
         "packages/governance-ledger-plugin/src/index.ts"
       ],
       "@natalia/contracts": ["packages/contracts/src/index.ts"],
+      "@natalia/example-ui-plugin": ["packages/example-ui-plugin/src/index.ts"],
       "@natalia/installer": ["packages/installer/src/index.ts"],
       "@natalia/local-tools-plugin": [
         "packages/local-tools-plugin/src/index.ts"

@@ -1,3 +1,4 @@
+import type { UiAdapterMountInput } from "@natalia/contracts";
 import type { RuntimeTool } from "@natalia/tools";
 import type { PluginManifest } from "./manifest";
 
@@ -78,6 +79,12 @@ export type PluginAdapterContributionRegistry = {
   register<Context, Instance extends PluginAdapterInstance>(
     contribution: PluginAdapterContribution<Context, Instance>,
   ): () => void;
+  registerUi(contribution: PluginUiAdapterContribution): () => void;
+};
+export type PluginUiAdapterContribution = {
+  kind: string;
+  mount(input: UiAdapterMountInput): void | Promise<void>;
+  dispose(): void | Promise<void>;
 };
 export type PluginAdapterRegistryView = {
   contribution<T>(kind: "adapters", name: string): T | undefined;

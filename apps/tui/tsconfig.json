@@ -9,6 +9,7 @@
   },
   "include": ["src", "test", "bin"],
   "references": [
+    { "path": "../../packages/example-ui-plugin" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/client" },
     { "path": "../../packages/capability" },

@@ -670,6 +670,76 @@ test("adapter contributions stay inert until materialized and dispose in reverse
   await registry.unloadAll();
 });
 
+test("UI adapters receive host runtime ports and follow materializer lifecycle", async () => {
+  const contributions = new Map<string, unknown>();
+  const owners = new Map<string, string>();
+  const lifecycle: string[] = [];
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    registerOwner: (manifest) => ({
+      contribute: (kind, name, payload) => {
+        if (kind === "adapters") {
+          contributions.set(name, payload);
+          owners.set(name, manifest.id);
+        }
+        return () => {
+          contributions.delete(name);
+          owners.delete(name);
+        };
+      },
+      release: () => undefined,
+    }),
+  });
+  const input = {
+    runtime: {} as import("@natalia/contracts").RuntimeClient,
+    events: { subscribe: () => () => undefined },
+    commands: { list: async () => [] },
+  };
+  await registry.load(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-ui-test",
+        version: "1.0.0",
+        name: "UI Test",
+        description: "",
+        entry: "natalia:ui-test",
+        scope: "process",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: ["adapters"],
+      },
+      setup(api) {
+        api.adapters.registerUi({
+          kind: "ui.test",
+          mount(received) {
+            expect(received).toBe(input);
+            lifecycle.push("mount");
+          },
+          dispose() {
+            lifecycle.push("dispose");
+          },
+        });
+      },
+    }),
+  );
+  expect(lifecycle).toEqual([]);
+  const materializer = createPluginAdapterMaterializer({
+    contribution: <T>(_kind: "adapters", name: string) =>
+      contributions.get(name) as T | undefined,
+    ownerOf: (_kind, name) => owners.get(name),
+  });
+  await materializer.materialize("ui.test", input);
+  await materializer.close();
+  await materializer.close();
+  expect(lifecycle).toEqual(["mount", "dispose"]);
+  await registry.unloadAll();
+});
+
 test("adapter materializer fails before creating unavailable resources", async () => {
   const materializer = createPluginAdapterMaterializer({
     contribution: () => undefined,

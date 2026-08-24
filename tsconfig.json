@@ -5,6 +5,7 @@
     { "path": "apps/tui" },
     { "path": "apps/cli" },
     { "path": "packages/contracts" },
+    { "path": "packages/example-ui-plugin" },
     { "path": "packages/runtime-services" },
     { "path": "packages/context-ledger-plugin" },
     { "path": "packages/governance-ledger-plugin" },

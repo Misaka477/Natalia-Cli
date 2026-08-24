@@ -9,3 +9,4 @@ export * from "./loading";
 export * from "./manifest";
 export * from "./registry";
 export * from "./types";
+export * from "./ui-adapter";

@@ -1256,6 +1256,17 @@ export type ContributedCommand = {
   category?: string;
 };
 
+/** Host-owned runtime ports exposed to a mounted UI adapter. */
+export type UiAdapterMountInput = {
+  runtime: RuntimeClient;
+  events: {
+    subscribe(listener: (event: RuntimeEvent) => void): () => void;
+  };
+  commands: {
+    list(): Promise<ContributedCommand[]>;
+  };
+};
+
 /**
  * Work Graph read models exposed over RuntimeClient/RPC/SDK.
  *
