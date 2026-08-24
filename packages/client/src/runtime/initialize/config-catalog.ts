@@ -96,6 +96,11 @@ export async function configureCatalog(
             attachment: {
               enabled: true,
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
+              commands: {
+                submit: async (sessionID: SessionID, input) => {
+                  await ctx.ports.submitInput(input, sessionID);
+                },
+              },
             },
           }
         : {}),

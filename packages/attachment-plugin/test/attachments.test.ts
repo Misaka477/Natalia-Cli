@@ -165,8 +165,34 @@ test("attachment service is absent after plugin unload", async () => {
   });
 
   expect(services.has(ATTACHMENT_SERVICE)).toBe(false);
-  await registry.load(createAttachmentPlugin({ workspaceRoot: root }));
+  const submissions: unknown[] = [];
+  await registry.load(
+    createAttachmentPlugin({
+      workspaceRoot: root,
+      commands: {
+        submit: async (sessionID, input) => {
+          submissions.push({ sessionID, input });
+        },
+      },
+    }),
+  );
   expect(services.get(ATTACHMENT_SERVICE)).toBeDefined();
+  expect(registry.commands().map((command) => command.name)).toEqual([
+    "attach",
+  ]);
+  await registry.commands()[0]?.run({
+    raw: "/attach image.png inspect this",
+    args: ["image.png", "inspect", "this"],
+    workspaceRoot: root,
+    sessionID: "ses_test",
+  });
+  expect(submissions).toEqual([
+    {
+      sessionID: "ses_test",
+      input: { text: "inspect this", attachments: ["image.png"] },
+    },
+  ]);
   await registry.unload(ATTACHMENT_PLUGIN_ID);
   expect(services.has(ATTACHMENT_SERVICE)).toBe(false);
+  expect(registry.commands()).toHaveLength(0);
 });

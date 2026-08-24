@@ -23,7 +23,6 @@ export type SlashDeps = {
   commandExec: SessionExecutionState;
   publish: (event: RuntimeEvent) => void;
   agentRegistry: ReturnType<RuntimeContext["ports"]["getAgentRegistry"]>;
-  submitInput: RuntimeContext["ports"]["submitInput"];
   applyAgentPolicy: () => void;
   applyAgentProvider: (exec: SessionExecutionState) => void;
   getActiveExec: () => SessionExecutionState | undefined;
@@ -98,7 +97,6 @@ export function createCommands(ctx: RuntimeContext) {
       getAgentRegistry,
       setPaused,
       publishForSession,
-      submitInput,
       applyAgentPolicy,
       applyAgentProvider,
       getActiveExec,
@@ -112,7 +110,6 @@ export function createCommands(ctx: RuntimeContext) {
       commandExec,
       publish: (event) => publishForSession(commandExec, event),
       agentRegistry: getAgentRegistry(),
-      submitInput,
       applyAgentPolicy,
       applyAgentProvider,
       getActiveExec,

@@ -10,19 +10,6 @@ import type { SlashDeps } from "./index";
 export async function tryActionSlashCommand(deps: SlashDeps): Promise<boolean> {
   const trimmed = deps.text.trim();
   const commandExec = deps.commandExec;
-  if (trimmed.startsWith("/attach ")) {
-    const [path, ...rest] = trimmed
-      .slice("/attach ".length)
-      .trim()
-      .split(/\s+/u);
-    if (!path || !rest.length)
-      throw new Error("usage: /attach <workspace-relative-image> <prompt>");
-    await deps.submitInput(
-      { text: rest.join(" "), attachments: [path] },
-      commandExec.session.id,
-    );
-    return true;
-  }
   if (trimmed === "/agents") {
     const agents = deps.agentRegistry?.selectable() ?? [];
     deps.publish({

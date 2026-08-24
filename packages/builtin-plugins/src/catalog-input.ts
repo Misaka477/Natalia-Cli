@@ -5,6 +5,7 @@ import type {
   SandboxBackend,
 } from "@natalia/contracts";
 import type { CollaborationPluginInput } from "@natalia/collaboration-plugin";
+import type { AttachmentPluginInput } from "@natalia/attachment-plugin";
 import type { RetryRunnerOptions } from "@natalia/runtime";
 import type {
   ProviderModelControllerInput,
@@ -109,7 +110,7 @@ export type BuiltinPluginCatalogInput = {
   governanceLedger?: { enabled: boolean };
   turnOrchestration?: { enabled: boolean; controller: TurnControllerInput };
   retry?: { enabled: boolean; policy(): RetryRunnerOptions["policy"] };
-  attachment?: { enabled: boolean; workspaceRoot: string };
+  attachment?: AttachmentPluginInput & { enabled: boolean };
   compaction?: { enabled: boolean };
   runtimeUi?: { enabled: boolean; controller: RuntimeUiPluginInput };
 };

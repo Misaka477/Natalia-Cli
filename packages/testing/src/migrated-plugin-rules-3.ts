@@ -240,12 +240,17 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
       "packages/client/src/runtime/main.ts",
       "packages/client/src/provider-runner.ts",
       "packages/client/src/session-store-controller.ts",
+      "packages/client/src/runtime/commands/slash-action.ts",
     ],
     forbidden: [
       {
         description: "direct attachment helper use",
         pattern:
           /\b(?:attachmentDataURL|attachmentText|cleanupUnreferencedAttachments|isTextAttachment|referencedAttachmentsForSessions|storeLocalAttachments)\b/u,
+      },
+      {
+        description: "client-owned attachment command implementation",
+        pattern: /["']\/attach\b/u,
       },
     ],
   },
