@@ -86,17 +86,8 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
       "packages/team-plugin/src/fan-out.ts",
       "packages/team-plugin/src/team-tools.ts",
       "packages/team-plugin/src/team-plugin.ts",
-      "packages/sandbox-plugin/src/index.ts",
     ],
     forbidden: [
-      {
-        description: "direct sandbox implementation import",
-        pattern: /from\s+["']@natalia\/sandbox["']/u,
-      },
-      {
-        description: "direct sandbox controller construction",
-        pattern: /\bcreateSandboxController\b/u,
-      },
       {
         description: "concrete sandbox backend type in service consumers",
         pattern:
@@ -178,14 +169,14 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
     id: "natalia-workflow-scheduler",
     targets: [
       "packages/client/src/index.ts",
-      "packages/workflow-scheduler-plugin/src/index.ts",
-      "packages/workflow-scheduler-plugin/src/workflow-scheduler-plugin.ts",
+      "packages/workflow-scheduler/src/index.ts",
+      "packages/workflow-scheduler/src/workflow-scheduler-host.ts",
     ],
     forbidden: [
       {
         description: "workflow scheduler composition re-exported by client",
         pattern:
-          /export\s+(?:type\s+)?\{[^}]*\b(?:createWorkflowSchedulerPluginHost|WORKFLOW_SCHEDULER_PLUGIN_ID|WORKFLOW_SCHEDULER_SERVICE)\b[^}]*\}\s+from\s+["']@natalia\/workflow-scheduler-plugin["']/u,
+          /export\s+(?:type\s+)?\{[^}]*\b(?:createWorkflowSchedulerHost|createWorkflowSchedulerPluginHost|WORKFLOW_SCHEDULER_PLUGIN_ID|WORKFLOW_SCHEDULER_SERVICE)\b[^}]*\}\s+from\s+["']@natalia\/workflow-scheduler["']/u,
       },
       {
         description: "concrete workflow scheduler exported by public barrel",
@@ -244,7 +235,7 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
       {
         description: "direct CLI command dispatcher lifecycle",
         pattern:
-          /(?:from\s+["']\.\/command-dispatcher["']|\bcreateRealRuntimeClient\b|\bcreateHttpTransportPluginHost\b|\bcreateWorkflowSchedulerPluginHost\b)/u,
+          /(?:from\s+["']\.\/command-dispatcher["']|\bcreateRealRuntimeClient\b|\bcreateHttpTransport(?:Plugin)?Host\b|\bcreateWorkflowScheduler(?:Plugin)?Host\b)/u,
       },
     ],
   },

@@ -1,5 +1,4 @@
-import { resolveConfig } from "@natalia/config";
-import { createTuiAdapterHost, TUI_PLUGIN_ID } from "./tui-adapter";
+import { createTuiAdapterHost } from "./tui-adapter";
 import { resolveTuiWorkspaceRoot } from "./workspace";
 
 const smoke =
@@ -9,19 +8,12 @@ const diagnostics = process.argv.includes("--diagnostics");
 const workspaceRoot = await resolveTuiWorkspaceRoot({
   override: process.env.NATALIA_WORKSPACE ?? argumentValue("--workspace"),
 });
-const config = await resolveConfig({
-  workspaceRoot,
-  ...(process.env.NATALIA_CONFIG
-    ? { globalPath: process.env.NATALIA_CONFIG }
-    : {}),
-});
 const host = await createTuiAdapterHost({
   workspaceRoot,
   sessionID: argumentValue("--session"),
   smoke,
   doctor,
   diagnostics,
-  enabled: config.config.plugins.enabled[TUI_PLUGIN_ID] !== false,
 });
 try {
   await host.done;

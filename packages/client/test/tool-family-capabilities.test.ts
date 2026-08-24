@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
 import type { ToolFamily } from "@natalia/tools";
 import {
-  builtinToolNames,
+  runtimeToolNames,
   createToolRegistryFromCapabilities,
   registerToolFamilyCapabilities,
   toolFamilyCapabilityID,
@@ -36,23 +36,23 @@ function syntheticFamily(id: string): ToolFamily {
 }
 
 test("the effective tool catalogue names migrated plugin tools", () => {
-  expect(builtinToolNames()).toContain("ask_user");
-  expect(builtinToolNames()).toEqual(
+  expect(runtimeToolNames()).toContain("ask_user");
+  expect(runtimeToolNames()).toEqual(
     expect.arrayContaining(["plan", "todo_read", "todo_write"]),
   );
-  expect(builtinToolNames()).toEqual(expect.arrayContaining(["glob", "grep"]));
-  expect(builtinToolNames()).toEqual(
+  expect(runtimeToolNames()).toEqual(expect.arrayContaining(["glob", "grep"]));
+  expect(runtimeToolNames()).toEqual(
     expect.arrayContaining(["read_file", "write_file", "edit_file"]),
   );
-  expect(builtinToolNames()).toContain("apply_patch");
-  expect(builtinToolNames()).toContain("web_fetch");
-  expect(builtinToolNames()).toContain("run_shell");
-  expect(builtinToolNames()).toContain("agent_spawn");
-  expect(builtinToolNames()).toContain("interactive_terminal_start");
-  expect(builtinToolNames()).toContain("interactive_start");
-  expect(builtinToolNames()).toContain("sandbox_create");
-  expect(builtinToolNames()).toContain("process_start");
-  expect(builtinToolNames()).toContain("background_start");
+  expect(runtimeToolNames()).toContain("apply_patch");
+  expect(runtimeToolNames()).toContain("web_fetch");
+  expect(runtimeToolNames()).toContain("run_shell");
+  expect(runtimeToolNames()).toContain("agent_spawn");
+  expect(runtimeToolNames()).toContain("interactive_terminal_start");
+  expect(runtimeToolNames()).toContain("interactive_start");
+  expect(runtimeToolNames()).toContain("sandbox_create");
+  expect(runtimeToolNames()).toContain("process_start");
+  expect(runtimeToolNames()).toContain("background_start");
 });
 
 test("each family declares exactly the tools grant", () => {

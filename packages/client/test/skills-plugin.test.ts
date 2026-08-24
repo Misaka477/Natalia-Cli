@@ -4,10 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@natalia/tools";
-import { skillsPluginEntry, SKILLS_PLUGIN_ID } from "@natalia/builtin-plugins";
+import {
+  skillsPluginEntry,
+  SKILLS_PLUGIN_ID,
+} from "../src/runtime/plugin-config";
 import { SKILL_SERVICE, type SkillService } from "@natalia/runtime-services";
 import { createPluginsController } from "../src/plugins-controller";
-import { defaultDesiredEntries } from "../src/builtin-mount";
 import type { Plugin } from "@natalia/plugin";
 
 async function skillWorkspace() {
@@ -39,7 +41,7 @@ test("skills uses the same plugin activation path and owns its service and tool"
   const { capabilityRegistry, tools, controller } = host(root);
   controller.init();
   await controller.reconcileDesired(
-    defaultDesiredEntries([skillsPluginEntry({ workspaceRoot: root })]),
+    [skillsPluginEntry({ workspaceRoot: root })],
     {},
   );
 

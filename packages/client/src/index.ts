@@ -157,6 +157,7 @@ export type {
   RuntimeEvent,
   SubmittedTurn,
 } from "@natalia/contracts";
+export { RUNTIME_PLUGIN_MANIFESTS } from "./runtime/plugin-config";
 
 export type TransportKind =
   | "local-fixture"

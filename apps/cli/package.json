@@ -16,23 +16,21 @@
   },
   "dependencies": {
     "@natalia/agent": "workspace:*",
-    "@natalia/attachment-plugin": "workspace:*",
-    "@natalia/builtin-plugins": "workspace:*",
     "@natalia/capability": "workspace:*",
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/installer": "workspace:*",
-    "@natalia/local-tools-plugin": "workspace:*",
+    "@natalia/plugin-local-tools": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
-    "@natalia/session-store-plugin": "workspace:*",
-    "@natalia/task-workflow-plugin": "workspace:*",
+    "@natalia/session-store": "workspace:*",
+    "@natalia/plugin-task-workflow": "workspace:*",
     "@natalia/transport": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/workflow": "workspace:*",
-    "@natalia/workflow-scheduler-plugin": "workspace:*"
+    "@natalia/workflow-scheduler": "workspace:*"
   }
 }

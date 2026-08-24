@@ -20,7 +20,6 @@
     { "path": "../../packages/ui-model" },
     { "path": "../../packages/testing" },
     { "path": "../../packages/tools" },
-    { "path": "../../packages/view-store" },
-    { "path": "../../packages/workflow-scheduler-plugin" }
+    { "path": "../../packages/view-store" }
   ]
 }

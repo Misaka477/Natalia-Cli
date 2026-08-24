@@ -566,14 +566,14 @@ export interface TerminalController {
   setActiveSession(sessionID: string | undefined): void;
   close(): Promise<void>;
 }
-export type TerminalControllerPluginInput = {
+export type TerminalControllerInput = {
   workspaceRoot: string;
   publish(event: RuntimeEvent): void;
   onPerformance(name: string, durationMs: number): void;
   runtimeID(): string;
   userRuntimeHome(): string | undefined;
   windowMode(): "auto" | "windowless" | "window";
-  /** Provider-private native registry, interpreted only by terminal-plugin. */
+  /** Provider-private native registry, interpreted only by the terminal subsystem. */
   external?: unknown;
 };
 export interface SandboxService extends SandboxToolService {

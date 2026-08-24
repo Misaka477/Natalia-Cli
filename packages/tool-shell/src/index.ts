@@ -3,7 +3,7 @@
  *
  * Depends on the framework for the tool-authoring surface and process helpers.
  * The `runShell` execution primitive it wraps lives in `@natalia/tools` so other
- * tool plugins (notably `@natalia/tool-web`) can run commands without depending
+ * tool plugins (notably `@natalia/plugin-tool-web`) can run commands without depending
  * on this package. It knows nothing about the runtime or the capability kernel.
  */
 import type { Plugin, PluginManifest } from "@natalia/plugin";

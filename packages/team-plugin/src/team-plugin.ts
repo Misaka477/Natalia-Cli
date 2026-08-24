@@ -15,8 +15,6 @@ import {
   type SandboxService,
   type SubagentsService,
 } from "@natalia/runtime-services";
-import { SANDBOX_PLUGIN_ID } from "@natalia/sandbox-plugin";
-import { SUBAGENTS_PLUGIN_ID } from "@natalia/subagents-plugin";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 import {
   sandboxedSubagentSystemPrompt,
@@ -38,20 +36,7 @@ export const TEAM_PLUGIN_MANIFEST: PluginManifest = {
   requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],
   optionalRequires: [],
   conflicts: [],
-  dependencies: [
-    {
-      id: SUBAGENTS_PLUGIN_ID,
-      spec: "workspace:*",
-      optional: false,
-      peer: false,
-    },
-    {
-      id: SANDBOX_PLUGIN_ID,
-      spec: "workspace:*",
-      optional: false,
-      peer: false,
-    },
-  ],
+  dependencies: [],
   hooks: {},
   integrationPoints: ["tools", "services"],
 };

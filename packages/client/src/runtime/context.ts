@@ -97,6 +97,17 @@ type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
 };
 
 /**
+ * The host-owned lifecycle of the framework subsystems wired by
+ * `initialize/framework-services.ts`. `refreshRuntimeConfig` re-contributes the
+ * `runtime.config` service after a config reload; `close` releases the
+ * framework resources (workspace watcher, config contribution) at dispose.
+ */
+export type FrameworkServices = {
+  refreshRuntimeConfig(): void;
+  close(): void;
+};
+
+/**
  * Every mutable and shared value the runtime carries. The composition root
  * (`runtime/main.ts`) creates this once; modules read it through `ctx.state`.
  */
@@ -148,7 +159,8 @@ export type RuntimeState = {
   sessionPersistence: Promise<void>;
   nativeRuntimeID: string;
   tsRuntimeConfig?: ConfigV3;
-  buildBuiltinPluginCatalog: (config: ConfigV3) => unknown[];
+  buildRuntimePluginCatalog: (config: ConfigV3) => unknown[];
+  frameworkServices?: FrameworkServices;
   contextWindowResolver: ContextWindowResolver;
   runtimeContextConfig: RuntimeContextStatusConfig;
   retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];

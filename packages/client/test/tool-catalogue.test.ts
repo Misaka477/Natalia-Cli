@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
 import {
-  builtinToolNames,
+  runtimeToolNames,
   createToolRegistryFromCapabilities,
 } from "../src/capabilities/tool-family-capabilities";
 
@@ -191,7 +191,7 @@ const migratedPluginTools = new Set([
 
 test("the public tool catalogue retains migrated plugin tool names", () => {
   for (const name of migratedPluginTools)
-    expect(builtinToolNames()).toContain(name);
+    expect(runtimeToolNames()).toContain(name);
 });
 
 test("the static tool catalogue contains only unmigrated tools", () => {

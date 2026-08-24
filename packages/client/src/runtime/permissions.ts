@@ -249,9 +249,7 @@ export function createPermissions(
         ? "skills"
         : toolName.startsWith("mcp_")
           ? "mcp"
-          : toolName.startsWith("plugin_")
-            ? "plugins"
-            : undefined;
+          : undefined;
     if (!extension || extensionEnabled(extension, profile))
       return { allowed: true, diagnostics: [] };
     const source =

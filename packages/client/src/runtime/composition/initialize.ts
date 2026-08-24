@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import { agentsFromConfig } from "@natalia/agent";
-import {
-  builtinPluginCatalog,
-  computeBuiltinFeatureGates,
-  computeBuiltinPluginGates,
-} from "@natalia/builtin-plugins";
+import { runtimePluginCatalog } from "../plugin-config";
 import { resolveConfig } from "@natalia/config";
 import {
   contextEntriesToProviderMessages,
@@ -56,7 +52,8 @@ import {
   evaluatePermissionProfileCommandRules,
 } from "@natalia/tools";
 import { effectiveFlowPermissions, moduleToolPolicy } from "@natalia/workflow";
-import { mountPlugins } from "../../builtin-mount";
+import { mountPlugins } from "../../plugin-mount";
+import { wireFrameworkServices } from "../initialize/framework-services";
 import { createInitialize } from "../initialize";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -89,15 +86,10 @@ export function wireInitialize(
     reloadPermissionSettings: features.permissions.reloadPermissionSettings,
     skillsPluginInput: features.pluginAssembly.skillsPluginInput,
     localToolsPluginInput: features.pluginAssembly.localToolsPluginInput,
-    workspacePluginInput: features.pluginAssembly.workspacePluginInput,
-    terminalPluginInput: features.pluginAssembly.terminalPluginInput,
-    sandboxPluginInput: features.pluginAssembly.sandboxPluginInput,
     mcpPluginInput: features.pluginAssembly.mcpPluginInput,
-    compactionPluginInput: features.pluginAssembly.compactionPluginInput,
     providerModelPluginInput: features.pluginAssembly.providerModelPluginInput,
-    builtinPluginCatalog,
-    computeBuiltinFeatureGates,
-    computeBuiltinPluginGates,
+    runtimePluginCatalog,
+    wireFrameworkServices,
     capabilityRegistry: state.capabilityRegistry,
     workspaceCapabilityView: state.workspaceCapabilityView,
     waiterDeps: state.waiterDeps,
@@ -138,7 +130,7 @@ export function wireInitialize(
     drainSession,
     projectInteractiveRequests,
     contextStatusEvent,
-    publishBuiltinCapabilities: features.toolPublish.publishBuiltinCapabilities,
+    publishRuntimeCapabilities: features.toolPublish.publishRuntimeCapabilities,
     publishRegisteredTools: features.toolPublish.publishRegisteredTools,
     ProviderConcurrencyLimiter,
     serviceNames: {

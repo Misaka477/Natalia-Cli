@@ -10,10 +10,25 @@ import { agentsFromConfig } from "@natalia/agent";
 import { resolveConfig } from "@natalia/config";
 import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
+import {
+  CHECKPOINT_FACTORY_SERVICE,
+  type CheckpointFactory,
+} from "@natalia/runtime-services";
 import type { ConfigV3, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
-import { defaultDesiredEntries } from "../builtin-mount";
+
+/**
+ * The checkpoint factory owns per-session controllers; a config reload must
+ * reset them so the next initialization reads the new checkpoint settings.
+ */
+function resetCheckpointFactory(ctx: RuntimeContext) {
+  ctx.ports
+    .resolveService<
+      CheckpointFactory & { close?(): void }
+    >(CHECKPOINT_FACTORY_SERVICE)
+    ?.close?.();
+}
 
 export function createConfigReload(
   ctx: RuntimeContext,
@@ -118,7 +133,7 @@ export function createConfigReload(
       modelRefKeyForSelection,
       runPluginLifecyclePostReconcile,
       publishToolCatalogChanges,
-      buildBuiltinPluginCatalog,
+      buildRuntimePluginCatalog,
     } = ctx.ports;
     const workspaceRoot = getWorkspaceRoot();
     const previous = captureReloadState();
@@ -128,6 +143,8 @@ export function createConfigReload(
         globalPath: options.globalConfigPath,
       });
       setTsRuntimeConfig(tsConfig.config);
+      ctx.state.frameworkServices?.refreshRuntimeConfig();
+      resetCheckpointFactory(ctx);
       setMaxSteps(tsConfig.config.runtime.maxStepsPerTurn);
       setRetryPolicy({
         maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
@@ -169,9 +186,7 @@ export function createConfigReload(
           exec.activeSkill ? [[id, exec.activeSkill.qualifiedName]] : [],
         ),
       );
-      const defaults = defaultDesiredEntries(
-        buildBuiltinPluginCatalog(tsConfig.config),
-      );
+      const defaults = buildRuntimePluginCatalog(tsConfig.config);
       await getPluginsController().reconcileDesired(
         defaults,
         tsConfig.config.plugins,
@@ -276,6 +291,8 @@ export function createConfigReload(
   ) {
     const ports = ctx.ports;
     ports.setTsRuntimeConfig(previous.config);
+    ctx.state.frameworkServices?.refreshRuntimeConfig();
+    resetCheckpointFactory(ctx);
     ports.setMaxSteps(previous.maxSteps);
     ports.setRetryPolicy(previous.retryPolicy);
     ports.setProviderConcurrencyLimiter(previous.limiter);
@@ -299,9 +316,7 @@ export function createConfigReload(
     }
     ports.applyAgentPolicy();
     if (!previous.config) return;
-    const defaults = defaultDesiredEntries(
-      ports.buildBuiltinPluginCatalog(previous.config),
-    );
+    const defaults = ports.buildRuntimePluginCatalog(previous.config);
     await ports
       .getPluginsController()
       .reconcileDesired(defaults, previous.config.plugins);

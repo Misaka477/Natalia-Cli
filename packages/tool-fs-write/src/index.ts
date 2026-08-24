@@ -2,7 +2,7 @@
  * The write filesystem tool family, split out of `tool-fs` by read/write
  * boundary (2026-08-21): these tools write the workspace, take the write lock,
  * are `requiresApproval: true` and carry the write-path permission rules. The
- * read half lives in `@natalia/tool-fs-read`.
+ * read half lives in `@natalia/plugin-tool-fs-read`.
  *
  * Depends on the framework only for the tool-authoring surface and knows
  * nothing about the runtime or the capability kernel.

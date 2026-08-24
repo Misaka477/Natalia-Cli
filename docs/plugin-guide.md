@@ -11,6 +11,16 @@ use the same registry, declared names, permissions, dependency resolution, and
 load/unload lifecycle. A runtime default is only distribution configuration; it
 does not receive a privileged API or a separate lifecycle.
 
+Plugins do not wrap Natalia's own framework. Agent turn/step execution,
+providers and model selection, sessions and configuration, transport/SDK/daemon,
+CLI/TUI hosts, permissions and approval, sandbox, checkpoint, engineering
+intelligence, workspace, runtime status, and diagnostics are constructed and
+owned directly by the runtime or host. They have no plugin manifest, unloadable
+plugin ID, `plugins.enabled` gate, or plugin-catalog entry. A package is a plugin
+only when removing it leaves the runtime's core semantics complete. Independent
+model tools and UI adapters can therefore be plugins, but they do not own the
+corresponding framework controller lifecycle.
+
 Plugins are trusted code. They are imported into the runtime process without a
 VM, filesystem sandbox, network sandbox, or execution timeout. Manifest
 `integrationPoints` govern contribution ownership and validation, not process

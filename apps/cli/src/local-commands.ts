@@ -22,8 +22,7 @@ import {
 import {
   createWorkflowExecutionStoreService,
   createWorkflowStoreService,
-} from "@natalia/task-workflow-plugin";
-import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
+} from "@natalia/plugin-task-workflow";
 import type {
   EpisodeID,
   EvaluatorResult,
@@ -57,10 +56,6 @@ import {
   runtimeDaemonStatus,
   stopRuntimeDaemon,
 } from "@natalia/transport/host";
-import {
-  createHttpTransportPluginHost,
-  TRANSPORT_PLUGIN_ID,
-} from "./transport-plugin";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import {

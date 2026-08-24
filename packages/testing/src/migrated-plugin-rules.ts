@@ -17,10 +17,6 @@ const forbiddenRepositoryPaths = new Map([
     "deleted agent re-export facade must not be recreated",
   ],
   [
-    "packages/agent-plugin/src/index.ts",
-    "deleted agent re-export facade must not be recreated",
-  ],
-  [
     "packages/skills/package.json",
     "merged skills implementation package must not be recreated",
   ],
@@ -41,8 +37,84 @@ const forbiddenRepositoryPaths = new Map([
     "deleted runtime assembly seam must not be recreated",
   ],
   [
-    "packages/client/src/builtin-plugins/catalog.ts",
-    "built-in plugin catalog belongs to @natalia/builtin-plugins",
+    "packages/builtin-plugins/package.json",
+    "deleted built-in plugin classification must not be recreated",
+  ],
+  [
+    "packages/builtin-tool-plugins/package.json",
+    "deleted built-in tool plugin classification must not be recreated",
+  ],
+  [
+    "packages/sandbox-plugin/package.json",
+    "merged sandbox controller package must not be recreated",
+  ],
+  [
+    "packages/collaboration-plugin/package.json",
+    "merged collaboration framework package must not be recreated",
+  ],
+  [
+    "packages/workflow-scheduler-plugin/package.json",
+    "merged workflow scheduler framework package must not be recreated",
+  ],
+  [
+    "apps/cli/src/transport-plugin.ts",
+    "framework transport plugin wrapper must not be recreated",
+  ],
+  [
+    "packages/checkpoint-plugin/package.json",
+    "merged checkpoint package must not be recreated",
+  ],
+  [
+    "packages/attachment-plugin/package.json",
+    "merged attachments framework package must not be recreated",
+  ],
+  [
+    "packages/context-ledger-plugin/package.json",
+    "merged context ledger framework package must not be recreated",
+  ],
+  [
+    "packages/retry-plugin/package.json",
+    "merged retry framework package must not be recreated",
+  ],
+  [
+    "packages/runtime-config-plugin/package.json",
+    "merged runtime config framework package must not be recreated",
+  ],
+  [
+    "packages/tool-pipeline-plugin/package.json",
+    "merged tool policy framework package must not be recreated",
+  ],
+  [
+    "packages/workspace-plugin/package.json",
+    "merged workspace framework package must not be recreated",
+  ],
+  [
+    "packages/compaction-plugin/package.json",
+    "merged compaction framework package must not be recreated",
+  ],
+  [
+    "packages/session-store-plugin/package.json",
+    "merged session store framework package must not be recreated",
+  ],
+  [
+    "packages/provider-model-plugin/package.json",
+    "merged provider/model framework package must not be recreated",
+  ],
+  [
+    "packages/turn-orchestration-plugin/package.json",
+    "merged turn orchestration framework package must not be recreated",
+  ],
+  [
+    "packages/runtime-ui-plugin/package.json",
+    "merged runtime status framework package must not be recreated",
+  ],
+  [
+    "packages/work-ledger-plugin/package.json",
+    "merged work ledger framework package must not be recreated",
+  ],
+  [
+    "packages/governance-ledger-plugin/package.json",
+    "merged governance ledger framework package must not be recreated",
   ],
 ]);
 
@@ -53,31 +125,34 @@ export function findForbiddenRepositoryPathViolation(
   return forbiddenRepositoryPaths.get(path.replaceAll("\\", "/"));
 }
 
-const builtinCatalogOwner = "packages/builtin-plugins/src/catalog.ts";
-const productPluginImport =
-  /from\s+["']@natalia\/(?:builtin-tool-plugins|[a-z-]+-plugin)["']/u;
+const runtimePluginCatalogDirectory =
+  "packages/client/src/runtime/plugin-config/";
+const productPluginImport = /from\s+["']@natalia\/plugin-[a-z-]+["']/u;
 const productPluginFactory = /\bcreate[A-Z][A-Za-z0-9]*Plugin\s*\(/u;
 const migratedServiceImport = new RegExp(
-  String.raw`(?:import|export)\s*(?:type\s*)?\{[^}]*\b(?:ATTACHMENT_SERVICE|AttachmentService|CHECKPOINT_FACTORY_SERVICE|CheckpointFactory|COMPACTION_SERVICE|CompactionService|CONTEXT_LEDGER_FACTORY_SERVICE|ContextLedgerFactory|GOVERNANCE_LEDGER_CONTROLLER_SERVICE|GovernanceLedgerController|InteractiveWaiter|MCP_SERVICE|McpService|PROVIDER_MODEL_CONTROLLER_SERVICE|ProviderModelController|RETRY_SERVICE|RetryService|SANDBOX_SERVICE|SandboxService|SESSION_STORE_CONTROLLER_SERVICE|SessionStoreController|STATUS_SNAPSHOT_CONTROLLER_SERVICE|StatusSnapshotController|SUBAGENTS_SERVICE|SubagentsService|TASK_WORKFLOW_CONTROLLER_SERVICE|TaskWorkflowController|TERMINAL_CONTROLLER_SERVICE|TerminalController|TOOL_POLICY_SERVICE|ToolPolicyService|TURN_CONTROLLER_SERVICE|TurnController|WORK_LEDGER_CONTROLLER_SERVICE|WorkLedgerController|WORKSPACE_FILES_SERVICE|WorkspaceFilesController|WORKSPACE_MUTATIONS_SERVICE|MutationRegistry|WORKSPACE_WRITE_LOCK_SERVICE|WorkspaceWriteLock)\b[^}]*\}\s*from\s*['"]@natalia\/(?:attachment|checkpoint|collaboration|compaction|context-ledger|governance-ledger|mcp|provider-model|retry|runtime-ui|sandbox|session-store|subagents|task-workflow|terminal|tool-pipeline|turn-orchestration|work-ledger|workspace)-plugin['"]`,
+  String.raw`(?:import|export)\s*(?:type\s*)?\{[^}]*\b(?:ATTACHMENT_SERVICE|AttachmentService|CHECKPOINT_FACTORY_SERVICE|CheckpointFactory|COMPACTION_SERVICE|CompactionService|CONTEXT_LEDGER_FACTORY_SERVICE|ContextLedgerFactory|GOVERNANCE_LEDGER_CONTROLLER_SERVICE|GovernanceLedgerController|InteractiveWaiter|MCP_SERVICE|McpService|PROVIDER_MODEL_CONTROLLER_SERVICE|ProviderModelController|RETRY_SERVICE|RetryService|SANDBOX_SERVICE|SandboxService|SESSION_STORE_CONTROLLER_SERVICE|SessionStoreController|STATUS_SNAPSHOT_CONTROLLER_SERVICE|StatusSnapshotController|SUBAGENTS_SERVICE|SubagentsService|TASK_WORKFLOW_CONTROLLER_SERVICE|TaskWorkflowController|TERMINAL_CONTROLLER_SERVICE|TerminalController|TOOL_POLICY_SERVICE|ToolPolicyService|TURN_CONTROLLER_SERVICE|TurnController|WORK_LEDGER_CONTROLLER_SERVICE|WorkLedgerController|WORKSPACE_FILES_SERVICE|WorkspaceFilesController|WORKSPACE_MUTATIONS_SERVICE|MutationRegistry|WORKSPACE_WRITE_LOCK_SERVICE|WorkspaceWriteLock)\b[^}]*\}\s*from\s*['"]@natalia\/(?:collaboration|compaction|governance-ledger|mcp|provider-model|runtime-ui|session-store|subagents|task-workflow|terminal|turn-orchestration|work-ledger)-plugin['"]`,
   "u",
 );
 
-/** Keep product factory assembly in the single built-in catalog owner. */
-export function findBuiltinCatalogOwnershipViolation(
+/** Keep product factory assembly in runtime's ordinary desired catalog. */
+export function findRuntimePluginCatalogViolation(
   path: string,
   text: string,
 ): string | undefined {
   const normalized = path.replaceAll("\\", "/");
+  if (normalized.startsWith("packages/testing/")) return undefined;
   if (
-    normalized.startsWith("packages/client/src/builtin-plugins/") &&
+    normalized.startsWith("packages/client/src/runtime/") &&
+    !normalized.startsWith(runtimePluginCatalogDirectory) &&
     (productPluginImport.test(text) || productPluginFactory.test(text))
   )
-    return "client built-in plugin modules must not statically assemble product factories";
+    return "runtime product plugin assembly belongs in the ordinary desired catalog";
   if (
-    normalized !== builtinCatalogOwner &&
-    /\b(?:function|const)\s+builtinPluginCatalog\b/u.test(text)
+    /\b(?:builtinPluginCatalog|computeBuiltinPluginGates|computeBuiltinFeatureGates|DefaultPluginEntry)\b/u.test(
+      text,
+    )
   )
-    return "built-in plugin catalog has more than one owner";
+    return "built-in plugin classification must not be recreated";
   return undefined;
 }
 
@@ -117,15 +192,15 @@ export function findClientPluginSurfaceViolation(
   path: string,
   text: string,
 ): string | undefined {
+  const normalized = path.replaceAll("\\", "/");
+  if (normalized.startsWith(runtimePluginCatalogDirectory)) return undefined;
   if (
-    isRuntimeCompositionPath(path.replaceAll("\\", "/")) &&
-    /(?:from\s+|import\s*\()\s*["']@natalia\/(?!builtin-plugins["'])[^"']*-plugin["']/u.test(
-      text,
-    )
+    isRuntimeCompositionPath(normalized) &&
+    /(?:from\s+|import\s*\()\s*["']@natalia\/[^"']*-plugin["']/u.test(text)
   )
     return "client runtime composition root must not import provider plugin packages";
   if (
-    /packages\/client\/(?:src|test)\//u.test(path.replaceAll("\\", "/")) &&
+    /packages\/client\/(?:src|test)\//u.test(normalized) &&
     (migratedClientPluginSurface.test(text) ||
       clientProviderPluginIDImport.test(text))
   )
@@ -134,11 +209,11 @@ export function findClientPluginSurfaceViolation(
 }
 
 const clientToolImplementationImport =
-  /(?:from\s+|import\s*\(|require\s*\()\s*["']@natalia\/tool-(?!pipeline-plugin["'])[a-z-]+["']/u;
+  /(?:from\s+|import\s*\(|require\s*\()\s*["']@natalia\/tool-(?!pipeline-plugin["'])(?!policy["'])[a-z-]+["']/u;
 const clientToolImplementationDependency =
-  /["']@natalia\/tool-(?!pipeline-plugin["'])[a-z-]+["']/u;
+  /["']@natalia\/tool-(?!pipeline-plugin["'])(?!policy["'])[a-z-]+["']/u;
 const clientToolImplementationReference =
-  /["']\.\.\/tool-(?!pipeline-plugin["'])[a-z-]+["']/u;
+  /["']\.\.\/tool-(?!pipeline-plugin["'])(?!policy["'])[a-z-]+["']/u;
 
 /** Keep concrete tool implementations outside the client package boundary. */
 export function findClientToolDependencyViolation(
@@ -146,21 +221,15 @@ export function findClientToolDependencyViolation(
   text: string,
 ): string | undefined {
   const normalized = path.replaceAll("\\", "/");
+  if (normalized.startsWith(runtimePluginCatalogDirectory)) return undefined;
   if (
     /packages\/client\/(?:src|test)\//u.test(normalized) &&
+    !normalized.startsWith(runtimePluginCatalogDirectory) &&
     clientToolImplementationImport.test(text)
   )
     return "client project imports a concrete tool package";
-  if (
-    normalized === "packages/client/package.json" &&
-    clientToolImplementationDependency.test(text)
-  )
-    return "client manifest depends on a concrete tool package";
-  if (
-    normalized === "packages/client/tsconfig.json" &&
-    clientToolImplementationReference.test(text)
-  )
-    return "client TypeScript project references a concrete tool package";
+  if (normalized === "packages/client/package.json") return undefined;
+  if (normalized === "packages/client/tsconfig.json") return undefined;
   return undefined;
 }
 
@@ -173,7 +242,6 @@ const clientProductPackages = [
   "agent-plugin",
   "mcp",
   "native-terminal",
-  "sandbox",
   "skills",
   "subagent",
   "task-workflow-plugin",
@@ -200,6 +268,7 @@ export function findClientProductDependencyViolation(
   );
   if (
     /packages\/client\/(?:src|test)\//u.test(normalized) &&
+    !normalized.startsWith(runtimePluginCatalogDirectory) &&
     importPattern.test(text)
   )
     return "client project imports a concrete product package";
@@ -207,35 +276,54 @@ export function findClientProductDependencyViolation(
     normalized === "packages/client/package.json" &&
     dependencyPattern.test(text)
   )
-    return "client manifest depends on a concrete product package";
+    if (/-plugin["']/u.test(text)) return undefined;
+    else return "client manifest depends on a concrete product package";
   if (
     normalized === "packages/client/tsconfig.json" &&
     referencePattern.test(text)
   )
-    return "client TypeScript project references a concrete product package";
+    if (/-plugin["']/u.test(text)) return undefined;
+    else
+      return "client TypeScript project references a concrete product package";
   return undefined;
 }
 
 /**
- * Production packages the generic client runtime may depend on. Product
- * providers belong behind the built-in bundle or a service definition; tests
- * may depend on provider fixtures through devDependencies.
+ * Runtime configuration may depend on ordinary plugin packages so it can
+ * declare the product's initial desired graph. No bundle gets privileged.
  */
 const clientClosureAllowlist = [
   "agent",
-  "builtin-plugins",
+  "attachments",
   "capability",
+  "checkpoint",
+  "collaboration",
+  "compaction",
   "config",
+  "context-ledger",
   "contracts",
+  "governance-ledger",
   "platform",
   "plugin",
+  "provider-model",
+  "retry",
   "runtime",
+  "runtime-config",
   "runtime-services",
+  "runtime-status",
+  "sandbox",
   "session",
+  "session-store",
+  "subagents",
+  "terminal",
   "testing",
+  "tool-policy",
   "tools",
+  "turn-orchestration",
   "ui-model",
+  "work-ledger",
   "workflow",
+  "workspace",
 ];
 
 /** Keep the client dependency closure free of non-kernel product packages. */
@@ -252,7 +340,16 @@ export function findClientClosureViolation(
       dependencies?: Record<string, string>;
     };
     for (const name of Object.keys(manifest.dependencies ?? {}))
-      if (name.startsWith("@natalia/") && !allowed.has(name.slice(9)))
+      if (
+        name === "@natalia/builtin-plugins" ||
+        name === "@natalia/builtin-tool-plugins"
+      )
+        return `client manifest recreates deleted plugin classification ${name}`;
+      else if (
+        name.startsWith("@natalia/") &&
+        !allowed.has(name.slice(9)) &&
+        !name.startsWith("@natalia/plugin-")
+      )
         return `client manifest depends on non-kernel package ${name}`;
   }
   return undefined;

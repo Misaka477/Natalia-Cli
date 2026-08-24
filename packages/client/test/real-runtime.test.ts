@@ -15,10 +15,12 @@ import { createToolRegistry } from "@natalia/tools";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
+  CHECKPOINT_FACTORY_SERVICE,
   COMPACTION_SERVICE,
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   TERMINAL_CONTROLLER_SERVICE,
+  TURN_CONTROLLER_SERVICE,
   WORKSPACE_FILES_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
   WORKSPACE_WRITE_LOCK_SERVICE,
@@ -35,21 +37,14 @@ import {
   pluginSdkImportPath,
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
-import { toolCallNodeID } from "@natalia/work-ledger-plugin";
+import { toolCallNodeID } from "@natalia/work-ledger";
 import {
-  CHECKPOINT_PLUGIN_ID,
-  COMPACTION_PLUGIN_ID,
   MCP_PLUGIN_ID,
   PDF_PLUGIN_ID,
-  PROVIDER_MODEL_PLUGIN_ID,
-  SANDBOX_CONTROLLER_PLUGIN_ID,
-  SESSION_STORE_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
   TEAM_PLUGIN_ID,
-  TERMINAL_CONTROLLER_PLUGIN_ID,
   TODO_PLUGIN_ID,
-  WORKSPACE_PLUGIN_ID,
-} from "@natalia/builtin-plugins";
+} from "../src/runtime/plugin-config";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
@@ -143,7 +138,7 @@ test("real runtime client streams provider output and persists replayable sessio
   ).toBe(true);
 });
 
-test("disabled provider-model plugin constructs no provider loop or chat task", async () => {
+test("provider-model subsystem ignores plugins.enabled and always provides the controller", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-provider-model-disabled-"),
   );
@@ -166,24 +161,17 @@ test("disabled provider-model plugin constructs no provider loop or chat task", 
       model: "test",
       async *stream() {
         streams += 1;
-        yield { type: "content" as const, text: "unexpected" };
+        yield { type: "content" as const, text: "ok" };
       },
     },
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("do not run");
-  expect(streams).toBe(0);
-  expect(kernel.has("natalia-provider-model")).toBe(false);
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "diagnostic",
-      message: "Provider/model plugin is disabled.",
-    }),
-  );
-  expect(await client.chatSubmit!({ text: "do not chat" })).toEqual({
-    messageID: "",
-  });
+  await client.submit("run");
+  await waitFor(() => streams === 1);
+  // Framework subsystem: present even when plugins.enabled says otherwise.
+  expect(kernel.has("natalia-provider-model")).toBe(true);
+  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeDefined();
   await client.dispose?.();
 });
 
@@ -212,16 +200,21 @@ test("disabled task-workflow plugin constructs no service or task storage", asyn
   await client.dispose?.();
 });
 
-for (const [pluginID, expectedError] of [
-  ["natalia-attachment", "attachment service unavailable"],
-  ["natalia-retry", "retry service unavailable"],
-  ["natalia-compaction", "compaction service unavailable"],
-  ["natalia-runtime-ui", "runtime UI unavailable"],
-  ["natalia-context-ledger", "context ledger unavailable"],
-  ["natalia-work-ledger", "work ledger unavailable"],
-  ["natalia-governance-ledger", "governance ledger unavailable"],
+for (const [pluginID, serviceID, errorText] of [
+  ["natalia-compaction", COMPACTION_SERVICE, "compaction service unavailable"],
+  [
+    "natalia-runtime-ui",
+    "status.snapshot.controller",
+    "runtime UI unavailable",
+  ],
+  ["natalia-work-ledger", "work-ledger.controller", "work ledger unavailable"],
+  [
+    "natalia-governance-ledger",
+    "governance-ledger.controller",
+    "governance ledger unavailable",
+  ],
 ] as const)
-  test(`disabled required ${pluginID} fails closed without a service`, async () => {
+  test(`framework subsystem ${pluginID} is present even when plugins.enabled disables it`, async () => {
     const root = await mkdtemp(join(tmpdir(), `${pluginID}-disabled-`));
     await mkdir(join(root, ".natalia"), { recursive: true });
     await writeFile(
@@ -238,16 +231,14 @@ for (const [pluginID, expectedError] of [
       capabilityRegistry: kernel,
     });
     client.start(() => undefined);
-    await expect(client.history!()).rejects.toThrow(expectedError);
-    expect(kernel.has(pluginID)).toBe(false);
-    if (pluginID === "natalia-attachment") {
-      expect(existsSync(join(root, ".natalia", "sessions"))).toBe(false);
-      expect(existsSync(join(root, ".natalia", "attachments"))).toBe(false);
-    }
+    await client.runtimeStatus?.();
+    expect(kernel.has(pluginID)).toBe(true);
+    expect(kernel.service(serviceID)).toBeDefined();
+    await expect(client.history!()).resolves.toBeDefined();
     await client.dispose?.();
   });
 
-test("disabled turn orchestration fails before session or inbox initialization", async () => {
+test("turn orchestration subsystem is present even when plugins.enabled disables it", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-turn-orchestration-disabled-"),
   );
@@ -266,11 +257,10 @@ test("disabled turn orchestration fails before session or inbox initialization",
     capabilityRegistry: kernel,
   });
   client.start(() => undefined);
-  await expect(client.submit("must not be admitted")).rejects.toThrow(
-    "turn orchestration unavailable",
-  );
-  expect(kernel.has("natalia-turn-orchestration")).toBe(false);
-  expect(existsSync(join(root, ".natalia", "sessions"))).toBe(false);
+  await client.runtimeStatus?.();
+  expect(kernel.has("natalia-turn-orchestration")).toBe(true);
+  expect(kernel.service(TURN_CONTROLLER_SERVICE)).toBeDefined();
+  expect(existsSync(join(root, ".natalia", "sessions"))).toBe(true);
   await client.dispose?.();
 });
 
@@ -1478,17 +1468,19 @@ test("user plugin config reload reconciles its lifecycle", async () => {
   await client.dispose?.();
 }, 60_000);
 
-test("workspace plugin config reload reconciles its services", async () => {
+test("workspace framework services are always present and stable across reloads", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-workspace-config-reload-"),
   );
   await mkdir(join(root, ".natalia"), { recursive: true });
   const configPath = join(root, ".natalia", "config.json");
-  const disabledConfig = {
-    version: 3,
-    plugins: { enabled: { [WORKSPACE_PLUGIN_ID]: false } },
-  };
-  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-workspace": false } },
+    }),
+  );
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -1499,60 +1491,45 @@ test("workspace plugin config reload reconciles its services", async () => {
   client.start(() => undefined);
   await client.runtimeStatus?.();
 
-  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeUndefined();
-  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeUndefined();
-  expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeUndefined();
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(true);
-  const firstWriteLock = kernel.service(WORKSPACE_WRITE_LOCK_SERVICE);
-  const firstMutations = kernel.service(WORKSPACE_MUTATIONS_SERVICE);
-  const firstFiles = kernel.service(WORKSPACE_FILES_SERVICE);
-  expect(firstWriteLock).toBeDefined();
-  expect(firstMutations).toBeDefined();
-  expect(firstFiles).toBeDefined();
-
-  await writeFile(
-    configPath,
-    JSON.stringify({
-      version: 3,
-      plugins: { settings: { [WORKSPACE_PLUGIN_ID]: { generation: 2 } } },
-    }),
+  // The workspace subsystem is framework-internal: it is not gated by
+  // plugins.enabled and is present on first boot.
+  expect(kernel.ownerOf("services", WORKSPACE_WRITE_LOCK_SERVICE)).toBe(
+    "natalia-workspace",
   );
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).not.toBe(firstWriteLock);
-  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).not.toBe(firstMutations);
-  expect(kernel.service(WORKSPACE_FILES_SERVICE)).not.toBe(firstFiles);
-
-  await writeFile(configPath, JSON.stringify(disabledConfig));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeUndefined();
-  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeUndefined();
-  expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeUndefined();
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(WORKSPACE_PLUGIN_ID)).toBe(true);
   expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeDefined();
   expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeDefined();
   expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeDefined();
+
+  const firstWriteLock = kernel.service<object>(WORKSPACE_WRITE_LOCK_SERVICE);
+  const firstMutations = kernel.service<object>(WORKSPACE_MUTATIONS_SERVICE);
+  const firstFiles = kernel.service<object>(WORKSPACE_FILES_SERVICE);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  // Framework services survive reload: same instances, no teardown/recreate.
+  expect(kernel.service<object>(WORKSPACE_WRITE_LOCK_SERVICE)).toBe(
+    firstWriteLock,
+  );
+  expect(kernel.service<object>(WORKSPACE_MUTATIONS_SERVICE)).toBe(
+    firstMutations,
+  );
+  expect(kernel.service<object>(WORKSPACE_FILES_SERVICE)).toBe(firstFiles);
   await client.dispose?.();
 }, 60_000);
 
-test("provider-model plugin config reload reconciles its controller", async () => {
+test("provider-model framework service is always present and stable across reloads", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-provider-model-config-reload-"),
   );
   await mkdir(join(root, ".natalia"), { recursive: true });
   const configPath = join(root, ".natalia", "config.json");
-  const disabledConfig = {
-    version: 3,
-    plugins: { enabled: { [PROVIDER_MODEL_PLUGIN_ID]: false } },
-  };
-  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-provider-model": false } },
+    }),
+  );
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -1563,57 +1540,38 @@ test("provider-model plugin config reload reconciles its controller", async () =
   client.start(() => undefined);
   await client.runtimeStatus?.();
 
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeUndefined();
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(true);
+  // The provider-model subsystem is framework-internal: it is not gated by
+  // plugins.enabled and is present on first boot.
+  expect(kernel.ownerOf("services", PROVIDER_MODEL_CONTROLLER_SERVICE)).toBe(
+    "natalia-provider-model",
+  );
   const firstController = kernel.service<ProviderModelController>(
     PROVIDER_MODEL_CONTROLLER_SERVICE,
   );
   expect(firstController).toBeDefined();
 
-  await writeFile(
-    configPath,
-    JSON.stringify({
-      version: 3,
-      plugins: {
-        settings: { [PROVIDER_MODEL_PLUGIN_ID]: { generation: 2 } },
-      },
-    }),
-  );
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).not.toBe(
-    firstController,
-  );
-  await expect(
-    firstController!.runTurn("ses_provider_model_config_reload", {} as never),
-  ).rejects.toThrow("provider/model controller disposed");
-
-  await writeFile(configPath, JSON.stringify(disabledConfig));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeUndefined();
-
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(true);
-  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeDefined();
+  // Framework services survive reload: same instance, no teardown/recreate.
+  expect(
+    kernel.service<ProviderModelController>(PROVIDER_MODEL_CONTROLLER_SERVICE),
+  ).toBe(firstController);
   await client.dispose?.();
 }, 60_000);
 
-test("compaction plugin config reload reconciles its dependency closure", async () => {
+test("compaction framework service is always present and stable across reloads", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-compaction-config-reload-"),
   );
   await mkdir(join(root, ".natalia"), { recursive: true });
   const configPath = join(root, ".natalia", "config.json");
-  const disabledConfig = {
-    version: 3,
-    plugins: { enabled: { [COMPACTION_PLUGIN_ID]: false } },
-  };
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-compaction": false } },
+    }),
+  );
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -1624,57 +1582,33 @@ test("compaction plugin config reload reconciles its dependency closure", async 
   client.start(() => undefined);
   await client.runtimeStatus?.();
 
-  expect(kernel.has(COMPACTION_PLUGIN_ID)).toBe(true);
-  const firstService = kernel.service(COMPACTION_SERVICE);
+  expect(kernel.ownerOf("services", COMPACTION_SERVICE)).toBe(
+    "natalia-compaction",
+  );
+  expect(kernel.ownerOf("services", PROVIDER_MODEL_CONTROLLER_SERVICE)).toBe(
+    "natalia-provider-model",
+  );
+  const firstService = kernel.service<object>(COMPACTION_SERVICE);
   expect(firstService).toBeDefined();
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(true);
   const firstController = kernel.service<ProviderModelController>(
     PROVIDER_MODEL_CONTROLLER_SERVICE,
   );
   expect(firstController).toBeDefined();
 
-  await writeFile(
-    configPath,
-    JSON.stringify({
-      version: 3,
-      plugins: {
-        settings: { [COMPACTION_PLUGIN_ID]: { generation: 2 } },
-      },
-    }),
-  );
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service(COMPACTION_SERVICE)).not.toBe(firstService);
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(true);
-  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).not.toBe(
-    firstController,
-  );
-  await expect(
-    firstController!.runTurn("ses_compaction_config_reload", {} as never),
-  ).rejects.toThrow("provider/model controller disposed");
-
-  await writeFile(configPath, JSON.stringify(disabledConfig));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(COMPACTION_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(COMPACTION_SERVICE)).toBeUndefined();
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(false);
-
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(COMPACTION_PLUGIN_ID)).toBe(true);
-  expect(kernel.service(COMPACTION_SERVICE)).toBeDefined();
-  expect(kernel.has(PROVIDER_MODEL_PLUGIN_ID)).toBe(true);
+  expect(kernel.service<object>(COMPACTION_SERVICE)).toBe(firstService);
+  expect(
+    kernel.service<ProviderModelController>(PROVIDER_MODEL_CONTROLLER_SERVICE),
+  ).toBe(firstController);
   await client.dispose?.();
 }, 60_000);
 
-test("terminal plugin config reload preserves its host-owned registry", async () => {
+test("terminal framework config reload preserves its host-owned registry", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-config-reload-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
   const configPath = join(root, ".natalia", "config.json");
-  const disabledConfig = {
-    version: 3,
-    plugins: { enabled: { [TERMINAL_CONTROLLER_PLUGIN_ID]: false } },
-  };
-  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
   let stops = 0;
   const nativeTerminal = new NativeTerminalRegistry({
     kind: "wezterm",
@@ -1712,13 +1646,7 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
   client.start(() => undefined);
   await client.runtimeStatus?.();
 
-  expect(kernel.has(TERMINAL_CONTROLLER_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeUndefined();
-  expect(await client.nativeTerminalList?.()).toEqual([]);
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(TERMINAL_CONTROLLER_PLUGIN_ID)).toBe(true);
+  expect(kernel.has("natalia-terminal")).toBe(true);
   expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeDefined();
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "reload_terminal" },
@@ -1726,7 +1654,7 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
   await expect(client.nativeTerminalRead?.("reload_terminal")).resolves.toEqual(
     { id: "reload_terminal", text: "reload pane output" },
   );
-  const firstController = kernel.service(TERMINAL_CONTROLLER_SERVICE);
+  const firstController = kernel.service<object>(TERMINAL_CONTROLLER_SERVICE);
 
   await writeFile(
     configPath,
@@ -1736,24 +1664,14 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
     }),
   );
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).not.toBe(firstController);
+  expect(kernel.service<object>(TERMINAL_CONTROLLER_SERVICE)).toBe(
+    firstController,
+  );
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "reload_terminal" },
   ]);
   expect(stops).toBe(0);
 
-  await writeFile(configPath, JSON.stringify(disabledConfig));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(TERMINAL_CONTROLLER_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeUndefined();
-  expect(stops).toBe(0);
-  expect(await client.nativeTerminalList?.()).toEqual([]);
-  await expect(client.nativeTerminalRead?.("reload_terminal")).rejects.toThrow(
-    "Native Terminal Host is unavailable",
-  );
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "reload_terminal" },
   ]);
@@ -1761,7 +1679,7 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
   expect(stops).toBe(0);
 }, 60_000);
 
-test("checkpoint plugin config reload reconciles its lifecycle", async () => {
+test("checkpoint config reload reconciles its lifecycle", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-checkpoint-config-reload-"),
   );
@@ -1769,7 +1687,7 @@ test("checkpoint plugin config reload reconciles its lifecycle", async () => {
   const configPath = join(root, ".natalia", "config.json");
   const disabledConfig = {
     version: 3,
-    plugins: { enabled: { [CHECKPOINT_PLUGIN_ID]: false } },
+    checkpoint: { enabled: false },
   };
   await writeFile(configPath, JSON.stringify(disabledConfig));
   const kernel = new CapabilityRegistry();
@@ -1782,18 +1700,15 @@ test("checkpoint plugin config reload reconciles its lifecycle", async () => {
   });
   client.start((event) => events.push(event));
   await client.runtimeStatus?.();
-  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(false);
+  expect(kernel.service(CHECKPOINT_FACTORY_SERVICE)).toBeDefined();
   await client.submit("without checkpoint");
   expect(events.some((event) => event.type === "checkpoint.created")).toBe(
     false,
   );
-  await expect(client.checkpointList?.()).rejects.toThrow(
-    "checkpoint controller unavailable",
-  );
+  expect(await client.checkpointList?.()).toEqual([]);
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(true);
   await client.submit("with checkpoint");
   expect(events.some((event) => event.type === "checkpoint.created")).toBe(
     true,
@@ -1801,7 +1716,6 @@ test("checkpoint plugin config reload reconciles its lifecycle", async () => {
 
   await writeFile(configPath, JSON.stringify(disabledConfig));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(false);
   const checkpointCount = events.filter(
     (event) => event.type === "checkpoint.created",
   ).length;
@@ -1812,7 +1726,6 @@ test("checkpoint plugin config reload reconciles its lifecycle", async () => {
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(CHECKPOINT_PLUGIN_ID)).toBe(true);
   await client.submit("enabled again");
   expect(
     events.filter((event) => event.type === "checkpoint.created").length,
@@ -1935,15 +1848,11 @@ lines.on("line", (line) => {
   await client.dispose?.();
 }, 60_000);
 
-test("sandbox plugin config reload releases resources and reconciles team", async () => {
+test("sandbox subsystem composes directly and releases on dispose", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-config-reload-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
   const configPath = join(root, ".natalia", "config.json");
-  const disabledConfig = {
-    version: 3,
-    plugins: { enabled: { [SANDBOX_CONTROLLER_PLUGIN_ID]: false } },
-  };
-  await writeFile(configPath, JSON.stringify(disabledConfig));
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -1954,15 +1863,8 @@ test("sandbox plugin config reload releases resources and reconciles team", asyn
   client.start(() => undefined);
   await client.runtimeStatus?.();
 
-  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(false);
-  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(SANDBOX_SERVICE)).toBeUndefined();
-  await expect(client.sandboxList?.()).rejects.toThrow(
-    "sandbox controller unavailable",
-  );
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.service(SANDBOX_SERVICE)).toBeDefined();
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
   const first = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   await first.create("reload_box");
   const resource = await first.startResource(
@@ -1970,41 +1872,23 @@ test("sandbox plugin config reload releases resources and reconciles team", asyn
     "sleep 30",
     "reload_resource",
   );
-  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(true);
-  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
-
-  await writeFile(configPath, JSON.stringify(disabledConfig));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(false);
-  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(false);
-  expect(kernel.service(SANDBOX_SERVICE)).toBeUndefined();
-  await expect(first.list()).rejects.toThrow(
-    "sandbox manager is not initialized",
-  );
-  expect(
-    (await client.registeredTools?.())?.some((tool) =>
-      tool.name.startsWith("team_"),
-    ),
-  ).toBe(false);
-  await expect(client.sandboxList?.()).rejects.toThrow(
-    "sandbox controller unavailable",
-  );
-  await waitForProcessExit(resource.pid);
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(SANDBOX_CONTROLLER_PLUGIN_ID)).toBe(true);
-  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
-  const second = kernel.service<SandboxService>(SANDBOX_SERVICE);
-  expect(second).toBeDefined();
-  expect(second).not.toBe(first);
-  expect(await client.sandboxList?.()).toMatchObject([{ id: "reload_box" }]);
   expect(
     (await client.registeredTools?.())?.filter((tool) =>
       tool.name.startsWith("team_"),
     ),
   ).toHaveLength(2);
+
+  await writeFile(configPath, JSON.stringify({ version: 3 }));
+  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
+  expect(kernel.service<SandboxService>(SANDBOX_SERVICE)).toBe(first);
+  expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
+  expect(await client.sandboxList?.()).toMatchObject([{ id: "reload_box" }]);
+
   await client.dispose?.();
+  await expect(first.list()).rejects.toThrow(
+    "sandbox manager is not initialized",
+  );
+  await waitForProcessExit(resource.pid);
 }, 60_000);
 
 test("built-in tool plugin config reload reconciles its lifecycle", async () => {
@@ -5092,11 +4976,6 @@ test("sessions slash command reports durable event counts", async () => {
   expect(
     (await client.commandCatalog?.())?.map((command) => command.name),
   ).toContain("sessions");
-  expect(
-    (await client.plugins?.())?.find(
-      (plugin) => plugin.id === SESSION_STORE_PLUGIN_ID,
-    )?.capabilities,
-  ).toContain("commands");
 });
 
 test("model slash commands share catalog and durable selection behavior", async () => {

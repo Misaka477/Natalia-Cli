@@ -20,8 +20,8 @@ import {
 import {
   createWorkflowExecutionStoreService,
   createWorkflowStoreService,
-} from "@natalia/task-workflow-plugin";
-import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
+} from "@natalia/plugin-task-workflow";
+import { createWorkflowSchedulerHost } from "@natalia/workflow-scheduler";
 import type {
   EpisodeID,
   EvaluatorResult,
@@ -55,10 +55,7 @@ import {
   runtimeDaemonStatus,
   stopRuntimeDaemon,
 } from "@natalia/transport/host";
-import {
-  createHttpTransportPluginHost,
-  TRANSPORT_PLUGIN_ID,
-} from "./transport-plugin";
+import { createHttpTransportHost } from "./transport-host";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import {
@@ -110,14 +107,13 @@ export async function handleDaemonCommands(argv: string[]) {
       const port = Number(requestedPort ?? "8787");
       if (!Number.isInteger(port) || port < 0 || port > 65535)
         throw new Error("daemon requires a valid port");
-      const transportIsEnabled = await transportEnabled();
       const token = await daemonToken(store);
       const maxConcurrentTasks = Number(
         valueAfter(argv, "--max-concurrent-tasks") ?? "1",
       );
       if (!Number.isInteger(maxConcurrentTasks) || maxConcurrentTasks <= 0)
         throw new Error("daemon requires a positive --max-concurrent-tasks");
-      const taskSchedulerHost = await createWorkflowSchedulerPluginHost({
+      const taskSchedulerHost = createWorkflowSchedulerHost({
         globalConcurrency: maxConcurrentTasks,
         workspaceConcurrency: 1,
         queueTimeoutMs: Number(
@@ -157,11 +153,10 @@ export async function handleDaemonCommands(argv: string[]) {
           return await created;
         };
         const client = createRealRuntimeClient();
-        const transport = await createHttpTransportPluginHost({
+        const transport = createHttpTransportHost({
           client,
           port,
           token,
-          enabled: transportIsEnabled,
           taskExecution: true,
           // Delivery reuses the very same controller a one-shot run uses, so the
           // resident path cannot drift from it or bypass its policy.
@@ -241,14 +236,4 @@ export async function handleDaemonCommands(argv: string[]) {
     }
   }
   return true;
-}
-
-async function transportEnabled() {
-  const resolved = await resolveConfig({
-    workspaceRoot: process.cwd(),
-    ...(process.env.NATALIA_CONFIG
-      ? { globalPath: process.env.NATALIA_CONFIG }
-      : {}),
-  });
-  return resolved.config.plugins.enabled[TRANSPORT_PLUGIN_ID] !== false;
 }

@@ -14,6 +14,9 @@
     },
     {
       "path": "../object-store"
+    },
+    {
+      "path": "../tools"
     }
   ]
 }

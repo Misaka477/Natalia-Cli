@@ -7,8 +7,8 @@ import { safeToolEnv, terminateChildProcessTree } from "./child-process";
 /**
  * Runs one shell command inside the workspace with output capture.
  *
- * Lives here rather than in `@natalia/tool-shell` because it is a shared
- * execution primitive, not shell-plugin-specific: `@natalia/tool-web` runs the
+ * Lives here rather than in `@natalia/plugin-tool-shell` because it is a shared
+ * execution primitive, not shell-plugin-specific: `@natalia/plugin-tool-web` runs the
  * headless browser through it. A tool plugin may use it without statically
  * depending on another tool plugin's package.
  */

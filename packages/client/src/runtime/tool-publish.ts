@@ -19,14 +19,14 @@ export function createToolPublish(
   options: RealRuntimeClientOptions,
 ) {
   return {
-    publishBuiltinCapabilities,
+    publishRuntimeCapabilities,
     hotReloadToolFamily,
     publishRegisteredTools,
     publishToolCatalogChanges,
     publishWorkGraphToolCall,
   };
 
-  function publishBuiltinCapabilities() {
+  function publishRuntimeCapabilities() {
     const { publish, getCapabilityRegistry } = ctx.ports;
     for (const record of getCapabilityRegistry().list()) {
       publish({

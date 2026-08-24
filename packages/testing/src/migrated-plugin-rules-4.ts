@@ -103,7 +103,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
     id: "natalia-mcp",
     targets: [
       "packages/client/src/runtime/main.ts",
-      "packages/provider-model-plugin/src/provider-runner.ts",
+      "packages/provider-model/src/provider-runner.ts",
     ],
     forbidden: [
       {
@@ -263,7 +263,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       "apps/tui/src/app/command-controller.tsx",
       "apps/tui/src/component/CommandPalette.tsx",
       "apps/tui/src/component/PromptAutocomplete.tsx",
-      "packages/runtime-ui-plugin/src/runtime-ui-plugin.ts",
+      "packages/runtime-status/src/status-controller.ts",
     ],
     forbidden: [
       {

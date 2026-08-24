@@ -87,9 +87,9 @@ export type RuntimePortsExtra = {
   getPluginsController: () => ReturnType<
     typeof import("../plugins-controller").createPluginsController
   >;
-  buildBuiltinPluginCatalog: (
+  buildRuntimePluginCatalog: (
     config: ConfigV3,
-  ) => import("./initialize-types").BuiltinPluginCatalog;
+  ) => import("./initialize-types").RuntimeDesiredPluginCatalog;
   runPluginLifecyclePostReconcile: (
     selectedSkills?: Map<SessionID, string>,
   ) => Promise<void>;

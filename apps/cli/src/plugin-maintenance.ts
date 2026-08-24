@@ -6,9 +6,9 @@ import {
   setPluginEnabled,
   uninstallPlugin,
 } from "@natalia/installer";
-import { TRANSPORT_PLUGIN_MANIFEST } from "./transport-plugin";
+import { RUNTIME_PLUGIN_MANIFESTS } from "@natalia/client";
 
-const runtimeManifests = [TRANSPORT_PLUGIN_MANIFEST];
+const runtimeManifests = Object.values(RUNTIME_PLUGIN_MANIFESTS);
 
 export function isPluginMaintenanceCommand(argv: readonly string[]) {
   return argv[0] === "plugin";

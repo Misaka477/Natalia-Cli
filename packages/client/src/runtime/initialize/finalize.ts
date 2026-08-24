@@ -116,7 +116,7 @@ export async function finalizeInitialize(
       level: "warning",
       message: `capability "${override.winner}" (precedence ${override.winnerPrecedence}) replaced "${override.loser}" (precedence ${override.loserPrecedence}) for ${override.kind} "${override.name}"`,
     });
-  scope.publishBuiltinCapabilities();
+  scope.publishRuntimeCapabilities();
   scope.publishRegisteredTools();
   scope.publish(
     scope.contextStatusEvent(

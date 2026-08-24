@@ -200,12 +200,12 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
       {
         description: "direct workflow scheduler implementation import",
         pattern:
-          /from\s+["'](?:\.\.?\/)*(?:workflow-execution-scheduler|workflow-scheduler-plugin|builtin-plugins\/workflow-scheduler-plugin)["']/u,
+          /from\s+["'](?:\.\.?\/)*(?:workflow-execution-scheduler|workflow-scheduler-host|workflow-scheduler-plugin|builtin-plugins\/workflow-scheduler-plugin)["']/u,
       },
       {
         description: "client-owned workflow scheduler implementation",
         pattern:
-          /export (?:class WorkflowExecutionScheduler|function createWorkflowSchedulerPlugin)\b/u,
+          /export (?:class WorkflowExecutionScheduler|function createWorkflowScheduler(?:Plugin)?Host|function createWorkflowSchedulerPlugin)\b/u,
       },
       {
         description: "concrete workflow scheduler type outside its owner",
@@ -214,7 +214,7 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
       {
         description: "workflow scheduler host imported through client facade",
         pattern:
-          /import\s*\{[^}]*\bcreateWorkflowSchedulerPluginHost\b[^}]*\}\s*from\s*["']@natalia\/client["']/u,
+          /import\s*\{[^}]*\bcreateWorkflowScheduler(?:Plugin)?Host\b[^}]*\}\s*from\s*["']@natalia\/client["']/u,
       },
     ],
   },

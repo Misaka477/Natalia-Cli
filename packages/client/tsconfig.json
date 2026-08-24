@@ -10,11 +10,11 @@
       "path": "../agent"
     },
     {
-      "path": "../attachment-plugin"
+      "path": "../attachments"
     },
-    {
-      "path": "../builtin-plugins"
-    },
+    { "path": "../checkpoint" },
+    { "path": "../collaboration" },
+    { "path": "../compaction" },
     {
       "path": "../capability"
     },
@@ -24,12 +24,18 @@
     {
       "path": "../contracts"
     },
+    { "path": "../context-ledger" },
+    { "path": "../governance-ledger" },
+    { "path": "../local-tools-plugin" },
+    { "path": "../mcp-plugin" },
     {
       "path": "../platform"
     },
     {
       "path": "../plugin"
     },
+    { "path": "../provider-model" },
+    { "path": "../retry" },
     {
       "path": "../runtime"
     },
@@ -37,31 +43,54 @@
       "path": "../runtime-services"
     },
     {
-      "path": "../runtime-config-plugin"
+      "path": "../runtime-config"
     },
+    { "path": "../runtime-status" },
+    { "path": "../sandbox" },
     {
       "path": "../session"
     },
     {
-      "path": "../session-store-plugin"
+      "path": "../session-store"
     },
+    { "path": "../skills-plugin" },
+    { "path": "../subagents" },
+    { "path": "../task-module-plugin" },
+    { "path": "../task-workflow-plugin" },
+    { "path": "../team-plugin" },
+    { "path": "../terminal" },
     {
       "path": "../testing"
     },
     {
       "path": "../tools"
     },
+    { "path": "../tool-agent" },
+    { "path": "../tool-ask" },
+    { "path": "../tool-fs-read" },
+    { "path": "../tool-fs-write" },
+    { "path": "../tool-pdf" },
+    { "path": "../tool-policy" },
+    { "path": "../tool-process" },
+    { "path": "../tool-sandbox" },
+    { "path": "../tool-search" },
+    { "path": "../tool-shell" },
+    { "path": "../tool-terminal" },
+    { "path": "../tool-todo" },
+    { "path": "../tool-web" },
+    { "path": "../turn-orchestration" },
     {
       "path": "../ui-model"
     },
     {
-      "path": "../work-ledger-plugin"
+      "path": "../work-ledger"
     },
+    { "path": "../workspace" },
     {
       "path": "../workflow"
     },
     {
-      "path": "../workflow-scheduler-plugin"
+      "path": "../workflow-scheduler"
     }
   ]
 }

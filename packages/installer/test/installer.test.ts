@@ -23,9 +23,36 @@ import {
   type PackageManagerRun,
 } from "../src";
 import { rollbackWith } from "../src/closure";
+import type { PluginManifest } from "@natalia/plugin";
 
 const packageName = "@fixture/natalia-plugin";
 const pluginID = "fixture.plugin";
+const runtimeManifests: PluginManifest[] = [
+  {
+    apiVersion: 1,
+    id: "natalia-cli",
+    version: "1.0.0",
+    name: "CLI",
+    description: "CLI adapter.",
+    entry: "natalia:cli",
+    capabilities: ["commands"],
+    scope: "process",
+    provides: [],
+    requires: [],
+  },
+  {
+    apiVersion: 1,
+    id: "natalia-tool-todo",
+    version: "1.0.0",
+    name: "Todo",
+    description: "Todo tools.",
+    entry: "natalia:tool-todo",
+    capabilities: ["tools"],
+    scope: "session",
+    provides: [],
+    requires: [],
+  },
+];
 
 function fixturePackageManager(runs: string[][]): PackageManagerRun {
   return async ({ args }) => {
@@ -117,7 +144,7 @@ test("plugin lifecycle stages, catalogs, toggles, reconciles, and fully uninstal
   expect(runs[1]!.join(" ")).toContain("plugins");
   expect(await doctorPlugins(workspaceRoot)).toEqual([]);
 
-  const rows = await listInstalledPlugins(workspaceRoot);
+  const rows = await listInstalledPlugins(workspaceRoot, { runtimeManifests });
   expect(rows.find((row) => row.id === "natalia-cli")).toMatchObject({
     name: "CLI",
     installed: true,
@@ -141,6 +168,7 @@ test("plugin lifecycle stages, catalogs, toggles, reconciles, and fully uninstal
     workspaceRoot,
     pluginID: "natalia-tool-todo",
     enabled: false,
+    runtimeManifests,
   });
   const toggled = JSON.parse(
     await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
@@ -205,6 +233,7 @@ test("uninstalling a runtime default durably disables it", async () => {
   const result = await uninstallPlugin({
     workspaceRoot,
     pluginID: "natalia-tool-todo",
+    runtimeManifests,
   });
   expect(result).toMatchObject({
     uninstalled: false,
@@ -230,6 +259,7 @@ test("runtime default uninstall restores config after a reported write failure",
     uninstallPlugin({
       workspaceRoot,
       pluginID: "natalia-tool-todo",
+      runtimeManifests,
       seams: {
         updateConfig: async (root, patch, options) => {
           await updateConfig(root, patch, options);
@@ -740,7 +770,7 @@ test("custom global config participates in maintenance reads and writes", async 
     }),
   );
   expect(
-    (await listInstalledPlugins(root, { globalPath })).find(
+    (await listInstalledPlugins(root, { globalPath, runtimeManifests })).find(
       (row) => row.id === "natalia-cli",
     )?.enabled,
   ).toBe(false);
@@ -749,6 +779,7 @@ test("custom global config participates in maintenance reads and writes", async 
     pluginID: "natalia-cli",
     enabled: true,
     config: { globalPath },
+    runtimeManifests,
   });
   expect(
     (await resolveConfig({ workspaceRoot: root, globalPath })).config.plugins

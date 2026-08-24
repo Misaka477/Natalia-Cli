@@ -1,21 +1,12 @@
-import {
-  createFakeBackend,
-  createUiAdapterHost,
-  createWorkerRuntimeClient,
-} from "@natalia/client";
-import { TUI_PLUGIN_MANIFEST } from "@natalia/builtin-plugins";
+import { createFakeBackend, createWorkerRuntimeClient } from "@natalia/client";
 import type { RuntimeClient, UiAdapterMountInput } from "@natalia/contracts";
-import type {
-  DesiredPluginEntry,
-  Plugin,
-  PluginAdapterInstance,
+import {
+  createUiAdapterMountInput,
+  type PluginAdapterInstance,
 } from "@natalia/plugin";
 import { paste100KiB } from "@natalia/testing";
 import { MessageChannel, Worker } from "node:worker_threads";
 import { runTuiShell } from "./app/runtime";
-
-export const TUI_PLUGIN_ID = TUI_PLUGIN_MANIFEST.id;
-export const TUI_ADAPTER = "ui.tui";
 
 export type TuiAdapterOptions = {
   workspaceRoot: string;
@@ -34,63 +25,41 @@ type StartTuiAdapter = (
   options: TuiAdapterOptions,
 ) => Promise<TuiAdapterInstance>;
 
-export function createTuiAdapterPlugin(
-  options: TuiAdapterOptions,
-  start: StartTuiAdapter = startTuiAdapter,
-): Plugin {
-  let active: TuiAdapterInstance | undefined;
-  return {
-    manifest: TUI_PLUGIN_MANIFEST,
-    setup(api) {
-      api.adapters.registerUi({
-        kind: TUI_ADAPTER,
-        async mount(input) {
-          active = await start(input, options);
-        },
-        async dispose() {
-          await active?.dispose();
-          active = undefined;
-        },
-      });
-    },
-  };
-}
-
 export async function createTuiAdapterHost(
-  options: TuiAdapterOptions & { enabled?: boolean },
+  options: TuiAdapterOptions,
   start: StartTuiAdapter = startTuiAdapter,
   createRuntime: (options: TuiAdapterOptions) => RuntimeClient = (input) =>
     input.smoke
       ? createFakeBackend()
       : createWorkerBackend(input.workspaceRoot, input.sessionID),
 ) {
-  if (options.enabled === false)
-    throw new Error(`TUI plugin is disabled (${TUI_PLUGIN_ID})`);
-  const { enabled: _, ...adapterOptions } = options;
-  const runtime = createRuntime(adapterOptions);
-  let adapter: TuiAdapterInstance | undefined;
-  const entry: DesiredPluginEntry = {
-    id: TUI_PLUGIN_ID,
-    enabled: true,
-    fingerprint: TUI_PLUGIN_MANIFEST.version,
-    manifest: TUI_PLUGIN_MANIFEST,
-    load: async () =>
-      createTuiAdapterPlugin(adapterOptions, async (input, launchOptions) => {
-        adapter = await start(input, launchOptions);
-        return adapter;
-      }),
-  };
-  const host = await createUiAdapterHost({
-    workspaceRoot: adapterOptions.workspaceRoot,
-    runtime,
-    kinds: [TUI_ADAPTER],
-    extraEntries: [entry],
-    report: (message) => process.stderr.write(`natalia: ${message}\n`),
-  });
+  const runtime = createRuntime(options);
+  let adapter: TuiAdapterInstance;
+  try {
+    adapter = await start(createUiAdapterMountInput(runtime), options);
+  } catch (error) {
+    await runtime.dispose?.();
+    throw error;
+  }
+  let closed = false;
   return {
-    done: adapter!.done,
+    done: adapter.done,
     async close() {
-      await host.close();
+      if (closed) return;
+      closed = true;
+      const errors: unknown[] = [];
+      try {
+        await adapter.dispose();
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        await runtime.dispose?.();
+      } catch (error) {
+        errors.push(error);
+      }
+      if (errors.length)
+        throw new AggregateError(errors, "TUI host cleanup failed");
     },
   };
 }

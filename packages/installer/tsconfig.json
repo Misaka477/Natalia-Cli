@@ -4,7 +4,6 @@
   "compilerOptions": { "rootDir": "../.." },
   "include": ["src", "test"],
   "references": [
-    { "path": "../builtin-plugins" },
     { "path": "../config" },
     { "path": "../contracts" },
     { "path": "../plugin" }

@@ -8,7 +8,6 @@ import type {
   ToolPolicyService,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
-import { defaultDesiredEntries } from "../../builtin-mount";
 
 export async function configureRuntime(
   ctx: RuntimeContext,
@@ -16,9 +15,8 @@ export async function configureRuntime(
   { runtimeConfig, tsConfig }: InitializeCatalogResult,
 ) {
   const scope = createInitializeRuntime(ctx);
-  const defaults = defaultDesiredEntries(
-    scope.buildBuiltinPluginCatalog(runtimeConfig),
-  );
+  ctx.state.frameworkServices = await scope.wireFrameworkServices(ctx, options);
+  const defaults = scope.buildRuntimePluginCatalog(runtimeConfig);
   await scope.mountPlugins({
     controller: scope.pluginsController,
     defaults,

@@ -100,12 +100,12 @@ export function wireFeatures(
   ports.setAgentRegistry = (registry) => {
     state.agentRegistry = registry;
   };
-  ports.setBuildBuiltinPluginCatalog = (build) => {
-    state.buildBuiltinPluginCatalog = build;
+  ports.setBuildRuntimePluginCatalog = (build) => {
+    state.buildRuntimePluginCatalog = build;
   };
-  ports.buildBuiltinPluginCatalog = (config) =>
-    state.buildBuiltinPluginCatalog(config) as ReturnType<
-      typeof import("@natalia/builtin-plugins").builtinPluginCatalog
+  ports.buildRuntimePluginCatalog = (config) =>
+    state.buildRuntimePluginCatalog(config) as ReturnType<
+      typeof import("../plugin-config").runtimePluginCatalog
     >;
   const configReload = createConfigReload(ctx, options);
   ports.configReloadBlockedReason = configReload.configReloadBlockedReason;

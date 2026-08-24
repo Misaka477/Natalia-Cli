@@ -7,7 +7,7 @@ import { configV3Schema } from "@natalia/contracts";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import type { WorkflowExecutionHandle } from "@natalia/workflow";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
-import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
+import { createWorkflowSchedulerHost } from "@natalia/workflow-scheduler";
 import { createRealRuntimeClient } from "../src/runtime/main";
 import {
   TASK_WORKFLOW_CONTROLLER_SERVICE,
@@ -67,7 +67,7 @@ function loadTask(host: CapabilityHost) {
 test("execution host resolves the current task workflow service per run", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-service-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
-  const schedulerHost = await createWorkflowSchedulerPluginHost();
+  const schedulerHost = createWorkflowSchedulerHost();
   const executions = new CapabilityExecutionHost(capabilities, {
     scheduler: schedulerHost.scheduler,
     resolveService: async (serviceID) => capabilities.service(serviceID),
@@ -122,7 +122,7 @@ test("queued capability work revalidates after the scheduler gates", async () =>
   const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-queued-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
   const owner = loadTask(capabilities);
-  const schedulerHost = await createWorkflowSchedulerPluginHost({
+  const schedulerHost = createWorkflowSchedulerHost({
     globalConcurrency: 1,
   });
   const runtime = await workflowService(root, capabilities);
@@ -163,7 +163,7 @@ test("started execution keeps its lease while the owner hides contributions", as
   const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-lease-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
   const owner = loadTask(capabilities);
-  const schedulerHost = await createWorkflowSchedulerPluginHost();
+  const schedulerHost = createWorkflowSchedulerHost();
   const runtime = await workflowService(root, capabilities);
   try {
     const executions = new CapabilityExecutionHost(capabilities, {
@@ -213,7 +213,7 @@ test("started execution keeps its lease while the owner hides contributions", as
 test("execution host refuses a workspace owned by another capability host", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-root-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
-  const schedulerHost = await createWorkflowSchedulerPluginHost();
+  const schedulerHost = createWorkflowSchedulerHost();
   const runtime = await workflowService(root, capabilities);
   try {
     const executions = new CapabilityExecutionHost(capabilities, {

@@ -205,12 +205,9 @@ function extensionAllowed(
   return true;
 }
 
-function extensionForTool(
-  name: string,
-): "skills" | "mcp" | "plugins" | undefined {
+function extensionForTool(name: string): "skills" | "mcp" | undefined {
   if (name === "skill_load") return "skills";
   if (name.startsWith("mcp_")) return "mcp";
-  if (name.startsWith("plugin_")) return "plugins";
   return undefined;
 }
 
@@ -251,14 +248,14 @@ function runtimeToolNames(capabilities: {
   return [
     // The host's family catalogue is the built-in inventory. Keeping a second
     // list here is how a tool ends up callable but unknown to policy.
-    ...builtinToolNames(),
+    ...runtimeToolNameCatalog(),
     SYSTEM_MODULE_TOOL,
     ...(capabilities.reportIssue ? ["report_issue"] : []),
     ...(capabilities.readDataSource ? ["read_data_source"] : []),
   ];
 }
 
-function builtinToolNames(): string[] {
+function runtimeToolNameCatalog(): string[] {
   return [
     "ask_user",
     "plan",

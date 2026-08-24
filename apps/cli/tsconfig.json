@@ -7,12 +7,6 @@
   "include": ["src", "test"],
   "references": [
     {
-      "path": "../../packages/builtin-plugins"
-    },
-    {
-      "path": "../../packages/attachment-plugin"
-    },
-    {
       "path": "../../packages/capability"
     },
     {
@@ -52,7 +46,7 @@
       "path": "../../packages/workflow"
     },
     {
-      "path": "../../packages/workflow-scheduler-plugin"
+      "path": "../../packages/workflow-scheduler"
     }
   ]
 }

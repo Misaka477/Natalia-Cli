@@ -2,15 +2,12 @@
  * Default plugin input assembly — runtime/plugin-assembly.ts.
  *
  * Builds the input objects for runtime default plugins from resolved config:
- * skills, checkpoint, sandbox, terminal, workspace, provider-model, compaction,
- * MCP and local-tools inputs. Reads host state through `RuntimeContext` at call
- * time.
+ * skills, terminal, workspace, provider-model, compaction, MCP and local-tools
+ * inputs. Reads host state through `RuntimeContext` at call time.
  */
 import { resolve } from "node:path";
-import { findWorkspaceFiles } from "@natalia/platform";
 import { verifyTrust } from "@natalia/config";
 import { toolFamilyCapabilityID } from "../capabilities/tool-family-capabilities";
-import { computeBuiltinPluginGates } from "@natalia/builtin-plugins";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -20,14 +17,11 @@ export function createPluginAssembly(
   ctx: RuntimeContext,
   options: RealRuntimeClientOptions,
 ) {
+  const pluginEnabled = (config: ConfigV3, id: string) =>
+    config.plugins.enabled[id] !== false;
   return {
     skillsPluginInput,
-    checkpointPluginInput,
-    sandboxPluginInput,
-    terminalPluginInput,
-    workspacePluginInput,
     providerModelPluginInput,
-    compactionPluginInput,
     mcpPluginInput,
     localToolsPluginInput,
   };
@@ -42,10 +36,7 @@ export function createPluginAssembly(
       extensionEnabled,
     } = ctx.ports;
     const workspaceRoot = getWorkspaceRoot();
-    if (
-      !computeBuiltinPluginGates(config).skills ||
-      !extensionEnabled("skills")
-    )
+    if (!pluginEnabled(config, "natalia-skills") || !extensionEnabled("skills"))
       return undefined;
     return {
       workspaceRoot,
@@ -86,77 +77,9 @@ export function createPluginAssembly(
     };
   }
 
-  function checkpointPluginInput(config: ConfigV3) {
-    return !computeBuiltinPluginGates(config).checkpoint
-      ? undefined
-      : { workspaceRoot: ctx.ports.getWorkspaceRoot() };
-  }
-
-  function sandboxPluginInput(config: ConfigV3) {
-    return !computeBuiltinPluginGates(config).sandboxController
-      ? undefined
-      : {
-          workspaceRoot: ctx.ports.getWorkspaceRoot(),
-          backend: () => ctx.ports.getTsRuntimeConfig()?.sandbox.backend,
-          identity: config.sandbox,
-        };
-  }
-
-  function terminalPluginInput(config: ConfigV3) {
-    const {
-      getWorkspaceRoot,
-      getExecutionBySession,
-      publishForSession,
-      getPerformanceTrace,
-      getNativeRuntimeID,
-      getUserRuntimeHome,
-      getTsRuntimeConfig,
-    } = ctx.ports;
-    return !computeBuiltinPluginGates(config).terminalController
-      ? undefined
-      : {
-          workspaceRoot: getWorkspaceRoot(),
-          publish: (event: RuntimeEvent) =>
-            publishForSession(
-              event.sessionID
-                ? getExecutionBySession().get(event.sessionID as SessionID)
-                : undefined,
-              event,
-            ),
-          onPerformance: (name: string, durationMs: number) =>
-            getPerformanceTrace().mark(name, durationMs),
-          runtimeID: () => getNativeRuntimeID(),
-          userRuntimeHome: () => getUserRuntimeHome(),
-          windowMode: () =>
-            getTsRuntimeConfig()?.runtime.terminal.windowMode ?? "auto",
-          external: options.nativeTerminal,
-          identity: config.runtime.terminal.windowMode,
-        };
-  }
-
-  function workspacePluginInput(config: ConfigV3) {
-    const { getWorkspaceRoot } = ctx.ports;
-    const workspaceRoot = getWorkspaceRoot();
-    return !computeBuiltinPluginGates(config).workspace
-      ? undefined
-      : {
-          workspaceRoot,
-          listPaths: async () =>
-            (
-              await findWorkspaceFiles({
-                workspaceRoot,
-                limit: 1000,
-              })
-            )
-              .filter((entry) => entry.type === "file")
-              .map((entry) => entry.path),
-        };
-  }
-
-  function providerModelPluginInput(config: ConfigV3): {
-    enabled: boolean;
-    controller: import("@natalia/runtime-services").ProviderModelControllerInput;
-  } {
+  function providerModelPluginInput(
+    config?: ConfigV3,
+  ): import("@natalia/runtime-services").ProviderModelControllerInput {
     const {
       getProvider,
       setProvider,
@@ -171,59 +94,49 @@ export function createPluginAssembly(
       clientModelCatalog,
       selectRuntimeModel,
     } = ctx.ports;
-    const enabled = computeBuiltinPluginGates(config).providerModel;
     return {
-      enabled,
-      controller: {
-        initialize: () => {
-          if (!getProvider() && !options.provider) {
-            const provider = providerFromEnvironment();
-            if (provider) {
-              setProvider(provider);
-              setProviderSource("environment");
-            }
+      initialize: () => {
+        if (!getProvider() && !options.provider) {
+          const provider = providerFromEnvironment();
+          if (provider) {
+            setProvider(provider);
+            setProviderSource("environment");
           }
+        }
+      },
+      runnerInput: providerRunnerInput,
+      commands: {
+        catalog: clientModelCatalog,
+        select: async (sessionID, modelID, variant) => {
+          const exec = getExecutionBySession().get(sessionID);
+          if (!exec) throw new Error(`session not found: ${sessionID}`);
+          await selectRuntimeModel(modelID, variant, exec);
         },
-        runnerInput: providerRunnerInput,
-        commands: {
-          catalog: clientModelCatalog,
-          select: async (sessionID, modelID, variant) => {
-            const exec = getExecutionBySession().get(sessionID);
-            if (!exec) throw new Error(`session not found: ${sessionID}`);
-            await selectRuntimeModel(modelID, variant, exec);
-          },
+      },
+      chat: {
+        available: (id) =>
+          getExecutionBySession().get(id)?.provider !== undefined,
+        publish: (id, event) =>
+          publishForSession(getExecutionBySession().get(id), event),
+        runBody: async (input, signal) => {
+          const exec = getExecutionBySession().get(input.sessionID);
+          if (!exec)
+            throw new Error(
+              `no execution state for session ${input.sessionID}`,
+            );
+          await runChatTurnBody({ ...input, exec }, signal);
         },
-        chat: {
-          available: (id) =>
-            getExecutionBySession().get(id)?.provider !== undefined,
-          publish: (id, event) =>
-            publishForSession(getExecutionBySession().get(id), event),
-          runBody: async (input, signal) => {
-            const exec = getExecutionBySession().get(input.sessionID);
-            if (!exec)
-              throw new Error(
-                `no execution state for session ${input.sessionID}`,
-              );
-            await runChatTurnBody({ ...input, exec }, signal);
-          },
-          wake: async (id) => {
-            const exec = getExecutionBySession().get(id);
-            if (exec) await wakeNavi(exec);
-          },
+        wake: async (id) => {
+          const exec = getExecutionBySession().get(id);
+          if (exec) await wakeNavi(exec);
         },
       },
     };
   }
 
-  function compactionPluginInput(config: ConfigV3) {
-    return {
-      enabled: computeBuiltinPluginGates(config).compaction,
-    };
-  }
-
   function mcpPluginInput(config: ConfigV3) {
     const { getTsRuntimeConfig, extensionEnabled, publish } = ctx.ports;
-    if (!computeBuiltinPluginGates(config).mcp || !extensionEnabled("mcp"))
+    if (!pluginEnabled(config, "natalia-mcp") || !extensionEnabled("mcp"))
       return undefined;
     return {
       servers: () => getTsRuntimeConfig()?.mcpServers ?? {},
@@ -240,7 +153,7 @@ export function createPluginAssembly(
     if (
       options.tools ||
       !config.tools.paths.length ||
-      !computeBuiltinPluginGates(config).localTools
+      !pluginEnabled(config, "natalia-local-tools")
     )
       return undefined;
     return {

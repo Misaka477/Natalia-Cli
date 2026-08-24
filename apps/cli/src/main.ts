@@ -1,8 +1,4 @@
-import { resolveConfig } from "@natalia/config";
-import {
-  CLI_PLUGIN_ID,
-  createCliCommandAdapterHost,
-} from "./cli-command-adapter";
+import { createCliCommandAdapterHost } from "./cli-command-adapter";
 import {
   isPluginMaintenanceCommand,
   runPluginMaintenanceCommand,
@@ -13,16 +9,7 @@ const argv = process.argv.slice(2);
 if (isPluginMaintenanceCommand(argv)) {
   await runPluginMaintenanceCommand(argv);
 } else {
-  const workspaceRoot = argumentValue(argv, "--workspace") ?? process.cwd();
-  const config = await resolveConfig({
-    workspaceRoot,
-    ...(process.env.NATALIA_CONFIG
-      ? { globalPath: process.env.NATALIA_CONFIG }
-      : {}),
-  });
-  const host = await createCliCommandAdapterHost({
-    enabled: config.config.plugins.enabled[CLI_PLUGIN_ID] !== false,
-  });
+  const host = await createCliCommandAdapterHost();
   try {
     await host.done;
   } finally {

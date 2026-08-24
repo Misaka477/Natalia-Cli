@@ -24,7 +24,7 @@ export {
 } from "./tool-family-registry";
 
 /** Every built-in tool name, including the aliases a model may use. */
-export function builtinToolNames(): string[] {
+export function runtimeToolNames(): string[] {
   return [
     "ask_user",
     "plan",

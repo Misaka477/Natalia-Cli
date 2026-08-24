@@ -22,7 +22,7 @@ import {
   createLocalSessionService,
   type LocalSessionRow,
   type SessionMetadataBundle,
-} from "@natalia/session-store-plugin";
+} from "@natalia/session-store";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";

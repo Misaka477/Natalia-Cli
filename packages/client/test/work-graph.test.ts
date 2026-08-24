@@ -19,7 +19,7 @@ import {
   decisionNode,
   externalWorkspaceChangeNode,
   toolCallNodeID,
-} from "@natalia/work-ledger-plugin";
+} from "@natalia/work-ledger";
 
 /**
  * The Work Graph shipped as schema, projector, query and a TUI dialog with no

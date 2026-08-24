@@ -228,5 +228,5 @@ export type ToolFamily = {
  * Each one describes itself the way an out-of-package family does, so moving a
  * family into its own `packages/tool-*` package is a move, not a redesign: the
  * host's list of families is the only thing that changes. `todo` already left —
- * see `@natalia/tool-todo`.
+ * see `@natalia/plugin-tool-todo`.
  */

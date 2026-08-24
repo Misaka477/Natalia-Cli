@@ -5,11 +5,9 @@ import { join } from "node:path";
 import { createToolRegistry } from "@natalia/tools";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createPluginsController } from "../src/plugins-controller";
-import { createRuntimeConfigPlugin } from "@natalia/runtime-config-plugin";
 import type { Plugin } from "@natalia/plugin";
 import type { DesiredPluginEntry } from "@natalia/plugin";
 import type { PluginConfigSnapshot } from "../src/plugins-controller";
-import { defaultDesiredEntries } from "../src/builtin-mount";
 import {
   installPluginSdkLinks,
   pluginSdkImportPath,
@@ -606,11 +604,7 @@ test("desired default reconciliation diffs identity, settings and enabled state"
           hooks: {},
           integrationPoints: ["services" as const],
         },
-        setup(
-          api: Parameters<
-            ReturnType<typeof createRuntimeConfigPlugin>["setup"]
-          >[0],
-        ) {
+        setup(api: Parameters<Plugin["setup"]>[0]) {
           lifecycle.push("setup");
           api.services.provide("desired.value", {});
         },
@@ -1243,11 +1237,11 @@ test("direct load updates desired state for reload and reconcile", async () => {
   await controller.close();
 });
 
-test("default factory constructs once per actual load epoch", async () => {
+test("desired entry loads once per actual load epoch", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-default-factory-"));
   const { controller } = makeController(root);
   let constructions = 0;
-  const defaults = defaultDesiredEntries([
+  const defaults: DesiredPluginEntry[] = [
     {
       id: "default.factory",
       enabled: true,
@@ -1268,7 +1262,7 @@ test("default factory constructs once per actual load epoch", async () => {
         hooks: {},
         integrationPoints: [],
       },
-      create() {
+      async load() {
         constructions++;
         return {
           manifest: {
@@ -1291,7 +1285,7 @@ test("default factory constructs once per actual load epoch", async () => {
         };
       },
     },
-  ]);
+  ];
   controller.init();
   await controller.reconcileDesired(defaults, {});
   await controller.reconcileDesired(defaults, {});
@@ -1301,11 +1295,11 @@ test("default factory constructs once per actual load epoch", async () => {
   await controller.close();
 });
 
-test("dependency-blocked default is not constructed", async () => {
+test("dependency-blocked desired entry is not loaded", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-default-blocked-"));
   const { controller } = makeController(root);
   let constructions = 0;
-  const defaults = defaultDesiredEntries([
+  const defaults: DesiredPluginEntry[] = [
     {
       id: "blocked.default",
       enabled: true,
@@ -1333,12 +1327,12 @@ test("dependency-blocked default is not constructed", async () => {
         hooks: {},
         integrationPoints: [],
       },
-      create() {
+      async load() {
         constructions++;
         throw new Error("blocked default was constructed");
       },
     },
-  ]);
+  ];
   controller.init();
   await controller.reconcileDesired(defaults, {});
   expect(constructions).toBe(0);
@@ -1417,11 +1411,17 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "req.plugin", versi
 
   const kernel = new CapabilityRegistry();
   const { controller } = makeController(root, kernel);
-  // The runtime-config builtin provides the required service before the local
-  // plugin loads, exactly as the real runtime wires it.
-  await initialize(controller, [
-    desiredPlugin(createRuntimeConfigPlugin({ runtime: {} } as never)),
-  ]);
+  // The runtime-config framework service provides the required service before
+  // the local plugin loads, exactly as the real runtime wires it.
+  const runtimeConfigOwner = kernel.registerOwner({
+    id: "natalia-runtime-config",
+    name: "Runtime Config",
+    version: "1.0.0",
+    scope: "workspace",
+    grants: ["services"],
+  });
+  runtimeConfigOwner.contribute("services", "runtime.config", { runtime: {} });
+  await initialize(controller, []);
   // Plugin dependency ordering ensures the service is available before setup.
   expect(kernel.has("req.plugin")).toBe(true);
   await controller.close();

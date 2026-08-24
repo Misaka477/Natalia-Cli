@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  findBuiltinCatalogOwnershipViolation,
+  findRuntimePluginCatalogViolation,
   findClientClosureViolation,
   findClientProductDependencyViolation,
   findClientServiceContractViolation,
@@ -17,27 +17,27 @@ const dependencyGuarded = [
   "packages/session",
   "packages/tools",
   "packages/config",
-  "packages/attachment-plugin",
-  "packages/compaction-plugin",
-  "packages/context-ledger-plugin",
+  "packages/attachments",
+  "packages/compaction",
+  "packages/context-ledger",
   "packages/sandbox",
   "packages/mcp-plugin",
   "packages/skills-plugin",
   "packages/subagent",
   "packages/workflow",
   "packages/plugin",
-  "packages/retry-plugin",
-  "packages/runtime-ui-plugin",
-  "packages/turn-orchestration-plugin",
-  "packages/provider-model-plugin",
+  "packages/retry",
+  "packages/runtime-status",
+  "packages/turn-orchestration",
+  "packages/provider-model",
   "packages/task-workflow-plugin",
-  "packages/workflow-scheduler-plugin",
-  "packages/work-ledger-plugin",
-  "packages/checkpoint-plugin",
-  "packages/collaboration-plugin",
-  "packages/governance-ledger-plugin",
-  "packages/session-store-plugin",
-  "packages/workspace-plugin",
+  "packages/workflow-scheduler",
+  "packages/work-ledger",
+  "packages/checkpoint",
+  "packages/collaboration",
+  "packages/governance-ledger",
+  "packages/session-store",
+  "packages/workspace",
   "packages/tool-pdf",
 ];
 const capabilityRoots = ["packages/capability"];
@@ -71,21 +71,35 @@ const consumerContractRoots = [
 ];
 const kernelPackages = [
   "agent",
+  "attachments",
+  "checkpoint",
   "client",
+  "compaction",
   "config",
+  "context-ledger",
+  "governance-ledger",
   "native-terminal",
   "platform",
   "plugin",
+  "provider-model",
+  "retry",
   "runtime",
+  "runtime-config",
+  "runtime-status",
   "sandbox",
   "session",
+  "session-store",
   "skills-plugin",
   "subagent",
   "terminal",
   "testing",
+  "tool-policy",
   "tools",
   "transport",
+  "turn-orchestration",
+  "work-ledger",
   "workflow",
+  "workspace",
 ];
 const sourceExtensions = /\.(ts|tsx|js|jsx|go|json|toml|ya?ml)$/u;
 const skippedDirs = new Set([
@@ -189,7 +203,80 @@ const runtimePortTargets = new Set([
   "packages/client/src/runtime/initialize-types.ts",
 ]);
 
+/** Runtime semantics that must remain present when every product plugin is removed. */
+const frameworkSubsystemRoots = [
+  "packages/agent/src",
+  "packages/attachments/src",
+  "packages/checkpoint/src",
+  "packages/collaboration/src",
+  "packages/compaction/src",
+  "packages/context-ledger/src",
+  "packages/governance-ledger/src",
+  "packages/provider-model/src",
+  "packages/retry/src",
+  "packages/runtime-config/src",
+  "packages/runtime-status/src",
+  "packages/sandbox/src",
+  "packages/sdk/src",
+  "packages/session/src",
+  "packages/session-store/src",
+  "packages/subagents/src",
+  "packages/terminal/src",
+  "packages/tool-policy/src",
+  "packages/transport/src",
+  "packages/turn-orchestration/src",
+  "packages/work-ledger/src",
+  "packages/workflow-scheduler/src",
+  "packages/workspace/src",
+];
+const frameworkSubsystemFiles = ["apps/cli/src/transport-host.ts"];
+const forbiddenFrameworkPluginSurface = [
+  /from\s+["']@natalia\/plugin(?:[\/"'])/u,
+  /\b(?:PluginManifest|DesiredPluginEntry|PluginAPI)\b/u,
+  /\b[A-Z][A-Z0-9_]*_PLUGIN_ID\b/u,
+  /plugins\.enabled\s*\[/u,
+];
+
 const failures: string[] = [];
+for (const dir of frameworkSubsystemRoots)
+  await scan(join(root, dir), /\.tsx?$/u, (full, text) => {
+    for (const pattern of forbiddenFrameworkPluginSurface)
+      if (pattern.test(text))
+        failures.push(
+          `${full}: framework subsystem must not expose plugin lifecycle or enable gates ${pattern}`,
+        );
+  });
+for (const path of frameworkSubsystemFiles) {
+  const full = join(root, path);
+  const text = await readFile(full, "utf8");
+  for (const pattern of forbiddenFrameworkPluginSurface)
+    if (pattern.test(text))
+      failures.push(
+        `${full}: framework subsystem must not expose plugin lifecycle or enable gates ${pattern}`,
+      );
+}
+
+for (const entry of await readdir(join(root, "packages"), {
+  withFileTypes: true,
+})) {
+  if (!entry.isDirectory()) continue;
+  const manifestPath = join(root, "packages", entry.name, "package.json");
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      name?: string;
+      dependencies?: Record<string, string>;
+    };
+    if (
+      manifest.name?.startsWith("@natalia/plugin-") &&
+      manifest.dependencies?.["@natalia/plugin"] === undefined
+    )
+      failures.push(
+        `${manifestPath}: plugin package must depend on @natalia/plugin`,
+      );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
 for (const dir of dependencyGuarded)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
     for (const pattern of forbiddenDependencies) {
@@ -256,7 +343,7 @@ for (const dir of productionRoots)
       findForbiddenRepositoryPathViolation(relative);
     if (forbiddenPathViolation)
       failures.push(`${full}: ${forbiddenPathViolation}`);
-    const catalogOwnershipViolation = findBuiltinCatalogOwnershipViolation(
+    const catalogOwnershipViolation = findRuntimePluginCatalogViolation(
       relative,
       text,
     );

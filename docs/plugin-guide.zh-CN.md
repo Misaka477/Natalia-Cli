@@ -9,6 +9,13 @@ Natalia 只有一种插件。runtime 默认随附插件和用户安装插件使�
 权限、依赖解析及装载/卸载生命周期。runtime 默认项只是分发配置，不拥有特权 API，
 也不走第二套生命周期。
 
+插件不用于包装 Natalia 框架自身。Agent turn/step、Provider 与模型选择、会话与配置、
+传输/SDK/daemon、CLI/TUI host、权限与审批、sandbox、checkpoint、工程智能、workspace、
+runtime status 和 diagnostics 都由 runtime/host 直接构造并管理。这些能力没有插件
+manifest、可卸载 plugin ID 或 `plugins.enabled` 开关，也不会出现在插件 catalog 中。
+只有移除后仍能保持 runtime 核心语义完整的扩展包才是插件；例如独立模型工具和 UI
+adapter 可以是插件，但它们不能拥有对应框架 controller 的生命周期。
+
 插件是可信代码。它会被直接导入 runtime 进程，没有 VM、文件系统沙箱、网络沙箱或
 执行超时。manifest 的 `integrationPoints` 用于贡献物归属和校验，不提供进程隔离。
 只安装你编写过或审计过的包。
@@ -161,6 +168,10 @@ natalia plugin uninstall yourco.demo
   默认插件文件属于 runtime 本身，因此对它执行 uninstall 会持久化为禁用。
 - `doctor` 审计安装状态，`reconcile` 修复 desired package closure；二者是恢复命令，
   不是安装的额外步骤。
+
+框架能力不会出现在上述维护命令中。例如禁用名为 `natalia-transport`、
+`natalia-sandbox` 或 `natalia-checkpoint` 的配置项不会关闭对应框架子系统；这些名称不再
+是可维护的 plugin ID。
 
 runtime RPC 的 `pluginUnload` 和 `pluginReload` 只操作已运行 registry，不能替代 CLI
 持久化的 install、uninstall、enable、disable。

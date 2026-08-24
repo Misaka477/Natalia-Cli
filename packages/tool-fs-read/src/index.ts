@@ -2,7 +2,7 @@
  * The read-only filesystem tool family, split out of `tool-fs` by read/write
  * boundary (2026-08-21): these tools never write the workspace, need no write
  * lock and are `requiresApproval: false`. The write half lives in
- * `@natalia/tool-fs-write`.
+ * `@natalia/plugin-tool-fs-write`.
  *
  * Depends on the framework only for the tool-authoring surface and knows
  * nothing about the runtime or the capability kernel.

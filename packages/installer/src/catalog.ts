@@ -1,4 +1,3 @@
-import { RUNTIME_DEFAULT_PLUGIN_MANIFESTS } from "@natalia/builtin-plugins";
 import { resolveConfig } from "@natalia/config";
 import type { PluginPackageSource } from "@natalia/contracts";
 import { discoverPluginManifests, type PluginManifest } from "@natalia/plugin";
@@ -23,10 +22,7 @@ export function runtimeDefaultPlugin(
   id: string,
   additionalManifests: readonly PluginManifest[] = [],
 ) {
-  return (
-    RUNTIME_DEFAULT_PLUGIN_MANIFESTS[id] ??
-    additionalManifests.find((manifest) => manifest.id === id)
-  );
+  return additionalManifests.find((manifest) => manifest.id === id);
 }
 
 export async function listInstalledPlugins(
@@ -42,10 +38,7 @@ export async function listInstalledPlugins(
     resolveConfig({ workspaceRoot, ...configOptions }),
   ]);
   const rows = new Map<string, PluginCatalogRow>();
-  for (const manifest of [
-    ...Object.values(RUNTIME_DEFAULT_PLUGIN_MANIFESTS),
-    ...runtimeManifests,
-  ])
+  for (const manifest of runtimeManifests)
     rows.set(manifest.id, {
       id: manifest.id,
       name: manifest.name,

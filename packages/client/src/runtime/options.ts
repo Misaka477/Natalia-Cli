@@ -1,7 +1,7 @@
 import type { CapabilityHost, CapabilityRegistry } from "@natalia/capability";
 import type { EpisodeID, SessionID } from "@natalia/contracts";
 import type {
-  TerminalControllerPluginInput,
+  TerminalControllerInput,
   ToolHooks,
   ToolPolicy,
 } from "@natalia/runtime-services";
@@ -24,7 +24,7 @@ export type RealRuntimeClientOptions = {
   permissionMode?: "ask" | "auto" | "read_only";
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
-  nativeTerminal?: TerminalControllerPluginInput["external"];
+  nativeTerminal?: TerminalControllerInput["external"];
   taskModuleContext?: TaskModuleContext;
   /** Host-owned registry shared with task delivery and other capability consumers. */
   capabilityRegistry?: CapabilityRegistry;

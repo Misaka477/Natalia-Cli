@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/team-plugin",
+  "name": "@natalia/plugin-team",
   "version": "0.0.0-m13",
   "private": true,
   "type": "module",
@@ -12,8 +12,6 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime-services": "workspace:*",
-    "@natalia/sandbox-plugin": "workspace:*",
-    "@natalia/subagents-plugin": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*"
   }

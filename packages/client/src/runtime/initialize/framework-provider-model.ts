@@ -1,0 +1,71 @@
+/**
+ * Framework subsystem composition — initialize/framework-provider-model.ts.
+ *
+ * Provider/model selection and the main agent loop are framework-internal
+ * subsystems, not a plugin: this module constructs the controller directly and
+ * contributes it as the `provider-model.controller` service plus the
+ * `/models` and `/model` commands. The controller reads live host state through
+ * the runtime ports, so it needs no recreation on config reload.
+ */
+import { createProviderModelController } from "@natalia/provider-model";
+import type { PluginCommandInvocation } from "@natalia/plugin";
+import type { SessionID } from "@natalia/contracts";
+import {
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
+  type ProviderModelController,
+} from "@natalia/runtime-services";
+import type { RuntimeContext } from "../context";
+
+export type ProviderModelHandle = { close(): void };
+
+export function wireProviderModel(ctx: RuntimeContext): ProviderModelHandle {
+  const registry = ctx.state.capabilityRegistry;
+  const deps = ctx.state.initialize;
+  const input = deps.providerModelPluginInput(ctx.ports.getTsRuntimeConfig());
+  const owner = registry.registerOwner({
+    id: "natalia-provider-model",
+    name: "Provider Model",
+    version: "1.0.0",
+    scope: "workspace",
+    grants: ["services", "commands"],
+  });
+  const controller: ProviderModelController =
+    createProviderModelController(input);
+  owner.contribute("services", PROVIDER_MODEL_CONTROLLER_SERVICE, controller);
+  owner.contribute("commands", "models", {
+    name: "models",
+    title: "List models",
+    async run() {
+      const models = await input.commands.catalog();
+      return models.length
+        ? models
+            .map(
+              (model) =>
+                `${model.id}: ${model.name} @ ${model.provider}${model.variants.length ? ` (${model.variants.join(", ")})` : ""}`,
+            )
+            .join("\n")
+        : "no selectable models configured";
+    },
+  });
+  owner.contribute("commands", "model", {
+    name: "model",
+    title: "Select model",
+    async run(invocation: PluginCommandInvocation) {
+      const [modelID, variant] = invocation?.args ?? [];
+      if (!modelID) throw new Error("model ID is required");
+      if (!invocation?.sessionID)
+        throw new Error("model selection requires a session");
+      await input.commands.select(
+        invocation.sessionID as SessionID,
+        modelID,
+        variant,
+      );
+      return `selected model ${modelID}${variant ? ` (${variant})` : ""}`;
+    },
+  });
+  return {
+    close() {
+      void controller.dispose();
+    },
+  };
+}

@@ -139,7 +139,7 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-session-store",
-    targets: ["packages/session-store-plugin/src/index.ts"],
+    targets: ["packages/session-store/src/index.ts"],
     forbidden: [
       {
         description: "concrete session store exported by plugin barrel",

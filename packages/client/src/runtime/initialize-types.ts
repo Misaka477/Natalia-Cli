@@ -20,6 +20,7 @@ export type InitializeOptions = {
   globalConfigPath?: string;
   sessionDir?: string;
   useSqliteStore?: boolean;
+  nativeTerminal?: import("@natalia/runtime-services").TerminalControllerInput["external"];
   provider?: StreamingProvider;
   tools?: import("@natalia/tools").ToolRegistry;
   permissionProfile?: string;
@@ -31,34 +32,34 @@ export type InitializeOptions = {
 type ResolvedConfig = Awaited<
   ReturnType<typeof import("@natalia/config").resolveConfig>
 >;
-type BuiltinCatalog = ReturnType<
-  typeof import("@natalia/builtin-plugins").builtinPluginCatalog
+type RuntimePluginCatalog = ReturnType<
+  typeof import("./plugin-config").runtimePluginCatalog
 >;
-type BuiltinInput = Parameters<
-  typeof import("@natalia/builtin-plugins").builtinPluginCatalog
+type RuntimePluginInput = Parameters<
+  typeof import("./plugin-config").runtimePluginCatalog
 >[0];
 
 export type InitializeDependencies = {
   resolveConfig: typeof import("@natalia/config").resolveConfig;
   reloadPermissionSettings: (config: ConfigV3) => void;
-  skillsPluginInput: (config: ConfigV3) => BuiltinInput["skills"];
-  localToolsPluginInput: (config: ConfigV3) => BuiltinInput["localTools"];
-  workspacePluginInput: (config: ConfigV3) => BuiltinInput["workspace"];
-  terminalPluginInput: (config: ConfigV3) => BuiltinInput["terminal"];
-  sandboxPluginInput: (config: ConfigV3) => BuiltinInput["sandbox"];
-  mcpPluginInput: (config: ConfigV3) => BuiltinInput["mcp"];
-  compactionPluginInput: (config: ConfigV3) => BuiltinInput["compaction"];
-  providerModelPluginInput: (config: ConfigV3) => BuiltinInput["providerModel"];
-  builtinPluginCatalog: typeof import("@natalia/builtin-plugins").builtinPluginCatalog;
-  computeBuiltinFeatureGates: typeof import("@natalia/builtin-plugins").computeBuiltinFeatureGates;
-  computeBuiltinPluginGates: typeof import("@natalia/builtin-plugins").computeBuiltinPluginGates;
+  skillsPluginInput: (config: ConfigV3) => RuntimePluginInput["skills"];
+  localToolsPluginInput: (config: ConfigV3) => RuntimePluginInput["localTools"];
+  mcpPluginInput: (config: ConfigV3) => RuntimePluginInput["mcp"];
+  providerModelPluginInput: (
+    config?: ConfigV3,
+  ) => import("@natalia/runtime-services").ProviderModelControllerInput;
+  runtimePluginCatalog: typeof import("./plugin-config").runtimePluginCatalog;
+  wireFrameworkServices: (
+    ctx: import("./context").RuntimeContext,
+    options: InitializeOptions,
+  ) => Promise<import("./context").FrameworkServices>;
   capabilityRegistry: CapabilityRegistryHost;
   workspaceCapabilityView?: import("@natalia/capability").CapabilityRegistryView;
   waiterDeps: InteractiveWaiterDeps;
   deliverQueuedMailboxAtBoundary: (exec?: SessionExecutionState) => void;
   effectiveFlowPermissions: typeof import("@natalia/workflow").effectiveFlowPermissions;
   createRealRuntimeClient: NonNullable<
-    BuiltinInput["taskWorkflow"]
+    RuntimePluginInput["taskWorkflow"]
   >["controller"]["createRuntimeClient"];
   handleCommand: (
     id: string,
@@ -67,7 +68,7 @@ export type InitializeDependencies = {
     exec: SessionExecutionState,
   ) => Promise<boolean>;
   scheduleTitleGeneration: (sessionID: SessionID) => void;
-  mountPlugins: typeof import("../builtin-mount").mountPlugins;
+  mountPlugins: typeof import("../plugin-mount").mountPlugins;
   moduleToolPolicy: typeof import("@natalia/workflow").moduleToolPolicy;
   agentPolicyLayer: (
     agent?: AgentDefinition,
@@ -107,7 +108,7 @@ export type InitializeDependencies = {
   drainSession: (signal: AbortSignal) => Promise<void>;
   projectInteractiveRequests: typeof import("@natalia/session").projectInteractiveRequests;
   contextStatusEvent: typeof import("@natalia/runtime").contextStatusEvent;
-  publishBuiltinCapabilities: () => void;
+  publishRuntimeCapabilities: () => void;
   publishRegisteredTools: () => void;
   MAX_STEPS_PROMPT: string;
   MISSING_FINAL_RESPONSE_FALLBACK: string;
@@ -186,4 +187,4 @@ export type SubagentSupport = {
   ): void;
 };
 
-export type BuiltinPluginCatalog = BuiltinCatalog;
+export type RuntimeDesiredPluginCatalog = RuntimePluginCatalog;

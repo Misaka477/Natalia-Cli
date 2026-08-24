@@ -5,12 +5,8 @@ import {
   plainRuntimeEvent,
   type UiAdapterHost,
 } from "@natalia/client";
-import { resolveConfig } from "@natalia/config";
 import { createRecordedFetch } from "@natalia/transport";
-import {
-  createHttpTransportPluginHost,
-  TRANSPORT_PLUGIN_ID,
-} from "./transport-plugin";
+import { createHttpTransportHost } from "./transport-host";
 import { promptArguments } from "./index";
 import { valueAfter, waitSignal, withoutOption } from "./command-helpers";
 
@@ -19,11 +15,10 @@ export async function handleRuntimeCommand(argv: string[]) {
   if (command === "serve" || command === "--serve") {
     const port = parseServePort(argv);
     const client = createRealRuntimeClient();
-    const transport = await createHttpTransportPluginHost({
+    const transport = createHttpTransportHost({
       client,
       port,
       token: process.env.NATALIA_TRANSPORT_TOKEN,
-      enabled: await transportEnabled(),
     });
     console.log(
       JSON.stringify({
@@ -120,10 +115,9 @@ export async function handleRuntimeCommand(argv: string[]) {
     const cassettePath = argv[1];
     if (!cassettePath) throw new Error("record requires a cassette path");
     const client = createRealRuntimeClient();
-    const transport = await createHttpTransportPluginHost({
+    const transport = createHttpTransportHost({
       client,
       port: Number(argv[2] ?? "8787"),
-      enabled: await transportEnabled(),
     });
     globalThis.fetch = createRecordedFetch({
       mode: "record",
@@ -178,14 +172,4 @@ async function runOnce(
     await client.dispose?.();
   }
   if (failed) process.exitCode = 1;
-}
-
-async function transportEnabled() {
-  const resolved = await resolveConfig({
-    workspaceRoot: process.cwd(),
-    ...(process.env.NATALIA_CONFIG
-      ? { globalPath: process.env.NATALIA_CONFIG }
-      : {}),
-  });
-  return resolved.config.plugins.enabled[TRANSPORT_PLUGIN_ID] !== false;
 }

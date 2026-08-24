@@ -1,6 +1,10 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
+  CHECKPOINT_FACTORY_SERVICE,
+  SANDBOX_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
+  type CheckpointFactory,
+  type SandboxService,
   type SessionStoreController,
 } from "@natalia/runtime-services";
 import { updateConfigAtScope } from "@natalia/config";
@@ -54,6 +58,13 @@ export function createLifecycleSurface(
             sessionStore.flush(id),
           ),
         );
+      await ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE)?.close();
+      ctx.ports
+        .resolveService<
+          CheckpointFactory & { close?(): void }
+        >(CHECKPOINT_FACTORY_SERVICE)
+        ?.close?.();
+      ctx.state.frameworkServices?.close();
       await ctx.ports.getPluginsController().close();
       await ctx.ports.getPerformanceTrace().stop();
     },
