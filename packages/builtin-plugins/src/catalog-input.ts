@@ -40,6 +40,9 @@ export type BuiltinPluginCatalogInput = {
       output: string,
       context: ToolExecutionContext,
     ) => void;
+    commandSession?: Parameters<
+      typeof import("@natalia/skills-plugin").createSkillsPlugin
+    >[0]["commandSession"];
   };
   taskModule?: TaskModuleContext;
   runtimeConfig?: ConfigV3;

@@ -271,7 +271,7 @@ export const PRODUCT_PLUGIN_MANIFESTS: Record<string, PluginManifest> = {
     name: "Skills",
     description: "Discovered project, user and remote skills.",
     entry: "natalia:skills",
-    capabilities: ["tools"],
+    capabilities: ["tools", "commands"],
     scope: "workspace",
     provides: ["skills.service"],
     requires: [],

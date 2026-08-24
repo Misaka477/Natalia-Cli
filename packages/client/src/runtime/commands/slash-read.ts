@@ -129,21 +129,6 @@ export async function tryReadSlashCommand(deps: SlashDeps): Promise<boolean> {
     deps.publish(await deps.runtimeStatusSnapshot());
     return true;
   }
-  if (trimmed === "/skills") {
-    const skills = deps.skillsList();
-    deps.publish({
-      type: "content.delta",
-      id: deps.id,
-      text: skills.length
-        ? skills
-            .map((skill) => `${skill.qualifiedName}: ${skill.description}`)
-            .join("\n")
-        : "no native skills discovered",
-    });
-    deps.publish({ type: "content.done", id: deps.id });
-    deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
-    return true;
-  }
   if (trimmed === "/models") {
     const models = await deps.clientModelCatalog();
     deps.publish({

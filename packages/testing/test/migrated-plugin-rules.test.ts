@@ -480,6 +480,15 @@ test("retry migration protects provider runner", () => {
   ).toEqual([expect.objectContaining({ pluginID: "natalia-retry" })]);
 });
 
+test("skills migration rejects client-owned slash commands", () => {
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/runtime/commands/slash-action.ts",
+      'if (trimmed === "/skill") return true',
+    ),
+  ).toContainEqual(expect.objectContaining({ pluginID: "natalia-skills" }));
+});
+
 test("collaboration migration protects the extracted implementation", () => {
   for (const [path, source] of [
     [

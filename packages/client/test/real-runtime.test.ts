@@ -4852,11 +4852,15 @@ test("runtime skill catalog exposes discovery metadata without skill body", asyn
       (capability) => capability.id === "natalia-skills",
     ),
   ).toMatchObject({
-    grants: ["services", "tools"],
+    grants: ["services", "tools", "commands"],
     provides: ["skills.service"],
     contributions: [
       { kind: "services", name: "skills.service" },
       { kind: "tools", name: "skill_load" },
+      { kind: "commands", name: "skills" },
+      { kind: "commands", name: "skill" },
+      { kind: "commands", name: "skill-resource" },
+      { kind: "commands", name: "skill-script" },
     ],
   });
   await client.dispose?.();

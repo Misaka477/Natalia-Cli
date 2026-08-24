@@ -3,7 +3,11 @@ import type { MigratedPluginRule } from "./migrated-plugin-rule-types";
 export const migratedPluginRules1: readonly MigratedPluginRule[] = [
   {
     id: "natalia-skills",
-    targets: ["packages/client/src/runtime/main.ts"],
+    targets: [
+      "packages/client/src/runtime/main.ts",
+      "packages/client/src/runtime/commands/slash-read.ts",
+      "packages/client/src/runtime/commands/slash-action.ts",
+    ],
     forbidden: [
       {
         description: "legacy skills controller",
@@ -20,6 +24,10 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
       {
         description: "direct skills plugin import",
         pattern: /from\s+["']@natalia\/skills-plugin["']/u,
+      },
+      {
+        description: "client-owned skills command implementation",
+        pattern: /["']\/(?:skills|skill|skill-resource|skill-script)["']/u,
       },
     ],
   },

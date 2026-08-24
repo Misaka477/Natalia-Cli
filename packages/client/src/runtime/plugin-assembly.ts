@@ -64,6 +64,21 @@ export function createPluginAssembly(
       workspaceRoot,
       userRoot: getUserSkillRoot(),
       remoteURLs: config.skills.urls,
+      commandSession: {
+        active: (sessionID: SessionID) =>
+          getExecutionBySession().get(sessionID)?.activeSkill,
+        activate: (sessionID: SessionID, skill: SkillMetadata) => {
+          const owner = getExecutionBySession().get(sessionID);
+          if (!owner) throw new Error(`session not found: ${sessionID}`);
+          owner.activeSkill = skill;
+          if (owner === getActiveExec()) setActiveSkill(skill);
+          owner.context.add({
+            id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
+            role: "system",
+            content: `Active skill ${skill.name}: ${skill.description}\n${skill.body}`,
+          });
+        },
+      },
       onLoad: (
         skill: SkillMetadata,
         output: string,
