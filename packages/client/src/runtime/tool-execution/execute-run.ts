@@ -11,6 +11,16 @@
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
+import {
+  TOOL_POLICY_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  WORKSPACE_WRITE_LOCK_SERVICE,
+  type MutationRegistry,
+  type ToolPolicyService,
+  type WorkLedgerController,
+  type WorkspaceWriteLock,
+} from "@natalia/runtime-services";
 import { buildToolExecutionContext } from "./execute-context";
 import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -52,22 +62,31 @@ export async function runExecuteStage(
     publishWorkGraphToolCall,
     waitIfPaused,
     setInFlightOperationFor,
-    requireWriteLock,
-    getToolLayer,
-    getToolPolicy,
     getTerminalCommandBuffer,
     setEndTurnWaitingHuman,
     getInteractive,
-    getMutationRegistry,
-    getWorkLedgerController,
     scheduleRuntimeStatusSnapshot,
   } = ctx.ports;
-  const toolPolicy = getToolPolicy();
-  const toolLayer = getToolLayer();
+  const toolLayer = ctx.ports.createToolPolicyLayer(exec);
+  const toolPolicy =
+    ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+  if (!toolPolicy)
+    throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
+  const workspaceWriteLock = ctx.ports.resolveService<WorkspaceWriteLock>(
+    WORKSPACE_WRITE_LOCK_SERVICE,
+  );
+  if (!workspaceWriteLock)
+    throw new Error("workspace write lock unavailable (natalia-workspace)");
   const terminalCommandBuffer = getTerminalCommandBuffer();
   const interactive = getInteractive();
-  const mutationRegistry = getMutationRegistry();
-  const workLedgerController = getWorkLedgerController();
+  const mutationRegistry = ctx.ports.resolveService<MutationRegistry>(
+    WORKSPACE_MUTATIONS_SERVICE,
+  );
+  const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
+    WORK_LEDGER_CONTROLLER_SERVICE,
+  );
+  if (!workLedgerController)
+    throw new Error("work ledger unavailable (natalia-work-ledger)");
   const redactToolOutput = ctx.ports.redactToolOutput;
   const redactToolOutputEnabled = ctx.ports.redactToolOutputEnabled;
   const waitForToolExecution = ctx.ports.waitForToolExecution;
@@ -188,14 +207,14 @@ export async function runExecuteStage(
     const signal = executionController.signal;
     // D2: workspace writes serialise across sessions.
 
-    releaseWriteLock = toolPolicy!.workspaceWritePathForTool(
+    releaseWriteLock = toolPolicy.workspaceWritePathForTool(
       tool.name,
       parsed as Record<string, unknown>,
     )
-      ? await requireWriteLock().acquire()
+      ? await workspaceWriteLock.acquire()
       : undefined;
     // WG4 Phase 3: register the expected mutation before the tool runs.
-    const writePath = toolPolicy!.workspaceWritePathForTool(
+    const writePath = toolPolicy.workspaceWritePathForTool(
       tool.name,
       parsed as Record<string, unknown>,
     );
@@ -284,7 +303,7 @@ export async function runExecuteStage(
     // Only after success: a write that failed did not change the workspace, and
     // a graph that says otherwise sends a reader looking for a change that is
     // not there.
-    const changedPath = toolPolicy!.workspaceWritePathForTool(
+    const changedPath = toolPolicy.workspaceWritePathForTool(
       tool.name,
       tryParseToolArguments(call.arguments),
     );
@@ -333,7 +352,7 @@ export async function runExecuteStage(
     // WG4 Phase 3: a failed write did not change the workspace — drop the
     // expected mutation so it cannot attribute a later unrelated hint.
     if (
-      toolPolicy!.workspaceWritePathForTool(
+      toolPolicy.workspaceWritePathForTool(
         tool.name,
         tryParseToolArguments(call.arguments),
       )

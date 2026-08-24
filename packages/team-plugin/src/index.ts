@@ -13,5 +13,9 @@ export {
   type PRReviewDecision,
   type PRReviewOutcome,
 } from "./fan-out";
-export { createTeamPlugin, TEAM_PLUGIN_ID } from "./team-plugin";
+export {
+  createTeamPlugin,
+  TEAM_PLUGIN_ID,
+  TEAM_PLUGIN_MANIFEST,
+} from "./team-plugin";
 export { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";

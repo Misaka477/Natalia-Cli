@@ -2555,7 +2555,11 @@ export async function runCommand(command: string, ctx: CommandContext) {
   }
   if ((await ctx.commands.list()).some((entry) => entry.name === command)) {
     try {
-      await ctx.commands.execute(command);
+      await ctx.commands.execute({
+        name: command,
+        raw: `/${command}`,
+        args: [],
+      });
     } catch (error) {
       ctx.toast.show({
         variant: "warning",

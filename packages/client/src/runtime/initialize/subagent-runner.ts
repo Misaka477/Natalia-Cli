@@ -2,11 +2,13 @@ import type {
   InitializeOptions,
   RuntimeContext,
   RuntimeEvent,
+  SandboxService,
   SessionExecutionState,
   SessionID,
   StreamingProvider,
   SubagentRunnerContext,
   SubagentSupport,
+  SubagentsService,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
 
@@ -24,6 +26,13 @@ export async function installSubagents(
   },
 ) {
   const scope = createInitializeRuntime(ctx);
+  const subagents = scope.resolveService<SubagentsService>(
+    scope.SUBAGENTS_SERVICE,
+  );
+  if (!subagents)
+    throw new Error("subagents controller unavailable (natalia-subagents)");
+  const subagentsController = subagents;
+  const sandbox = scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE);
   const {
     acquireSandboxedSubagentSlot,
     releaseSandboxedSubagentSlot,
@@ -56,13 +65,13 @@ export async function installSubagents(
     exec: SessionExecutionState,
     activeProvider: StreamingProvider,
   ) {
-    const record = scope.subagentsController?.get(runner.agentId);
+    const record = subagentsController.get(runner.agentId);
     if (!record)
       throw new Error(`subagent record not found: ${runner.agentId}`);
     const allowed = record.allowedTools ?? [];
     const excluded = new Set(record.excludeTools ?? []);
     // The sub-agent's own worktree, created through the sandbox backend.
-    const manifest = await scope.sandboxController?.create(runner.agentId);
+    const manifest = await sandbox?.create(runner.agentId);
     if (!manifest)
       throw new Error("sandbox controller unavailable for subagent worktree");
     const sandboxRoot = manifest.root;
@@ -169,9 +178,9 @@ export async function installSubagents(
     }
     throw new Error("subagent step limit reached");
   }
-  await scope.subagentsController?.init(async (task, runner) => {
+  await subagentsController.init(async (task, runner) => {
     try {
-      const record = scope.subagentsController?.get(runner.agentId);
+      const record = subagentsController.get(runner.agentId);
       const exec = scope.executionBySession.get(
         record?.parentSessionID as SessionID,
       );
@@ -272,8 +281,8 @@ export async function installSubagents(
       throw error;
     }
   });
-  scope.subagentsController!.subscribe((event) => {
-    const record = scope.subagentsController!.get(event.agentId);
+  subagentsController.subscribe((event) => {
+    const record = subagentsController.get(event.agentId);
     const update = {
       type: "subagent.update",
       id: event.agentId,
@@ -293,7 +302,7 @@ export async function installSubagents(
       continuation: event.continuation,
       phase: event.phase ?? record?.phase,
       activityDetail: event.activityDetail ?? record?.activityDetail,
-      health: scope.subagentsController!.health(event.agentId),
+      health: subagentsController.health(event.agentId),
       lastActivityAt: record?.lastActivityAt,
       startedAt: record?.startedAt,
       endedAt: record?.endedAt,

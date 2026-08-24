@@ -23,4 +23,5 @@ export {
 export {
   createToolPipelinePlugin,
   TOOL_PIPELINE_PLUGIN_ID,
+  TOOL_PIPELINE_PLUGIN_MANIFEST,
 } from "./tool-pipeline-plugin";

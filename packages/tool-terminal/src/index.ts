@@ -24,7 +24,7 @@ import {
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
 } from "@natalia/tools";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { truncateProcessOutput } from "@natalia/tools";
 import type {
   RuntimeTool,
@@ -719,24 +719,26 @@ export function terminalToolFamily(): ToolFamily {
 
 export const TERMINAL_PLUGIN_ID = "natalia-tool-terminal";
 
+export const TERMINAL_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: TERMINAL_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Terminal Tools",
+  description: "Native terminal panes and interactive programs.",
+  entry: "natalia:tool-terminal",
+  scope: "session",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools"],
+};
+
 export function createTerminalPlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: TERMINAL_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Terminal Tools",
-      description: "Native terminal panes and interactive programs.",
-      entry: "natalia:tool-terminal",
-      scope: "session",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
+    manifest: TERMINAL_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of terminalTools()) api.tools.register(tool);
       for (const [alias, target] of Object.entries(

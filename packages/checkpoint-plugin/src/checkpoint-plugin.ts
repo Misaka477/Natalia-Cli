@@ -1,4 +1,4 @@
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
 import { runCheckpointCommand } from "@natalia/runtime";
 import { createCheckpointController } from "./checkpoint-controller";
@@ -18,27 +18,29 @@ export type CheckpointPluginInput = {
   };
 };
 
+export const CHECKPOINT_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: CHECKPOINT_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Checkpoint",
+  description: "Durable session checkpoints and rollback.",
+  entry: "natalia:checkpoint",
+  scope: "workspace",
+  provides: [CHECKPOINT_FACTORY_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services", "commands"],
+};
+
 export function createCheckpointControllerPlugin(
   input: CheckpointPluginInput,
 ): Plugin {
   const controllers = new Set<CheckpointController>();
   return {
-    manifest: {
-      apiVersion: 2,
-      id: CHECKPOINT_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Checkpoint",
-      description: "Durable session checkpoints and rollback.",
-      entry: "natalia:checkpoint",
-      scope: "workspace",
-      provides: [CHECKPOINT_FACTORY_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services", "commands"],
-    },
+    manifest: CHECKPOINT_PLUGIN_MANIFEST,
     setup(api) {
       const factory: CheckpointFactory = (accessors) => {
         const controller = createCheckpointController({

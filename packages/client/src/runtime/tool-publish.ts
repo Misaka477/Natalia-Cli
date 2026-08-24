@@ -6,6 +6,10 @@
  * Reads host state through `RuntimeContext` at call time.
  */
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/runtime-services";
+import {
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import type { ToolFamily } from "@natalia/tools";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -126,18 +130,18 @@ export function createToolPublish(
     toolName: string,
     status: string,
   ) {
-    const {
-      executionForTurn,
-      getActiveExec,
-      getSessionID,
-      publishForSession,
-      getWorkLedgerController,
-    } = ctx.ports;
+    const { executionForTurn, getActiveExec, getSessionID, publishForSession } =
+      ctx.ports;
+    const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!workLedgerController)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
     const exec = executionForTurn(turnID) ?? getActiveExec();
     const ownerSessionID = exec?.session.id ?? getSessionID();
     publishForSession(
       exec,
-      getWorkLedgerController().toolCallNode({
+      workLedgerController.toolCallNode({
         turnID,
         callID,
         toolName,
@@ -147,7 +151,7 @@ export function createToolPublish(
     );
     publishForSession(
       exec,
-      getWorkLedgerController().toolCallEdge({ turnID, callID }),
+      workLedgerController.toolCallEdge({ turnID, callID }),
     );
   }
 }

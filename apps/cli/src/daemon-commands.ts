@@ -15,9 +15,7 @@ import {
   CapabilityHost,
   removeTaskSystemd,
   taskPermissionPreview,
-  TASK_WORKFLOW_CONTROLLER_SERVICE,
   type RuntimeServiceClient,
-  type TaskWorkflowService,
 } from "@natalia/client";
 import {
   createWorkflowExecutionStoreService,
@@ -146,18 +144,12 @@ export async function handleDaemonCommands(argv: string[]) {
               workspaceRoot: root,
               capabilityHost: capabilities,
             });
-            const taskWorkflowService =
-              await runtime.service<TaskWorkflowService>(
-                TASK_WORKFLOW_CONTROLLER_SERVICE,
-              );
-            if (!taskWorkflowService)
-              throw new Error("task workflow service unavailable");
             return {
               capabilities,
               runtime,
               executions: new CapabilityExecutionHost(capabilities, {
                 scheduler: taskScheduler,
-                taskWorkflowService,
+                resolveService: (serviceID) => runtime.service(serviceID),
               }),
             };
           })();
@@ -180,7 +172,9 @@ export async function handleDaemonCommands(argv: string[]) {
             const config = assertConfigApplied(
               await resolveConfig({ workspaceRoot }),
             );
-            return (await workspaceHost(workspaceRoot)).executions.runTask({
+            return await (
+              await workspaceHost(workspaceRoot)
+            ).executions.runTask({
               workspaceRoot,
               path: request.taskPath,
               taskID: request.taskID,

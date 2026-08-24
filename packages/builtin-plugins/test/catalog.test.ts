@@ -6,6 +6,7 @@ import {
   CHECKPOINT_PLUGIN_ID,
   checkpointPluginEntry,
   computeBuiltinFeatureGates,
+  computeBuiltinPluginGates,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   MCP_PLUGIN_ID,
@@ -38,7 +39,62 @@ import { RUNTIME_UI_PLUGIN_ID } from "@natalia/runtime-ui-plugin";
 import { WORKSPACE_PLUGIN_ID } from "@natalia/workspace-plugin";
 import { LOCAL_TOOLS_PLUGIN_ID } from "@natalia/local-tools-plugin";
 import { TEAM_PLUGIN_ID } from "@natalia/team-plugin";
+import { SESSION_STORE_PLUGIN_ID } from "@natalia/session-store-plugin";
+import { SUBAGENTS_PLUGIN_ID } from "@natalia/subagents-plugin";
 import { pluginManifestSchema } from "@natalia/plugin";
+
+test("default plugin gates own dependency-aware enablement", () => {
+  const config = {
+    version: 3,
+    plugins: { enabled: {} },
+  } as import("@natalia/contracts").ConfigV3;
+  expect(computeBuiltinPluginGates(config)).toMatchObject({
+    attachment: true,
+    compaction: true,
+    governanceLedger: true,
+    providerModel: true,
+    sessionStore: true,
+    team: true,
+    turnOrchestration: true,
+  });
+
+  const withoutAttachment = structuredClone(config);
+  withoutAttachment.plugins.enabled[ATTACHMENT_PLUGIN_ID] = false;
+  expect(computeBuiltinPluginGates(withoutAttachment)).toMatchObject({
+    attachment: false,
+    providerModel: false,
+    sessionStore: false,
+    turnOrchestration: false,
+  });
+
+  const withoutContextLedger = structuredClone(config);
+  withoutContextLedger.plugins.enabled[CONTEXT_LEDGER_PLUGIN_ID] = false;
+  expect(computeBuiltinPluginGates(withoutContextLedger)).toMatchObject({
+    compaction: false,
+    providerModel: true,
+  });
+
+  const withoutWorkLedger = structuredClone(config);
+  withoutWorkLedger.plugins.enabled[WORK_LEDGER_PLUGIN_ID] = false;
+  expect(computeBuiltinPluginGates(withoutWorkLedger)).toMatchObject({
+    governanceLedger: false,
+    workLedger: false,
+  });
+
+  const withoutSubagents = structuredClone(config);
+  withoutSubagents.plugins.enabled[SUBAGENTS_PLUGIN_ID] = false;
+  expect(computeBuiltinPluginGates(withoutSubagents)).toMatchObject({
+    subagents: false,
+    team: false,
+  });
+
+  const withoutSessionStore = structuredClone(config);
+  withoutSessionStore.plugins.enabled[SESSION_STORE_PLUGIN_ID] = false;
+  expect(computeBuiltinPluginGates(withoutSessionStore)).toMatchObject({
+    sessionStore: false,
+    turnOrchestration: false,
+  });
+});
 
 test("every static catalog manifest exactly matches its factory", () => {
   const noop = () => undefined;

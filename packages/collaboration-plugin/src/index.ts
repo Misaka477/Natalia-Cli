@@ -1,6 +1,7 @@
 export {
   createCollaborationPlugin,
   COLLABORATION_PLUGIN_ID,
+  COLLABORATION_PLUGIN_MANIFEST,
   type CollaborationPluginInput,
 } from "./collaboration-plugin";
 export {

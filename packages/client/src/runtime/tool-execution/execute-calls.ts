@@ -13,6 +13,12 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { projectedConstitutionRules } from "@natalia/session";
 import { readOnlyToolMessage } from "@natalia/runtime-services";
+import {
+  TOOL_POLICY_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type ToolPolicyService,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import type { ProviderToolCall, ProviderMessage } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { ToolMaterialization } from "@natalia/tools";
@@ -72,12 +78,12 @@ export function createExecuteCalls(
     toolResource: string,
     commandText?: string,
   ): string | undefined {
-    const {
-      getActiveExec,
-      executionForTurn,
-      publishForSession,
-      getWorkLedgerController,
-    } = ctx.ports;
+    const { getActiveExec, executionForTurn, publishForSession } = ctx.ports;
+    const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!workLedgerController)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
     const activeExec = getActiveExec();
     const exec = executionForTurn(turnID) ?? activeExec;
     if (!exec) return undefined;
@@ -104,7 +110,7 @@ export function createExecuteCalls(
           // the edge's source exists once the call settles; a conflict is the
           // only check worth an edge (a pass-through rule is not news).
           publish(
-            getWorkLedgerController().constitutionCheckEdge({
+            workLedgerController.constitutionCheckEdge({
               turnID,
               callID,
               ruleID: entry.ruleID,
@@ -171,9 +177,6 @@ export function createExecuteCalls(
       currentModelPdfInput,
       mediaTypeForImage,
       isToolAllowed,
-      getToolLayer,
-      getModuleToolLayer,
-      getModulePermissionToolLayer,
       extensionToolPermission,
       executeOneTool,
     } = ctx.ports;
@@ -182,9 +185,20 @@ export function createExecuteCalls(
     const activeExec = getActiveExec();
     const workspaceRoot = getWorkspaceRoot();
     const runtimeContext = getRuntimeContext();
-    const toolLayer = getToolLayer();
-    const moduleToolLayer = getModuleToolLayer();
-    const modulePermissionToolLayer = getModulePermissionToolLayer();
+    const policy =
+      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    if (!policy)
+      throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
+    const moduleToolLayer = policy.createHookLayer(
+      options.taskModuleContext
+        ? ctx.state.initialize.moduleToolPolicy(
+            options.taskModuleContext.moduleType,
+          )
+        : undefined,
+    );
+    const modulePermissionToolLayer = policy.createHookLayer(
+      options.taskModuleContext?.modulePermissions?.tools,
+    );
     // B: the model can attach an image (a screenshot it took) so the next
     // provider step shows it back to the model, gated by the model's image
     // input capability.

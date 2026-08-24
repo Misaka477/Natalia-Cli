@@ -6,6 +6,7 @@ type Surface = Pick<
   RuntimeServiceClient,
   | "plugins"
   | "commandCatalog"
+  | "commandExecute"
   | "capabilities"
   | "pluginUnload"
   | "pluginReload"
@@ -41,6 +42,18 @@ export function createExtensionsSurface(
         acceptsArguments: command.acceptsArguments,
         category: command.category,
       }));
+    },
+    async commandExecute(input) {
+      await ctx.ports.ensureReady();
+      const command = ctx.ports
+        .commandCatalogEntries()
+        .find((entry) => entry.name === input.name);
+      if (!command) throw new Error(`command unavailable: ${input.name}`);
+      const raw = input.raw.trim();
+      const expected = `/${input.name}`;
+      if (raw !== expected && !raw.startsWith(`${expected} `))
+        throw new Error(`command input does not match ${expected}`);
+      await ctx.ports.submitInput({ text: raw });
     },
     async pluginUnload(id) {
       await ctx.ports.getReady();

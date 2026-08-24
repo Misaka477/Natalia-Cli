@@ -7,6 +7,10 @@
  */
 import { sessionRunCoordinator } from "@natalia/session";
 import { withProviderConcurrency } from "@natalia/runtime";
+import {
+  SESSION_STORE_CONTROLLER_SERVICE,
+  type SessionStoreController,
+} from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import {
   fallbackSessionTitle,
@@ -100,7 +104,6 @@ export function createTitleGeneration(ctx: RuntimeContext) {
     signal: AbortSignal,
   ) {
     const {
-      getSessionStoreController,
       getSessionPersistence,
       getProviderConcurrencyLimiter,
       getExecutionBySession,
@@ -109,9 +112,14 @@ export function createTitleGeneration(ctx: RuntimeContext) {
     const sanitized = sanitizeSessionTitleInput(text);
     if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
       return;
-    const sessionStoreController = getSessionStoreController();
+    const sessionStoreController =
+      ctx.ports.resolveService<SessionStoreController>(
+        SESSION_STORE_CONTROLLER_SERVICE,
+      );
+    if (!sessionStoreController)
+      throw new Error("session store unavailable (natalia-session-store)");
     const loadCurrent = async () =>
-      (await sessionStoreController?.load(id)).session;
+      (await sessionStoreController.load(id)).session;
     try {
       await getSessionPersistence();
       const current = await loadCurrent();
@@ -139,7 +147,7 @@ export function createTitleGeneration(ctx: RuntimeContext) {
       if (signal.aborted) return;
       const title = generated || fallbackSessionTitle(sanitized);
       const source = generated ? "generated" : "fallback";
-      const updated = await sessionStoreController?.setAutoTitle(
+      const updated = await sessionStoreController.setAutoTitle(
         id,
         title,
         source,
@@ -155,7 +163,7 @@ export function createTitleGeneration(ctx: RuntimeContext) {
       if (signal.aborted) return;
       const fallback = fallbackSessionTitle(sanitized);
       const updated = await sessionStoreController
-        ?.setAutoTitle(id, fallback, "fallback")
+        .setAutoTitle(id, fallback, "fallback")
         .catch(() => undefined);
       const committed = await loadCurrent().catch(() => undefined);
       if (

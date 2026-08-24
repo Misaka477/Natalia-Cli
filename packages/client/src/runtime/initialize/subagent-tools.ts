@@ -3,9 +3,12 @@ import type {
   ProviderToolCall,
   RuntimeContext,
   RuntimeTool,
+  SandboxService,
   SessionExecutionState,
   SubagentRunnerContext,
   SubagentSupport,
+  SubagentsService,
+  TerminalController,
   ToolHookEvent,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
@@ -16,6 +19,13 @@ export async function createSubagentTools(
   support: SubagentSupport,
 ) {
   const scope = createInitializeRuntime(ctx);
+  const subagents = scope.resolveService<SubagentsService>(
+    scope.SUBAGENTS_SERVICE,
+  );
+  const terminal = scope.resolveService<TerminalController>(
+    scope.TERMINAL_CONTROLLER_SERVICE,
+  );
+  const sandbox = scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE);
   const { publishSubagentEvent, subagentTurnID } = support;
   async function executeSubagentToolCall(input: {
     call: ProviderToolCall;
@@ -86,7 +96,9 @@ export async function createSubagentTools(
         summary: tool.requiresApproval ? "awaiting approval" : "queued",
         argumentsDelta: call.arguments,
       });
-      const preResult = await scope.toolLayer.preExecute(hookEvent);
+      const preResult = await scope
+        .createToolPolicyLayer(input.exec)
+        .preExecute(hookEvent);
       if (!preResult.allowed)
         throw new Error(
           `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
@@ -108,9 +120,7 @@ export async function createSubagentTools(
         throw new Error(
           `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
         );
-      const parentSessionID = scope.subagentsController?.get(
-        runner.agentId,
-      )?.parentSessionID;
+      const parentSessionID = subagents?.get(runner.agentId)?.parentSessionID;
       const startedAt = Date.now();
       publishSubagentEvent(runner, {
         type: "tool.update",
@@ -134,11 +144,9 @@ export async function createSubagentTools(
             hookEvent.turnID,
             question,
           ),
-        subagents: scope.subagentsController,
-        terminal: scope.terminalController,
-        ...(input.exposeSandboxes
-          ? { sandboxes: scope.sandboxController }
-          : {}),
+        subagents: subagents ?? undefined,
+        terminal: terminal ?? undefined,
+        ...(input.exposeSandboxes ? { sandboxes: sandbox ?? undefined } : {}),
         workspaceReadAuthorize: (request) =>
           scope.authorizeWorkspaceRead(request, input.exec),
         ...(input.writeAuthorize
@@ -158,7 +166,9 @@ export async function createSubagentTools(
         scope.redactToolOutputEnabled(input.exec),
       );
       const projectedRender = tool.output?.presentResult?.(parsed, result);
-      await scope.toolLayer.postExecute({ ...hookEvent, result });
+      await scope
+        .createToolPolicyLayer(input.exec)
+        .postExecute({ ...hookEvent, result });
       publishSubagentEvent(runner, {
         type: "tool.update",
         id: toolID,
@@ -175,7 +185,9 @@ export async function createSubagentTools(
     } catch (error) {
       if (runner.signal.aborted) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      await scope.toolLayer.postExecute({ ...hookEvent, error: message });
+      await scope
+        .createToolPolicyLayer(input.exec)
+        .postExecute({ ...hookEvent, error: message });
       publishSubagentEvent(runner, {
         type: "tool.update",
         id: toolID,

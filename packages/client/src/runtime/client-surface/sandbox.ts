@@ -1,4 +1,12 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import {
+  SANDBOX_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  type MutationRegistry,
+  type SandboxService,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import { randomUUID } from "node:crypto";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
@@ -16,10 +24,28 @@ export function createSandboxSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
+  function requireSandboxes() {
+    const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
+    if (!sandboxes) throw new Error("sandbox controller unavailable");
+    return sandboxes;
+  }
+  function requireWorkLedger() {
+    const ledger = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!ledger)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
+    return ledger;
+  }
+  function mutationRegistry() {
+    return ctx.ports.resolveService<MutationRegistry>(
+      WORKSPACE_MUTATIONS_SERVICE,
+    );
+  }
   return {
     async sandboxList() {
       await ctx.ports.getReady();
-      const sandboxes = ctx.ports.requireSandboxes();
+      const sandboxes = requireSandboxes();
       return (await sandboxes.list()).map((sandbox) => ({
         id: sandbox.id,
         root: sandbox.root,
@@ -31,17 +57,17 @@ export function createSandboxSurface(
     },
     async sandboxDiff(id) {
       await ctx.ports.getReady();
-      const sandboxes = ctx.ports.requireSandboxes();
+      const sandboxes = requireSandboxes();
       return await sandboxes.previewMerge(id);
     },
     async sandboxResources(id) {
       await ctx.ports.getReady();
-      const sandboxes = ctx.ports.requireSandboxes();
+      const sandboxes = requireSandboxes();
       return sandboxes.resourcesFor(id);
     },
     async sandboxResourceOutput(input) {
       await ctx.ports.getReady();
-      const sandboxes = ctx.ports.requireSandboxes();
+      const sandboxes = requireSandboxes();
       return await sandboxes.resourceOutput(
         input.id,
         input.resourceID,
@@ -52,7 +78,7 @@ export function createSandboxSurface(
       await ctx.ports.getReady();
       const owner = ctx.ports.getActiveExec();
       if (!owner) throw new Error("session is not initialized");
-      const sandboxes = ctx.ports.requireSandboxes();
+      const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_merge",
         { id },
@@ -68,7 +94,7 @@ export function createSandboxSurface(
       // WG4 Phase 3: sandbox merge keeps its own operation provenance (not a
       // tool call), but registers an expected mutation so the auditor can
       // attribute merged paths to the merge operation.
-      ctx.ports.getMutationRegistry()?.register({
+      mutationRegistry()?.register({
         sessionID: owner.session.id,
         episodeID: options.episodeID,
         operationID,
@@ -79,7 +105,7 @@ export function createSandboxSurface(
       for (const change of changes) {
         ctx.ports.publishForSession(
           owner,
-          ctx.ports.getWorkLedgerController().workspaceChangeNode({
+          requireWorkLedger().workspaceChangeNode({
             operationID,
             path: change.path,
             toolName: "sandbox_merge",
@@ -87,7 +113,7 @@ export function createSandboxSurface(
           }),
         );
       }
-      ctx.ports.getMutationRegistry()?.settle(operationID);
+      mutationRegistry()?.settle(operationID);
       ctx.ports.publishForSession(owner, sandboxes.updateEvent(id));
       ctx.ports.publishForSession(owner, sandboxes.auditEvent(id, "merge"));
       return changes;
@@ -96,7 +122,7 @@ export function createSandboxSurface(
       await ctx.ports.getReady();
       const owner = ctx.ports.getActiveExec();
       if (!owner) throw new Error("session is not initialized");
-      const sandboxes = ctx.ports.requireSandboxes();
+      const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_delete",
         { id },
@@ -120,7 +146,7 @@ export function createSandboxSurface(
       await ctx.ports.getReady();
       const owner = ctx.ports.getActiveExec();
       if (!owner) throw new Error("session is not initialized");
-      const sandboxes = ctx.ports.requireSandboxes();
+      const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_resource_stop",
         input,

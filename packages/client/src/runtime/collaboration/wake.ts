@@ -7,6 +7,10 @@
  * time.
  */
 import { sessionRunCoordinator } from "@natalia/session";
+import {
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
+  type ProviderModelController,
+} from "@natalia/runtime-services";
 import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -51,14 +55,17 @@ export function createCollaborationWake(ctx: RuntimeContext) {
 
   function requestNaviWake(exec: SessionExecutionState) {
     ctx.ports
-      .getProviderModelController()
+      .resolveService<ProviderModelController>(
+        PROVIDER_MODEL_CONTROLLER_SERVICE,
+      )
       ?.requestChatWake(exec.session.id as SessionID);
   }
 
   async function wakeNavi(exec: SessionExecutionState) {
-    const { getProviderModelController, publishForSession, nextChatSequence } =
-      ctx.ports;
-    const controller = getProviderModelController();
+    const { publishForSession, nextChatSequence } = ctx.ports;
+    const controller = ctx.ports.resolveService<ProviderModelController>(
+      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    );
     if (!exec.provider || !controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
     try {

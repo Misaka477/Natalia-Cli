@@ -116,7 +116,7 @@ export function createConfigReload(
       getContextWindowResolver,
       refreshExecutionContextConfig,
       modelRefKeyForSelection,
-      refreshBuiltinServices,
+      runPluginLifecyclePostReconcile,
       publishToolCatalogChanges,
       buildBuiltinPluginCatalog,
     } = ctx.ports;
@@ -176,7 +176,7 @@ export function createConfigReload(
         defaults,
         tsConfig.config.plugins,
       );
-      await refreshBuiltinServices(selectedSkills);
+      await runPluginLifecyclePostReconcile(selectedSkills);
       publishToolCatalogChanges(toolsBeforeReconcile);
       applyAgentPolicy();
       if (
@@ -310,6 +310,6 @@ export function createConfigReload(
         state.activeSkill ? [[id, state.activeSkill]] : [],
       ),
     );
-    await ports.refreshBuiltinServices(selectedSkills);
+    await ports.runPluginLifecyclePostReconcile(selectedSkills);
   }
 }

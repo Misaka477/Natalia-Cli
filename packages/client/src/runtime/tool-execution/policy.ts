@@ -7,6 +7,10 @@
  */
 import { mergeContributedToolSettings } from "../../capability-settings";
 import type { ToolHookEvent } from "@natalia/runtime-services";
+import {
+  TOOL_POLICY_SERVICE,
+  type ToolPolicyService,
+} from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -23,13 +27,9 @@ export function createToolPolicySurface(ctx: RuntimeContext) {
     input: { id: string; paths: string[] },
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ) {
-    const {
-      getActiveExec,
-      getActiveTurnID,
-      getSessionID,
-      getToolLayer,
-      publishForSession,
-    } = ctx.ports;
+    const { getActiveExec, getActiveTurnID, getSessionID, publishForSession } =
+      ctx.ports;
+    const toolLayer = ctx.ports.createToolPolicyLayer(exec);
     const activeExec = getActiveExec();
     const activeTurnID = getActiveTurnID();
     const sessionID = getSessionID();
@@ -43,7 +43,7 @@ export function createToolPolicySurface(ctx: RuntimeContext) {
         toolCallID: `sandbox:${input.id}:${path}`,
         arguments: JSON.stringify({ id: input.id, path }),
       };
-      const preResult = await getToolLayer().preExecute(hookEvent);
+      const preResult = await toolLayer.preExecute(hookEvent);
       for (const diagnostic of preResult.diagnostics)
         publishForSession(exec, {
           type: "diagnostic",
@@ -62,14 +62,15 @@ export function createToolPolicySurface(ctx: RuntimeContext) {
     arguments_: Record<string, string>,
     exec: SessionExecutionState = ctx.ports.getActiveExec()!,
   ) {
-    const { getToolLayer, publishForSession } = ctx.ports;
+    const { publishForSession } = ctx.ports;
+    const toolLayer = ctx.ports.createToolPolicyLayer(exec);
     const hookEvent: ToolHookEvent = {
       turnID: exec.activeTurnID ?? `sandbox:${exec.session.id}`,
       toolName,
       toolCallID: `sandbox:manage:${toolName}:${arguments_.id}`,
       arguments: JSON.stringify(arguments_),
     };
-    const result = await getToolLayer().preExecute(hookEvent);
+    const result = await toolLayer.preExecute(hookEvent);
     for (const diagnostic of result.diagnostics)
       publishForSession(exec, {
         type: "diagnostic",
@@ -89,16 +90,15 @@ export function createToolPolicySurface(ctx: RuntimeContext) {
     },
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ) {
-    const {
-      getSelectedAgent,
-      getToolPolicy,
-      getWorkspaceRoot,
-      publishForSession,
-    } = ctx.ports;
+    const { getSelectedAgent, getWorkspaceRoot, publishForSession } = ctx.ports;
+    const policy =
+      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    if (!policy)
+      throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
     const selectedAgent = getSelectedAgent();
     const agent = exec ? exec.selectedAgent : selectedAgent;
     for (const path of input.paths) {
-      const permission = getToolPolicy()!.evaluatePermissionRules(
+      const permission = policy.evaluatePermissionRules(
         agent?.permissions,
         input.toolName,
         { path },

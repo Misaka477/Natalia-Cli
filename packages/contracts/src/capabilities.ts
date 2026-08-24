@@ -169,6 +169,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   extensions: [
     "plugins",
     "commandCatalog",
+    "commandExecute",
     "capabilities",
     "pluginUnload",
     "pluginReload",

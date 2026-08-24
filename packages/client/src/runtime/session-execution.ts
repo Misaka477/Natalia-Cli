@@ -7,6 +7,14 @@
  * through `RuntimeContext` at call time.
  */
 import { modelVisibleEvents, projectSession } from "@natalia/session";
+import {
+  CONTEXT_LEDGER_FACTORY_SERVICE,
+  SESSION_STORE_CONTROLLER_SERVICE,
+  TURN_CONTROLLER_SERVICE,
+  type ContextLedgerFactory,
+  type SessionStoreController,
+  type TurnController,
+} from "@natalia/runtime-services";
 import type { SessionRecord } from "@natalia/session";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
@@ -29,14 +37,26 @@ export function createSessionExecution(
   function drainSessionFor(sessionID: SessionID) {
     return async (signal: AbortSignal) => {
       await ensureExecution(sessionID);
-      await ctx.ports.getTurnController().drain(signal, sessionID);
+      const turnController = ctx.ports.resolveService<TurnController>(
+        TURN_CONTROLLER_SERVICE,
+      );
+      if (!turnController)
+        throw new Error(
+          "turn orchestration unavailable (natalia-turn-orchestration)",
+        );
+      await turnController.drain(signal, sessionID);
     };
   }
 
   async function drainPendingQueue(signal?: AbortSignal) {
-    await ctx.ports
-      .getTurnController()
-      .drainQueue(signal, ctx.ports.getSessionID());
+    const turnController = ctx.ports.resolveService<TurnController>(
+      TURN_CONTROLLER_SERVICE,
+    );
+    if (!turnController)
+      throw new Error(
+        "turn orchestration unavailable (natalia-turn-orchestration)",
+      );
+    await turnController.drainQueue(signal, ctx.ports.getSessionID());
   }
 
   async function runAdmittedInput(
@@ -46,26 +66,43 @@ export function createSessionExecution(
     resources: import("@natalia/contracts").PromptResourceMention[] = [],
     agents: import("@natalia/contracts").PromptAgentMention[] = [],
   ) {
-    await ctx.ports
-      .getTurnController()
-      .admit(
-        ctx.ports.getSessionID(),
-        id,
-        text,
-        attachments,
-        resources,
-        agents,
+    const turnController = ctx.ports.resolveService<TurnController>(
+      TURN_CONTROLLER_SERVICE,
+    );
+    if (!turnController)
+      throw new Error(
+        "turn orchestration unavailable (natalia-turn-orchestration)",
       );
+    await turnController.admit(
+      ctx.ports.getSessionID(),
+      id,
+      text,
+      attachments,
+      resources,
+      agents,
+    );
   }
 
   async function persistInboxPromotion(
     targetSessionID = ctx.ports.getSessionID(),
   ) {
-    await ctx.ports.getTurnController().persistPromotion(targetSessionID);
+    const turnController = ctx.ports.resolveService<TurnController>(
+      TURN_CONTROLLER_SERVICE,
+    );
+    if (!turnController)
+      throw new Error(
+        "turn orchestration unavailable (natalia-turn-orchestration)",
+      );
+    await turnController.persistPromotion(targetSessionID);
   }
 
   async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {
-    return (await ctx.ports.getSessionStoreController().load(id)).session;
+    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
+      SESSION_STORE_CONTROLLER_SERVICE,
+    );
+    if (!sessionStore)
+      throw new Error("session store unavailable (natalia-session-store)");
+    return (await sessionStore.load(id)).session;
   }
 
   /**
@@ -78,8 +115,6 @@ export function createSessionExecution(
     sessionID: SessionID,
   ): Promise<SessionExecutionState> {
     const {
-      getSessionStoreController,
-      getContextLedgerFactory,
       getProviderSource,
       getProvider,
       getRuntimeContextConfig,
@@ -92,17 +127,26 @@ export function createSessionExecution(
     const { executionBySession } = ctx.state;
     const existing = executionBySession.get(sessionID);
     if (existing) return existing;
-    const sessionStoreController = getSessionStoreController();
-    const stored = await sessionStoreController.load(sessionID);
+    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
+      SESSION_STORE_CONTROLLER_SERVICE,
+    );
+    if (!sessionStore)
+      throw new Error("session store unavailable (natalia-session-store)");
+    const contextLedgerFactory = ctx.ports.resolveService<ContextLedgerFactory>(
+      CONTEXT_LEDGER_FACTORY_SERVICE,
+    );
+    if (!contextLedgerFactory)
+      throw new Error("context ledger unavailable (natalia-context-ledger)");
+    const stored = await sessionStore.load(sessionID);
     const loaded = stored.session;
-    const execContext = getContextLedgerFactory().create();
+    const execContext = contextLedgerFactory.create();
     const projection = projectSession(loaded);
     const epoch = stored.contextEpoch;
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
-    getContextLedgerFactory().restore(
+    contextLedgerFactory.restore(
       execContext,
       epoch
-        ? sessionStoreController.contextEventsAfter(sessionID, epoch)!
+        ? sessionStore.contextEventsAfter(sessionID, epoch)!
         : modelVisibleEvents(projection.replayableEvents),
     );
     const exec: SessionExecutionState = {

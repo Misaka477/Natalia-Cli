@@ -1,6 +1,9 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import {
+  SESSION_STORE_CONTROLLER_SERVICE,
+  type SessionStoreController,
+} from "@natalia/runtime-services";
 import { updateConfigAtScope } from "@natalia/config";
-import { PROVIDER_MODEL_PLUGIN_ID } from "@natalia/builtin-plugins";
 import { sessionRunCoordinator } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
@@ -32,17 +35,19 @@ export function createLifecycleSurface(
           sessionRunCoordinator(id).interrupt(),
         ),
       );
-      await ctx.ports.getPluginsController().unload(PROVIDER_MODEL_PLUGIN_ID);
-      ctx.ports.setProviderModelController(undefined);
       await Promise.allSettled([...ctx.ports.getInternalWakeTasks()]);
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
       await ctx.ports.getSessionPersistence();
-      await Promise.all(
-        [...ctx.ports.getExecutionBySession().keys()].map((id) =>
-          ctx.ports.getSessionStoreController()?.flush(id),
-        ),
+      const sessionStore = ctx.ports.resolveService<SessionStoreController>(
+        SESSION_STORE_CONTROLLER_SERVICE,
       );
+      if (sessionStore)
+        await Promise.all(
+          [...ctx.ports.getExecutionBySession().keys()].map((id) =>
+            sessionStore.flush(id),
+          ),
+        );
       await ctx.ports.getPluginsController().close();
       await ctx.ports.getPerformanceTrace().stop();
     },

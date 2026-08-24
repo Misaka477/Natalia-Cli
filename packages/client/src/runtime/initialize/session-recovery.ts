@@ -1,7 +1,13 @@
 import type {
+  AttachmentService,
+  ContextLedgerFactory,
   InitializeOptions,
+  McpService,
   RuntimeContext,
+  SandboxService,
   SessionExecutionState,
+  SessionStoreController,
+  TerminalController,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
 
@@ -11,24 +17,29 @@ export async function recoverSession(
 ) {
   const scope = createInitializeRuntime(ctx);
   if (scope.tsRuntimeConfig && scope.extensionEnabled("mcp")) {
-    await scope.mcpService?.reload();
+    scope.resolveService<McpService>(scope.MCP_SERVICE)?.reload();
   }
   // Out-of-tree families declared by `scope.tools.paths` join the built-ins through
   // the same kernel, so they own their scope.tools the same way. They load here
   // because dynamic import is async and the built-in catalogue is assembled at
   // construction — before this point no config is resolved yet.
-  await scope.terminalController?.init();
-  scope.terminalController?.setActiveSession(scope.sessionID);
-
-  await scope.sandboxController?.init();
-  const storedSession = await scope.sessionStoreController?.load(
-    scope.sessionID,
-    {
-      title: options.title,
-      create: true,
-      indexedRecovery: scope.replayMode === "none",
-    },
+  const terminal = scope.resolveService<TerminalController>(
+    scope.TERMINAL_CONTROLLER_SERVICE,
   );
+  await terminal?.init();
+  terminal?.setActiveSession(scope.sessionID);
+
+  await scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE)?.init();
+  const sessionStore = scope.resolveService<SessionStoreController>(
+    scope.SESSION_STORE_CONTROLLER_SERVICE,
+  );
+  if (!sessionStore)
+    throw new Error("session store unavailable (natalia-session-store)");
+  const storedSession = await sessionStore.load(scope.sessionID, {
+    title: options.title,
+    create: true,
+    indexedRecovery: scope.replayMode === "none",
+  });
   scope.session = storedSession?.session;
   if (!scope.session)
     throw new Error("session initialization did not complete");
@@ -37,7 +48,7 @@ export async function recoverSession(
       ...scope.session.metadata,
       titleSource: "manual",
     };
-    await scope.sessionStoreController?.updateMetadata(scope.session, {
+    await sessionStore.updateMetadata(scope.session, {
       titleSource: "manual",
     });
   }
@@ -65,8 +76,13 @@ export async function recoverSession(
   // list) would silently see the pre-recovery shell instead of the restored
   // state.
   if (scope.activeExec) scope.activeExec.session = scope.session;
-  await scope.attachmentService
-    .cleanup(await scope.sessionStoreController.referencedAttachments())
+  const attachmentService = scope.resolveService<AttachmentService>(
+    scope.ATTACHMENT_SERVICE,
+  );
+  if (!attachmentService)
+    throw new Error("attachment service unavailable (natalia-attachment)");
+  await attachmentService
+    .cleanup(await sessionStore.referencedAttachments())
     .catch((error) =>
       scope.publish({
         type: "diagnostic",
@@ -92,15 +108,12 @@ export async function recoverSession(
   );
   if (interruptedOperation) {
     delete scope.session.metadata?.inFlightOperation;
-    await scope.sessionStoreController?.updateMetadata(scope.session, {
+    await sessionStore.updateMetadata(scope.session, {
       inFlightOperation: undefined,
     });
   }
   if (interrupted.length || interruptedOperation) {
-    await scope.sessionStoreController?.appendEvents(
-      scope.session,
-      interrupted,
-    );
+    await sessionStore.appendEvents(scope.session, interrupted);
     scope.publish({
       type: "diagnostic",
       level: "warning",
@@ -165,13 +178,15 @@ export async function recoverSession(
     scope.runtimeContext.restoreDurableCheckpoint(
       latestContextCheckpoint.snapshot,
     );
-  scope.contextLedgerFactory.restore(
+  const contextLedgerFactory = scope.resolveService<ContextLedgerFactory>(
+    scope.CONTEXT_LEDGER_FACTORY_SERVICE,
+  );
+  if (!contextLedgerFactory)
+    throw new Error("context ledger unavailable (natalia-context-ledger)");
+  contextLedgerFactory.restore(
     scope.runtimeContext,
     sqliteEpoch
-      ? scope.sessionStoreController.contextEventsAfter(
-          scope.sessionID,
-          sqliteEpoch,
-        )!
+      ? sessionStore.contextEventsAfter(scope.sessionID, sqliteEpoch)!
       : scope.modelVisibleEvents(projection.replayableEvents),
   );
   for (const [turnID, attachments] of sqliteRecovery?.attachments ?? [])

@@ -1,5 +1,11 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
+  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type GovernanceLedgerController,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
+import {
   projectedCanonicalTools,
   projectedCompletions,
   projectedConstitutionRules,
@@ -31,6 +37,24 @@ export function createIntelligenceSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
+  function requireGovernanceLedger() {
+    const ledger = ctx.ports.resolveService<GovernanceLedgerController>(
+      GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!ledger)
+      throw new Error(
+        "governance ledger unavailable (natalia-governance-ledger)",
+      );
+    return ledger;
+  }
+  function requireWorkLedger() {
+    const ledger = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!ledger)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
+    return ledger;
+  }
   return {
     async confirmedWorkspaceChanges() {
       await ctx.ports.getReady();
@@ -84,7 +108,7 @@ export function createIntelligenceSurface(
       linkedConstraints?: string[];
     }) {
       if (!ctx.ports.getSession()) return { recorded: false as const };
-      const event = ctx.ports.getGovernanceLedgerController().recordDecision({
+      const event = requireGovernanceLedger().recordDecision({
         id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
         ...input,
       });
@@ -92,7 +116,7 @@ export function createIntelligenceSurface(
       // CST4 Work Graph linkage: the decision is a `decision` node in the graph.
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().decisionNode({
+        requireWorkLedger().decisionNode({
           decisionID: event.id,
           decision: event.decision,
           sessionID: ctx.ports.getSessionID(),
@@ -118,12 +142,10 @@ export function createIntelligenceSurface(
           status: r.status,
           effectiveStatus:
             r.taskID && planStateForTask.has(r.taskID)
-              ? ctx.ports
-                  .getGovernanceLedgerController()
-                  .evidenceStatusForPlanState(
-                    planStateForTask.get(r.taskID)! as PlanLifecycleState,
-                    r.status,
-                  )
+              ? requireGovernanceLedger().evidenceStatusForPlanState(
+                  planStateForTask.get(r.taskID)! as PlanLifecycleState,
+                  r.status,
+                )
               : r.status,
           changes: r.changes ?? [],
           validations: r.validations ?? [],
@@ -188,24 +210,20 @@ export function createIntelligenceSurface(
       } catch (error) {
         safeSummary = `validation runner failed: ${error instanceof Error ? error.message : String(error)}`;
       }
-      const outcome = ctx.ports
-        .getGovernanceLedgerController()
-        .boundValidationOutcome({
-          command: redactToolOutput(input.command, true),
-          result,
-          safeSummary,
-          durationMs: performance.now() - startedAt,
-        });
-      const event = ctx.ports
-        .getGovernanceLedgerController()
-        .buildEvidenceRecorded({
-          id: `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`,
-          taskID: input.taskID,
-          objective: input.objective,
-          status: result === "passed" ? "validated" : "failed",
-          validations: [outcome],
-          knownGaps: input.knownGaps,
-        });
+      const outcome = requireGovernanceLedger().boundValidationOutcome({
+        command: redactToolOutput(input.command, true),
+        result,
+        safeSummary,
+        durationMs: performance.now() - startedAt,
+      });
+      const event = requireGovernanceLedger().buildEvidenceRecorded({
+        id: `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`,
+        taskID: input.taskID,
+        objective: input.objective,
+        status: result === "passed" ? "validated" : "failed",
+        validations: [outcome],
+        knownGaps: input.knownGaps,
+      });
       ctx.ports.publishForSession(owner, event);
       return {
         recorded: true as const,
@@ -245,39 +263,37 @@ export function createIntelligenceSurface(
         return { recorded: false as const };
       const recordedAt = new Date().toISOString();
       const completionID = `completion:${Date.now().toString(36)}:${ctx.ports.nextCompletionSequence()}`;
-      const event = ctx.ports
-        .getGovernanceLedgerController()
-        .buildCompletionRecorded({
-          id: completionID,
-          taskID: input.taskID,
-          objective: input.objective,
-          changeSummary: redactToolOutput(input.changeSummary, true),
-          ...(input.behaviorImpact
-            ? { behaviorImpact: redactToolOutput(input.behaviorImpact, true) }
-            : {}),
-          validations: (input.validations ?? []).map((validation) =>
-            ctx.ports.getGovernanceLedgerController().boundValidationOutcome({
-              command: redactToolOutput(validation.command, true),
-              result: validation.result,
-              safeSummary: validation.safeSummary,
-            }),
-          ),
-          ...(input.humanValidation
-            ? { humanValidation: redactToolOutput(input.humanValidation, true) }
-            : {}),
-          knownGaps: input.knownGaps,
-          externalSideEffects: input.externalSideEffects,
-          rollbackState: input.rollbackState,
-          evidenceIDs: input.evidenceIDs,
-          recordedAt,
-        });
+      const event = requireGovernanceLedger().buildCompletionRecorded({
+        id: completionID,
+        taskID: input.taskID,
+        objective: input.objective,
+        changeSummary: redactToolOutput(input.changeSummary, true),
+        ...(input.behaviorImpact
+          ? { behaviorImpact: redactToolOutput(input.behaviorImpact, true) }
+          : {}),
+        validations: (input.validations ?? []).map((validation) =>
+          requireGovernanceLedger().boundValidationOutcome({
+            command: redactToolOutput(validation.command, true),
+            result: validation.result,
+            safeSummary: validation.safeSummary,
+          }),
+        ),
+        ...(input.humanValidation
+          ? { humanValidation: redactToolOutput(input.humanValidation, true) }
+          : {}),
+        knownGaps: input.knownGaps,
+        externalSideEffects: input.externalSideEffects,
+        rollbackState: input.rollbackState,
+        evidenceIDs: input.evidenceIDs,
+        recordedAt,
+      });
       ctx.ports.publishForSession(ctx.ports.getActiveExec(), event);
       // P2 E4 Work Graph integration: each completed change is validated by the
       // card through a `validated_by` edge.
       for (const path of input.changePaths ?? [])
         ctx.ports.publishForSession(
           ctx.ports.getActiveExec(),
-          ctx.ports.getWorkLedgerController().completionValidationEdge({
+          requireWorkLedger().completionValidationEdge({
             changeID: event.taskID,
             path,
             completionID,
@@ -321,7 +337,7 @@ export function createIntelligenceSurface(
       if (!ctx.ports.getSession()) return { opened: 0 as const };
       if (!input.objective.trim() || !input.currentActivity.trim())
         return { opened: 0 as const };
-      const findings = ctx.ports.getWorkLedgerController().evaluateDrift({
+      const findings = requireWorkLedger().evaluateDrift({
         sessionID: ctx.ports.getSessionID(),
         turnID: ctx.ports.getActiveExec()?.activeTurnID,
         objective: input.objective,
@@ -355,7 +371,7 @@ export function createIntelligenceSurface(
       if (!finding) return { acknowledged: false as const };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().buildDriftFindingUpdate({
+        requireWorkLedger().buildDriftFindingUpdate({
           id: `drift:${Date.now().toString(36)}:${input.findingID}`,
           findingID: input.findingID,
           status: input.status,

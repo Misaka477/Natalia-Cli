@@ -9,6 +9,14 @@
 import { contextStatusEvent } from "@natalia/runtime";
 import { projectSession } from "@natalia/session";
 import { RuntimeRefusal } from "@natalia/contracts";
+import {
+  SESSION_STORE_CONTROLLER_SERVICE,
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  TERMINAL_CONTROLLER_SERVICE,
+  type SessionStoreController,
+  type StatusSnapshotController,
+  type TerminalController,
+} from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 
@@ -28,9 +36,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
       setAttachmentReferences,
       setToolCalls,
       getSessionPersistence,
-      getSessionStoreController,
       ensureExecution,
-      getTerminalController,
       setLastSubmitted,
       setActiveAbort,
       setActiveTurnID,
@@ -51,19 +57,30 @@ export function createSessionAttach(ctx: RuntimeContext) {
       applyAgentProvider,
       initializeCheckpointController,
       publishForSession,
-      getStatusController,
     } = ctx.ports;
     await getReady();
     // D2: a running turn is no longer a reason to refuse. The turn belongs to
     // its own session's exec and keeps running in the background; attach only
     // switches which session the UI is attached to.
+    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
+      SESSION_STORE_CONTROLLER_SERVICE,
+    );
+    if (!sessionStore)
+      throw new Error("session store unavailable (natalia-session-store)");
+    const terminal = ctx.ports.resolveService<TerminalController>(
+      TERMINAL_CONTROLLER_SERVICE,
+    );
+    const status = ctx.ports.resolveService<StatusSnapshotController>(
+      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+    );
+    if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
     const sessionID = getSessionID();
     const nextID = id as SessionID;
     if (nextID === sessionID) return { sessionID: nextID };
 
     // A replacement runtime can open the old session as soon as attach returns.
     await getSessionPersistence();
-    await getSessionStoreController()?.flush(sessionID);
+    await sessionStore.flush(sessionID);
 
     // D2: the attached session becomes the activity exec. Its ledger is its
     // own — restoring into the shared one would clobber the previous session's
@@ -77,7 +94,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
     setActiveExec(exec);
     setAttachmentReferences(exec.attachmentReferences);
     setToolCalls(exec.toolCalls);
-    getTerminalController()?.setActiveSession(nextID);
+    terminal?.setActiveSession(nextID);
     setLastSubmitted(exec.lastSubmitted);
     setActiveAbort(exec.activeAbort);
     setActiveTurnID(exec.activeTurnID);
@@ -129,7 +146,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
     );
     publishForSession(
       exec,
-      await getStatusController().snapshotFor({
+      await status.snapshotFor({
         provider: exec.provider,
         context: exec.context,
         permissionMode: exec.permissionMode,

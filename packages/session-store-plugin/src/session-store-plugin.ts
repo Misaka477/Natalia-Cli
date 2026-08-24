@@ -7,7 +7,7 @@
  * constructs no store at all. The host resolves the service and drives `init`,
  * then every member that persists session events reads it from the kernel.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
 import { createSessionStoreController } from "./session-store-controller";
 import { ATTACHMENT_PLUGIN_ID } from "@natalia/attachment-plugin";
@@ -18,6 +18,29 @@ import {
 } from "@natalia/runtime-services";
 
 export const SESSION_STORE_PLUGIN_ID = "natalia-session-store";
+export const SESSION_STORE_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: SESSION_STORE_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Session Store",
+  description: "Durable session persistence.",
+  entry: "natalia:session-store",
+  scope: "workspace",
+  provides: [SESSION_STORE_CONTROLLER_SERVICE],
+  requires: [ATTACHMENT_SERVICE],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [
+    {
+      id: ATTACHMENT_PLUGIN_ID,
+      spec: ">=1.0.0",
+      optional: false,
+      peer: false,
+    },
+  ],
+  hooks: {},
+  integrationPoints: ["services", "commands"],
+};
 export function createSessionStoreControllerPlugin(input: {
   workspaceRoot: string;
   sessionID(): SessionID;
@@ -27,29 +50,7 @@ export function createSessionStoreControllerPlugin(input: {
 }): Plugin {
   let controller: ReturnType<typeof createSessionStoreController> | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: SESSION_STORE_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Session Store",
-      description: "Durable session persistence.",
-      entry: "natalia:session-store",
-      scope: "workspace",
-      provides: [SESSION_STORE_CONTROLLER_SERVICE],
-      requires: [ATTACHMENT_SERVICE],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [
-        {
-          id: ATTACHMENT_PLUGIN_ID,
-          spec: ">=1.0.0",
-          optional: false,
-          peer: false,
-        },
-      ],
-      hooks: {},
-      integrationPoints: ["services", "commands"],
-    },
+    manifest: SESSION_STORE_PLUGIN_MANIFEST,
     setup(api) {
       const attachments =
         api.services.get<AttachmentService>(ATTACHMENT_SERVICE);

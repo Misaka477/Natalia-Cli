@@ -10,6 +10,10 @@ import {
   projectedMailboxMessages,
   projectedPlans,
 } from "@natalia/session";
+import {
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import { chatToolSummary } from "./chat-summary";
@@ -35,7 +39,6 @@ export function createChatTools(ctx: RuntimeContext) {
   ): RuntimeTool[] {
     const {
       getExecutionBySession,
-      getWorkLedgerController,
       publishForSession,
       redactToolOutput,
       currentSessionSnapshot,
@@ -339,9 +342,15 @@ export function createChatTools(ctx: RuntimeContext) {
               candidate.status === "draft",
           );
           if (!plan) return `no live_chat draft ${args.planID}`;
+          const workLedgerController =
+            ctx.ports.resolveService<WorkLedgerController>(
+              WORK_LEDGER_CONTROLLER_SERVICE,
+            );
+          if (!workLedgerController)
+            throw new Error("work ledger unavailable (natalia-work-ledger)");
           publishForSession(
             exec,
-            getWorkLedgerController().buildPlanTransition({
+            workLedgerController.buildPlanTransition({
               id: `${plan.planID}:draft:${plan.version + 1}`,
               planID: plan.planID,
               version: plan.version + 1,
@@ -377,9 +386,15 @@ export function createChatTools(ctx: RuntimeContext) {
           );
           if (!plan || plan.status !== "draft")
             return `no draftable live_chat plan ${args.planID}`;
+          const workLedgerController =
+            ctx.ports.resolveService<WorkLedgerController>(
+              WORK_LEDGER_CONTROLLER_SERVICE,
+            );
+          if (!workLedgerController)
+            throw new Error("work ledger unavailable (natalia-work-ledger)");
           publishForSession(
             exec,
-            getWorkLedgerController().buildPlanTransition({
+            workLedgerController.buildPlanTransition({
               id: `${plan.planID}:proposed:${Date.now().toString(36)}`,
               planID: plan.planID,
               version: plan.version,

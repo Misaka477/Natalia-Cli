@@ -1,6 +1,7 @@
 export {
   createLocalToolsPlugin,
   LOCAL_TOOLS_PLUGIN_ID,
+  LOCAL_TOOLS_PLUGIN_MANIFEST,
 } from "./local-tools-plugin";
 export { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/runtime-services";
 export {

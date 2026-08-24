@@ -46,7 +46,7 @@ import {
   requireObject,
   requireString,
 } from "@natalia/tools";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type {
   RuntimeTool,
   ToolExecutionContext,
@@ -786,25 +786,27 @@ export const PROCESS_PLUGIN_ID = "natalia-tool-process";
 
 export const MANAGED_PROCESS_REGISTRY_SERVICE = "managedProcessRegistry";
 
+export const PROCESS_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: PROCESS_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Managed Process Tools",
+  description: "Long-running background processes.",
+  entry: "natalia:tool-process",
+  scope: "session",
+  provides: [MANAGED_PROCESS_REGISTRY_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools", "services"],
+};
+
 export function createProcessPlugin(): Plugin {
   let registry: ManagedProcessRegistry | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: PROCESS_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Managed Process Tools",
-      description: "Long-running background processes.",
-      entry: "natalia:tool-process",
-      scope: "session",
-      provides: [MANAGED_PROCESS_REGISTRY_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools", "services"],
-    },
+    manifest: PROCESS_PLUGIN_MANIFEST,
     setup(api) {
       registry = new ManagedProcessRegistry();
       api.services.provide(MANAGED_PROCESS_REGISTRY_SERVICE, registry);

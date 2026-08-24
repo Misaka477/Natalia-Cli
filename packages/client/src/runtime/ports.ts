@@ -37,6 +37,7 @@ import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
 
 export type RuntimePorts = {
+  resolveService: <T>(serviceID: string) => T | undefined;
   publish: (event: RuntimeEvent) => void;
   publishForSession: (
     exec: SessionExecutionState | undefined,
@@ -60,7 +61,6 @@ export type RuntimePorts = {
     operation: import("@natalia/session").DurableInFlightOperation | undefined,
   ) => Promise<void>;
   isDisposed: () => boolean;
-  getSessionStoreController: () => SessionStoreController;
   getSessionPersistence: () => Promise<void>;
   setSessionPersistence: (next: Promise<void>) => void;
   redactToolOutput: (output: string, redact: boolean | undefined) => string;
@@ -175,18 +175,13 @@ export type RuntimePorts = {
     toolName: string,
     profile?: ConfigV3["permissionProfiles"][string],
   ) => { allowed: boolean; diagnostics: string[] };
-  getStatusController: () => StatusSnapshotController;
   getWorkspaceRoot: () => string;
-  getWorkspaceFilesController: () => WorkspaceFilesController | undefined;
   nextMailboxSequence: () => number;
-  getSandboxController: () => SandboxService | undefined;
   getWorkspaceWriteLock: () => WorkspaceWriteLock | undefined;
   getWorkspaceCapabilityView: () =>
     | import("@natalia/capability").CapabilityRegistryView
     | undefined;
   getTools: () => import("@natalia/tools").ToolRegistry;
-  requireWriteLock: () => WorkspaceWriteLock;
-  requireSandboxes: () => SandboxService;
   getAgentRegistry: () => AgentRegistry | undefined;
   setPaused: (paused: boolean) => void;
   getPaused: () => boolean;
@@ -210,9 +205,6 @@ export type RuntimePorts = {
   refreshExecutionContextConfig: (exec: SessionExecutionState) => Promise<void>;
   getCapabilityRegistry: () => CapabilityRegistryHost;
   getTsRuntimeConfig: () => ConfigV3 | undefined;
-  getSubagentsController: () => SubagentsService | undefined;
-  getWorkLedgerController: () => WorkLedgerController;
-  getProviderModelController: () => ProviderModelController | undefined;
   nextChatSequence: () => number;
   nextPlanSequence: () => number;
   requestNaviWake: (exec: SessionExecutionState) => void;
@@ -247,21 +239,9 @@ export type RuntimePorts = {
   ) => void;
   setRuntimeContextConfig: (config: RuntimeContextStatusConfig) => void;
   getRuntimeContextConfig: () => RuntimeContextStatusConfig;
-  getTurnController: () => TurnController;
   getSessionID: () => SessionID;
-  getContextLedgerFactory: () => ContextLedgerFactory;
   getProvider: () => StreamingProvider | undefined;
-  getToolPolicy: () => ToolPolicyService | undefined;
-  getToolLayer: () => ToolPolicyHookLayer;
-  getAgentToolLayer: () => ToolPolicyHookLayer;
-  getPermissionProfileToolLayer: () => ToolPolicyHookLayer;
-  getModuleToolLayer: () => ToolPolicyHookLayer;
-  getModulePermissionToolLayer: () => ToolPolicyHookLayer;
-  setToolLayer: (layer: ToolPolicyHookLayer) => void;
-  setAgentToolLayer: (layer: ToolPolicyHookLayer) => void;
-  setPermissionProfileToolLayer: (layer: ToolPolicyHookLayer) => void;
-  setModuleToolLayer: (layer: ToolPolicyHookLayer) => void;
-  setModulePermissionToolLayer: (layer: ToolPolicyHookLayer) => void;
+  createToolPolicyLayer: (exec?: SessionExecutionState) => ToolPolicyHookLayer;
   getPermissionMode: () => "ask" | "auto" | "read_only";
   setPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getSelectedPermissionProfile: () =>
@@ -278,14 +258,6 @@ export type RuntimePorts = {
   setDefaultPermissionProfile: (
     profile: ConfigV3["permissionProfiles"][string] | undefined,
   ) => void;
-  getCompactionService: () =>
-    | import("@natalia/runtime-services").CompactionService
-    | undefined;
-  getAttachmentService: () => import("@natalia/runtime-services").AttachmentService;
-  getMcpService: () =>
-    | import("@natalia/runtime-services").McpService
-    | undefined;
-  getRetryService: () => import("@natalia/runtime-services").RetryService;
   setActiveAbort: (controller: AbortController | undefined) => void;
   setActiveTurnID: (id: string | undefined) => void;
   setSelectedAgent: (agent: AgentDefinition | undefined) => void;

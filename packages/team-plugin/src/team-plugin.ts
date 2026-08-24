@@ -7,7 +7,7 @@
  * required services and the capability kernel holds it pending until they are
  * provided. A disabled team plugin registers no team tools at all.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import {
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
@@ -25,38 +25,40 @@ import {
 
 export const TEAM_PLUGIN_ID = "natalia-team";
 
+export const TEAM_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: TEAM_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Team",
+  description:
+    "Parallel fan-out of sandboxed subagents and the lead reviewer's merge.",
+  entry: "natalia:team",
+  scope: "workspace",
+  provides: [TEAM_BEHAVIOR_SERVICE],
+  requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [
+    {
+      id: SUBAGENTS_PLUGIN_ID,
+      spec: "workspace:*",
+      optional: false,
+      peer: false,
+    },
+    {
+      id: SANDBOX_PLUGIN_ID,
+      spec: "workspace:*",
+      optional: false,
+      peer: false,
+    },
+  ],
+  hooks: {},
+  integrationPoints: ["tools", "services"],
+};
+
 export function createTeamPlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: TEAM_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Team",
-      description:
-        "Parallel fan-out of sandboxed subagents and the lead reviewer's merge.",
-      entry: "natalia:team",
-      scope: "workspace",
-      provides: [TEAM_BEHAVIOR_SERVICE],
-      requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [
-        {
-          id: SUBAGENTS_PLUGIN_ID,
-          spec: "workspace:*",
-          optional: false,
-          peer: false,
-        },
-        {
-          id: SANDBOX_PLUGIN_ID,
-          spec: "workspace:*",
-          optional: false,
-          peer: false,
-        },
-      ],
-      hooks: {},
-      integrationPoints: ["tools", "services"],
-    },
+    manifest: TEAM_PLUGIN_MANIFEST,
     setup(api) {
       api.services.provide(TEAM_BEHAVIOR_SERVICE, {
         directive: () => TEAM_MODE_DIRECTIVE,

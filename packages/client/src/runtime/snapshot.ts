@@ -7,6 +7,10 @@
  */
 import { projectSession } from "@natalia/session";
 import { buildSessionIntelligenceSnapshot } from "../session-intelligence";
+import {
+  SESSION_STORE_CONTROLLER_SERVICE,
+  type SessionStoreController,
+} from "@natalia/runtime-services";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { DurableInFlightOperation } from "@natalia/session";
 import type { RuntimeContext } from "./context";
@@ -143,22 +147,23 @@ export function createSnapshot(ctx: RuntimeContext) {
     exec: SessionExecutionState,
     operation: DurableInFlightOperation | undefined,
   ) {
-    const {
-      getSessionPersistence,
-      setSessionPersistence,
-      getSessionStoreController,
-      publishForSession,
-    } = ctx.ports;
+    const { getSessionPersistence, setSessionPersistence, publishForSession } =
+      ctx.ports;
+    const sessionStoreController =
+      ctx.ports.resolveService<SessionStoreController>(
+        SESSION_STORE_CONTROLLER_SERVICE,
+      );
+    if (!sessionStoreController)
+      throw new Error("session store unavailable (natalia-session-store)");
     const targetSession = exec.session;
     targetSession.metadata = { ...targetSession.metadata };
     if (operation) targetSession.metadata.inFlightOperation = operation;
     else delete targetSession.metadata.inFlightOperation;
     const sessionSnapshot = structuredClone(targetSession);
     const sessionPersistence = getSessionPersistence();
-    const sessionStoreController = getSessionStoreController();
     const next = sessionPersistence
       .then(() =>
-        sessionStoreController?.updateMetadata(sessionSnapshot, {
+        sessionStoreController.updateMetadata(sessionSnapshot, {
           inFlightOperation: operation,
         }),
       )

@@ -26,27 +26,6 @@ export function wireFeatures(
   ports.maybeContinueAfterHumanInput =
     terminalRuntime.maybeContinueAfterHumanInput;
 
-  ports.getToolPolicy = () => state.toolPolicy;
-  ports.getToolLayer = () => state.toolLayer;
-  ports.getAgentToolLayer = () => state.agentToolLayer;
-  ports.getPermissionProfileToolLayer = () => state.permissionProfileToolLayer;
-  ports.getModuleToolLayer = () => state.moduleToolLayer;
-  ports.getModulePermissionToolLayer = () => state.modulePermissionToolLayer;
-  ports.setToolLayer = (layer) => {
-    state.toolLayer = layer;
-  };
-  ports.setAgentToolLayer = (layer) => {
-    state.agentToolLayer = layer;
-  };
-  ports.setPermissionProfileToolLayer = (layer) => {
-    state.permissionProfileToolLayer = layer;
-  };
-  ports.setModuleToolLayer = (layer) => {
-    state.moduleToolLayer = layer;
-  };
-  ports.setModulePermissionToolLayer = (layer) => {
-    state.modulePermissionToolLayer = layer;
-  };
   ports.getPermissionMode = () => state.permissionMode;
   ports.setPermissionMode = (mode) => {
     state.permissionMode = mode;
@@ -64,6 +43,7 @@ export function wireFeatures(
     state.defaultPermissionProfile = profile;
   };
   const permissions = createPermissions(ctx, options);
+  ports.createToolPolicyLayer = permissions.createToolPolicyLayer;
   ports.isToolAllowed = permissions.isToolAllowed;
   ports.applyAgentPolicy = permissions.applyAgentPolicy;
   ports.extensionToolPermission = permissions.extensionToolPermission;

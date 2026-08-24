@@ -350,6 +350,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   // --- extensions ---
   plugins: { refusal: "none", note: "pure read" },
   commandCatalog: { refusal: "none", note: "pure read" },
+  commandExecute: {
+    refusal: "error",
+    note: "the contributed command either enters the session execution queue or is rejected",
+  },
   capabilities: { refusal: "none", note: "pure read" },
   chatMessages: {
     refusal: "none",

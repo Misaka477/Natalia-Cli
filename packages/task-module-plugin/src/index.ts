@@ -12,4 +12,5 @@ export type {
 export {
   createTaskModulePlugin,
   TASK_MODULE_PLUGIN_ID,
+  TASK_MODULE_PLUGIN_MANIFEST,
 } from "./task-module-plugin";

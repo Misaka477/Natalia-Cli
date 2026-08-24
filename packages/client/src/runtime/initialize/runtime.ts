@@ -6,6 +6,7 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
   return {
     ...deps,
     ...initializeConstants(ctx),
+    resolveService: ctx.ports.resolveService,
     get workspaceRoot() {
       return ctx.ports.getWorkspaceRoot();
     },
@@ -21,88 +22,6 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     set buildBuiltinPluginCatalog(value) {
       ctx.ports.setBuildBuiltinPluginCatalog(value);
     },
-    set activeCheckpointFactory(
-      value: import("@natalia/runtime-services").CheckpointFactory | undefined,
-    ) {
-      ctx.ports.setActiveCheckpointFactory(value);
-    },
-    get activeCheckpointFactory() {
-      return ctx.ports.getActiveCheckpointFactory();
-    },
-    set workspaceWriteLock(
-      value: import("@natalia/runtime-services").WorkspaceWriteLock | undefined,
-    ) {
-      ctx.ports.setWorkspaceWriteLock(value);
-    },
-    get workspaceWriteLock() {
-      return ctx.ports.getWorkspaceWriteLock();
-    },
-    set mutationRegistry(
-      value: import("@natalia/runtime-services").MutationRegistry | undefined,
-    ) {
-      ctx.ports.setMutationRegistry(value);
-    },
-    get mutationRegistry() {
-      return ctx.ports.getMutationRegistry();
-    },
-    set workspaceFilesController(
-      value:
-        | import("@natalia/runtime-services").WorkspaceFilesController
-        | undefined,
-    ) {
-      ctx.ports.setWorkspaceFilesController(value);
-    },
-    get workspaceFilesController() {
-      return ctx.ports.getWorkspaceFilesController();
-    },
-    get terminalController() {
-      return ctx.ports.getTerminalController();
-    },
-    set terminalController(
-      value: import("@natalia/runtime-services").TerminalController | undefined,
-    ) {
-      ctx.ports.setTerminalController(value);
-    },
-    get sandboxController() {
-      return ctx.ports.getSandboxController();
-    },
-    set sandboxController(
-      value: import("@natalia/runtime-services").SandboxService | undefined,
-    ) {
-      ctx.ports.setSandboxController(value);
-    },
-    get mcpService() {
-      return ctx.ports.getMcpService();
-    },
-    set mcpService(
-      value: import("@natalia/runtime-services").McpService | undefined,
-    ) {
-      ctx.ports.setMcpService(value);
-    },
-    get subagentsController() {
-      return ctx.ports.getSubagentsController();
-    },
-    set subagentsController(
-      value: import("@natalia/runtime-services").SubagentsService | undefined,
-    ) {
-      ctx.ports.setSubagentsController(value);
-    },
-    get sessionStoreController() {
-      return ctx.ports.getSessionStoreController();
-    },
-    set sessionStoreController(
-      value: import("@natalia/runtime-services").SessionStoreController,
-    ) {
-      ctx.ports.setSessionStoreController(value);
-    },
-    get toolPolicy() {
-      return ctx.ports.getToolPolicy();
-    },
-    set toolPolicy(
-      value: import("@natalia/runtime-services").ToolPolicyService | undefined,
-    ) {
-      ctx.ports.setToolPolicyService(value);
-    },
     get interactive() {
       return ctx.ports.getInteractive();
     },
@@ -110,56 +29,6 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
       value: import("@natalia/runtime-services").InteractiveWaiter,
     ) {
       ctx.ports.setInteractive(value);
-    },
-    get providerModelController() {
-      return ctx.ports.getProviderModelController();
-    },
-    set providerModelController(
-      value:
-        | import("@natalia/runtime-services").ProviderModelController
-        | undefined,
-    ) {
-      ctx.ports.setProviderModelController(value);
-    },
-    set taskWorkflowController(
-      value:
-        | import("@natalia/runtime-services").TaskWorkflowController
-        | undefined,
-    ) {
-      ctx.ports.setTaskWorkflowController(value);
-    },
-    get taskWorkflowController() {
-      return ctx.ports.getTaskWorkflowController();
-    },
-    get agentToolLayer() {
-      return ctx.ports.getAgentToolLayer();
-    },
-    set agentToolLayer(value) {
-      ctx.ports.setAgentToolLayer(value);
-    },
-    get permissionProfileToolLayer() {
-      return ctx.ports.getPermissionProfileToolLayer();
-    },
-    set permissionProfileToolLayer(value) {
-      ctx.ports.setPermissionProfileToolLayer(value);
-    },
-    get moduleToolLayer() {
-      return ctx.ports.getModuleToolLayer();
-    },
-    set moduleToolLayer(value) {
-      ctx.ports.setModuleToolLayer(value);
-    },
-    get modulePermissionToolLayer() {
-      return ctx.ports.getModulePermissionToolLayer();
-    },
-    set modulePermissionToolLayer(value) {
-      ctx.ports.setModulePermissionToolLayer(value);
-    },
-    get toolLayer() {
-      return ctx.ports.getToolLayer();
-    },
-    set toolLayer(value) {
-      ctx.ports.setToolLayer(value);
     },
     get retryPolicy() {
       return ctx.ports.getRetryPolicy();
@@ -219,59 +88,11 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     set runtimeContextConfig(value) {
       ctx.ports.setRuntimeContextConfig(value);
     },
-    get attachmentService() {
-      return ctx.ports.getAttachmentService();
-    },
-    set attachmentService(value) {
-      ctx.ports.setAttachmentService(value);
-    },
-    get retryService() {
-      return ctx.ports.getRetryService();
-    },
-    set retryService(value) {
-      ctx.ports.setRetryService(value);
-    },
-    get contextLedgerFactory() {
-      return ctx.ports.getContextLedgerFactory();
-    },
-    set contextLedgerFactory(value) {
-      ctx.ports.setContextLedgerFactory(value);
-    },
-    get compactionService() {
-      return ctx.ports.getCompactionService();
-    },
-    set compactionService(value) {
-      ctx.ports.setCompactionService(value);
-    },
-    get statusController() {
-      return ctx.ports.getStatusController();
-    },
-    set statusController(value) {
-      ctx.ports.setStatusController(value);
-    },
     get runtimeContext() {
       return ctx.ports.getRuntimeContext();
     },
     set runtimeContext(value) {
       ctx.ports.setRuntimeContext(value);
-    },
-    get workLedgerController() {
-      return ctx.ports.getWorkLedgerController();
-    },
-    set workLedgerController(value) {
-      ctx.ports.setWorkLedgerController(value);
-    },
-    get governanceLedgerController() {
-      return ctx.ports.getGovernanceLedgerController();
-    },
-    set governanceLedgerController(value) {
-      ctx.ports.setGovernanceLedgerController(value);
-    },
-    get turnController() {
-      return ctx.ports.getTurnController();
-    },
-    set turnController(value) {
-      ctx.ports.setTurnController(value);
     },
     get sessionID() {
       return ctx.ports.getSessionID();
@@ -356,6 +177,7 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     teamBehavior: ctx.ports.teamBehavior,
     tools: ctx.ports.getTools(),
     isToolAllowed: ctx.ports.isToolAllowed,
+    createToolPolicyLayer: ctx.ports.createToolPolicyLayer,
     effectiveMaxSteps: ctx.ports.effectiveMaxSteps,
     skillService: ctx.ports.skillService,
     requestNaviWake: ctx.ports.requestNaviWake,

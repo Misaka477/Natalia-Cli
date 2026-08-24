@@ -51,6 +51,7 @@ export type InitializeDependencies = {
   providerModelPluginInput: (config: ConfigV3) => BuiltinInput["providerModel"];
   builtinPluginCatalog: typeof import("@natalia/builtin-plugins").builtinPluginCatalog;
   computeBuiltinFeatureGates: typeof import("@natalia/builtin-plugins").computeBuiltinFeatureGates;
+  computeBuiltinPluginGates: typeof import("@natalia/builtin-plugins").computeBuiltinPluginGates;
   capabilityRegistry: CapabilityRegistryHost;
   workspaceCapabilityView?: import("@natalia/capability").CapabilityRegistryView;
   waiterDeps: InteractiveWaiterDeps;
@@ -133,11 +134,6 @@ export type InitializeDependencies = {
     collaborationWaiter: string;
     providerModelController: string;
     taskWorkflowController: string;
-  };
-  pluginIDs: {
-    sandboxController: string;
-    taskWorkflow: string;
-    runtimeUi: string;
   };
 };
 

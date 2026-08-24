@@ -1,4 +1,4 @@
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { ToolFamily } from "@natalia/tools";
 import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/runtime-services";
 import {
@@ -10,6 +10,23 @@ import {
 
 export const LOCAL_TOOLS_PLUGIN_ID = "natalia-local-tools";
 
+export const LOCAL_TOOLS_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: LOCAL_TOOLS_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Local Tools",
+  description: "Out-of-tree tool families discovered in configured paths.",
+  entry: "natalia:local-tools",
+  scope: "workspace",
+  provides: [LOCAL_TOOLS_RELOAD_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools", "services"],
+};
+
 export function createLocalToolsPlugin(input: {
   roots: string[];
   trust?: LocalToolFamilyOptions["trust"];
@@ -20,22 +37,7 @@ export function createLocalToolsPlugin(input: {
   let closeWatcher: (() => Promise<void>) | undefined;
 
   return {
-    manifest: {
-      apiVersion: 2,
-      id: LOCAL_TOOLS_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Local Tools",
-      description: "Out-of-tree tool families discovered in configured paths.",
-      entry: "natalia:local-tools",
-      scope: "workspace",
-      provides: [LOCAL_TOOLS_RELOAD_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools", "services"],
-    },
+    manifest: LOCAL_TOOLS_PLUGIN_MANIFEST,
     async setup(api) {
       const registerFamily = (family: ToolFamily) => {
         familyDisposers.get(family.id)?.();

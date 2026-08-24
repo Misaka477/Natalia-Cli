@@ -9,6 +9,10 @@
  */
 import { appendSessionEvent } from "@natalia/session";
 import { runtimeEventDurability } from "@natalia/contracts";
+import {
+  SESSION_STORE_CONTROLLER_SERVICE,
+  type SessionStoreController,
+} from "@natalia/runtime-services";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
@@ -37,7 +41,6 @@ export function createEventSink(
   ) {
     const {
       getSink,
-      getSessionStoreController,
       getSessionPersistence,
       setSessionPersistence,
       setPendingHumanTerminal,
@@ -133,11 +136,16 @@ export function createEventSink(
       runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(exec.session, event);
+      const sessionStoreController =
+        ctx.ports.resolveService<SessionStoreController>(
+          SESSION_STORE_CONTROLLER_SERVICE,
+        );
+      if (!sessionStoreController)
+        throw new Error("session store unavailable (natalia-session-store)");
       const sessionSnapshot = structuredClone(exec.session);
       const sessionPersistence = getSessionPersistence();
       const next = sessionPersistence
         .then(() => {
-          const sessionStoreController = getSessionStoreController();
           if (sessionStoreController.status().initialized)
             return sessionStoreController.appendEvent(sessionSnapshot, event);
         })

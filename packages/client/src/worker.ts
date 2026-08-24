@@ -8,13 +8,6 @@ import type {
   SubmitInput,
   SubmittedTurn,
 } from "@natalia/contracts";
-import type { CapabilityExecutionHost } from "./capability-execution-host";
-import type { TaskRunResult } from "./task-controller";
-import {
-  WorkflowExecutionEventStream,
-  type WorkflowExecutionEvent,
-  type WorkflowExecutionHandle,
-} from "@natalia/workflow";
 
 /**
  * The worker channel's route table, mirroring `handleWorkerRequest` below.
@@ -40,6 +33,8 @@ export const WORKER_ROUTE_MEMBERS = {
   "task.overview": "taskOverview",
   "flow.overview": "flowOverview",
   "document.catalog": "documentCatalog",
+  "command.catalog": "commandCatalog",
+  "command.execute": "commandExecute",
   snapshot: "snapshot",
   diagnostic: "diagnostic",
   approval: "respondApproval",
@@ -118,12 +113,6 @@ export const WORKER_ROUTED_MEMBERS: ReadonlySet<string> = new Set(
     (member): member is string => typeof member === "string",
   ),
 );
-
-/** Worker-host controls that are deliberately outside RuntimeClient reachability. */
-export const WORKER_CONTROL_METHODS: ReadonlySet<string> = new Set([
-  "workflow.run",
-  "workflow.cancel",
-]);
 
 type WorkerRequest = {
   type: "runtime.request";
@@ -215,8 +204,8 @@ type WorkerRequest = {
     | "task.overview"
     | "flow.overview"
     | "document.catalog"
-    | "workflow.run"
-    | "workflow.cancel";
+    | "command.catalog"
+    | "command.execute";
   value?: unknown;
 };
 
@@ -228,22 +217,6 @@ type WorkerResponse = {
 };
 
 type WorkerEvent = { type: "runtime.event"; event: RuntimeEvent };
-type WorkflowWorkerEvent = {
-  type: "workflow.execution.event";
-  event: WorkflowExecutionEvent;
-};
-
-type WorkerWorkflowRunInput = {
-  executionID: string;
-  idempotencyKey?: string;
-  idempotencyFingerprint?: string;
-  workspaceRoot: string;
-  path?: string;
-  taskID?: string;
-  requestedBy?: {
-    sessionID?: string;
-  };
-};
 
 export type RuntimeWorkerPort = {
   postMessage(value: unknown): void;
@@ -263,9 +236,6 @@ export type RuntimeWorkerPort = {
 
 export type WorkerRuntimeClient = RuntimeClient & {
   availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
-  runWorkflowTask(
-    input: Omit<WorkerWorkflowRunInput, "executionID">,
-  ): WorkflowExecutionHandle<TaskRunResult>;
 };
 
 export function createWorkerRuntimeClient(
@@ -277,23 +247,8 @@ export function createWorkerRuntimeClient(
   >();
   let sequence = 0;
   let sink: ((event: RuntimeEvent) => void) | undefined;
-  const workflowStreams = new Map<string, WorkflowExecutionEventStream>();
   const onMessage = (event: MessageEvent<unknown>) => {
-    const message = event.data as
-      | WorkerResponse
-      | WorkerEvent
-      | WorkflowWorkerEvent;
-    if (message.type === "workflow.execution.event") {
-      workflowStreams.get(message.event.executionID)?.publish(message.event);
-      if (
-        message.event.type === "workflow.execution" &&
-        ["completed", "failed", "cancelled"].includes(message.event.status)
-      ) {
-        workflowStreams.get(message.event.executionID)?.close();
-        workflowStreams.delete(message.event.executionID);
-      }
-      return;
-    }
+    const message = event.data as WorkerResponse | WorkerEvent;
     if (message.type === "runtime.event") {
       sink?.(message.event);
       return;
@@ -365,27 +320,6 @@ export function createWorkerRuntimeClient(
       return (await request("runtime.availability")) as Awaited<
         ReturnType<typeof describeRuntimeCapabilities>
       >;
-    },
-    runWorkflowTask(input) {
-      const executionID = `exe_${crypto.randomUUID().replace(/-/gu, "")}`;
-      const events = new WorkflowExecutionEventStream();
-      workflowStreams.set(executionID, events);
-      const result = request("workflow.run", {
-        ...input,
-        executionID,
-      } satisfies WorkerWorkflowRunInput) as Promise<TaskRunResult>;
-      void result.catch(() => {
-        events.close();
-        workflowStreams.delete(executionID);
-      });
-      return {
-        executionID,
-        events,
-        result,
-        cancel(reason) {
-          notify("workflow.cancel", { executionID, reason });
-        },
-      };
     },
     async submit(text) {
       return (await request("submit", { text })) as SubmittedTurn;
@@ -555,6 +489,14 @@ export function createWorkerRuntimeClient(
       return (await request("document.catalog")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["documentCatalog"]>>
       >;
+    },
+    async commandCatalog() {
+      return (await request("command.catalog")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["commandCatalog"]>>
+      >;
+    },
+    async commandExecute(input) {
+      await request("command.execute", input);
     },
     async updateConfig(input) {
       return (await request("config.update", input)) as Awaited<
@@ -833,20 +775,10 @@ export function attachRuntimeClientWorker(
   client: RuntimeClient,
   options?: {
     reload?: () => RuntimeClient;
-    workflowExecution?: CapabilityExecutionHost;
-    workflowConfig?: () => Promise<import("@natalia/contracts").ConfigV3>;
     disposeHost?: () => void | Promise<void>;
   },
 ) {
   let activeClient = client;
-  const workflowExecutions = new Map<
-    string,
-    WorkflowExecutionHandle<TaskRunResult>
-  >();
-  const workflowPumps = new Map<string, Promise<void>>();
-  const workflowAdmissions = new Set<string>();
-  const pendingWorkflowCancellations = new Map<string, string | undefined>();
-  let closing = false;
   const forwardEvent = (event: RuntimeEvent) => {
     port.postMessage({ type: "runtime.event", event } satisfies WorkerEvent);
   };
@@ -879,84 +811,6 @@ export function attachRuntimeClientWorker(
           await activeClient.runtimeStatus?.();
           value = { applied: true };
         }
-      } else if (request.method === "workflow.run") {
-        if (closing) throw new Error("worker runtime disposed");
-        if (!options?.workflowExecution || !options.workflowConfig)
-          throw new Error("workflow execution is not available in this worker");
-        const input = request.value as WorkerWorkflowRunInput;
-        if (
-          workflowExecutions.has(input.executionID) ||
-          workflowAdmissions.has(input.executionID)
-        )
-          throw new Error(
-            `workflow execution ID is already admitted: ${input.executionID}`,
-          );
-        workflowAdmissions.add(input.executionID);
-        let config: import("@natalia/contracts").ConfigV3;
-        try {
-          config = await options.workflowConfig();
-        } catch (error) {
-          workflowAdmissions.delete(input.executionID);
-          pendingWorkflowCancellations.delete(input.executionID);
-          throw error;
-        }
-        // `workflow.run` and an immediate `workflow.cancel` are separate port
-        // messages. Yield one message turn after async config resolution so the
-        // ordered cancel can populate pendingWorkflowCancellations before the
-        // scheduler admits and resolves any document.
-        await new Promise<void>((resolveAdmission) =>
-          setTimeout(resolveAdmission, 0),
-        );
-        if (closing) {
-          workflowAdmissions.delete(input.executionID);
-          throw new Error("worker runtime disposed");
-        }
-        let handle: WorkflowExecutionHandle<TaskRunResult>;
-        try {
-          handle = options.workflowExecution.runTask({
-            executionID: input.executionID,
-            idempotencyKey: input.idempotencyKey,
-            idempotencyFingerprint: input.idempotencyFingerprint,
-            workspaceRoot: input.workspaceRoot,
-            path: input.path,
-            taskID: input.taskID,
-            config,
-            requestedBy: {
-              transport: "worker",
-              sessionID: input.requestedBy?.sessionID,
-            },
-          });
-        } finally {
-          workflowAdmissions.delete(input.executionID);
-        }
-        workflowExecutions.set(handle.executionID, handle);
-        const cancelled = pendingWorkflowCancellations.has(handle.executionID);
-        const cancellation = pendingWorkflowCancellations.get(
-          handle.executionID,
-        );
-        pendingWorkflowCancellations.delete(handle.executionID);
-        if (cancelled) handle.cancel(cancellation);
-        const pump = (async () => {
-          for await (const workflowEvent of handle.events)
-            port.postMessage({
-              type: "workflow.execution.event",
-              event: workflowEvent,
-            } satisfies WorkflowWorkerEvent);
-        })();
-        workflowPumps.set(handle.executionID, pump);
-        try {
-          value = await handle.result;
-        } finally {
-          await pump;
-          workflowPumps.delete(handle.executionID);
-          workflowExecutions.delete(handle.executionID);
-        }
-      } else if (request.method === "workflow.cancel") {
-        const input = request.value as { executionID: string; reason?: string };
-        const handle = workflowExecutions.get(input.executionID);
-        if (handle) handle.cancel(input.reason);
-        else if (workflowAdmissions.has(input.executionID))
-          pendingWorkflowCancellations.set(input.executionID, input.reason);
       } else if (request.method === "config.update") {
         // The write-apply path, unlike the rebuild path above: the patch lands
         // on disk and the runtime applies it in place.
@@ -967,12 +821,6 @@ export function attachRuntimeClientWorker(
           },
         );
       } else if (request.method === "dispose") {
-        closing = true;
-        for (const handle of workflowExecutions.values())
-          handle.cancel("worker runtime disposed");
-        pendingWorkflowCancellations.clear();
-        workflowAdmissions.clear();
-        await Promise.allSettled(workflowPumps.values());
         value = await activeClient.dispose?.();
         await options?.disposeHost?.();
       } else {
@@ -1217,5 +1065,9 @@ export async function handleWorkerRequest(
   if (request.method === "flow.overview") return await client.flowOverview?.();
   if (request.method === "document.catalog")
     return await client.documentCatalog?.();
+  if (request.method === "command.catalog")
+    return await client.commandCatalog?.();
+  if (request.method === "command.execute")
+    return await client.commandExecute?.(request.value as never);
   throw new Error(`worker channel does not route ${request.method}`);
 }

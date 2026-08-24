@@ -8,6 +8,7 @@ import {
   deleteTaskDocument,
   flowOverview as flowOverviewForWorkspace,
   NataliaDocumentStore,
+  manualFlowTask,
   removeTaskSystemd,
   saveFlowDocument as saveFlowDocumentFile,
   saveTaskDocument,
@@ -58,6 +59,48 @@ export function createTaskWorkflowController(input: {
   }
 
   const service: TaskWorkflowService = {
+    async runCommand(kind, path, signal) {
+      const config =
+        input.runtimeConfig() ??
+        assertConfigApplied(
+          await resolveConfig({
+            workspaceRoot: input.workspaceRoot,
+            globalPath: input.globalConfigPath,
+          }),
+        );
+      const documents = createWorkflowStoreService({
+        workspaceRoot: input.workspaceRoot,
+        contributedDocuments: contributedDocuments(),
+      });
+      const output: string[] = [];
+      const emit = (line: string) => output.push(line);
+      const result =
+        kind === "task"
+          ? await service.runTaskFromDocument({
+              workspaceRoot: input.workspaceRoot,
+              path,
+              config,
+              json: false,
+              emit,
+              signal,
+            })
+          : await (async () => {
+              const flow = await documents.loadFlow(path);
+              return await service.runTask({
+                workspaceRoot: input.workspaceRoot,
+                task: manualFlowTask(flow, config),
+                flow,
+                config,
+                json: false,
+                emit,
+                signal,
+              });
+            })();
+      return [
+        ...output,
+        `${kind} ${path}: ${result.status} (exit ${result.exitCode})`,
+      ].join("\n");
+    },
     runTask: (request) =>
       runTask({ ...request, createRuntimeClient: input.createRuntimeClient }),
     runTaskFromDocument: (request) =>

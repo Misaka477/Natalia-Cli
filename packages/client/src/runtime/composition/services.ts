@@ -1,4 +1,4 @@
-import { createServiceRefresh } from "../service-refresh";
+import { createPluginLifecycle } from "../plugin-lifecycle";
 import { createEnsureReady } from "../ensure-ready";
 import { createSessionExecution } from "../session-execution";
 import { createSessionAttach } from "../session-attach";
@@ -17,72 +17,11 @@ export function wireServices(
   options: RealRuntimeClientOptions,
 ) {
   const { state, ports } = ctx;
-  ports.setWorkspaceWriteLock = (value) => {
-    state.workspaceWriteLock = value;
-  };
-  ports.setMutationRegistry = (value) => {
-    state.mutationRegistry = value;
-  };
-  ports.setWorkspaceFilesController = (value) => {
-    state.workspaceFilesController = value;
-  };
-  ports.setTerminalController = (value) => {
-    state.terminalController = value;
-  };
-  ports.setSandboxController = (value) => {
-    state.sandboxController = value;
-  };
-  ports.setMcpService = (value) => {
-    state.mcpService = value;
-  };
-  ports.setSubagentsController = (value) => {
-    state.subagentsController = value;
-  };
-  ports.setProviderModelController = (value) => {
-    state.providerModelController = value;
-  };
-  ports.setTaskWorkflowController = (value) => {
-    state.taskWorkflowController = value;
-  };
-  ports.setCompactionService = (value) => {
-    state.compactionService = value;
-  };
-  ports.setSessionStoreController = (value) => {
-    state.sessionStoreController = value;
-  };
-  ports.setToolPolicyService = (value) => {
-    state.toolPolicy = value;
-  };
   ports.setInteractive = (value) => {
     state.interactive = value;
   };
-  ports.setAttachmentService = (value) => {
-    state.attachmentService = value;
-  };
-  ports.setRetryService = (value) => {
-    state.retryService = value;
-  };
-  ports.setContextLedgerFactory = (value) => {
-    state.contextLedgerFactory = value;
-  };
-  ports.setStatusController = (value) => {
-    state.statusController = value;
-  };
-  ports.setWorkLedgerController = (value) => {
-    state.workLedgerController = value;
-  };
-  ports.setGovernanceLedgerController = (value) => {
-    state.governanceLedgerController = value;
-  };
-  ports.setTurnController = (value) => {
-    state.turnController = value;
-  };
-  ports.setActiveCheckpointFactory = (value) => {
-    state.activeCheckpointFactory = value;
-  };
-  ports.getActiveCheckpointFactory = () => state.activeCheckpointFactory;
-  ports.refreshBuiltinServices =
-    createServiceRefresh(ctx).refreshBuiltinServices;
+  ports.runPluginLifecyclePostReconcile =
+    createPluginLifecycle(ctx).runPluginLifecyclePostReconcile;
   ports.setReady = (value) => {
     state.ready = value;
   };
@@ -140,10 +79,6 @@ export function wireServices(
   ports.setPendingAgent = (value) => {
     state.pendingAgent = value;
   };
-  ports.getCompactionService = () => state.compactionService;
-  ports.getAttachmentService = () => state.attachmentService;
-  ports.getMcpService = () => state.mcpService;
-  ports.getRetryService = () => state.retryService;
 
   const policy = createToolPolicySurface(ctx);
   ports.waitIfPaused = policy.waitIfPaused;
@@ -151,9 +86,7 @@ export function wireServices(
   ports.authorizeWorkspaceRead = policy.authorizeWorkspaceRead;
   ports.authorizeSandboxMerge = policy.authorizeSandboxMerge;
   ports.authorizeSandboxManagement = policy.authorizeSandboxManagement;
-  ports.getTerminalController = () => state.terminalController;
   ports.getInteractive = () => state.interactive;
-  ports.getMutationRegistry = () => state.mutationRegistry;
   ports.getTerminalCommandBuffer = () => state.terminalCommandBuffer;
   ports.getSandboxResourcesByID = () => state.sandboxResourcesByID;
   ports.getEndTurnWaitingHuman = () => state.endTurnWaitingHuman;

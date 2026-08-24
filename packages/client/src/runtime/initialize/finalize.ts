@@ -1,4 +1,9 @@
-import type { InitializeOptions, RuntimeContext } from "../context";
+import type {
+  GovernanceLedgerController,
+  InitializeOptions,
+  RuntimeContext,
+  WorkLedgerController,
+} from "../context";
 import { createInitializeRuntime } from "./runtime";
 
 export async function finalizeInitialize(
@@ -10,6 +15,19 @@ export async function finalizeInitialize(
   }: Awaited<ReturnType<typeof import("./session-recovery").recoverSession>>,
 ) {
   const scope = createInitializeRuntime(ctx);
+  const governanceLedgerController =
+    scope.resolveService<GovernanceLedgerController>(
+      scope.GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+    );
+  if (!governanceLedgerController)
+    throw new Error(
+      "governance ledger unavailable (natalia-governance-ledger)",
+    );
+  const workLedgerController = scope.resolveService<WorkLedgerController>(
+    scope.WORK_LEDGER_CONTROLLER_SERVICE,
+  );
+  if (!workLedgerController)
+    throw new Error("work ledger unavailable (natalia-work-ledger)");
   const session = scope.session;
   if (!session) throw new Error("session initialization did not complete");
   scope.publish({
@@ -76,14 +94,14 @@ export async function finalizeInitialize(
   // into the durable journal on every boot (idempotent — replay already holds
   // them) so `constitutionRules()` and the /constitution UI answer real rules,
   // not the empty projection CST1 shipped.
-  for (const rule of scope.governanceLedgerController.seedConstitutionRules(
+  for (const rule of governanceLedgerController.seedConstitutionRules(
     session.events,
   )) {
     scope.publish(rule);
     // CST4 Work Graph linkage: each seeded rule is a `constraint` node, so
     // tool calls and drift findings can relate to it in the graph.
     scope.publish(
-      scope.workLedgerController.constitutionRuleNode({
+      workLedgerController.constitutionRuleNode({
         ruleID: rule.ruleID,
         statement: rule.statement,
         sessionID: scope.sessionID,

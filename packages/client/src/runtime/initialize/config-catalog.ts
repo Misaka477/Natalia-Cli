@@ -3,7 +3,10 @@ import type {
   InitializeOptions,
   RuntimeContext,
   RuntimeEvent,
+  SandboxService,
   SessionID,
+  StatusSnapshotController,
+  SubagentsService,
 } from "../context";
 import { EGRESS_ADVISORY } from "../../egress-advisory";
 
@@ -23,18 +26,7 @@ export async function configureCatalog(
   // would still load its plugin.
   deps.reloadPermissionSettings(tsConfig.config);
   ctx.ports.setBuildBuiltinPluginCatalog((runtimeConfig) => {
-    const pluginEnabled = (id: string) =>
-      runtimeConfig.plugins.enabled[id] !== false;
-    const attachmentEnabled = pluginEnabled("natalia-attachment");
-    const retryEnabled = pluginEnabled("natalia-retry");
-    const contextLedgerEnabled = pluginEnabled("natalia-context-ledger");
-    const sessionStoreEnabled =
-      pluginEnabled("natalia-session-store") && attachmentEnabled;
-    const workLedgerEnabled = pluginEnabled("natalia-work-ledger");
-    const sandboxControllerEnabled = pluginEnabled(
-      deps.pluginIDs.sandboxController,
-    );
-    const subagentsEnabled = pluginEnabled("natalia-subagents");
+    const gates = deps.computeBuiltinPluginGates(runtimeConfig);
     const localTools = deps.localToolsPluginInput(runtimeConfig);
     return deps.builtinPluginCatalog({
       ...deps.computeBuiltinFeatureGates({
@@ -59,7 +51,7 @@ export async function configureCatalog(
       ...(deps.mcpPluginInput(runtimeConfig)
         ? { mcp: deps.mcpPluginInput(runtimeConfig) }
         : {}),
-      ...(pluginEnabled("natalia-checkpoint")
+      ...(gates.checkpoint
         ? {
             checkpoint: {
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
@@ -74,7 +66,9 @@ export async function configureCatalog(
                   return exec.context;
                 },
                 referencedObjectIDs: async () => {
-                  const sandbox = ctx.ports.getSandboxController();
+                  const sandbox = ctx.ports.resolveService<SandboxService>(
+                    deps.serviceNames.sandbox,
+                  );
                   if (!sandbox)
                     throw new Error("sandbox controller unavailable");
                   return (await sandbox.referencedObjectIDs()) ?? new Set();
@@ -83,7 +77,7 @@ export async function configureCatalog(
             },
           }
         : {}),
-      ...(subagentsEnabled
+      ...(gates.subagents
         ? {
             subagents: {
               workDir: ctx.ports.getWorkspaceRoot(),
@@ -91,7 +85,7 @@ export async function configureCatalog(
             },
           }
         : {}),
-      ...(attachmentEnabled
+      ...(gates.attachment
         ? {
             attachment: {
               enabled: true,
@@ -104,7 +98,7 @@ export async function configureCatalog(
             },
           }
         : {}),
-      ...(sessionStoreEnabled
+      ...(gates.sessionStore
         ? {
             sessionStore: {
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
@@ -115,19 +109,15 @@ export async function configureCatalog(
             },
           }
         : {}),
-      ...(pluginEnabled("natalia-team") &&
-      sandboxControllerEnabled &&
-      subagentsEnabled
+      ...(gates.team
         ? {
             team: {
               enabled: ctx.ports.extensionEnabled("skills"),
             },
           }
         : {}),
-      ...(pluginEnabled("natalia-tool-pipeline")
-        ? { toolPipeline: { enabled: true } }
-        : {}),
-      ...(pluginEnabled("natalia-collaboration")
+      ...(gates.toolPipeline ? { toolPipeline: { enabled: true } } : {}),
+      ...(gates.collaboration
         ? {
             collaboration: {
               waiter: deps.waiterDeps,
@@ -154,14 +144,13 @@ export async function configureCatalog(
             },
           }
         : {}),
-      ...(retryEnabled
+      ...(gates.retry
         ? { retry: { enabled: true, policy: ctx.ports.getRetryPolicy } }
         : {}),
       compaction: deps.compactionPluginInput(runtimeConfig),
       providerModel: deps.providerModelPluginInput(runtimeConfig),
       taskWorkflow: {
-        enabled:
-          runtimeConfig.plugins.enabled[deps.pluginIDs.taskWorkflow] !== false,
+        enabled: gates.taskWorkflow,
         controller: {
           workspaceRoot: ctx.ports.getWorkspaceRoot(),
           globalConfigPath: options.globalConfigPath,
@@ -182,9 +171,9 @@ export async function configureCatalog(
           createRuntimeClient: deps.createRealRuntimeClient,
         },
       },
-      ...(contextLedgerEnabled ? { contextLedger: { enabled: true } } : {}),
+      ...(gates.contextLedger ? { contextLedger: { enabled: true } } : {}),
       workLedger: {
-        enabled: workLedgerEnabled,
+        enabled: gates.workLedger,
         controller: {
           openFindingIDs: () =>
             new Set(
@@ -201,13 +190,11 @@ export async function configureCatalog(
             ),
         },
       },
-      ...(pluginEnabled("natalia-governance-ledger") && workLedgerEnabled
+      ...(gates.governanceLedger
         ? { governanceLedger: { enabled: true } }
         : {}),
       turnOrchestration: {
-        enabled:
-          sessionStoreEnabled &&
-          runtimeConfig.plugins.enabled["natalia-turn-orchestration"] !== false,
+        enabled: gates.turnOrchestration,
         controller: {
           session: ctx.ports.getSession,
           activeAbort: () => ctx.ports.getActiveExec()?.activeAbort,
@@ -231,7 +218,14 @@ export async function configureCatalog(
             return persistence;
           },
           saveInbox: async (snapshot) => {
-            await ctx.ports.getSessionStoreController().saveInbox(snapshot);
+            const sessionStore = ctx.ports.resolveService<
+              import("@natalia/runtime-services").SessionStoreController
+            >(deps.serviceNames.sessionStoreController);
+            if (!sessionStore)
+              throw new Error(
+                "session store unavailable (natalia-session-store)",
+              );
+            await sessionStore.saveInbox(snapshot);
           },
           flush: async () => {
             await ctx.ports.getSessionPersistence();
@@ -257,10 +251,11 @@ export async function configureCatalog(
               ctx.state.executionBySession.get(input.sessionID as SessionID),
             );
             try {
-              if (ctx.ports.getProviderModelController())
-                await ctx.ports
-                  .getProviderModelController()!
-                  .runTurn(input.sessionID as SessionID, input);
+              const controller = ctx.ports.resolveService<
+                import("@natalia/runtime-services").ProviderModelController
+              >(deps.serviceNames.providerModelController);
+              if (controller)
+                await controller.runTurn(input.sessionID as SessionID, input);
               else {
                 const exec = ctx.state.executionBySession.get(
                   input.sessionID as SessionID,
@@ -283,16 +278,19 @@ export async function configureCatalog(
         },
       },
       runtimeUi: {
-        enabled:
-          runtimeConfig.plugins.enabled[deps.pluginIDs.runtimeUi] !== false,
+        enabled: gates.runtimeUi,
         controller: {
           provider: ctx.ports.getProvider,
           context: ctx.ports.getRuntimeContext,
           workspaceRoot: ctx.ports.getWorkspaceRoot(),
           permissionMode: ctx.ports.getPermissionMode,
           runningCount: async () =>
-            (ctx.ports.getSubagentsController()?.runningCount() ?? 0) +
-            (ctx.ports.getSandboxController()?.runningResourceCount() ?? 0) +
+            (ctx.ports
+              .resolveService<SubagentsService>(deps.serviceNames.subagents)
+              ?.runningCount() ?? 0) +
+            (ctx.ports
+              .resolveService<SandboxService>(deps.serviceNames.sandbox)
+              ?.runningResourceCount() ?? 0) +
             ((await deps.capabilityRegistry
               .service<{
                 runningCount(input: { workspaceRoot: string }): Promise<number>;
@@ -313,6 +311,12 @@ export async function configureCatalog(
             session: async (sessionID: SessionID) => {
               const exec = ctx.state.executionBySession.get(sessionID);
               if (!exec) throw new Error(`session not found: ${sessionID}`);
+              const statusController =
+                ctx.ports.resolveService<StatusSnapshotController>(
+                  deps.serviceNames.statusSnapshotController,
+                );
+              if (!statusController)
+                throw new Error("runtime UI unavailable (natalia-runtime-ui)");
               return {
                 provider: exec.provider,
                 providerSource: ctx.ports.getProviderSource(),
@@ -326,7 +330,7 @@ export async function configureCatalog(
                   ...(ctx.state.runtimeDiagnosticsBySession.get(sessionID) ??
                     []),
                 ],
-                snapshot: await ctx.ports.getStatusController().snapshotFor({
+                snapshot: await statusController.snapshotFor({
                   provider: exec.provider,
                   context: exec.context,
                   permissionMode: exec.permissionMode,

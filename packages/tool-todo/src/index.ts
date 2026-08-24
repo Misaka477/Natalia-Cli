@@ -13,7 +13,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@natalia/tools";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -173,24 +173,26 @@ export function todoToolFamily(): ToolFamily {
   };
 }
 
+export const TODO_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: TODO_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Todo Tools",
+  description: "The session's task list.",
+  entry: "natalia:tool-todo",
+  scope: "session",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools"],
+};
+
 export function createTodoPlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: TODO_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Todo Tools",
-      description: "The session's task list.",
-      entry: "natalia:tool-todo",
-      scope: "session",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
+    manifest: TODO_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of todoTools) api.tools.register(tool);
     },

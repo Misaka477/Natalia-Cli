@@ -253,6 +253,9 @@ export type NataliaSDK = {
    */
   /** Commands contributed by capabilities and plugins. */
   commandCatalog(): Promise<import("@natalia/contracts").ContributedCommand[]>;
+  commandExecute(
+    input: import("@natalia/contracts").ContributedCommandExecution,
+  ): Promise<void>;
   /** Replayable causal facts, including the existing epi_* correlation id. */
   workGraphNodes(): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
   workGraphEdges(): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
@@ -810,6 +813,9 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("mcp.resource", { server, uri }),
     plugins: async () => await call("plugin.list", {}),
     commandCatalog: async () => await call("command.catalog", {}),
+    commandExecute: async (input) => {
+      await call("command.execute", input);
+    },
     workGraphNodes: async () => await call("workgraph.nodes", {}),
     workGraphEdges: async () => await call("workgraph.edges", {}),
     nativeTerminalList: async () => await call("nativeTerminal.list", {}),

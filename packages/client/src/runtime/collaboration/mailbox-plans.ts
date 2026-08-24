@@ -9,6 +9,10 @@
 import { projectedCollabMessages } from "@natalia/session";
 import { sessionRunCoordinator } from "@natalia/session";
 import { buildMailboxQueued } from "@natalia/runtime-services";
+import {
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
@@ -235,8 +239,12 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     },
     targetExec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ) {
-    const { publishForSession, getWorkLedgerController, nextPlanSequence } =
-      ctx.ports;
+    const { publishForSession, nextPlanSequence } = ctx.ports;
+    const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!workLedgerController)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
     if (!targetExec) return { created: false as const };
     if (
       typeof input.title !== "string" ||
@@ -251,7 +259,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     const planID = `plan:${Date.now().toString(36)}:${nextPlanSequence()}`;
     publishForSession(
       targetExec,
-      getWorkLedgerController().buildPlanDraftCreated({
+      workLedgerController.buildPlanDraftCreated({
         id: `${planID}:draft:0`,
         planID,
         version: 1,

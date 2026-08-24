@@ -1,8 +1,9 @@
 import type { CapabilityHost } from "@natalia/capability";
-import type {
-  CapabilityTaskExecutionRequest,
-  TaskRunResult,
-  TaskWorkflowService,
+import {
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  type CapabilityTaskExecutionRequest,
+  type TaskRunResult,
+  type TaskWorkflowService,
 } from "@natalia/runtime-services";
 import type {
   WorkflowExecutionHandle,
@@ -16,14 +17,20 @@ export class CapabilityExecutionHost {
     private readonly capabilities: CapabilityHost,
     private readonly options: {
       scheduler: WorkflowExecutionSchedulerService;
-      taskWorkflowService: TaskWorkflowService;
+      resolveService: <T>(serviceID: string) => Promise<T | undefined>;
     },
   ) {}
 
-  runTask(
+  async runTask(
     request: CapabilityTaskExecutionRequest,
-  ): WorkflowExecutionHandle<TaskRunResult> {
-    return this.options.taskWorkflowService.runCapabilityTask({
+  ): Promise<WorkflowExecutionHandle<TaskRunResult>> {
+    const taskWorkflowService =
+      await this.options.resolveService<TaskWorkflowService>(
+        TASK_WORKFLOW_CONTROLLER_SERVICE,
+      );
+    if (!taskWorkflowService)
+      throw new Error("task workflow service unavailable");
+    return taskWorkflowService.runCapabilityTask({
       capabilities: this.capabilities,
       scheduler: this.options.scheduler,
       request,

@@ -6,7 +6,7 @@
  * tool plugins (notably `@natalia/tool-web`) can run commands without depending
  * on this package. It knows nothing about the runtime or the capability kernel.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import {
   numberOr,
   requireObject,
@@ -101,24 +101,26 @@ export function shellToolFamily(): ToolFamily {
   };
 }
 
+export const SHELL_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: SHELL_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Shell Tools",
+  description: "One-shot command execution.",
+  entry: "natalia:tool-shell",
+  scope: "session",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools"],
+};
+
 export function createShellPlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: SHELL_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Shell Tools",
-      description: "One-shot command execution.",
-      entry: "natalia:tool-shell",
-      scope: "session",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
+    manifest: SHELL_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of shellTools) api.tools.register(tool);
     },

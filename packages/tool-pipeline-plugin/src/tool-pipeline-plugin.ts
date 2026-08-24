@@ -12,7 +12,7 @@
  * contribute policy rules and hooks through the same single writer, instead of
  * opening a second policy path.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import {
   commandTextForTool,
   createToolPolicyHookLayer,
@@ -24,24 +24,25 @@ import {
 import { TOOL_POLICY_SERVICE } from "@natalia/runtime-services";
 
 export const TOOL_PIPELINE_PLUGIN_ID = "natalia-tool-pipeline";
+export const TOOL_PIPELINE_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: TOOL_PIPELINE_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Tool Pipeline",
+  description: "The single policy funnel every tool call passes through.",
+  entry: "natalia:tool-pipeline",
+  scope: "workspace",
+  provides: [TOOL_POLICY_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services"],
+};
 export function createToolPipelinePlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: TOOL_PIPELINE_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Tool Pipeline",
-      description: "The single policy funnel every tool call passes through.",
-      entry: "natalia:tool-pipeline",
-      scope: "workspace",
-      provides: [TOOL_POLICY_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services"],
-    },
+    manifest: TOOL_PIPELINE_PLUGIN_MANIFEST,
     setup(api) {
       api.services.provide(TOOL_POLICY_SERVICE, {
         createExecutionPipeline: () => new ToolExecutionPipeline(),

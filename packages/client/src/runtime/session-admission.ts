@@ -11,6 +11,12 @@ import {
   admitInput,
   sessionRunCoordinator,
 } from "@natalia/session";
+import {
+  ATTACHMENT_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type AttachmentService,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import { createHash } from "node:crypto";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
@@ -34,8 +40,6 @@ export function createSessionAdmission(
       getSessionID,
       ensureExecution,
       teamBehavior,
-      getAttachmentService,
-      getWorkLedgerController,
       publishForSession,
       getSessionPersistence,
       getActiveExec,
@@ -48,6 +52,15 @@ export function createSessionAdmission(
       text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length;
     await getReady();
     if (isDisposed()) throw new Error("runtime disposed");
+    const attachmentService =
+      ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
+    if (!attachmentService)
+      throw new Error("attachment service unavailable (natalia-attachment)");
+    const workLedger = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!workLedger)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
     const targetSessionID = forSessionID ?? getSessionID();
     const targetExec = await ensureExecution(targetSessionID);
     if (isDisposed()) throw new Error("runtime disposed");
@@ -70,7 +83,7 @@ export function createSessionAdmission(
       text = message;
     }
     const attachments = input.attachments?.length
-      ? await getAttachmentService().store(input.attachments)
+      ? await attachmentService.store(input.attachments)
       : [];
     if (isDisposed()) throw new Error("runtime disposed");
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
@@ -120,7 +133,7 @@ export function createSessionAdmission(
     // contain anything, and the graph is replayable and shareable.
     publishForSession(
       targetExec,
-      getWorkLedgerController().agentActionNode({
+      workLedger.agentActionNode({
         turnID: id,
         sessionID: targetSessionID,
         agent: targetExec?.selectedAgent?.name,

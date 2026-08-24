@@ -18,6 +18,7 @@ export { createWorkLedgerController } from "./work-ledger-controller";
 export {
   createWorkLedgerPlugin,
   WORK_LEDGER_PLUGIN_ID,
+  WORK_LEDGER_PLUGIN_MANIFEST,
 } from "./work-ledger-plugin";
 export {
   agentActionNode,

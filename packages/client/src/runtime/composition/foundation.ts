@@ -1,5 +1,4 @@
 import { isAbsolute, join } from "node:path";
-import { RuntimeRefusal } from "@natalia/contracts";
 import {
   foregroundProcessForTTY,
   globalConfigHome,
@@ -9,8 +8,18 @@ import { TerminalCommandBuffer } from "@natalia/tools";
 import {
   SKILL_SERVICE,
   TEAM_BEHAVIOR_SERVICE,
+  TERMINAL_CONTROLLER_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  WORKSPACE_WRITE_LOCK_SERVICE,
+  SANDBOX_SERVICE,
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  type SandboxService,
   type SkillService,
+  type StatusSnapshotController,
   type TeamBehaviorService,
+  type TerminalController,
+  type WorkLedgerController,
+  type WorkspaceWriteLock,
 } from "@natalia/runtime-services";
 import { createPluginsController } from "../../plugins-controller";
 import { redactToolOutput } from "../client-surface/helpers";
@@ -26,7 +35,10 @@ export function wireFoundation(ctx: RuntimeContext) {
   state.terminalCommandBuffer = new TerminalCommandBuffer({
     foregroundProgram: async (paneID) => {
       try {
-        const ttyName = await state.terminalController?.ttyName(paneID);
+        const terminal = ports.resolveService<TerminalController>(
+          TERMINAL_CONTROLLER_SERVICE,
+        );
+        const ttyName = await terminal?.ttyName(paneID);
         if (!ttyName)
           return {
             supported: false as const,
@@ -65,7 +77,14 @@ export function wireFoundation(ctx: RuntimeContext) {
     agentIDForTurn: (turnID) => state.turnAgent.get(turnID),
     capabilityOwnerForTool: (toolName) =>
       state.capabilityRegistry.ownerOf("tools", toolName),
-    workLedger: () => state.workLedgerController,
+    workLedger: () => {
+      const workLedger = ports.resolveService<WorkLedgerController>(
+        WORK_LEDGER_CONTROLLER_SERVICE,
+      );
+      if (!workLedger)
+        throw new Error("work ledger unavailable (natalia-work-ledger)");
+      return workLedger;
+    },
     publishForSession: (sessionID, event) =>
       ports.publishForSession(state.executionBySession.get(sessionID), event),
   };
@@ -74,7 +93,8 @@ export function wireFoundation(ctx: RuntimeContext) {
   ports.setDisposed = (disposed) => {
     state.runtimeDisposed = disposed;
   };
-  ports.getSessionStoreController = () => state.sessionStoreController;
+  ports.resolveService = <T>(serviceID: string) =>
+    state.capabilityRegistry.service<T>(serviceID);
   ports.getSession = () => state.session;
   ports.getReplayMode = () => state.replayMode;
   ports.setReplayMode = (mode) => {
@@ -90,34 +110,30 @@ export function wireFoundation(ctx: RuntimeContext) {
   ports.getAttachmentReferences = () => state.attachmentReferences;
   ports.getToolCalls = () => state.toolCalls;
   ports.getRetryPolicy = () => state.retryPolicy;
-  ports.getGovernanceLedgerController = () => state.governanceLedgerController;
   ports.executionForTurn = (turnID) =>
     state.executionBySession.get(
       state.turnSession.get(turnID) ?? state.sessionID,
     );
-  ports.getTurnController = () => state.turnController;
-  ports.getTaskWorkflowController = () => state.taskWorkflowController;
   ports.getSessionID = () => state.sessionID;
-  ports.getContextLedgerFactory = () => state.contextLedgerFactory;
   ports.getProvider = () => state.provider;
   ports.getActiveExec = () => state.activeExec;
   ports.getActiveTurnID = () => state.activeTurnID;
   ports.getPauseWaiters = () => state.pauseWaiters;
-  ports.getWorkspaceWriteLock = () => state.workspaceWriteLock;
   ports.getWorkspaceCapabilityView = () => state.workspaceCapabilityView;
   ports.getTools = () => state.tools;
-  ports.requireWriteLock = () => {
-    if (!state.workspaceWriteLock)
-      throw new Error("workspace write lock unavailable");
-    return state.workspaceWriteLock;
+  ports.scheduleRuntimeStatusSnapshot = () =>
+    ports
+      .resolveService<StatusSnapshotController>(
+        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+      )
+      ?.schedule();
+  ports.runtimeStatusSnapshot = () => {
+    const status = ports.resolveService<StatusSnapshotController>(
+      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+    );
+    if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+    return status.snapshot();
   };
-  ports.requireSandboxes = () => {
-    if (!state.sandboxController)
-      throw new Error("sandbox controller unavailable");
-    return state.sandboxController;
-  };
-  ports.scheduleRuntimeStatusSnapshot = () => state.statusController.schedule();
-  ports.runtimeStatusSnapshot = () => state.statusController.snapshot();
   ports.skillService = () =>
     state.capabilityRegistry.service<SkillService>(SKILL_SERVICE);
   ports.skillsList = () => ports.skillService()?.list() ?? [];
@@ -125,10 +141,8 @@ export function wireFoundation(ctx: RuntimeContext) {
     state.capabilityRegistry.service<TeamBehaviorService>(
       TEAM_BEHAVIOR_SERVICE,
     );
-  ports.getStatusController = () => state.statusController;
   ports.getProviderSource = () => state.providerSource;
   ports.getWorkspaceRoot = () => state.workspaceRoot;
-  ports.getSandboxController = () => state.sandboxController;
   ports.getAgentRegistry = () => state.agentRegistry;
   ports.setPaused = (value) => {
     state.paused = value;
@@ -136,8 +150,6 @@ export function wireFoundation(ctx: RuntimeContext) {
   ports.getPaused = () => state.paused;
   ports.getCapabilityRegistry = () => state.capabilityRegistry;
   ports.getTsRuntimeConfig = () => state.tsRuntimeConfig;
-  ports.getSubagentsController = () => state.subagentsController;
-  ports.getWorkLedgerController = () => state.workLedgerController;
   ports.getSelectedAgent = () => state.selectedAgent;
   ports.getSelectedModel = () => state.selectedModel;
   ports.getMaxSteps = () => state.maxSteps;
@@ -153,12 +165,10 @@ export function wireFoundation(ctx: RuntimeContext) {
     state.runtimeContextConfig = value;
   };
   ports.getRuntimeContextConfig = () => state.runtimeContextConfig;
-  ports.getWorkspaceFilesController = () => state.workspaceFilesController;
   ports.nextMailboxSequence = () => state.mailboxSequence++;
   ports.nextDecisionSequence = () => state.decisionSequence++;
   ports.nextEvidenceSequence = () => state.evidenceSequence++;
   ports.nextCompletionSequence = () => state.completionSequence++;
-  ports.getProviderModelController = () => state.providerModelController;
   ports.nextChatSequence = () => state.chatSequence++;
   ports.getInternalWakeTasks = () => state.internalWakeTasks;
   ports.setSessionPersistence = (next) => {
@@ -177,9 +187,4 @@ export function wireFoundation(ctx: RuntimeContext) {
     state.providerSource = source;
   };
   ports.getPluginsController = () => state.pluginsController;
-  ports.requireTaskWorkflow = () => {
-    if (!state.taskWorkflowController)
-      throw new RuntimeRefusal("Task/workflow plugin is disabled.");
-    return state.taskWorkflowController;
-  };
 }

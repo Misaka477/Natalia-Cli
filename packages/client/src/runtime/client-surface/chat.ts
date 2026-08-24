@@ -1,4 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import {
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
+  type ProviderModelController,
+} from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
@@ -46,7 +50,9 @@ export function createChatSurface(
       await ctx.ports.getReady();
       const text = typeof input.text === "string" ? input.text.trim() : "";
       const exec = ctx.ports.getActiveExec();
-      const controller = ctx.ports.getProviderModelController();
+      const controller = ctx.ports.resolveService<ProviderModelController>(
+        PROVIDER_MODEL_CONTROLLER_SERVICE,
+      );
       if (!text || !exec?.provider || !controller) return { messageID: "" };
       const now = new Date();
       const userMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;

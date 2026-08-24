@@ -6,7 +6,7 @@
  * `terminal.controller` service, so a disabled or absent plugin constructs no
  * native terminal registry and starts no WezTerm watcher.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { createTerminalController } from "./terminal-controller";
 import {
@@ -16,27 +16,29 @@ import {
 
 export const TERMINAL_PLUGIN_ID = "natalia-terminal";
 
+export const TERMINAL_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: TERMINAL_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Terminal",
+  description: "Native terminal panes and interactive programs.",
+  entry: "natalia:terminal",
+  scope: "session",
+  provides: [TERMINAL_CONTROLLER_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services"],
+};
+
 export function createTerminalControllerPlugin(
   input: TerminalControllerPluginInput,
 ): Plugin {
   let controller: ReturnType<typeof createTerminalController> | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: TERMINAL_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Terminal",
-      description: "Native terminal panes and interactive programs.",
-      entry: "natalia:terminal",
-      scope: "session",
-      provides: [TERMINAL_CONTROLLER_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services"],
-    },
+    manifest: TERMINAL_PLUGIN_MANIFEST,
     setup(api) {
       controller = createTerminalController({
         ...input,

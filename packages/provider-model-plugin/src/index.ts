@@ -7,6 +7,7 @@ export type {
 export {
   createProviderModelPlugin,
   PROVIDER_MODEL_PLUGIN_ID,
+  PROVIDER_MODEL_PLUGIN_MANIFEST,
 } from "./provider-model-plugin";
 export {
   createProviderRunner,

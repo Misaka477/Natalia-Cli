@@ -2,6 +2,7 @@ export { createSessionStoreController } from "./session-store-controller";
 export {
   createSessionStoreControllerPlugin,
   SESSION_STORE_PLUGIN_ID,
+  SESSION_STORE_PLUGIN_MANIFEST,
 } from "./session-store-plugin";
 export {
   createLocalSessionService,

@@ -177,6 +177,7 @@ export const RPC_ROUTE_MEMBERS = {
   "tools.reload": "toolFamilyReload",
   "plugin.list": "plugins",
   "command.catalog": "commandCatalog",
+  "command.execute": "commandExecute",
   "task.overview": "taskOverview",
   "flow.overview": "flowOverview",
   "document.catalog": "documentCatalog",
@@ -318,6 +319,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "provider.remove",
   "plugin.unload",
   "plugin.reload",
+  "command.execute",
   "nativeTerminal.stop",
   "nativeTerminal.revokeApprovalScope",
   "nativeTerminal.releaseHumanControl",
@@ -1162,6 +1164,26 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.commandCatalog(),
+      };
+    }
+    if (body.method === "command.execute") {
+      optionsGuard(client, "commandExecute");
+      const name = body.params?.name;
+      const raw = body.params?.raw;
+      const args = body.params?.args;
+      if (typeof name !== "string")
+        throw invalidParams("command.execute.params.name must be a string");
+      if (typeof raw !== "string")
+        throw invalidParams("command.execute.params.raw must be a string");
+      if (!Array.isArray(args) || !args.every((arg) => typeof arg === "string"))
+        throw invalidParams(
+          "command.execute.params.args must be an array of strings",
+        );
+      await client.commandExecute({ name, raw, args });
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: null,
       };
     }
     if (body.method === "workgraph.nodes") {

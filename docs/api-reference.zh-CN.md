@@ -713,7 +713,7 @@ createRuntimeHttpServer({
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (20 groups · 122 optional members)
+### Capability groups (20 groups · 123 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -728,7 +728,7 @@ createRuntimeHttpServer({
 | sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxResourceStop`                                                                                                                                                                               |
 | sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionExport` · `sessionAttach`                                                                                                                          |
 | mcp            | `mcpCatalog` · `getMcpPrompt` · `readMcpResource` · `mcpServerAdd` · `mcpServerRemove`                                                                                                                                                                                                                                |
-| extensions     | `plugins` · `commandCatalog` · `capabilities` · `pluginUnload` · `pluginReload` · `toolFamilyReload`                                                                                                                                                                                                                  |
+| extensions     | `plugins` · `commandCatalog` · `commandExecute` · `capabilities` · `pluginUnload` · `pluginReload` · `toolFamilyReload`                                                                                                                                                                                               |
 | management     | `permissionList` · `permissionSave` · `permissionDelete`                                                                                                                                                                                                                                                              |
 | automation     | `taskOverview` · `flowOverview` · `documentCatalog` · `saveFlowDocument` · `deleteFlowDocument` · `saveTaskDocument` · `deleteTaskDocument` · `taskSchedule` · `taskUnschedule` · `taskPermissionPreview`                                                                                                             |
 | observability  | `runtimeStatus` · `diagnostics` · `sessionSnapshot`                                                                                                                                                                                                                                                                   |
@@ -738,7 +738,7 @@ createRuntimeHttpServer({
 | plans          | `planList` · `planCreate` · `planUpdate` · `planPropose` · `planAccept` · `planQueue` · `planActivate` · `planSupersede` · `planCompleted`                                                                                                                                                                            |
 | chat           | `chatSubmit` · `chatMessages` · `chatRollback`                                                                                                                                                                                                                                                                        |
 
-### RPC route table (127 methods → members)
+### RPC route table (128 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -810,6 +810,7 @@ createRuntimeHttpServer({
 | `tools.reload`                       | `toolFamilyReload`                  | extensions       | read  |
 | `plugin.list`                        | `plugins`                           | extensions       | read  |
 | `command.catalog`                    | `commandCatalog`                    | extensions       | read  |
+| `command.execute`                    | `commandExecute`                    | extensions       | write |
 | `task.overview`                      | `taskOverview`                      | automation       | read  |
 | `flow.overview`                      | `flowOverview`                      | automation       | read  |
 | `document.catalog`                   | `documentCatalog`                   | automation       | read  |
@@ -870,7 +871,7 @@ createRuntimeHttpServer({
 | `task.unschedule`                    | `taskUnschedule`                    | automation       | write |
 | `task.preview`                       | `taskPermissionPreview`             | automation       | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 52 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 53 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `cancel`
@@ -909,6 +910,7 @@ createRuntimeHttpServer({
 - `provider.remove`
 - `plugin.unload`
 - `plugin.reload`
+- `command.execute`
 - `nativeTerminal.stop`
 - `nativeTerminal.revokeApprovalScope`
 - `nativeTerminal.releaseHumanControl`

@@ -1,16 +1,6 @@
 import type { AgentDefinition } from "@natalia/agent";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { SessionRecord } from "@natalia/session";
-import type {
-  GovernanceLedgerController,
-  InteractiveWaiter,
-  McpService,
-  MutationRegistry,
-  ProviderModelController,
-  SessionStoreController,
-  TerminalController,
-  WorkLedgerController,
-} from "@natalia/runtime-services";
 import type { SessionExecutionState } from "./session-execution-state";
 
 export type RuntimeClientSurfacePorts = {
@@ -27,17 +17,6 @@ export type RuntimeClientSurfacePorts = {
   setPauseWaiters: (waiters: Array<() => void>) => void;
   getReady: () => Promise<void> | undefined;
   getSessionID: () => SessionID;
-  getSessionStoreController: () => SessionStoreController;
-  getTerminalController: () => TerminalController | undefined;
-  getInteractive: () => InteractiveWaiter;
-  getMcpService: () => McpService | undefined;
-  getMutationRegistry: () => MutationRegistry | undefined;
-  getProviderModelController: () => ProviderModelController | undefined;
-  setProviderModelController: (
-    controller: ProviderModelController | undefined,
-  ) => void;
-  getGovernanceLedgerController: () => GovernanceLedgerController;
-  getWorkLedgerController: () => WorkLedgerController;
   getTsRuntimeConfig: () => ConfigV3 | undefined;
   getSelectedAgent: () => AgentDefinition | undefined;
   setSelectedAgent: (agent: AgentDefinition | undefined) => void;
@@ -61,7 +40,6 @@ export type RuntimeClientSurfacePorts = {
   applyConfigFromDisk: () => Promise<{ applied: boolean; reason?: string }>;
   attachSession: (id: string) => Promise<{ sessionID: string }>;
   cancelTitleGeneration: (id: SessionID) => Promise<void>;
-  requireTaskWorkflow: () => import("@natalia/runtime-services").TaskWorkflowController;
   getInternalWakeTasks: () => Set<Promise<unknown>>;
   enqueueMailboxForClient: (
     input: Parameters<

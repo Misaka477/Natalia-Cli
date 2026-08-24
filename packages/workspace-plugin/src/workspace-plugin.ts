@@ -11,7 +11,7 @@
  *   - `workspace.files` reconciles observed changes against the expected
  *     mutation registry and reports un-attributed drift.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
 import { createMutationRegistry } from "./mutation-registry";
 import {
@@ -29,33 +29,36 @@ import {
 } from "@natalia/runtime-services";
 
 export const WORKSPACE_PLUGIN_ID = "natalia-workspace";
+
+export const WORKSPACE_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: WORKSPACE_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Workspace",
+  description:
+    "Workspace observation, write serialisation and mutation attribution.",
+  entry: "natalia:workspace",
+  scope: "workspace",
+  provides: [
+    WORKSPACE_WRITE_LOCK_SERVICE,
+    WORKSPACE_MUTATIONS_SERVICE,
+    WORKSPACE_FILES_SERVICE,
+  ],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services", "commands"],
+};
+
 export function createWorkspacePlugin(input: {
   workspaceRoot: string;
   listPaths: () => Promise<string[]>;
 }): Plugin {
   let files: WorkspaceFilesController | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: WORKSPACE_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Workspace",
-      description:
-        "Workspace observation, write serialisation and mutation attribution.",
-      entry: "natalia:workspace",
-      scope: "workspace",
-      provides: [
-        WORKSPACE_WRITE_LOCK_SERVICE,
-        WORKSPACE_MUTATIONS_SERVICE,
-        WORKSPACE_FILES_SERVICE,
-      ],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services", "commands"],
-    },
+    manifest: WORKSPACE_PLUGIN_MANIFEST,
     async setup(api) {
       const mutations: MutationRegistry = createMutationRegistry();
       files = createWorkspaceFilesController({

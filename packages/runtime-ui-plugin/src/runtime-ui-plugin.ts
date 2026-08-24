@@ -1,4 +1,8 @@
-import type { Plugin, PluginCommandInvocation } from "@natalia/plugin";
+import type {
+  Plugin,
+  PluginCommandInvocation,
+  PluginManifest,
+} from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
 import {
   createStatusSnapshotController,
@@ -10,25 +14,26 @@ import {
 } from "@natalia/runtime-services";
 
 export const RUNTIME_UI_PLUGIN_ID = "natalia-runtime-ui";
+export const RUNTIME_UI_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: RUNTIME_UI_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Runtime UI",
+  description: "Shared runtime status projection for interface adapters.",
+  entry: "natalia:runtime-ui",
+  scope: "workspace",
+  provides: [STATUS_SNAPSHOT_CONTROLLER_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services", "commands"],
+};
 export function createRuntimeUiPlugin(input: RuntimeUiPluginInput): Plugin {
   let controller: StatusSnapshotController | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: RUNTIME_UI_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Runtime UI",
-      description: "Shared runtime status projection for interface adapters.",
-      entry: "natalia:runtime-ui",
-      scope: "workspace",
-      provides: [STATUS_SNAPSHOT_CONTROLLER_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services", "commands"],
-    },
+    manifest: RUNTIME_UI_PLUGIN_MANIFEST,
     setup(api) {
       controller = createStatusSnapshotController(input);
       api.services.provide(STATUS_SNAPSHOT_CONTROLLER_SERVICE, controller);

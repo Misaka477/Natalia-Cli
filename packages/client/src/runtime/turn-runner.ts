@@ -14,6 +14,18 @@ import {
   projectedPlans,
 } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
+import {
+  ATTACHMENT_SERVICE,
+  COMPACTION_SERVICE,
+  MCP_SERVICE,
+  RETRY_SERVICE,
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  type AttachmentService,
+  type CompactionService,
+  type McpService,
+  type RetryService,
+  type StatusSnapshotController,
+} from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 
@@ -30,16 +42,11 @@ export function createTurnRunner(
   ): ProviderRunnerInput {
     const {
       getExecutionBySession,
-      getCompactionService,
       getTools,
-      getAttachmentService,
-      getMcpService,
       getAgentRegistry,
       getActiveExec,
       getWorkspaceRoot,
       getTsRuntimeConfig,
-      getStatusController,
-      getRetryService,
       publishForSession,
       modelCapabilitiesForExecution,
       refreshExecutionContextConfig,
@@ -63,9 +70,24 @@ export function createTurnRunner(
     const { executionBySession, tools } = ctx.state;
     const exec = executionBySession.get(sessionID);
     if (!exec) throw new Error(`no execution state for session ${sessionID}`);
-    const compactionService = getCompactionService();
+    const compactionService =
+      ctx.ports.resolveService<CompactionService>(COMPACTION_SERVICE);
     if (!compactionService)
       throw new Error("compaction service unavailable (natalia-compaction)");
+    const attachmentService =
+      ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
+    if (!attachmentService)
+      throw new Error("attachment service unavailable (natalia-attachment)");
+    const statusController = ctx.ports.resolveService<StatusSnapshotController>(
+      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+    );
+    if (!statusController)
+      throw new Error(
+        "status snapshot controller unavailable (natalia-runtime-ui)",
+      );
+    const retryService = ctx.ports.resolveService<RetryService>(RETRY_SERVICE);
+    if (!retryService)
+      throw new Error("retry service unavailable (natalia-retry)");
     const activeExec = getActiveExec();
     return {
       provider: () => exec.provider,
@@ -73,9 +95,9 @@ export function createTurnRunner(
       context: () => exec.context,
       tools: () => tools,
       attachmentReferences: () => exec.attachmentReferences,
-      attachments: getAttachmentService(),
+      attachments: attachmentService,
       compaction: compactionService,
-      mcp: () => getMcpService(),
+      mcp: () => ctx.ports.resolveService<McpService>(MCP_SERVICE),
       agentRegistry: () => getAgentRegistry(),
       activeAbort: () => exec.activeAbort,
       setActiveAbort: (controller) => {
@@ -167,7 +189,7 @@ export function createTurnRunner(
           riskNotes: plan.riskNotes,
         };
       },
-      retry: getRetryService(),
+      retry: retryService,
       lastProviderUsage: () => exec.lastProviderUsage,
       setLastProviderUsage: (usage) => {
         exec.lastProviderUsage = usage;
@@ -194,7 +216,7 @@ export function createTurnRunner(
         return result;
       },
       runtimeStatusSnapshot: () =>
-        getStatusController().snapshotFor({
+        statusController.snapshotFor({
           provider: exec.provider,
           context: exec.context,
           permissionMode: exec.permissionMode,

@@ -1,6 +1,9 @@
 import type {
+  CompactionService,
+  ContextLedgerFactory,
   InitializeOptions,
   ProviderToolCall,
+  RetryService,
   RuntimeContext,
   RuntimeContextLedger,
   RuntimeEvent,
@@ -9,6 +12,7 @@ import type {
   StreamingProvider,
   SubagentRunnerContext,
   SubagentSupport,
+  SubagentsService,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
 
@@ -17,6 +21,25 @@ export async function createSubagentSupport(
   _options: InitializeOptions,
 ): Promise<SubagentSupport> {
   const scope = createInitializeRuntime(ctx);
+  const subagents = scope.resolveService<SubagentsService>(
+    scope.SUBAGENTS_SERVICE,
+  );
+  const contextLedgerFactory = scope.resolveService<ContextLedgerFactory>(
+    scope.CONTEXT_LEDGER_FACTORY_SERVICE,
+  );
+  if (!contextLedgerFactory)
+    throw new Error("context ledger unavailable (natalia-context-ledger)");
+  const resolvedContextLedgerFactory = contextLedgerFactory;
+  const compactionService = scope.resolveService<CompactionService>(
+    scope.COMPACTION_SERVICE,
+  );
+  if (!compactionService)
+    throw new Error("compaction service unavailable (natalia-compaction)");
+  const resolvedCompactionService = compactionService;
+  const retryService = scope.resolveService<RetryService>(scope.RETRY_SERVICE);
+  if (!retryService)
+    throw new Error("retry service unavailable (natalia-retry)");
+  const resolvedRetryService = retryService;
   let sandboxedSubagentActive = 0;
   const sandboxedSubagentWaiters: Array<{
     resume: () => void;
@@ -66,8 +89,9 @@ export async function createSubagentSupport(
     runner: SubagentRunnerContext,
     event: RuntimeEvent,
   ) {
-    const parentSessionID = scope.subagentsController?.get(runner.agentId)
-      ?.parentSessionID as SessionID | undefined;
+    const parentSessionID = subagents?.get(runner.agentId)?.parentSessionID as
+      | SessionID
+      | undefined;
     scope.publishForSession(
       parentSessionID
         ? scope.executionBySession.get(parentSessionID)
@@ -78,8 +102,7 @@ export async function createSubagentSupport(
     );
   }
   function subagentTurnID(runner: SubagentRunnerContext) {
-    const continuation =
-      scope.subagentsController?.get(runner.agentId)?.continuation ?? 0;
+    const continuation = subagents?.get(runner.agentId)?.continuation ?? 0;
     return continuation
       ? `subagent:${runner.agentId}:continuation:${continuation}`
       : `subagent:${runner.agentId}`;
@@ -89,8 +112,9 @@ export async function createSubagentSupport(
     task: string,
   ) {
     const id = subagentTurnID(runner);
-    const parentSessionID = scope.subagentsController?.get(runner.agentId)
-      ?.parentSessionID as SessionID | undefined;
+    const parentSessionID = subagents?.get(runner.agentId)?.parentSessionID as
+      | SessionID
+      | undefined;
     if (parentSessionID) scope.turnSession.set(id, parentSessionID);
     scope.turnAgent.set(id, runner.agentId);
     publishSubagentEvent(runner, {
@@ -117,7 +141,7 @@ export async function createSubagentSupport(
     scope.turnAgent.delete(id);
   }
   function createSubagentContext(system: string, task: string) {
-    const ledger = scope.contextLedgerFactory.create();
+    const ledger = resolvedContextLedgerFactory.create();
     ledger.add({ id: "system", role: "system", content: system });
     ledger.add({ id: "task", role: "user", content: task });
     return ledger;
@@ -136,11 +160,8 @@ export async function createSubagentSupport(
     allowToolCalls = true,
   ) {
     const id = subagentTurnID(runner);
-    const compaction = scope.compactionService;
-    if (!compaction)
-      throw new Error("compaction service unavailable (natalia-compaction)");
     const runStep = () =>
-      scope.retryService.run(
+      resolvedRetryService.run(
         { id, operation: "llm_step", step },
         async ({ attempt }) => {
           let output = "";
@@ -212,7 +233,7 @@ export async function createSubagentSupport(
     let result;
     while (true) {
       runner.signal.throwIfAborted();
-      result = await compaction.runWithContextLimitRecovery({
+      result = await resolvedCompactionService.runWithContextLimitRecovery({
         id,
         step,
         compactionID: `${id}:context-limit:${step}`,

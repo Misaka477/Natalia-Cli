@@ -217,6 +217,75 @@ export type BuiltinFeatureGates = {
   pdfEnabled: boolean;
 };
 
+export type BuiltinPluginGates = {
+  attachment: boolean;
+  checkpoint: boolean;
+  collaboration: boolean;
+  compaction: boolean;
+  contextLedger: boolean;
+  governanceLedger: boolean;
+  localTools: boolean;
+  mcp: boolean;
+  providerModel: boolean;
+  retry: boolean;
+  runtimeUi: boolean;
+  sandboxController: boolean;
+  sessionStore: boolean;
+  skills: boolean;
+  subagents: boolean;
+  taskWorkflow: boolean;
+  team: boolean;
+  terminalController: boolean;
+  toolPipeline: boolean;
+  turnOrchestration: boolean;
+  workLedger: boolean;
+  workspace: boolean;
+};
+
+export function computeBuiltinPluginGates(
+  config: ConfigV3,
+): BuiltinPluginGates {
+  const enabled = (id: string) => config.plugins.enabled[id] !== false;
+  const attachment = enabled(ATTACHMENT_PLUGIN_ID);
+  const retry = enabled(RETRY_PLUGIN_ID);
+  const contextLedger = enabled(CONTEXT_LEDGER_PLUGIN_ID);
+  const compactionPlugin = enabled(COMPACTION_PLUGIN_ID);
+  const compaction = retry && contextLedger && compactionPlugin;
+  const sandboxController = enabled(SANDBOX_CONTROLLER_PLUGIN_ID);
+  const subagents = enabled(SUBAGENTS_PLUGIN_ID);
+  const sessionStore = enabled(SESSION_STORE_PLUGIN_ID) && attachment;
+  const workLedger = enabled(WORK_LEDGER_PLUGIN_ID);
+
+  return {
+    attachment,
+    checkpoint: enabled(CHECKPOINT_PLUGIN_ID),
+    collaboration: enabled(COLLABORATION_PLUGIN_ID),
+    compaction,
+    contextLedger,
+    governanceLedger: enabled(GOVERNANCE_LEDGER_PLUGIN_ID) && workLedger,
+    localTools: enabled(LOCAL_TOOLS_PLUGIN_ID),
+    mcp: enabled(MCP_PLUGIN_ID),
+    providerModel:
+      attachment &&
+      retry &&
+      compactionPlugin &&
+      enabled(PROVIDER_MODEL_PLUGIN_ID),
+    retry,
+    runtimeUi: enabled(RUNTIME_UI_PLUGIN_ID),
+    sandboxController,
+    sessionStore,
+    skills: enabled(SKILLS_PLUGIN_ID),
+    subagents,
+    taskWorkflow: enabled(TASK_WORKFLOW_PLUGIN_ID),
+    team: enabled(TEAM_PLUGIN_ID) && sandboxController && subagents,
+    terminalController: enabled(TERMINAL_CONTROLLER_PLUGIN_ID),
+    toolPipeline: enabled(TOOL_PIPELINE_PLUGIN_ID),
+    turnOrchestration: enabled(TURN_ORCHESTRATION_PLUGIN_ID) && sessionStore,
+    workLedger,
+    workspace: enabled(WORKSPACE_PLUGIN_ID),
+  };
+}
+
 export function computeBuiltinFeatureGates(input: {
   config: ConfigV3 | undefined;
   hasCustomTools: boolean;

@@ -5,6 +5,7 @@ import {
   resolveDesiredPluginCatalog,
   type DesiredPluginEntry,
   type Plugin,
+  type PluginManifest,
 } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import {
@@ -15,6 +16,23 @@ import {
 export const WORKFLOW_SCHEDULER_PLUGIN_ID = "natalia-workflow-scheduler";
 export const WORKFLOW_SCHEDULER_SERVICE = "workflow-execution.scheduler";
 
+export const WORKFLOW_SCHEDULER_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: WORKFLOW_SCHEDULER_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Workflow Scheduler",
+  description: "Process-level workflow admission and concurrency gates.",
+  entry: "natalia:workflow-scheduler",
+  scope: "process",
+  provides: [WORKFLOW_SCHEDULER_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services"],
+};
+
 export type WorkflowSchedulerOptions = ConstructorParameters<
   typeof WorkflowExecutionScheduler
 >[0];
@@ -24,22 +42,7 @@ export function createWorkflowSchedulerPlugin(
 ): Plugin {
   let scheduler: WorkflowExecutionScheduler | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: WORKFLOW_SCHEDULER_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Workflow Scheduler",
-      description: "Process-level workflow admission and concurrency gates.",
-      entry: "natalia:workflow-scheduler",
-      scope: "process",
-      provides: [WORKFLOW_SCHEDULER_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services"],
-    },
+    manifest: WORKFLOW_SCHEDULER_PLUGIN_MANIFEST,
     setup(api) {
       scheduler = new WorkflowExecutionScheduler(options);
       api.services.provide(WORKFLOW_SCHEDULER_SERVICE, scheduler);

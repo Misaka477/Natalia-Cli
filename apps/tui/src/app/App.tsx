@@ -31,10 +31,6 @@ import type {
   RuntimeModelSelection,
   UiAdapterMountInput,
 } from "@natalia/contracts";
-import type {
-  WorkerRuntimeClient,
-  WorkflowExecutionHandle,
-} from "@natalia/client";
 import type { ConfigV3 } from "@natalia/contracts";
 import { buildKeybindMap, commands, composerKeyAction } from "../keymap";
 import { useKeybinds } from "../context/keybind";
@@ -70,12 +66,7 @@ import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { LiveChatView } from "../component/LiveChatView";
-import {
-  PromptAutocomplete,
-  workflowRunUnavailableReason,
-  workflowRunRequest,
-} from "../component/PromptAutocomplete";
-import { runWorkflowProcess } from "../component/DialogScheduledTasks";
+import { PromptAutocomplete } from "../component/PromptAutocomplete";
 import {
   editPromptExternally,
   retainEditorMentions,
@@ -124,6 +115,7 @@ import {
 import { runCommand } from "./command-controller";
 
 type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+type TuiRuntimeClient = RuntimeClient;
 
 export function App(props: {
   backend: TuiRuntimeClient;
@@ -301,12 +293,14 @@ function runtimeCommandHost(
 ): UiAdapterMountInput["commands"] {
   return {
     list: async () => (await runtime.commandCatalog?.()) ?? [],
-    async execute(name) {
+    async execute(input) {
       const command = (await runtime.commandCatalog?.())?.find(
-        (entry) => entry.name === name,
+        (entry) => entry.name === input.name,
       );
-      if (!command) throw new Error(`command unavailable: ${name}`);
-      await runtime.submit(`/${name}`);
+      if (!command) throw new Error(`command unavailable: ${input.name}`);
+      if (!runtime.commandExecute)
+        throw new Error("runtime command execution unavailable");
+      await runtime.commandExecute(input);
     },
   };
 }
@@ -449,13 +443,11 @@ function Shell(props: {
   const history = new PromptHistory();
   const scrollRef: { current?: any } = {};
   const [modelSubmissions, setModelSubmissions] = createSignal(0);
-  const [workflowRunning, setWorkflowRunning] = createSignal(false);
   const [quickModel, setQuickModel] = createSignal<RuntimeModelSelection>({});
   const [quickReasoning, setQuickReasoning] = createSignal<ReasoningEffort>();
   const [quickProfile, setQuickProfile] = createSignal("ask");
   let composerControlTimer: ReturnType<typeof setTimeout> | undefined;
   let ignoreStopUntil = 0;
-  let activeWorkflow: WorkflowExecutionHandle<unknown> | undefined;
   let restoredAgent = false;
   let preferencesLoad = 0;
 
@@ -796,100 +788,19 @@ function Shell(props: {
       setTimeout(() => composer()?.focus(), 1);
       return;
     }
-    const workflowRun = workflowRunRequest(control);
-    if (workflowRun) {
-      if (busy()) {
-        toast.show({
-          variant: "warning",
-          message: "Stop the current work before starting a workflow",
-        });
-        return;
-      }
-      if (!props.workspaceRoot) {
-        toast.show({
-          variant: "warning",
-          message: "Task and flow runs require a workspace root",
-        });
-        return;
-      }
-      const unavailable = workflowRunUnavailableReason(
-        workflowRun.kind,
-        workflowRun.path,
-        Boolean(props.backend.runWorkflowTask),
-      );
-      if (unavailable) {
-        toast.show({
-          variant: "warning",
-          message: unavailable,
-        });
-        return;
-      }
-      setWorkflowRunning(true);
-      input?.clear();
-      history.add(text);
-      try {
-        toast.show({
-          variant: "info",
-          message: `Starting ${workflowRun.kind} ${workflowRun.path}`,
-        });
-        dispatch({
-          type: "status.update",
-          status: "running",
-          detail: `${workflowRun.kind === "flow" ? "Flow" : "Task"}: ${workflowRun.path}`,
-        });
-        const outcome = workflowRun.path.startsWith("cap:")
-          ? await runCapabilityWorkflowTask({
-              backend: props.backend,
-              path: workflowRun.path,
-              workspaceRoot: props.workspaceRoot,
-              sessionID: state.facts.sessionID,
-              setActive: (handle) => (activeWorkflow = handle),
-              onEvent: dispatchWorkflowEvent,
-            })
-          : await runWorkflowProcess({
-              kind: workflowRun.kind,
-              path: workflowRun.path,
-              workspaceRoot: props.workspaceRoot,
-              onEvent: dispatchWorkflowEvent,
-            });
-        dispatch({
-          type: "status.update",
-          status: outcome.ok ? "ready" : "failed",
-          detail: outcome.message,
-        });
-        dispatch({
-          type: "flow.finished",
-          outcome: outcome.ok
-            ? "succeeded"
-            : outcome.status === "skipped_due_to_overlap"
-              ? "skipped"
-              : "failed",
-          reason: outcome.message,
-        });
-        toast.show({
-          variant: outcome.ok ? "success" : "warning",
-          message: outcome.message,
-        });
-      } finally {
-        activeWorkflow = undefined;
-        setWorkflowRunning(false);
+    const commandMatch = control.match(/^\/(\S+)(?:\s+(.*))?$/u);
+    if (commandMatch) {
+      const commandHost = props.commands ?? runtimeCommandHost(props.backend);
+      const name = commandMatch[1]!;
+      if ((await commandHost.list()).some((entry) => entry.name === name)) {
+        input?.clear();
+        history.add(text);
+        const args =
+          commandMatch[2]?.trim().split(/\s+/u).filter(Boolean) ?? [];
+        await commandHost.execute({ name, raw: control, args });
         setTimeout(() => composer()?.focus(), 1);
+        return;
       }
-      return;
-    }
-    if (control === "/task" || control === "/flow") {
-      toast.show({
-        variant: "warning",
-        message: `Select an existing ${control.slice(1)} from autocomplete`,
-      });
-      return;
-    }
-    if (workflowRunning()) {
-      toast.show({
-        variant: "warning",
-        message: "Wait for the current workflow to finish before sending",
-      });
-      return;
     }
     const attachments = attachmentPaths();
     const agents = mentionAgents();
@@ -1048,10 +959,6 @@ function Shell(props: {
   }
 
   function exitOrCancel() {
-    if (workflowRunning()) {
-      activeWorkflow?.cancel("TUI workflow cancellation");
-      return;
-    }
     if (
       state.facts.activeTurn ||
       modelSubmissions() > 0 ||
@@ -1066,7 +973,7 @@ function Shell(props: {
   }
 
   function busy() {
-    return Boolean(modelBusy() || workflowRunning());
+    return modelBusy();
   }
 
   function modelBusy() {
@@ -1109,16 +1016,6 @@ function Shell(props: {
   onCleanup(() => {
     if (composerControlTimer) clearTimeout(composerControlTimer);
   });
-
-  function dispatchWorkflowEvent(event: Record<string, unknown>) {
-    if (
-      event.type !== "task.invocation" &&
-      event.type !== "task.alert" &&
-      event.type !== "task.alert_delivery" &&
-      event.type !== "task.state"
-    )
-      dispatch(event as RuntimeEvent);
-  }
 
   function changeSession(sessionID?: string) {
     if (busy()) {
@@ -1944,46 +1841,6 @@ function compactComposerLabel(value: string, maxLength: number) {
   return value.length > maxLength
     ? `${value.slice(0, Math.max(1, maxLength - 3))}...`
     : value;
-}
-
-type TuiRuntimeClient = RuntimeClient &
-  Partial<Pick<WorkerRuntimeClient, "runWorkflowTask">>;
-
-export async function runCapabilityWorkflowTask(input: {
-  backend: TuiRuntimeClient;
-  path: string;
-  workspaceRoot: string;
-  sessionID?: string;
-  setActive(handle: WorkflowExecutionHandle<unknown>): void;
-  onEvent(event: Record<string, unknown>): void;
-}) {
-  if (!input.backend.runWorkflowTask)
-    throw new Error("Capability task execution is not available");
-  const handle = input.backend.runWorkflowTask({
-    workspaceRoot: input.workspaceRoot,
-    path: input.path,
-    requestedBy: { sessionID: input.sessionID },
-  });
-  input.setActive(handle);
-  const consume = (async () => {
-    for await (const event of handle.events) {
-      if (event.type !== "workflow.execution.output") continue;
-      try {
-        const parsed = JSON.parse(event.line) as Record<string, unknown>;
-        if (typeof parsed.type === "string") input.onEvent(parsed);
-      } catch {
-        // The worker runs JSON mode; a plain diagnostic line remains a status only.
-      }
-    }
-  })();
-  const result = await handle.result;
-  await consume;
-  const ok = result.status === "succeeded" || result.status === "stalled";
-  return {
-    ok,
-    status: result.status,
-    message: `task ${input.path}: ${result.status}`,
-  };
 }
 
 function scrollToBottom(scrollbox: any) {

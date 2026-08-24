@@ -135,7 +135,6 @@ export {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
   handleWorkerRequest,
-  WORKER_CONTROL_METHODS,
   WORKER_ROUTE_MEMBERS,
   type RuntimeWorkerPort,
   type WorkerRuntimeClient,

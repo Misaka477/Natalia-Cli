@@ -13,7 +13,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@natalia/tools";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
@@ -191,24 +191,26 @@ export function searchToolFamily(): ToolFamily {
   };
 }
 
+export const SEARCH_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: SEARCH_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Search Tools",
+  description: "Finding files by name and content in the workspace.",
+  entry: "natalia:tool-search",
+  scope: "workspace",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools"],
+};
+
 export function createSearchPlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: SEARCH_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Search Tools",
-      description: "Finding files by name and content in the workspace.",
-      entry: "natalia:tool-search",
-      scope: "workspace",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
+    manifest: SEARCH_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of searchTools) api.tools.register(tool);
     },

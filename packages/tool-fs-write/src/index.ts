@@ -16,7 +16,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@natalia/tools";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 
@@ -269,24 +269,26 @@ export function fsWriteToolFamily(): ToolFamily {
   };
 }
 
+export const FS_WRITE_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: FS_WRITE_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Filesystem Write Tools",
+  description: "Writing and editing workspace files.",
+  entry: "natalia:tool-fs-write",
+  scope: "workspace",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools"],
+};
+
 export function createFsWritePlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: FS_WRITE_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Filesystem Write Tools",
-      description: "Writing and editing workspace files.",
-      entry: "natalia:tool-fs-write",
-      scope: "workspace",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
+    manifest: FS_WRITE_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of writeFileTools) api.tools.register(tool);
     },

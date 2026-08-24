@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { CapabilityHost } from "@natalia/capability";
 import { configV3Schema } from "@natalia/contracts";
 import { NataliaTaskStateStore } from "@natalia/workflow";
+import type { WorkflowExecutionHandle } from "@natalia/workflow";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
 import { createWorkflowSchedulerPluginHost } from "@natalia/workflow-scheduler-plugin";
 import { createRealRuntimeClient } from "../src/runtime/main";
@@ -13,13 +14,19 @@ import {
   type TaskWorkflowService,
 } from "@natalia/runtime-services";
 
-async function workflowService(workspaceRoot: string) {
-  const runtime = createRealRuntimeClient({ workspaceRoot });
+async function workflowService(
+  workspaceRoot: string,
+  capabilities: CapabilityHost,
+) {
+  const runtime = createRealRuntimeClient({
+    workspaceRoot,
+    capabilityHost: capabilities,
+  });
   const service = await runtime.service<TaskWorkflowService>(
     TASK_WORKFLOW_CONTROLLER_SERVICE,
   );
   if (!service) throw new Error("task workflow service unavailable");
-  return { runtime, service };
+  return runtime;
 }
 
 function loadTask(host: CapabilityHost) {
@@ -57,6 +64,60 @@ function loadTask(host: CapabilityHost) {
   return owner;
 }
 
+test("execution host resolves the current task workflow service per run", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-service-"));
+  const capabilities = new CapabilityHost({ workspaceRoot: root });
+  const schedulerHost = await createWorkflowSchedulerPluginHost();
+  const executions = new CapabilityExecutionHost(capabilities, {
+    scheduler: schedulerHost.scheduler,
+    resolveService: async (serviceID) => capabilities.service(serviceID),
+  });
+  const request = {
+    workspaceRoot: root,
+    taskID: "task_current_service",
+    config: configV3Schema.parse({ version: 3 }),
+  };
+  const calls: string[] = [];
+  const provide = (ownerID: string) => {
+    const owner = capabilities.registerOwner({
+      id: ownerID,
+      name: ownerID,
+      version: "1",
+      scope: "workspace",
+      grants: ["services"],
+    });
+    owner.contribute("services", TASK_WORKFLOW_CONTROLLER_SERVICE, {
+      runCapabilityTask() {
+        calls.push(ownerID);
+        return { executionID: ownerID } as WorkflowExecutionHandle<never>;
+      },
+    } satisfies Pick<TaskWorkflowService, "runCapabilityTask">);
+    return owner;
+  };
+
+  try {
+    await expect(executions.runTask(request)).rejects.toThrow(
+      "task workflow service unavailable",
+    );
+    const first = provide("workflow.first");
+    expect((await executions.runTask(request)).executionID).toBe(
+      "workflow.first",
+    );
+    first.release();
+    await expect(executions.runTask(request)).rejects.toThrow(
+      "task workflow service unavailable",
+    );
+    provide("workflow.second");
+    expect((await executions.runTask(request)).executionID).toBe(
+      "workflow.second",
+    );
+    expect(calls).toEqual(["workflow.first", "workflow.second"]);
+  } finally {
+    capabilities.dispose();
+    await schedulerHost.close();
+  }
+});
+
 test("queued capability work revalidates after the scheduler gates", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-queued-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
@@ -64,7 +125,7 @@ test("queued capability work revalidates after the scheduler gates", async () =>
   const schedulerHost = await createWorkflowSchedulerPluginHost({
     globalConcurrency: 1,
   });
-  const workflow = await workflowService(root);
+  const runtime = await workflowService(root, capabilities);
   try {
     const scheduler = schedulerHost.scheduler;
     let release!: () => void;
@@ -74,9 +135,9 @@ test("queued capability work revalidates after the scheduler gates", async () =>
     });
     const executions = new CapabilityExecutionHost(capabilities, {
       scheduler,
-      taskWorkflowService: workflow.service,
+      resolveService: (serviceID) => runtime.service(serviceID),
     });
-    const queued = executions.runTask({
+    const queued = await executions.runTask({
       workspaceRoot: root,
       taskID: "task_doctor",
       config: configV3Schema.parse({ version: 3 }),
@@ -93,7 +154,7 @@ test("queued capability work revalidates after the scheduler gates", async () =>
     expect(state.invocations("task_doctor")).toEqual([]);
     state.close();
   } finally {
-    await workflow.runtime.dispose?.();
+    await runtime.dispose?.();
     await schedulerHost.close();
   }
 });
@@ -103,13 +164,13 @@ test("started execution keeps its lease while the owner hides contributions", as
   const capabilities = new CapabilityHost({ workspaceRoot: root });
   const owner = loadTask(capabilities);
   const schedulerHost = await createWorkflowSchedulerPluginHost();
-  const workflow = await workflowService(root);
+  const runtime = await workflowService(root, capabilities);
   try {
     const executions = new CapabilityExecutionHost(capabilities, {
       scheduler: schedulerHost.scheduler,
-      taskWorkflowService: workflow.service,
+      resolveService: (serviceID) => runtime.service(serviceID),
     });
-    const handle = executions.runTask({
+    const handle = await executions.runTask({
       workspaceRoot: root,
       taskID: "task_doctor",
       config: configV3Schema.parse({ version: 3 }),
@@ -144,7 +205,7 @@ test("started execution keeps its lease while the owner hides contributions", as
       true,
     );
   } finally {
-    await workflow.runtime.dispose?.();
+    await runtime.dispose?.();
     await schedulerHost.close();
   }
 });
@@ -153,21 +214,21 @@ test("execution host refuses a workspace owned by another capability host", asyn
   const root = await mkdtemp(join(tmpdir(), "natalia-cap-execution-root-"));
   const capabilities = new CapabilityHost({ workspaceRoot: root });
   const schedulerHost = await createWorkflowSchedulerPluginHost();
-  const workflow = await workflowService(root);
+  const runtime = await workflowService(root, capabilities);
   try {
     const executions = new CapabilityExecutionHost(capabilities, {
       scheduler: schedulerHost.scheduler,
-      taskWorkflowService: workflow.service,
+      resolveService: (serviceID) => runtime.service(serviceID),
     });
-    expect(() =>
+    await expect(
       executions.runTask({
         workspaceRoot: join(root, "other"),
         taskID: "task_missing",
         config: configV3Schema.parse({ version: 3 }),
       }),
-    ).toThrow("belongs to another workspace");
+    ).rejects.toThrow("belongs to another workspace");
   } finally {
-    await workflow.runtime.dispose?.();
+    await runtime.dispose?.();
     await schedulerHost.close();
   }
 });

@@ -10,6 +10,18 @@
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
+import {
+  SANDBOX_SERVICE,
+  SUBAGENTS_SERVICE,
+  TERMINAL_CONTROLLER_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  WORKSPACE_MUTATIONS_SERVICE,
+  type MutationRegistry,
+  type SandboxService,
+  type SubagentsService,
+  type TerminalController,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -48,18 +60,19 @@ export function buildToolExecutionContext(input: BuildContextInput) {
   const {
     getCapabilityRegistry,
     getTsRuntimeConfig,
-    getSubagentsController,
-    getTerminalController,
-    getSandboxController,
     getInteractive,
     authorizeWorkspaceRead,
     authorizeSandboxMerge,
     toolSettings,
-    getWorkLedgerController,
-    getMutationRegistry,
     scheduleRuntimeStatusSnapshot,
   } = ctx.ports;
   const { sandboxResourcesByID } = ctx.state;
+  const subagents =
+    ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
+  const terminal = ctx.ports.resolveService<TerminalController>(
+    TERMINAL_CONTROLLER_SERVICE,
+  );
+  const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
   return {
     workspaceRoot,
     signal,
@@ -80,9 +93,9 @@ export function buildToolExecutionContext(input: BuildContextInput) {
         turnID,
         input,
       ),
-    subagents: getSubagentsController(),
-    terminal: getTerminalController(),
-    sandboxes: getSandboxController(),
+    subagents,
+    terminal,
+    sandboxes,
     ...(attachImage ? { attachImage } : {}),
     ...(attachPdf ? { attachPdf } : {}),
     workspaceReadAuthorize: (request: { toolName: string; paths: string[] }) =>
@@ -109,11 +122,19 @@ export function buildToolExecutionContext(input: BuildContextInput) {
       // WG4 Phase 3: the tool settled successfully — the expected
       // mutation stops matching unrelated later hints, but its identity
       // stays available for attributing the change it caused.
-      getMutationRegistry()?.settle(call.id);
+      ctx.ports
+        .resolveService<MutationRegistry>(WORKSPACE_MUTATIONS_SERVICE)
+        ?.settle(call.id);
       if (!exec?.session) return;
+      const workLedgerController =
+        ctx.ports.resolveService<WorkLedgerController>(
+          WORK_LEDGER_CONTROLLER_SERVICE,
+        );
+      if (!workLedgerController)
+        throw new Error("work ledger unavailable (natalia-work-ledger)");
       for (const change of changes) {
         publish(
-          getWorkLedgerController().workspaceChangeNode({
+          workLedgerController.workspaceChangeNode({
             turnID,
             path: change.path,
             toolName: tool.name,
@@ -121,7 +142,7 @@ export function buildToolExecutionContext(input: BuildContextInput) {
           }),
         );
         publish(
-          getWorkLedgerController().workspaceChangeEdge({
+          workLedgerController.workspaceChangeEdge({
             turnID,
             callID: call.id,
             path: change.path,

@@ -12,6 +12,11 @@ import { createRuntimeHttpServer } from "../src/host";
 test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", async () => {
   const events: RuntimeEvent[] = [];
   let sink: ((event: RuntimeEvent) => void) | undefined;
+  const commandExecutions: Array<{
+    name: string;
+    raw: string;
+    args: string[];
+  }> = [];
   const client: RuntimeClient = {
     start(handler) {
       sink = handler;
@@ -112,6 +117,9 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
         },
       ];
     },
+    async commandExecute(input) {
+      commandExecutions.push(input);
+    },
     async runtimeStatus() {
       return {
         type: "status.snapshot",
@@ -204,6 +212,23 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   expect(
     (await plugins.json()) as { result: Array<{ id: string }> },
   ).toMatchObject({ result: [{ id: "demo.plugin" }] });
+  const command = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 9,
+      method: "command.execute",
+      params: { name: "demo", raw: "/demo one", args: ["one"] },
+    }),
+  });
+  expect(await command.json()).toMatchObject({ result: null });
+  expect(commandExecutions).toEqual([
+    { name: "demo", raw: "/demo one", args: ["one"] },
+  ]);
   const diagnostics = await fetch(`${server.url}/rpc`, {
     method: "POST",
     headers: {

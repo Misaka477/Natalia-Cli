@@ -1,4 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import {
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
 import { projectedPlans } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
@@ -19,6 +23,14 @@ export function createPlansSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
+  function requireWorkLedger() {
+    const ledger = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!ledger)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
+    return ledger;
+  }
   return {
     async planList() {
       if (!ctx.ports.getSession()) return [];
@@ -88,7 +100,7 @@ export function createPlansSurface(
       if (!plan) return { updated: false as const };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().buildPlanTransition({
+        requireWorkLedger().buildPlanTransition({
           id: `${input.planID}:draft:${plan.version + 1}`,
           planID: input.planID,
           version: plan.version + 1,
@@ -108,7 +120,7 @@ export function createPlansSurface(
       if (!plan) return { proposed: false as const };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().buildPlanTransition({
+        requireWorkLedger().buildPlanTransition({
           id: `${planID}:proposed:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -145,7 +157,7 @@ export function createPlansSurface(
         return { accepted: false as const };
       ctx.ports.publishForSession(
         owner,
-        ctx.ports.getWorkLedgerController().buildPlanTransition({
+        requireWorkLedger().buildPlanTransition({
           id: `${planID}:accepted:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -164,7 +176,7 @@ export function createPlansSurface(
       if (!plan) return { queued: false as const };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().buildPlanTransition({
+        requireWorkLedger().buildPlanTransition({
           id: `${planID}:queued:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -183,7 +195,7 @@ export function createPlansSurface(
       if (!plan) return { activated: false as const };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().buildPlanTransition({
+        requireWorkLedger().buildPlanTransition({
           id: `${planID}:activated:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -205,7 +217,7 @@ export function createPlansSurface(
       if (!plan) return { superseded: false as const };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().buildPlanTransition({
+        requireWorkLedger().buildPlanTransition({
           id: `${planID}:superseded:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
@@ -227,7 +239,7 @@ export function createPlansSurface(
       if (!plan) return { completed: false as const };
       ctx.ports.publishForSession(
         ctx.ports.getActiveExec(),
-        ctx.ports.getWorkLedgerController().buildPlanTransition({
+        requireWorkLedger().buildPlanTransition({
           id: `${planID}:completed:${plan.version + 1}`,
           planID,
           version: plan.version + 1,

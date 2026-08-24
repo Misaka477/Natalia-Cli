@@ -8,6 +8,12 @@
  * state through `RuntimeContext` at call time.
  */
 import { readOnlyToolMessage } from "@natalia/runtime-services";
+import {
+  TERMINAL_CONTROLLER_SERVICE,
+  TOOL_POLICY_SERVICE,
+  type TerminalController,
+  type ToolPolicyService,
+} from "@natalia/runtime-services";
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool, ToolMaterialization } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
@@ -41,23 +47,26 @@ export function createExecuteOne(
       publishForSession,
       publishWorkGraphToolCall,
       checkConstitutionForTool,
-      getToolLayer,
-      getToolPolicy,
-      getTerminalController,
+      createToolPolicyLayer,
       tryParseToolArguments,
     } = ctx.ports;
     const { executionBySession, turnSession, toolCalls } = ctx.state;
     const sessionID = getSessionID();
     const activeExec = getActiveExec();
     const runtimeContext = getRuntimeContext();
-    const toolLayer = getToolLayer();
-    const toolPolicy = getToolPolicy();
-    const terminalController = getTerminalController();
     // D2: same shadowing as `executeToolCalls` — this segment's events and
     // ledger belong to the turn's session.
     const exec =
       executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
       activeExec;
+    const toolLayer = createToolPolicyLayer(exec);
+    const toolPolicy =
+      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    if (!toolPolicy)
+      throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
+    const terminalController = ctx.ports.resolveService<TerminalController>(
+      TERMINAL_CONTROLLER_SERVICE,
+    );
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const toolID = `${turnID}:${call.id}`;
     const dedupKey = `${call.name}\u0000${call.arguments}`;

@@ -6,6 +6,7 @@ export {
 export {
   createTaskWorkflowPlugin,
   TASK_WORKFLOW_PLUGIN_ID,
+  TASK_WORKFLOW_PLUGIN_MANIFEST,
 } from "./task-workflow-plugin";
 export {
   createWorkflowExecutionStoreService,

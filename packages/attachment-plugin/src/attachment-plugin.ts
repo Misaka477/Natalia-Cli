@@ -1,4 +1,4 @@
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
 import { createAttachmentService } from "./attachment-service";
 import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
@@ -14,24 +14,26 @@ export type AttachmentPluginInput = {
   };
 };
 
+export const ATTACHMENT_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: ATTACHMENT_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Attachment",
+  description: "Durable local attachment storage and materialization.",
+  entry: "natalia:attachment",
+  scope: "workspace",
+  provides: [ATTACHMENT_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services", "commands"],
+};
+
 export function createAttachmentPlugin(input: AttachmentPluginInput): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: ATTACHMENT_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Attachment",
-      description: "Durable local attachment storage and materialization.",
-      entry: "natalia:attachment",
-      scope: "workspace",
-      provides: [ATTACHMENT_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services", "commands"],
-    },
+    manifest: ATTACHMENT_PLUGIN_MANIFEST,
     setup(api) {
       api.services.provide(
         ATTACHMENT_SERVICE,

@@ -1257,6 +1257,11 @@ export type ContributedCommand = {
   acceptsArguments?: boolean;
   category?: string;
 };
+export type ContributedCommandExecution = {
+  name: string;
+  raw: string;
+  args: string[];
+};
 
 /** Host-owned runtime ports exposed to a mounted UI adapter. */
 export type UiAdapterMountInput = {
@@ -1266,7 +1271,7 @@ export type UiAdapterMountInput = {
   };
   commands: {
     list(): Promise<ContributedCommand[]>;
-    execute(name: string): Promise<void>;
+    execute(input: ContributedCommandExecution): Promise<void>;
   };
 };
 
@@ -1968,6 +1973,7 @@ export type RuntimeClient = {
    * without knowing which extension produced each one.
    */
   commandCatalog?(): Promise<ContributedCommand[]>;
+  commandExecute?(input: ContributedCommandExecution): Promise<void>;
   taskOverview?(): Promise<import("./schemas").ScheduledTaskOverview>;
   flowOverview?(): Promise<import("./schemas").FlowOverview>;
   documentCatalog?(): Promise<import("./schemas").WorkflowDocumentChoice[]>;

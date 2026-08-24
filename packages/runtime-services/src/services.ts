@@ -651,6 +651,11 @@ export type HeadlessExecution = {
   useSqliteStore: boolean;
 };
 export interface TaskWorkflowService extends TaskWorkflowController {
+  runCommand(
+    kind: "task" | "flow",
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string>;
   runTask(input: TaskRunInput): Promise<TaskRunResult>;
   runTaskFromDocument(input: TaskRunFromDocumentInput): Promise<TaskRunResult>;
   taskPermissionPreviewFor(input: {

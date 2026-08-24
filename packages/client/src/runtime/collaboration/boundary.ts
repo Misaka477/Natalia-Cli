@@ -10,6 +10,12 @@
  */
 import { projectedMailboxMessages, projectedPlans } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
+import {
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  WORKSPACE_FILES_SERVICE,
+  type WorkLedgerController,
+  type WorkspaceFilesController,
+} from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -95,8 +101,12 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
    * already-active plan is never re-activated.
    */
   function activateQueuedPlanAtBoundary(exec?: SessionExecutionState) {
-    const { getActiveExec, publishForSession, getWorkLedgerController } =
-      ctx.ports;
+    const { getActiveExec, publishForSession } = ctx.ports;
+    const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
+      WORK_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!workLedgerController)
+      throw new Error("work ledger unavailable (natalia-work-ledger)");
     const target = exec ?? getActiveExec();
     if (!target?.session) return;
     const queued = projectedPlans(target.session.events).find(
@@ -105,7 +115,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     if (!queued) return;
     publishForSession(
       target,
-      getWorkLedgerController().buildPlanTransition({
+      workLedgerController.buildPlanTransition({
         id: `${queued.planID}:activated:${queued.version + 1}`,
         planID: queued.planID,
         version: queued.version + 1,
@@ -148,21 +158,25 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     }>
   > {
     return (async () => {
-      const {
-        getActiveExec,
-        publishForSession,
-        getWorkLedgerController,
-        getWorkspaceFilesController,
-      } = ctx.ports;
+      const { getActiveExec, publishForSession } = ctx.ports;
+      const workLedgerController =
+        ctx.ports.resolveService<WorkLedgerController>(
+          WORK_LEDGER_CONTROLLER_SERVICE,
+        );
+      if (!workLedgerController)
+        throw new Error("work ledger unavailable (natalia-work-ledger)");
+      const workspaceFilesController =
+        ctx.ports.resolveService<WorkspaceFilesController>(
+          WORKSPACE_FILES_SERVICE,
+        );
       const target = exec ?? getActiveExec();
       if (!target?.session) return [];
-      const workspaceFilesController = getWorkspaceFilesController();
       const confirmed = (await workspaceFilesController?.reconcile()) ?? [];
       for (const change of confirmed) {
         if (change.attribution === "attributed") continue;
         publishForSession(
           target,
-          getWorkLedgerController().externalWorkspaceChangeNode({
+          workLedgerController.externalWorkspaceChangeNode({
             confirmedChangeID: change.id,
             path: change.path,
             sessionID: target.session.id,
@@ -176,7 +190,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         const objective = activePlan?.objective ?? "";
         const applicableConstraints = activePlan?.constraints ?? [];
         if (objective || applicableConstraints.length) {
-          const findings = getWorkLedgerController().evaluateDrift({
+          const findings = workLedgerController.evaluateDrift({
             sessionID: target.session.id,
             turnID: target.activeTurnID,
             objective,

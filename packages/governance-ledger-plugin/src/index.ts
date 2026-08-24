@@ -16,4 +16,5 @@ export { createGovernanceLedgerController } from "./governance-ledger-controller
 export {
   createGovernanceLedgerPlugin,
   GOVERNANCE_LEDGER_PLUGIN_ID,
+  GOVERNANCE_LEDGER_PLUGIN_MANIFEST,
 } from "./governance-ledger-plugin";

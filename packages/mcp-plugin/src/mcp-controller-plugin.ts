@@ -6,12 +6,29 @@
  * `mcp.service` operational service, so a disabled or absent plugin opens no MCP
  * connections and loads no MCP tools.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
 import { createMcpController } from "./mcp-controller";
 import { MCP_SERVICE } from "@natalia/runtime-services";
 
 export const MCP_PLUGIN_ID = "natalia-mcp";
+
+export const MCP_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: MCP_PLUGIN_ID,
+  version: "1.0.0",
+  name: "MCP Server",
+  description: "Native MCP connections and their tools.",
+  entry: "natalia:mcp",
+  scope: "session",
+  provides: [MCP_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools", "services"],
+};
 
 export function createMcpPlugin(input: {
   servers(): Record<string, MCPServerConfig>;
@@ -21,22 +38,7 @@ export function createMcpPlugin(input: {
 }): Plugin {
   let controller: ReturnType<typeof createMcpController> | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: MCP_PLUGIN_ID,
-      version: "1.0.0",
-      name: "MCP Server",
-      description: "Native MCP connections and their tools.",
-      entry: "natalia:mcp",
-      scope: "session",
-      provides: [MCP_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools", "services"],
-    },
+    manifest: MCP_PLUGIN_MANIFEST,
     setup(api) {
       controller = createMcpController({
         ...input,

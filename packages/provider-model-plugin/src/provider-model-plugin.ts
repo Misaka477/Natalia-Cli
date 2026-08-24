@@ -1,4 +1,4 @@
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { createProviderModelController } from "./provider-model-controller";
 import { RETRY_PLUGIN_ID } from "@natalia/retry-plugin";
 import { ATTACHMENT_PLUGIN_ID } from "@natalia/attachment-plugin";
@@ -13,47 +13,48 @@ import {
 } from "@natalia/runtime-services";
 
 export const PROVIDER_MODEL_PLUGIN_ID = "natalia-provider-model";
+export const PROVIDER_MODEL_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: PROVIDER_MODEL_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Provider Model",
+  description:
+    "Provider/model selection, the main agent loop and Live Work Chat lifecycle.",
+  entry: "natalia:provider-model",
+  scope: "workspace",
+  provides: [PROVIDER_MODEL_CONTROLLER_SERVICE],
+  requires: [RETRY_SERVICE, ATTACHMENT_SERVICE, COMPACTION_SERVICE],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [
+    {
+      id: RETRY_PLUGIN_ID,
+      spec: ">=1.0.0",
+      optional: false,
+      peer: false,
+    },
+    {
+      id: ATTACHMENT_PLUGIN_ID,
+      spec: ">=1.0.0",
+      optional: false,
+      peer: false,
+    },
+    {
+      id: COMPACTION_PLUGIN_ID,
+      spec: ">=1.0.0",
+      optional: false,
+      peer: false,
+    },
+  ],
+  hooks: {},
+  integrationPoints: ["services", "commands"],
+};
 export function createProviderModelPlugin(
   input: ProviderModelControllerInput,
 ): Plugin {
   let controller: ProviderModelController | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: PROVIDER_MODEL_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Provider Model",
-      description:
-        "Provider/model selection, the main agent loop and Live Work Chat lifecycle.",
-      entry: "natalia:provider-model",
-      scope: "workspace",
-      provides: [PROVIDER_MODEL_CONTROLLER_SERVICE],
-      requires: [RETRY_SERVICE, ATTACHMENT_SERVICE, COMPACTION_SERVICE],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [
-        {
-          id: RETRY_PLUGIN_ID,
-          spec: ">=1.0.0",
-          optional: false,
-          peer: false,
-        },
-        {
-          id: ATTACHMENT_PLUGIN_ID,
-          spec: ">=1.0.0",
-          optional: false,
-          peer: false,
-        },
-        {
-          id: COMPACTION_PLUGIN_ID,
-          spec: ">=1.0.0",
-          optional: false,
-          peer: false,
-        },
-      ],
-      hooks: {},
-      integrationPoints: ["services", "commands"],
-    },
+    manifest: PROVIDER_MODEL_PLUGIN_MANIFEST,
     setup(api) {
       if (!api.services.get(RETRY_SERVICE))
         throw new Error("retry service unavailable (natalia-retry)");

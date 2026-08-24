@@ -17,6 +17,11 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   const selectedModels: Array<{ modelID?: string; variant?: string }> = [];
   const attachedSessions: string[] = [];
   const setCalls: Array<{ patch: Record<string, unknown>; scope: string }> = [];
+  const commandExecutions: Array<{
+    name: string;
+    raw: string;
+    args: string[];
+  }> = [];
   const client: RuntimeClient = {
     start(handler) {
       sink = handler;
@@ -249,6 +254,9 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
         },
       ];
     },
+    async commandExecute(input) {
+      commandExecutions.push(input);
+    },
     async runtimeStatus() {
       return {
         type: "status.snapshot",
@@ -305,6 +313,14 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   });
   expect(await sdk.plugins()).toMatchObject([
     { id: "demo.plugin", capabilities: ["tools"] },
+  ]);
+  await sdk.commandExecute({
+    name: "demo",
+    raw: "/demo one",
+    args: ["one"],
+  });
+  expect(commandExecutions).toEqual([
+    { name: "demo", raw: "/demo one", args: ["one"] },
   ]);
   expect(await sdk.runtimeStatus()).toMatchObject({ provider: "fixture" });
   expect(await sdk.diagnostics(1)).toMatchObject([{ message: "safe" }]);

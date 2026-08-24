@@ -1,4 +1,4 @@
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { createSkillLoadTool, discoverSkills, type Skill } from "./skills";
 import type { ToolExecutionContext } from "@natalia/tools";
 import { SKILL_SERVICE } from "@natalia/runtime-services";
@@ -6,6 +6,19 @@ import type { SessionID } from "@natalia/contracts";
 
 export const SKILLS_PLUGIN_ID = "natalia-skills";
 export const SKILLS_REGISTRY_SERVICE = SKILL_SERVICE;
+
+export const SKILLS_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 1,
+  id: SKILLS_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Skills",
+  description: "Discovered project, user and remote skills.",
+  entry: "natalia:skills",
+  capabilities: ["tools", "commands"],
+  scope: "workspace",
+  provides: [SKILLS_REGISTRY_SERVICE],
+  requires: [],
+};
 
 export function createSkillsPlugin(input: {
   workspaceRoot: string;
@@ -22,18 +35,7 @@ export function createSkillsPlugin(input: {
   };
 }): Plugin {
   return {
-    manifest: {
-      apiVersion: 1,
-      id: SKILLS_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Skills",
-      description: "Discovered project, user and remote skills.",
-      entry: "natalia:skills",
-      capabilities: ["tools", "commands"],
-      scope: "workspace",
-      provides: [SKILLS_REGISTRY_SERVICE],
-      requires: [],
-    },
+    manifest: SKILLS_PLUGIN_MANIFEST,
     async setup(api) {
       const skills = await discoverSkills({
         workspaceRoot: input.workspaceRoot,

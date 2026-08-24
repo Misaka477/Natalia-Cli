@@ -12,6 +12,10 @@ import type {
   RuntimeTerminalSession,
   TerminalAction,
 } from "@natalia/contracts";
+import {
+  SESSION_STORE_CONTROLLER_SERVICE,
+  type SessionStoreController,
+} from "@natalia/runtime-services";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
@@ -34,12 +38,17 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
       getExecutionBySession,
       getSessionPersistence,
       setSessionPersistence,
-      getSessionStoreController,
       publishForSession,
     } = ctx.ports;
     const target = getExecutionBySession().get(forSessionID);
     const targetSession = target?.session;
     if (!targetSession) return;
+    const sessionStoreController =
+      ctx.ports.resolveService<SessionStoreController>(
+        SESSION_STORE_CONTROLLER_SERVICE,
+      );
+    if (!sessionStoreController)
+      throw new Error("session store unavailable (natalia-session-store)");
     targetSession.metadata = { ...targetSession.metadata };
     targetSession.metadata.pendingHumanTerminal = {
       terminalID: input.terminalID,
@@ -49,10 +58,9 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
     const sessionSnapshot = structuredClone(targetSession);
     const pendingSnapshot = targetSession.metadata.pendingHumanTerminal;
     const sessionPersistence = getSessionPersistence();
-    const sessionStoreController = getSessionStoreController();
     const next = sessionPersistence
       .then(() =>
-        sessionStoreController?.updateMetadata(sessionSnapshot, {
+        sessionStoreController.updateMetadata(sessionSnapshot, {
           pendingHumanTerminal: pendingSnapshot,
         }),
       )
@@ -72,20 +80,24 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
       getExecutionBySession,
       getSessionPersistence,
       setSessionPersistence,
-      getSessionStoreController,
       publishForSession,
     } = ctx.ports;
     const target = getExecutionBySession().get(forSessionID);
     const targetSession = target?.session;
     if (!targetSession?.metadata?.pendingHumanTerminal) return false;
+    const sessionStoreController =
+      ctx.ports.resolveService<SessionStoreController>(
+        SESSION_STORE_CONTROLLER_SERVICE,
+      );
+    if (!sessionStoreController)
+      throw new Error("session store unavailable (natalia-session-store)");
     targetSession.metadata = { ...targetSession.metadata };
     delete targetSession.metadata.pendingHumanTerminal;
     const sessionSnapshot = structuredClone(targetSession);
     const sessionPersistence = getSessionPersistence();
-    const sessionStoreController = getSessionStoreController();
     const next = sessionPersistence
       .then(() =>
-        sessionStoreController?.updateMetadata(sessionSnapshot, {
+        sessionStoreController.updateMetadata(sessionSnapshot, {
           pendingHumanTerminal: undefined,
         }),
       )

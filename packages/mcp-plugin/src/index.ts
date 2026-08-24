@@ -1,1 +1,5 @@
-export { createMcpPlugin, MCP_PLUGIN_ID } from "./mcp-controller-plugin";
+export {
+  createMcpPlugin,
+  MCP_PLUGIN_ID,
+  MCP_PLUGIN_MANIFEST,
+} from "./mcp-controller-plugin";

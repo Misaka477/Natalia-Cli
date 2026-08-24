@@ -92,6 +92,7 @@ function controllableClient() {
     "readMcpResource",
     "plugins",
     "commandCatalog",
+    "commandExecute",
     "capabilities",
     "taskOverview",
     "flowOverview",
@@ -291,6 +292,7 @@ test("a read-only credential cannot write, and the refusal does not leak existen
       "provider.remove",
       "plugin.unload",
       "plugin.reload",
+      "command.execute",
       "nativeTerminal.stop",
       "nativeTerminal.start",
       "nativeTerminal.write",
@@ -347,6 +349,7 @@ test("the write surface is an enumerated, test-pinned list", () => {
   expect(RPC_WRITE_METHODS.has("provider.remove")).toBe(true);
   expect(RPC_WRITE_METHODS.has("plugin.unload")).toBe(true);
   expect(RPC_WRITE_METHODS.has("plugin.reload")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("command.execute")).toBe(true);
   expect(RPC_WRITE_METHODS.has("nativeTerminal.write")).toBe(true);
   expect(RPC_WRITE_METHODS.has("nativeTerminal.start")).toBe(true);
   expect(RPC_WRITE_METHODS.has("nativeTerminal.resize")).toBe(true);

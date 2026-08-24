@@ -10,20 +10,7 @@ import { resolve } from "node:path";
 import { findWorkspaceFiles } from "@natalia/platform";
 import { verifyTrust } from "@natalia/config";
 import { toolFamilyCapabilityID } from "../capabilities/tool-family-capabilities";
-import {
-  ATTACHMENT_PLUGIN_ID,
-  CHECKPOINT_PLUGIN_ID,
-  COMPACTION_PLUGIN_ID,
-  CONTEXT_LEDGER_PLUGIN_ID,
-  LOCAL_TOOLS_PLUGIN_ID,
-  MCP_PLUGIN_ID,
-  PROVIDER_MODEL_PLUGIN_ID,
-  RETRY_PLUGIN_ID,
-  SANDBOX_CONTROLLER_PLUGIN_ID,
-  SKILLS_PLUGIN_ID,
-  TERMINAL_CONTROLLER_PLUGIN_ID,
-  WORKSPACE_PLUGIN_ID,
-} from "@natalia/builtin-plugins";
+import { computeBuiltinPluginGates } from "@natalia/builtin-plugins";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -56,7 +43,7 @@ export function createPluginAssembly(
     } = ctx.ports;
     const workspaceRoot = getWorkspaceRoot();
     if (
-      config.plugins.enabled[SKILLS_PLUGIN_ID] === false ||
+      !computeBuiltinPluginGates(config).skills ||
       !extensionEnabled("skills")
     )
       return undefined;
@@ -100,13 +87,13 @@ export function createPluginAssembly(
   }
 
   function checkpointPluginInput(config: ConfigV3) {
-    return config.plugins.enabled[CHECKPOINT_PLUGIN_ID] === false
+    return !computeBuiltinPluginGates(config).checkpoint
       ? undefined
       : { workspaceRoot: ctx.ports.getWorkspaceRoot() };
   }
 
   function sandboxPluginInput(config: ConfigV3) {
-    return config.plugins.enabled[SANDBOX_CONTROLLER_PLUGIN_ID] === false
+    return !computeBuiltinPluginGates(config).sandboxController
       ? undefined
       : {
           workspaceRoot: ctx.ports.getWorkspaceRoot(),
@@ -125,7 +112,7 @@ export function createPluginAssembly(
       getUserRuntimeHome,
       getTsRuntimeConfig,
     } = ctx.ports;
-    return config.plugins.enabled[TERMINAL_CONTROLLER_PLUGIN_ID] === false
+    return !computeBuiltinPluginGates(config).terminalController
       ? undefined
       : {
           workspaceRoot: getWorkspaceRoot(),
@@ -150,7 +137,7 @@ export function createPluginAssembly(
   function workspacePluginInput(config: ConfigV3) {
     const { getWorkspaceRoot } = ctx.ports;
     const workspaceRoot = getWorkspaceRoot();
-    return config.plugins.enabled[WORKSPACE_PLUGIN_ID] === false
+    return !computeBuiltinPluginGates(config).workspace
       ? undefined
       : {
           workspaceRoot,
@@ -184,11 +171,7 @@ export function createPluginAssembly(
       clientModelCatalog,
       selectRuntimeModel,
     } = ctx.ports;
-    const enabled =
-      config.plugins.enabled[ATTACHMENT_PLUGIN_ID] !== false &&
-      config.plugins.enabled[RETRY_PLUGIN_ID] !== false &&
-      config.plugins.enabled[COMPACTION_PLUGIN_ID] !== false &&
-      config.plugins.enabled[PROVIDER_MODEL_PLUGIN_ID] !== false;
+    const enabled = computeBuiltinPluginGates(config).providerModel;
     return {
       enabled,
       controller: {
@@ -234,19 +217,13 @@ export function createPluginAssembly(
 
   function compactionPluginInput(config: ConfigV3) {
     return {
-      enabled:
-        config.plugins.enabled[RETRY_PLUGIN_ID] !== false &&
-        config.plugins.enabled[CONTEXT_LEDGER_PLUGIN_ID] !== false &&
-        config.plugins.enabled[COMPACTION_PLUGIN_ID] !== false,
+      enabled: computeBuiltinPluginGates(config).compaction,
     };
   }
 
   function mcpPluginInput(config: ConfigV3) {
     const { getTsRuntimeConfig, extensionEnabled, publish } = ctx.ports;
-    if (
-      config.plugins.enabled[MCP_PLUGIN_ID] === false ||
-      !extensionEnabled("mcp")
-    )
+    if (!computeBuiltinPluginGates(config).mcp || !extensionEnabled("mcp"))
       return undefined;
     return {
       servers: () => getTsRuntimeConfig()?.mcpServers ?? {},
@@ -263,7 +240,7 @@ export function createPluginAssembly(
     if (
       options.tools ||
       !config.tools.paths.length ||
-      config.plugins.enabled[LOCAL_TOOLS_PLUGIN_ID] === false
+      !computeBuiltinPluginGates(config).localTools
     )
       return undefined;
     return {

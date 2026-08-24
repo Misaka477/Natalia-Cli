@@ -1,4 +1,8 @@
-export { createWorkspacePlugin, WORKSPACE_PLUGIN_ID } from "./workspace-plugin";
+export {
+  createWorkspacePlugin,
+  WORKSPACE_PLUGIN_ID,
+  WORKSPACE_PLUGIN_MANIFEST,
+} from "./workspace-plugin";
 export { createMutationRegistry } from "./mutation-registry";
 export {
   createWorkspaceChangeAuditor,

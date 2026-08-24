@@ -1,4 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import {
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  type StatusSnapshotController,
+} from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 type Surface = Pick<
@@ -62,9 +66,14 @@ export function createCheckpointSurface(
         dryRun: input.dryRun,
         ...controller.rollbackOptions(),
       });
+      const status = ctx.ports.resolveService<StatusSnapshotController>(
+        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+      );
+      if (!status)
+        throw new Error("runtime UI unavailable (natalia-runtime-ui)");
       ctx.ports.publishForSession(
         owner,
-        await ctx.ports.getStatusController().snapshotFor({
+        await status.snapshotFor({
           provider: owner.provider,
           context: owner.context,
           permissionMode: owner.permissionMode,

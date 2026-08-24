@@ -46,36 +46,16 @@ import type {
 } from "@natalia/contracts";
 import type { SessionRecord } from "@natalia/session";
 import type {
-  AttachmentService,
   CheckpointController,
   CheckpointFactory,
-  CompactionService,
-  ContextLedgerFactory,
-  GovernanceLedgerController,
   InteractiveWaiter,
   InteractiveWaiterDeps,
-  McpService,
-  MutationRegistry,
-  ProviderModelController,
   ProviderRunnerInput,
-  RetryService,
   RuntimeContextLedger,
   RuntimeServiceClient,
-  SandboxService,
-  SessionStoreController,
   SkillMetadata,
   SkillService,
-  StatusSnapshotController,
-  SubagentsService,
   TeamBehaviorService,
-  TaskWorkflowController,
-  TerminalController,
-  ToolPolicyHookLayer,
-  ToolPolicyService,
-  TurnController,
-  WorkLedgerController,
-  WorkspaceFilesController,
-  WorkspaceWriteLock,
 } from "@natalia/runtime-services";
 export type {
   AttachmentService,
@@ -128,7 +108,6 @@ export type RuntimeState = {
   initialize: InitializeDependencies;
   workspaceRoot: string;
   sessionID: SessionID;
-  sessionStoreController: SessionStoreController;
   provider?: StreamingProvider;
   providerSource: "explicit" | "environment" | "ts_config" | "unconfigured";
   capabilityRegistry: CapabilityRegistryHost;
@@ -137,28 +116,12 @@ export type RuntimeState = {
     | import("@natalia/capability").CapabilityRegistryView
     | undefined;
   tools: ToolRegistryType;
-  toolPolicy?: ToolPolicyService;
-  agentToolLayer: ToolPolicyHookLayer;
-  permissionProfileToolLayer: ToolPolicyHookLayer;
-  moduleToolLayer: ToolPolicyHookLayer;
-  modulePermissionToolLayer: ToolPolicyHookLayer;
-  toolLayer: ToolPolicyHookLayer;
   terminalCommandBuffer: TerminalCommandBuffer;
   permissionMode: "ask" | "auto" | "read_only";
   selectedPermissionProfile?: PermissionProfile;
   defaultPermissionMode: "ask" | "auto" | "read_only";
   defaultPermissionProfile?: PermissionProfile;
   maxSteps?: number;
-  subagentsController?: SubagentsService;
-  providerModelController?: ProviderModelController;
-  taskWorkflowController?: TaskWorkflowController;
-  contextLedgerFactory: ContextLedgerFactory;
-  workLedgerController: WorkLedgerController;
-  governanceLedgerController: GovernanceLedgerController;
-  turnController: TurnController;
-  terminalController?: TerminalController;
-  sandboxController?: SandboxService;
-  mcpService?: McpService;
   pluginsController: ReturnType<typeof createPluginsController>;
   toolCalls: Map<string, number>;
   runtimeContext: RuntimeContextLedger;
@@ -176,12 +139,14 @@ export type RuntimeState = {
   turnAgent: Map<string, string>;
   executionBySession: Map<SessionID, SessionExecutionState>;
   activeExec?: SessionExecutionState;
-  checkpointControllerBySession: Map<SessionID, CheckpointController>;
-  checkpointInitBySession: Map<SessionID, Promise<void>>;
-  activeCheckpointFactory?: CheckpointFactory;
-  workspaceWriteLock?: WorkspaceWriteLock;
-  mutationRegistry?: MutationRegistry;
-  workspaceFilesController?: WorkspaceFilesController;
+  checkpointControllerBySession: Map<
+    SessionID,
+    { factory: CheckpointFactory; controller: CheckpointController }
+  >;
+  checkpointInitBySession: Map<
+    SessionID,
+    { factory: CheckpointFactory; promise: Promise<void> }
+  >;
   paused: boolean;
   pauseWaiters: Array<() => void>;
   ready?: Promise<void>;
@@ -201,11 +166,7 @@ export type RuntimeState = {
   contextWindowResolver: ContextWindowResolver;
   runtimeContextConfig: RuntimeContextStatusConfig;
   retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
-  retryService: RetryService;
-  attachmentService: AttachmentService;
-  compactionService?: CompactionService;
   providerConcurrencyLimiter: ProviderConcurrencyLimiter;
-  statusController: StatusSnapshotController;
   terminalStatusByID: Map<string, string>;
   performanceTrace: RuntimePerformanceTrace;
   sandboxResourcesByID: Map<string, number>;

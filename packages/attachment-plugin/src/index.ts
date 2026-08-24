@@ -1,5 +1,6 @@
 export {
   ATTACHMENT_PLUGIN_ID,
+  ATTACHMENT_PLUGIN_MANIFEST,
   createAttachmentPlugin,
   type AttachmentPluginInput,
 } from "./attachment-plugin";

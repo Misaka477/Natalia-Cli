@@ -1,4 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import {
+  TURN_CONTROLLER_SERVICE,
+  type TurnController,
+} from "@natalia/runtime-services";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { sessionRunCoordinator } from "@natalia/session";
 import type { RuntimeContext } from "../context";
@@ -81,10 +85,16 @@ export function createCoreSurface(
           reason,
         });
       void (async () => {
-        if (pendingInput)
-          await ctx.ports
-            .getTurnController()
-            .persistPromotion(pendingSessionID!);
+        if (pendingInput) {
+          const turnController = ctx.ports.resolveService<TurnController>(
+            TURN_CONTROLLER_SERVICE,
+          );
+          if (!turnController)
+            throw new Error(
+              "turn orchestration unavailable (natalia-turn-orchestration)",
+            );
+          await turnController.persistPromotion(pendingSessionID!);
+        }
         await coordinator.interrupt();
         // `interrupt` intentionally clears stale wakeups. A prompt admitted with
         // queue delivery is durable work, not a stale wakeup, so start a fresh

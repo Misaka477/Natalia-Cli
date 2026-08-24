@@ -1,4 +1,9 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { RuntimeRefusal } from "@natalia/contracts";
+import {
+  TASK_WORKFLOW_CONTROLLER_SERVICE,
+  type RuntimeServiceClient,
+  type TaskWorkflowController,
+} from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 type Surface = Pick<
@@ -18,46 +23,54 @@ export function createAutomationSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
+  function requireTaskWorkflow() {
+    const controller = ctx.ports.resolveService<TaskWorkflowController>(
+      TASK_WORKFLOW_CONTROLLER_SERVICE,
+    );
+    if (!controller)
+      throw new RuntimeRefusal("Task/workflow plugin is disabled.");
+    return controller;
+  }
   return {
     async taskOverview() {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().taskOverview();
+      return requireTaskWorkflow().taskOverview();
     },
     async flowOverview() {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().flowOverview();
+      return requireTaskWorkflow().flowOverview();
     },
     async documentCatalog() {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().documentCatalog();
+      return requireTaskWorkflow().documentCatalog();
     },
     async saveFlowDocument(input) {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().saveFlowDocument(input);
+      return requireTaskWorkflow().saveFlowDocument(input);
     },
     async taskPermissionPreview(input) {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().taskPermissionPreview(input);
+      return requireTaskWorkflow().taskPermissionPreview(input);
     },
     async deleteFlowDocument(input) {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().deleteFlowDocument(input);
+      return requireTaskWorkflow().deleteFlowDocument(input);
     },
     async saveTaskDocument(input) {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().saveTaskDocument(input);
+      return requireTaskWorkflow().saveTaskDocument(input);
     },
     async deleteTaskDocument(input) {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().deleteTaskDocument(input);
+      return requireTaskWorkflow().deleteTaskDocument(input);
     },
     async taskSchedule(input) {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().taskSchedule(input);
+      return requireTaskWorkflow().taskSchedule(input);
     },
     async taskUnschedule(input) {
       await ctx.ports.ensureReady();
-      return ctx.ports.requireTaskWorkflow().taskUnschedule(input);
+      return requireTaskWorkflow().taskUnschedule(input);
     },
   };
 }

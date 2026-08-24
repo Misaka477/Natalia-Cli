@@ -5,7 +5,6 @@ import {
   slashAutocompleteQuery,
   workflowAutocompleteQuery,
   workflowDocumentUnavailableReason,
-  workflowRunRequest,
 } from "../src/component/PromptAutocomplete";
 
 test("slash autocomplete only activates for a single leading command token", () => {
@@ -25,11 +24,6 @@ test("workflow autocomplete recognizes task and flow arguments", () => {
   });
   expect(workflowAutocompleteQuery("/task")).toBeUndefined();
   expect(workflowAutocompleteQuery(" /flow review")).toBeUndefined();
-  expect(workflowRunRequest("/task nightly.yaml")).toEqual({
-    kind: "task",
-    path: "nightly.yaml",
-  });
-  expect(workflowRunRequest("/flow ")).toBeUndefined();
 });
 
 test("workflow launch readiness carries the host reason into autocomplete", () => {

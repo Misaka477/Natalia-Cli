@@ -15,7 +15,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@natalia/tools";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { relative } from "node:path";
@@ -189,24 +189,26 @@ export function fsReadToolFamily(): ToolFamily {
   };
 }
 
+export const FS_READ_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: FS_READ_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Filesystem Read Tools",
+  description: "Reading workspace files and media metadata.",
+  entry: "natalia:tool-fs-read",
+  scope: "workspace",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools"],
+};
+
 export function createFsReadPlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: FS_READ_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Filesystem Read Tools",
-      description: "Reading workspace files and media metadata.",
-      entry: "natalia:tool-fs-read",
-      scope: "workspace",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
+    manifest: FS_READ_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of readFileTools) api.tools.register(tool);
     },

@@ -3873,7 +3873,11 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
     category: "Palette",
   });
 
-  await client.submit("/sync alpha beta");
+  await client.commandExecute?.({
+    name: "sync",
+    raw: "/sync alpha beta",
+    args: ["alpha", "beta"],
+  });
   expect(
     events.filter((event) => event.type === "content.delta").at(-1)?.text,
   ).toBe("synced alpha,beta");

@@ -1,6 +1,7 @@
 export {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
+  SKILLS_PLUGIN_MANIFEST,
   SKILLS_REGISTRY_SERVICE,
 } from "./skills-plugin";
 export {

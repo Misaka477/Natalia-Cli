@@ -5,10 +5,7 @@ import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import type { TextareaRenderable } from "@opentui/core";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import {
-  PromptAutocomplete,
-  workflowRunUnavailableReason,
-} from "../src/component/PromptAutocomplete";
+import { PromptAutocomplete } from "../src/component/PromptAutocomplete";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
 
 test("slash autocomplete selects an existing flow by keyboard", async () => {
@@ -92,17 +89,4 @@ test("slash autocomplete selects an existing flow by keyboard", async () => {
     disposeKeymap();
     setup.renderer.destroy();
   }
-});
-
-test("capability workflow paths never fall through to the disk subprocess", () => {
-  expect(workflowRunUnavailableReason("task", "review.yaml")).toBeUndefined();
-  expect(
-    workflowRunUnavailableReason("task", "cap:review/task_review.yaml", true),
-  ).toBeUndefined();
-  expect(
-    workflowRunUnavailableReason("flow", "cap:review/flow_review.yaml", true),
-  ).toContain("flow direct execution is not available");
-  expect(
-    workflowRunUnavailableReason("task", "cap:review/task_review.yaml"),
-  ).toContain("task execution is not available through this TUI transport");
 });

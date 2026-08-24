@@ -17,7 +17,7 @@ import {
   requireObject,
   requireString,
 } from "@natalia/tools";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type {
   RuntimeTool,
   SandboxToolService,
@@ -397,24 +397,26 @@ export function sandboxToolFamily(): ToolFamily {
 
 export const SANDBOX_PLUGIN_ID = "natalia-tool-sandbox";
 
+export const SANDBOX_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: SANDBOX_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Sandbox Tools",
+  description: "Isolated workspaces and their merge back.",
+  entry: "natalia:tool-sandbox",
+  scope: "workspace",
+  provides: [],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools"],
+};
+
 export function createSandboxPlugin(): Plugin {
   return {
-    manifest: {
-      apiVersion: 2,
-      id: SANDBOX_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Sandbox Tools",
-      description: "Isolated workspaces and their merge back.",
-      entry: "natalia:tool-sandbox",
-      scope: "workspace",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
+    manifest: SANDBOX_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of sandboxTools()) api.tools.register(tool);
     },

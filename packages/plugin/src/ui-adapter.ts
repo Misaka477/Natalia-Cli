@@ -21,12 +21,14 @@ export function createUiAdapterMountInput(
     },
     commands: {
       list: async () => (await runtime.commandCatalog?.()) ?? [],
-      async execute(name) {
+      async execute(input) {
         const command = (await runtime.commandCatalog?.())?.find(
-          (entry) => entry.name === name,
+          (entry) => entry.name === input.name,
         );
-        if (!command) throw new Error(`command unavailable: ${name}`);
-        await runtime.submit(`/${name}`);
+        if (!command) throw new Error(`command unavailable: ${input.name}`);
+        if (!runtime.commandExecute)
+          throw new Error("runtime command execution unavailable");
+        await runtime.commandExecute(input);
       },
     },
   };

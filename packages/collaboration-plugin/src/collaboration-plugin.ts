@@ -10,7 +10,7 @@
  * Main-agent collaboration tools are owned by this plugin and disappear with
  * it. Provider-driven chat turns remain behind narrow host ports for now.
  */
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { createInteractiveWaiter } from "./interactive-waiter";
 import {
   COLLABORATION_WAITER_SERVICE,
@@ -27,27 +27,29 @@ export type CollaborationPluginInput = {
   tools: CollaborationToolPorts;
 };
 
+export const COLLABORATION_PLUGIN_MANIFEST: PluginManifest = {
+  apiVersion: 2,
+  id: COLLABORATION_PLUGIN_ID,
+  version: "1.0.0",
+  name: "Collaboration",
+  description: "Interactive waiting and Live Work Chat collaboration.",
+  entry: "natalia:collaboration",
+  scope: "workspace",
+  provides: [COLLABORATION_WAITER_SERVICE],
+  requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["services", "tools"],
+};
+
 export function createCollaborationPlugin(
   input: CollaborationPluginInput,
 ): Plugin {
   let waiter: ReturnType<typeof createInteractiveWaiter> | undefined;
   return {
-    manifest: {
-      apiVersion: 2,
-      id: COLLABORATION_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Collaboration",
-      description: "Interactive waiting and Live Work Chat collaboration.",
-      entry: "natalia:collaboration",
-      scope: "workspace",
-      provides: [COLLABORATION_WAITER_SERVICE],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["services", "tools"],
-    },
+    manifest: COLLABORATION_PLUGIN_MANIFEST,
     setup(api) {
       waiter = createInteractiveWaiter(input.waiter);
       api.services.provide(COLLABORATION_WAITER_SERVICE, waiter);

@@ -34,6 +34,9 @@ test("an installed UI package mounts through the public adapter port", async () 
       sink = listener;
     },
     commandCatalog: async () => [{ name: "status", title: "Status" }],
+    async commandExecute(input) {
+      submissions.push(input.raw);
+    },
     async submit(text: string) {
       submissions.push(text);
       return { id: "turn_fixture" };
@@ -44,14 +47,18 @@ test("an installed UI package mounts through the public adapter port", async () 
   const materializer = createPluginAdapterMaterializer(kernel);
   const mountInput = createUiAdapterMountInput(runtime);
   await materializer.materialize(EXAMPLE_UI_ADAPTER, mountInput);
-  await mountInput.commands.execute("status");
+  await mountInput.commands.execute({
+    name: "status",
+    raw: "/status",
+    args: [],
+  });
   runtime.commandCatalog = async () => [];
-  await expect(mountInput.commands.execute("status")).rejects.toThrow(
-    "command unavailable: status",
-  );
-  await expect(mountInput.commands.execute("missing")).rejects.toThrow(
-    "command unavailable: missing",
-  );
+  await expect(
+    mountInput.commands.execute({ name: "status", raw: "/status", args: [] }),
+  ).rejects.toThrow("command unavailable: status");
+  await expect(
+    mountInput.commands.execute({ name: "missing", raw: "/missing", args: [] }),
+  ).rejects.toThrow("command unavailable: missing");
   const event = {
     type: "session.created",
     sessionID: "ses_fixture",

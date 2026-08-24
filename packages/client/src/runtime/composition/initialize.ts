@@ -3,9 +3,7 @@ import { agentsFromConfig } from "@natalia/agent";
 import {
   builtinPluginCatalog,
   computeBuiltinFeatureGates,
-  RUNTIME_UI_PLUGIN_ID,
-  SANDBOX_CONTROLLER_PLUGIN_ID,
-  TASK_WORKFLOW_PLUGIN_ID,
+  computeBuiltinPluginGates,
 } from "@natalia/builtin-plugins";
 import { resolveConfig } from "@natalia/config";
 import {
@@ -80,7 +78,11 @@ export function wireInitialize(
 ) {
   const { state, ports } = ctx;
   const drainSession = async (signal: AbortSignal) => {
-    await state.turnController.drain(signal, state.sessionID);
+    const controller = ports.resolveService<
+      import("@natalia/runtime-services").TurnController
+    >(TURN_CONTROLLER_SERVICE);
+    if (!controller) throw new Error("turn orchestration unavailable");
+    await controller.drain(signal, state.sessionID);
   };
   state.initialize = {
     resolveConfig,
@@ -95,6 +97,7 @@ export function wireInitialize(
     providerModelPluginInput: features.pluginAssembly.providerModelPluginInput,
     builtinPluginCatalog,
     computeBuiltinFeatureGates,
+    computeBuiltinPluginGates,
     capabilityRegistry: state.capabilityRegistry,
     workspaceCapabilityView: state.workspaceCapabilityView,
     waiterDeps: state.waiterDeps,
@@ -160,11 +163,6 @@ export function wireInitialize(
       collaborationWaiter: COLLABORATION_WAITER_SERVICE,
       providerModelController: PROVIDER_MODEL_CONTROLLER_SERVICE,
       taskWorkflowController: TASK_WORKFLOW_CONTROLLER_SERVICE,
-    },
-    pluginIDs: {
-      sandboxController: SANDBOX_CONTROLLER_PLUGIN_ID,
-      taskWorkflow: TASK_WORKFLOW_PLUGIN_ID,
-      runtimeUi: RUNTIME_UI_PLUGIN_ID,
     },
   };
   ports.initialize = createInitialize(ctx, options).initialize;

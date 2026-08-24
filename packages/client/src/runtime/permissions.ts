@@ -13,7 +13,12 @@ import {
 import { derivePermissionSettings } from "../permission-settings";
 import type { AgentDefinition } from "@natalia/agent";
 import type { ConfigV3 } from "@natalia/contracts";
+import type { PermissionProfileCommandRules } from "@natalia/tools";
 import type { ToolPolicyHookLayer } from "@natalia/runtime-services";
+import {
+  TOOL_POLICY_SERVICE,
+  type ToolPolicyService,
+} from "@natalia/runtime-services";
 import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -26,6 +31,7 @@ export function createPermissions(
 ) {
   return {
     applyAgentPolicy,
+    createToolPolicyLayer,
     agentPolicyLayer,
     permissionProfileLayer,
     reloadPermissionSettings,
@@ -34,33 +40,141 @@ export function createPermissions(
     extensionToolPermission,
   };
 
-  function applyAgentPolicy() {
-    const {
-      getSelectedAgent,
-      getSelectedPermissionProfile,
-      setAgentToolLayer,
-      setPermissionProfileToolLayer,
-    } = ctx.ports;
-    setAgentToolLayer(agentPolicyLayer(getSelectedAgent()));
-    setPermissionProfileToolLayer(
-      permissionProfileLayer(getSelectedPermissionProfile()),
-    );
-  }
+  function applyAgentPolicy() {}
 
   function agentPolicyLayer(agent: AgentDefinition | undefined) {
-    const { getTsRuntimeConfig, getToolPolicy } = ctx.ports;
+    const { getTsRuntimeConfig, resolveService } = ctx.ports;
     const tsRuntimeConfig = getTsRuntimeConfig();
     const mode = tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
-    return getToolPolicy()!.createHookLayer(
-      deriveAgentToolPolicy({ agent, mode }),
-    );
+    return resolveService<ToolPolicyService>(
+      TOOL_POLICY_SERVICE,
+    )!.createHookLayer(deriveAgentToolPolicy({ agent, mode }));
   }
 
   function permissionProfileLayer(profile: PermissionProfile | undefined) {
-    const { getToolPolicy } = ctx.ports;
-    return getToolPolicy()!.createHookLayer(
-      deriveProfileToolPolicy({ profile }),
+    return ctx.ports
+      .resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE)!
+      .createHookLayer(deriveProfileToolPolicy({ profile }));
+  }
+
+  function createToolPolicyLayer(
+    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+  ): ToolPolicyHookLayer {
+    const policy =
+      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    if (!policy)
+      throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
+    const agent = exec?.selectedAgent ?? ctx.ports.getSelectedAgent();
+    const profile =
+      exec?.permissionProfile ?? ctx.ports.getSelectedPermissionProfile();
+    const base = policy.createHookLayer(options.toolPolicy);
+    const agentLayer = agentPolicyLayer(agent);
+    const profileLayer = permissionProfileLayer(profile);
+    const moduleLayer = policy.createHookLayer(
+      options.taskModuleContext
+        ? ctx.state.initialize.moduleToolPolicy(
+            options.taskModuleContext.moduleType,
+          )
+        : undefined,
     );
+    const modulePermissionLayer = policy.createHookLayer(
+      options.taskModuleContext?.modulePermissions?.tools,
+    );
+    const layers = [
+      base,
+      agentLayer,
+      profileLayer,
+      moduleLayer,
+      modulePermissionLayer,
+    ];
+    return {
+      ...policy.createHookLayer(undefined, {
+        preExecute: async (event) => {
+          if (
+            options.taskModuleContext &&
+            event.toolName === "flow_module_complete"
+          )
+            return { allowed: true, diagnostics: [] };
+          for (const layer of layers) {
+            const result = await layer.preExecute(event);
+            if (!result.allowed) {
+              if (layer === moduleLayer)
+                return {
+                  ...result,
+                  diagnostics: [
+                    `blocked outside active ${options.taskModuleContext?.moduleType} module: ${event.toolName}`,
+                  ],
+                };
+              return result;
+            }
+          }
+          const args = ctx.ports.tryParseToolArguments(event.arguments);
+          for (const rules of [
+            agent?.permissions,
+            profile?.permissions,
+            options.taskModuleContext?.modulePermissions,
+          ]) {
+            const result = policy.evaluatePermissionRules(
+              rules,
+              event.toolName,
+              args,
+              ctx.ports.getWorkspaceRoot(),
+            );
+            if (!result.allowed) return result;
+          }
+          const terminalCommandBuffer = ctx.ports.getTerminalCommandBuffer();
+          const bufferedProfileCommandPermission =
+            await terminalCommandBuffer.evaluate(
+              [
+                profile?.commandRules,
+                options.taskModuleContext?.moduleCommandRules,
+              ].filter((rules): rules is PermissionProfileCommandRules =>
+                Boolean(rules),
+              ),
+              event.toolName,
+              args,
+              [
+                profile?.interactivePrograms,
+                options.taskModuleContext?.moduleInteractivePrograms,
+              ],
+            );
+          const profileCommandPermission =
+            bufferedProfileCommandPermission ??
+            (await ctx.state.initialize.evaluatePermissionProfileCommandRules(
+              profile?.commandRules,
+              event.toolName,
+              args,
+            ));
+          if (!profileCommandPermission.allowed)
+            return profileCommandPermission;
+          if (!bufferedProfileCommandPermission) {
+            const moduleCommandPermission =
+              await ctx.state.initialize.evaluatePermissionProfileCommandRules(
+                options.taskModuleContext?.moduleCommandRules,
+                event.toolName,
+                args,
+                "active module",
+              );
+            if (!moduleCommandPermission.allowed)
+              return moduleCommandPermission;
+          }
+          const extensionResult = extensionToolPermission(
+            event.toolName,
+            profile,
+          );
+          if (!extensionResult.allowed) return extensionResult;
+          return (
+            (await options.hooks?.preExecute?.(event)) ?? {
+              allowed: true,
+              diagnostics: [],
+            }
+          );
+        },
+        postExecute: options.hooks?.postExecute,
+      }),
+      isToolAllowed: (toolName: string) =>
+        layers.every((layer) => layer.isToolAllowed(toolName)),
+    };
   }
 
   /**
@@ -96,14 +210,7 @@ export function createPermissions(
     toolName: string,
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ) {
-    const {
-      getToolLayer,
-      getAgentToolLayer,
-      getPermissionProfileToolLayer,
-      getModuleToolLayer,
-      getModulePermissionToolLayer,
-      getSelectedPermissionProfile,
-    } = ctx.ports;
+    const { getSelectedPermissionProfile } = ctx.ports;
     // The module completion tool is system control, not a capability: it must
     // stay available even when a profile, agent or module allow-list forgets to
     // mention it, otherwise the model can never report completion and every
@@ -111,15 +218,7 @@ export function createPermissions(
     if (options.taskModuleContext && toolName === "flow_module_complete")
       return true;
     return (
-      getToolLayer().isToolAllowed(toolName) &&
-      (exec
-        ? agentPolicyLayer(exec.selectedAgent).isToolAllowed(toolName)
-        : getAgentToolLayer().isToolAllowed(toolName)) &&
-      (exec
-        ? permissionProfileLayer(exec.permissionProfile).isToolAllowed(toolName)
-        : getPermissionProfileToolLayer().isToolAllowed(toolName)) &&
-      getModuleToolLayer().isToolAllowed(toolName) &&
-      getModulePermissionToolLayer().isToolAllowed(toolName) &&
+      createToolPolicyLayer(exec).isToolAllowed(toolName) &&
       extensionToolPermission(
         toolName,
         exec ? exec.permissionProfile : getSelectedPermissionProfile(),
