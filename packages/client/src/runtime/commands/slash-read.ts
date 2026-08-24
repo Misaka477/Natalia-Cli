@@ -7,7 +7,6 @@
  */
 import { runtimeSlashCommands } from "@natalia/contracts";
 import { runCheckpointCommand } from "@natalia/runtime";
-import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
 import { EGRESS_ADVISORY, type SlashDeps } from "./index";
 
 export async function tryReadSlashCommand(deps: SlashDeps): Promise<boolean> {
@@ -158,44 +157,6 @@ export async function tryReadSlashCommand(deps: SlashDeps): Promise<boolean> {
             )
             .join("\n")
         : "no selectable models configured",
-    });
-    deps.publish({ type: "content.done", id: deps.id });
-    deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
-    return true;
-  }
-  if (trimmed === "/files" || trimmed.startsWith("/files ")) {
-    const query = trimmed.slice("/files".length).trim();
-    const files = await findWorkspaceFiles({
-      workspaceRoot: deps.workspaceRoot,
-      query: query || undefined,
-      limit: 50,
-    });
-    deps.publish({
-      type: "content.delta",
-      id: deps.id,
-      text: files.length
-        ? files.map((file) => file.path).join("\n")
-        : "no workspace files found",
-    });
-    deps.publish({ type: "content.done", id: deps.id });
-    deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
-    return true;
-  }
-  if (trimmed.startsWith("/search ")) {
-    const query = trimmed.slice("/search ".length).trim();
-    const matches = await searchWorkspaceFiles({
-      workspaceRoot: deps.workspaceRoot,
-      query,
-      limit: 50,
-    });
-    deps.publish({
-      type: "content.delta",
-      id: deps.id,
-      text: matches.length
-        ? matches
-            .map((match) => `${match.path}:${match.line}:${match.text}`)
-            .join("\n")
-        : "no workspace matches found",
     });
     deps.publish({ type: "content.done", id: deps.id });
     deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });

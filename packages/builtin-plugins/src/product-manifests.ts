@@ -381,5 +381,5 @@ export const PRODUCT_PLUGIN_MANIFESTS: Record<string, PluginManifest> = {
     integrationPoints: ["services"],
   },
   "natalia-work-ledger": { apiVersion: 2, id: "natalia-work-ledger", version: "1.0.0", name: "Work Ledger", description: "Plan, drift and work graph event writers.", entry: "natalia:work-ledger", scope: "workspace", provides: ["work-ledger.controller"], requires: [], optionalRequires: [], conflicts: [], dependencies: [], hooks: {}, integrationPoints: ["services"] },
-  "natalia-workspace": { apiVersion: 2, id: "natalia-workspace", version: "1.0.0", name: "Workspace", description: "Workspace observation, write serialisation and mutation attribution.", entry: "natalia:workspace", scope: "workspace", provides: ["workspace.writeLock", "workspace.mutations", "workspace.files"], requires: [], optionalRequires: [], conflicts: [], dependencies: [], hooks: {}, integrationPoints: ["services"] },
+  "natalia-workspace": { apiVersion: 2, id: "natalia-workspace", version: "1.0.0", name: "Workspace", description: "Workspace observation, write serialisation and mutation attribution.", entry: "natalia:workspace", scope: "workspace", provides: ["workspace.writeLock", "workspace.mutations", "workspace.files"], requires: [], optionalRequires: [], conflicts: [], dependencies: [], hooks: {}, integrationPoints: ["services", "commands"] },
 };

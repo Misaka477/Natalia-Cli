@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
@@ -35,7 +35,7 @@ test("workspace resources exist only while the plugin is loaded", async () => {
   });
   const plugin = createWorkspacePlugin({
     workspaceRoot: root,
-    listPaths: async () => [],
+    listPaths: async () => ["main.ts"],
   });
 
   expect(plugin.manifest).toMatchObject({
@@ -62,9 +62,24 @@ test("workspace resources exist only while the plugin is loaded", async () => {
     expect(
       services.get(WORKSPACE_FILES_SERVICE) as WorkspaceFilesController,
     ).toHaveProperty("reconcile");
+    await writeFile(join(root, "main.ts"), "const needle = true\n");
+    const commands = registry.commands();
+    expect(
+      await commands.find((command) => command.name === "files")?.run(),
+    ).toBe("main.ts");
+    expect(
+      await commands
+        .find((command) => command.name === "search")
+        ?.run({
+          raw: "/search needle",
+          args: ["needle"],
+          workspaceRoot: root,
+        }),
+    ).toBe("main.ts:1:const needle = true");
 
     await registry.unload(WORKSPACE_PLUGIN_ID);
     expect(services.size).toBe(0);
+    expect(registry.commands()).toHaveLength(0);
   } finally {
     await registry.unload(WORKSPACE_PLUGIN_ID).catch(() => undefined);
     await rm(root, { recursive: true, force: true });

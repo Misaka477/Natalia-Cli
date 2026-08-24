@@ -12,6 +12,7 @@
  *     mutation registry and reports un-attributed drift.
  */
 import type { Plugin } from "@natalia/plugin";
+import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
 import { createMutationRegistry } from "./mutation-registry";
 import {
   createWorkspaceFilesController,
@@ -53,7 +54,7 @@ export function createWorkspacePlugin(input: {
       conflicts: [],
       dependencies: [],
       hooks: {},
-      integrationPoints: ["services"],
+      integrationPoints: ["services", "commands"],
     },
     async setup(api) {
       const mutations: MutationRegistry = createMutationRegistry();
@@ -80,6 +81,39 @@ export function createWorkspacePlugin(input: {
         api.services.provide(WORKSPACE_WRITE_LOCK_SERVICE, writeLock);
         api.services.provide(WORKSPACE_MUTATIONS_SERVICE, mutations);
         api.services.provide(WORKSPACE_FILES_SERVICE, files);
+        api.commands.register({
+          name: "files",
+          title: "Find workspace files",
+          async run(invocation) {
+            const query = invocation?.args.join(" ").trim();
+            const found = await findWorkspaceFiles({
+              workspaceRoot: input.workspaceRoot,
+              query: query || undefined,
+              limit: 50,
+            });
+            return found.length
+              ? found.map((file) => file.path).join("\n")
+              : "no workspace files found";
+          },
+        });
+        api.commands.register({
+          name: "search",
+          title: "Search workspace files",
+          async run(invocation) {
+            const query = invocation?.args.join(" ").trim();
+            if (!query) throw new Error("/search requires a query");
+            const matches = await searchWorkspaceFiles({
+              workspaceRoot: input.workspaceRoot,
+              query,
+              limit: 50,
+            });
+            return matches.length
+              ? matches
+                  .map((match) => `${match.path}:${match.line}:${match.text}`)
+                  .join("\n")
+              : "no workspace matches found";
+          },
+        });
       } catch (error) {
         files.close();
         files = undefined;

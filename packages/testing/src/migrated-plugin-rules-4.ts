@@ -86,6 +86,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       "packages/client/src/workspace-files.ts",
       "packages/client/src/workspace-observation.ts",
       "packages/client/src/workspace-write-lock.ts",
+      "packages/client/src/runtime/commands/slash-read.ts",
     ],
     forbidden: [
       {
@@ -102,6 +103,11 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
         description: "client-owned workspace implementation",
         pattern:
           /export (?:async )?function (?:createWorkspacePlugin|createWorkspaceChangeAuditor|findWorkspaceFiles|watchWorkspaceFiles)\b/u,
+      },
+      {
+        description: "client-owned workspace command implementation",
+        pattern:
+          /(?:findWorkspaceFiles|searchWorkspaceFiles|["']\/(?:files|search)["'])/u,
       },
     ],
   },

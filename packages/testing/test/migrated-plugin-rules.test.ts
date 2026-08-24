@@ -533,10 +533,14 @@ test("workspace migration protects the extracted implementation", () => {
       "packages/client/src/workspace-files.ts",
       "export async function findWorkspaceFiles() {}",
     ],
+    [
+      "packages/client/src/runtime/commands/slash-read.ts",
+      'if (trimmed === "/files") return true',
+    ],
   ])
-    expect(findMigratedPluginViolations(path, source)).toEqual([
+    expect(findMigratedPluginViolations(path, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-workspace" }),
-    ]);
+    );
 
   expect(
     findMigratedPluginViolations(
