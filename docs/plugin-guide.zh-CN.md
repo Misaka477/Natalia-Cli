@@ -1,91 +1,113 @@
-# Natalia 插件开发指南 — v1
+# Natalia 插件开发指南 - v2
 
-> 状态：`PLUGIN_API_VERSION` = 1（见 `@natalia/plugin`）。
-> 本指南讲如何编写、加载与测试插件，与运行时 API 参考（`docs/api-reference.md`）
-> 配套：插件**运行在 runtime 进程内**，因此插件 API 是 host 侧扩展面，不是
-> RPC 面。
+> `PLUGIN_API_VERSION` 为 `2`。一个插件就是一个包，包内同时包含 package 元数据、
+> `natalia.plugin.json`、入口模块和实现。插件 API 是进程内 host 扩展面，不是 RPC 面。
 
-## 1. 插件是什么
+## 1. 单一插件体系
 
-插件是运行在 runtime **进程内**的 TypeScript/JavaScript 模块，可贡献三类东西，
-每类由独立 capability 门控：
+Natalia 只有一种插件。runtime 默认随附插件和用户安装插件使用同一 registry、声明名、
+权限、依赖解析及装载/卸载生命周期。runtime 默认项只是分发配置，不拥有特权 API，
+也不走第二套生命周期。
 
-| Capability | 插件得到什么                                                             |
-| ---------- | ------------------------------------------------------------------------ |
-| `tools`    | `api.tools.register(tool)` — 模型可调用的工具，名为 `plugin_<id>_<name>` |
-| `events`   | `api.events.on(listener)` — 全部 runtime 事件，分发给所有监听者          |
-| `commands` | `api.commands.register(command)` — 面板命令，名为 `plugin_<id>_<name>`   |
+插件是可信代码。它会被直接导入 runtime 进程，没有 VM、文件系统沙箱、网络沙箱或
+执行超时。manifest 的 `integrationPoints` 用于贡献物归属和校验，不提供进程隔离。
+只安装你编写过或审计过的包。
 
-**信任模型，直说：插件是可信代码，不是沙箱。** 它是进程内 `import()` 加载，
-仅有路径包含与 `.js`/`.mjs`/`.ts` 扩展名检查——无 VM、无文件系统限制、无超时、
-无网络策略。加载插件与你自己运行它的代码是同一安全决定。capability 门控与
-workspace 的 `readOnly` 信任标记是治理，不是隔离：声明只有 `events` 的插件
-不能注册工具，但没有任何东西阻止它做 JavaScript 能做的任何事。只加载你写过
-或审计过的插件。
+v2 integration point 包括 `tools`、`commands`、`events`、`services`、
+`resources`、`projections`、`workflows`、`settingsSchema`、`adapters` 和
+`schedulerJobs`。声明 integration point 就获得对应 API。工具和命令保留声明名，
+Natalia 不添加插件前缀。工具审批尊重每个工具的 `requiresApproval` 声明，并继续经过
+runtime 的常规策略路径；不存在按插件类别强制审批。
 
-## 2. 插件放哪里
+## 2. 单包布局
 
-runtime 启动时从 `<workspace>/.natalia/plugins/` 加载插件。每个插件是一个带
-manifest 的目录：
+可发布插件包的最小结构：
 
-```
-.natalia/plugins/
-  demo/
-    natalia.plugin.json        # manifest
-    index.ts           # 入口，或 manifest 指定的任意 .js/.mjs/.ts
+```text
+my-natalia-plugin/
+  package.json
+  natalia.plugin.json
+  src/index.ts
 ```
 
-越出 plugins 根的入口、或非本地 JS/TS 模块，加载时被拒。manifest 校验失败的
-插件被拒并记 audit；`setup` 抛错的插件被回滚（它注册的一切都被撤销）并在
-registry audit 中记为 `failed`。
-
-## 3. Manifest
+包必须声明源码直接导入的 runtime 包：
 
 ```json
 {
-  "apiVersion": 1,
-  "id": "demo.plugin",
+  "name": "@yourco/natalia-demo",
   "version": "1.0.0",
-  "name": "Demo",
-  "description": "A demonstration plugin",
-  "entry": "index.ts",
-  "capabilities": ["tools", "events", "commands"],
-  "scope": "session"
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@natalia/plugin": "<compatible-version>",
+    "@natalia/contracts": "<compatible-version>"
+  }
 }
 ```
 
-| 字段           | 规则                                                                           |
-| -------------- | ------------------------------------------------------------------------------ |
-| `apiVersion`   | 必须为 `1`                                                                     |
-| `id`           | `[a-z0-9][a-z0-9._-]*`；registry 键，也是所有注册名的前缀                      |
-| `version`      | 语义化版本                                                                     |
-| `name`         | 显示名；也是命令的默认 `category`                                              |
-| `description`  | 可选，默认 `""`                                                                |
-| `entry`        | 可选，默认 `"index.ts"`；必须是本地 `.js`/`.mjs`/`.ts`                         |
-| `capabilities` | 插件可用的 `tools`/`events`/`commands`；host 还可用 `allowed` 白名单进一步约束 |
-| `scope`        | 插件贡献的存活范围：`process`/`workspace`/`session`，默认 `session`            |
+版本应与目标 Natalia 发行版兼容。包管理器会把完整 package closure 安装到
+`.natalia/plugins`；不要要求用户另建 SDK 软链接或单独复制入口文件。
 
-`scope` 是归属，不是沙箱：插件的工具报告插件为 owner、scope 为它所声明的值，
-与内置工具族完全一致。宿主的内核拥有插件的工具——卸载插件时它们从内核释放，
-`tool.registered` 指向插件而不是匿名的宿主。
+## 3. Manifest v2
 
-## 4. `definePlugin`
+```json
+{
+  "apiVersion": 2,
+  "id": "yourco.demo",
+  "version": "1.0.0",
+  "name": "Demo",
+  "description": "A demonstration plugin.",
+  "entry": "src/index.ts",
+  "scope": "workspace",
+  "provides": [],
+  "requires": [],
+  "optionalRequires": [],
+  "conflicts": [],
+  "dependencies": [],
+  "hooks": {},
+  "integrationPoints": ["tools", "commands"]
+}
+```
+
+- `id` 匹配 `[a-z0-9][a-z0-9._-]*`，同时是 registry owner id。
+- `version` 是语义版本；`entry` 必须是包内本地 `.js`、`.mjs` 或 `.ts` 文件。
+- `scope` 为 `process`、`workspace` 或 `session`，表示生命周期归属，不是安全边界。
+- `provides`、`requires`、`optionalRequires` 描述 service contract。
+- `conflicts` 和 `dependencies` 进入确定性依赖解析；dependency 可标记
+  `optional` 或 `peer`。
+- `hooks` 可声明 `preInstall`、`postInstall`、`preUninstall`、
+  `postUninstall` package script。
+- `integrationPoints` 必须覆盖 `setup` 使用的每个贡献 API。
+
+manifest、依赖和配置校验在激活前完成。`setup` 失败时，本次激活产生的注册项全部
+回滚，插件 audit 状态为 `failed`。
+
+## 4. 实现插件
 
 ```ts
 import { definePlugin } from "@natalia/plugin";
 
 export default definePlugin({
   manifest: {
-    apiVersion: 1,
-    id: "demo.plugin",
+    apiVersion: 2,
+    id: "yourco.demo",
     version: "1.0.0",
     name: "Demo",
-    capabilities: ["tools", "commands"],
+    description: "A demonstration plugin.",
+    entry: "src/index.ts",
+    scope: "workspace",
+    provides: [],
+    requires: [],
+    optionalRequires: [],
+    conflicts: [],
+    dependencies: [],
+    hooks: {},
+    integrationPoints: ["tools", "commands"],
   },
   setup(api) {
     api.tools.register({
       name: "echo",
-      description: "Echo the input back.",
+      description: "Echo the input.",
       requiresApproval: false,
       parameters: {
         type: "object",
@@ -93,178 +115,118 @@ export default definePlugin({
         required: ["text"],
         additionalProperties: false,
       },
-      async execute(input, context) {
-        return (input as { text?: string }).text ?? "";
+      async execute(input) {
+        return (input as { text: string }).text;
       },
     });
-
     api.commands.register({
-      name: "hello",
+      name: "demo.hello",
       title: "Say hello",
       run() {
-        console.log("hello from the demo plugin");
+        console.log("hello from yourco.demo");
       },
     });
-  },
-  dispose() {
-    // 可选；在插件注册项被移除前执行
   },
 });
 ```
 
-- **名字自动加命名空间。** 注册为 `echo` 的工具变成 `plugin_demo_plugin_echo`；
-  名为 `hello` 的命令变成 `plugin_demo_plugin_hello`。插件不能靠选名字遮蔽内建
-  工具或命令；卸载插件移除的恰好是它注册的那些名字。
-- **动态插件工具默认要审批，除非被信任。** 插件工具的 `requiresApproval`
-  默认为 `true`；显式信任某插件只读声明的 workspace 可标记它
-  （host 侧 `readOnly: { "demo.plugin": true }`），此时声明
-  `requiresApproval: false` 的工具保持免审批。
-- **`execute(input, context)` 的 `context` 形状**（来自
-  `@natalia/tools` 的 `ToolExecutionContext`）：
-  - `workspaceRoot: string` — 当前工作区根。
-  - `signal?: AbortSignal` — 回合取消时中止；长时间工具应监听它。
-  - `askQuestion?` — 向用户提问（`{ title, questions: [{ id, header, question,
-options: [{ label, description? }], multiple?, custom? }] }`，返回
-    `string[][]`，外层按 questions 顺序）。宿主无交互通道时不存在。
-  - `subagents?` / `nativeTerminal?` / `sandboxes?` — 子代理、终端与会话注册表
-    （各自宿主能力存在时才有）。
-  - `workspaceReadAuthorize?` / `sandboxMergeAuthorize?` — 宿主策略钩子；
-    工具应**先调用再落盘/合并**，拒绝即抛错。
-  - `settings?` — 运行时网络与浏览器策略（`allowedHosts`/`allowedSchemes`/
-    `allowLocalhost`/`allowPrivate`/`deniedHosts`/`envAllowlist`、
-    `webSearchEndpoint`、`browserEnabled`/`browserBinary`…）。读写类工具应
-    遵守这些边界——宿主按同一份 settings 执行网络策略。
-  - `parentSessionID?` / `parentAgentID?` / `maxSubagentDepth?` — 调用方会话
-    与子代理深度预算。
-- **`setup` 可以是 async。** 若抛错，它注册的一切被回滚，加载记为 `failed`。
-- **每个注册返回一个 disposer**（`const off = api.tools.register(...)`）。
-  不需要你调用——卸载会做——但你可以用它中途注销。
+实际注册名就是 `echo` 和 `demo.hello`。重复名字会被拒绝，因此应选全局语义清晰的
+名字。每次注册都返回 disposer，registry unload 也会清理 owner 的全部贡献物。
+`setup` 和插件 `dispose` 都可以异步执行。
 
-## 5. 配置
+插件可通过 Standard Schema 声明 `configSchema`。校验结果从 `api.config` 读取，
+原始值来自 `plugins.settings[pluginID]`。无效配置会阻止激活，不会留下半配置插件。
 
-需要配置的插件自己声明配置的 schema，宿主把为它配置的那一项传进来：
+## 5. 生命周期命令
 
-```json
-// .natalia/config.json
-{
-  "plugins": {
-    "settings": {
-      "demo.plugin": { "endpoint": "https://example.test", "retries": 5 }
-    }
-  }
-}
+CLI 是权威维护入口：
+
+```bash
+natalia plugin install @yourco/natalia-demo
+natalia plugin list
+natalia plugin disable yourco.demo
+natalia plugin enable yourco.demo
+natalia plugin uninstall yourco.demo
 ```
 
+使用 `--workspace /path/to/project` 可指定其他工作区。
+
+- `install <spec>` 在一个事务中完成 package staging 与校验、安装依赖闭包、写入
+  `.natalia/natalia.lock`、记录 package 配置并启用插件。失败时恢复原 closure、
+  lock 和配置。
+- `list` 用一张 catalog 同时列出 runtime 默认项和用户安装包，字段包括 `id`、
+  `name`、`version`、`scope`、`enabled`、`installed`、`source`、`packageName`。
+- `disable <id>` 和 `enable <id>` 只改变 desired activation state。
+- `uninstall <id>` 删除用户安装包的配置、closure 和 lock entry。runtime 分发的
+  默认插件文件属于 runtime 本身，因此对它执行 uninstall 会持久化为禁用。
+- `doctor` 审计安装状态，`reconcile` 修复 desired package closure；二者是恢复命令，
+  不是安装的额外步骤。
+
+runtime RPC 的 `pluginUnload` 和 `pluginReload` 只操作已运行 registry，不能替代 CLI
+持久化的 install、uninstall、enable、disable。
+
+## 6. UI adapter
+
+UI 是使用现有 `adapters` integration point 的普通 v2 插件：
+
 ```ts
-import { z } from "zod";
+import { definePlugin } from "@natalia/plugin";
 
 export default definePlugin({
   manifest: {
-    apiVersion: 1,
-    id: "demo.plugin",
+    apiVersion: 2,
+    id: "yourco.ui.web",
     version: "1.0.0",
-    name: "Demo",
+    name: "Web UI",
+    description: "Example UI adapter.",
+    entry: "src/index.ts",
+    scope: "process",
+    provides: [],
+    requires: [],
+    optionalRequires: [],
+    conflicts: [],
+    dependencies: [],
+    hooks: {},
+    integrationPoints: ["adapters"],
   },
-  configSchema: z.object({
-    endpoint: z.string().url(),
-    retries: z.number().int().min(0).default(3),
-  }),
   setup(api) {
-    const config = api.config as { endpoint: string; retries: number };
-    // 宿主没写 retries 时它是 3——schema 声明的默认值。
+    let unsubscribe: (() => void) | undefined;
+    api.adapters.registerUi({
+      kind: "ui.web",
+      async mount(input) {
+        const commands = await input.commands.list();
+        render({ runtime: input.runtime, commands });
+        unsubscribe = input.events.subscribe((event) => update(event));
+      },
+      dispose() {
+        unsubscribe?.();
+        unmount();
+      },
+    });
   },
 });
 ```
 
-- **schema 归插件，值归宿主。** runtime 不解释 `plugins.settings`：它只按插件
-  id 索引，把对应的那一项交给该插件。因此插件的配置词汇随插件版本演进，而不
-  绑在 runtime 的配置 schema 上。
-- **`api.config` 是校验后的值**（schema 的解析结果），声明的默认值已经生效。
-  没有 `configSchema` 的插件接受任意值，原样收到。
-- **配置错误让加载失败，并且吵。** 校验发生在 `setup` **之前**，无效配置绝不
-  会进到一个半配置好的插件里：加载抛错并列出失败路径
-  （`- Invalid url (at endpoint)`），审计记为 `failed`，插件本会注册的东西
-  一件都不存在。
-- **任何 Standard Schema 库都可以**（zod、valibot、arktype）——插件 API 只对
-  `~standard` 接口做鸭子类型，不要求本仓库的 zod 构建，因为插件是独立分发的。
-  schema 必须同步校验；异步 schema 直接算加载错误，而不是静默地不校验。
-- **conformance 也能带配置**：
-  `runPluginConformance({ plugin, config: { endpoint: "https://example.test" } })`，
-  于是插件的配置契约可以被单独测试。
+host 注入三个公共端口：`runtime` 是 `RuntimeClient` 视图，`events.subscribe` 是
+runtime 事件流，`commands.list` 是权威 command catalog。注册本身是惰性的，直到
+host materialize 对应 adapter 才创建 UI；卸载通过与其他 contribution 相同的 owner
+和 lifecycle 路径调用 disposer。
 
-## 6. 事件
+可执行最小包位于 `packages/example-ui-plugin`，端到端 materialization 测试位于
+`apps/tui/test/example-ui-plugin.test.ts`。生产 TUI 使用相同 `registerUi` 端口和
+materializer，因此新增 UI 不需要 TUI 专用 host 分支。
 
-```ts
-setup(api) {
-  api.events.on((event) => {
-    if ((event as { type?: string }).type === "turn.finished") {
-      console.log("a turn finished");
-    }
-  });
-}
-```
+## 7. 审计与测试
 
-监听者看到全部 runtime 事件（与事件流相同的 `RuntimeEvent` 对象，进程内、
-无序列化）。抛错的监听者被忽略——一个坏插件不能搞坏分发循环。events 是插件
-声明"观察"所用的 capability；插件靠它响应 runtime 而无须轮询。
+registry 记录 `loaded`、`unloaded`、`denied`、`failed` audit，runtime diagnostic
+暴露激活错误。插件至少应验证：
 
-## 7. 命令
+1. adapter materialize 前，注册不会创建外部资源。
+2. 工具和命令保留声明名与审批声明。
+3. setup 失败后没有 contribution 残留。
+4. disable、unload、uninstall 后没有该 owner 的 tool、service、command、listener、
+   resource 或 UI surface。
+5. dispose 幂等，并释放事件订阅和进程。
 
-```ts
-api.commands.register({
-  name: "deploy",
-  title: "Deploy the demo",
-  category: "Demo", // 可选；默认取插件名
-  async run() {
-    await deploy();
-  },
-});
-```
-
-命令是插件的 UI 面：它们出现在面板里（TUI 与 CLI 一致），且权威列表可通过 RPC
-读取——`command.catalog`（`sdk.commandCatalog()`）——远程 UI 看到的是 registry
-实际拥有的命令。面板经进程级同步桥渲染，该桥假设每进程一个 runtime（CLI 与
-TUI worker 成立）。
-
-## 8. Conformance
-
-`runPluginConformance` 在隔离环境里、对着一次性工具 registry 检查插件：
-
-```ts
-import { runPluginConformance } from "@natalia/plugin";
-
-const results = await runPluginConformance({ plugin, allowed: ["tools"] });
-// [{ name: "manifest-and-setup", passed: true },
-//  { name: "tool-ownership", passed: true },
-//  { name: "approval-boundary", passed: true },
-//  { name: "owned-registration-cleanup", passed: true }]
-```
-
-四项检查：manifest 可解析且 `setup` 能跑；插件注册的每个工具都以插件为前缀命名、
-并以该名字交给 kernel 通道；动态工具的审批边界成立（除非工作区把插件标记为
-read-only——传 `readOnly: { "demo.plugin": true }` 可检查受信一侧）；`unload` 后
-工具 registry 与 kernel 通道里都不剩任何注册。若你的插件贡献第四种东西，发布前
-按同样方式扩展 `packages/plugin/test/` 的 conformance 检查——本仓库的门禁是：本
-指南里的一句声明，要么是测试，要么是谎言。
-
-## 9. 加载与审计
-
-registry 把每个生命周期转换记为 `PluginAudit`：`loaded`、`unloaded`、
-`denied`（插件用了未授予的 capability）或 `failed`（manifest 或 `setup`
-错误）。audit 可通过 registry（`registry.audit()`）读取，runtime 也会把它
-暴露出来；加载失败的插件产生一条指名道姓的 runtime diagnostic，因此坏插件
-在 `sdk.diagnostics()` 里可见，而不是悄悄消失。
-
-## 10. 依赖解析（部署注意）
-
-import `@natalia/plugin`（文档化的 `definePlugin` 方式）的插件必须能解析它。
-bun 解析裸 specifier 的方式是从 *import 文件*向上找 `node_modules`/workspace
-上下文，而插件位于 workspace 的 `.natalia/plugins`——在 runtime 包树之外。
-因此部署必须提供以下之一：
-
-- 把 SDK 包装进 workspace 的 `node_modules`（或把 `node_modules/@natalia`
-  软链到 runtime 的包），或
-- 让 `@natalia/*` 从插件目录可解析的加载器/runtime 布局。
-
-这是部署契约，不是 runtime 功能：runtime 不拦截模块解析。解析失败的插件
-以 `failed` 记录加载，解析错误在 diagnostic 里可见。
+仓库内插件运行 `npm run typecheck`、`npm run test`、`npm run guard:imports`；所有
+`src/**/*.ts` 文件不得超过 400 行。

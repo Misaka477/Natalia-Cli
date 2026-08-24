@@ -553,8 +553,14 @@ table except the two reads:
   (idempotent; a provider referenced by a model refuses). The api key crosses
   the wire only in the request body of these calls — use a scoped credential
   with the `management` group for anything that touches them.
-- **Plugins** — `pluginUnload` (idempotent), `pluginReload` (unloads and
-  re-imports the module from its manifest path, busting the import cache).
+- **Plugins** — the CLI is the durable maintenance surface:
+  `natalia plugin install <spec>`, `uninstall <id>`, `enable <id>`,
+  `disable <id>`, and `list`. Install validates and records one package and its
+  dependency closure; enable/disable changes desired activation; uninstall
+  removes an installed closure (or durably disables a runtime-distributed
+  default). The RPC members `pluginUnload` (idempotent) and `pluginReload`
+  (unload and re-import from the manifest path) only operate on the current
+  running registry. They do not install packages or persist desired state.
 
 The management group (`permissionList`/`permissionSave`/`permissionDelete`)
 lets a deployment hand out a credential that can configure policy without
@@ -620,14 +626,14 @@ plan around them rather than discover them:
 
 - **One server, one runtime.** No session routing, no multi-tenancy. Multi-session
   is a planned protocol evolution, not a config flag.
-- **No out-of-tree capability loading.** Capabilities are registered in-repo
-  only. Plugins can contribute tools, commands and event listeners, but a
-  plugin is `import()`ed in-process with path containment, no VM, no
-  filesystem restriction and no timeout — **a plugin is trusted code, not a
-  sandbox**. The public `settings` RPC surface is active; the extension grants
-  for plugin-contributed `settings`, `workflows` and `projection` still have
-  no host-side contribution handlers, so declaring those grants alone adds no
-  plugin behavior yet.
+- **Plugins are trusted host extensions, not remote capability modules.** A
+  plugin is imported in-process with path containment, no VM, no filesystem
+  restriction, and no timeout. Plugin API v2 supports tools, commands, events,
+  services, resources, projections, workflows, settings schemas, adapters, and
+  scheduler jobs through one ownership and lifecycle path. UI packages use
+  `api.adapters.registerUi({ kind, mount, dispose })`; the host supplies a
+  `RuntimeClient`, event subscription, and command catalog. Remote UIs continue
+  to use this document's SDK/transport surface rather than importing host APIs.
 - **Five fact queries answer empty** until their production writers exist
   (§6). Do not build a feature on them.
 - **Terminal writes are host-gated, off by default.** The `nativeTerminal`

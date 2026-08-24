@@ -448,8 +448,12 @@ provider 请求：
   provider 的 models 端点，只读）、`providerAdd`（创建或替换，立即生效）、
   `providerRemove`（幂等；被模型引用的 provider 拒绝）。apiKey 只在这些调用
   的请求体里过线——接触它们的凭据请用带 `management` 组的作用域凭据。
-- **插件** — `pluginUnload`（幂等）、`pluginReload`（卸载并按 manifest 路径
-  重新 import，破除 import 缓存）。
+- **插件** — CLI 是持久化维护面：`natalia plugin install <spec>`、
+  `uninstall <id>`、`enable <id>`、`disable <id>`、`list`。install 校验并记录
+  单个插件包及其依赖闭包；enable/disable 改变 desired activation；uninstall 删除
+  用户安装 closure，或持久禁用 runtime 随附默认项。RPC 的 `pluginUnload`（幂等）
+  和 `pluginReload`（按 manifest 路径卸载并重新 import）只操作当前运行 registry，
+  不安装 package，也不持久化 desired state。
 
 `management` 组（`permissionList`/`permissionSave`/`permissionDelete`）让部署
 可以签发一把"只配策略、不碰其余面"的凭据。
@@ -498,12 +502,12 @@ conformance 套件 `packages/sdk/test/consumer-conformance.test.ts` 是本文档
 
 - **一个 server 一个 runtime。** 无 session 路由，无多租户。多会话是规划中的协议
   演进，不是配置开关。
-- **无 out-of-tree capability 加载。** 能力仅在仓库内注册。plugin 可贡献 tools、
-  commands 与事件监听，但 plugin 是进程内 `import()` 加载，仅路径包含与扩展名
-  白名单，无 VM、无文件系统限制、无超时——**plugin 是可信代码，不是沙箱**。
-  公开 `settings` RPC 面已经生效；但供 plugin 贡献 `settings`、`workflows`、
-  `projection` 的 extension grant 仍没有 host 侧贡献处理器，因此仅声明这些 grant
-  目前不会增加 plugin 行为。
+- **插件是可信 host extension，不是远程 capability module。** plugin 经路径包含
+  检查后在进程内 import，没有 VM、文件系统限制或超时。Plugin API v2 通过同一
+  ownership 和 lifecycle 路径支持 tools、commands、events、services、resources、
+  projections、workflows、settings schema、adapters 和 scheduler jobs。UI 包使用
+  `api.adapters.registerUi({ kind, mount, dispose })`；host 注入 `RuntimeClient`、事件
+  订阅和 command catalog。远程 UI 继续使用本文的 SDK/transport 面，不导入 host API。
 - **五个事实查询恒空**，直到其生产写入方出现（§6）。不要基于它们构建功能。
 - **终端写面由 host 门控，默认关闭。** `nativeTerminal` 组经 RPC 暴露完整的
   交互式终端面：`list`、`read`、`start`、`write`、`resize`、`stop`、`openHub`、

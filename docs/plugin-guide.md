@@ -1,98 +1,121 @@
-# Natalia Plugin Guide — v1
+# Natalia Plugin Guide - v2
 
-> Status: `PLUGIN_API_VERSION` = 1 (see `@natalia/plugin`).
-> This guide covers how to write, load and test a plugin. It pairs with the
-> runtime API reference (`docs/api-reference.md`): plugins run _inside_ the
-> runtime process, so the plugin API is a host-side extension surface, not an
-> RPC surface.
+> `PLUGIN_API_VERSION` is `2`. A plugin is one package containing its package
+> metadata, `natalia.plugin.json`, entry module, and implementation. The plugin
+> API is an in-process host extension surface, not an RPC surface.
 
-## 1. What a plugin is
+## 1. One plugin system
 
-A plugin is a TypeScript/JavaScript module that runs **in-process** inside the
-runtime. It can contribute three kinds of things, each gated by its own
-capability:
+Natalia has one plugin type. Runtime defaults and packages installed by users
+use the same registry, declared names, permissions, dependency resolution, and
+load/unload lifecycle. A runtime default is only distribution configuration; it
+does not receive a privileged API or a separate lifecycle.
 
-| Capability | What the plugin gets                                                             |
-| ---------- | -------------------------------------------------------------------------------- |
-| `tools`    | `api.tools.register(tool)` — a model-callable tool, named `plugin_<id>_<name>`   |
-| `events`   | `api.events.on(listener)` — every runtime event, dispatched to all listeners     |
-| `commands` | `api.commands.register(command)` — a palette command, named `plugin_<id>_<name>` |
+Plugins are trusted code. They are imported into the runtime process without a
+VM, filesystem sandbox, network sandbox, or execution timeout. Manifest
+`integrationPoints` govern contribution ownership and validation, not process
+isolation. Install only packages you wrote or audited.
 
-**Trust model, stated plainly: a plugin is trusted code, not a sandbox.** It is
-`import()`ed in-process with path containment and a `.js`/`.mjs`/`.ts`
-extension check — no VM, no filesystem restriction, no timeout, no network
-policy. Loading a plugin is the same security decision as running its code
-yourself. The capability gate and the `readOnly` workspace trust mark are
-governance, not isolation: a plugin that declares only `events` cannot register
-tools, but nothing stops it from doing whatever JavaScript can do. Load only
-plugins you wrote or audited.
+The v2 integration points are `tools`, `commands`, `events`, `services`,
+`resources`, `projections`, `workflows`, `settingsSchema`, `adapters`, and
+`schedulerJobs`. Declaring an integration point authorizes its API. Tools and
+commands keep the names they declare; Natalia does not add a plugin prefix.
+Tool approval follows each tool's `requiresApproval` declaration and the normal
+runtime policy path. There is no plugin-class-based forced approval.
 
-## 2. Where plugins live
+## 2. Package layout
 
-The runtime loads plugins from `<workspace>/.natalia/plugins/` at startup. Each
-plugin is a directory with a manifest:
+A publishable plugin package has this shape:
 
-```
-.natalia/plugins/
-  demo/
-    natalia.plugin.json        # the manifest
-    index.ts           # the entry, or any .js/.mjs/.ts the manifest names
+```text
+my-natalia-plugin/
+  package.json
+  natalia.plugin.json
+  src/index.ts
 ```
 
-A plugin entry that escapes the plugins root, or is not a local JS/TS module,
-is refused at load. A plugin whose manifest fails validation is refused with an
-audit entry; a plugin whose `setup` throws is rolled back (every registration
-it made is undone) and recorded as `failed` in the registry audit.
-
-## 3. The manifest
+The package declares every imported runtime package as a dependency:
 
 ```json
 {
-  "apiVersion": 1,
-  "id": "demo.plugin",
+  "name": "@yourco/natalia-demo",
   "version": "1.0.0",
-  "name": "Demo",
-  "description": "A demonstration plugin",
-  "entry": "index.ts",
-  "capabilities": ["tools", "events", "commands"],
-  "scope": "session"
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@natalia/plugin": "<compatible-version>",
+    "@natalia/contracts": "<compatible-version>"
+  }
 }
 ```
 
-| Field          | Rule                                                                                                                |
-| -------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `apiVersion`   | must be `1`                                                                                                         |
-| `id`           | `[a-z0-9][a-z0-9._-]*`; the registry key, and the prefix of every registered name                                   |
-| `version`      | semantic version                                                                                                    |
-| `name`         | display name; also the default `category` for commands                                                              |
-| `description`  | optional, default `""`                                                                                              |
-| `entry`        | optional, default `"index.ts"`; must be a local `.js`/`.mjs`/`.ts`                                                  |
-| `capabilities` | which of `tools`/`events`/`commands` the plugin may use; the host may further constrain with an `allowed` whitelist |
-| `scope`        | how long the plugin's contributions live: `process`/`workspace`/`session`, default `session`                        |
+Use versions compatible with the Natalia distribution you target. The package
+manager installs the complete package closure under `.natalia/plugins`; do not
+ask users to create SDK symlinks or copy an entry file separately.
 
-`scope` is attribution, not sandboxing: a plugin's tools report the plugin as
-their owner with the scope it declared, the same way a built-in tool family
-does. The host's capability kernel owns the plugin's tools — unloading the
-plugin releases them from the kernel, and `tool.registered` names the plugin
-instead of an anonymous host.
+## 3. Manifest v2
 
-## 4. `definePlugin`
+```json
+{
+  "apiVersion": 2,
+  "id": "yourco.demo",
+  "version": "1.0.0",
+  "name": "Demo",
+  "description": "A demonstration plugin.",
+  "entry": "src/index.ts",
+  "scope": "workspace",
+  "provides": [],
+  "requires": [],
+  "optionalRequires": [],
+  "conflicts": [],
+  "dependencies": [],
+  "hooks": {},
+  "integrationPoints": ["tools", "commands"]
+}
+```
+
+- `id` matches `[a-z0-9][a-z0-9._-]*` and is the registry owner id.
+- `version` is a semantic version; `entry` is a local `.js`, `.mjs`, or `.ts`
+  file contained by the package.
+- `scope` is `process`, `workspace`, or `session`. It is lifecycle attribution,
+  not a security boundary.
+- `provides`, `requires`, and `optionalRequires` describe service contracts.
+- `conflicts` and `dependencies` participate in deterministic dependency
+  resolution. A dependency can set `optional` or `peer`.
+- `hooks` may name `preInstall`, `postInstall`, `preUninstall`, and
+  `postUninstall` package scripts.
+- `integrationPoints` must include every contribution API used by `setup`.
+
+Manifest validation, dependency checks, and configuration validation complete
+before activation. If `setup` fails, registrations made during that activation
+are rolled back and the plugin is audited as `failed`.
+
+## 4. Implement a plugin
 
 ```ts
 import { definePlugin } from "@natalia/plugin";
 
 export default definePlugin({
   manifest: {
-    apiVersion: 1,
-    id: "demo.plugin",
+    apiVersion: 2,
+    id: "yourco.demo",
     version: "1.0.0",
     name: "Demo",
-    capabilities: ["tools", "commands"],
+    description: "A demonstration plugin.",
+    entry: "src/index.ts",
+    scope: "workspace",
+    provides: [],
+    requires: [],
+    optionalRequires: [],
+    conflicts: [],
+    dependencies: [],
+    hooks: {},
+    integrationPoints: ["tools", "commands"],
   },
   setup(api) {
     api.tools.register({
       name: "echo",
-      description: "Echo the input back.",
+      description: "Echo the input.",
       requiresApproval: false,
       parameters: {
         type: "object",
@@ -100,204 +123,127 @@ export default definePlugin({
         required: ["text"],
         additionalProperties: false,
       },
-      async execute(input, context) {
-        return (input as { text?: string }).text ?? "";
+      async execute(input) {
+        return (input as { text: string }).text;
       },
     });
-
     api.commands.register({
-      name: "hello",
+      name: "demo.hello",
       title: "Say hello",
       run() {
-        console.log("hello from the demo plugin");
+        console.log("hello from yourco.demo");
       },
     });
-  },
-  dispose() {
-    // optional; run before the plugin's registrations are removed
   },
 });
 ```
 
-- **Names are namespaced for you.** A tool registered as `echo` becomes
-  `plugin_demo_plugin_echo`; a command named `hello` becomes
-  `plugin_demo_plugin_hello`. A plugin cannot shadow a built-in tool or
-  command by choosing its name, and unloading a plugin removes exactly the
-  names it registered.
-- **Dynamic plugin tools require approval unless trusted.** `requiresApproval`
-  defaults to `true` for plugin tools; a workspace that explicitly trusts a
-  plugin's own read-only declaration can mark it
-  (`readOnly: { "demo.plugin": true }` in the host), in which case tools that
-  declare `requiresApproval: false` stay approval-free.
-- **The `context` passed to `execute(input, context)`** (the
-  `ToolExecutionContext` from `@natalia/tools`):
-  - `workspaceRoot: string` — the current workspace root.
-  - `signal?: AbortSignal` — aborts when the turn is cancelled; long-running
-    tools should listen to it.
-  - `askQuestion?` — ask the user a question
-    (`{ title, questions: [{ id, header, question, options: [{ label,
-description? }], multiple?, custom? }] }`, answering `string[][]`,
-    outer array in questions order). Absent when the host has no interactive
-    channel.
-  - `subagents?` / `nativeTerminal?` / `sandboxes?` — the subagent, terminal
-    and sandbox registries, present when the host capability exists.
-  - `workspaceReadAuthorize?` / `sandboxMergeAuthorize?` — host policy hooks;
-    call them **before** touching the workspace or merging, a refusal throws.
-  - `settings?` — the runtime's network/browser policy
-    (`allowedHosts`/`allowedSchemes`/`allowLocalhost`/`allowPrivate`/
-    `deniedHosts`/`envAllowlist`, `webSearchEndpoint`,
-    `browserEnabled`/`browserBinary`, …). Read/write tools should respect
-    these boundaries — the host enforces the same settings for its own
-    network policy.
-  - `parentSessionID?` / `parentAgentID?` / `maxSubagentDepth?` — the calling
-    session, agent and the subagent depth budget.
-- **`setup` may be async.** If it throws, everything it registered is rolled
-  back and the load is recorded as `failed`.
-- **Every registration returns a disposer** (`const off = api.tools.register(...)`).
-  You do not need to call them — unload does — but you may use them to
-  unregister mid-flight.
+`echo` and `demo.hello` are the registered names. Duplicate names are rejected;
+choose globally meaningful names. Every registration returns a disposer, and
+registry unload also disposes all owned contributions. `setup` and plugin
+`dispose` may be asynchronous.
 
-## 5. Configuration
+Plugins can declare a Standard Schema `configSchema`. The validated value is
+available as `api.config`, sourced from `plugins.settings[pluginID]`. Invalid
+configuration prevents activation rather than creating a partial plugin.
 
-A plugin that needs configuration declares the schema for its own config, and
-the host passes the entry it was configured with:
+## 5. Lifecycle commands
 
-```json
-// .natalia/config.json
-{
-  "plugins": {
-    "settings": {
-      "demo.plugin": { "endpoint": "https://example.test", "retries": 5 }
-    }
-  }
-}
+The CLI is the authoritative maintenance entry point:
+
+```bash
+natalia plugin install @yourco/natalia-demo
+natalia plugin list
+natalia plugin disable yourco.demo
+natalia plugin enable yourco.demo
+natalia plugin uninstall yourco.demo
 ```
 
+Add `--workspace /path/to/project` to target another workspace.
+
+- `install <spec>` stages and validates one package, installs its dependency
+  closure, writes `.natalia/natalia.lock`, records the package configuration,
+  and enables the plugin in one transaction. A failed operation restores the
+  previous closure, lock, and configuration.
+- `list` returns one catalog for runtime defaults and installed packages with
+  `id`, `name`, `version`, `scope`, `enabled`, `installed`, `source`, and
+  `packageName`.
+- `disable <id>` and `enable <id>` only change desired activation state.
+- `uninstall <id>` removes an installed package's configuration, closure, and
+  lock entry. For a runtime-distributed default, uninstall durably disables it
+  because its files belong to the runtime distribution.
+- `doctor` audits installed state; `reconcile` repairs the desired package
+  closure. They are recovery commands, not extra installation steps.
+
+The runtime RPC methods `pluginUnload` and `pluginReload` operate on an already
+running registry. They do not replace the CLI's durable install, uninstall,
+enable, or disable operations.
+
+## 6. UI adapters
+
+A UI is a normal v2 plugin using the existing `adapters` integration point:
+
 ```ts
-import { z } from "zod";
+import { definePlugin } from "@natalia/plugin";
 
 export default definePlugin({
   manifest: {
-    apiVersion: 1,
-    id: "demo.plugin",
+    apiVersion: 2,
+    id: "yourco.ui.web",
     version: "1.0.0",
-    name: "Demo",
+    name: "Web UI",
+    description: "Example UI adapter.",
+    entry: "src/index.ts",
+    scope: "process",
+    provides: [],
+    requires: [],
+    optionalRequires: [],
+    conflicts: [],
+    dependencies: [],
+    hooks: {},
+    integrationPoints: ["adapters"],
   },
-  configSchema: z.object({
-    endpoint: z.string().url(),
-    retries: z.number().int().min(0).default(3),
-  }),
   setup(api) {
-    const config = api.config as { endpoint: string; retries: number };
-    // config.retries is 3 when the host omitted it — the schema's default.
+    let unsubscribe: (() => void) | undefined;
+    api.adapters.registerUi({
+      kind: "ui.web",
+      async mount(input) {
+        const commands = await input.commands.list();
+        render({ runtime: input.runtime, commands });
+        unsubscribe = input.events.subscribe((event) => update(event));
+      },
+      dispose() {
+        unsubscribe?.();
+        unmount();
+      },
+    });
   },
 });
 ```
 
-- **The plugin owns the schema, the host owns the value.** The runtime does not
-  interpret `plugins.settings`: it keys the record by plugin id and hands each
-  plugin its own entry. A plugin's config vocabulary is therefore versioned
-  with the plugin, not with the runtime's config schema.
-- **`api.config` is the validated value**, i.e. the schema's parsed output, so
-  declared defaults are already applied. A plugin without a `configSchema`
-  accepts anything and receives the raw value unchanged.
-- **Misconfiguration fails the load, loudly.** Validation runs _before_
-  `setup`, so an invalid entry never reaches a half-configured plugin: the load
-  throws with the failing paths (`- Invalid url (at endpoint)`), the audit
-  records `failed`, and nothing the plugin would have registered exists.
-- **Any Standard Schema library works** (zod, valibot, arktype) — the plugin
-  API duck-types the `~standard` interface rather than requiring this repo's
-  zod build, because a plugin is distributed independently. The schema must
-  validate synchronously; an async schema is a load error rather than a
-  silently unvalidated config.
-- **Conformance takes a config too**:
-  `runPluginConformance({ plugin, config: { endpoint: "https://example.test" } })`,
-  so a plugin's config contract is testable in isolation.
+The host injects three public ports: `runtime` is the `RuntimeClient` view,
+`events.subscribe` is the runtime event stream, and `commands.list` is the
+authoritative command catalog. Registration is inert until the host
+materializes that adapter. Unload calls its disposer through the same ownership
+and lifecycle path as every other contribution.
 
-## 6. Events
+The executable minimal package is
+`packages/example-ui-plugin`; its end-to-end materialization test is
+`apps/tui/test/example-ui-plugin.test.ts`. The production TUI uses the same
+`registerUi` port and materializer, so a new UI does not require a TUI-specific
+host branch.
 
-```ts
-setup(api) {
-  api.events.on((event) => {
-    if ((event as { type?: string }).type === "turn.finished") {
-      console.log("a turn finished");
-    }
-  });
-}
-```
+## 7. Audit and testing
 
-Listeners see every runtime event (the same `RuntimeEvent` objects the event
-stream carries, in-process, without serialization). A listener that throws is
-ignored — one bad plugin cannot break the dispatch loop. Events are the
-capability a plugin declares to observe; it is how a plugin reacts to the
-runtime without polling.
+The registry records `loaded`, `unloaded`, `denied`, and `failed` audit entries.
+Runtime diagnostics expose activation failures. Test at least these properties:
 
-## 7. Commands
+1. Registration creates no external resource before adapter materialization.
+2. Declared tools and commands retain their names and approval declarations.
+3. Setup failure leaves no contribution behind.
+4. Disable, unload, and uninstall leave no tool, service, command, listener,
+   resource, or UI surface owned by the plugin.
+5. Disposal is idempotent and releases event subscriptions and processes.
 
-```ts
-api.commands.register({
-  name: "deploy",
-  title: "Deploy the demo",
-  category: "Demo", // optional; defaults to the plugin's name
-  async run() {
-    await deploy();
-  },
-});
-```
-
-Commands are the plugin's UI surface: they appear in the palette (TUI and CLI
-alike), and the authoritative list is readable over RPC — `command.catalog`
-(`sdk.commandCatalog()`) — so a remote UI sees exactly the commands the
-registry owns. The palette renders synchronously through a process-wide bridge
-that assumes one runtime per process (true for the CLI and the TUI worker).
-
-## 8. Conformance
-
-`runPluginConformance` checks a plugin in isolation, against a throwaway tool
-registry:
-
-```ts
-import { runPluginConformance } from "@natalia/plugin";
-
-const results = await runPluginConformance({ plugin, allowed: ["tools"] });
-// [{ name: "manifest-and-setup", passed: true },
-//  { name: "tool-ownership", passed: true },
-//  { name: "approval-boundary", passed: true },
-//  { name: "owned-registration-cleanup", passed: true }]
-```
-
-Four checks: the manifest parses and `setup` runs; every tool the plugin
-registers is namespaced to it and offered to the kernel channel under that owned
-name; the dynamic-tool approval boundary holds (approval unless the workspace
-marks the plugin read-only — pass `readOnly: { "demo.plugin": true }` to check
-the trusted side); and after `unload` no registration — in the tool registry or
-the kernel channel — is left behind. If your plugin adds another kind of
-contribution, extend the conformance checks in `packages/plugin/test/` the same
-way before shipping it — the repo's gate is that a claim in this guide is either
-a test or a lie.
-
-## 9. Loading and auditing
-
-The registry records every lifecycle transition as a `PluginAudit`:
-`loaded`, `unloaded`, `denied` (a capability the plugin used but was not
-granted) or `failed` (manifest or `setup` error). The audit is readable through
-the registry (`registry.audit()`) and surfaced by the runtime; a plugin that
-fails to load produces a runtime diagnostic naming the plugin, so a broken
-plugin is visible in `sdk.diagnostics()` instead of silently missing.
-
-## 10. Dependency resolution (deployment note)
-
-A plugin that imports `@natalia/plugin` (the documented way to `definePlugin`)
-must be able to resolve it. Bun resolves bare specifiers by walking up from
-the _importing file_ for a `node_modules`/workspace context, and the plugin
-lives in the workspace's `.natalia/plugins` — outside the runtime's package
-tree. The deployment must therefore provide one of:
-
-- the SDK packages installed into the workspace's `node_modules` (or a
-  `node_modules/@natalia` symlink to the runtime's packages), or
-- a loader/runtime layout that makes `@natalia/*` resolvable from the plugin
-  directory.
-
-This is a deployment contract, not a runtime feature: the runtime does not
-intercept module resolution. A plugin whose import fails to resolve reports a
-`failed` load with the resolution error in the diagnostic.
+Repository plugins run `npm run typecheck`, `npm run test`, and
+`npm run guard:imports`; all `src/**/*.ts` files must stay at or below 400 lines.

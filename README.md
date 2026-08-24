@@ -20,6 +20,17 @@ Natalia CLI is a local-first TypeScript/Bun coding agent runtime. It provides a 
 
 Natalia is local-first. It does not provide cloud accounts, organization management, billing, browser login, OAuth login, or hosted synchronization.
 
+### Architecture
+
+Natalia has three layers: **kernel + runtime + plugin**. The kernel provides
+generic registry, lifecycle, ownership, event, and storage mechanisms. The
+runtime composes the product surface, including sessions, providers, policy,
+transport, and the CLI. Product features use one trusted, in-process plugin
+system; runtime defaults and user-installed packages have the same permissions
+and lifecycle. The CLI is the authoritative maintenance entry point. The TUI
+is a UI adapter plugin over the same `RuntimeClient`, event stream, and command
+catalog available to any other UI package.
+
 ### Requirements
 
 - Bun and Node-compatible npm tooling.
@@ -58,7 +69,7 @@ Never commit API keys or place them in prompts, diagnostic fixtures, screenshots
 - [API reference](docs/api-reference.md) — the stable HTTP/RPC protocol: auth, failure kinds, events, the write surface. Bilingual.
 - [Types reference](docs/types-reference.md) — complete field shapes of every result type, nested objects expanded.
 - [Config reference](docs/config-reference.md) — the full `.natalia/config.json` shape (types, optionality, defaults).
-- [Plugin guide](docs/plugin-guide.md) — in-process plugins (tools, events, commands) and the trust model.
+- [Plugin guide](docs/plugin-guide.md) — v2 single-package plugins, lifecycle commands, UI adapters, and the trust model.
 - [Provider guide](docs/provider-guide.md) — writing a provider adapter.
 - [CLI commands](docs/commands.md) — session, filesystem, daemon, diagnostics, recording.
 
@@ -73,6 +84,12 @@ NATALIA_TRANSPORT_TOKEN="local-token" npm run ts:cli -- serve 8787
 npm run ts:cli -- daemon 8787
 npm run ts:cli -- daemon-status
 npm run ts:cli -- daemon-stop
+
+npm run ts:cli -- plugin install @yourco/natalia-plugin
+npm run ts:cli -- plugin list
+npm run ts:cli -- plugin disable yourco.plugin
+npm run ts:cli -- plugin enable yourco.plugin
+npm run ts:cli -- plugin uninstall yourco.plugin
 ```
 
 The local transport supports authenticated HTTP/RPC/SSE, WebSocket, Unix sockets, and TLS. Keep transport tokens and certificates outside the repository.
@@ -121,7 +138,8 @@ minimal scope overlays and validated before writing.
 - Tool calls pass policy, schema, approval, and audit boundaries.
 - Sensitive PTY input is redacted from model context, transcript, checkpoint, and audit output.
 - Browser/network access follows configured host, scheme, localhost, and private-network policy.
-- Dynamic plugin tools fail closed and require runtime-controlled approval unless explicitly trusted as read-only.
+- Plugins are trusted in-process code. Tool approval follows each tool's
+  `requiresApproval` declaration and the runtime's normal policy path.
 
 ### Development
 
@@ -169,6 +187,15 @@ Natalia CLI 是一个本地优先的 TypeScript/Bun 编码 Agent 运行时。它
 
 Natalia 是 local-first runtime，不提供云账号、组织管理、账单、browser login、OAuth login 或 hosted sync。
 
+### 架构
+
+Natalia 只有三层：**kernel + runtime + plugin**。kernel 提供通用 registry、
+lifecycle、ownership、事件与存储机制；runtime 装配 session、provider、policy、
+transport 和 CLI 等产品面；产品功能统一使用一种可信的进程内插件体系。runtime
+默认随附插件与用户安装包具有相同权限和生命周期。CLI 是权威维护入口；TUI 是基于
+同一 `RuntimeClient`、事件流和 command catalog 的 UI adapter 插件，其他 UI 包与其
+使用相同通道。
+
 ### 环境要求
 
 - Bun 与兼容 Node 的 npm 工具链。
@@ -210,7 +237,7 @@ NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-2.5-pro" npm
   嵌套对象已展开。
 - [配置参考](docs/config-reference.zh-CN.md) — `.natalia/config.json` 的完整
   形状（类型、可选性、默认值）。
-- [插件指南](docs/plugin-guide.zh-CN.md) — 进程内插件（tools、events、commands）
+- [插件指南](docs/plugin-guide.zh-CN.md) — v2 单包插件、生命周期命令、UI adapter
   与信任模型。
 - [Provider 指南](docs/provider-guide.zh-CN.md) — 编写 provider adapter。
 - [CLI 命令参考](docs/commands.md) — session、filesystem、daemon、diagnostics、
@@ -227,6 +254,12 @@ NATALIA_TRANSPORT_TOKEN="local-token" npm run ts:cli -- serve 8787
 npm run ts:cli -- daemon 8787
 npm run ts:cli -- daemon-status
 npm run ts:cli -- daemon-stop
+
+npm run ts:cli -- plugin install @yourco/natalia-plugin
+npm run ts:cli -- plugin list
+npm run ts:cli -- plugin disable yourco.plugin
+npm run ts:cli -- plugin enable yourco.plugin
+npm run ts:cli -- plugin uninstall yourco.plugin
 ```
 
 本地 transport 支持带认证的 HTTP/RPC/SSE、WebSocket、Unix socket 与 TLS。transport token 和证书应保存在仓库之外。
@@ -275,7 +308,8 @@ agent modes、permission profiles 与 TUI preferences。设置以最小 scope ov
 - 所有 tool call 都经过 policy、schema、approval 与 audit 边界。
 - 敏感 PTY 输入不会进入模型上下文、transcript、checkpoint 或 audit output。
 - Browser/network 访问遵循配置的 host、scheme、localhost 与 private-network policy。
-- Dynamic plugin tool 默认 fail-closed；除非显式信任为 read-only，否则必须经过 runtime-controlled approval。
+- 插件是可信的进程内代码。工具审批尊重各工具的 `requiresApproval` 声明，并继续
+  经过 runtime 的常规 policy 路径。
 
 ### 开发
 
