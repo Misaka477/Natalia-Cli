@@ -1,4 +1,8 @@
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type {
+  ContributedCommand,
+  RuntimeEvent,
+  SessionID,
+} from "@natalia/contracts";
 import type {
   StatusContextLedger,
   StatusProvider,
@@ -13,6 +17,7 @@ export type RuntimeUiPluginInput = {
   runningCount(): Promise<number>;
   publish(event: RuntimeEvent): void;
   commands?: {
+    list(): ContributedCommand[];
     session(sessionID: SessionID): Promise<RuntimeUiCommandSession>;
     publish(sessionID: SessionID, event: RuntimeEvent): void;
     egressAdvisory: string;

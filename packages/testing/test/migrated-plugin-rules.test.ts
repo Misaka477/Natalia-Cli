@@ -850,6 +850,14 @@ test("TUI command adapters cannot restore the process-global command bridge", ()
     ],
     ["apps/tui/src/app/command-controller.tsx", "pluginCmd.run()"],
     ["apps/tui/src/component/CommandPalette.tsx", "cmd.run()"],
+    [
+      "apps/tui/src/component/PromptAutocomplete.tsx",
+      "runtimeSlashCommands.filter(Boolean)",
+    ],
+    [
+      "packages/runtime-ui-plugin/src/runtime-ui-plugin.ts",
+      "runtimeSlashCommands.map(render)",
+    ],
   ])
     expect(findMigratedPluginViolations(path, source)).toEqual([
       expect.objectContaining({ pluginID: "natalia-ui-command-host" }),

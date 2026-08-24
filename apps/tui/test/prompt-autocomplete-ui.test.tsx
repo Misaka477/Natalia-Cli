@@ -32,6 +32,18 @@ test("slash autocomplete selects an existing flow by keyboard", async () => {
             <PromptAutocomplete
               input={input}
               text={text}
+              commands={async () => [
+                {
+                  name: "task",
+                  title: "Run task",
+                  acceptsArguments: true,
+                },
+                {
+                  name: "flow",
+                  title: "Run flow",
+                  acceptsArguments: true,
+                },
+              ]}
               workflows={async () => [
                 {
                   kind: "task",

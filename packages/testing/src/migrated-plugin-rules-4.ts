@@ -319,6 +319,8 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       "apps/tui/src/app/App.tsx",
       "apps/tui/src/app/command-controller.tsx",
       "apps/tui/src/component/CommandPalette.tsx",
+      "apps/tui/src/component/PromptAutocomplete.tsx",
+      "packages/runtime-ui-plugin/src/runtime-ui-plugin.ts",
     ],
     forbidden: [
       {
@@ -328,6 +330,10 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
       {
         description: "direct plugin command closure execution",
         pattern: /\b(?:pluginCmd|cmd)\.run\s*\(/u,
+      },
+      {
+        description: "static runtime command vocabulary",
+        pattern: /\bruntimeSlashCommands\b/u,
       },
     ],
   },

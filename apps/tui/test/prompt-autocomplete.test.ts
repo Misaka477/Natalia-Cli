@@ -4,7 +4,6 @@ import {
   slashAutocompleteOptions,
   slashAutocompleteQuery,
   workflowAutocompleteQuery,
-  workflowCommandKinds,
   workflowDocumentUnavailableReason,
   workflowRunRequest,
 } from "../src/component/PromptAutocomplete";
@@ -31,22 +30,6 @@ test("workflow autocomplete recognizes task and flow arguments", () => {
     path: "nightly.yaml",
   });
   expect(workflowRunRequest("/flow ")).toBeUndefined();
-  expect(
-    workflowCommandKinds(
-      [
-        {
-          kind: "task",
-          path: "nightly.yaml",
-          id: "task_nightly",
-          displayName: "Nightly",
-          source: { kind: "workspace" },
-          launch: { ready: true },
-        },
-      ],
-      "",
-    ),
-  ).toEqual(["task"]);
-  expect(workflowCommandKinds([], "")).toEqual([]);
 });
 
 test("workflow launch readiness carries the host reason into autocomplete", () => {
@@ -70,14 +53,22 @@ test("file mention autocomplete only activates at an @ token boundary", () => {
 });
 
 test("slash autocomplete filters the shared runtime command vocabulary", () => {
+  const commands = [
+    { name: "model", title: "Model" },
+    { name: "models", title: "Models" },
+    { name: "skill-resource", title: "Skill resource" },
+    { name: "editor", title: "Editor" },
+  ];
   expect(
-    slashAutocompleteOptions("/mod").map((command) => command.name),
+    slashAutocompleteOptions("/mod", commands).map((command) => command.name),
   ).toEqual(expect.arrayContaining(["model", "models"]));
-  expect(slashAutocompleteOptions("/does-not-exist")).toEqual([]);
+  expect(slashAutocompleteOptions("/does-not-exist", commands)).toEqual([]);
   expect(
-    slashAutocompleteOptions("/skill-r").map((command) => command.name),
+    slashAutocompleteOptions("/skill-r", commands).map(
+      (command) => command.name,
+    ),
   ).toContain("skill-resource");
   expect(
-    slashAutocompleteOptions("/edi").map((command) => command.name),
+    slashAutocompleteOptions("/edi", commands).map((command) => command.name),
   ).toContain("editor");
 });

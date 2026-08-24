@@ -302,6 +302,14 @@ export async function configureCatalog(
               })) ?? 0),
           publish: ctx.ports.publish,
           commands: {
+            list: () =>
+              ctx.ports.commandCatalogEntries().map((command) => ({
+                name: command.name,
+                title: command.title,
+                description: command.description,
+                acceptsArguments: command.acceptsArguments,
+                category: command.category,
+              })),
             session: async (sessionID: SessionID) => {
               const exec = ctx.state.executionBySession.get(sessionID);
               if (!exec) throw new Error(`session not found: ${sessionID}`);

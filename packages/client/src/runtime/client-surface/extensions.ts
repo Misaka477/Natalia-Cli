@@ -37,6 +37,8 @@ export function createExtensionsSurface(
       return ctx.ports.commandCatalogEntries().map((command) => ({
         name: command.name,
         title: command.title,
+        description: command.description,
+        acceptsArguments: command.acceptsArguments,
         category: command.category,
       }));
     },

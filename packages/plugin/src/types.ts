@@ -93,6 +93,8 @@ export type PluginAdapterRegistryView = {
 export type PluginCommand = {
   name: string;
   title: string;
+  description?: string;
+  acceptsArguments?: boolean;
   category?: string;
   run(invocation?: PluginCommandInvocation): PluginCommandResult;
 };

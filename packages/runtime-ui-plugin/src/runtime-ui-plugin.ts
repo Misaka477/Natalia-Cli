@@ -1,5 +1,5 @@
 import type { Plugin, PluginCommandInvocation } from "@natalia/plugin";
-import { runtimeSlashCommands, type SessionID } from "@natalia/contracts";
+import type { SessionID } from "@natalia/contracts";
 import {
   createStatusSnapshotController,
   type RuntimeUiPluginInput,
@@ -46,10 +46,12 @@ export function createRuntimeUiPlugin(input: RuntimeUiPluginInput): Plugin {
           run: () =>
             [
               "Natalia TS7 agent shell commands:",
-              ...runtimeSlashCommands.map(
-                (command) =>
-                  `/${command.name}${command.acceptsArguments ? " <args>" : ""} - ${command.description}`,
-              ),
+              ...input
+                .commands!.list()
+                .map(
+                  (command) =>
+                    `/${command.name}${command.acceptsArguments ? " <args>" : ""} - ${command.description ?? command.title}`,
+                ),
               "Use Ctrl-C to cancel an active turn and Ctrl-D on an empty composer to exit.",
             ].join("\n"),
         });

@@ -36,6 +36,15 @@ test("runtime UI service follows plugin load and unload", async () => {
     runningCount: async () => 0,
     publish: (event) => events.push(event),
     commands: {
+      list: () => [
+        { name: "help", title: "Help" },
+        {
+          name: "task",
+          title: "Run task",
+          description: "Run an existing task document",
+          acceptsArguments: true,
+        },
+      ],
       session: async () => ({
         provider: { provider: "openai", model: "gpt-test" },
         providerSource: "config",

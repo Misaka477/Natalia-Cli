@@ -25,11 +25,33 @@ export function createTaskWorkflowPlugin(
       conflicts: [],
       dependencies: [],
       hooks: {},
-      integrationPoints: ["services"],
+      integrationPoints: ["services", "commands"],
     },
     setup(api) {
       controller = createTaskWorkflowController(input);
       api.services.provide(TASK_WORKFLOW_CONTROLLER_SERVICE, controller);
+      for (const kind of ["task", "flow"] as const)
+        api.commands.register({
+          name: kind,
+          title: `Run ${kind}`,
+          description: `Run an existing ${kind} document`,
+          acceptsArguments: true,
+          async run(invocation) {
+            if (invocation?.args.length)
+              return `${kind} execution is available through a workflow-capable runtime adapter`;
+            const documents = await controller?.documentCatalog();
+            const choices = (documents ?? []).filter(
+              (document) => document.kind === kind,
+            );
+            if (!choices.length) return `No ${kind} documents found.`;
+            return choices
+              .map(
+                (document) =>
+                  `${document.path}${document.launch.ready ? "" : ` (unavailable: ${document.launch.reason})`}`,
+              )
+              .join("\n");
+          },
+        });
     },
     dispose() {
       controller = undefined;

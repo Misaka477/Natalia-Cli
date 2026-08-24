@@ -1,7 +1,7 @@
 import type { TextareaRenderable } from "@opentui/core";
 import { useBindings } from "@opentui/keymap/solid";
 import {
-  runtimeSlashCommands,
+  type ContributedCommand,
   type MCPResourceCatalog,
   type RuntimeAgentCatalogEntry,
   type RuntimeWorkspaceFileEntry,
@@ -21,11 +21,10 @@ import { useKeybinds } from "../context/keybind";
 import { darkTheme } from "../theme/theme";
 
 type AutocompleteOption =
-  | { kind: "slash"; command: (typeof runtimeSlashCommands)[number] }
+  | { kind: "slash"; command: ContributedCommand }
   | { kind: "mention"; file: RuntimeWorkspaceFileEntry }
   | { kind: "agent"; agent: RuntimeAgentCatalogEntry }
   | { kind: "resource"; resource: MCPResourceCatalog }
-  | { kind: "workflow-command"; workflowKind: "task" | "flow" }
   | { kind: "workflow"; workflow: WorkflowDocumentChoice };
 
 export function workflowAutocompleteQuery(text: string) {
@@ -60,30 +59,21 @@ export function workflowDocumentUnavailableReason(
   return workflow.launch.ready ? undefined : workflow.launch.reason;
 }
 
-export function workflowCommandKinds(
-  workflows: WorkflowDocumentChoice[],
-  query: string,
-) {
-  return (["task", "flow"] as const).filter(
-    (kind) =>
-      workflows.some((workflow) => workflow.kind === kind) &&
-      (kind.includes(query) ||
-        `Run an existing ${kind}`.toLowerCase().includes(query)),
-  );
-}
-
 export function slashAutocompleteQuery(text: string) {
   if (!/^\/\S*$/u.test(text)) return undefined;
   return text.slice(1).toLowerCase();
 }
 
-export function slashAutocompleteOptions(text: string) {
+export function slashAutocompleteOptions(
+  text: string,
+  commands: ContributedCommand[],
+) {
   const query = slashAutocompleteQuery(text);
   if (query === undefined) return [];
-  return runtimeSlashCommands.filter(
+  return commands.filter(
     (command) =>
       command.name.includes(query) ||
-      command.description.toLowerCase().includes(query),
+      (command.description ?? command.title).toLowerCase().includes(query),
   );
 }
 
@@ -101,6 +91,7 @@ export function PromptAutocomplete(props: {
   agents?(): Promise<RuntimeAgentCatalogEntry[]>;
   mcpCatalog?(): Promise<{ resources: MCPResourceCatalog[] }>;
   workflows?(): Promise<WorkflowDocumentChoice[]>;
+  commands?(): Promise<ContributedCommand[]>;
   attach(path: string): void;
   mentionAgent(name: string): void;
   mentionResource(resource: MCPResourceCatalog): void;
@@ -147,6 +138,11 @@ export function PromptAutocomplete(props: {
           : undefined,
     async (active) => (active && props.workflows ? props.workflows() : []),
   );
+  const [commands] = createResource(
+    () => (slashQuery() !== undefined ? slashQuery() : undefined),
+    async (active) =>
+      active !== undefined && props.commands ? props.commands() : [],
+  );
   const options = createMemo<AutocompleteOption[]>(() =>
     workflowQuery() !== undefined
       ? (workflows() ?? [])
@@ -161,18 +157,12 @@ export function PromptAutocomplete(props: {
           })
           .map((workflow) => ({ kind: "workflow" as const, workflow }))
       : slashQuery() !== undefined
-        ? [
-            ...workflowCommandKinds(workflows() ?? [], slashQuery()!).map(
-              (workflowKind) => ({
-                kind: "workflow-command" as const,
-                workflowKind,
-              }),
-            ),
-            ...slashAutocompleteOptions(props.text()).map((command) => ({
+        ? slashAutocompleteOptions(props.text(), commands() ?? []).map(
+            (command) => ({
               kind: "slash" as const,
               command,
-            })),
-          ]
+            }),
+          )
         : [
             ...(agents() ?? []).map((agent) => ({
               kind: "agent" as const,
@@ -240,17 +230,15 @@ export function PromptAutocomplete(props: {
     if (item.kind === "agent") return `@${item.agent.name}`;
     if (item.kind === "resource") return `@${item.resource.name}`;
     if (item.kind === "slash") return `/${item.command.name}`;
-    if (item.kind === "workflow-command") return `/${item.workflowKind}`;
     return item.workflow.displayName;
   }
 
   function optionDescription(item: AutocompleteOption) {
-    if (item.kind === "slash") return item.command.description;
+    if (item.kind === "slash")
+      return item.command.description ?? item.command.title;
     if (item.kind === "mention") return "workspace file";
     if (item.kind === "agent") return item.agent.description || "agent";
     if (item.kind === "resource") return item.resource.uri;
-    if (item.kind === "workflow-command")
-      return `Run an existing ${item.workflowKind}`;
     const unavailable = workflowDocumentUnavailableReason(item.workflow);
     return !unavailable
       ? `${item.workflow.id} · ${item.workflow.path}`
@@ -269,17 +257,17 @@ export function PromptAutocomplete(props: {
     const text =
       item.kind === "slash"
         ? `/${item.command.name}${item.command.acceptsArguments ? " " : ""}`
-        : item.kind === "workflow-command"
-          ? `/${item.workflowKind} `
-          : item.kind === "workflow"
-            ? `/${item.workflow.kind} ${item.workflow.path}`
-            : props
-                .text()
-                .replace(
-                  /@(\S*)$/u,
-                  `@${item.kind === "mention" ? item.file.path : item.kind === "agent" ? item.agent.name : item.resource.name} `,
-                );
-    setDismissed(item.kind === "workflow-command" ? undefined : text);
+        : item.kind === "workflow"
+          ? `/${item.workflow.kind} ${item.workflow.path}`
+          : props
+              .text()
+              .replace(
+                /@(\S*)$/u,
+                `@${item.kind === "mention" ? item.file.path : item.kind === "agent" ? item.agent.name : item.resource.name} `,
+              );
+    setDismissed(
+      item.kind === "slash" && item.command.acceptsArguments ? undefined : text,
+    );
     if (item.kind === "mention") props.attach(item.file.path);
     if (item.kind === "agent") props.mentionAgent(item.agent.name);
     if (item.kind === "resource") props.mentionResource(item.resource);

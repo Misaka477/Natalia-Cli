@@ -1732,6 +1732,21 @@ function Shell(props: {
                   workspaceFiles={props.backend.workspaceFiles}
                   agents={props.backend.agents}
                   mcpCatalog={props.backend.mcpCatalog}
+                  commands={() =>
+                    (props.commands ?? runtimeCommandHost(props.backend))
+                      .list()
+                      .then((commands) => [
+                        ...commands,
+                        {
+                          name: "editor",
+                          title: "External editor",
+                          description:
+                            "Open the composer draft in an external editor",
+                          acceptsArguments: true,
+                          category: "tui",
+                        },
+                      ])
+                  }
                   workflows={
                     props.workspaceRoot && props.backend.documentCatalog
                       ? async () =>

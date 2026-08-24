@@ -80,6 +80,7 @@ test("task workflow controller exists only while the plugin is loaded", async ()
     provides: [TASK_WORKFLOW_CONTROLLER_SERVICE],
     requires: [],
     dependencies: [],
+    integrationPoints: ["services", "commands"],
   });
   expect(services.has(TASK_WORKFLOW_CONTROLLER_SERVICE)).toBe(false);
 
@@ -87,7 +88,12 @@ test("task workflow controller exists only while the plugin is loaded", async ()
   expect(
     services.get(TASK_WORKFLOW_CONTROLLER_SERVICE) as TaskWorkflowController,
   ).toHaveProperty("documentCatalog");
+  expect(registry.commands().map((command) => command.name)).toEqual([
+    "task",
+    "flow",
+  ]);
 
   await registry.unload(TASK_WORKFLOW_PLUGIN_ID);
   expect(services.has(TASK_WORKFLOW_CONTROLLER_SERVICE)).toBe(false);
+  expect(registry.commands()).toEqual([]);
 });
