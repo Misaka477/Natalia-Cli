@@ -124,8 +124,16 @@ test("session store service is dependency-bound and closes on unload", async () 
   expect(controller).toBeDefined();
   await controller.init();
   expect(controller.status()).toEqual({ initialized: true, mode: "sqlite" });
+  const sessionsCommand = registry
+    .commands()
+    .find((command) => command.name === "sessions");
+  expect(sessionsCommand).toBeDefined();
+  expect(await sessionsCommand?.run()).toContain("ses_host");
 
   await registry.unload(SESSION_STORE_PLUGIN_ID);
   expect(services.has(SESSION_STORE_CONTROLLER_SERVICE)).toBe(false);
+  expect(
+    registry.commands().some((command) => command.name === "sessions"),
+  ).toBe(false);
   expect(controller.status()).toEqual({ initialized: false, mode: "sqlite" });
 });

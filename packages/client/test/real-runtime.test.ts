@@ -44,6 +44,7 @@ import {
   PDF_PLUGIN_ID,
   PROVIDER_MODEL_PLUGIN_ID,
   SANDBOX_CONTROLLER_PLUGIN_ID,
+  SESSION_STORE_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
   TEAM_PLUGIN_ID,
   TERMINAL_CONTROLLER_PLUGIN_ID,
@@ -3847,7 +3848,7 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
   );
   await writeFile(
     join(pluginRoot, "index.ts"),
-    "export default { setup(api) { api.commands.register({ name: 'sync', title: 'Sync everything', run() {} }) } }",
+    "export default { setup(api) { api.commands.register({ name: 'sync', title: 'Sync everything', run(input) { return `synced ${input.args.join(',')}` } }) } }",
   );
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -3861,7 +3862,8 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
       },
     },
   });
-  client.start(() => undefined);
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
   await client.submit("load plugins");
 
   // The authoritative surface, which an external UI reads over RPC.
@@ -3875,6 +3877,10 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
   // The synchronous bridge the TUI palette renders from. It was permanently
   // empty before, so the palette could never show a plugin command.
   expect(getPluginCommands().map((command) => command.name)).toContain("sync");
+  await client.submit("/sync alpha beta");
+  expect(
+    events.filter((event) => event.type === "content.delta").at(-1)?.text,
+  ).toBe("synced alpha,beta");
   await client.dispose?.();
 });
 
@@ -5075,6 +5081,14 @@ test("sessions slash command reports durable event counts", async () => {
   expect(output?.type).toBe("content.delta");
   expect(output?.text).toContain("ses_runtime_sessions_command");
   expect(output?.text).toMatch(/\s[1-9]\d* events$/u);
+  expect(
+    (await client.commandCatalog?.())?.map((command) => command.name),
+  ).toContain("sessions");
+  expect(
+    (await client.plugins?.())?.find(
+      (plugin) => plugin.id === SESSION_STORE_PLUGIN_ID,
+    )?.capabilities,
+  ).toContain("commands");
 });
 
 test("model slash commands share catalog and durable selection behavior", async () => {

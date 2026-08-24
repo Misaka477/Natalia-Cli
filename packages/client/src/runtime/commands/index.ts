@@ -42,9 +42,6 @@ export type SlashDeps = {
   selectedAgent: SessionExecutionState["selectedAgent"];
   activeSkill: SessionExecutionState["activeSkill"];
   commandContext: SessionExecutionState["context"];
-  sessionStoreController: ReturnType<
-    RuntimeContext["ports"]["getSessionStoreController"]
-  >;
   sandboxController: SessionExecutionState["provider"] extends never
     ? never
     : ReturnType<RuntimeContext["ports"]["getSandboxController"]>;
@@ -109,11 +106,37 @@ export function createCommands(ctx: RuntimeContext) {
     commandExec: SessionExecutionState = ctx.ports.getActiveExec()!,
   ) {
     if (!text.trim().startsWith("/")) return false;
+    const trimmed = text.trim();
+    const [commandName, ...args] = trimmed.slice(1).split(/\s+/u);
+    const pluginCommand = commandCatalogEntries().find(
+      (command) => command.name === commandName,
+    );
+    if (pluginCommand) {
+      const output = await pluginCommand.run({
+        raw: trimmed,
+        args,
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        sessionID: commandExec.session.id,
+        signal,
+      });
+      if (typeof output === "string")
+        ctx.ports.publishForSession(commandExec, {
+          type: "content.delta",
+          id,
+          text: output,
+        });
+      ctx.ports.publishForSession(commandExec, { type: "content.done", id });
+      ctx.ports.publishForSession(commandExec, {
+        type: "turn.finished",
+        id,
+        stopReason: "done",
+      });
+      return true;
+    }
     const {
       getStatusController,
       getProviderSource,
       getWorkspaceRoot,
-      getSessionStoreController,
       getSandboxController,
       getAgentRegistry,
       setPaused,
@@ -154,7 +177,6 @@ export function createCommands(ctx: RuntimeContext) {
       selectedAgent: commandExec.selectedAgent,
       activeSkill: commandExec.activeSkill,
       commandContext,
-      sessionStoreController: getSessionStoreController(),
       sandboxController: getSandboxController(),
       agentRegistry: getAgentRegistry(),
       workspaceRoot: getWorkspaceRoot(),

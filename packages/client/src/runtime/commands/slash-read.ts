@@ -99,19 +99,6 @@ export async function tryReadSlashCommand(deps: SlashDeps): Promise<boolean> {
     deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
     return true;
   }
-  if (trimmed === "/sessions") {
-    const listing = (await deps.sessionStoreController.list())
-      .map((item) => `${item.id}  ${item.title}  ${item.events} events`)
-      .join("\n");
-    deps.publish({
-      type: "content.delta",
-      id: deps.id,
-      text: listing || "no TS sessions found in this workspace",
-    });
-    deps.publish({ type: "content.done", id: deps.id });
-    deps.publish({ type: "turn.finished", id: deps.id, stopReason: "done" });
-    return true;
-  }
   if (/^\/(?:checkpoint|checkpoints|rollback)\b/u.test(trimmed)) {
     const controller = await deps.initializeCheckpointController(
       deps.commandExec,

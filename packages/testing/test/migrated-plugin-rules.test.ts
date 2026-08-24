@@ -635,6 +635,10 @@ test("session store migration rejects client-owned implementations", () => {
     ],
     ["packages/client/src/runtime/main.ts", "sessionStoreController?.sqlite()"],
     ["packages/client/src/runtime/main.ts", "sessionStoreController.json()"],
+    [
+      "packages/client/src/runtime/commands/slash-read.ts",
+      'if (trimmed === "/sessions") return true',
+    ],
   ] as const)
     expect(findMigratedPluginViolations(path, source)).toContainEqual(
       expect.objectContaining({ pluginID: "natalia-session-store" }),

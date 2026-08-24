@@ -48,7 +48,7 @@ export function createSessionStoreControllerPlugin(input: {
         },
       ],
       hooks: {},
-      integrationPoints: ["services"],
+      integrationPoints: ["services", "commands"],
     },
     setup(api) {
       const attachments =
@@ -57,6 +57,18 @@ export function createSessionStoreControllerPlugin(input: {
         throw new Error("attachment service unavailable (natalia-attachment)");
       controller = createSessionStoreController({ ...input, attachments });
       api.services.provide(SESSION_STORE_CONTROLLER_SERVICE, controller);
+      api.commands.register({
+        name: "sessions",
+        title: "List sessions",
+        async run() {
+          if (!controller?.status().initialized)
+            throw new Error("session store is not initialized");
+          const listing = (await controller.list())
+            .map((item) => `${item.id}  ${item.title}  ${item.events} events`)
+            .join("\n");
+          return listing || "no TS sessions found in this workspace";
+        },
+      });
     },
     async dispose() {
       await controller?.close();

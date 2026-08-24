@@ -139,6 +139,7 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
     targets: [
       "packages/client/test/real-runtime.test.ts",
       "packages/client/test/session-store-controller.test.ts",
+      "packages/client/src/runtime/commands/slash-read.ts",
     ],
     forbidden: [
       {
@@ -148,6 +149,10 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
       {
         description: "session store backend accessor",
         pattern: /\bcontroller\.(?:json|sqlite)\s*\(/u,
+      },
+      {
+        description: "client-owned session command implementation",
+        pattern: /trimmed\s*===\s*["']\/sessions["']/u,
       },
     ],
   },

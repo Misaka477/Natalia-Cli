@@ -94,8 +94,16 @@ export type PluginCommand = {
   name: string;
   title: string;
   category?: string;
-  run(): void | Promise<void>;
+  run(invocation?: PluginCommandInvocation): PluginCommandResult;
 };
+export type PluginCommandInvocation = {
+  raw: string;
+  args: string[];
+  workspaceRoot: string;
+  sessionID?: string;
+  signal?: AbortSignal;
+};
+export type PluginCommandResult = string | void | Promise<string | void>;
 export type PluginContributionKind =
   | "tools"
   | "commands"
