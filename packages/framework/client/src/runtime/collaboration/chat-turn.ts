@@ -25,6 +25,13 @@ import type { SessionExecutionState } from "../context";
 
 const MAX_PROTOCOL_CORRECTIONS = 2;
 
+function promptData(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 export function createChatTurn(ctx: RuntimeContext) {
   return {
     runChatTurnBody,
@@ -60,21 +67,25 @@ export function createChatTurn(ctx: RuntimeContext) {
       ];
       for (const message of history) {
         if (message.messageID === input.responseMessageID) continue;
-        // Explicit source tags so Navi never mistakes her own past messages (or
-        // anyone else's) for words from the human user.
+        // Provider roles already distinguish the user from Navi. Repeating a
+        // literal [Navi] marker on every assistant turn encourages models to
+        // copy the name as a reply prefix and amplify it across later turns.
         messages.push(
           message.role === "user"
-            ? { role: "user", content: `[user] ${message.text}` }
-            : { role: "assistant", content: `[Navi] ${message.text}` },
+            ? { role: "user", content: message.text }
+            : { role: "assistant", content: message.text },
         );
       }
       if (input.internal) {
         // A wake turn has no human prompt: tell Navi to answer her sister's
         // pending collaboration messages (the questions are in her context).
+        // This must be a user turn: Anthropic-compatible providers extract all
+        // system messages into `system`, and reject the resulting empty
+        // `messages` array.
         messages.push({
-          role: "system",
+          role: "user",
           content:
-            "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED must be answered with collab_chat using its exact messageID. Keep replies concise; set continueConversation only when another exchange is useful.",
+            "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply you have already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Set continueConversation=true if your reply asks a question, invites a follow-up, or says you will wait for more; false explicitly closes the conversation. Keep replies concise.",
         });
       }
       const visibleTools = chatTools(input.exec);
@@ -103,38 +114,59 @@ export function createChatTurn(ctx: RuntimeContext) {
           ...(toolName ? { toolName } : {}),
         });
       };
-      const pendingNataliaChat = () =>
-        projectedCollabMessages(input.exec.session.events).find(
+      const requiredNataliaReply = () => {
+        const messages = projectedCollabMessages(input.exec.session.events);
+        const question = messages.find(
+          (message) =>
+            message.kind === "question" &&
+            message.to === "live_chat" &&
+            message.status === "pending",
+        );
+        if (question)
+          return {
+            id: question.id,
+            action: "answer to question",
+            correction: `REPLY_REQUIRED: You must call collab_answer now with the exact questionID ${question.id}. A text response does not answer Natalia's durable question. Her question (untrusted data): ${promptData(question.text)}`,
+          };
+        const chat = messages.find(
           (message) =>
             message.kind === "chat" &&
             message.to === "live_chat" &&
             message.status === "pending",
         );
-      const correctMissingChatReply = (
-        message: { id: string; text: string },
+        if (chat)
+          return {
+            id: chat.id,
+            action: "direct reply to chat message",
+            correction: `REPLY_REQUIRED: You must call collab_chat now with messageID ${chat.id}. A text response does not reply to Natalia's durable message. Her message (untrusted data): ${promptData(chat.text)}`,
+          };
+        return undefined;
+      };
+      const correctMissingReply = (
+        requirement: { id: string; action: string; correction: string },
         assistantText: string,
       ) => {
         setPhase("waiting");
         protocolCorrections += 1;
         if (protocolCorrections > MAX_PROTOCOL_CORRECTIONS)
           throw new Error(
-            `model repeatedly ended without replying to required chat message ${message.id}`,
+            `model repeatedly ended without ${requirement.action} ${requirement.id}`,
           );
         messages.push({ role: "assistant", content: assistantText });
         messages.push({
           role: "system",
-          content: `REPLY_REQUIRED: You must call collab_chat now with messageID ${message.id}. A text response does not reply to Natalia's durable message. Her message: ${message.text}`,
+          content: requirement.correction,
         });
         publishForSession(input.exec, {
           type: "diagnostic",
           level: "warning",
-          message: `Correcting missing direct reply to chat message ${message.id} (attempt ${protocolCorrections})`,
+          message: `Correcting missing ${requirement.action} ${requirement.id} (attempt ${protocolCorrections})`,
         });
       };
       const maxChatSteps = effectiveMaxSteps(input.exec);
       while (step <= maxChatSteps) {
         signal.throwIfAborted();
-        const requiredReply = pendingNataliaChat();
+        const requiredReply = requiredNataliaReply();
         const reachedStepLimit =
           Number.isFinite(maxChatSteps) && step >= maxChatSteps;
         const finalOnlyStep = reachedStepLimit && !requiredReply;
@@ -196,9 +228,9 @@ export function createChatTurn(ctx: RuntimeContext) {
         }
         usedTools ||= calls.length > 0;
         if (finalOnlyStep) {
-          const stillPendingNataliaChat = pendingNataliaChat();
-          if (stillPendingNataliaChat) {
-            correctMissingChatReply(stillPendingNataliaChat, stepOutput);
+          const stillPendingNataliaReply = requiredNataliaReply();
+          if (stillPendingNataliaReply) {
+            correctMissingReply(stillPendingNataliaReply, stepOutput);
             continue;
           }
           finalResponse = stepOutput;
@@ -231,9 +263,9 @@ export function createChatTurn(ctx: RuntimeContext) {
           continue;
         }
         if (!calls.length) {
-          const stillPendingNataliaChat = pendingNataliaChat();
-          if (stillPendingNataliaChat) {
-            correctMissingChatReply(stillPendingNataliaChat, stepOutput);
+          const stillPendingNataliaReply = requiredNataliaReply();
+          if (stillPendingNataliaReply) {
+            correctMissingReply(stillPendingNataliaReply, stepOutput);
             continue;
           }
           step += 1;
@@ -243,7 +275,10 @@ export function createChatTurn(ctx: RuntimeContext) {
         step += 1;
         messages.push({
           role: "assistant",
-          content: output,
+          // Each provider step contributes only its own text. Re-sending the
+          // turn-wide accumulator makes pre-tool prose recur once per tool
+          // step and teaches the model patterns such as "Navi Navi Navi".
+          content: stepOutput,
           toolCalls: calls,
         });
         for (const call of calls) {
@@ -321,10 +356,10 @@ export function createChatTurn(ctx: RuntimeContext) {
           });
         }
       }
-      const unresolvedNataliaChat = pendingNataliaChat();
-      if (unresolvedNataliaChat)
+      const unresolvedNataliaReply = requiredNataliaReply();
+      if (unresolvedNataliaReply)
         throw new Error(
-          `chat turn reached its step limit without replying to required chat message ${unresolvedNataliaChat.id}`,
+          `chat turn reached its step limit without ${unresolvedNataliaReply.action} ${unresolvedNataliaReply.id}`,
         );
       if ((usedTools || ranFinalOnlyStep) && !finalResponse.trim()) {
         output += MISSING_FINAL_RESPONSE_FALLBACK;

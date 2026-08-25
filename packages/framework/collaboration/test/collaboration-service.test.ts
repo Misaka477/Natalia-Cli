@@ -128,3 +128,31 @@ test("service closes chat at the automatic round limit", async () => {
     replyRequired: false,
   });
 });
+
+test("new chats reject continueConversation because they always request one reply", async () => {
+  const { service } = setup();
+
+  await expect(
+    service.send({
+      sessionID,
+      kind: "chat",
+      from: "live_chat",
+      text: "Are you free?",
+      continueConversation: false,
+    }),
+  ).rejects.toThrow(
+    "continueConversation is only valid when replying with replyToID",
+  );
+
+  const first = await service.send({
+    sessionID,
+    kind: "chat",
+    from: "live_chat",
+    text: "Are you free?",
+  });
+  expect(first.message).toMatchObject({
+    kind: "chat",
+    round: 1,
+    expectsReply: true,
+  });
+});

@@ -135,6 +135,10 @@ function buildMessage(
     );
     if (input.replyToID) {
       validateReply(target, input.from, "chat");
+    } else if (input.continueConversation !== undefined) {
+      throw new Error(
+        "continueConversation is only valid when replying with replyToID; a new chat always requests one reply",
+      );
     } else if (pendingIncoming) {
       throw new Error(`reply required for chat message ${pendingIncoming.id}`);
     } else if (pendingOutgoing) {

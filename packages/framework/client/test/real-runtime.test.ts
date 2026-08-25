@@ -12378,13 +12378,21 @@ test("the live work chat read and rollback surface a durable conversation", asyn
 
 test("chat submit runs a live work chat turn and persists the conversation", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-chat-turn-"));
+  const requests: Array<Array<{ role: string; content: string }>> = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_chat_turn",
     provider: {
       provider: "test",
       model: "test",
-      async *stream() {
+      async *stream(request) {
+        requests.push(
+          (
+            request as {
+              messages: Array<{ role: string; content: string }>;
+            }
+          ).messages,
+        );
         yield {
           type: "content" as const,
           text: "the main agent is running step 2",
@@ -12425,6 +12433,14 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
       }),
     ],
   );
+  await client.chatSubmit!({ text: "and now" });
+  expect(
+    requests.at(-1)?.filter((message) => message.role !== "system"),
+  ).toEqual([
+    { role: "user", content: "what is the agent doing" },
+    { role: "assistant", content: "the main agent is running step 2" },
+    { role: "user", content: "and now" },
+  ]);
   await client.dispose?.();
 });
 
@@ -12805,6 +12821,8 @@ test("the chat can query the main agent's live status with session_snapshot", as
   const root = await mkdtemp(join(tmpdir(), "natalia-chat-snapshot-"));
   let streamCalls = 0;
   let snapshotToolResult = "";
+  let finalStepAssistantTexts: string[] = [];
+  let chatSystemPrompt = "";
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_chat_snapshot",
@@ -12813,7 +12831,12 @@ test("the chat can query the main agent's live status with session_snapshot", as
       model: "test",
       async *stream(request) {
         streamCalls++;
+        const requestMessages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages;
+        chatSystemPrompt = requestMessages[0]?.content ?? "";
         if (streamCalls === 1) {
+          yield { type: "content" as const, text: "Let me check." };
           yield {
             type: "tool_call" as const,
             calls: [
@@ -12826,14 +12849,27 @@ test("the chat can query the main agent's live status with session_snapshot", as
           };
           return;
         }
+        if (streamCalls === 2) {
+          yield { type: "content" as const, text: "Checking once more." };
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_2",
+                name: "session_snapshot",
+                arguments: "{}",
+              },
+            ],
+          };
+          return;
+        }
         snapshotToolResult = String(
-          (
-            request as {
-              messages: Array<{ role: string; content: string }>;
-            }
-          ).messages.filter((message) => message.role === "tool")[0]?.content ??
-            "",
+          requestMessages.filter((message) => message.role === "tool")[0]
+            ?.content ?? "",
         );
+        finalStepAssistantTexts = requestMessages
+          .filter((message) => message.role === "assistant")
+          .map((message) => message.content);
         yield {
           type: "content" as const,
           text: "the main agent is running step 2",
@@ -12846,6 +12882,23 @@ test("the chat can query the main agent's live status with session_snapshot", as
   await client.chatSubmit!({ text: "what is the main agent doing" });
   // The read-only snapshot tool returned the live status to the model.
   expect(snapshotToolResult).toContain("agentStatus");
+  expect(finalStepAssistantTexts).toEqual([
+    "Let me check.",
+    "Checking once more.",
+  ]);
+  expect(chatSystemPrompt).toContain(
+    "Speak directly to the user in first person",
+  );
+  expect(chatSystemPrompt).toContain(
+    "Status and snapshot data always describe Natalia, never you",
+  );
+  expect(chatSystemPrompt).toContain(
+    "a Natalia chat marked REPLY_REQUIRED is itself a reply you have already received",
+  );
+  expect(chatSystemPrompt).toContain("set continueConversation=true");
+  expect(chatSystemPrompt).toContain(
+    "false means you intentionally close the conversation",
+  );
   await client.dispose?.();
 });
 
@@ -12853,7 +12906,7 @@ test("the collaboration channel round-robins between Navi and the main agent", a
   const root = await mkdtemp(join(tmpdir(), "natalia-collab-"));
   let mainPrompt = "";
   let chatPrompt2 = "";
-  let mainResponded = false;
+  let mainStreamCount = 0;
   let naviSuggested = false;
   const rrEvents: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
@@ -12873,12 +12926,25 @@ test("the collaboration channel round-robins between Navi and the main agent", a
         const naviTurn = system.includes("<natalia_collaborations>");
         if (!naviTurn) {
           mainPrompt = system;
-          if (!mainResponded) {
-            mainResponded = true;
+          mainStreamCount++;
+          if (mainStreamCount === 1) {
+            yield { type: "content" as const, text: "I will use that." };
+            yield { type: "done" as const };
+            return;
+          }
+          if (mainStreamCount === 2) {
             // Natalia's wake turn: adopt Navi's suggestion.
-            const match = /\[Navi\] (collab:suggestion:[a-z0-9]+:[0-9]+)/u.exec(
-              system,
+            const correction = String(
+              (
+                request as {
+                  messages: Array<{ role: string; content: string }>;
+                }
+              ).messages.at(-1)?.content ?? "",
             );
+            const match =
+              /messageID (collab:suggestion:[a-z0-9]+:[0-9]+)/u.exec(
+                correction,
+              );
             yield {
               type: "tool_call" as const,
               calls: [
@@ -12933,6 +12999,7 @@ test("the collaboration channel round-robins between Navi and the main agent", a
   expect(mainPrompt).toContain("your younger sister");
   expect(mainPrompt).toContain("<navi_collaborations>");
   expect(mainPrompt).toContain("prefer echo over cat for the demo");
+  expect(mainPrompt).toContain("REPLY_REQUIRED");
   // Wait until the wake main turn's decision lands, so Navi's next prompt is
   // built after the outcome exists (the round-robin race).
   await waitForAsync(
@@ -12948,6 +13015,13 @@ test("the collaboration channel round-robins between Navi and the main agent", a
   // Navi sees the outcome without the user prompting her.
   expect(chatPrompt2).toContain("Outcomes of your suggestions to Natalia");
   expect(chatPrompt2).toContain("adopted");
+  expect(
+    rrEvents.some(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("Correcting missing response to suggestion"),
+    ),
+  ).toBe(true);
   await client.dispose?.();
 }, 20000);
 
@@ -12955,6 +13029,7 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
   const root = await mkdtemp(join(tmpdir(), "natalia-navi-wake-"));
   let streamCalls = 0;
   let naviStreamCount = 0;
+  let firstNaviMessages: Array<{ role: string; content: string }> = [];
   const mainPrompts: string[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -12992,6 +13067,18 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
         }
         naviStreamCount++;
         if (naviStreamCount === 1) {
+          firstNaviMessages = (
+            request as {
+              messages: Array<{ role: string; content: string }>;
+            }
+          ).messages.map((message) => ({ ...message }));
+        }
+        if (naviStreamCount === 1) {
+          yield { type: "content" as const, text: "yes, echo is safe" };
+          yield { type: "done" as const };
+          return;
+        }
+        if (naviStreamCount === 2) {
           const match = /questionID: (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
             system,
           );
@@ -13032,6 +13119,23 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
   expect(answer).toMatchObject({
     message: { kind: "answer", text: "yes, echo is safe" },
   });
+  expect(
+    firstNaviMessages.filter((message) => message.role !== "system"),
+  ).toEqual([
+    expect.objectContaining({
+      role: "user",
+      content: expect.stringContaining(
+        "Natalia (the main agent) sent you collaboration messages",
+      ),
+    }),
+  ]);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("Correcting missing answer to question"),
+    ),
+  ).toBe(true);
   // The answer reaches Natalia's own context on her next turn (the 轮巡).
   await client.submit("continue");
   await waitForAsync(async () => mainPrompts.length >= 2);
