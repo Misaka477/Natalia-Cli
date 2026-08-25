@@ -4,8 +4,5 @@
   "type": "module",
   "license": "Apache-2.0",
   "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "dependencies": {
-    "@natalia/contracts": "workspace:*"
-  }
+  "types": "./src/index.ts"
 }

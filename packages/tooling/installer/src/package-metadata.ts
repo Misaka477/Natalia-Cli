@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import type { PluginPackageSource } from "@natalia/contracts";
 import {
   discoverPluginManifests,
+  pluginManifestSchema,
   type PluginInstallationMetadata,
 } from "@natalia/plugin";
 import {
@@ -54,7 +55,10 @@ export async function validateStagedPackage(
     throw new Error(
       `plugin entry escapes package directory: ${manifest.entry}`,
     );
-  await import(pathToFileURL(entryPath).href);
+  const module = (await import(pathToFileURL(entryPath).href)) as {
+    default?: unknown;
+  };
+  validatePluginModule(module.default, manifest);
   const record = await readPackageRecord(prefix, packageName);
   if (!record?.version)
     throw new Error(
@@ -82,6 +86,17 @@ export async function validateStagedPackage(
         : [],
   };
   return { manifest, relativeManifest, packageName, metadata };
+}
+
+function validatePluginModule(value: unknown, manifest: unknown) {
+  if (!value || typeof value !== "object")
+    throw new Error("plugin entry must have a default object export");
+  const plugin = value as { manifest?: unknown; setup?: unknown };
+  if (typeof plugin.setup !== "function")
+    throw new Error("plugin entry default export must have a setup function");
+  const exportedManifest = pluginManifestSchema.parse(plugin.manifest);
+  if (JSON.stringify(exportedManifest) !== JSON.stringify(manifest))
+    throw new Error("plugin entry manifest does not match natalia.plugin.json");
 }
 
 function containedRelative(parent: string, child: string) {

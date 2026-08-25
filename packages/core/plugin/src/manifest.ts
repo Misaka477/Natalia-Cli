@@ -44,14 +44,7 @@ export const pluginDependencySchema = z.object({
   peer: z.boolean().default(false),
 });
 
-export const pluginLifecycleHooksSchema = z
-  .object({
-    preInstall: z.string().min(1).optional(),
-    postInstall: z.string().min(1).optional(),
-    preUninstall: z.string().min(1).optional(),
-    postUninstall: z.string().min(1).optional(),
-  })
-  .default({});
+export const pluginLifecycleHooksSchema = z.object({}).strict().default({});
 
 export const pluginManifestV2Schema = z.object({
   apiVersion: z.literal(PLUGIN_API_VERSION),

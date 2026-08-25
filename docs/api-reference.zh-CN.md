@@ -448,12 +448,16 @@ provider 请求：
   provider 的 models 端点，只读）、`providerAdd`（创建或替换，立即生效）、
   `providerRemove`（幂等；被模型引用的 provider 拒绝）。apiKey 只在这些调用
   的请求体里过线——接触它们的凭据请用带 `management` 组的作用域凭据。
-- **插件** — CLI 是持久化维护面：`natalia plugin install <spec>`、
-  `uninstall <id>`、`enable <id>`、`disable <id>`、`list`。install 校验并记录
-  单个插件包及其依赖闭包；enable/disable 改变 desired activation；uninstall 删除
-  用户安装 closure，或持久禁用 runtime 随附默认项。RPC 的 `pluginUnload`（幂等）
-  和 `pluginReload`（按 manifest 路径卸载并重新 import）只操作当前运行 registry，
-  不安装 package，也不持久化 desired state。
+- **插件** — CLI 是持久化维护面：
+  `natalia-ts plugin create <directory> --id <plugin-id>`、`install <spec>`、
+  `uninstall <id>`、`enable <id>`、`disable <id>`、`list`、`doctor` 和
+  `reconcile`。create 生成可发布的 ESM JavaScript 脚手架；install 校验并记录单个
+  插件包及其依赖闭包；enable/disable 改变 desired activation；uninstall 删除用户
+  安装 closure，或持久禁用 runtime 随附默认项；doctor 审计 lock、配置与 package
+  一致性；reconcile 修复缺失 package，并让 package 配置与 lock 对齐。RPC 的
+  `pluginUnload`（幂等）和 `pluginReload`（按 manifest 路径卸载并重新 import）只操作
+  当前运行 registry，不安装 package，也不持久化 desired state。完整开发和维护契约见
+  `docs/plugin-guide.zh-CN.md`。
 
 `management` 组（`permissionList`/`permissionSave`/`permissionDelete`）让部署
 可以签发一把"只配策略、不碰其余面"的凭据。
@@ -1011,7 +1015,7 @@ createRuntimeHttpServer({
 - Runtime event types (`RuntimeEventData` union): 103.
 - view-store projections (`case` labels in `packages/hosts/view-store/src`): 84.
 
-### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/index.ts`)
+### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
 
 | SDK method                          | RPC method                           | Params                                                                                                                                                                                                                                                                                                                                                                                                       | Return type                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

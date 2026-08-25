@@ -84,17 +84,39 @@ The `fs` commands stay within the selected workspace and return JSON.
 ## Plugins
 
 ```bash
+npm run ts:cli -- plugin create ./my-plugin --id yourco.demo
+npm run ts:cli -- plugin create ./my-plugin --id yourco.demo --package @yourco/demo
 npm run ts:cli -- plugin list
 npm run ts:cli -- plugin install <spec>
 npm run ts:cli -- plugin uninstall <id>
 npm run ts:cli -- plugin enable <id>
 npm run ts:cli -- plugin disable <id>
+npm run ts:cli -- plugin doctor
+npm run ts:cli -- plugin reconcile
 ```
+
+`plugin create` writes a publishable JavaScript starter package and refuses to
+overwrite an existing directory. It requires exactly one directory and
+`--id <plugin-id>`; `--package <npm-name>` is optional and defaults to the
+directory basename. The directory is resolved from the current process working
+directory. Although the shared parser accepts `--workspace`, that option does
+not relocate or otherwise affect scaffold output.
 
 `plugin list` reports runtime defaults and user-installed plugins through one
 catalogue. Install, uninstall, enable, and disable each perform the complete
-lifecycle operation in one command. All plugins use the same registry,
-permissions, naming, and cleanup path.
+lifecycle operation in one command. `doctor` audits the installed state and
+`reconcile` repairs the desired package closure. All plugins use the same
+registry, permissions, naming, and cleanup path.
+`install`, `uninstall`, `enable`, `disable`, `list`, `doctor`, and `reconcile`
+accept `--workspace <path>`.
+
+`install <spec>` accepts npm registry specs, local directories, Git specs, and
+local or remote tarballs. It validates a staged package before transactionally
+updating `.natalia/plugins`, `.natalia/natalia.lock`, and project configuration.
+The durable enable/disable/install state is read when a runtime starts or
+reconciles configuration; these commands do not mutate another process's live
+registry. See the [plugin guide](plugin-guide.md) for API contracts, output
+shapes, diagnostics, built-in plugin IDs, and the complete authoring tutorial.
 
 ## Transport Recording
 

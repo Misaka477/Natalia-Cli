@@ -16,6 +16,18 @@ import {
   runPluginConformance,
 } from "../src";
 
+test("v2 manifests reject lifecycle hooks that are not implemented", () => {
+  expect(() =>
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id: "fixture.hooks",
+      version: "1.0.0",
+      name: "Hooks",
+      hooks: { postInstall: "configure" },
+    }),
+  ).toThrow();
+});
+
 test("plugin discovery scans unscoped and scoped installed packages", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-discovery-"));
   const packages = [

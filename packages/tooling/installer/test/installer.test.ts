@@ -27,6 +27,11 @@ import type { PluginManifest } from "@natalia/plugin";
 
 const packageName = "@fixture/natalia-plugin";
 const pluginID = "fixture.plugin";
+
+function pluginModule(manifest: object) {
+  return `export default { manifest: ${JSON.stringify(manifest)}, setup() {} };`;
+}
+
 const runtimeManifests: PluginManifest[] = [
   {
     apiVersion: 1,
@@ -85,18 +90,19 @@ function fixturePackageManager(runs: string[][]): PackageManagerRun {
         },
       }),
     );
+    const manifest = {
+      apiVersion: 2,
+      id: pluginID,
+      version: "1.2.3",
+      name: "Fixture",
+      entry: "index.ts",
+      scope: "workspace",
+    } as const;
     await writeFile(
       join(packageDir, "natalia.plugin.json"),
-      JSON.stringify({
-        apiVersion: 2,
-        id: pluginID,
-        version: "1.2.3",
-        name: "Fixture",
-        entry: "index.ts",
-        scope: "workspace",
-      }),
+      JSON.stringify(manifest),
     );
-    await writeFile(join(packageDir, "index.ts"), "export default {};");
+    await writeFile(join(packageDir, "index.ts"), pluginModule(manifest));
   };
 }
 
@@ -226,6 +232,36 @@ test("invalid staged install leaves no live package, lock, or config", async () 
   expect(existsSync(join(workspaceRoot, ".natalia", "config.json"))).toBe(
     false,
   );
+});
+
+test("install rejects an entry manifest that differs from the package manifest", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-mismatch-"));
+  const base = fixturePackageManager([]);
+  const runPackageManager: PackageManagerRun = async (input) => {
+    await base(input);
+    const prefix = input.args[input.args.indexOf("--prefix") + 1]!;
+    const entry = join(
+      prefix,
+      "node_modules",
+      "@fixture",
+      "natalia-plugin",
+      "index.ts",
+    );
+    await writeFile(
+      entry,
+      pluginModule({
+        apiVersion: 2,
+        id: "different.plugin",
+        version: "1.2.3",
+        name: "Fixture",
+        entry: "index.ts",
+        scope: "workspace",
+      }),
+    );
+  };
+  await expect(
+    installPlugin({ workspaceRoot, spec: packageName, runPackageManager }),
+  ).rejects.toThrow("does not match natalia.plugin.json");
 });
 
 test("uninstalling a runtime default durably disables it", async () => {
@@ -452,18 +488,19 @@ test("install rejects duplicate plugin IDs and package manifest ID changes", asy
           packages: { [`node_modules/${name}`]: { version: "1.0.0" } },
         }),
       );
+      const manifest = {
+        apiVersion: 1,
+        id,
+        version: "1.0.0",
+        name,
+        entry: "index.ts",
+        scope: "workspace",
+      } as const;
       await writeFile(
         join(dir, "natalia.plugin.json"),
-        JSON.stringify({
-          apiVersion: 1,
-          id,
-          version: "1.0.0",
-          name,
-          entry: "index.ts",
-          scope: "workspace",
-        }),
+        JSON.stringify(manifest),
       );
-      await writeFile(join(dir, "index.ts"), "export default {};");
+      await writeFile(join(dir, "index.ts"), pluginModule(manifest));
     };
   await expect(
     installPlugin({
@@ -652,16 +689,17 @@ test("package validation enforces package, manifest, entry, and lock boundaries"
               : { "node_modules/boundary-plugin": { version: "1.0.0" } },
         }),
       );
+      const manifest = {
+        apiVersion: 1,
+        id: "boundary.plugin",
+        version: "1.0.0",
+        name: "Boundary",
+        entry: "index.ts",
+        scope: "workspace",
+      } as const;
       await writeFile(
         join(packageRoot, "natalia.plugin.json"),
-        JSON.stringify({
-          apiVersion: 1,
-          id: "boundary.plugin",
-          version: "1.0.0",
-          name: "Boundary",
-          entry: "index.ts",
-          scope: "workspace",
-        }),
+        JSON.stringify(manifest),
       );
       if (mode === "entryEscape") {
         await writeFile(join(prefix, "outside.ts"), "export default {};");
@@ -670,7 +708,7 @@ test("package validation enforces package, manifest, entry, and lock boundaries"
           join(packageRoot, "index.ts"),
         );
       } else
-        await writeFile(join(packageRoot, "index.ts"), "export default {};");
+        await writeFile(join(packageRoot, "index.ts"), pluginModule(manifest));
       if (mode === "dependency") {
         const dependency = join(dir, "node_modules", "dependency");
         await mkdir(dependency, { recursive: true });

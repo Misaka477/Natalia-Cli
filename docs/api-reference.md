@@ -554,13 +554,17 @@ table except the two reads:
   the wire only in the request body of these calls — use a scoped credential
   with the `management` group for anything that touches them.
 - **Plugins** — the CLI is the durable maintenance surface:
-  `natalia plugin install <spec>`, `uninstall <id>`, `enable <id>`,
-  `disable <id>`, and `list`. Install validates and records one package and its
-  dependency closure; enable/disable changes desired activation; uninstall
-  removes an installed closure (or durably disables a runtime-distributed
-  default). The RPC members `pluginUnload` (idempotent) and `pluginReload`
-  (unload and re-import from the manifest path) only operate on the current
-  running registry. They do not install packages or persist desired state.
+  `natalia-ts plugin create <directory> --id <plugin-id>`, `install <spec>`,
+  `uninstall <id>`, `enable <id>`, `disable <id>`, `list`, `doctor`, and
+  `reconcile`. Create writes a publishable ESM JavaScript scaffold. Install
+  validates and records one package and its dependency closure; enable/disable
+  changes desired activation; uninstall removes an installed closure (or
+  durably disables a runtime-distributed default); doctor audits lock, config,
+  and package consistency; reconcile repairs missing packages and aligns
+  package config with the lock. The RPC members `pluginUnload` (idempotent) and
+  `pluginReload` (unload and re-import from the manifest path) only operate on
+  the current running registry. They do not install packages or persist desired
+  state. See `docs/plugin-guide.md` for the authoring and maintenance contract.
 
 The management group (`permissionList`/`permissionSave`/`permissionDelete`)
 lets a deployment hand out a credential that can configure policy without
@@ -1161,7 +1165,7 @@ Deployment notes:
 - Runtime event types (`RuntimeEventData` union): 103.
 - view-store projections (`case` labels in `packages/hosts/view-store/src`): 84.
 
-### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/index.ts`)
+### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
 
 | SDK method                          | RPC method                           | Params                                                                                                                                                                                                                                                                                                                                                                                                       | Return type                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -4,10 +4,5 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": ["src", "test"],
-  "references": [
-    {
-      "path": "../contracts"
-    }
-  ]
+  "include": ["src", "test"]
 }

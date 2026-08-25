@@ -159,14 +159,14 @@ function failureCodeMeanings(): Map<string, string> {
 
 /**
  * SDK method → RPC method → params, scanned from the SDK's own `call(...)` sites
- * (`packages/tooling/sdk/src/index.ts`). The SDK object literal is the fact source: it
+ * (`packages/tooling/sdk/src/sdk.ts`). The SDK object literal is the fact source: it
  * names the method, the RPC route it calls, the params object literal, and the
  * `call<T>` return type. A signature change in the SDK shows up here, so the
  * reference cannot describe a call the SDK does not make.
  */
 /**
  * SDK method → RPC method → params, scanned from the SDK's own `call(...)` sites
- * and the `NataliaSDK` type (`packages/tooling/sdk/src/index.ts`). The SDK is the fact
+ * and the `NataliaSDK` type (`packages/tooling/sdk/src/sdk.ts`). The SDK is the fact
  * source: it names the method, the RPC route it calls, and the signature. A
  * signature change in the SDK shows up here, so the reference cannot describe a
  * call the SDK does not make.
@@ -178,12 +178,12 @@ function sdkMethodReference(): Array<{
   returnType: string;
 }> {
   const text = readFileSync(
-    join(process.cwd(), "packages", "tooling", "sdk", "src", "index.ts"),
+    join(process.cwd(), "packages", "tooling", "sdk", "src", "sdk.ts"),
     "utf8",
   );
   const objectStart = text.indexOf("return {");
   if (objectStart === -1)
-    throw new Error("sdk/src/index.ts: SDK object not found");
+    throw new Error("sdk/src/sdk.ts: SDK object not found");
   let depth = 0;
   let objectEnd = -1;
   for (let i = objectStart; i < text.length; i++) {
@@ -1531,7 +1531,7 @@ export function renderGeneratedSections(): string {
     `- Runtime event types (\`RuntimeEventData\` union): ${eventTypeCount()}.`,
     `- view-store projections (\`case\` labels in \`packages/hosts/view-store/src\`): ${projectedEventTypeCount()}.`,
     ``,
-    `### SDK methods → RPC routes (source scan of \`packages/tooling/sdk/src/index.ts\`)`,
+    `### SDK methods → RPC routes (source scan of \`packages/tooling/sdk/src/sdk.ts\`)`,
     ``,
     markdownTable(
       ["SDK method", "RPC method", "Params", "Return type"],
