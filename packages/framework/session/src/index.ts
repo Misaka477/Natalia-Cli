@@ -325,6 +325,7 @@ export {
   projectedPlans,
   projectedChatMessages,
   projectedCollabMessages,
+  normalizeCollaborationEvent,
   projectSession,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
@@ -334,6 +335,7 @@ export {
 export type {
   ProjectedCapability,
   ProjectedDriftFinding,
+  ProjectedCollabMessage,
   SessionProjection,
 } from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";

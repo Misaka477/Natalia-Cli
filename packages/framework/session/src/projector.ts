@@ -1,4 +1,5 @@
 import type {
+  CollaborationMessage,
   RuntimeEvent,
   RuntimeMessagePage,
   RuntimeProjectedMessage,
@@ -615,131 +616,140 @@ export function projectedChatMessages(
 
 /**
  * Projects the agent-to-agent collaboration channel (Chat Navi ↔ Main Natalia):
- * suggestions, notices, questions and answers as a durable conversation, with
- * responses folding the decision back onto the target message's status. Both
- * agents read this same projection, so the 轮巡 works without the user
- * prompting either side to check on the other (§8.3).
+ * suggestions, notices, questions, answers and responses as one durable
+ * conversation. Reply relationships are resolved after normalization so
+ * replay order does not change pending state.
  */
-export type ProjectedCollabMessage = {
-  id: string;
-  kind: "suggestion" | "notice" | "question" | "answer" | "chat";
-  from: "live_chat" | "main_agent";
-  to: "live_chat" | "main_agent";
-  text: string;
-  priority?: string;
-  noticeType?: string;
-  status:
-    | "proposed"
-    | "adopted"
-    | "rejected"
-    | "deferred"
-    | "answered"
-    | "pending"
-    | "replied"
-    | "informational";
+export type ProjectedCollabMessage = CollaborationMessage & {
+  status: "pending" | "replied" | "informational";
+  /** Legacy alias retained while the public tool still calls this questionID. */
   questionID?: string;
-  threadID?: string;
-  replyToID?: string;
-  round?: number;
-  expectsReply?: boolean;
-  /** The recipient's reply reason, when a suggestion was responded to. */
-  responseReason?: string;
-  at: string;
 };
+
+export function normalizeCollaborationEvent(
+  event: RuntimeEvent,
+  targets: ReadonlyMap<string, CollaborationMessage> = new Map(),
+): CollaborationMessage | undefined {
+  if (event.type === "collab.message") return event.message;
+  if (event.type === "collab.suggestion")
+    return {
+      id: event.id,
+      threadID: event.id,
+      kind: "suggestion",
+      from: event.from,
+      to: event.to,
+      text: event.suggestion,
+      expectsReply: true,
+      priority: event.priority,
+      ...(event.rationale ? { rationale: event.rationale } : {}),
+      at: event.at,
+    };
+  if (event.type === "collab.notice")
+    return {
+      id: event.id,
+      threadID: event.id,
+      kind: "notice",
+      from: event.from,
+      to: event.to,
+      text: event.notice,
+      expectsReply: false,
+      noticeType: event.noticeType,
+      at: event.at,
+    };
+  if (event.type === "collab.question")
+    return {
+      id: event.id,
+      threadID: event.id,
+      kind: "question",
+      from: event.from,
+      to: event.to,
+      text: event.question,
+      expectsReply: true,
+      at: event.at,
+    };
+  if (event.type === "collab.answer")
+    return {
+      id: event.id,
+      threadID: targets.get(event.questionID)?.threadID ?? event.questionID,
+      replyToID: event.questionID,
+      kind: "answer",
+      from: event.from,
+      to: event.to,
+      text: event.answer,
+      expectsReply: false,
+      at: event.at,
+    };
+  if (event.type === "collab.chat")
+    return {
+      id: event.id,
+      threadID: event.threadID,
+      ...(event.replyToID ? { replyToID: event.replyToID } : {}),
+      kind: "chat",
+      from: event.from,
+      to: event.to,
+      text: event.text,
+      expectsReply: event.expectsReply,
+      round: event.round,
+      at: event.at,
+    };
+  if (event.type === "collab.response")
+    return {
+      id: event.id,
+      threadID: targets.get(event.messageID)?.threadID ?? event.messageID,
+      replyToID: event.messageID,
+      kind: "response",
+      from: "main_agent",
+      to: "live_chat",
+      text: event.reason ?? event.decision,
+      expectsReply: false,
+      decision: event.decision,
+      ...(event.reason ? { reason: event.reason } : {}),
+      at: event.at,
+    };
+  return undefined;
+}
 
 export function projectedCollabMessages(
   events: RuntimeEvent[],
 ): ProjectedCollabMessage[] {
-  const messages: ProjectedCollabMessage[] = [];
+  const targets = new Map<string, CollaborationMessage>();
   for (const event of events) {
-    if (event.type === "collab.suggestion") {
-      messages.push({
-        id: event.id,
-        kind: "suggestion",
-        from: "live_chat",
-        to: "main_agent",
-        text: event.suggestion,
-        priority: event.priority,
-        status: "proposed",
-        at: event.at,
-      });
-      continue;
-    }
-    if (event.type === "collab.notice") {
-      messages.push({
-        id: event.id,
-        kind: "notice",
-        from: "main_agent",
-        to: "live_chat",
-        text: event.notice,
-        noticeType: event.noticeType,
-        status: "proposed",
-        at: event.at,
-      });
-      continue;
-    }
-    if (event.type === "collab.question") {
-      messages.push({
-        id: event.id,
-        kind: "question",
-        from: "main_agent",
-        to: "live_chat",
-        text: event.question,
-        status: "proposed",
-        at: event.at,
-      });
-      continue;
-    }
-    if (event.type === "collab.answer") {
-      messages.push({
-        id: event.id,
-        kind: "answer",
-        from: "live_chat",
-        to: "main_agent",
-        text: event.answer,
-        questionID: event.questionID,
-        status: "answered",
-        at: event.at,
-      });
-      const target = messages.find(
-        (message) => message.id === event.questionID,
-      );
-      if (target && target.kind === "question") target.status = "answered";
-      continue;
-    }
-    if (event.type === "collab.chat") {
-      if (event.replyToID) {
-        const target = messages.find(
-          (message) =>
-            message.id === event.replyToID && message.kind === "chat",
-        );
-        if (target) target.status = "replied";
-      }
-      messages.push({
-        id: event.id,
-        kind: "chat",
-        from: event.from,
-        to: event.to,
-        text: event.text,
-        threadID: event.threadID,
-        ...(event.replyToID ? { replyToID: event.replyToID } : {}),
-        round: event.round,
-        expectsReply: event.expectsReply,
-        status: event.expectsReply ? "pending" : "informational",
-        at: event.at,
-      });
-      continue;
-    }
-    if (event.type === "collab.response") {
-      const target = messages.find((message) => message.id === event.messageID);
-      if (target && target.kind === "suggestion") {
-        target.status = event.decision;
-        if (event.reason) target.responseReason = event.reason;
-      }
-      continue;
-    }
+    const message = normalizeCollaborationEvent(event, targets);
+    if (message && !targets.has(message.id)) targets.set(message.id, message);
   }
-  return messages;
+  const normalized = events
+    .map((event) => normalizeCollaborationEvent(event, targets))
+    .filter((message): message is CollaborationMessage => Boolean(message));
+  const unique = normalized.filter(
+    (message, index) =>
+      normalized.findIndex((candidate) => candidate.id === message.id) ===
+      index,
+  );
+  const replied = new Set<string>();
+  for (const message of unique) {
+    if (!message.replyToID) continue;
+    const target = targets.get(message.replyToID);
+    if (
+      target &&
+      target.expectsReply &&
+      target.threadID === message.threadID &&
+      target.from === message.to &&
+      target.to === message.from &&
+      ((message.kind === "answer" && target.kind === "question") ||
+        (message.kind === "response" && target.kind === "suggestion") ||
+        (message.kind === "chat" && target.kind === "chat"))
+    )
+      replied.add(target.id);
+  }
+  return unique.map((message) => ({
+    ...message,
+    status: replied.has(message.id)
+      ? "replied"
+      : message.expectsReply
+        ? "pending"
+        : "informational",
+    ...(message.kind === "answer" ? { questionID: message.replyToID } : {}),
+  }));
 }
 
 /**

@@ -12936,7 +12936,11 @@ test("the collaboration channel round-robins between Navi and the main agent", a
   // Wait until the wake main turn's decision lands, so Navi's next prompt is
   // built after the outcome exists (the round-robin race).
   await waitForAsync(
-    async () => rrEvents.some((event) => event.type === "collab.response"),
+    async () =>
+      rrEvents.some(
+        (event) =>
+          event.type === "collab.message" && event.message.kind === "response",
+      ),
     10000,
   );
   await client.chatSubmit!({ text: "what did she decide" });
@@ -13016,10 +13020,18 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
   // No chatSubmit at all: the question wakes Navi and she answers on her own.
   await client.submit("hello");
   await waitForAsync(async () =>
-    events.some((event) => event.type === "collab.answer"),
+    events.some(
+      (event) =>
+        event.type === "collab.message" && event.message.kind === "answer",
+    ),
   );
-  const answer = events.find((event) => event.type === "collab.answer");
-  expect(answer).toMatchObject({ answer: "yes, echo is safe" });
+  const answer = events.find(
+    (event) =>
+      event.type === "collab.message" && event.message.kind === "answer",
+  );
+  expect(answer).toMatchObject({
+    message: { kind: "answer", text: "yes, echo is safe" },
+  });
   // The answer reaches Natalia's own context on her next turn (the 轮巡).
   await client.submit("continue");
   await waitForAsync(async () => mainPrompts.length >= 2);
@@ -13121,7 +13133,10 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
   try {
     await client.submit("hello");
     await waitForAsync(async () =>
-      events.some((event) => event.type === "collab.answer"),
+      events.some(
+        (event) =>
+          event.type === "collab.message" && event.message.kind === "answer",
+      ),
     );
     await waitForAsync(async () =>
       events.some(
@@ -13138,7 +13153,7 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
   }
 }, 20000);
 
-test("collab_answer accepts a truncated question id (models drop the prefix)", async () => {
+test("collab_answer rejects a truncated question id", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-collab-trunc-"));
   let streamCalls = 0;
   let naviStreamCount = 0;
@@ -13207,10 +13222,19 @@ test("collab_answer accepts a truncated question id (models drop the prefix)", a
   client.start((event) => events.push(event));
   await client.submit("hello");
   await waitForAsync(async () =>
-    events.some((event) => event.type === "collab.answer"),
+    events.some(
+      (event) =>
+        event.type === "chat.tool.used" &&
+        event.toolName === "collab_answer" &&
+        event.result?.includes("no pending question"),
+    ),
   );
-  const answer = events.find((event) => event.type === "collab.answer");
-  expect(answer).toMatchObject({ answer: "yes, echo is safe" });
+  expect(
+    events.some(
+      (event) =>
+        event.type === "collab.message" && event.message.kind === "answer",
+    ),
+  ).toBe(false);
   await client.dispose?.();
 }, 20000);
 
@@ -13357,7 +13381,8 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
     await client.submit("ask Navi to check it");
     await waitForAsync(async () => {
       const chatCount = events.filter(
-        (event) => event.type === "collab.chat",
+        (event) =>
+          event.type === "collab.message" && event.message.kind === "chat",
       ).length;
       if (chatCount > 4)
         throw new Error(`collab_chat exceeded its limit: ${chatCount}`);
@@ -13366,7 +13391,8 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
       const summary = events
         .filter(
           (event) =>
-            event.type === "collab.chat" ||
+            (event.type === "collab.message" &&
+              event.message.kind === "chat") ||
             event.type === "chat.tool.used" ||
             event.type === "diagnostic" ||
             event.type === "turn.finished",
@@ -13376,24 +13402,25 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
       throw new Error(`${String(error)}\n${summary}`);
     });
 
-    const chats = events.filter(
-      (event): event is Extract<RuntimeEvent, { type: "collab.chat" }> =>
-        event.type === "collab.chat",
+    const chats = events.flatMap((event) =>
+      event.type === "collab.message" && event.message.kind === "chat"
+        ? [event.message]
+        : [],
     );
-    expect(chats.map((event) => event.from)).toEqual([
+    expect(chats.map((message) => message.from)).toEqual([
       "main_agent",
       "live_chat",
       "main_agent",
       "live_chat",
     ]);
-    expect(chats.map((event) => event.round)).toEqual([1, 2, 3, 3]);
-    expect(chats.map((event) => event.expectsReply)).toEqual([
+    expect(chats.map((message) => message.round)).toEqual([1, 2, 3, 3]);
+    expect(chats.map((message) => message.expectsReply)).toEqual([
       true,
       true,
       true,
       false,
     ]);
-    expect(new Set(chats.map((event) => event.threadID)).size).toBe(1);
+    expect(new Set(chats.map((message) => message.threadID)).size).toBe(1);
     expect(
       events
         .filter(
@@ -13403,8 +13430,8 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
         )
         .every((event) => event.internal === true),
     ).toBe(true);
-    expect(chats.slice(1).map((event) => event.replyToID)).toEqual(
-      chats.slice(0, -1).map((event) => event.id),
+    expect(chats.slice(1).map((message) => message.replyToID)).toEqual(
+      chats.slice(0, -1).map((message) => message.id),
     );
     expect(
       events.some(
@@ -13518,16 +13545,19 @@ test("collab_chat honors a configured one-round automatic limit", async () => {
     await client.submit("start one round");
     await waitForAsync(
       async () =>
-        events.filter((event) => event.type === "collab.chat").length === 2 &&
-        finalWakeObserved,
+        events.filter(
+          (event) =>
+            event.type === "collab.message" && event.message.kind === "chat",
+        ).length === 2 && finalWakeObserved,
       10000,
     );
-    const chats = events.filter(
-      (event): event is Extract<RuntimeEvent, { type: "collab.chat" }> =>
-        event.type === "collab.chat",
+    const chats = events.flatMap((event) =>
+      event.type === "collab.message" && event.message.kind === "chat"
+        ? [event.message]
+        : [],
     );
-    expect(chats.map((event) => event.round)).toEqual([1, 1]);
-    expect(chats.map((event) => event.expectsReply)).toEqual([true, false]);
+    expect(chats.map((message) => message.round)).toEqual([1, 1]);
+    expect(chats.map((message) => message.expectsReply)).toEqual([true, false]);
     expect(
       events.some(
         (event) =>

@@ -22,7 +22,9 @@ import { createSandboxController, sandboxTools } from "@natalia/sandbox";
 import { agentTools, createSubagentsController } from "@natalia/subagents";
 import { createToolPolicyService } from "@natalia/tool-policy";
 import {
+  COLLABORATION_SERVICE,
   collaborationTools,
+  createCollaborationService,
   createInteractiveWaiter,
 } from "@natalia/collaboration";
 import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
@@ -128,6 +130,22 @@ export async function wireFrameworkServices(
     COLLABORATION_WAITER_SERVICE,
     createInteractiveWaiter(ctx.state.waiterDeps),
   );
+  const collaborationService = createCollaborationService({
+    events: (sessionID) =>
+      ctx.ports.getExecutionBySession().get(sessionID)?.session.events,
+    publish: (sessionID, event) => {
+      const exec = ctx.ports.getExecutionBySession().get(sessionID);
+      if (exec) ctx.ports.publishForSession(exec, event);
+    },
+    nextSequence: ctx.ports.nextCollabSequence,
+    maxAutoRounds: () =>
+      ctx.ports.getTsRuntimeConfig()?.runtime.collaboration.maxAutoRounds ?? 3,
+  });
+  collaborationOwner.contribute(
+    "services",
+    COLLABORATION_SERVICE,
+    collaborationService,
+  );
   for (const tool of collaborationTools({
     events: (sessionID) =>
       ctx.ports.getExecutionBySession().get(sessionID)?.session.events,
@@ -137,13 +155,13 @@ export async function wireFrameworkServices(
     },
     redact: (text) => ctx.ports.redactToolOutput(text, true),
     nextMailboxSequence: ctx.ports.nextMailboxSequence,
-    nextCollabSequence: ctx.ports.nextCollabSequence,
     requestWake: (sessionID) => {
       const exec = ctx.ports.getExecutionBySession().get(sessionID);
       if (exec) ctx.ports.requestNaviWake(exec);
     },
     maxAutoRounds: () =>
       ctx.ports.getTsRuntimeConfig()?.runtime.collaboration.maxAutoRounds ?? 3,
+    service: collaborationService,
   })) {
     collaborationOwner.contribute("tools", tool.name, tool);
     if (ctx.state.tools.get(tool.name))

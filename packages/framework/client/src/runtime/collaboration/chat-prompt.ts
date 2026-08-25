@@ -137,7 +137,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     const recentTools = recentToolActivity(chatSession.events);
     const collab = projectedCollabMessages(chatSession.events);
     const nataliaQuestions = collab.filter(
-      (message) => message.kind === "question" && message.status === "proposed",
+      (message) => message.kind === "question" && message.status === "pending",
     );
     const nataliaNotices = collab
       .filter((message) => message.kind === "notice")
@@ -150,8 +150,8 @@ export function createChatPrompt(ctx: RuntimeContext) {
     );
     const naviOutcomes = collab
       .filter(
-        (message) =>
-          message.kind === "suggestion" && message.status !== "proposed",
+        (message): message is typeof message & { kind: "response" } =>
+          message.kind === "response",
       )
       .slice(-3);
     const lines = [
@@ -238,12 +238,8 @@ export function createChatPrompt(ctx: RuntimeContext) {
         ? `Outcomes of your suggestions to Natalia:\n${naviOutcomes
             .map(
               (message) =>
-                `- [Natalia → you] ${message.id}: ${message.status}${
-                  message.responseReason
-                    ? ` — her reply: ${message.responseReason}`
-                    : message.text
-                      ? ` (your suggestion: ${message.text})`
-                      : ""
+                `- [Natalia → you] ${message.replyToID}: ${message.decision}${
+                  message.reason ? ` — her reply: ${message.reason}` : ""
                 }`,
             )
             .join("\n")}`

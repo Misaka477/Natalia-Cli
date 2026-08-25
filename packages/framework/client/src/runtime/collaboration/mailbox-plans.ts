@@ -6,7 +6,6 @@
  * and the plan draft writer. Reads live state through `RuntimeContext` at call
  * time.
  */
-import { projectedCollabMessages } from "@natalia/session";
 import { sessionRunCoordinator } from "@natalia/session";
 import { buildMailboxQueued } from "@natalia/runtime-services";
 import {
@@ -15,6 +14,10 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
+import {
+  COLLABORATION_SERVICE,
+  type CollaborationService,
+} from "@natalia/collaboration";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -37,13 +40,10 @@ export function createMailboxPlans(ctx: RuntimeContext) {
   ): RuntimeTool {
     const {
       getExecutionBySession,
-      publishForSession,
       redactToolOutput,
-      nextCollabSequence,
       requestNaviWake,
       wakeMainForCollaboration,
     } = ctx.ports;
-    const collabSequence = nextCollabSequence;
     return {
       name: "collab_chat",
       description:
@@ -75,66 +75,39 @@ export function createMailboxPlans(ctx: RuntimeContext) {
             ? getExecutionBySession().get(context.sessionID as SessionID)
             : undefined);
         if (!owner) return "no session";
-        const recipient = sender === "main_agent" ? "live_chat" : "main_agent";
-        const chats = projectedCollabMessages(owner.session.events).filter(
-          (message) => message.kind === "chat",
-        );
         const suppliedID = args.messageID?.trim();
-        const target = suppliedID
-          ? chats.find(
-              (message) =>
-                message.to === sender &&
-                message.status === "pending" &&
-                message.id === suppliedID,
-            )
-          : undefined;
-        if (suppliedID && !target)
-          return `no pending chat message ${suppliedID}`;
-        const pendingIncoming = chats.find(
-          (message) => message.to === sender && message.status === "pending",
-        );
-        if (!suppliedID && pendingIncoming)
-          return `reply required for chat message ${pendingIncoming.id}; call collab_chat with that messageID before starting another message`;
-        const pendingOutgoing = chats.find(
-          (message) => message.from === sender && message.status === "pending",
-        );
-        if (!suppliedID && pendingOutgoing)
-          return `awaiting reply to chat message ${pendingOutgoing.id}`;
-
-        const maxRounds = collaborationMaxAutoRounds();
         const wantsContinuation = args.continueConversation === true;
-        const mayContinue = target
-          ? wantsContinuation && (target.round ?? 1) < maxRounds
-          : true;
-        const round = target
-          ? mayContinue
-            ? (target.round ?? 1) + 1
-            : (target.round ?? 1)
-          : 1;
-        const id = `collab:chat:${Date.now().toString(36)}:${collabSequence()}`;
-        const threadID = target?.threadID ?? id;
-        publishForSession(owner, {
-          type: "collab.chat",
-          id,
-          threadID,
-          from: sender,
-          to: recipient,
-          text: redactToolOutput(args.text, true),
-          ...(target ? { replyToID: target.id } : {}),
-          round,
-          expectsReply: target ? mayContinue : true,
-          at: new Date().toISOString(),
-        });
-        if (sender === "main_agent") requestNaviWake(owner);
-        else wakeMainForCollaboration(owner, id, "chat message");
+        const service = ctx.ports.resolveService<CollaborationService>(
+          COLLABORATION_SERVICE,
+        );
+        if (!service) return "collaboration service unavailable";
+        let result;
+        try {
+          result = await service.send({
+            sessionID: owner.session.id as SessionID,
+            kind: "chat",
+            from: sender,
+            text: redactToolOutput(args.text, true),
+            ...(suppliedID ? { replyToID: suppliedID } : {}),
+            continueConversation: wantsContinuation,
+          });
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+        if (result.wake.recipient === "live_chat") requestNaviWake(owner);
+        else wakeMainForCollaboration(owner, result.message.id, "chat message");
         return JSON.stringify({
           sent: true,
-          messageID: id,
-          threadID,
-          round,
-          expectsReply: target ? mayContinue : true,
-          ...(wantsContinuation && !mayContinue
-            ? { autoRoundLimitReached: true, maxAutoRounds: maxRounds }
+          messageID: result.message.id,
+          threadID: result.message.threadID,
+          round:
+            result.message.kind === "chat" ? result.message.round : undefined,
+          expectsReply: result.message.expectsReply,
+          ...(wantsContinuation && !result.message.expectsReply
+            ? {
+                autoRoundLimitReached: true,
+                maxAutoRounds: collaborationMaxAutoRounds(),
+              }
             : {}),
         });
       },

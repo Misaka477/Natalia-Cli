@@ -145,8 +145,8 @@ export function createTurnRunner(
       naviSuggestions: () =>
         projectedCollabMessages(exec.session.events)
           .filter(
-            (message) =>
-              message.kind === "suggestion" && message.status === "proposed",
+            (message): message is typeof message & { kind: "suggestion" } =>
+              message.kind === "suggestion" && message.status === "pending",
           )
           .map((message) => ({
             id: message.id,

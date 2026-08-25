@@ -5,17 +5,17 @@
  * plus the collaboration/mailbox/plan drafting tools. Reads live state through
  * `RuntimeContext` at call time.
  */
-import {
-  projectedCollabMessages,
-  projectedMailboxMessages,
-  projectedPlans,
-} from "@natalia/session";
+import { projectedMailboxMessages, projectedPlans } from "@natalia/session";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
+import {
+  COLLABORATION_SERVICE,
+  type CollaborationService,
+} from "@natalia/collaboration";
 import { chatToolSummary } from "./chat-summary";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -42,14 +42,12 @@ export function createChatTools(ctx: RuntimeContext) {
       publishForSession,
       redactToolOutput,
       currentSessionSnapshot,
-      nextCollabSequence,
       wakeMainForCollaboration,
       createCollabChatTool,
       enqueueMailboxMessage,
       createPlanDraft,
     } = ctx.ports;
     const { tools } = ctx.state;
-    const collabSequence = nextCollabSequence;
     const visible: RuntimeTool[] = [];
     for (const tool of tools.values())
       if (CHAT_READ_ONLY_TOOLS.has(tool.name)) visible.push(tool);
@@ -119,24 +117,24 @@ export function createChatTools(ctx: RuntimeContext) {
           if (typeof args.suggestion !== "string" || !args.suggestion.trim())
             return "collab_suggest requires suggestion";
           if (!exec) return "no session";
-          const id = `collab:suggestion:${Date.now().toString(36)}:${collabSequence()}`;
-          publishForSession(exec, {
-            type: "collab.suggestion",
-            id,
+          const service = ctx.ports.resolveService<CollaborationService>(
+            COLLABORATION_SERVICE,
+          );
+          if (!service) return "collaboration service unavailable";
+          const { message } = await service.send({
+            sessionID: exec.session.id as SessionID,
+            kind: "suggestion",
             from: "live_chat",
-            to: "main_agent",
-            suggestion: redactToolOutput(args.suggestion, true),
+            text: redactToolOutput(args.suggestion, true),
             ...(args.rationale
               ? { rationale: redactToolOutput(args.rationale, true) }
               : {}),
             priority: args.priority === "high" ? "high" : "normal",
-            status: "proposed",
-            at: new Date().toISOString(),
           });
           // Symmetric round-robin: if the main agent is idle, wake it to see
           // the suggestion; if it is working, the suggestion reaches its next
           // turn through <navi_collaborations>.
-          wakeMainForCollaboration(exec, id, "suggestion");
+          wakeMainForCollaboration(exec, message.id, "suggestion");
           return JSON.stringify({ sent: true });
         },
       },
@@ -165,29 +163,23 @@ export function createChatTools(ctx: RuntimeContext) {
             ? getExecutionBySession().get(context.sessionID as SessionID)
             : undefined;
           if (!owner) return "no session";
-          const questionID = args.questionID;
-          // Models routinely truncate the id to its tail; accept an exact id
-          // or a unique suffix of it.
-          const target = projectedCollabMessages(owner.session.events).find(
-            (message) =>
-              message.kind === "question" &&
-              message.status === "proposed" &&
-              (message.id === questionID ||
-                message.id.endsWith(questionID) ||
-                questionID.endsWith(message.id)),
+          const service = ctx.ports.resolveService<CollaborationService>(
+            COLLABORATION_SERVICE,
           );
-          if (!target) return `no open question ${questionID}`;
-          publishForSession(owner, {
-            type: "collab.answer",
-            id: `collab:answer:${Date.now().toString(36)}:${collabSequence()}`,
-            // The matched question's real id, so the projection marks it answered.
-            questionID: target.id,
-            from: "live_chat",
-            to: "main_agent",
-            answer: redactToolOutput(args.answer, true),
-            at: new Date().toISOString(),
-          });
-          wakeMainForCollaboration(owner, target.id, "answer");
+          if (!service) return "collaboration service unavailable";
+          let message;
+          try {
+            ({ message } = await service.send({
+              sessionID: owner.session.id as SessionID,
+              kind: "answer",
+              from: "live_chat",
+              replyToID: args.questionID,
+              text: redactToolOutput(args.answer, true),
+            }));
+          } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+          }
+          wakeMainForCollaboration(owner, message.id, "answer");
           return JSON.stringify({ answered: true });
         },
       },

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { RuntimeEvent } from "@natalia/contracts";
 import {
   admitInput,
   appendSessionEvent,
@@ -536,6 +537,75 @@ test("projectedCollabMessages tracks required replies and closed chat threads", 
       status: "informational",
       replyToID: "collab:chat:2",
       expectsReply: false,
+    }),
+  ]);
+});
+
+test("projectedCollabMessages normalizes mixed and out-of-order replies", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "collab.answer",
+      id: "answer:1",
+      questionID: "question:1",
+      from: "live_chat",
+      to: "main_agent",
+      answer: "yes",
+      at: "t1",
+    },
+    {
+      type: "collab.question",
+      id: "question:1",
+      from: "main_agent",
+      to: "live_chat",
+      question: "safe?",
+      at: "t0",
+    },
+    {
+      type: "collab.message",
+      message: {
+        id: "suggestion:1",
+        threadID: "suggestion:1",
+        kind: "suggestion",
+        from: "live_chat",
+        to: "main_agent",
+        text: "use echo",
+        priority: "normal",
+        expectsReply: true,
+        at: "t2",
+      },
+    },
+    {
+      type: "collab.message",
+      message: {
+        id: "response:1",
+        threadID: "suggestion:1",
+        replyToID: "suggestion:1",
+        kind: "response",
+        from: "main_agent",
+        to: "live_chat",
+        text: "adopted",
+        decision: "adopted",
+        expectsReply: false,
+        at: "t3",
+      },
+    },
+  ];
+
+  expect(projectedCollabMessages(events)).toEqual([
+    expect.objectContaining({
+      id: "answer:1",
+      kind: "answer",
+      threadID: "question:1",
+      replyToID: "question:1",
+      status: "informational",
+    }),
+    expect.objectContaining({ id: "question:1", status: "replied" }),
+    expect.objectContaining({ id: "suggestion:1", status: "replied" }),
+    expect.objectContaining({
+      id: "response:1",
+      kind: "response",
+      decision: "adopted",
+      status: "informational",
     }),
   ]);
 });

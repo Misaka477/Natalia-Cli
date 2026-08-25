@@ -234,6 +234,61 @@ export type ToolStatus =
   | "rejected"
   | "cancelled";
 
+export type CollaborationParticipant = "main_agent" | "live_chat";
+
+export type CollaborationKind =
+  | "chat"
+  | "suggestion"
+  | "notice"
+  | "question"
+  | "answer"
+  | "response";
+
+type CollaborationMessageBase = {
+  id: string;
+  threadID: string;
+  replyToID?: string;
+  from: CollaborationParticipant;
+  to: CollaborationParticipant;
+  kind: CollaborationKind;
+  text: string;
+  expectsReply: boolean;
+  at: string;
+};
+
+export type CollaborationMessage =
+  | (CollaborationMessageBase & {
+      kind: "chat";
+      round: number;
+    })
+  | (CollaborationMessageBase & {
+      kind: "suggestion";
+      expectsReply: true;
+      priority: "normal" | "high";
+      rationale?: string;
+    })
+  | (CollaborationMessageBase & {
+      kind: "notice";
+      expectsReply: false;
+      noticeType: "step_completed" | "blocked" | "needs_input" | "risk";
+    })
+  | (CollaborationMessageBase & {
+      kind: "question";
+      expectsReply: true;
+    })
+  | (CollaborationMessageBase & {
+      kind: "answer";
+      replyToID: string;
+      expectsReply: false;
+    })
+  | (CollaborationMessageBase & {
+      kind: "response";
+      replyToID: string;
+      decision: "adopted" | "rejected" | "deferred";
+      reason?: string;
+      expectsReply: false;
+    });
+
 type RuntimeEventData =
   | { type: "session.created"; sessionID: SessionID; title: string }
   | { type: "session.title.updated"; sessionID: SessionID; title: string }
@@ -1135,6 +1190,10 @@ type RuntimeEventData =
       decision: "adopted" | "rejected" | "deferred";
       reason?: string;
       at: string;
+    }
+  | {
+      type: "collab.message";
+      message: CollaborationMessage;
     }
   | {
       type: "settings.updated";

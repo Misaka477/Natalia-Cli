@@ -115,6 +115,31 @@ test("collaboration chat renders both Natalia and Navi directions", () => {
   );
 });
 
+test("unified collaboration messages render as system rows", () => {
+  const state = projectEvents([
+    {
+      type: "collab.message",
+      message: {
+        id: "collab:response:1",
+        threadID: "collab:suggestion:1",
+        replyToID: "collab:suggestion:1",
+        kind: "response",
+        from: "main_agent",
+        to: "live_chat",
+        text: "adopted",
+        decision: "adopted",
+        reason: "lower risk",
+        expectsReply: false,
+        at: "t1",
+      },
+    },
+  ]);
+  expect(displayText(state.chatMessages[0]!)).toBe(
+    "Natalia adopted the suggestion (lower risk)",
+  );
+  expect(state.chatMessages[0]?.role).toBe("system");
+});
+
 test("a queued turn stays visibly queued without replacing active work", () => {
   const state = projectEvents([
     submitted("t1", "first"),

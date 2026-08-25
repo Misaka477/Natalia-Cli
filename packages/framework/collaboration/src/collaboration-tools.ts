@@ -1,22 +1,20 @@
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import {
-  projectedCollabMessages,
-  projectedMailboxMessages,
-} from "@natalia/session";
+import { projectedMailboxMessages } from "@natalia/session";
 import {
   buildMailboxStatus,
   createMailboxAcknowledgeTool,
 } from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
+import type { CollaborationService } from "./collaboration-service";
 
 export type CollaborationToolPorts = {
   events(sessionID: SessionID): RuntimeEvent[] | undefined;
   publish(sessionID: SessionID, event: RuntimeEvent): void;
   redact(text: string): string;
   nextMailboxSequence(): number;
-  nextCollabSequence(): number;
   requestWake(sessionID: SessionID): void;
   maxAutoRounds(): number;
+  service: CollaborationService;
 };
 
 export function collaborationTools(
@@ -81,26 +79,20 @@ export function collaborationTools(
       )
         return "collab_respond requires messageID and decision";
       const sessionID = context.sessionID as SessionID | undefined;
-      const events = sessionEvents(sessionID);
-      if (!sessionID || !events) return "no session";
-      const target = projectedCollabMessages(events).find(
-        (message) =>
-          message.kind === "suggestion" &&
-          message.status === "proposed" &&
-          (message.id === args.messageID ||
-            message.id.endsWith(args.messageID!) ||
-            args.messageID!.endsWith(message.id)),
-      );
-      if (!target) return `no suggestion ${args.messageID}`;
-      ports.publish(sessionID, {
-        type: "collab.response",
-        id: `collab:response:${Date.now().toString(36)}:${ports.nextCollabSequence()}`,
-        messageID: target.id,
-        from: "main_agent",
-        decision: args.decision as "adopted" | "rejected" | "deferred",
-        ...(args.reason ? { reason: ports.redact(args.reason) } : {}),
-        at: new Date().toISOString(),
-      });
+      if (!sessionID || !sessionEvents(sessionID)) return "no session";
+      try {
+        await ports.service.send({
+          sessionID,
+          kind: "response",
+          from: "main_agent",
+          replyToID: args.messageID,
+          decision: args.decision as "adopted" | "rejected" | "deferred",
+          text: ports.redact(args.reason ?? args.decision),
+          ...(args.reason ? { reason: ports.redact(args.reason) } : {}),
+        });
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
       ports.requestWake(sessionID);
       return JSON.stringify({ responded: true });
     },
@@ -116,7 +108,8 @@ export function collaborationTools(
       const events = sessionEvents(context.sessionID);
       if (!events) return "[]";
       return JSON.stringify(
-        projectedCollabMessages(events)
+        ports.service
+          .list(context.sessionID as SessionID)
           .slice(-10)
           .map((message) => ({
             id: message.id,
@@ -128,7 +121,7 @@ export function collaborationTools(
             ...(message.questionID ? { questionID: message.questionID } : {}),
             ...(message.threadID ? { threadID: message.threadID } : {}),
             ...(message.replyToID ? { replyToID: message.replyToID } : {}),
-            ...(message.round ? { round: message.round } : {}),
+            ...(message.kind === "chat" ? { round: message.round } : {}),
             ...(message.expectsReply !== undefined
               ? { expectsReply: message.expectsReply }
               : {}),
@@ -155,13 +148,11 @@ export function collaborationTools(
         return "collab_ask requires question";
       const sessionID = context.sessionID as SessionID | undefined;
       if (!sessionID || !sessionEvents(sessionID)) return "no session";
-      ports.publish(sessionID, {
-        type: "collab.question",
-        id: `collab:question:${Date.now().toString(36)}:${ports.nextCollabSequence()}`,
+      await ports.service.send({
+        sessionID,
+        kind: "question",
         from: "main_agent",
-        to: "live_chat",
-        question: ports.redact(question),
-        at: new Date().toISOString(),
+        text: ports.redact(question),
       });
       ports.requestWake(sessionID);
       return JSON.stringify({ asked: true });
@@ -201,65 +192,33 @@ function createMainAgentChatTool(
       const sessionID = context.sessionID as SessionID | undefined;
       const events = sessionEvents(sessionID);
       if (!sessionID || !events) return "no session";
-      const chats = projectedCollabMessages(events).filter(
-        (message) => message.kind === "chat",
-      );
       const suppliedID = args.messageID?.trim();
-      const target = suppliedID
-        ? chats.find(
-            (message) =>
-              message.to === "main_agent" &&
-              message.status === "pending" &&
-              message.id === suppliedID,
-          )
-        : undefined;
-      if (suppliedID && !target) return `no pending chat message ${suppliedID}`;
-      const pendingIncoming = chats.find(
-        (message) =>
-          message.to === "main_agent" && message.status === "pending",
-      );
-      if (!suppliedID && pendingIncoming)
-        return `reply required for chat message ${pendingIncoming.id}; call collab_chat with that messageID before starting another message`;
-      const pendingOutgoing = chats.find(
-        (message) =>
-          message.from === "main_agent" && message.status === "pending",
-      );
-      if (!suppliedID && pendingOutgoing)
-        return `awaiting reply to chat message ${pendingOutgoing.id}`;
-
-      const maxRounds = ports.maxAutoRounds();
       const wantsContinuation = args.continueConversation === true;
-      const mayContinue = target
-        ? wantsContinuation && (target.round ?? 1) < maxRounds
-        : true;
-      const round = target
-        ? mayContinue
-          ? (target.round ?? 1) + 1
-          : (target.round ?? 1)
-        : 1;
-      const id = `collab:chat:${Date.now().toString(36)}:${ports.nextCollabSequence()}`;
-      const threadID = target?.threadID ?? id;
-      ports.publish(sessionID, {
-        type: "collab.chat",
-        id,
-        threadID,
-        from: "main_agent",
-        to: "live_chat",
-        text: ports.redact(args.text),
-        ...(target ? { replyToID: target.id } : {}),
-        round,
-        expectsReply: target ? mayContinue : true,
-        at: new Date().toISOString(),
-      });
+      let result;
+      try {
+        result = await ports.service.send({
+          sessionID,
+          kind: "chat",
+          from: "main_agent",
+          text: ports.redact(args.text),
+          ...(suppliedID ? { replyToID: suppliedID } : {}),
+          continueConversation: wantsContinuation,
+        });
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
       ports.requestWake(sessionID);
       return JSON.stringify({
         sent: true,
-        messageID: id,
-        threadID,
-        round,
-        expectsReply: target ? mayContinue : true,
-        ...(wantsContinuation && !mayContinue
-          ? { autoRoundLimitReached: true, maxAutoRounds: maxRounds }
+        messageID: result.message.id,
+        threadID: result.message.threadID,
+        round: result.message.kind === "chat" ? result.message.round : 1,
+        expectsReply: result.message.expectsReply,
+        ...(wantsContinuation && !result.message.expectsReply
+          ? {
+              autoRoundLimitReached: true,
+              maxAutoRounds: ports.maxAutoRounds(),
+            }
           : {}),
       });
     },

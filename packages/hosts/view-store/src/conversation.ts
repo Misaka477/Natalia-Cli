@@ -812,6 +812,24 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         `Natalia ${event.decision} the suggestion${event.reason ? ` (${event.reason})` : ""}`,
       );
       return true;
+    case "collab.message": {
+      const message = event.message;
+      const direction =
+        message.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia";
+      const text =
+        message.kind === "notice"
+          ? `${direction}: [${message.noticeType}] ${message.text}`
+          : message.kind === "response"
+            ? `Natalia ${message.decision} the suggestion${message.reason ? ` (${message.reason})` : ""}`
+            : `${direction}: ${message.text}`;
+      upsertInto(
+        state.chatMessages,
+        `chat:${message.id}:collab`,
+        "system",
+        text,
+      );
+      return true;
+    }
     default:
       return false;
   }
