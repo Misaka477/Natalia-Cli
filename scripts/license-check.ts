@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 const expectedLicense = "Apache-2.0";
 const manifests = [
@@ -120,11 +120,33 @@ console.log(
 
 async function workspaceManifests(root: string) {
   const paths: string[] = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const path = `${root}/${entry.name}/package.json`;
-    if (await Bun.file(path).exists()) paths.push(path);
-  }
+  const skipped = new Set([
+    ".git",
+    ".turbo",
+    "coverage",
+    "dist",
+    "node_modules",
+  ]);
+  const visit = async (directory: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (skipped.has(entry.name)) continue;
+      const path = `${directory}/${entry.name}`;
+      if (await Bun.file(join(path, "package.json")).exists()) {
+        paths.push(`${path}/package.json`);
+        continue;
+      }
+      await visit(path);
+    }
+  };
+  await visit(root);
   return paths;
 }
 

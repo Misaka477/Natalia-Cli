@@ -10,15 +10,15 @@ import { join, resolve } from "node:path";
  * Ubuntu glibc (2.39), which is what a deployed Ubuntu server runs. Building
  * on a newer-glibc host (e.g. Fedora) produces binaries that crash with
  * "GLIBC_2.x not found" on the server. The framework resolves the fork from
- * packages/native-terminal/wezterm/target/release, so the stage directory is
- * non-negotiable — everything else (CARGO_TARGET_DIR, cargo cache) is kept
- * in podman volumes so repeated builds are incremental.
+ * packages/plugins/native-terminal/wezterm/target/release, so the stage
+ * directory is non-negotiable — everything else (CARGO_TARGET_DIR, cargo
+ * cache) is kept in podman volumes so repeated builds are incremental.
  *
  * Reuses an existing `natalia-ubuntu-build` container and its cargo cache.
  */
 
 const repoRoot = resolve(join(import.meta.dir, ".."));
-const forkDir = join(repoRoot, "packages", "native-terminal", "wezterm");
+const forkDir = join(repoRoot, "packages", "plugin-native-terminal", "wezterm");
 const releaseDir = join(forkDir, "target", "release");
 const containerName = "natalia-ubuntu-build";
 const containerForkDir = "/src/wezterm";

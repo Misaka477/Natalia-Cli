@@ -1,16 +1,19 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { cpus, platform, release } from "node:os";
 import { join, resolve } from "node:path";
-import { createRealRuntimeClient } from "../../packages/client/src";
-import type { RuntimeEvent, SessionID } from "../../packages/contracts/src";
+import { createRealRuntimeClient } from "../../packages/framework/client/src";
+import type {
+  RuntimeEvent,
+  SessionID,
+} from "../../packages/core/contracts/src";
 
 import {
   createSessionRecord,
   JsonSessionStore,
   projectSessionMessages,
   SqliteSessionStore,
-} from "../../packages/session/src";
-import type { StreamingProvider } from "../../packages/runtime/src";
+} from "../../packages/framework/session/src";
+import type { StreamingProvider } from "../../packages/framework/runtime/src";
 import {
   boundHistoryCache,
   historyCacheLimit,

@@ -70,12 +70,12 @@ npm run native-terminal:build-wezterm:windows-cross
 npm run native-terminal:build-wezterm:windows
 ```
 
-产物在 `packages/native-terminal/wezterm/target/release/`。
+产物在 `packages/plugins/native-terminal/wezterm/target/release/`。
 
 **从 Windows release 包安装** —— 预编译三件套已放在压缩包内的预期路径，解压即用，无需移动：
 
 ```text
-packages/native-terminal/wezterm/target/release/
+packages/plugins/native-terminal/wezterm/target/release/
 ├── wezterm.exe            ← CLI 客户端
 ├── wezterm-gui.exe        ← 可见窗口
 └── wezterm-mux-server.exe ← 后台 multiplexer daemon
@@ -90,8 +90,8 @@ packages/native-terminal/wezterm/target/release/
 解压后验证一次：
 
 ```powershell
-packages\native-terminal\wezterm\target\release\wezterm.exe --version
-packages\native-terminal\wezterm\target\release\wezterm-gui.exe start
+packages\plugin-native-terminal\wezterm\target\release\wezterm.exe --version
+packages\plugin-native-terminal\wezterm\target\release\wezterm-gui.exe start
 ```
 
 ## 3. 配置 provider
@@ -348,7 +348,7 @@ docker build --target server -t natalia-deploy:ubuntu24 .
 docker build --target cli -t natalia-cli:ubuntu24 .
 ```
 
-> fork 产物位于 `packages/native-terminal/wezterm/target/release/`；构建脚本会把它
+> fork 产物位于 `packages/plugins/native-terminal/wezterm/target/release/`；构建脚本会把它
 > 同时复制到 `deploy/wezterm-bin/`，`.dockerignore` 排除了 `wezterm/target`（2.8G），
 > 镜像通过 `--from=wezterm-build` 从 `deploy/wezterm-bin/` 显式打包这三个二进制。
 

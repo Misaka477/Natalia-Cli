@@ -3,10 +3,10 @@
 > Status: **apiVersion 1** (see `API_VERSION` in `@natalia/contracts`).
 > The tables under the "machine-derived" heading below are generated from the
 > source tables the transport and the contracts use, and a drift guard
-> (`packages/transport/test/api-reference.test.ts`) fails the test gate if this
+> (`packages/hosts/transport/test/api-reference.test.ts`) fails the test gate if this
 > document disagrees with the code. Regenerate with
 > `npm run docs:api-reference`. Everything here is exercised by
-> `packages/sdk/test/consumer-conformance.test.ts`, which drives a real runtime
+> `packages/tooling/sdk/test/consumer-conformance.test.ts`, which drives a real runtime
 > over the real transport using only the consumer packages; if that test cannot
 > do it, this document does not claim you can.
 
@@ -213,7 +213,7 @@ catching. Today: `reloadConfig` / `canReloadConfig` (`applied` / `allowed`),
 for an external UI: answering a request that has already timed out returns
 `accepted: false`, and the model was already told that call did not run —
 rendering it as approved would be wrong. Which members must answer this way is
-recorded per member in `packages/contracts/src/refusals.ts`, with a note for
+recorded per member in `packages/core/contracts/src/refusals.ts`, with a note for
 each; a new member cannot be added to `RuntimeClient` without deciding this.
 
 The SDK also performs a **version check**: before the first call it reads
@@ -590,7 +590,7 @@ unavailable" otherwise):
 
 ## 10. Examples (executable, not prose)
 
-The conformance suite `packages/sdk/test/consumer-conformance.test.ts` is this
+The conformance suite `packages/tooling/sdk/test/consumer-conformance.test.ts` is this
 document's contract in executable form — 18 tests across eight scenario
 families, using only the consumer packages, against a real runtime over the
 real transport:
@@ -854,7 +854,7 @@ Deployment notes:
 <!-- api-reference:generated -->
 ## Machine-derived reference
 
-> All numbers and tables below are derived from the source tables the transport and the contracts use. Regenerate with `npm run docs:api-reference`. A hand edit inside this block, or any disagreement with the code, turns `packages/transport/test/api-reference.test.ts` red.
+> All numbers and tables below are derived from the source tables the transport and the contracts use. Regenerate with `npm run docs:api-reference`. A hand edit inside this block, or any disagreement with the code, turns `packages/hosts/transport/test/api-reference.test.ts` red.
 
 ### Protocol version
 
@@ -1159,9 +1159,9 @@ Deployment notes:
 ### Events and projection (source scan)
 
 - Runtime event types (`RuntimeEventData` union): 103.
-- view-store projections (`case` labels in `packages/view-store/src`): 84.
+- view-store projections (`case` labels in `packages/hosts/view-store/src`): 84.
 
-### SDK methods → RPC routes (source scan of `packages/sdk/src/index.ts`)
+### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/index.ts`)
 
 | SDK method                          | RPC method                           | Params                                                                                                                                                                                                                                                                                                                                                                                                       | Return type                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1288,7 +1288,7 @@ Deployment notes:
 | `diagnostics`                       | `diagnostics.list`                   | `limit?`: number                                                                                                                                                                                                                                                                                                                                                                                             | RuntimeDiagnostic[]                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `health`                            | `—`                                  | —                                                                                                                                                                                                                                                                                                                                                                                                            | { ok: boolean; apiVersion: number }                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-### Runtime event dictionary (source scan of `packages/contracts/src/events.ts`)
+### Runtime event dictionary (source scan of `packages/core/contracts/src/events.ts`)
 
 | Event type                  | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Trigger                                                                                                                                                                              |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

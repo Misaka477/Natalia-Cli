@@ -6,7 +6,7 @@
 > 无需阅读 `@natalia/contracts` 源码即可知道每个返回值的形状。
 >
 > 文末"机器派生"标题下的表格由源码表生成（`npm run docs:api-reference`），
-> 与英文版逐字节一致；防漂移守卫（`packages/transport/test/api-reference.test.ts`）
+> 与英文版逐字节一致；防漂移守卫（`packages/hosts/transport/test/api-reference.test.ts`）
 > 在二者不一致或与代码不一致时使门禁变红。
 
 ## 1. 怎么用

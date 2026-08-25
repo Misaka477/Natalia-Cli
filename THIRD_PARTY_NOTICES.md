@@ -51,11 +51,11 @@ redistribution.
 
 The interactive terminal host is a patched fork of
 [WezTerm](https://github.com/wez/wezterm), vendored under
-`packages/native-terminal/wezterm` and pinned to upstream commit
+`packages/plugins/native-terminal/wezterm` and pinned to upstream commit
 `76b606ec597a3c0263fa60321548637451c0a547`. The fork adds an authenticated
 input-claim exchange immediately before the pane write path (five files under
 `wezterm-gui/src/termwindow/`); the full fork metadata, including build
-commands, is recorded in `packages/native-terminal/wezterm-fork.json`.
+commands, is recorded in `packages/plugins/native-terminal/wezterm-fork.json`.
 
 WezTerm is licensed under the MIT License:
 
@@ -81,14 +81,14 @@ WezTerm is licensed under the MIT License:
 > FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 > IN THE SOFTWARE.
 
-The upstream text lives at `packages/native-terminal/wezterm/LICENSE.md` and is
+The upstream text lives at `packages/plugins/native-terminal/wezterm/LICENSE.md` and is
 preserved there.
 
 WezTerm bundles the `JetBrains Mono`, `Noto Color Emoji`, and `Roboto` fonts,
 and a `Symbols Nerd Font Mono` build limited to icon sets distributed under the
 OFL 1.1; the Pomicons set is excluded. Those fonts are distributed under the
 SIL Open Font License 1.1, whose text is included in the vendored tree under
-`packages/native-terminal/wezterm/assets/fonts`.
+`packages/plugins/native-terminal/wezterm/assets/fonts`.
 
 ## System Components
 

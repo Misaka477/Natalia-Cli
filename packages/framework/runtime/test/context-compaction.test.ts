@@ -1,0 +1,537 @@
+import { expect, test } from "bun:test";
+import { FakeCompactor } from "./fixtures";
+import {
+  compactContext,
+  compactionTrigger,
+  ContextLedger,
+  largeToolResultContext,
+  preserveRecentWithToolPairs,
+  providerCompactor,
+  providerError,
+  recoverContextLimitOnce,
+  resolveReservedOutputTokens,
+  type Compactor,
+  type ContextEntry,
+  type ProviderStreamRequest,
+  type StreamingProvider,
+} from "../src";
+
+test("context accounting combines provider exact checkpoint with pending estimate", () => {
+  const ledger = new ContextLedger();
+  ledger.add({
+    id: "sys",
+    role: "system",
+    content: "system prompt",
+    tokens: 10,
+  });
+  ledger.add({
+    id: "tool",
+    role: "tool_result",
+    content: "tool output",
+    tokens: 20,
+  });
+  ledger.recordProviderUsage(100, 25);
+  expect(
+    ledger.status({
+      max: 200,
+      thresholdPercent: 85,
+      reserved: 50,
+    }).source,
+  ).toBe("exact_checkpoint");
+  ledger.add({
+    id: "dyn",
+    role: "dynamic",
+    content: "dynamic injection",
+    tokens: 7,
+  });
+  ledger.addResource({
+    kind: "agent",
+    id: "agent-1",
+    summary: "running subagent",
+  });
+
+  const status = ledger.status({
+    max: 200,
+    thresholdPercent: 85,
+    reserved: 50,
+  });
+  expect(status.used).toBeGreaterThanOrEqual(132);
+  expect(status.source).toBe("pending_estimate");
+  expect(status.trigger).toBeUndefined();
+  expect(ledger.snapshot().entries.map((entry) => entry.role)).toContain(
+    "resource",
+  );
+});
+
+test("reserved output resolver prioritizes provider, explicit, catalog and fallback formula", () => {
+  expect(
+    resolveReservedOutputTokens({
+      contextWindow: 32000,
+      configuredReserved: 1234,
+    }).source,
+  ).toBe("config");
+  expect(
+    resolveReservedOutputTokens({
+      contextWindow: 32000,
+      configuredReserved: "auto",
+      providerOutputLimit: 4096,
+    }).tokens,
+  ).toBe(4096);
+  expect(
+    resolveReservedOutputTokens({
+      contextWindow: 32000,
+      configuredReserved: "auto",
+      explicitMaxOutputTokens: 2048,
+    }).source,
+  ).toBe("explicit_output");
+  expect(
+    resolveReservedOutputTokens({
+      contextWindow: 32000,
+      configuredReserved: "auto",
+      catalogOutputLimit: 8192,
+    }).source,
+  ).toBe("catalog");
+  expect(
+    resolveReservedOutputTokens({
+      contextWindow: 32000,
+      configuredReserved: "auto",
+    }).tokens,
+  ).toBe(4096);
+  expect(
+    resolveReservedOutputTokens({
+      contextWindow: 200000,
+      configuredReserved: "auto",
+    }).tokens,
+  ).toBe(20000);
+});
+
+test("compaction trigger uses ratio or reserved budget and respects disabled config", async () => {
+  expect(
+    compactionTrigger({
+      used: 86,
+      max: 100,
+      thresholdPercent: 85,
+      reserved: 1,
+    }),
+  ).toBe("ratio");
+  expect(
+    compactionTrigger({
+      used: 70,
+      max: 100,
+      thresholdPercent: 85,
+      reserved: 31,
+    }),
+  ).toBe("reserved");
+
+  const ledger = ledgerWithMessages(10);
+  const before = ledger.snapshot();
+  const result = await compactContext(ledger, new FakeCompactor(), {
+    id: "cmp_disabled",
+    trigger: "ratio",
+    enabled: false,
+    maxTokens: 100,
+    thresholdPercent: 85,
+    reservedTokens: 10,
+    preservedRecentMessages: 2,
+  });
+  expect(result).toEqual({ compacted: false, skipped: "disabled" });
+  expect(ledger.snapshot()).toEqual(before);
+});
+
+test("manual compaction works while disabled and preserves tool-call/result pairing", async () => {
+  const ledger = new ContextLedger();
+  ledger.add({ id: "u1", role: "user", content: "old", tokens: 10 });
+  ledger.add({
+    id: "call",
+    role: "tool_call",
+    content: "call",
+    pairID: "p1",
+    tokens: 10,
+  });
+  ledger.add({
+    id: "result",
+    role: "tool_result",
+    content: "result",
+    pairID: "p1",
+    tokens: 10,
+  });
+  ledger.add({ id: "a1", role: "assistant", content: "recent", tokens: 10 });
+  const events: string[] = [];
+
+  const result = await compactContext(
+    ledger,
+    new FakeCompactor([{ summary: "manual summary", tokens: 20 }]),
+    {
+      id: "cmp_manual",
+      trigger: "manual",
+      enabled: false,
+      maxTokens: 1000,
+      thresholdPercent: 85,
+      reservedTokens: 100,
+      preservedRecentMessages: 2,
+      instruction: "keep tool evidence",
+      onEvent: (event) => events.push(event.type),
+    },
+  );
+
+  expect(result.compacted).toBe(true);
+  expect(events).toContain("compaction.begin");
+  expect(events).toContain("compaction.end");
+  expect(ledger.snapshot().entries.map((entry) => entry.id)).toEqual([
+    "cmp_manual:summary",
+    "call",
+    "result",
+    "a1",
+  ]);
+});
+
+test("compaction summarizes only entries older than the preserved tail", async () => {
+  const ledger = ledgerWithMessages(4);
+  let compactedIDs: string[] = [];
+  const compactor: Compactor = {
+    async compact(input) {
+      compactedIDs = input.entries.map((entry) => entry.id);
+      return { summary: "old context" };
+    },
+  };
+  await compactContext(ledger, compactor, {
+    id: "cmp_head_only",
+    trigger: "ratio",
+    maxTokens: 100,
+    thresholdPercent: 85,
+    reservedTokens: 10,
+    preservedRecentMessages: 2,
+  });
+  expect(compactedIDs).toEqual(["m0", "m1"]);
+  expect(ledger.snapshot().entries.map((entry) => entry.id)).toEqual([
+    "cmp_head_only:summary",
+    "m2",
+    "m3",
+  ]);
+  expect(
+    ledger.status({ max: 100, thresholdPercent: 85, reserved: 10 }).source,
+  ).toBe("pending_estimate");
+});
+
+test("provider compaction requests a structured, updateable work-state summary", async () => {
+  let request: ProviderStreamRequest | undefined;
+  const provider: StreamingProvider = {
+    provider: "test",
+    model: "test",
+    async *stream(input) {
+      request = input;
+      yield { type: "content", text: "structured summary" };
+    },
+  };
+
+  await providerCompactor(provider).compact({
+    entries: [
+      { id: "summary", role: "summary", content: "Earlier state" },
+      { id: "user", role: "user", content: "New requirement" },
+    ],
+    resources: [],
+  });
+
+  const prompt = request?.messages.at(-1)?.content ?? "";
+  expect(prompt).toContain("update that anchor");
+  expect(prompt).toContain("## Objective");
+  expect(prompt).toContain("### Completed");
+  expect(prompt).toContain("### Active");
+  expect(prompt).toContain("### Blocked");
+  expect(prompt).toContain("## Next Move");
+  expect(prompt).toContain("## Relevant Files");
+  expect(prompt).toContain("summary: Earlier state");
+  expect(prompt).toContain("user: New requirement");
+});
+
+test("compaction skips when every entry belongs to the preserved tail", async () => {
+  const ledger = ledgerWithMessages(2);
+  let called = false;
+  const result = await compactContext(
+    ledger,
+    {
+      async compact() {
+        called = true;
+        return { summary: "unused" };
+      },
+    },
+    {
+      id: "cmp_nothing",
+      trigger: "ratio",
+      maxTokens: 100,
+      thresholdPercent: 85,
+      reservedTokens: 10,
+      preservedRecentMessages: 2,
+    },
+  );
+  expect(result).toEqual({
+    compacted: false,
+    skipped: "nothing_to_compact",
+  });
+  expect(called).toBe(false);
+});
+
+test("compaction does not repeatedly summarize an existing summary", async () => {
+  const ledger = new ContextLedger();
+  ledger.add({
+    id: "summary",
+    role: "summary",
+    content: "already compacted",
+    tokens: 10,
+  });
+  let called = false;
+  const result = await compactContext(
+    ledger,
+    {
+      async compact() {
+        called = true;
+        return { summary: "nested summary" };
+      },
+    },
+    {
+      id: "cmp_summary_only",
+      trigger: "ratio",
+      maxTokens: 10,
+      thresholdPercent: 50,
+      reservedTokens: 1,
+      preservedRecentMessages: 0,
+    },
+  );
+  expect(result).toEqual({
+    compacted: false,
+    skipped: "nothing_to_compact",
+  });
+  expect(called).toBe(false);
+});
+
+test("compaction estimates retained context instead of compactor API usage", async () => {
+  const ledger = new ContextLedger();
+  ledger.add({ id: "old", role: "user", content: "x".repeat(400_000) });
+  ledger.add({ id: "recent", role: "user", content: "recent", tokens: 2 });
+  await compactContext(
+    ledger,
+    new FakeCompactor([{ summary: "small summary" }]),
+    {
+      id: "cmp_usage",
+      trigger: "manual",
+      maxTokens: 10_000,
+      thresholdPercent: 85,
+      reservedTokens: 1_000,
+      preservedRecentMessages: 1,
+    },
+  );
+  expect(ledger.effectiveTokens()).toBeLessThan(200);
+  expect(
+    ledger.status({ max: 10_000, thresholdPercent: 85, reserved: 1_000 })
+      .trigger,
+  ).toBeUndefined();
+});
+
+test("compaction retains attachment metadata only for preserved user entries", async () => {
+  const ledger = new ContextLedger();
+  ledger.add({
+    id: "old-user",
+    role: "user",
+    content: "old image",
+    attachments: [
+      {
+        id: "att_old",
+        path: ".natalia/attachments/att_old-image.png",
+        filename: "old.png",
+        mediaType: "image/png",
+        byteLength: 8,
+        sha256: "old",
+      },
+    ],
+  });
+  ledger.add({
+    id: "recent-user",
+    role: "user",
+    content: "recent image",
+    attachments: [
+      {
+        id: "att_recent",
+        path: ".natalia/attachments/att_recent-image.png",
+        filename: "recent.png",
+        mediaType: "image/png",
+        byteLength: 8,
+        sha256: "recent",
+      },
+    ],
+  });
+  await compactContext(
+    ledger,
+    new FakeCompactor([{ summary: "summary", tokens: 10 }]),
+    {
+      id: "cmp_attachment",
+      trigger: "manual",
+      maxTokens: 1000,
+      thresholdPercent: 85,
+      reservedTokens: 100,
+      preservedRecentMessages: 1,
+    },
+  );
+  expect(
+    ledger
+      .snapshot()
+      .entries.flatMap((entry) => entry.attachments ?? [])
+      .map((attachment) => attachment.id),
+  ).toEqual(["att_recent"]);
+});
+
+test("compaction failure is atomic and retry events use M9 policy", async () => {
+  const ledger = ledgerWithMessages(5);
+  const before = ledger.snapshot();
+  const events: string[] = [];
+  const compactor: Compactor = {
+    async compact() {
+      throw providerError({ kind: "timeout", message: "compaction timeout" });
+    },
+  };
+  await expect(
+    compactContext(ledger, compactor, {
+      id: "cmp_fail",
+      trigger: "ratio",
+      maxTokens: 100,
+      thresholdPercent: 85,
+      reservedTokens: 10,
+      preservedRecentMessages: 2,
+      retry: {
+        policy: { maxAttemptsPerStep: 3 },
+        timer: async () => undefined,
+        random: () => 0,
+      },
+      onEvent: (event) => events.push(event.type),
+    }),
+  ).rejects.toMatchObject({ kind: "timeout" });
+  expect(ledger.snapshot()).toEqual(before);
+  expect(events.filter((type) => type === "step.retry")).toHaveLength(2);
+  expect(events).toContain("compaction.end");
+});
+
+test("context-limit recovery compacts once then retries original step without loop", async () => {
+  const ledger = ledgerWithMessages(8);
+  let calls = 0;
+  const events: string[] = [];
+  const value = await recoverContextLimitOnce({
+    id: "turn_ctx",
+    step: 2,
+    ledger,
+    compactor: new FakeCompactor([{ summary: "recovered", tokens: 50 }]),
+    compact: {
+      id: "cmp_ctx",
+      maxTokens: 1000,
+      thresholdPercent: 85,
+      reservedTokens: 100,
+      preservedRecentMessages: 2,
+      retry: { timer: async () => undefined, random: () => 0 },
+    },
+    onEvent: (event) => events.push(event.type),
+    async runStep() {
+      calls += 1;
+      if (calls === 1)
+        throw providerError({ kind: "context_limit", message: "too long" });
+      return "ok";
+    },
+  });
+  expect(value).toBe("ok");
+  expect(calls).toBe(2);
+  expect(events).toContain("context.limit.recovery");
+  expect(events).toContain("compaction.begin");
+  expect(events).toContain("compaction.end");
+});
+
+test("context-limit recovery reports when no old context can be compacted", async () => {
+  const ledger = ledgerWithMessages(1);
+  const recoveries: boolean[] = [];
+  let calls = 0;
+  const value = await recoverContextLimitOnce({
+    id: "turn_no_head",
+    step: 1,
+    ledger,
+    compactor: new FakeCompactor(),
+    compact: {
+      id: "cmp_no_head",
+      maxTokens: 100,
+      thresholdPercent: 85,
+      reservedTokens: 10,
+      preservedRecentMessages: 2,
+    },
+    async runStep() {
+      calls += 1;
+      if (calls === 1)
+        throw providerError({ kind: "context_limit", message: "too long" });
+      return "retried";
+    },
+    onEvent(event) {
+      if (event.type === "context.limit.recovery")
+        recoveries.push(event.compacted);
+    },
+  });
+  expect(value).toBe("retried");
+  expect(recoveries).toEqual([false, false]);
+});
+
+test("resource reinjection, session restore and event replay remain deterministic", async () => {
+  const ledger = ledgerWithMessages(4);
+  ledger.addResource({
+    kind: "workflow",
+    id: "wf-1",
+    summary: "pending workflow",
+  });
+  const restored = new ContextLedger();
+  restored.restore(ledger.snapshot());
+  await compactContext(
+    restored,
+    new FakeCompactor([{ summary: "with resources", tokens: 40 }]),
+    {
+      id: "cmp_restore",
+      trigger: "manual",
+      maxTokens: 1000,
+      thresholdPercent: 85,
+      reservedTokens: 100,
+      preservedRecentMessages: 1,
+    },
+  );
+  expect(
+    restored
+      .snapshot()
+      .entries.filter((entry) => entry.content.includes("workflow:wf-1")),
+  ).toHaveLength(1);
+});
+
+test("large tool result context representation separates artifact from UI text", () => {
+  const entry = largeToolResultContext({
+    id: "tool_big",
+    role: "tool_result",
+    content: "x".repeat(5000),
+    artifactRef: "artifact://tool_big",
+  });
+  expect(entry.content.length).toBeLessThan(2500);
+  expect(entry.content).toContain("artifact://tool_big");
+  expect(entry.content).toContain("totalChars=5000");
+});
+
+function ledgerWithMessages(count: number) {
+  const ledger = new ContextLedger();
+  for (let index = 0; index < count; index++) {
+    ledger.add({
+      id: `m${index}`,
+      role: index % 2 ? "assistant" : "user",
+      content: `message ${index}`,
+      tokens: 10,
+    });
+  }
+  return ledger;
+}
+
+test("preserveRecentWithToolPairs restores missing paired call", () => {
+  const entries: ContextEntry[] = [
+    { id: "call", role: "tool_call", content: "call", pairID: "p" },
+    { id: "middle", role: "assistant", content: "middle" },
+    { id: "result", role: "tool_result", content: "result", pairID: "p" },
+  ];
+  expect(
+    preserveRecentWithToolPairs(entries, 1).map((entry) => entry.id),
+  ).toEqual(["call", "result"]);
+});

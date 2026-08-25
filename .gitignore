@@ -47,6 +47,8 @@ Thumbs.db
 /frontend/tui/node_modules/
 /apps/*/node_modules/
 /packages/*/node_modules/
+/packages/*/*/node_modules/
+/packages/*/*/*/node_modules/
 
 # TypeScript/Bun build and cache outputs
 /apps/*/dist/
@@ -54,11 +56,19 @@ Thumbs.db
 /apps/*/.vite/
 /apps/*/tsconfig.tsbuildinfo
 /packages/*/dist/
+/packages/*/*/dist/
+/packages/*/*/*/dist/
 /packages/*/tsconfig.tsbuildinfo
-/packages/native-terminal/wezterm/target/
+/packages/*/*/tsconfig.tsbuildinfo
+/packages/*/*/*/tsconfig.tsbuildinfo
+/packages/plugins/native-terminal/wezterm/target/
 /dist/
 /packages/*/.turbo/
+/packages/*/*/.turbo/
+/packages/*/*/*/.turbo/
 /packages/*/.vite/
+/packages/*/*/.vite/
+/packages/*/*/*/.vite/
 /.turbo/
 /.bun/
 

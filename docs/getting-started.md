@@ -75,13 +75,13 @@ npm run native-terminal:build-wezterm:windows-cross
 npm run native-terminal:build-wezterm:windows
 ```
 
-They land in `packages/native-terminal/wezterm/target/release/`.
+They land in `packages/plugins/native-terminal/wezterm/target/release/`.
 
 **From a Windows release archive** — the prebuilt fork binaries are included in
 the archive at their expected path, so nothing needs to be moved:
 
 ```text
-packages/native-terminal/wezterm/target/release/
+packages/plugins/native-terminal/wezterm/target/release/
 ├── wezterm.exe            ← CLI client
 ├── wezterm-gui.exe        ← visible window
 └── wezterm-mux-server.exe ← background multiplexer daemon
@@ -98,8 +98,8 @@ stock WezTerm.
 Verify once after unpacking:
 
 ```powershell
-packages\native-terminal\wezterm\target\release\wezterm.exe --version
-packages\native-terminal\wezterm\target\release\wezterm-gui.exe start
+packages\plugin-native-terminal\wezterm\target\release\wezterm.exe --version
+packages\plugin-native-terminal\wezterm\target\release\wezterm-gui.exe start
 ```
 
 ## 3. Configure a provider

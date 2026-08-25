@@ -8,7 +8,7 @@ FROM ubuntu:24.04 AS wezterm-build
 
 # The WezTerm fork is built inside the `natalia-ubuntu-build` podman container
 # (scripts/build-wezterm-ubuntu.ts) so the executables only require the Ubuntu
-# glibc (2.39), then staged into packages/native-terminal/wezterm/target/release.
+# glibc (2.39), then staged into packages/plugins/native-terminal/wezterm/target/release.
 # This stage copies those host-staged binaries (staged under deploy/wezterm-bin
 # so the 2.8G cargo target stays out of the build context) instead of
 # recompiling inside `docker build`, because building on the Docker host would
@@ -16,9 +16,9 @@ FROM ubuntu:24.04 AS wezterm-build
 # image-build time, and (b) risk linking against the host's glibc.
 # Run the build script before `docker build`:
 #   npm run native-terminal:build-wezterm:ubuntu
-COPY deploy/wezterm-bin/wezterm /src/packages/native-terminal/wezterm/target/release/wezterm
-COPY deploy/wezterm-bin/wezterm-gui /src/packages/native-terminal/wezterm/target/release/wezterm-gui
-COPY deploy/wezterm-bin/wezterm-mux-server /src/packages/native-terminal/wezterm/target/release/wezterm-mux-server
+COPY deploy/wezterm-bin/wezterm /src/packages/plugins/native-terminal/wezterm/target/release/wezterm
+COPY deploy/wezterm-bin/wezterm-gui /src/packages/plugins/native-terminal/wezterm/target/release/wezterm-gui
+COPY deploy/wezterm-bin/wezterm-mux-server /src/packages/plugins/native-terminal/wezterm/target/release/wezterm-mux-server
 
 FROM ubuntu:24.04 AS cli
 
@@ -26,9 +26,9 @@ RUN useradd --create-home --uid 10001 --shell /bin/bash natalia
 
 COPY --from=bun-build /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=bun-build /src /opt/natalia
-COPY --from=wezterm-build /src/packages/native-terminal/wezterm/target/release/wezterm /opt/natalia/packages/native-terminal/wezterm/target/release/wezterm
-COPY --from=wezterm-build /src/packages/native-terminal/wezterm/target/release/wezterm-gui /opt/natalia/packages/native-terminal/wezterm/target/release/wezterm-gui
-COPY --from=wezterm-build /src/packages/native-terminal/wezterm/target/release/wezterm-mux-server /opt/natalia/packages/native-terminal/wezterm/target/release/wezterm-mux-server
+COPY --from=wezterm-build /src/packages/plugins/native-terminal/wezterm/target/release/wezterm /opt/natalia/packages/plugins/native-terminal/wezterm/target/release/wezterm
+COPY --from=wezterm-build /src/packages/plugins/native-terminal/wezterm/target/release/wezterm-gui /opt/natalia/packages/plugins/native-terminal/wezterm/target/release/wezterm-gui
+COPY --from=wezterm-build /src/packages/plugins/native-terminal/wezterm/target/release/wezterm-mux-server /opt/natalia/packages/plugins/native-terminal/wezterm/target/release/wezterm-mux-server
 
 WORKDIR /workspace
 ENV HOME=/tmp/natalia-home \

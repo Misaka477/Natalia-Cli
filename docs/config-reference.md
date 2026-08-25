@@ -2,7 +2,7 @@
 
 > This document describes the shape of `.natalia/config.json`: the type,
 > optionality and default of every field. The validator is `configV3Schema`
-> (`packages/contracts/src/schemas.ts`); the table below is generated from
+> (`packages/core/contracts/src/schemas.ts`); the table below is generated from
 > that schema, so it cannot drift from the code.
 >
 > Config is written and applied through `updateConfig` (`config.update`) —
@@ -27,7 +27,7 @@
 ---
 
 <!-- config-reference:generated -->
-## Config shape (source scan of the zod schema graph rooted at `packages/contracts/src/schemas.ts`)
+## Config shape (source scan of the zod schema graph rooted at `packages/core/contracts/src/schemas.ts`)
 
 | Schema                                | Field                                 | Type                                                                             | Optional | Default                                                                          |
 | ------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------- |

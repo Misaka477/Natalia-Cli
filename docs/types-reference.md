@@ -10,7 +10,7 @@
 > The tables under the "Machine-derived" heading below are generated from the
 > source tables (`npm run docs:api-reference`) and are byte-identical with the
 > Chinese edition; the drift guard
-> (`packages/transport/test/api-reference.test.ts`) turns the gate red on any
+> (`packages/hosts/transport/test/api-reference.test.ts`) turns the gate red on any
 > disagreement with the code.
 
 ## 1. How to use

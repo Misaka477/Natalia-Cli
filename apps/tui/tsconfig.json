@@ -9,17 +9,41 @@
   },
   "include": ["src", "test", "bin"],
   "references": [
-    { "path": "../../packages/example-ui-plugin" },
-    { "path": "../../packages/contracts" },
-    { "path": "../../packages/client" },
-    { "path": "../../packages/capability" },
-    { "path": "../../packages/config" },
-    { "path": "../../packages/plugin" },
-    { "path": "../../packages/platform" },
-    { "path": "../../packages/session" },
-    { "path": "../../packages/ui-model" },
-    { "path": "../../packages/testing" },
-    { "path": "../../packages/tools" },
-    { "path": "../../packages/view-store" }
+    {
+      "path": "../../packages/examples/ui-plugin"
+    },
+    {
+      "path": "../../packages/core/contracts"
+    },
+    {
+      "path": "../../packages/framework/client"
+    },
+    {
+      "path": "../../packages/core/capability"
+    },
+    {
+      "path": "../../packages/hosts/config"
+    },
+    {
+      "path": "../../packages/core/plugin"
+    },
+    {
+      "path": "../../packages/hosts/platform"
+    },
+    {
+      "path": "../../packages/framework/session"
+    },
+    {
+      "path": "../../packages/hosts/ui-model"
+    },
+    {
+      "path": "../../packages/tooling/testing"
+    },
+    {
+      "path": "../../packages/core/tools"
+    },
+    {
+      "path": "../../packages/hosts/view-store"
+    }
   ]
 }

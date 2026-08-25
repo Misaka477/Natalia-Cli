@@ -69,7 +69,7 @@ format:
 
 Translate this into your vendor request format; the built-in adapters are the
 reference implementations for OpenAI-compatible, Anthropic and Gemini shapes
-(`packages/runtime/src/provider.ts`).
+(`packages/framework/runtime/src/provider.ts`).
 
 ## 4. Attachment lowering and the double gate
 
@@ -112,7 +112,7 @@ errors so the consumer gets a machine-readable failure, not an unclassified
 Two ways:
 
 1. **A new built-in kind** — add a branch in `providerFromKind`
-   (`packages/runtime/src/provider.ts`); the config's `providers[].type`
+   (`packages/framework/runtime/src/provider.ts`); the config's `providers[].type`
    string is matched case-insensitively by substring (`"anthropic"` /
    `"claude"` → `AnthropicProvider`, `"gemini"` / `"google"` →
    `GeminiProvider`, anything else falls back to the OpenAI-compatible
@@ -135,6 +135,6 @@ TUI's "add provider" flow to list your models.
 - Declares `imageInput`/`pdfInput`/`videoInput` exactly as implemented.
 - Throws `providerError`/`providerErrorFromHttp`, never a raw string.
 - Reports `usage` so the journal records tokens.
-- Tests mirror `packages/runtime/test/provider.test.ts`: stream parsing,
+- Tests mirror `packages/framework/runtime/test/provider.test.ts`: stream parsing,
   attachment lowering to the native format, error mapping, `videoInput`
   declarations.

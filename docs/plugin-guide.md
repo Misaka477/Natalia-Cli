@@ -238,7 +238,7 @@ materializes that adapter. Unload calls its disposer through the same ownership
 and lifecycle path as every other contribution.
 
 The executable minimal package is
-`packages/example-ui-plugin`; its end-to-end materialization test is
+`packages/examples/ui-plugin`; its end-to-end materialization test is
 `apps/tui/test/example-ui-plugin.test.ts`. The production TUI uses the same
 `registerUi` port and materializer, so a new UI does not require a TUI-specific
 host branch.

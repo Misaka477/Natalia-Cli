@@ -91,7 +91,7 @@ function makeDemoBackend(): RuntimeClient {
           {
             tool: "read_file",
             status: "completed",
-            input: { path: "packages/runtime/src/turn.ts" },
+            input: { path: "packages/framework/runtime/src/turn.ts" },
           },
         ],
       });

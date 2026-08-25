@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../../.."
+  },
+  "include": ["src", "test"],
+  "references": [
+    {
+      "path": "../../core/contracts"
+    },
+    {
+      "path": "../../hosts/config"
+    },
+    {
+      "path": "../../hosts/platform"
+    },
+    {
+      "path": "../session"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../sandbox"
+    },
+    {
+      "path": "../../hosts/object-store"
+    }
+  ]
+}

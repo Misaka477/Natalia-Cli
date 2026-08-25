@@ -60,23 +60,23 @@ function makeDemoBackend(): RuntimeClient {
       emitTool(
         "grep",
         "grep_defaults",
-        { pattern: "defaultModel", include: "packages/config/**/*.ts" },
+        { pattern: "defaultModel", include: "packages/hosts/config/**/*.ts" },
         [
-          "packages/config/src/defaults.ts:14: defaultModel: ''",
-          "packages/config/src/schema.ts:82: defaultModel: z.string()",
+          "packages/hosts/config/src/defaults.ts:14: defaultModel: ''",
+          "packages/hosts/config/src/schema.ts:82: defaultModel: z.string()",
         ].join("\n"),
       );
       emitTool(
         "read_file",
         "read_defaults",
-        { path: "packages/config/src/defaults.ts" },
+        { path: "packages/hosts/config/src/defaults.ts" },
         "export const defaults = { defaultModel: '', maxSteps: 1000 };",
       );
       emitTool(
         "write_file",
         "write_defaults",
         {
-          path: "packages/config/src/defaults.ts",
+          path: "packages/hosts/config/src/defaults.ts",
           content: [
             "export const defaults = {",
             "  defaultModel: '',",
@@ -85,7 +85,7 @@ function makeDemoBackend(): RuntimeClient {
             "};",
           ].join("\n"),
         },
-        "wrote packages/config/src/defaults.ts",
+        "wrote packages/hosts/config/src/defaults.ts",
       );
       sink?.({ type: "turn.finished", id: submission.id, stopReason: "done" });
       return submission;

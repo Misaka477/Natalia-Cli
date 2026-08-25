@@ -11,7 +11,7 @@ const output = [
   "All matched files use Prettier code style!",
   "Type checking workspace packages...",
   "apps/tui passed",
-  "packages/runtime passed",
+  "packages/framework/runtime passed",
   "packages/tools passed",
   "Running package tests...",
   "221 package tests passed",

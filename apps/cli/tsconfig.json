@@ -7,46 +7,46 @@
   "include": ["src", "test"],
   "references": [
     {
-      "path": "../../packages/capability"
+      "path": "../../packages/core/capability"
     },
     {
-      "path": "../../packages/client"
+      "path": "../../packages/framework/client"
     },
     {
-      "path": "../../packages/config"
+      "path": "../../packages/hosts/config"
     },
     {
-      "path": "../../packages/contracts"
+      "path": "../../packages/core/contracts"
     },
     {
-      "path": "../../packages/installer"
+      "path": "../../packages/tooling/installer"
     },
     {
-      "path": "../../packages/local-tools-plugin"
+      "path": "../../packages/plugins/local-tools"
     },
     {
-      "path": "../../packages/platform"
+      "path": "../../packages/hosts/platform"
     },
     {
-      "path": "../../packages/plugin"
+      "path": "../../packages/core/plugin"
     },
     {
-      "path": "../../packages/runtime"
+      "path": "../../packages/framework/runtime"
     },
     {
-      "path": "../../packages/session"
+      "path": "../../packages/framework/session"
     },
     {
-      "path": "../../packages/transport"
+      "path": "../../packages/hosts/transport"
     },
     {
-      "path": "../../packages/tools"
+      "path": "../../packages/core/tools"
     },
     {
-      "path": "../../packages/workflow"
+      "path": "../../packages/domains/workflow"
     },
     {
-      "path": "../../packages/workflow-scheduler"
+      "path": "../../packages/framework/workflow-scheduler"
     }
   ]
 }

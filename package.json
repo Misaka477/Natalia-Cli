@@ -7,12 +7,19 @@
   "license": "Apache-2.0",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/core/*",
+    "packages/framework/*",
+    "packages/hosts/*",
+    "packages/domains/*",
+    "packages/plugins/*",
+    "packages/plugins/tools/*",
+    "packages/tooling/*",
+    "packages/examples/*"
   ],
   "scripts": {
     "format": "prettier --check package.json tsconfig.json tsconfig.base.json 'apps/**/*.{ts,tsx,json,toml}' 'packages/**/*.{ts,tsx,json}' 'scripts/**/*.{ts,json}' --ignore-path .gitignore --ignore-path .prettierignore --ignore-unknown",
-    "typecheck": "tsc -b apps/tui apps/cli packages/contracts packages/runtime-services packages/attachments packages/local-tools-plugin packages/task-module-plugin packages/team-plugin packages/tool-policy packages/checkpoint packages/context-ledger packages/compaction packages/runtime-status packages/turn-orchestration packages/provider-model packages/work-ledger packages/governance-ledger packages/collaboration packages/workspace packages/task-workflow-plugin packages/workflow-scheduler packages/client packages/ui-model packages/runtime packages/retry packages/runtime-config packages/session packages/session-store packages/config packages/platform packages/tools packages/native-terminal packages/object-store packages/sandbox packages/skills-plugin packages/workflow packages/transport packages/mcp-plugin packages/sdk packages/testing packages/subagent packages/subagents packages/terminal packages/agent packages/plugin packages/installer packages/tool-ask packages/tool-fs-read packages/tool-fs-write packages/tool-pdf packages/tool-search packages/tool-shell packages/tool-todo packages/tool-web packages/tool-process packages/tool-terminal packages/tool-agent packages/tool-sandbox packages/view-store packages/capability",
-    "test": "npx bun test ./packages/contracts/test ./packages/local-tools-plugin/test ./packages/task-module-plugin/test ./packages/team-plugin/test ./packages/tool-policy/test ./packages/platform/test ./packages/config/test ./packages/runtime/test ./packages/retry/test ./packages/runtime-config/test ./packages/runtime-status/test ./packages/turn-orchestration/test ./packages/provider-model/test ./packages/work-ledger/test ./packages/governance-ledger/test ./packages/collaboration/test ./packages/workspace/test ./packages/task-workflow-plugin/test ./packages/workflow-scheduler/test ./packages/checkpoint/test ./packages/attachments/test ./packages/context-ledger/test ./packages/compaction/test ./packages/session/test ./packages/session-store/test ./packages/ui-model/test ./packages/view-store/test ./packages/capability/test ./packages/client/test ./packages/tools/test ./packages/testing/test ./packages/installer/test ./packages/native-terminal/test ./packages/object-store/test ./packages/sandbox/test ./packages/skills-plugin/test ./packages/workflow/test ./packages/transport/test ./packages/mcp-plugin/test ./packages/sdk/test ./packages/subagent/test ./packages/subagents/test ./packages/terminal/test ./packages/agent/test ./packages/plugin/test ./packages/tool-ask/test ./packages/tool-fs-read/test ./packages/tool-fs-write/test ./packages/tool-pdf/test ./packages/tool-search/test ./packages/tool-shell/test ./packages/tool-todo/test ./packages/tool-web/test ./packages/tool-process/test ./packages/tool-terminal/test ./packages/tool-agent/test ./packages/tool-sandbox/test --timeout 60000 && npm --workspace @natalia/cli run test && npm --workspace @natalia/tui run test",
+    "typecheck": "tsc -b apps/tui apps/cli packages/core/contracts packages/core/runtime-services packages/framework/attachments packages/plugins/local-tools packages/plugins/task-module packages/plugins/team packages/framework/tool-policy packages/framework/checkpoint packages/domains/context-ledger packages/framework/compaction packages/framework/runtime-status packages/framework/turn-orchestration packages/framework/provider-model packages/domains/work-ledger packages/domains/governance-ledger packages/framework/collaboration packages/framework/workspace packages/plugins/task-workflow packages/framework/workflow-scheduler packages/framework/client packages/hosts/ui-model packages/framework/runtime packages/framework/retry packages/framework/runtime-config packages/framework/session packages/framework/session-store packages/hosts/config packages/hosts/platform packages/core/tools packages/plugins/native-terminal packages/hosts/object-store packages/framework/sandbox packages/plugins/skills packages/domains/workflow packages/hosts/transport packages/plugins/mcp packages/tooling/sdk packages/tooling/testing packages/framework/subagents packages/framework/agent packages/core/plugin packages/tooling/installer packages/plugins/tools/ask packages/plugins/tools/fs-read packages/plugins/tools/fs-write packages/plugins/tools/pdf packages/plugins/tools/search packages/plugins/tools/shell packages/plugins/tools/todo packages/plugins/tools/web packages/plugins/tools/process packages/hosts/view-store packages/core/capability",
+    "test": "npx bun test ./packages/core/contracts/test ./packages/plugins/local-tools/test ./packages/plugins/task-module/test ./packages/plugins/team/test ./packages/framework/tool-policy/test ./packages/hosts/platform/test ./packages/hosts/config/test ./packages/framework/runtime/test ./packages/framework/retry/test ./packages/framework/runtime-config/test ./packages/framework/runtime-status/test ./packages/framework/turn-orchestration/test ./packages/framework/provider-model/test ./packages/domains/work-ledger/test ./packages/domains/governance-ledger/test ./packages/framework/collaboration/test ./packages/framework/workspace/test ./packages/plugins/task-workflow/test ./packages/framework/workflow-scheduler/test ./packages/framework/checkpoint/test ./packages/framework/attachments/test ./packages/domains/context-ledger/test ./packages/framework/compaction/test ./packages/framework/session/test ./packages/framework/session-store/test ./packages/hosts/ui-model/test ./packages/hosts/view-store/test ./packages/core/capability/test ./packages/framework/client/test ./packages/core/tools/test ./packages/tooling/testing/test ./packages/tooling/installer/test ./packages/plugins/native-terminal/test ./packages/hosts/object-store/test ./packages/framework/sandbox/test ./packages/plugins/skills/test ./packages/domains/workflow/test ./packages/hosts/transport/test ./packages/plugins/mcp/test ./packages/tooling/sdk/test ./packages/framework/subagents/test ./packages/framework/agent/test ./packages/core/plugin/test ./packages/plugins/tools/ask/test ./packages/plugins/tools/fs-read/test ./packages/plugins/tools/fs-write/test ./packages/plugins/tools/pdf/test ./packages/plugins/tools/search/test ./packages/plugins/tools/shell/test ./packages/plugins/tools/todo/test ./packages/plugins/tools/web/test ./packages/plugins/tools/process/test --timeout 60000 && npm --workspace @natalia/cli run test && npm --workspace @natalia/tui run test",
     "smoke:tui:terminal": "npm --workspace @natalia/tui run smoke:terminal",
     "smoke:tui:snapshot": "npm --workspace @natalia/tui run smoke:snapshot",
     "smoke:tui:long-modal": "npm --workspace @natalia/tui run smoke:long-modal",
@@ -24,22 +31,18 @@
     "smoke:tui:palette-keyboard": "npm --workspace @natalia/tui run smoke:palette-keyboard",
     "smoke:tui:provider-config": "npm --workspace @natalia/tui run smoke:provider-config",
     "smoke:tui:terminal-sandbox": "npm --workspace @natalia/tui run smoke:terminal-sandbox",
-    "native-terminal:build-wezterm": "env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER -u _CE_CONDA -u _CE_M PATH=/usr/bin:/bin CC=/usr/bin/gcc CXX=/usr/bin/g++ cargo build --manifest-path packages/native-terminal/wezterm/Cargo.toml --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server",
-    "native-terminal:build-wezterm:windows": "cargo build --manifest-path packages/native-terminal/wezterm/Cargo.toml --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server",
+    "native-terminal:build-wezterm": "env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER -u _CE_CONDA -u _CE_M PATH=/usr/bin:/bin CC=/usr/bin/gcc CXX=/usr/bin/g++ cargo build --manifest-path packages/plugins/native-terminal/wezterm/Cargo.toml --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server",
+    "native-terminal:build-wezterm:windows": "cargo build --manifest-path packages/plugins/native-terminal/wezterm/Cargo.toml --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server",
     "native-terminal:build-wezterm:windows-cross": "npx bun scripts/build-wezterm-windows.ts",
     "native-terminal:build-wezterm:ubuntu": "npx bun scripts/build-wezterm-ubuntu.ts",
-    "smoke:native-terminal:kimi": "npx bun scripts/native-terminal-kimi-smoke.ts",
     "smoke:native-terminal:headless": "env -u DISPLAY -u WAYLAND_DISPLAY npx bun scripts/native-terminal-headless-smoke.ts",
-    "smoke:native-terminal:chat": "npx bun scripts/native-terminal-kimi-chat-smoke.ts",
-    "perf:native-terminal:kimi-30m": "npx bun scripts/perf/kimi-terminal-soak.ts 1800000",
-    "perf:native-terminal:kimi-2h": "npx bun scripts/perf/kimi-terminal-soak.ts 7200000",
     "perf:baseline": "npx bun scripts/perf/perf-0.ts",
     "perf:p0-trace": "npx bun scripts/perf/p0-trace-summary.ts",
     "smoke:tui:retry": "npm --workspace @natalia/tui run smoke:retry",
     "smoke:tui:dialog-stack": "npm --workspace @natalia/tui run smoke:dialog-stack",
     "smoke:tui:approval-overlay": "npm --workspace @natalia/tui run smoke:approval-overlay",
     "smoke:cli:automation": "npx bun scripts/cli-automation-smoke.ts",
-    "guard:imports": "npx bun run packages/testing/bin/import-guard.ts",
+    "guard:imports": "npx bun run packages/tooling/testing/bin/import-guard.ts",
     "ts:tui": "npm --workspace @natalia/tui run dev",
     "ts:cli": "npx bun apps/cli/src/main.ts",
     "ts:release-check": "npm run licenses:check && npx bun scripts/ts-release-check.ts",
@@ -49,7 +52,7 @@
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports",
     "smoke:daemon:task-delivery": "npx bun scripts/daemon-task-delivery-smoke.ts",
     "cleanup:test-tmp": "bun scripts/cleanup-test-tmp.ts",
-    "docs:api-reference": "API_REFERENCE_WRITE=1 npx bun run packages/transport/test/api-reference.test.ts"
+    "docs:api-reference": "API_REFERENCE_WRITE=1 npx bun run packages/hosts/transport/test/api-reference.test.ts"
   },
   "dependencies": {
     "zod": "3.25.76"

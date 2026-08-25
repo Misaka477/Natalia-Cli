@@ -3,8 +3,8 @@
 > 状态：**apiVersion 1**（见 `@natalia/contracts` 的 `API_VERSION`）。
 > 本文档为 `docs/api-reference.md` 的中文版；文末"机器派生"标题下的表格由源码表
 > 生成（`npm run docs:api-reference`），**与英文版逐字节一致**，防漂移守卫
-> （`packages/transport/test/api-reference.test.ts`）在二者不一致时使门禁变红。
-> 本文档所有内容均由 `packages/sdk/test/consumer-conformance.test.ts` 验证——它用
+> （`packages/hosts/transport/test/api-reference.test.ts`）在二者不一致时使门禁变红。
+> 本文档所有内容均由 `packages/tooling/sdk/test/consumer-conformance.test.ts` 验证——它用
 > 消费面三包驱动真实 runtime、走真实传输；若该测试做不到，本文档不会声称你可以。
 
 本文档面向在 Natalia runtime 之上通过 HTTP 构建 UI 或集成的开发者。它覆盖稳定协议
@@ -184,7 +184,7 @@ for (const block of state.messages) console.log(displayText(block));
 （`outcome` 为 `applied`、`pending` 或 `rejected`）、`respondApproval` /
 `respondQuestion`（`accepted`）。最后一对对外部 UI 最重要：回答一个已超时的请求会
 返回 `accepted: false`，而模型已被告知该调用没有执行——把它渲染成"已批准"就错了。
-哪些成员必须这样回答，逐成员记录在 `packages/contracts/src/refusals.ts`（每条带注
+哪些成员必须这样回答，逐成员记录在 `packages/core/contracts/src/refusals.ts`（每条带注
 释）；向 `RuntimeClient` 新增成员时，typecheck 强制必须对此做出决定。
 
 SDK 还会做**版本检查**：首次调用前读 `/healthz`，若 runtime 说出的 `apiVersion` 比
@@ -476,7 +476,7 @@ host 必须存在（否则报 "Native Terminal Host is unavailable"）：
 
 ## 10. 示例（可执行，不是散文）
 
-conformance 套件 `packages/sdk/test/consumer-conformance.test.ts` 是本文档的契约
+conformance 套件 `packages/tooling/sdk/test/consumer-conformance.test.ts` 是本文档的契约
 可执行形态——18 条测试、8 个场景族，只用消费面包，对着真实 runtime 走真实传输：
 
 1. **回合渲染闭环** — 提交提示词、消费事件、重放 history、用 `view-store` 折叠
@@ -704,7 +704,7 @@ createRuntimeHttpServer({
 <!-- api-reference:generated -->
 ## Machine-derived reference
 
-> All numbers and tables below are derived from the source tables the transport and the contracts use. Regenerate with `npm run docs:api-reference`. A hand edit inside this block, or any disagreement with the code, turns `packages/transport/test/api-reference.test.ts` red.
+> All numbers and tables below are derived from the source tables the transport and the contracts use. Regenerate with `npm run docs:api-reference`. A hand edit inside this block, or any disagreement with the code, turns `packages/hosts/transport/test/api-reference.test.ts` red.
 
 ### Protocol version
 
@@ -1009,9 +1009,9 @@ createRuntimeHttpServer({
 ### Events and projection (source scan)
 
 - Runtime event types (`RuntimeEventData` union): 103.
-- view-store projections (`case` labels in `packages/view-store/src`): 84.
+- view-store projections (`case` labels in `packages/hosts/view-store/src`): 84.
 
-### SDK methods → RPC routes (source scan of `packages/sdk/src/index.ts`)
+### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/index.ts`)
 
 | SDK method                          | RPC method                           | Params                                                                                                                                                                                                                                                                                                                                                                                                       | Return type                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1138,7 +1138,7 @@ createRuntimeHttpServer({
 | `diagnostics`                       | `diagnostics.list`                   | `limit?`: number                                                                                                                                                                                                                                                                                                                                                                                             | RuntimeDiagnostic[]                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `health`                            | `—`                                  | —                                                                                                                                                                                                                                                                                                                                                                                                            | { ok: boolean; apiVersion: number }                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-### Runtime event dictionary (source scan of `packages/contracts/src/events.ts`)
+### Runtime event dictionary (source scan of `packages/core/contracts/src/events.ts`)
 
 | Event type                  | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Trigger                                                                                                                                                                              |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

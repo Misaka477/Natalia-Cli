@@ -60,14 +60,104 @@
         "solid-js": "1.9.12",
       },
     },
-    "packages/agent": {
+    "packages/core/capability": {
+      "name": "@natalia/capability",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
+    },
+    "packages/core/contracts": {
+      "name": "@natalia/contracts",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/ui-model": "workspace:*",
+        "zod": "3.25.76",
+      },
+    },
+    "packages/core/plugin": {
+      "name": "@natalia/plugin",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/core/runtime-services": {
+      "name": "@natalia/runtime-services",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/agent": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/runtime": "workspace:*",
+        "@natalia/session": "workspace:*",
+        "@natalia/tools": "workspace:*",
+        "@natalia/workflow": "workspace:*",
+      },
+    },
+    "packages/core/tools": {
+      "name": "@natalia/tools",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
+        "@vscode/tree-sitter-wasm": "0.3.1",
+        "web-tree-sitter": "0.25.10",
+      },
+    },
+    "packages/domains/context-ledger": {
+      "name": "@natalia/context-ledger",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/runtime": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+      },
+    },
+    "packages/domains/governance-ledger": {
+      "name": "@natalia/governance-ledger",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+      },
+    },
+    "packages/domains/work-ledger": {
+      "name": "@natalia/work-ledger",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+      },
+    },
+    "packages/domains/workflow": {
+      "name": "@natalia/workflow",
+      "version": "0.0.0-ts7",
+      "dependencies": {
+        "@natalia/agent": "workspace:*",
+        "@natalia/config": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/runtime": "workspace:*",
+        "@natalia/tools": "workspace:*",
+        "yaml": "2.8.1",
+      },
+    },
+    "packages/examples/ui-plugin": {
+      "name": "@natalia/example-ui-plugin",
+      "version": "1.0.0",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+      },
+    },
+    "packages/framework/agent": {
       "name": "@natalia/agent",
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
     },
-    "packages/attachments": {
+    "packages/framework/attachments": {
       "name": "@natalia/attachments",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -76,14 +166,7 @@
         "@natalia/session": "workspace:*",
       },
     },
-    "packages/capability": {
-      "name": "@natalia/capability",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-      },
-    },
-    "packages/checkpoint": {
+    "packages/framework/checkpoint": {
       "name": "@natalia/checkpoint",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -92,7 +175,7 @@
         "@natalia/runtime-services": "workspace:*",
       },
     },
-    "packages/client": {
+    "packages/framework/client": {
       "name": "@natalia/client",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -110,20 +193,18 @@
         "@natalia/plugin": "workspace:*",
         "@natalia/plugin-local-tools": "workspace:*",
         "@natalia/plugin-mcp": "workspace:*",
+        "@natalia/plugin-native-terminal": "workspace:*",
         "@natalia/plugin-skills": "workspace:*",
         "@natalia/plugin-task-module": "workspace:*",
         "@natalia/plugin-task-workflow": "workspace:*",
         "@natalia/plugin-team": "workspace:*",
-        "@natalia/plugin-tool-agent": "workspace:*",
         "@natalia/plugin-tool-ask": "workspace:*",
         "@natalia/plugin-tool-fs-read": "workspace:*",
         "@natalia/plugin-tool-fs-write": "workspace:*",
         "@natalia/plugin-tool-pdf": "workspace:*",
         "@natalia/plugin-tool-process": "workspace:*",
-        "@natalia/plugin-tool-sandbox": "workspace:*",
         "@natalia/plugin-tool-search": "workspace:*",
         "@natalia/plugin-tool-shell": "workspace:*",
-        "@natalia/plugin-tool-terminal": "workspace:*",
         "@natalia/plugin-tool-todo": "workspace:*",
         "@natalia/plugin-tool-web": "workspace:*",
         "@natalia/provider-model": "workspace:*",
@@ -136,7 +217,6 @@
         "@natalia/session": "workspace:*",
         "@natalia/session-store": "workspace:*",
         "@natalia/subagents": "workspace:*",
-        "@natalia/terminal": "workspace:*",
         "@natalia/testing": "workspace:*",
         "@natalia/tool-policy": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -150,7 +230,7 @@
         "@natalia/workflow-scheduler": "workspace:*",
       },
     },
-    "packages/collaboration": {
+    "packages/framework/collaboration": {
       "name": "@natalia/collaboration",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -162,7 +242,7 @@
         "@natalia/work-ledger": "workspace:*",
       },
     },
-    "packages/compaction": {
+    "packages/framework/compaction": {
       "name": "@natalia/compaction",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -173,105 +253,7 @@
         "@natalia/runtime-services": "workspace:*",
       },
     },
-    "packages/config": {
-      "name": "@natalia/config",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "zod": "3.25.76",
-      },
-    },
-    "packages/context-ledger": {
-      "name": "@natalia/context-ledger",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-      },
-    },
-    "packages/contracts": {
-      "name": "@natalia/contracts",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/ui-model": "workspace:*",
-        "zod": "3.25.76",
-      },
-    },
-    "packages/example-ui-plugin": {
-      "name": "@natalia/example-ui-plugin",
-      "version": "1.0.0",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-      },
-    },
-    "packages/governance-ledger": {
-      "name": "@natalia/governance-ledger",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-      },
-    },
-    "packages/installer": {
-      "name": "@natalia/installer",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-      },
-    },
-    "packages/local-tools-plugin": {
-      "name": "@natalia/plugin-local-tools",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/config": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/mcp-plugin": {
-      "name": "@natalia/plugin-mcp",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/native-terminal": {
-      "name": "@natalia/native-terminal",
-      "version": "0.0.0-m11",
-      "dependencies": {
-        "@natalia/platform": "workspace:*",
-      },
-    },
-    "packages/object-store": {
-      "name": "@natalia/object-store",
-      "version": "0.0.0-m13",
-    },
-    "packages/platform": {
-      "name": "@natalia/platform",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "fuzzysort": "3.1.0",
-      },
-    },
-    "packages/plugin": {
-      "name": "@natalia/plugin",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/provider-model": {
+    "packages/framework/provider-model": {
       "name": "@natalia/provider-model",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -286,7 +268,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/retry": {
+    "packages/framework/retry": {
       "name": "@natalia/retry",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -294,7 +276,7 @@
         "@natalia/runtime-services": "workspace:*",
       },
     },
-    "packages/runtime": {
+    "packages/framework/runtime": {
       "name": "@natalia/runtime",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -309,26 +291,14 @@
         "@natalia/testing": "workspace:*",
       },
     },
-    "packages/runtime-config": {
+    "packages/framework/runtime-config": {
       "name": "@natalia/runtime-config",
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
     },
-    "packages/runtime-services": {
-      "name": "@natalia/runtime-services",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/agent": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/session": "workspace:*",
-        "@natalia/tools": "workspace:*",
-        "@natalia/workflow": "workspace:*",
-      },
-    },
-    "packages/runtime-status": {
+    "packages/framework/runtime-status": {
       "name": "@natalia/runtime-status",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -336,7 +306,7 @@
         "@natalia/runtime-services": "workspace:*",
       },
     },
-    "packages/sandbox": {
+    "packages/framework/sandbox": {
       "name": "@natalia/sandbox",
       "version": "0.0.0-m11",
       "dependencies": {
@@ -346,26 +316,14 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/sdk": {
-      "name": "@natalia/sdk",
-      "version": "0.0.0-ts7",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-      },
-      "devDependencies": {
-        "@natalia/client": "workspace:*",
-        "@natalia/transport": "workspace:*",
-        "@natalia/view-store": "workspace:*",
-      },
-    },
-    "packages/session": {
+    "packages/framework/session": {
       "name": "@natalia/session",
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
     },
-    "packages/session-store": {
+    "packages/framework/session-store": {
       "name": "@natalia/session-store",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -375,7 +333,122 @@
         "@natalia/session": "workspace:*",
       },
     },
-    "packages/skills-plugin": {
+    "packages/framework/subagents": {
+      "name": "@natalia/subagents",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/framework/tool-policy": {
+      "name": "@natalia/tool-policy",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/framework/turn-orchestration": {
+      "name": "@natalia/turn-orchestration",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/session": "workspace:*",
+      },
+    },
+    "packages/framework/workflow-scheduler": {
+      "name": "@natalia/workflow-scheduler",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/workflow": "workspace:*",
+      },
+    },
+    "packages/framework/workspace": {
+      "name": "@natalia/workspace",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+      },
+    },
+    "packages/hosts/config": {
+      "name": "@natalia/config",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
+        "zod": "3.25.76",
+      },
+    },
+    "packages/hosts/object-store": {
+      "name": "@natalia/object-store",
+      "version": "0.0.0-m13",
+    },
+    "packages/hosts/platform": {
+      "name": "@natalia/platform",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "fuzzysort": "3.1.0",
+      },
+    },
+    "packages/hosts/transport": {
+      "name": "@natalia/transport",
+      "version": "0.0.0-ts7",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@natalia/client": "workspace:*",
+      },
+    },
+    "packages/hosts/ui-model": {
+      "name": "@natalia/ui-model",
+      "version": "0.0.0-m13",
+    },
+    "packages/hosts/view-store": {
+      "name": "@natalia/view-store",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/ui-model": "workspace:*",
+      },
+    },
+    "packages/plugins/local-tools": {
+      "name": "@natalia/plugin-local-tools",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/config": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/plugins/mcp": {
+      "name": "@natalia/plugin-mcp",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/plugins/native-terminal": {
+      "name": "@natalia/plugin-native-terminal",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/plugins/skills": {
       "name": "@natalia/plugin-skills",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -385,20 +458,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/subagent": {
-      "name": "@natalia/subagent",
-      "version": "0.0.0-m13",
-    },
-    "packages/subagents": {
-      "name": "@natalia/subagents",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/subagent": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/task-module-plugin": {
+    "packages/plugins/task-module": {
       "name": "@natalia/plugin-task-module",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -409,7 +469,7 @@
         "@natalia/workflow": "workspace:*",
       },
     },
-    "packages/task-workflow-plugin": {
+    "packages/plugins/task-workflow": {
       "name": "@natalia/plugin-task-workflow",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -423,7 +483,7 @@
         "@natalia/workflow": "workspace:*",
       },
     },
-    "packages/team-plugin": {
+    "packages/plugins/team": {
       "name": "@natalia/plugin-team",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -433,38 +493,11 @@
         "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
-    },
-    "packages/terminal": {
-      "name": "@natalia/terminal",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/native-terminal": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/testing": "workspace:*",
-        "@natalia/tools": "workspace:*",
+      "devDependencies": {
+        "@natalia/subagents": "workspace:*",
       },
     },
-    "packages/testing": {
-      "name": "@natalia/testing",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/native-terminal": "workspace:*",
-        "@natalia/sandbox": "workspace:*",
-        "@natalia/session": "workspace:*",
-        "@natalia/subagent": "workspace:*",
-      },
-    },
-    "packages/tool-agent": {
-      "name": "@natalia/plugin-tool-agent",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/plugin": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/tool-ask": {
+    "packages/plugins/tools/ask": {
       "name": "@natalia/plugin-tool-ask",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -472,7 +505,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-fs-read": {
+    "packages/plugins/tools/fs-read": {
       "name": "@natalia/plugin-tool-fs-read",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -480,7 +513,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-fs-write": {
+    "packages/plugins/tools/fs-write": {
       "name": "@natalia/plugin-tool-fs-write",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -488,7 +521,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-pdf": {
+    "packages/plugins/tools/pdf": {
       "name": "@natalia/plugin-tool-pdf",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -498,15 +531,7 @@
         "pdfjs-dist": "6.2.108",
       },
     },
-    "packages/tool-policy": {
-      "name": "@natalia/tool-policy",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/tool-process": {
+    "packages/plugins/tools/process": {
       "name": "@natalia/plugin-tool-process",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -515,16 +540,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-sandbox": {
-      "name": "@natalia/plugin-tool-sandbox",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/plugin": "workspace:*",
-        "@natalia/testing": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/tool-search": {
+    "packages/plugins/tools/search": {
       "name": "@natalia/plugin-tool-search",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -532,7 +548,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-shell": {
+    "packages/plugins/tools/shell": {
       "name": "@natalia/plugin-tool-shell",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -540,16 +556,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-terminal": {
-      "name": "@natalia/plugin-tool-terminal",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/plugin": "workspace:*",
-        "@natalia/testing": "workspace:*",
-        "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/tool-todo": {
+    "packages/plugins/tools/todo": {
       "name": "@natalia/plugin-tool-todo",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -557,7 +564,7 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tool-web": {
+    "packages/plugins/tools/web": {
       "name": "@natalia/plugin-tool-web",
       "version": "0.0.0-m13",
       "dependencies": {
@@ -566,78 +573,35 @@
         "@natalia/tools": "workspace:*",
       },
     },
-    "packages/tools": {
-      "name": "@natalia/tools",
+    "packages/tooling/installer": {
+      "name": "@natalia/installer",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@vscode/tree-sitter-wasm": "0.3.1",
-        "web-tree-sitter": "0.25.10",
-      },
-    },
-    "packages/transport": {
-      "name": "@natalia/transport",
-      "version": "0.0.0-ts7",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-      },
-    },
-    "packages/turn-orchestration": {
-      "name": "@natalia/turn-orchestration",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/session": "workspace:*",
-      },
-    },
-    "packages/ui-model": {
-      "name": "@natalia/ui-model",
-      "version": "0.0.0-m13",
-    },
-    "packages/view-store": {
-      "name": "@natalia/view-store",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/ui-model": "workspace:*",
-      },
-    },
-    "packages/work-ledger": {
-      "name": "@natalia/work-ledger",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-      },
-    },
-    "packages/workflow": {
-      "name": "@natalia/workflow",
-      "version": "0.0.0-ts7",
-      "dependencies": {
-        "@natalia/agent": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/tools": "workspace:*",
-        "yaml": "2.8.1",
+        "@natalia/plugin": "workspace:*",
       },
     },
-    "packages/workflow-scheduler": {
-      "name": "@natalia/workflow-scheduler",
-      "version": "0.0.0-m13",
+    "packages/tooling/sdk": {
+      "name": "@natalia/sdk",
+      "version": "0.0.0-ts7",
       "dependencies": {
-        "@natalia/workflow": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@natalia/client": "workspace:*",
+        "@natalia/transport": "workspace:*",
+        "@natalia/view-store": "workspace:*",
       },
     },
-    "packages/workspace": {
-      "name": "@natalia/workspace",
+    "packages/tooling/testing": {
+      "name": "@natalia/testing",
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@natalia/plugin-native-terminal": "workspace:*",
+        "@natalia/sandbox": "workspace:*",
+        "@natalia/session": "workspace:*",
       },
     },
   },
@@ -732,127 +696,117 @@
 
     "@napi-rs/canvas-win32-x64-msvc": ["@napi-rs/canvas-win32-x64-msvc@1.0.7", "", { "os": "win32", "cpu": "x64" }, "sha512-SKTNdBV/ljfhkPsLhXjm4x2PQ0ILpc0PhkBzRHuroJXidZUaF5yh0j3s3dIzB8PrRmW+nEASzyMTaWT3nH1ywQ=="],
 
-    "@natalia/agent": ["@natalia/agent@workspace:packages/agent"],
+    "@natalia/agent": ["@natalia/agent@workspace:packages/framework/agent"],
 
-    "@natalia/attachments": ["@natalia/attachments@workspace:packages/attachments"],
+    "@natalia/attachments": ["@natalia/attachments@workspace:packages/framework/attachments"],
 
-    "@natalia/capability": ["@natalia/capability@workspace:packages/capability"],
+    "@natalia/capability": ["@natalia/capability@workspace:packages/core/capability"],
 
-    "@natalia/checkpoint": ["@natalia/checkpoint@workspace:packages/checkpoint"],
+    "@natalia/checkpoint": ["@natalia/checkpoint@workspace:packages/framework/checkpoint"],
 
     "@natalia/cli": ["@natalia/cli@workspace:apps/cli"],
 
-    "@natalia/client": ["@natalia/client@workspace:packages/client"],
+    "@natalia/client": ["@natalia/client@workspace:packages/framework/client"],
 
-    "@natalia/collaboration": ["@natalia/collaboration@workspace:packages/collaboration"],
+    "@natalia/collaboration": ["@natalia/collaboration@workspace:packages/framework/collaboration"],
 
-    "@natalia/compaction": ["@natalia/compaction@workspace:packages/compaction"],
+    "@natalia/compaction": ["@natalia/compaction@workspace:packages/framework/compaction"],
 
-    "@natalia/config": ["@natalia/config@workspace:packages/config"],
+    "@natalia/config": ["@natalia/config@workspace:packages/hosts/config"],
 
-    "@natalia/context-ledger": ["@natalia/context-ledger@workspace:packages/context-ledger"],
+    "@natalia/context-ledger": ["@natalia/context-ledger@workspace:packages/domains/context-ledger"],
 
-    "@natalia/contracts": ["@natalia/contracts@workspace:packages/contracts"],
+    "@natalia/contracts": ["@natalia/contracts@workspace:packages/core/contracts"],
 
-    "@natalia/example-ui-plugin": ["@natalia/example-ui-plugin@workspace:packages/example-ui-plugin"],
+    "@natalia/example-ui-plugin": ["@natalia/example-ui-plugin@workspace:packages/examples/ui-plugin"],
 
-    "@natalia/governance-ledger": ["@natalia/governance-ledger@workspace:packages/governance-ledger"],
+    "@natalia/governance-ledger": ["@natalia/governance-ledger@workspace:packages/domains/governance-ledger"],
 
-    "@natalia/installer": ["@natalia/installer@workspace:packages/installer"],
+    "@natalia/installer": ["@natalia/installer@workspace:packages/tooling/installer"],
 
-    "@natalia/native-terminal": ["@natalia/native-terminal@workspace:packages/native-terminal"],
+    "@natalia/object-store": ["@natalia/object-store@workspace:packages/hosts/object-store"],
 
-    "@natalia/object-store": ["@natalia/object-store@workspace:packages/object-store"],
+    "@natalia/platform": ["@natalia/platform@workspace:packages/hosts/platform"],
 
-    "@natalia/platform": ["@natalia/platform@workspace:packages/platform"],
+    "@natalia/plugin": ["@natalia/plugin@workspace:packages/core/plugin"],
 
-    "@natalia/plugin": ["@natalia/plugin@workspace:packages/plugin"],
+    "@natalia/plugin-local-tools": ["@natalia/plugin-local-tools@workspace:packages/plugins/local-tools"],
 
-    "@natalia/plugin-local-tools": ["@natalia/plugin-local-tools@workspace:packages/local-tools-plugin"],
+    "@natalia/plugin-mcp": ["@natalia/plugin-mcp@workspace:packages/plugins/mcp"],
 
-    "@natalia/plugin-mcp": ["@natalia/plugin-mcp@workspace:packages/mcp-plugin"],
+    "@natalia/plugin-native-terminal": ["@natalia/plugin-native-terminal@workspace:packages/plugins/native-terminal"],
 
-    "@natalia/plugin-skills": ["@natalia/plugin-skills@workspace:packages/skills-plugin"],
+    "@natalia/plugin-skills": ["@natalia/plugin-skills@workspace:packages/plugins/skills"],
 
-    "@natalia/plugin-task-module": ["@natalia/plugin-task-module@workspace:packages/task-module-plugin"],
+    "@natalia/plugin-task-module": ["@natalia/plugin-task-module@workspace:packages/plugins/task-module"],
 
-    "@natalia/plugin-task-workflow": ["@natalia/plugin-task-workflow@workspace:packages/task-workflow-plugin"],
+    "@natalia/plugin-task-workflow": ["@natalia/plugin-task-workflow@workspace:packages/plugins/task-workflow"],
 
-    "@natalia/plugin-team": ["@natalia/plugin-team@workspace:packages/team-plugin"],
+    "@natalia/plugin-team": ["@natalia/plugin-team@workspace:packages/plugins/team"],
 
-    "@natalia/plugin-tool-agent": ["@natalia/plugin-tool-agent@workspace:packages/tool-agent"],
+    "@natalia/plugin-tool-ask": ["@natalia/plugin-tool-ask@workspace:packages/plugins/tools/ask"],
 
-    "@natalia/plugin-tool-ask": ["@natalia/plugin-tool-ask@workspace:packages/tool-ask"],
+    "@natalia/plugin-tool-fs-read": ["@natalia/plugin-tool-fs-read@workspace:packages/plugins/tools/fs-read"],
 
-    "@natalia/plugin-tool-fs-read": ["@natalia/plugin-tool-fs-read@workspace:packages/tool-fs-read"],
+    "@natalia/plugin-tool-fs-write": ["@natalia/plugin-tool-fs-write@workspace:packages/plugins/tools/fs-write"],
 
-    "@natalia/plugin-tool-fs-write": ["@natalia/plugin-tool-fs-write@workspace:packages/tool-fs-write"],
+    "@natalia/plugin-tool-pdf": ["@natalia/plugin-tool-pdf@workspace:packages/plugins/tools/pdf"],
 
-    "@natalia/plugin-tool-pdf": ["@natalia/plugin-tool-pdf@workspace:packages/tool-pdf"],
+    "@natalia/plugin-tool-process": ["@natalia/plugin-tool-process@workspace:packages/plugins/tools/process"],
 
-    "@natalia/plugin-tool-process": ["@natalia/plugin-tool-process@workspace:packages/tool-process"],
+    "@natalia/plugin-tool-search": ["@natalia/plugin-tool-search@workspace:packages/plugins/tools/search"],
 
-    "@natalia/plugin-tool-sandbox": ["@natalia/plugin-tool-sandbox@workspace:packages/tool-sandbox"],
+    "@natalia/plugin-tool-shell": ["@natalia/plugin-tool-shell@workspace:packages/plugins/tools/shell"],
 
-    "@natalia/plugin-tool-search": ["@natalia/plugin-tool-search@workspace:packages/tool-search"],
+    "@natalia/plugin-tool-todo": ["@natalia/plugin-tool-todo@workspace:packages/plugins/tools/todo"],
 
-    "@natalia/plugin-tool-shell": ["@natalia/plugin-tool-shell@workspace:packages/tool-shell"],
+    "@natalia/plugin-tool-web": ["@natalia/plugin-tool-web@workspace:packages/plugins/tools/web"],
 
-    "@natalia/plugin-tool-terminal": ["@natalia/plugin-tool-terminal@workspace:packages/tool-terminal"],
+    "@natalia/provider-model": ["@natalia/provider-model@workspace:packages/framework/provider-model"],
 
-    "@natalia/plugin-tool-todo": ["@natalia/plugin-tool-todo@workspace:packages/tool-todo"],
+    "@natalia/retry": ["@natalia/retry@workspace:packages/framework/retry"],
 
-    "@natalia/plugin-tool-web": ["@natalia/plugin-tool-web@workspace:packages/tool-web"],
+    "@natalia/runtime": ["@natalia/runtime@workspace:packages/framework/runtime"],
 
-    "@natalia/provider-model": ["@natalia/provider-model@workspace:packages/provider-model"],
+    "@natalia/runtime-config": ["@natalia/runtime-config@workspace:packages/framework/runtime-config"],
 
-    "@natalia/retry": ["@natalia/retry@workspace:packages/retry"],
+    "@natalia/runtime-services": ["@natalia/runtime-services@workspace:packages/core/runtime-services"],
 
-    "@natalia/runtime": ["@natalia/runtime@workspace:packages/runtime"],
+    "@natalia/runtime-status": ["@natalia/runtime-status@workspace:packages/framework/runtime-status"],
 
-    "@natalia/runtime-config": ["@natalia/runtime-config@workspace:packages/runtime-config"],
+    "@natalia/sandbox": ["@natalia/sandbox@workspace:packages/framework/sandbox"],
 
-    "@natalia/runtime-services": ["@natalia/runtime-services@workspace:packages/runtime-services"],
+    "@natalia/sdk": ["@natalia/sdk@workspace:packages/tooling/sdk"],
 
-    "@natalia/runtime-status": ["@natalia/runtime-status@workspace:packages/runtime-status"],
+    "@natalia/session": ["@natalia/session@workspace:packages/framework/session"],
 
-    "@natalia/sandbox": ["@natalia/sandbox@workspace:packages/sandbox"],
+    "@natalia/session-store": ["@natalia/session-store@workspace:packages/framework/session-store"],
 
-    "@natalia/sdk": ["@natalia/sdk@workspace:packages/sdk"],
+    "@natalia/subagents": ["@natalia/subagents@workspace:packages/framework/subagents"],
 
-    "@natalia/session": ["@natalia/session@workspace:packages/session"],
+    "@natalia/testing": ["@natalia/testing@workspace:packages/tooling/testing"],
 
-    "@natalia/session-store": ["@natalia/session-store@workspace:packages/session-store"],
+    "@natalia/tool-policy": ["@natalia/tool-policy@workspace:packages/framework/tool-policy"],
 
-    "@natalia/subagent": ["@natalia/subagent@workspace:packages/subagent"],
+    "@natalia/tools": ["@natalia/tools@workspace:packages/core/tools"],
 
-    "@natalia/subagents": ["@natalia/subagents@workspace:packages/subagents"],
-
-    "@natalia/terminal": ["@natalia/terminal@workspace:packages/terminal"],
-
-    "@natalia/testing": ["@natalia/testing@workspace:packages/testing"],
-
-    "@natalia/tool-policy": ["@natalia/tool-policy@workspace:packages/tool-policy"],
-
-    "@natalia/tools": ["@natalia/tools@workspace:packages/tools"],
-
-    "@natalia/transport": ["@natalia/transport@workspace:packages/transport"],
+    "@natalia/transport": ["@natalia/transport@workspace:packages/hosts/transport"],
 
     "@natalia/tui": ["@natalia/tui@workspace:apps/tui"],
 
-    "@natalia/turn-orchestration": ["@natalia/turn-orchestration@workspace:packages/turn-orchestration"],
+    "@natalia/turn-orchestration": ["@natalia/turn-orchestration@workspace:packages/framework/turn-orchestration"],
 
-    "@natalia/ui-model": ["@natalia/ui-model@workspace:packages/ui-model"],
+    "@natalia/ui-model": ["@natalia/ui-model@workspace:packages/hosts/ui-model"],
 
-    "@natalia/view-store": ["@natalia/view-store@workspace:packages/view-store"],
+    "@natalia/view-store": ["@natalia/view-store@workspace:packages/hosts/view-store"],
 
-    "@natalia/work-ledger": ["@natalia/work-ledger@workspace:packages/work-ledger"],
+    "@natalia/work-ledger": ["@natalia/work-ledger@workspace:packages/domains/work-ledger"],
 
-    "@natalia/workflow": ["@natalia/workflow@workspace:packages/workflow"],
+    "@natalia/workflow": ["@natalia/workflow@workspace:packages/domains/workflow"],
 
-    "@natalia/workflow-scheduler": ["@natalia/workflow-scheduler@workspace:packages/workflow-scheduler"],
+    "@natalia/workflow-scheduler": ["@natalia/workflow-scheduler@workspace:packages/framework/workflow-scheduler"],
 
-    "@natalia/workspace": ["@natalia/workspace@workspace:packages/workspace"],
+    "@natalia/workspace": ["@natalia/workspace@workspace:packages/framework/workspace"],
 
     "@opentui/core": ["@opentui/core@0.4.3", "", { "dependencies": { "bun-ffi-structs": "0.2.4", "diff": "9.0.0", "marked": "17.0.1", "string-width": "7.2.0", "strip-ansi": "7.1.2" }, "optionalDependencies": { "@opentui/core-darwin-arm64": "0.4.3", "@opentui/core-darwin-x64": "0.4.3", "@opentui/core-linux-arm64": "0.4.3", "@opentui/core-linux-arm64-musl": "0.4.3", "@opentui/core-linux-x64": "0.4.3", "@opentui/core-linux-x64-musl": "0.4.3", "@opentui/core-win32-arm64": "0.4.3", "@opentui/core-win32-x64": "0.4.3" }, "peerDependencies": { "web-tree-sitter": "0.25.10" } }, "sha512-rrJfAk13tALDqldYjhc78eWQ+aKq1iknJgffIOg3OwyZoqQo+p6gtuqyhmWvXIfQzlNUbpgpCPcxbXlhMnlaHQ=="],
 

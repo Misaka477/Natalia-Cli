@@ -223,7 +223,7 @@ runtime 事件流，`commands.list` 是权威 command catalog。注册本身是�
 host materialize 对应 adapter 才创建 UI；卸载通过与其他 contribution 相同的 owner
 和 lifecycle 路径调用 disposer。
 
-可执行最小包位于 `packages/example-ui-plugin`，端到端 materialization 测试位于
+可执行最小包位于 `packages/examples/ui-plugin`，端到端 materialization 测试位于
 `apps/tui/test/example-ui-plugin.test.ts`。生产 TUI 使用相同 `registerUi` 端口和
 materializer，因此新增 UI 不需要 TUI 专用 host 分支。
 

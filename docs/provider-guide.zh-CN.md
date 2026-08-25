@@ -61,7 +61,7 @@ export type ProviderStreamRequest = {
 - `toolCalls`：assistant 回合时的工具调用。
 
 把它翻译成你的厂商请求格式；三个内建适配器（OpenAI 兼容、Anthropic、
-Gemini 形状，`packages/runtime/src/provider.ts`）是参考实现。
+Gemini 形状，`packages/framework/runtime/src/provider.ts`）是参考实现。
 
 ## 4. 附件降级与双层门控
 
@@ -99,7 +99,7 @@ runtime 对 provider 错误分类，让消费者拿到机器可读的失败而�
 两条路：
 
 1. **新的内建 kind**——在 `providerFromKind`
-   （`packages/runtime/src/provider.ts`）加分支；config 的 `providers[].type`
+   （`packages/framework/runtime/src/provider.ts`）加分支；config 的 `providers[].type`
    字符串按子串不区分大小写匹配（`"anthropic"`/`"claude"` →
    `AnthropicProvider`，`"gemini"`/`"google"` → `GeminiProvider`，其他全部
    回退到 OpenAI 兼容适配器）。然后 `providerForModel(config, modelID)`
@@ -118,5 +118,5 @@ runtime 对 provider 错误分类，让消费者拿到机器可读的失败而�
 - `imageInput`/`pdfInput`/`videoInput` 与实现完全一致。
 - 抛 `providerError`/`providerErrorFromHttp`，绝不抛裸字符串。
 - 报 `usage` 让 journal 记录 token。
-- 测试对照 `packages/runtime/test/provider.test.ts`：流解析、附件降级到原生
+- 测试对照 `packages/framework/runtime/test/provider.test.ts`：流解析、附件降级到原生
   格式、错误映射、`videoInput` 声明。

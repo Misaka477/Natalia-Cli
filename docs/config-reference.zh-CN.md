@@ -1,7 +1,7 @@
 # Natalia 配置参考 — v1
 
 > 本文档描述 `.natalia/config.json` 的形状：每个字段的类型、可选性与默认值。
-> 校验器是 `configV3Schema`（`packages/contracts/src/schemas.ts`）；本表由该
+> 校验器是 `configV3Schema`（`packages/core/contracts/src/schemas.ts`）；本表由该
 > schema 生成，因此不会与代码漂移。
 >
 > 配置经 `updateConfig`（`config.update`）写入并应用——写入与应用的语义（回合
@@ -21,7 +21,7 @@
 ---
 
 <!-- config-reference:generated -->
-## Config shape (source scan of the zod schema graph rooted at `packages/contracts/src/schemas.ts`)
+## Config shape (source scan of the zod schema graph rooted at `packages/core/contracts/src/schemas.ts`)
 
 | Schema                                | Field                                 | Type                                                                             | Optional | Default                                                                          |
 | ------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------- |

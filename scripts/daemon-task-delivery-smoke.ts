@@ -8,7 +8,7 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { NataliaTaskStateStore } from "../packages/workflow/src/index";
+import { NataliaTaskStateStore } from "../packages/domains/workflow/src/index";
 
 const cliEntry = join(import.meta.dir, "..", "apps", "cli", "src", "main.ts");
 
