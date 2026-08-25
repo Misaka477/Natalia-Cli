@@ -390,7 +390,44 @@ runtime RPC 的 `pluginUnload` 和 `pluginReload` 只操作已运行 registry，
 
 ## 6. UI adapter
 
-UI 是使用现有 `adapters` integration point 的普通 v2 插件：
+UI 是使用现有 `adapters` integration point 的普通 v2 插件。仓库内示例演示 host
+contract，但外部 UI 包必须和其他外部插件一样使用可发布的 ESM JavaScript 布局。本节给出
+该包从零开始的完整开发路径。
+
+### 创建外部 UI package
+
+先用普通脚手架创建包，再调整 manifest 的 scope 和 integration point：
+
+```bash
+natalia-ts plugin create ./my-ui --id yourco.ui.web --package @yourco/natalia-ui-web
+```
+
+使用 `scope: "process"`、`integrationPoints: ["adapters"]` 和唯一的 adapter
+`kind`。发布包需要 `@natalia/plugin` 注册 adapter；只有在导入 `RuntimeClient`、
+`RuntimeEvent` 或其他公共类型时，才添加 `@natalia/contracts`：
+
+```json
+{
+  "name": "@yourco/natalia-ui-web",
+  "version": "1.0.0",
+  "type": "module",
+  "files": ["src", "natalia.plugin.json"],
+  "exports": { ".": "./src/index.js" },
+  "dependencies": {
+    "@natalia/plugin": "<compatible-version>",
+    "@natalia/contracts": "<compatible-version>"
+  }
+}
+```
+
+不要把 `packages/examples/ui-plugin` 的 `workspace:*` 依赖版本或 `.ts` 入口照搬到
+发行包；它是仓库 fixture。外部 package 必须发布可导入的 `.js` 或 `.mjs` entry，并声明
+与发行版兼容的实际依赖版本。
+
+### Mount 与 dispose
+
+UI 插件本身很小。注册是惰性的：只有 UI host 选择对应 adapter kind 后才调用 `mount`；
+`dispose` 必须释放 `mount` 创建的所有 listener、timer、renderer、socket 或其他资源。
 
 ```js
 import { definePlugin } from "@natalia/plugin";
@@ -430,14 +467,69 @@ export default definePlugin({
 });
 ```
 
-host 注入三个公共端口：`runtime` 是 `RuntimeClient` 视图，`events.subscribe` 是
-runtime 事件流，`commands.list` 是权威 command catalog。注册本身是惰性的，直到
-host materialize 对应 adapter 才创建 UI；卸载通过与其他 contribution 相同的 owner
-和 lifecycle 路径调用 disposer。
+host 注入三个公共端口：
 
-可执行最小包位于 `packages/examples/ui-plugin`，端到端 materialization 测试位于
-`apps/tui/test/example-ui-plugin.test.ts`。生产 TUI 使用相同 `registerUi` 端口和
-materializer，因此新增 UI 不需要 TUI 专用 host 分支。
+| Port                                  | 用途                                                                                                                                                                    |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input.runtime`                       | 完整的类型化 `RuntimeClient`：提交 turn、查询 session/resource、调用 checkpoint 方法和其他已文档化的 runtime 操作。Feature 方法是可选的，方法不存在时应展示不可用状态。 |
+| `input.events.subscribe(listener)`    | 订阅共享 `RuntimeEvent` 流，并返回 unsubscribe。UI projection state 保持在 adapter 内部；不要另建 runtime 或修改 framework state。                                      |
+| `input.commands.list()` / `execute()` | 列出并执行 host 的权威 command catalog。通过 command `name` 定位，向 `execute` 传入原始命令与已解析参数。                                                               |
+
+UI package 不应导入内部 TUI host、checkpoint controller、registry 或 transport 实现，只能
+使用这些公共 port 与公开的 `@natalia/contracts` type。因此 OpenTUI、web、desktop 或自定义
+renderer 都可使用同一 runtime，而不依赖当前 TUI 的 state 或组件。
+
+### Checkpoint 与消息级 restore
+
+restore UI 必须围绕 preview 构建，不能直接修改 workspace：
+
+```js
+async function openRestore(input, checkpointID) {
+  if (!input.runtime.checkpointPreview || !input.runtime.checkpointRollback)
+    return showUnavailable("Checkpoint management is unavailable.");
+
+  const preview = await input.runtime.checkpointPreview(checkpointID);
+  renderRollbackPreview(
+    preview.changes,
+    preview.context,
+    preview.resources,
+    preview.warnings,
+  );
+
+  // 可选 dry run 返回相同 preview，不会改变 workspace。
+  await input.runtime.checkpointRollback({ id: checkpointID, dryRun: true });
+
+  if (!(await confirmRestore(preview))) return;
+  const result = await input.runtime.checkpointRollback({
+    id: checkpointID,
+    dryRun: false,
+  });
+  showRestored({ safetyCheckpointID: result.safetyCheckpointID });
+}
+```
+
+`checkpointList()` 返回带 `turnID` 的 `RuntimeCheckpoint`。transcript message ID 采用
+`${turnID}:user`、`${turnID}:assistant` 及相关 segment 形式，因此 UI 可以解析 turn ID，
+再用 `checkpoint.turnID === turnID` 过滤 checkpoint。这样能在 user message 或 assistant
+reply 上提供 `Restore...`，而不耦合 OpenTUI renderer。
+
+展示每个 `CheckpointPreview.changes` 的 `add`、`modify`、`delete`、`rename`、`mode` 或
+`symlink` 类型，并展示 context truncation、resource policy、warning 和 `complete` 状态。
+不完整 checkpoint 不能提供 restore。确认 rollback 会在修改 workspace 前创建
+`safetyCheckpointID`；应明确显示“Restore is reversible”，并允许用户之后恢复到该 safety
+checkpoint。
+
+小型 preview 可以只用一次确认。范围大或包含 destructive change 的 preview，应要求用户
+查看 changed-file list 和 warning 后才启用确认。runtime 始终是权威边界：即使 UI 出错，它也
+会拒绝不完整 target 和 safety checkpoint。
+
+### 测试 package
+
+将 renderer 代码放在 adapter-local function 后，并使用 fake `RuntimeClient` 测试 `mount`。
+验证 registration 在 materialize 前不产生 I/O，event 只更新 UI 本地 state，command 通过
+catalog 执行，`dispose` 停止所有 event listener 和 renderer resource。端到端
+materialization 测试可参考 `packages/examples/ui-plugin` 与
+`apps/tui/test/example-ui-plugin.test.ts`。
 
 ### 启动已安装的 UI
 
@@ -448,12 +540,12 @@ natalia-ts plugin install @yourco/natalia-ui-web
 natalia-ts ui ui.web
 ```
 
-`natalia-ts ui <kind>` 在进程内对真实 runtime 挂载该 UI；`natalia-ts ui`（不带
-kind）列出已启用已安装/path 插件贡献的可用 UI kind。TUI 与所有已安装 UI 共用同一个
-通用 host `createUiAdapterHost`（`@natalia/client`）：解析 workspace 配置、
-发现已启用插件、只把 adapter-capable 的 process 插件装入一个进程 registry，
-并对同一个共享 `UiAdapterMountInput` materialize 请求的 kind(s)。关闭幂等且
-fail-closed（先 materializer，再 registry，最后 runtime）。
+`natalia-ts ui <kind>` 在进程内对真实 runtime 挂载该 UI；`natalia-ts ui`（不带 kind）
+列出已启用已安装/path 插件贡献的可用 UI kind。TUI 与所有已安装 UI 共用同一个通用 host
+`createUiAdapterHost`（`@natalia/client`）：解析 workspace 配置、发现已启用插件、只把
+adapter-capable 的 process 插件装入一个进程 registry，并对同一个共享
+`UiAdapterMountInput` materialize 请求的 kind(s)。关闭幂等且 fail-closed（先
+materializer，再 registry，最后 runtime）。
 
 ## 7. 端到端教程
 

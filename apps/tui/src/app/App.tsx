@@ -1425,6 +1425,19 @@ function Shell(props: {
                 );
               });
             }}
+            onMessageRestore={(turnID) => {
+              if (!props.backend.checkpointList) {
+                toast.show({
+                  variant: "warning",
+                  message:
+                    "Checkpoint management is unavailable in this runtime",
+                });
+                return;
+              }
+              dialog.push(() => (
+                <DialogCheckpoint backend={props.backend} turnID={turnID} />
+              ));
+            }}
             backend={props.backend}
             onExit={exitOrCancel}
           />

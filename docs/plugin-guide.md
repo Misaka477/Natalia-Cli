@@ -435,7 +435,49 @@ enable, or disable operations.
 
 ## 6. UI adapters
 
-A UI is a normal v2 plugin using the existing `adapters` integration point:
+A UI is a normal v2 plugin using the existing `adapters` integration point. The
+repository example demonstrates the host contract, but an external UI package
+must use the same publishable ESM JavaScript layout as every other external
+plugin. This section is the complete authoring path for that package.
+
+### Create an external UI package
+
+Start with the ordinary scaffold, then change its manifest scope and integration
+point:
+
+```bash
+natalia-ts plugin create ./my-ui --id yourco.ui.web --package @yourco/natalia-ui-web
+```
+
+Use `scope: "process"`, `integrationPoints: ["adapters"]`, and a unique adapter
+`kind`. The published package needs `@natalia/plugin` to register the adapter
+and `@natalia/contracts` only when it imports `RuntimeClient`, `RuntimeEvent`,
+or other public types:
+
+```json
+{
+  "name": "@yourco/natalia-ui-web",
+  "version": "1.0.0",
+  "type": "module",
+  "files": ["src", "natalia.plugin.json"],
+  "exports": { ".": "./src/index.js" },
+  "dependencies": {
+    "@natalia/plugin": "<compatible-version>",
+    "@natalia/contracts": "<compatible-version>"
+  }
+}
+```
+
+Do not copy the `workspace:*` dependency versions or `.ts` entry from
+`packages/examples/ui-plugin`; that package is a repository fixture. External
+packages must publish an importable `.js` or `.mjs` entry and declare real
+release-compatible dependency versions.
+
+### Mount and dispose
+
+The UI plugin itself is small. Registration is inert: `mount` runs only after a
+UI host selects the adapter kind, and `dispose` must release every listener,
+timer, renderer, socket, or other resource created by `mount`.
 
 ```js
 import { definePlugin } from "@natalia/plugin";
@@ -475,19 +517,77 @@ export default definePlugin({
 });
 ```
 
-The host injects three public ports: `runtime` is the `RuntimeClient` view,
-`events.subscribe` is the runtime event stream, and `commands.list` is the
-authoritative command catalog. Registration is inert until the host
-materializes that adapter. Unload calls its disposer through the same ownership
-and lifecycle path as every other contribution.
+The host injects three public ports:
 
-The executable minimal package is
-`packages/examples/ui-plugin`; its end-to-end materialization test is
-`apps/tui/test/example-ui-plugin.test.ts`. The production TUI uses the same
-`registerUi` port and materializer, so a new UI does not require a TUI-specific
-host branch.
+| Port                                  | Use                                                                                                                                                                                                                                          |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input.runtime`                       | The complete typed `RuntimeClient`: submit turns, query sessions and resources, call checkpoint methods, and invoke other documented runtime operations. Feature methods are optional, so show an unavailable state when a method is absent. |
+| `input.events.subscribe(listener)`    | Subscribes to the shared `RuntimeEvent` stream and returns an unsubscribe function. Keep projected UI state in the adapter; do not create a second runtime or mutate framework state.                                                        |
+| `input.commands.list()` / `execute()` | Lists and executes the host's authoritative command catalog. Resolve by command `name`, and pass the raw command plus parsed arguments to `execute`.                                                                                         |
 
-### Launching an installed UI
+The UI package does not import an internal TUI host, checkpoint controller,
+registry, or transport implementation. It only uses these public ports and
+public `@natalia/contracts` types. This lets an OpenTUI, web, desktop, or custom
+renderer use the same runtime without sharing current TUI state or components.
+
+### Checkpoints and message-level restore
+
+Build restore UI around preview, never around a direct workspace mutation:
+
+```js
+async function openRestore(input, checkpointID) {
+  if (!input.runtime.checkpointPreview || !input.runtime.checkpointRollback)
+    return showUnavailable("Checkpoint management is unavailable.");
+
+  const preview = await input.runtime.checkpointPreview(checkpointID);
+  renderRollbackPreview(
+    preview.changes,
+    preview.context,
+    preview.resources,
+    preview.warnings,
+  );
+
+  // An optional dry run returns the same preview without changing the workspace.
+  await input.runtime.checkpointRollback({ id: checkpointID, dryRun: true });
+
+  if (!(await confirmRestore(preview))) return;
+  const result = await input.runtime.checkpointRollback({
+    id: checkpointID,
+    dryRun: false,
+  });
+  showRestored({ safetyCheckpointID: result.safetyCheckpointID });
+}
+```
+
+`checkpointList()` returns `RuntimeCheckpoint` items with `turnID`. Transcript
+message IDs follow `${turnID}:user`, `${turnID}:assistant`, and related segment
+forms, so a UI can derive the turn ID and filter checkpoints with
+`checkpoint.turnID === turnID`. This supports a `Restore...` action on either a
+user message or an assistant reply without coupling to the OpenTUI renderer.
+
+Show every `CheckpointPreview.changes` item with its `add`, `modify`, `delete`,
+`rename`, `mode`, or `symlink` kind, plus context truncation, resource policies,
+warnings, and whether `complete` is true. Do not offer a restore for an
+incomplete checkpoint. A confirmed rollback creates `safetyCheckpointID` before
+workspace mutation; surface it explicitly as "Restore is reversible" and allow
+the user to restore that safety checkpoint later.
+
+For a light-weight action, a small preview may use one confirmation. For broad
+or destructive previews, require the user to review the changed-file list and
+warnings before enabling confirmation. The runtime remains authoritative: it
+refuses incomplete targets and safety checkpoints even if a UI makes a mistake.
+
+### Test the package
+
+Keep renderer code behind an adapter-local function and test `mount` with a
+fake `RuntimeClient`. Assert that registration performs no I/O before
+materialization, events update only local UI state, command execution uses the
+catalog, and `dispose` stops all event listeners and renderer resources. See
+`packages/examples/ui-plugin` and
+`apps/tui/test/example-ui-plugin.test.ts` for an end-to-end materialization
+test.
+
+### Launch an installed UI
 
 A UI package is installed like any other plugin and launched by its adapter
 kind — one package, two commands:

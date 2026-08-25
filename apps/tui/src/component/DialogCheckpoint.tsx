@@ -11,7 +11,10 @@ import { DialogConfirm } from "../dialog/DialogConfirm";
 import { useDialog } from "../dialog/provider";
 import { DialogSelect } from "../dialog/DialogSelect";
 
-export function DialogCheckpoint(props: { backend: RuntimeClient }) {
+export function DialogCheckpoint(props: {
+  backend: RuntimeClient;
+  turnID?: string;
+}) {
   const dialog = useDialog();
   const [checkpoints, setCheckpoints] = createSignal<RuntimeCheckpoint[]>([]);
   const [error, setError] = createSignal<string>();
@@ -34,19 +37,27 @@ export function DialogCheckpoint(props: { backend: RuntimeClient }) {
   onMount(() => void refresh());
   return (
     <DialogSelect
-      title="Workspace Checkpoints"
-      options={[...checkpoints()].reverse().map((checkpoint) => ({
-        title: checkpoint.id,
-        description: `#${checkpoint.sequence} · ${checkpoint.reason} · ${checkpoint.files} files · ${checkpoint.changes} changes`,
-        footer: checkpoint.complete ? "complete" : "incomplete",
-        value: checkpoint,
-      }))}
+      title={props.turnID ? "Restore This Turn" : "Workspace Checkpoints"}
+      options={[...checkpoints()]
+        .filter(
+          (checkpoint) => !props.turnID || checkpoint.turnID === props.turnID,
+        )
+        .reverse()
+        .map((checkpoint) => ({
+          title: checkpoint.id,
+          description: `#${checkpoint.sequence} · ${checkpoint.reason} · ${checkpoint.files} files · ${checkpoint.changes} changes`,
+          footer: checkpoint.complete ? "complete" : "incomplete",
+          value: checkpoint,
+        }))}
       emptyView={
         <box paddingLeft={4} paddingRight={4} paddingTop={1}>
           <text fg={darkTheme.muted}>
             {loading()
               ? "Loading checkpoints..."
-              : (error() ?? "No workspace checkpoints.")}
+              : (error() ??
+                (props.turnID
+                  ? "No checkpoint is available for this turn."
+                  : "No workspace checkpoints."))}
           </text>
         </box>
       }

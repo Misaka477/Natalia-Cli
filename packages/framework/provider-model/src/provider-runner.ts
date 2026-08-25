@@ -151,6 +151,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         reason: "turn_begin",
         context: ledger,
         step: ledger.journalStatus().messageCount,
+        turnID: id,
         status: "turn_begin",
         model: activeProvider.model,
       });

@@ -19,6 +19,7 @@ export function MessageBlockView(props: {
   backend?: RuntimeClient;
   onCopy?: (text: string) => void;
   onFork?: (turnID: string, prompt: string) => void;
+  onRestore?: (turnID: string) => void;
   density: TuiPreferences["density"];
   toolDetails: TuiPreferences["toolDetails"];
   reasoning: TuiPreferences["reasoning"];
@@ -48,6 +49,7 @@ export function MessageBlockView(props: {
         density={props.density}
         onCopy={props.onCopy}
         onFork={props.onFork}
+        onRestore={props.onRestore}
       />
     );
   if (role === "thinking")
@@ -64,6 +66,7 @@ export function MessageBlockView(props: {
         block={props.block}
         density={props.density}
         onCopy={props.onCopy}
+        onRestore={props.onRestore}
       />
     );
   if (role === "turn_footer")
@@ -91,6 +94,7 @@ function UserBlock(props: {
   density: TuiPreferences["density"];
   onCopy?: (text: string) => void;
   onFork?: (turnID: string, prompt: string) => void;
+  onRestore?: (turnID: string) => void;
 }) {
   const [actionsOpen, setActionsOpen] = createSignal(false);
   return (
@@ -119,7 +123,10 @@ function UserBlock(props: {
       </Show>
       <Show
         when={
-          actionsOpen() && (props.onCopy || (props.onFork && props.block.text))
+          actionsOpen() &&
+          (props.onCopy ||
+            (props.onFork && props.block.text) ||
+            props.onRestore)
         }
       >
         <box flexDirection="row" gap={2} paddingTop={1}>
@@ -139,10 +146,24 @@ function UserBlock(props: {
               fg={darkTheme.muted}
               onMouseUp={(event: { stopPropagation(): void }) => {
                 event.stopPropagation();
-                props.onFork?.(props.block.id, props.block.text);
+                props.onFork?.(
+                  turnIDForBlock(props.block.id),
+                  props.block.text,
+                );
               }}
             >
               fork
+            </text>
+          </Show>
+          <Show when={props.onRestore}>
+            <text
+              fg={darkTheme.warning}
+              onMouseUp={(event: { stopPropagation(): void }) => {
+                event.stopPropagation();
+                props.onRestore?.(turnIDForBlock(props.block.id));
+              }}
+            >
+              restore...
             </text>
           </Show>
         </box>
@@ -155,13 +176,16 @@ function AssistantBlock(props: {
   block: MessageBlock;
   density: TuiPreferences["density"];
   onCopy?: (text: string) => void;
+  onRestore?: (turnID: string) => void;
 }) {
+  const [actionsOpen, setActionsOpen] = createSignal(false);
   return (
     <box
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
       paddingLeft={3}
       ref={(element: any) => alwaysSeparate.add(element)}
+      onMouseUp={() => setActionsOpen((open) => !open)}
     >
       <markdown
         content={props.block.text}
@@ -174,17 +198,39 @@ function AssistantBlock(props: {
           {props.block.pendingText}
         </text>
       </Show>
-      <Show when={props.onCopy}>
-        <text
-          fg={darkTheme.muted}
-          paddingTop={1}
-          onMouseUp={() => props.onCopy?.(props.block.text)}
-        >
-          copy
-        </text>
+      <Show when={actionsOpen() && (props.onCopy || props.onRestore)}>
+        <box flexDirection="row" gap={2} paddingTop={1}>
+          <Show when={props.onCopy}>
+            <text
+              fg={darkTheme.muted}
+              onMouseUp={(event: { stopPropagation(): void }) => {
+                event.stopPropagation();
+                props.onCopy?.(props.block.text);
+              }}
+            >
+              copy
+            </text>
+          </Show>
+          <Show when={props.onRestore}>
+            <text
+              fg={darkTheme.warning}
+              onMouseUp={(event: { stopPropagation(): void }) => {
+                event.stopPropagation();
+                props.onRestore?.(turnIDForBlock(props.block.id));
+              }}
+            >
+              restore...
+            </text>
+          </Show>
+        </box>
       </Show>
     </box>
   );
+}
+
+function turnIDForBlock(id: string) {
+  const marker = id.lastIndexOf(":");
+  return marker === -1 ? id : id.slice(0, marker);
 }
 
 function ThinkingBlock(props: {

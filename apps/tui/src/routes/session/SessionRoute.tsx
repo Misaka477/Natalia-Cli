@@ -77,6 +77,7 @@ export function SessionRoute(props: {
   onJumpToBottom?: () => void;
   onMessageCopy?: (text: string) => void;
   onMessageFork?: (turnID: string, prompt: string) => void;
+  onMessageRestore?: (turnID: string) => void;
   onLoadOlderHistory?: () => Promise<void>;
   onLoadNewerHistory?: () => Promise<void>;
   backend?: RuntimeClient;
@@ -266,6 +267,7 @@ export function SessionRoute(props: {
                           backend={props.backend}
                           onCopy={props.onMessageCopy}
                           onFork={props.onMessageFork}
+                          onRestore={props.onMessageRestore}
                           density={props.density ?? "comfortable"}
                           toolDetails={props.toolDetails ?? "collapsed"}
                           reasoning={props.reasoning ?? "step"}

@@ -17,6 +17,7 @@ async function mountBlock(
   actions: {
     onCopy?: (text: string) => void;
     onFork?: (turnID: string, prompt: string) => void;
+    onRestore?: (turnID: string) => void;
   } = {},
 ) {
   const setup = await createTestRenderer({ width: 120, height: 36 });
@@ -37,6 +38,7 @@ async function mountBlock(
               toolPreviewLines={10}
               onCopy={actions.onCopy ?? (() => {})}
               onFork={actions.onFork ?? (() => {})}
+              onRestore={actions.onRestore}
             />
           </DialogProvider>
         </RouteProvider>
@@ -109,9 +111,11 @@ const toolBlock = (
 test("a user message reveals its actions on click instead of hover", async () => {
   const copied: string[] = [];
   const forked: Array<[string, string]> = [];
+  const restored: string[] = [];
   const mounted = await mountBlock(userBlock, "collapsed", "step", {
     onCopy: (text) => copied.push(text),
     onFork: (turnID, prompt) => forked.push([turnID, prompt]),
+    onRestore: (turnID) => restored.push(turnID),
   });
   try {
     let frame = mounted.setup.captureCharFrame();
@@ -128,6 +132,7 @@ test("a user message reveals its actions on click instead of hover", async () =>
     frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("copy");
     expect(frame).toContain("fork");
+    expect(frame).toContain("restore...");
 
     const lines = frame.split("\n");
     const actionLine = lines.findIndex(
@@ -141,7 +146,14 @@ test("a user message reveals its actions on click instead of hover", async () =>
 
     await mounted.mouse.click(lines[actionLine]!.indexOf("fork"), actionLine);
     await mounted.setup.renderOnce();
-    expect(forked).toEqual([[userBlock.id, userBlock.text]]);
+    expect(forked).toEqual([["m1", userBlock.text]]);
+
+    await mounted.mouse.click(
+      lines[actionLine]!.indexOf("restore..."),
+      actionLine,
+    );
+    await mounted.setup.renderOnce();
+    expect(restored).toEqual(["m1"]);
 
     await mounted.mouse.click(4, 2);
     await mounted.setup.renderOnce();
@@ -153,11 +165,33 @@ test("a user message reveals its actions on click instead of hover", async () =>
 });
 
 test("an assistant reply is plain content with no per-block header", async () => {
-  const mounted = await mountBlock(assistantBlock);
+  const restored: string[] = [];
+  const mounted = await mountBlock(assistantBlock, "collapsed", "step", {
+    onRestore: (turnID) => restored.push(turnID),
+  });
   try {
-    const frame = mounted.setup.captureCharFrame();
+    let frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("replacing the fetch wrapper");
     expect(frame).not.toContain("Natalia");
+    expect(frame).not.toContain("restore...");
+
+    const contentLine = frame
+      .split("\n")
+      .findIndex((line) => line.includes(assistantBlock.text));
+    expect(contentLine).toBeGreaterThanOrEqual(0);
+    await mounted.mouse.click(4, contentLine);
+    await mounted.setup.renderOnce();
+    frame = mounted.setup.captureCharFrame();
+    const actionLine = frame
+      .split("\n")
+      .findIndex((line) => line.includes("restore..."));
+    expect(actionLine).toBeGreaterThanOrEqual(0);
+    await mounted.mouse.click(
+      frame.split("\n")[actionLine]!.indexOf("restore..."),
+      actionLine,
+    );
+    await mounted.setup.renderOnce();
+    expect(restored).toEqual(["m1"]);
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

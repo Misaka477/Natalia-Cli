@@ -904,6 +904,8 @@ function checkpointEventDetail(
   >,
   fallback: string,
 ) {
+  if (event.type === "checkpoint.failed")
+    return [fallback, ...(event.errors ?? [])].filter(Boolean).join("\n");
   if (event.type !== "rollback.previewed") return fallback;
   const changes = event.preview.changes
     .map(
