@@ -449,6 +449,7 @@ function syncProjectedChat(state: AppState) {
 
 function applyTuiEvent(state: AppState, event: RuntimeEvent) {
   switch (event.type) {
+    // TUI-only chrome: flow progress in the transcript.
     case "flow.module_event":
       handleFlowModuleEvent(state, event);
       return;
@@ -513,6 +514,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
     case "rollback.begin":
     case "rollback.end":
     case "rollback.failed":
+      applyResourceEvent(state.facts, event);
       handleCheckpointEvent(state, event);
       return;
     case "terminal.update": {
@@ -565,6 +567,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
         event.status,
       );
       return;
+    // TUI-only chrome: sandbox diff/audit narration in the transcript.
     case "sandbox.diff":
       upsertBlock(
         state,
@@ -595,6 +598,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       applyResourceEvent(state.facts, event);
       state.footer = `MCP ${event.server}: ${event.status}`;
       return;
+    // TUI-only chrome: warning/error diagnostics in the transcript.
     case "diagnostic":
       if (event.level === "info") return;
       upsertBlock(
@@ -605,6 +609,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       );
       state.footer = event.message;
       return;
+    // TUI-only chrome: dialog stack and modal focus.
     case "dialog.open":
       state.dialog = event.dialog;
       return;
