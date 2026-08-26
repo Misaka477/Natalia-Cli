@@ -212,6 +212,7 @@ export async function reviewPRs(input: {
   workspaceRoot: string;
   decide: (pr: FanOutPR) => Promise<PRReviewDecision> | PRReviewDecision;
   publish?: (event: RuntimeEvent) => void;
+  buildCommand?: string;
 }): Promise<PRReviewOutcome[]> {
   const outcomes: PRReviewOutcome[] = [];
   for (const pr of input.prs) {
@@ -226,7 +227,11 @@ export async function reviewPRs(input: {
     const decision = await input.decide(pr);
     if (decision.decision === "approve") {
       const merged = await input.sandboxes
-        .merge(pr.sandboxID, input.workspaceRoot)
+        .promoteWithValidation(pr.sandboxID, {
+          command: input.buildCommand?.trim() || "true",
+          hostRoot: input.workspaceRoot,
+        })
+        .then((promotion) => promotion.changedFiles)
         .catch((error) => {
           throw new Error(
             `promotion of ${pr.id} failed: ${error instanceof Error ? error.message : String(error)}`,

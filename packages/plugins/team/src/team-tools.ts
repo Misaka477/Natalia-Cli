@@ -168,6 +168,7 @@ export function createTeamReviewTool(input: {
         prs,
         sandboxes,
         workspaceRoot: context.workspaceRoot,
+        buildCommand: "true",
         decide: async (pr) => {
           const decision = decisions.get(pr.id);
           if (!decision)

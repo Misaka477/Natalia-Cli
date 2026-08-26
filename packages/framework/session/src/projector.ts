@@ -322,6 +322,14 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   const rules: RuntimeEvent[] = [];
   for (const event of events) {
     if (event.type === "constitution.rule_added") {
+      if (
+        rules.some(
+          (existing) =>
+            existing.type === "constitution.rule_added" &&
+            existing.ruleID === event.ruleID,
+        )
+      )
+        continue;
       rules.push(event);
     }
     if (event.type === "constitution.rule_updated") {
@@ -504,10 +512,17 @@ export function projectedCompletions(events: RuntimeEvent[]) {
 }
 
 export function projectedDecisionRecords(events: RuntimeEvent[]) {
-  return events.filter(
-    (event): event is Extract<RuntimeEvent, { type: "decision.recorded" }> =>
-      event.type === "decision.recorded",
-  );
+  const records: Array<
+    Extract<RuntimeEvent, { type: "decision.recorded" }>
+  > = [];
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.type !== "decision.recorded") continue;
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    records.push(event);
+  }
+  return records;
 }
 
 /**

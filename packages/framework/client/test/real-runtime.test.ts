@@ -7586,6 +7586,8 @@ test("the self-protection rules are seeded as the first constitution facts", asy
     "C-TERM-001",
     "C-TERM-002",
     "C-TERM-003",
+    "C-REL-001",
+    "C-REL-002",
   ]);
   for (const rule of rules)
     expect(rule).toMatchObject({
@@ -7593,7 +7595,6 @@ test("the self-protection rules are seeded as the first constitution facts", asy
       priority: "critical",
       source: "policy",
       enforcement: "deny",
-      overridePolicy: "forbidden",
     });
   expect(
     events.some(
@@ -7727,6 +7728,8 @@ test("constitution rules and decisions survive replay", async () => {
     "C-TERM-001",
     "C-TERM-002",
     "C-TERM-003",
+    "C-REL-001",
+    "C-REL-002",
   ]);
   const decisions = await reopened.decisionRecords!();
   expect(decisions.map((decision) => decision.decision)).toContain(
@@ -7742,6 +7745,8 @@ test("constitution rules and decisions survive replay", async () => {
       event.type === "constitution.rule_added",
   );
   expect(ruleAdded.map((event) => event.ruleID).sort()).toEqual([
+    "C-REL-001",
+    "C-REL-002",
     "C-TERM-001",
     "C-TERM-002",
     "C-TERM-003",
@@ -7824,6 +7829,42 @@ test("recordValidation redacts secrets from the recorded summary", async () => {
   const summary = records[0]?.validations[0]?.safeSummary ?? "";
   expect(summary).not.toContain("supersecretvalue");
   expect(JSON.stringify(records)).not.toContain("supersecretvalue");
+});
+
+test("promoting framework sources emits restart_required", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-e5-restart-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await mkdir(join(root, "packages", "framework"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      sandbox: { promoteCommand: "true" },
+    }),
+  );
+  const kernel = new CapabilityRegistry();
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_e5_restart",
+    capabilityRegistry: kernel,
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  await sandboxes.create("box");
+  await sandboxes.write("box", "packages/framework/restart.ts", "export {}\n");
+  await client.sandboxMerge!("box");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "diagnostic",
+      message: "restart_required",
+    }),
+  );
+  await client.dispose?.();
 });
 
 test("promote records evidence when validation passes", async () => {

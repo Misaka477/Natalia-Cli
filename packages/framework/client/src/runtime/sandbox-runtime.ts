@@ -218,6 +218,10 @@ export function createSandboxRuntime(
             recordedAt: new Date().toISOString(),
           }),
         );
+        await announcePromotionFollowUp(
+          ctx,
+          changes.map((change) => change.path),
+        );
         return changes;
       } catch (error) {
         publishPromotionEvidence({
@@ -281,4 +285,38 @@ function evidenceChangeType(
   if (kind === "add") return "added";
   if (kind === "delete") return "deleted";
   return "modified";
+}
+
+async function announcePromotionFollowUp(ctx: RuntimeContext, paths: string[]) {
+  const frameworkTouched = paths.some(
+    (path) =>
+      path.startsWith("packages/framework/") || path.startsWith("apps/cli/"),
+  );
+  if (frameworkTouched) {
+    ctx.ports.publish({
+      type: "diagnostic",
+      level: "warning",
+      message: "restart_required",
+    });
+    return;
+  }
+  const families = new Set(
+    paths
+      .map((path) => {
+        const match = /^packages\/plugins\/tools\/([^/]+)\//u.exec(path);
+        return match?.[1];
+      })
+      .filter((family): family is string => Boolean(family)),
+  );
+  for (const family of families) {
+    try {
+      await ctx.ports.hotReloadToolFamily(family);
+    } catch {
+      ctx.ports.publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `tool family reload failed: ${family}`,
+      });
+    }
+  }
 }

@@ -115,6 +115,14 @@ export async function finalizeInitialize(
     )
       continue;
     scope.publish(event);
+    if (event.type === "constitution.rule_added")
+      scope.publish(
+        workLedgerController.constitutionRuleNode({
+          ruleID: event.ruleID,
+          statement: event.statement,
+          sessionID: scope.sessionID,
+        }),
+      );
   }
   // The self-protection rules are the first constitution facts: migrate them
   // into the durable journal on every boot (idempotent — replay already holds
