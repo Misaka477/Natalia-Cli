@@ -63,6 +63,7 @@ test("sandbox tools run through the worktree backend (create/write/merge)", asyn
   const context = {
     workspaceRoot: root,
     sandboxes: manager,
+    runtimeConfig: () => ({ sandbox: { promoteCommand: "true" } }),
     onSandboxEvent: () => undefined,
     onWorkspaceChange: () => undefined,
     sandboxMergeAuthorize: async () => undefined,
@@ -98,6 +99,7 @@ test("sandbox tools run through the git-free snapshot backend (no git needed)", 
   const context = {
     workspaceRoot: root,
     sandboxes: manager,
+    runtimeConfig: () => ({ sandbox: { promoteCommand: "true" } }),
     onSandboxEvent: () => undefined,
     onWorkspaceChange: () => undefined,
     sandboxMergeAuthorize: async () => undefined,
@@ -152,6 +154,7 @@ test("sandbox tools create execute diff and merge through the registry", async (
   const context = {
     workspaceRoot: root,
     sandboxes: new WorkspaceSandboxManager(join(root, ".natalia", "sandboxes")),
+    runtimeConfig: () => ({ sandbox: { promoteCommand: "true" } }),
     onSandboxEvent: (event: { type: string }) => events.push(event.type),
   };
   const tools = new Map(sandboxTools().map((tool) => [tool.name, tool]));

@@ -45,6 +45,11 @@ export const sandboxConfigSchema = z.object({
    * git, git is opt-in for history integration.
    */
   backend: z.enum(["snapshot", "worktree"]).default("snapshot"),
+  /**
+   * Command run inside the candidate before a promote may land. Empty is
+   * rejected; the runtime never promotes on a silent no-op command.
+   */
+  promoteCommand: z.string().trim().min(1).default("npm run typecheck"),
 });
 
 export const runtimeConfigSchema = z.object({

@@ -296,6 +296,35 @@ export class WorkspaceSandboxManager
    * Runs a validation command in the candidate's root — the build evidence a
    * candidate must produce before its PR is ready. Shared by every backend.
    */
+  /**
+   * Validates the candidate, then promotes it. Empty commands are refused so a
+   * missing check cannot be mistaken for a green promote.
+   */
+  async promoteWithValidation(
+    id: string,
+    input: {
+      command: string;
+      authorize?: (paths: string[]) => Promise<void>;
+      hostRoot?: string;
+    },
+  ): Promise<{
+    sandboxID: string;
+    changedFiles: SandboxChange[];
+    lastKnownGood?: string;
+  }> {
+    const command = input.command.trim();
+    if (!command) throw new Error("sandbox promote command must not be empty");
+    const evidence = await this.validate(id, command);
+    if (!evidence.ok)
+      throw new Error(
+        `candidate ${id} failed validation (exit ${evidence.exitCode}):\n${evidence.output.slice(0, 2000)}`,
+      );
+    const hostRoot = input.hostRoot;
+    if (!hostRoot) throw new Error("sandbox promote requires hostRoot");
+    const changedFiles = await this.merge(id, hostRoot, input.authorize);
+    return { sandboxID: id, changedFiles };
+  }
+
   async validate(
     id: string,
     command: string,

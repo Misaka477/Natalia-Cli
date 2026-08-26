@@ -169,15 +169,22 @@ function sandboxMergeTool(): RuntimeTool {
       const args = requireObject(input);
       const id = requireString(args.id, "id");
       const manager = requireSandboxes(context);
-      const changes = await manager.merge(
-        id,
-        context.workspaceRoot,
-        async (paths) =>
+      const command =
+        (
+          context.runtimeConfig?.() as
+            | { sandbox?: { promoteCommand?: string } }
+            | undefined
+        )?.sandbox?.promoteCommand?.trim() || "npm run typecheck";
+      const promotion = await manager.promoteWithValidation(id, {
+        command,
+        hostRoot: context.workspaceRoot,
+        authorize: async (paths) =>
           await context.sandboxMergeAuthorize?.({
             id,
             paths,
           }),
-      );
+      });
+      const changes = promotion.changedFiles;
       context.onWorkspaceChange?.(changes);
       context.onSandboxEvent?.(manager.updateEvent(id));
       context.onSandboxEvent?.(manager.auditEvent(id, "merge"));

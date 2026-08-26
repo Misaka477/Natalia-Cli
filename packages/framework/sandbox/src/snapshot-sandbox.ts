@@ -73,6 +73,20 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
    * Promotes the candidate's changes into the host with a last-known-good
    * backup. Base-compatible return: the changed files.
    */
+  override async promoteWithValidation(
+    id: string,
+    input: {
+      command: string;
+      authorize?: (paths: string[]) => Promise<void>;
+      hostRoot?: string;
+    },
+  ) {
+    return await super.promoteWithValidation(id, {
+      ...input,
+      hostRoot: input.hostRoot ?? this.hostRoot,
+    });
+  }
+
   override async merge(
     id: string,
     _hostRoot?: string,

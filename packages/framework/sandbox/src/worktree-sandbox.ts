@@ -248,15 +248,18 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
    * `requireApprovalTier` is set, the human-approval hook runs only when the
    * candidate's governance risk tier clears the gate.
    */
-  async promoteWithValidation(
+  override async promoteWithValidation(
     id: string,
     input: {
       command: string;
       authorize?: (paths: string[]) => Promise<void>;
       requireApprovalTier?: SandboxRiskTier;
+      hostRoot?: string;
     },
   ): Promise<WorktreePromotion> {
-    const evidence = await this.validate(id, input.command);
+    const command = input.command.trim();
+    if (!command) throw new Error("sandbox promote command must not be empty");
+    const evidence = await this.validate(id, command);
     if (!evidence.ok)
       throw new Error(
         `candidate ${id} failed validation (exit ${evidence.exitCode}):\n${evidence.output.slice(0, 2000)}`,

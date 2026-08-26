@@ -619,6 +619,13 @@ test("a workspace change is attributable to the call and turn that made it", asy
 
 test("a sandbox merge records only successfully landed paths", async () => {
   const root = await workspace("sandbox-merge-change");
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      sandbox: { promoteCommand: "true" },
+    }),
+  );
   const events: RuntimeEvent[] = [];
   let step = 0;
   const client = createRealRuntimeClient({

@@ -97,6 +97,31 @@ test("sandbox merge is atomic on failure", async () => {
   expect(await readFile(join(host, "keep.txt"), "utf8")).toBe("original");
 });
 
+test("promoteWithValidation refuses an empty command and a failed check", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-promote-base-"));
+  const host = await mkdtemp(join(tmpdir(), "natalia-sandbox-promote-host-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  await manager.write("box", "file.txt", "candidate");
+  await expect(
+    manager.promoteWithValidation("box", { command: "   ", hostRoot: host }),
+  ).rejects.toThrow(/must not be empty/u);
+  await expect(
+    manager.promoteWithValidation("box", { command: "exit 1", hostRoot: host }),
+  ).rejects.toThrow(/failed validation/u);
+  await expect(readFile(join(host, "file.txt"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  const promotion = await manager.promoteWithValidation("box", {
+    command: "true",
+    hostRoot: host,
+  });
+  expect(promotion.changedFiles).toContainEqual(
+    expect.objectContaining({ path: "file.txt" }),
+  );
+  expect(await readFile(join(host, "file.txt"), "utf8")).toBe("candidate");
+});
+
 test("sandbox merge authorizes every host mutation before writing", async () => {
   const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-policy-base-"));
   const host = await mkdtemp(join(tmpdir(), "natalia-sandbox-policy-host-"));

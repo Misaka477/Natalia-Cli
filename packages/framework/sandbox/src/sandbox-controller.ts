@@ -83,6 +83,11 @@ export function createSandboxController(input: {
     previewMerge: async (id) => await requireManager().previewMerge(id),
     merge: async (id, hostRoot, authorize) =>
       await requireManager().merge(id, hostRoot, authorize),
+    promoteWithValidation: async (id, promoteInput) =>
+      await requireManager().promoteWithValidation(id, {
+        ...promoteInput,
+        hostRoot: promoteInput.hostRoot ?? input.workspaceRoot,
+      }),
     delete: async (id) => await requireManager().delete(id),
     startResource: async (id, command, resourceID) =>
       await requireManager().startResource(id, command, resourceID),

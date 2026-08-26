@@ -274,6 +274,18 @@ export type SandboxToolService = {
     hostRoot: string,
     authorize?: (paths: string[]) => Promise<void>,
   ): Promise<SandboxChangeView[]>;
+  promoteWithValidation(
+    id: string,
+    input: {
+      command: string;
+      authorize?: (paths: string[]) => Promise<void>;
+      hostRoot?: string;
+    },
+  ): Promise<{
+    sandboxID: string;
+    changedFiles: SandboxChangeView[];
+    lastKnownGood?: string;
+  }>;
   delete(id: string): Promise<{
     pendingChanges: SandboxChangeView[];
     runningResources: string[];

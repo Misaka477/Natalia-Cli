@@ -3773,6 +3773,7 @@ test("sandbox merge retains manifest path authorization", async () => {
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
+      sandbox: { promoteCommand: "true" },
       defaultAgent: "review",
       agents: {
         review: {
@@ -7579,6 +7580,137 @@ test("recordValidation redacts secrets from the recorded summary", async () => {
   const summary = records[0]?.validations[0]?.safeSummary ?? "";
   expect(summary).not.toContain("supersecretvalue");
   expect(JSON.stringify(records)).not.toContain("supersecretvalue");
+});
+
+test("promote records evidence when validation passes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-e5-promote-pass-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      sandbox: { promoteCommand: "true" },
+    }),
+  );
+  const kernel = new CapabilityRegistry();
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_e5_promote_pass",
+    capabilityRegistry: kernel,
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  await sandboxes.create("box");
+  await sandboxes.write("box", "promoted.txt", "landed");
+  const changes = await client.sandboxMerge!("box");
+  expect(changes).toContainEqual(
+    expect.objectContaining({ path: "promoted.txt" }),
+  );
+  expect(await readFile(join(root, "promoted.txt"), "utf8")).toBe("landed");
+  const records = await client.evidenceRecords!();
+  expect(records).toContainEqual(
+    expect.objectContaining({
+      taskID: "sandbox:box",
+      status: "promoted",
+      validations: [
+        expect.objectContaining({ command: "true", result: "passed" }),
+      ],
+    }),
+  );
+  expect(JSON.stringify(records)).not.toContain("stdout");
+  const cards = await client.completions!();
+  expect(cards).toContainEqual(
+    expect.objectContaining({
+      taskID: "sandbox:box",
+      rollbackState: "available",
+      changeSummary: "1 files promoted from sandbox box",
+    }),
+  );
+  expect(events.some((event) => event.type === "evidence.recorded")).toBe(true);
+  await client.dispose?.();
+});
+
+test("failed validation records failed evidence and does not promote", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-e5-promote-fail-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      sandbox: { promoteCommand: "exit 1" },
+    }),
+  );
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_e5_promote_fail",
+    capabilityRegistry: kernel,
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  await sandboxes.create("box");
+  await sandboxes.write("box", "blocked.txt", "should-not-land");
+  await expect(client.sandboxMerge!("box")).rejects.toThrow(
+    /failed validation/u,
+  );
+  await expect(
+    readFile(join(root, "blocked.txt"), "utf8"),
+  ).rejects.toMatchObject({ code: "ENOENT" });
+  const records = await client.evidenceRecords!();
+  expect(records).toContainEqual(
+    expect.objectContaining({
+      taskID: "sandbox:box",
+      status: "failed",
+      knownGaps: ["candidate failed validation; host unchanged"],
+      validations: [
+        expect.objectContaining({ command: "exit 1", result: "failed" }),
+      ],
+    }),
+  );
+  await client.dispose?.();
+});
+
+test("evidence summary is secret-safe", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-e5-promote-secret-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      sandbox: {
+        promoteCommand: 'printf "token=fakefaketoken\\n"; true',
+      },
+    }),
+  );
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_e5_promote_secret",
+    capabilityRegistry: kernel,
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  await sandboxes.create("box");
+  await sandboxes.write("box", "ok.txt", "ok");
+  await client.sandboxMerge!("box");
+  const records = await client.evidenceRecords!();
+  const payload = JSON.stringify(records);
+  expect(payload).not.toContain("fakefaketoken");
+  expect(records[0]?.validations[0]?.command).not.toContain("fakefaketoken");
+  await client.dispose?.();
 });
 
 test("recordValidation rejects empty task id or command without recording", async () => {

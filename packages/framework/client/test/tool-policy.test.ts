@@ -875,6 +875,7 @@ test("sandbox merge preflight rejects every denied manifest path atomically", as
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
+      sandbox: { promoteCommand: "true" },
       defaultAgent: "review",
       agents: {
         review: {
@@ -933,6 +934,14 @@ test("sandbox merge preflight rejects every denied manifest path atomically", as
 test("sandbox merge preflight permits a manifest when every path is allowed", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-ts7-sandbox-merge-allow-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      sandbox: { promoteCommand: "true" },
+    }),
   );
   const sandboxes = new WorkspaceSandboxManager(
     join(root, ".natalia", "sandboxes"),

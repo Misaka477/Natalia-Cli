@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { EpisodeID } from "@natalia/contracts";
+import type { EpisodeID, SandboxDiffKind } from "@natalia/contracts";
 import {
+  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
+  type GovernanceLedgerController,
   type MutationRegistry,
   type RuntimeServiceClient,
   type SandboxService,
@@ -47,6 +49,24 @@ export function createSandboxRuntime(
     );
   }
 
+  function requireGovernanceLedger() {
+    const ledger = ctx.ports.resolveService<GovernanceLedgerController>(
+      GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+    );
+    if (!ledger)
+      throw new Error(
+        "governance ledger unavailable (natalia-governance-ledger)",
+      );
+    return ledger;
+  }
+
+  function promoteCommand() {
+    const configured = ctx.ports.getTsRuntimeConfig()?.sandbox.promoteCommand;
+    const command = configured?.trim() || "npm run typecheck";
+    if (!command) throw new Error("sandbox promote command must not be empty");
+    return command;
+  }
+
   return {
     async sandboxList() {
       await ctx.ports.getReady();
@@ -85,36 +105,130 @@ export function createSandboxRuntime(
         { id },
         owner,
       );
-      const changes = await sandboxes.merge(
-        id,
-        ctx.ports.getWorkspaceRoot(),
-        async (paths) =>
-          await ctx.ports.authorizeSandboxMerge({ id, paths }, owner),
-      );
-      const operationID = `sandbox_merge:${id}:${randomUUID()}`;
-      mutationRegistry()?.register({
-        sessionID: owner.session.id,
-        episodeID,
-        operationID,
-        toolName: "sandbox_merge",
-        authorizedPaths: ["."],
-        expectedOperations: ["added", "modified", "deleted"],
-      });
-      for (const change of changes) {
-        ctx.ports.publishForSession(
-          owner,
-          requireWorkLedger().workspaceChangeNode({
-            operationID,
+      const command = promoteCommand();
+      const ledger = requireGovernanceLedger();
+      const startedAt = performance.now();
+      const taskID = `sandbox:${id}`;
+      const objective = `promote sandbox ${id}`;
+      const redact = (text: string) => ctx.ports.redactToolOutput(text, true);
+      const publishPromotionEvidence = (input: {
+        status: "promoted" | "failed";
+        result: "passed" | "failed";
+        output: string;
+        durationMs: number;
+        changes?: Array<{ path: string; kind: SandboxDiffKind }>;
+        knownGaps?: string[];
+      }) => {
+        const outcome = ledger.boundValidationOutcome({
+          command: redact(command),
+          result: input.result,
+          safeSummary: redact(input.output),
+          durationMs: input.durationMs,
+        });
+        const evidence = ledger.buildEvidenceRecorded({
+          id: `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`,
+          taskID,
+          objective,
+          status: input.status,
+          changes: (input.changes ?? []).map((change) => ({
             path: change.path,
-            toolName: "sandbox_merge",
-            sessionID: owner.session.id,
-          }),
+            changeType: evidenceChangeType(change.kind),
+            summary: change.path,
+          })),
+          validations: [outcome],
+          knownGaps: input.knownGaps,
+        });
+        ctx.ports.publishForSession(owner, evidence);
+        return { evidence, outcome };
+      };
+      let validation: { ok: boolean; exitCode: number; output: string };
+      try {
+        validation = await sandboxes.validate(id, command);
+      } catch (error) {
+        publishPromotionEvidence({
+          status: "failed",
+          result: "failed",
+          output: error instanceof Error ? error.message : String(error),
+          durationMs: performance.now() - startedAt,
+          knownGaps: ["candidate failed validation; host unchanged"],
+        });
+        throw error;
+      }
+      const durationMs = performance.now() - startedAt;
+      if (!validation.ok) {
+        publishPromotionEvidence({
+          status: "failed",
+          result: "failed",
+          output: validation.output,
+          durationMs,
+          knownGaps: ["candidate failed validation; host unchanged"],
+        });
+        throw new Error(
+          `candidate ${id} failed validation (exit ${validation.exitCode}):\n${validation.output.slice(0, 2000)}`,
         );
       }
-      mutationRegistry()?.settle(operationID);
-      ctx.ports.publishForSession(owner, sandboxes.updateEvent(id));
-      ctx.ports.publishForSession(owner, sandboxes.auditEvent(id, "merge"));
-      return changes;
+      try {
+        const promotion = await sandboxes.promoteWithValidation(id, {
+          command,
+          hostRoot: ctx.ports.getWorkspaceRoot(),
+          authorize: async (paths) =>
+            await ctx.ports.authorizeSandboxMerge({ id, paths }, owner),
+        });
+        const changes = promotion.changedFiles;
+        const operationID = `sandbox_merge:${id}:${randomUUID()}`;
+        mutationRegistry()?.register({
+          sessionID: owner.session.id,
+          episodeID,
+          operationID,
+          toolName: "sandbox_merge",
+          authorizedPaths: ["."],
+          expectedOperations: ["added", "modified", "deleted"],
+        });
+        for (const change of changes) {
+          ctx.ports.publishForSession(
+            owner,
+            requireWorkLedger().workspaceChangeNode({
+              operationID,
+              path: change.path,
+              toolName: "sandbox_merge",
+              sessionID: owner.session.id,
+            }),
+          );
+        }
+        mutationRegistry()?.settle(operationID);
+        ctx.ports.publishForSession(owner, sandboxes.updateEvent(id));
+        ctx.ports.publishForSession(owner, sandboxes.auditEvent(id, "merge"));
+        const { evidence, outcome } = publishPromotionEvidence({
+          status: "promoted",
+          result: "passed",
+          output: validation.output,
+          durationMs,
+          changes,
+        });
+        ctx.ports.publishForSession(
+          owner,
+          ledger.buildCompletionRecorded({
+            id: `completion:${Date.now().toString(36)}:${ctx.ports.nextCompletionSequence()}`,
+            taskID,
+            objective,
+            changeSummary: `${changes.length} files promoted from sandbox ${id}`,
+            validations: [outcome],
+            rollbackState: "available",
+            evidenceIDs: [evidence.id],
+            recordedAt: new Date().toISOString(),
+          }),
+        );
+        return changes;
+      } catch (error) {
+        publishPromotionEvidence({
+          status: "failed",
+          result: "failed",
+          output: error instanceof Error ? error.message : String(error),
+          durationMs: performance.now() - startedAt,
+          knownGaps: ["promotion did not land; host unchanged"],
+        });
+        throw error;
+      }
     },
     async sandboxDelete(id) {
       await ctx.ports.getReady();
@@ -159,4 +273,12 @@ export function createSandboxRuntime(
       return resource;
     },
   };
+}
+
+function evidenceChangeType(
+  kind: SandboxDiffKind,
+): "added" | "modified" | "deleted" {
+  if (kind === "add") return "added";
+  if (kind === "delete") return "deleted";
+  return "modified";
 }
