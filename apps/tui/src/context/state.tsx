@@ -417,6 +417,7 @@ function updateProjectedRow(target: MessageBlock, next: MessageBlock) {
   // The derived tool view is cached on the projected fact it came from, so an
   // unchanged tool is the same object and the row keeps its identity.
   if (target.tool !== next.tool) target.tool = next.tool;
+  if (target.taskID !== next.taskID) target.taskID = next.taskID;
 }
 
 /**
@@ -616,6 +617,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
     case "dialog.close":
       state.dialog = undefined;
       return;
+    // TUI-only chrome: live retry lines and localised turn outcomes.
     case "turn.retry":
       upsertBlockBefore(
         state,
