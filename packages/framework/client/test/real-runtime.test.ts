@@ -246,6 +246,7 @@ for (const [pluginID, serviceID, errorText] of [
     await client.dispose?.();
   });
 
+
 test("turn orchestration subsystem is present even when plugins.enabled disables it", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-turn-orchestration-disabled-"),
@@ -4304,6 +4305,169 @@ test("self-protection patterns block terminal input, not only run_shell", async 
         edge.targetID === "wg:constraint:C-TERM-001",
     ),
   ).toBe(true);
+  await client.dispose?.();
+});
+
+test("deny journal rule without override blocks git commit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-deny-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_cst3_deny",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (request.messages.at(-1)?.role === "user") {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "commit",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "git commit -m x" }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("commit the work");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "constitution.check",
+      ruleID: "C-REL-001",
+      conflict: true,
+    }),
+  );
+  expect(
+    events.some(
+      (event) =>
+        event.type === "tool.update" &&
+        event.callID === "commit" &&
+        event.status === "failed" &&
+        String(event.summary).includes("blocked by constitution"),
+    ),
+  ).toBe(true);
+  await client.dispose?.();
+});
+
+test("scoped path override allows only that path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-override-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_cst3_override",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (request.messages.at(-1)?.role === "user") {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "commit",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "git commit -m x" }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  const granted = await client.requestOverride?.({
+    ruleID: "C-REL-001",
+    reason: "release this commit",
+    paths: ["global"],
+  });
+  expect(granted).toMatchObject({ requested: true });
+  const before = events.length;
+  await client.submit("commit now");
+  expect(events.slice(before)).toContainEqual(
+    expect.objectContaining({
+      type: "constitution.check",
+      ruleID: "C-REL-001",
+      conflict: false,
+    }),
+  );
+  await client.dispose?.();
+});
+
+test("expired override does not lift a deny rule", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-expired-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_cst3_expired",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (request.messages.at(-1)?.role === "user") {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "commit",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "git commit -m x" }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  await client.requestOverride?.({
+    ruleID: "C-REL-001",
+    reason: "too late",
+    expiresAt: "2000-01-01T00:00:00.000Z",
+  });
+  const before = events.length;
+  await client.submit("commit now");
+  expect(events.slice(before)).toContainEqual(
+    expect.objectContaining({
+      type: "constitution.check",
+      ruleID: "C-REL-001",
+      conflict: true,
+    }),
+  );
+  await client.dispose?.();
+});
+
+test("forbidden override policy refuses requestOverride", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-forbidden-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_cst3_forbidden",
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  await expect(
+    client.requestOverride?.({
+      ruleID: "C-TERM-001",
+      reason: "please",
+    }),
+  ).resolves.toMatchObject({ requested: false, reason: "override forbidden" });
   await client.dispose?.();
 });
 

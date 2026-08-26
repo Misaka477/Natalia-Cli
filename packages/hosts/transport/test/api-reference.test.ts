@@ -406,6 +406,8 @@ const EVENT_TRIGGERS: Record<string, string> = {
   "compaction.end": "context compaction finished with the retained summary",
   "constitution.check":
     "a constitution rule was evaluated against a workspace change",
+  "constitution.override_granted":
+    "the user approved a scoped constitution override",
   "constitution.rule_added": "a constitution rule was added",
   "constitution.rule_updated": "a constitution rule was updated",
   "content.delta": "streaming answer text; live only, never journaled",

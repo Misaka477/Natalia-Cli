@@ -29,6 +29,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 export const SELF_PROTECTION_RULES: ReadonlyArray<{
   ruleID: string;
   statement: string;
+  overridePolicy?: "forbidden" | "user_scoped" | "user_explicit";
 }> = [
   {
     ruleID: "C-TERM-001",
@@ -41,6 +42,15 @@ export const SELF_PROTECTION_RULES: ReadonlyArray<{
   {
     ruleID: "C-TERM-003",
     statement: "禁止删除 Natalia 临时目录",
+  },
+  {
+    ruleID: "C-REL-001",
+    statement: "默认不 commit/push",
+    overridePolicy: "user_scoped",
+  },
+  {
+    ruleID: "C-REL-002",
+    statement: "未知副作用不自动 replay",
   },
 ];
 
@@ -79,7 +89,7 @@ export function seedConstitutionRules(
       priority: "critical",
       source: "policy",
       enforcement: "deny",
-      overridePolicy: "forbidden",
+      overridePolicy: rule.overridePolicy ?? "forbidden",
     });
   }
   return seeded;

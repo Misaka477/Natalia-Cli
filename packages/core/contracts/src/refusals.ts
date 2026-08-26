@@ -484,6 +484,16 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "reconciles watcher hints and returns the confirmed changes; not written to the Work Graph (Phase 4)",
   },
   registeredTools: { refusal: "none", note: "pure read" },
+  requestOverride: {
+    refusal: "value",
+    expressedBy: "requested",
+    note: "requests a user-scoped constitution override through the approval pipeline; forbidden rules answer requested:false",
+  },
+  approveOverride: {
+    refusal: "value",
+    expressedBy: "approved",
+    note: "records the user's approval response for a pending constitution override",
+  },
   projectionContributions: {
     refusal: "none",
     note: "pure read of sanitized plugin projection contributions",

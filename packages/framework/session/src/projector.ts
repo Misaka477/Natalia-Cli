@@ -345,6 +345,22 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   );
 }
 
+export function projectedConstitutionOverrides(events: RuntimeEvent[]) {
+  const now = Date.now();
+  const overrides: Array<
+    Extract<RuntimeEvent, { type: "constitution.override_granted" }>
+  > = [];
+  for (const event of events) {
+    if (event.type !== "constitution.override_granted") continue;
+    if (event.expiresAt) {
+      const expires = Date.parse(event.expiresAt);
+      if (Number.isFinite(expires) && expires <= now) continue;
+    }
+    overrides.push(event);
+  }
+  return overrides;
+}
+
 export function latestSessionSnapshot(events: RuntimeEvent[]) {
   let latest: Extract<RuntimeEvent, { type: "session.snapshot" }> | undefined;
   for (const event of events) {

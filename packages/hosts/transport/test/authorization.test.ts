@@ -126,6 +126,8 @@ function controllableClient() {
     "confirmedWorkspaceChanges",
     "registeredTools",
     "projectionContributions",
+    "requestOverride",
+    "approveOverride",
     "mailboxList",
     "mailboxSend",
     "mailboxDeliver",

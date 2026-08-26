@@ -312,6 +312,7 @@ export {
   modelVisibleEvents,
   projectSessionMessages,
   projectedConstitutionRules,
+  projectedConstitutionOverrides,
   projectedDecisionRecords,
   latestSessionSnapshot,
   projectedCanonicalTools,

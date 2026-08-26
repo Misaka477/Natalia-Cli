@@ -11,7 +11,10 @@
  */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { projectedConstitutionRules } from "@natalia/session";
+import {
+  projectedConstitutionOverrides,
+  projectedConstitutionRules,
+} from "@natalia/session";
 import { readOnlyToolMessage } from "@natalia/runtime-services";
 import {
   TOOL_POLICY_SERVICE,
@@ -89,6 +92,7 @@ export function createExecuteCalls(
     if (!exec) return undefined;
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const rules = projectedConstitutionRules(exec.session.events);
+    const overrides = projectedConstitutionOverrides(exec.session.events);
     let blocked: string | undefined;
 
     if (commandText) {
@@ -122,21 +126,77 @@ export function createExecuteCalls(
     }
 
     for (const rule of rules) {
-      if (rule.enforcement === "deny" || rule.enforcement === "warn") {
-        publish({
-          type: "constitution.check",
-          id: `${turnID}:constitution:${rule.ruleID.toLowerCase()}`,
-          ruleID: rule.ruleID,
-          statement: rule.statement,
-          priority: rule.priority,
-          enforcement: rule.enforcement,
-          action: toolAction,
-          resource: toolResource,
-          conflict: false,
-        });
+      if (rule.enforcement !== "deny" && rule.enforcement !== "warn") continue;
+      const applies = journalRuleApplies(
+        rule.ruleID,
+        commandText,
+        toolResource,
+      );
+      if (!applies) continue;
+      const override = matchingOverride(overrides, rule.ruleID, toolResource);
+      const denyWithoutOverride =
+        rule.enforcement === "deny" && applies && !override;
+      publish({
+        type: "constitution.check",
+        id: `${turnID}:constitution:${rule.ruleID.toLowerCase()}`,
+        ruleID: rule.ruleID,
+        statement: rule.statement,
+        priority: rule.priority,
+        enforcement: rule.enforcement,
+        action: toolAction,
+        resource: toolResource,
+        conflict: denyWithoutOverride,
+        ...(override
+          ? {
+              override: {
+                reason: override.reason,
+                approvedBy: override.approvedBy,
+              },
+            }
+          : {}),
+      });
+      if (denyWithoutOverride && !blocked) {
+        publish(
+          workLedgerController.constitutionCheckEdge({
+            turnID,
+            callID,
+            ruleID: rule.ruleID,
+          }),
+        );
+        blocked = `blocked by constitution: ${rule.statement}`;
       }
     }
     return blocked;
+  }
+
+  function journalRuleApplies(
+    ruleID: string,
+    commandText: string | undefined,
+    toolResource: string,
+  ) {
+    if (ruleID.startsWith("C-TERM-")) return false;
+    if (ruleID === "C-REL-001")
+      return Boolean(
+        commandText && /\bgit\s+(commit|push)\b/iu.test(commandText),
+      );
+    if (ruleID === "C-REL-002") return false;
+    return toolResource !== "global";
+  }
+
+  function matchingOverride(
+    overrides: ReturnType<
+      typeof import("@natalia/session").projectedConstitutionOverrides
+    >,
+    ruleID: string,
+    toolResource: string,
+  ) {
+    return overrides.find((override) => {
+      if (override.ruleID !== ruleID) return false;
+      if (!override.paths?.length) return true;
+      return override.paths.some(
+        (path) => toolResource === path || toolResource.includes(path),
+      );
+    });
   }
 
   /**

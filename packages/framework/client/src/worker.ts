@@ -111,6 +111,8 @@ export const WORKER_ROUTE_MEMBERS = {
   "decision.list": "decisionRecords",
   "evidence.list": "evidenceRecords",
   "projections.list": "projectionContributions",
+  "constitution.override.request": "requestOverride",
+  "constitution.override.approve": "approveOverride",
   "chat.messages": "chatMessages",
   "chat.submit": "chatSubmit",
   "chat.rollback": "chatRollback",
@@ -202,6 +204,8 @@ type WorkerRequest = {
     | "decision.list"
     | "evidence.list"
     | "projections.list"
+    | "constitution.override.request"
+    | "constitution.override.approve"
     | "chat.messages"
     | "chat.submit"
     | "chat.rollback"
@@ -768,6 +772,16 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["projectionContributions"]>>
       >;
     },
+    async requestOverride(input) {
+      return (await request("constitution.override.request", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["requestOverride"]>>
+      >;
+    },
+    async approveOverride(input) {
+      return (await request("constitution.override.approve", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["approveOverride"]>>
+      >;
+    },
     async chatMessages() {
       return (await request("chat.messages")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
@@ -1091,6 +1105,10 @@ export async function handleWorkerRequest(
     return await client.evidenceRecords?.();
   if (request.method === "projections.list")
     return await client.projectionContributions?.();
+  if (request.method === "constitution.override.request")
+    return await client.requestOverride?.(request.value as never);
+  if (request.method === "constitution.override.approve")
+    return await client.approveOverride?.(request.value as never);
   if (request.method === "chat.messages") return await client.chatMessages?.();
   if (request.method === "chat.submit")
     return await client.chatSubmit?.(request.value as { text: string });

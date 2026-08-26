@@ -373,6 +373,8 @@ export function createInteractiveWaiter(
     planID: string;
     title: string;
     detail: string;
+    preview?: string;
+    scope?: string;
     sessionID?: SessionID;
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;
@@ -396,11 +398,11 @@ export function createInteractiveWaiter(
       type: "approval.request",
       id: input.approvalID,
       title: input.title,
-      preview: `Accept plan ${input.planID}`,
+      preview: input.preview ?? `Accept plan ${input.planID}`,
       detail: input.detail,
       keyArguments: [input.planID],
       sensitive: false,
-      scope: "plan_acceptance",
+      scope: input.scope ?? "plan_acceptance",
     });
     try {
       return await waitForResponse(

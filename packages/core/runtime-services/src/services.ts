@@ -824,6 +824,8 @@ export interface InteractiveWaiter {
     planID: string;
     title: string;
     detail: string;
+    preview?: string;
+    scope?: string;
     sessionID?: SessionID;
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;

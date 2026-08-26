@@ -211,6 +211,28 @@ export function createChatPrompt(ctx: RuntimeContext) {
       rules.length
         ? `Constitution rules: ${rules.map((rule) => rule.ruleID).join(", ")}`
         : "Constitution rules: none",
+      ...(() => {
+        const conflicts = chatSession.events
+          .filter(
+            (
+              event,
+            ): event is Extract<
+              import("@natalia/contracts").RuntimeEvent,
+              { type: "constitution.check" }
+            > => event.type === "constitution.check" && event.conflict,
+          )
+          .slice(-3);
+        return conflicts.length
+          ? [
+              `Constitution conflicts (do not recordDecision to bypass; request a user-scoped override):\n${conflicts
+                .map(
+                  (event) =>
+                    `- ${event.ruleID}: ${promptData(event.statement)} · suggest sandbox, narrower paths, or abandon`,
+                )
+                .join("\n")}`,
+            ]
+          : ["Constitution conflicts: none"];
+      })(),
       activity
         ? `The user's recent conversation with the main agent:\n${promptData(activity)}`
         : "The user's recent conversation with the main agent: none",

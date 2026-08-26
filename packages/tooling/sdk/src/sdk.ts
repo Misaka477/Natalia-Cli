@@ -521,6 +521,12 @@ export type NataliaSDK = {
   projectionContributions(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["projectionContributions"]>>>
   >;
+  requestOverride(
+    input: Parameters<NonNullable<RuntimeClient["requestOverride"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["requestOverride"]>>>>;
+  approveOverride(
+    input: Parameters<NonNullable<RuntimeClient["approveOverride"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["approveOverride"]>>>>;
   /** Loaded capability records, distinct from `availability()` (what is implemented). */
   capabilities(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["capabilities"]>>>
@@ -943,6 +949,10 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("observation.confirmed", {}),
     registeredTools: async () => await call("tools.registered", {}),
     projectionContributions: async () => await call("projections.list", {}),
+    requestOverride: async (input) =>
+      await call("constitution.override.request", input),
+    approveOverride: async (input) =>
+      await call("constitution.override.approve", input),
     capabilities: async () => await call("capabilities", {}),
     sessionSnapshot: async () => await call("session.snapshot", {}),
     submitInput: async (input) => await call("submit.input", input),

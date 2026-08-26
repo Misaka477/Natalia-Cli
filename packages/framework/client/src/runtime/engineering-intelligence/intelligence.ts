@@ -45,6 +45,8 @@ type Surface = Pick<
   | "acknowledgeDriftFinding"
   | "confirmedWorkspaceChanges"
   | "registeredTools"
+  | "requestOverride"
+  | "approveOverride"
 >;
 export function createIntelligenceSurface(
   ctx: RuntimeContext,
@@ -392,6 +394,59 @@ export function createIntelligenceSurface(
         }),
       );
       return { acknowledged: true as const };
+    },
+    async requestOverride(input: {
+      ruleID: string;
+      reason: string;
+      paths?: string[];
+      taskID?: string;
+      expiresAt?: string;
+    }) {
+      await ctx.ports.getReady();
+      const session = ctx.ports.getSession();
+      if (!session || !input.ruleID.trim() || !input.reason.trim())
+        return {
+          requested: false as const,
+          reason: "invalid override request",
+        };
+      const rule = projectedConstitutionRules(session.events).find(
+        (candidate) => candidate.ruleID === input.ruleID,
+      );
+      if (!rule) return { requested: false as const, reason: "unknown rule" };
+      if (rule.overridePolicy === "forbidden")
+        return { requested: false as const, reason: "override forbidden" };
+      const requestID = `override:${input.ruleID}:${ctx.ports.nextDecisionSequence()}`;
+      const response = await ctx.ports.getInteractive().requirePlanAcceptance({
+        approvalID: requestID,
+        planID: input.ruleID,
+        title: `Override ${input.ruleID}`,
+        preview: `Allow ${input.ruleID} (${input.reason})`,
+        detail: input.reason,
+        scope: "constitution_override",
+      });
+      if (!response || response.decision === "reject")
+        return { requested: false as const, requestID, reason: "rejected" };
+      ctx.ports.publishForSession(ctx.ports.getActiveExec(), {
+        type: "constitution.override_granted",
+        id: requestID,
+        ruleID: input.ruleID,
+        reason: input.reason,
+        approvedBy: "user",
+        ...(input.paths?.length ? { paths: input.paths } : {}),
+        ...(input.taskID ? { taskID: input.taskID } : {}),
+        ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+      });
+      return { requested: true as const, requestID };
+    },
+    async approveOverride(input: {
+      requestID: string;
+      decision: "once" | "reject";
+    }) {
+      const outcome = ctx.ports.getInteractive().respondApproval({
+        requestID: input.requestID,
+        decision: input.decision,
+      });
+      return { approved: outcome.accepted && input.decision === "once" };
     },
     async registeredTools() {
       if (!ctx.ports.getSession()) return [];

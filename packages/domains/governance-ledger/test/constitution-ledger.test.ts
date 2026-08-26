@@ -11,25 +11,34 @@ test("the self-protection rules are the runtime's real rule metadata", () => {
     "C-TERM-001",
     "C-TERM-002",
     "C-TERM-003",
+    "C-REL-001",
+    "C-REL-002",
   ]);
 });
 
 test("seeding a fresh journal publishes all three rules as durable facts", () => {
   const seeded = seedConstitutionRules([]);
-  expect(seeded).toHaveLength(3);
+  expect(seeded).toHaveLength(5);
   for (const rule of seeded) {
     expect(rule.type).toBe("constitution.rule_added");
     expect(rule.scope).toBe("release");
     expect(rule.priority).toBe("critical");
     expect(rule.source).toBe("policy");
     expect(rule.enforcement).toBe("deny");
-    expect(rule.overridePolicy).toBe("forbidden");
   }
   expect(seeded.map((rule) => rule.ruleID)).toEqual([
     "C-TERM-001",
     "C-TERM-002",
     "C-TERM-003",
+    "C-REL-001",
+    "C-REL-002",
   ]);
+  expect(seeded.find((rule) => rule.ruleID === "C-REL-001")?.overridePolicy).toBe(
+    "user_scoped",
+  );
+  expect(seeded.find((rule) => rule.ruleID === "C-REL-002")?.overridePolicy).toBe(
+    "forbidden",
+  );
 });
 
 test("seeding is idempotent: a journal that already holds a rule is not reseeded", () => {
@@ -50,6 +59,8 @@ test("seeding is idempotent: a journal that already holds a rule is not reseeded
   expect(seeded.map((rule) => rule.ruleID)).toEqual([
     "C-TERM-002",
     "C-TERM-003",
+    "C-REL-001",
+    "C-REL-002",
   ]);
 });
 

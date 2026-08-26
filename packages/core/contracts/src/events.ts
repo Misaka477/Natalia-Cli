@@ -619,6 +619,16 @@ type RuntimeEventData =
       evidenceRefs?: string[];
     }
   | {
+      type: "constitution.override_granted";
+      id: string;
+      ruleID: string;
+      reason: string;
+      approvedBy: "user";
+      paths?: string[];
+      taskID?: string;
+      expiresAt?: string;
+    }
+  | {
       type: "constitution.rule_updated";
       id: string;
       ruleID: string;
@@ -1586,6 +1596,7 @@ export function runtimeEventDurability(
     case "chat.turn.phase":
     case "chat.turn.finished":
     case "projections.updated":
+    case "task.selection":
       return "live";
     case "tool.update":
       return ["succeeded", "failed", "rejected", "cancelled"].includes(
@@ -2502,6 +2513,17 @@ export type RuntimeClient = {
     status: "explained" | "dismissed" | "corrected";
     rationale?: string;
   }): Promise<{ acknowledged: boolean }>;
+  requestOverride?(input: {
+    ruleID: string;
+    reason: string;
+    paths?: string[];
+    taskID?: string;
+    expiresAt?: string;
+  }): Promise<{ requested: boolean; requestID?: string; reason?: string }>;
+  approveOverride?(input: {
+    requestID: string;
+    decision: "once" | "reject";
+  }): Promise<{ approved: boolean }>;
   registeredTools?(): Promise<
     Array<{
       name: string;

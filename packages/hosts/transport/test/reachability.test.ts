@@ -193,6 +193,8 @@ test("the remote report says implemented-but-unrouted for the P0-C work list", a
     "confirmedWorkspaceChanges",
     "registeredTools",
     "projectionContributions",
+    "requestOverride",
+    "approveOverride",
     "mailboxList",
     "mailboxSend",
     "mailboxDeliver",

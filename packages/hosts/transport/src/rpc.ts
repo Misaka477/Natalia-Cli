@@ -211,6 +211,8 @@ export const RPC_ROUTE_MEMBERS = {
   "drift.acknowledge": "acknowledgeDriftFinding",
   "observation.confirmed": "confirmedWorkspaceChanges",
   "tools.registered": "registeredTools",
+  "constitution.override.request": "requestOverride",
+  "constitution.override.approve": "approveOverride",
   "projections.list": "projectionContributions",
   // P8 C3: durable Live Work Chat mailbox.
   "mailbox.list": "mailboxList",
@@ -1624,6 +1626,55 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.projectionContributions(),
+      };
+    }
+    if (body.method === "constitution.override.request") {
+      optionsGuard(client, "requestOverride");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (!params || typeof params.ruleID !== "string" || !params.ruleID.trim())
+        throw invalidParams("ruleID is required");
+      if (typeof params.reason !== "string" || !params.reason.trim())
+        throw invalidParams("reason is required");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.requestOverride({
+          ruleID: params.ruleID,
+          reason: params.reason,
+          ...(Array.isArray(params.paths)
+            ? {
+                paths: params.paths.filter(
+                  (path): path is string => typeof path === "string",
+                ),
+              }
+            : {}),
+          ...(typeof params.taskID === "string"
+            ? { taskID: params.taskID }
+            : {}),
+          ...(typeof params.expiresAt === "string"
+            ? { expiresAt: params.expiresAt }
+            : {}),
+        }),
+      };
+    }
+    if (body.method === "constitution.override.approve") {
+      optionsGuard(client, "approveOverride");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.requestID !== "string" ||
+        !params.requestID.trim()
+      )
+        throw invalidParams("requestID is required");
+      if (params.decision !== "once" && params.decision !== "reject")
+        throw invalidParams("decision must be once or reject");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.approveOverride({
+          requestID: params.requestID,
+          decision: params.decision,
+        }),
       };
     }
     if (body.method === "mailbox.list") {
