@@ -503,34 +503,8 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       state.footer = `context ${event.used}/${event.max} source=${event.source}${event.trigger ? ` trigger=${event.trigger}` : ""}`;
       return;
     case "compaction.begin":
-      // The projection owns the banner (`facts.compactionBanner`); the TUI
-      // still narrates the row and the footer in its own wording.
-      upsertBlock(
-        state,
-        event.id,
-        "system",
-        `Compacting after ${event.trigger} · before ${event.beforeTokens}/${event.maxTokens} · reserved ${event.reservedTokens}`,
-        "compacting",
-      );
-      state.footer = `compacting after ${event.trigger}`;
-      return;
     case "compaction.end":
-      // Same row the "compacting" line above wrote, so the reader watches one row
-      // reach its outcome instead of collecting a second one. The projection
-      // states this too, in the same words; the row is written here because the
-      // narration layer owns it from `compaction.begin` onwards.
-      upsertBlock(
-        state,
-        event.id,
-        "system",
-        event.success
-          ? `compaction complete: ${event.beforeTokens} -> ${event.afterTokens} tokens in ${event.durationMs}ms`
-          : `compaction failed atomically: ${event.error ?? "unknown"}`,
-        event.success ? "compacted" : "failed",
-      );
-      state.footer = event.success
-        ? "compaction complete"
-        : "compaction failed";
+      state.footer = state.facts.footer;
       return;
     case "checkpoint.created":
     case "checkpoint.failed":
