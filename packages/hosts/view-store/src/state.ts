@@ -44,6 +44,7 @@ export type MessageBlock = {
   /** Present only on thinking blocks the provider allows a UI to render. */
   reasoningVisible?: boolean;
   tool?: ToolBlock;
+  taskID?: string;
 };
 
 export type ToolBlock = {
@@ -224,6 +225,8 @@ export type AppState = {
   retryBanner?: Banner;
   agentSelection?: { name?: string; pending: boolean };
   modelSelection?: { modelID?: string; variant?: string };
+  selectedTaskID?: string;
+  selectedEvidenceID?: string;
   /** Recent policy outcomes, so a UI can explain why a tool did not run. */
   policyDecisions: PolicyDecisionView[];
   workGraphNodes: Record<string, WorkGraphNodeView>;

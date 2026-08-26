@@ -74,6 +74,12 @@ export class TimelineVirtualizer<T> {
     };
   }
 
+  offsetOfKey(key: string) {
+    const index = this.groups.findIndex((group) => group.key === key);
+    if (index < 0) return undefined;
+    return this.starts[index] ?? 0;
+  }
+
   range(
     scrollTop: number,
     viewport: number,

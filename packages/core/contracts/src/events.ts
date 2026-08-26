@@ -446,6 +446,7 @@ type RuntimeEventData =
     }
   | { type: "agent.selection"; name?: string; pending: boolean }
   | { type: "model.selection"; modelID?: string; variant?: string }
+  | { type: "task.selection"; taskID: string; evidenceID?: string }
   | {
       type: "plugin.update";
       id: string;
@@ -2303,6 +2304,7 @@ export type RuntimeClient = {
       createdAt: string;
       status: string;
       reason?: string;
+      taskID?: string;
     }>
   >;
   /**

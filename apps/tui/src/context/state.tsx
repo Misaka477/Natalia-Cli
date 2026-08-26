@@ -62,6 +62,7 @@ export type MessageBlock = {
   reasoningVisible?: boolean;
   providerPolicy?: "visible" | "hidden";
   tool?: ToolBlockState;
+  taskID?: string;
   /**
    * Which layer owns this row.
    *

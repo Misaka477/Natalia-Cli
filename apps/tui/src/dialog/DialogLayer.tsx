@@ -690,11 +690,13 @@ export function DialogConstitution(props: {
 
 export function DialogEvidence(props: {
   records: Array<{
+    id?: string;
     taskID: string;
     objective: string;
     status: string;
     knownGaps: string[];
   }>;
+  onSelect?: (record: { taskID: string; evidenceID?: string }) => void;
 }) {
   return (
     <box
@@ -709,12 +711,21 @@ export function DialogEvidence(props: {
       <box flexDirection="column" gap={1} paddingTop={1}>
         <For each={props.records}>
           {(record) => (
-            <box flexDirection="column">
+            <box
+              flexDirection="column"
+              onMouseUp={() =>
+                props.onSelect?.({
+                  taskID: record.taskID,
+                  evidenceID: record.id,
+                })
+              }
+            >
               <box flexDirection="row" gap={1}>
                 <text
                   fg={
                     record.status === "validated" ||
-                    record.status === "accepted"
+                    record.status === "accepted" ||
+                    record.status === "promoted"
                       ? darkTheme.success
                       : record.status === "failed"
                         ? darkTheme.danger

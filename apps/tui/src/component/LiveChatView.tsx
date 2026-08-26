@@ -61,6 +61,7 @@ type PlanRow = {
   objective: string;
   status: string;
   author: string;
+  taskID?: string;
 };
 
 export function LiveChatView(props: {
@@ -80,6 +81,7 @@ export function LiveChatView(props: {
   onPlanAccept(planID: string): void;
   onPlanReject(planID: string): void;
   onIntentDeliver(messageID: string): void | Promise<void>;
+  selectedTaskID?: () => string | undefined;
   /** The composer's max height, matching the reference TUI's `max(6, h/3)`. */
   promptMaxHeight: number;
   contentWidth: number;
@@ -124,6 +126,11 @@ export function LiveChatView(props: {
     return undefined;
   };
   const proposedPlan = () => plans().find((plan) => plan.status === "proposed");
+  const alignedPlan = () => {
+    const taskID = props.selectedTaskID?.();
+    if (!taskID) return undefined;
+    return plans().find((plan) => plan.taskID === taskID);
+  };
   const liveAgentStatus = () => props.intelligence?.() ?? agentStatus();
   const queuedIntents = () =>
     mailbox().filter((message) => message.status === "queued");
@@ -316,6 +323,24 @@ export function LiveChatView(props: {
           </box>
         )}
       </Show>
+      <Show when={alignedPlan()}>
+        {(plan) => (
+          <Show when={plan().planID !== proposedPlan()?.planID}>
+            <box
+              flexShrink={0}
+              paddingLeft={2}
+              paddingRight={2}
+              paddingBottom={1}
+              border={["left"]}
+              borderColor={theme.accent}
+            >
+              <text fg={theme.accent} wrapMode="word">
+                Plan · {plan().title} · {plan().status}
+              </text>
+            </box>
+          </Show>
+        )}
+      </Show>
       <Show when={proposedPlan()}>
         {(plan) => (
           <box
@@ -327,7 +352,11 @@ export function LiveChatView(props: {
             paddingTop={1}
             paddingBottom={1}
             border={["left"]}
-            borderColor={theme.accent}
+            borderColor={
+              alignedPlan()?.planID === plan().planID
+                ? theme.success
+                : theme.accent
+            }
           >
             <text attributes={TextAttributes.BOLD} fg={theme.text}>
               Chat drafted a plan for your review

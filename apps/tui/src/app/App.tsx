@@ -1797,6 +1797,7 @@ function Shell(props: {
             onIntentDeliver={async (messageID) => {
               await props.backend.mailboxDeliver?.(messageID);
             }}
+            selectedTaskID={() => state.facts.selectedTaskID}
             promptMaxHeight={Math.min(
               preferences().prompt.maxHeight,
               layout().promptMaxHeight,

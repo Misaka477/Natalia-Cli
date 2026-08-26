@@ -429,6 +429,29 @@ test("agent and model selections project", () => {
   expect(state.modelSelection).toEqual({ modelID: "m1", variant: "high" });
 });
 
+test("task.selection projects selectedTaskID", () => {
+  const state = projectEvents([
+    {
+      type: "evidence.recorded",
+      id: "evidence:1",
+      taskID: "task_build",
+      objective: "verify the build",
+      status: "promoted",
+    } as RuntimeEvent,
+    {
+      type: "task.selection",
+      taskID: "task_build",
+      evidenceID: "evidence:1",
+    } as RuntimeEvent,
+  ]);
+  expect(state.selectedTaskID).toBe("task_build");
+  expect(state.selectedEvidenceID).toBe("evidence:1");
+  expect(state.messages[0]).toMatchObject({
+    id: "evidence:1",
+    taskID: "task_build",
+  });
+});
+
 test("todos project from the todo tool's own arguments", () => {
   const args = JSON.stringify({
     todos: [

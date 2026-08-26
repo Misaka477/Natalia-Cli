@@ -123,6 +123,20 @@ export function applyStatusEvent(
         variant: event.variant,
       };
       return true;
+    case "task.selection":
+      state.selectedTaskID = event.taskID;
+      state.selectedEvidenceID = event.evidenceID;
+      return true;
+    case "evidence.recorded":
+      upsertBlock(
+        state,
+        event.id,
+        "system",
+        `${event.status} · ${event.objective}`,
+        event.status,
+        { taskID: event.taskID },
+      );
+      return true;
     case "policy.decision":
       // Kept so a UI can explain why a tool did not run. Allows are recorded
       // too, because "nothing was denied" is also an answer.

@@ -56,6 +56,7 @@ async function mountChat(
     onPlanAccept?: (planID: string) => void;
     onPlanReject?: (planID: string) => void;
     onIntentDeliver?: (messageID: string) => void;
+    selectedTaskID?: () => string | undefined;
     activity?: () => ChatActivityView | undefined;
     intelligence?: () => SessionIntelligenceView | undefined;
   } = {},
@@ -103,6 +104,7 @@ async function mountChat(
               delivered.push(messageID);
               callbacks.onIntentDeliver?.(messageID);
             }}
+            selectedTaskID={callbacks.selectedTaskID}
             promptMaxHeight={6}
             contentWidth={156}
             density="comfortable"
@@ -474,6 +476,37 @@ test("an acknowledged intent is not clickable", async () => {
     await Bun.sleep(20);
     await mounted.setup.renderOnce();
     expect(mounted.delivered).toEqual([]);
+  } finally {
+    await mounted.dispose();
+  }
+});
+
+test("a selected task highlights the matching plan", async () => {
+  const mounted = await mountChat(
+    history,
+    { selectedTaskID: () => "task_build" },
+    {
+      planList: async () => [
+        {
+          planID: "plan:aligned",
+          version: 1,
+          title: "Aligned build plan",
+          author: "main_agent",
+          objective: "verify the build",
+          steps: [],
+          constraints: [],
+          verification: [],
+          riskNotes: [],
+          status: "active",
+          createdAt: "2026-08-26T00:00:00.000Z",
+          taskID: "task_build",
+        },
+      ],
+    },
+  );
+  try {
+    await mounted.setup.renderOnce();
+    expect(mounted.setup.captureCharFrame()).toContain("Aligned build plan");
   } finally {
     await mounted.dispose();
   }

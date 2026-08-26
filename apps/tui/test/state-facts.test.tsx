@@ -13,6 +13,7 @@ import {
   SessionFooter,
   SessionSidebar,
 } from "../src/routes/session/SessionRoute";
+import { DialogEvidence } from "../src/dialog/DialogLayer";
 
 /**
  * The TUI now keeps resource facts in `state.facts`, projected by
@@ -444,5 +445,61 @@ test("subagent and MCP facts land in the projection while the TUI keeps its narr
   // a second transcript no one reads while the visible rows stayed the TUI's.
   expect(state().facts.messages).toEqual([]);
 
+  setup.renderer.destroy();
+});
+
+test("task.selection stores selectedTaskID from a completion card", async () => {
+  const mounted = await mountState();
+  await mounted.send({
+    type: "evidence.recorded",
+    id: "evidence:card",
+    taskID: "task_build",
+    objective: "verify the build",
+    status: "promoted",
+  });
+  await mounted.send({
+    type: "task.selection",
+    taskID: "task_build",
+    evidenceID: "evidence:card",
+  });
+  expect(mounted.state().facts.selectedTaskID).toBe("task_build");
+  expect(mounted.state().facts.selectedEvidenceID).toBe("evidence:card");
+  expect(
+    mounted.state().messages.find((block) => block.taskID === "task_build")?.id,
+  ).toBe("evidence:card");
+  mounted.setup.renderer.destroy();
+});
+
+test("DialogEvidence click reports the selected task", async () => {
+  const setup = await createTestRenderer({ width: 80, height: 16 });
+  const selected: Array<{ taskID: string; evidenceID?: string }> = [];
+  await render(
+    () => (
+      <DialogEvidence
+        records={[
+          {
+            id: "evidence:card",
+            taskID: "task_build",
+            objective: "verify the build",
+            status: "promoted",
+            knownGaps: [],
+          },
+        ]}
+        onSelect={(record) => selected.push(record)}
+      />
+    ),
+    setup.renderer,
+  );
+  await setup.renderOnce();
+  const frame = setup.captureCharFrame();
+  expect(frame).toContain("verify the build");
+  const lines = frame.split("\n");
+  const y = lines.findIndex((line) => line.includes("verify the build"));
+  const x = lines[y]!.indexOf("verify") + 2;
+  const mouse = createMockMouse(setup.renderer);
+  await mouse.click(x, y);
+  expect(selected).toEqual([
+    { taskID: "task_build", evidenceID: "evidence:card" },
+  ]);
   setup.renderer.destroy();
 });

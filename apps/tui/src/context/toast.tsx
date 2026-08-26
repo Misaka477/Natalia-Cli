@@ -63,6 +63,10 @@ export function useToast() {
   return controller;
 }
 
+export function useOptionalToast() {
+  return useContext(ToastContext);
+}
+
 export function ToastRegion() {
   const toast = useToast();
   const dimensions = useTerminalDimensions();

@@ -65,6 +65,7 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
         createdAt: plan.createdAt,
         status: plan.status,
         ...(plan.reason ? { reason: plan.reason } : {}),
+        ...(plan.taskID ? { taskID: plan.taskID } : {}),
       }));
     },
     async planCreate(input) {

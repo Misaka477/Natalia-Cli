@@ -2430,7 +2430,19 @@ export async function runCommand(command: string, ctx: CommandContext) {
   }
   if (command === "evidence.list") {
     void ctx.backend.evidenceRecords?.().then(
-      (records) => ctx.dialog.push(() => <DialogEvidence records={records} />),
+      (records) =>
+        ctx.dialog.push(() => (
+          <DialogEvidence
+            records={records}
+            onSelect={(record) =>
+              ctx.dispatch({
+                type: "task.selection",
+                taskID: record.taskID,
+                ...(record.evidenceID ? { evidenceID: record.evidenceID } : {}),
+              })
+            }
+          />
+        )),
       (error: any) => ctx.toast.error(error),
     );
     return;

@@ -132,6 +132,7 @@ export function messageBlockFromProjection(
     owner: "projection" as const,
     pendingText: block.pendingText,
     status: block.status,
+    taskID: block.taskID,
     reasoningVisible: block.reasoningVisible,
     ...(block.role === "thinking" || block.role === "assistant"
       ? {

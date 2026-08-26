@@ -28,6 +28,7 @@ import type { TuiPreferences } from "../../settings";
 import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
 import { useDialog } from "../../dialog/provider";
+import { useOptionalToast } from "../../context/toast";
 import { DialogPrompt } from "../../dialog/DialogPrompt";
 import { PermissionPrompt } from "./permission";
 import { QuestionPrompt } from "./question";
@@ -85,7 +86,9 @@ export function SessionRoute(props: {
   showInteractivePrompt?: boolean;
 }) {
   const { state, dispatch } = useAppState();
+  const toast = useOptionalToast();
   const route = useRouteController();
+  let alignedTaskID = "";
   const viewState = () =>
     props.viewState ?? (props.displayOnly ? undefined : state);
   const layout = () => timelineLayout(props.terminalWidth ?? 80);
@@ -226,6 +229,27 @@ export function SessionRoute(props: {
         updateRange();
       });
     measureRenderedGroups();
+  });
+  createEffect(() => {
+    const taskID = viewState()?.facts.selectedTaskID;
+    if (!taskID || taskID === alignedTaskID) return;
+    alignedTaskID = taskID;
+    const match = messages().find((block) => block.taskID === taskID);
+    if (!match) {
+      toast?.show({ variant: "info", message: "无关联 turn" });
+      return;
+    }
+    const group = timelineGroups().find((candidate) =>
+      candidate.items.some((block) => block.id === match.id),
+    );
+    if (!group || !timelineScroll || timelineScroll.isDestroyed) return;
+    const offset = virtualizer.offsetOfKey(group.key);
+    if (offset === undefined) return;
+    queueMicrotask(() => {
+      if (!timelineScroll || timelineScroll.isDestroyed) return;
+      timelineScroll.scrollTo(offset);
+      updateRange();
+    });
   });
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" width="100%">

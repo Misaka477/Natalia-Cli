@@ -426,6 +426,8 @@ const EVENT_TRIGGERS: Record<string, string> = {
     "evidence for a task objective was recorded; no writer yet",
   "mcp.status": "an MCP server connection changed state",
   "model.selection": "the model was selected or switched",
+  "task.selection":
+    "a completion/evidence card was selected so UIs align on one taskID",
   "plugin.update": "a plugin loaded, unloaded or reported a lifecycle change",
   "policy.decision":
     "a tool or action policy decision was made (allow/deny/approval_required/rejected)",
