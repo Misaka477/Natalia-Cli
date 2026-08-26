@@ -429,6 +429,40 @@ test("agent and model selections project", () => {
   expect(state.modelSelection).toEqual({ modelID: "m1", variant: "high" });
 });
 
+test("plugin projection contributions project and clear", () => {
+  const contributed = projectEvents([
+    {
+      type: "projections.updated",
+      contributions: [
+        {
+          name: "demo.card",
+          title: "Demo card",
+          placement: "sidebar",
+          text: "hello",
+        },
+      ],
+    } as RuntimeEvent,
+  ]);
+  expect(contributed.pluginProjections).toEqual([
+    {
+      name: "demo.card",
+      title: "Demo card",
+      placement: "sidebar",
+      text: "hello",
+    },
+  ]);
+  const cleared = projectEvents(
+    [
+      {
+        type: "projections.updated",
+        contributions: [],
+      } as RuntimeEvent,
+    ],
+    contributed,
+  );
+  expect(cleared.pluginProjections).toEqual([]);
+});
+
 test("task.selection projects selectedTaskID", () => {
   const state = projectEvents([
     {

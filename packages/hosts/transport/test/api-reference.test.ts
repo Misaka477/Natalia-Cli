@@ -429,6 +429,8 @@ const EVENT_TRIGGERS: Record<string, string> = {
   "task.selection":
     "a completion/evidence card was selected so UIs align on one taskID",
   "plugin.update": "a plugin loaded, unloaded or reported a lifecycle change",
+  "projections.updated":
+    "plugin projection contributions changed; live snapshot of title/placement/text",
   "policy.decision":
     "a tool or action policy decision was made (allow/deny/approval_required/rejected)",
   "question.request":

@@ -484,6 +484,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "reconciles watcher hints and returns the confirmed changes; not written to the Work Graph (Phase 4)",
   },
   registeredTools: { refusal: "none", note: "pure read" },
+  projectionContributions: {
+    refusal: "none",
+    note: "pure read of sanitized plugin projection contributions",
+  },
 
   // --- Live Work Chat mailbox (P8 C3) ---
   mailboxList: { refusal: "none", note: "pure read" },

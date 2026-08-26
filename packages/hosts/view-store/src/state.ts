@@ -6,6 +6,7 @@
  * slice here plus one module, not editing a single growing switch.
  */
 import type {
+  ProjectionContribution,
   RuntimeEvent,
   SessionID,
   SubmittedTurn,
@@ -232,6 +233,7 @@ export type AppState = {
   workGraphNodes: Record<string, WorkGraphNodeView>;
   workGraphEdges: Record<string, WorkGraphEdgeView>;
   intelligence?: SessionIntelligenceView;
+  pluginProjections: ProjectionContribution[];
 };
 
 export function initialState(): AppState {
@@ -270,6 +272,7 @@ export function initialState(): AppState {
     policyDecisions: [],
     workGraphNodes: {},
     workGraphEdges: {},
+    pluginProjections: [],
   };
 }
 
@@ -313,6 +316,7 @@ export function cloneState(state: AppState): AppState {
     policyDecisions: [...state.policyDecisions],
     workGraphNodes: { ...state.workGraphNodes },
     workGraphEdges: { ...state.workGraphEdges },
+    pluginProjections: [...state.pluginProjections],
     ...(state.rollback ? { rollback: { ...state.rollback } } : {}),
   };
 }

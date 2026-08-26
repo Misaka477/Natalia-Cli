@@ -110,6 +110,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "constitution.list": "constitutionRules",
   "decision.list": "decisionRecords",
   "evidence.list": "evidenceRecords",
+  "projections.list": "projectionContributions",
   "chat.messages": "chatMessages",
   "chat.submit": "chatSubmit",
   "chat.rollback": "chatRollback",
@@ -200,6 +201,7 @@ type WorkerRequest = {
     | "constitution.list"
     | "decision.list"
     | "evidence.list"
+    | "projections.list"
     | "chat.messages"
     | "chat.submit"
     | "chat.rollback"
@@ -761,6 +763,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>
       >;
     },
+    async projectionContributions() {
+      return (await request("projections.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["projectionContributions"]>>
+      >;
+    },
     async chatMessages() {
       return (await request("chat.messages")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
@@ -1082,6 +1089,8 @@ export async function handleWorkerRequest(
     return await client.decisionRecords?.();
   if (request.method === "evidence.list")
     return await client.evidenceRecords?.();
+  if (request.method === "projections.list")
+    return await client.projectionContributions?.();
   if (request.method === "chat.messages") return await client.chatMessages?.();
   if (request.method === "chat.submit")
     return await client.chatSubmit?.(request.value as { text: string });

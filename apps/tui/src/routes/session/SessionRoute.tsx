@@ -761,6 +761,27 @@ export function SessionSidebar(props: {
               </Show>
             </box>
           </Show>
+          <Show when={state.facts.pluginProjections.length > 0}>
+            <box flexDirection="column" gap={1}>
+              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
+                Extensions
+              </text>
+              <For
+                each={state.facts.pluginProjections.filter(
+                  (entry) =>
+                    entry.placement === "sidebar" ||
+                    entry.placement === "tool-card",
+                )}
+              >
+                {(entry) => (
+                  <text fg={darkTheme.muted} wrapMode="word">
+                    {entry.title}
+                    {entry.text ? ` · ${entry.text}` : ""}
+                  </text>
+                )}
+              </For>
+            </box>
+          </Show>
           <Show when={agents().length > 0}>
             <box flexDirection="column" gap={1}>
               <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>

@@ -599,6 +599,9 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       applyResourceEvent(state.facts, event);
       state.footer = `MCP ${event.server}: ${event.status}`;
       return;
+    case "projections.updated":
+      applyResourceEvent(state.facts, event);
+      return;
     // TUI-only chrome: warning/error diagnostics in the transcript.
     case "diagnostic":
       if (event.level === "info") return;

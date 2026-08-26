@@ -518,6 +518,9 @@ export type NataliaSDK = {
   registeredTools(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
   >;
+  projectionContributions(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["projectionContributions"]>>>
+  >;
   /** Loaded capability records, distinct from `availability()` (what is implemented). */
   capabilities(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["capabilities"]>>>
@@ -939,6 +942,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     confirmedWorkspaceChanges: async () =>
       await call("observation.confirmed", {}),
     registeredTools: async () => await call("tools.registered", {}),
+    projectionContributions: async () => await call("projections.list", {}),
     capabilities: async () => await call("capabilities", {}),
     sessionSnapshot: async () => await call("session.snapshot", {}),
     submitInput: async (input) => await call("submit.input", input),

@@ -18,6 +18,7 @@ import {
 } from "@natalia/runtime-services";
 import { discoverDesiredPluginEntries } from "./plugin-discovery";
 import { registerPluginOwner } from "./plugin-owner";
+import { snapshotProjectionContributions } from "./projection-contributions";
 
 const HOST_INPUT_SERVICES = new Set([
   LOCAL_TOOLS_INPUT_SERVICE,
@@ -52,13 +53,15 @@ export function createPluginsController(input: {
     closed = false;
     registry = createPluginRegistry({
       tools: input.tools,
-      onAudit: (entry) =>
+      onAudit: (entry) => {
         input.publish({
           type: "plugin.update",
           id: entry.pluginID,
           status: entry.action,
           detail: entry.detail,
-        }),
+        });
+        publishProjectionSnapshot();
+      },
       registerOwner: (manifest) =>
         registerPluginOwner(manifest, input.capabilityRegistry),
       runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
@@ -111,6 +114,13 @@ export function createPluginsController(input: {
         onError: publishLoadError,
       });
     }, snapshot.settings);
+  }
+
+  function publishProjectionSnapshot() {
+    input.publish({
+      type: "projections.updated",
+      contributions: snapshotProjectionContributions(input.capabilityRegistry),
+    });
   }
 
   function publishLoadError(id: string, error: unknown) {

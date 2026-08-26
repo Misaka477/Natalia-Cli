@@ -1,6 +1,7 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { manifestIntegrationPoints } from "@natalia/plugin";
 import type { RuntimeContext } from "../context";
+import { snapshotProjectionContributions } from "../../projection-contributions";
 type Surface = Pick<
   RuntimeServiceClient,
   | "plugins"
@@ -10,6 +11,7 @@ type Surface = Pick<
   | "pluginUnload"
   | "pluginReload"
   | "toolFamilyReload"
+  | "projectionContributions"
 >;
 export function createExtensionsRuntime(ctx: RuntimeContext): Surface {
   return {
@@ -75,6 +77,10 @@ export function createExtensionsRuntime(ctx: RuntimeContext): Surface {
     async toolFamilyReload(id) {
       await ctx.ports.getReady();
       return await ctx.ports.hotReloadToolFamily(id);
+    },
+    async projectionContributions() {
+      await ctx.ports.getReady();
+      return snapshotProjectionContributions(ctx.ports.getCapabilityRegistry());
     },
     async capabilities() {
       // The built-in catalogue registers during initialize; a query that skips

@@ -125,6 +125,7 @@ function controllableClient() {
     "acknowledgeDriftFinding",
     "confirmedWorkspaceChanges",
     "registeredTools",
+    "projectionContributions",
     "mailboxList",
     "mailboxSend",
     "mailboxDeliver",

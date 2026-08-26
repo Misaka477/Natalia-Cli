@@ -211,6 +211,7 @@ export const RPC_ROUTE_MEMBERS = {
   "drift.acknowledge": "acknowledgeDriftFinding",
   "observation.confirmed": "confirmedWorkspaceChanges",
   "tools.registered": "registeredTools",
+  "projections.list": "projectionContributions",
   // P8 C3: durable Live Work Chat mailbox.
   "mailbox.list": "mailboxList",
   "mailbox.send": "mailboxSend",
@@ -1615,6 +1616,14 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.registeredTools(),
+      };
+    }
+    if (body.method === "projections.list") {
+      optionsGuard(client, "projectionContributions");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.projectionContributions(),
       };
     }
     if (body.method === "mailbox.list") {

@@ -199,6 +199,13 @@ export type RuntimeCheckpoint = {
   tokenEstimate: number;
   diskUsageBytes: number;
 };
+export type ProjectionContribution = {
+  name: string;
+  title: string;
+  placement: "tool-card" | "sidebar";
+  text?: string;
+};
+
 export type RuntimeSandbox = {
   id: string;
   root: string;
@@ -447,6 +454,10 @@ type RuntimeEventData =
   | { type: "agent.selection"; name?: string; pending: boolean }
   | { type: "model.selection"; modelID?: string; variant?: string }
   | { type: "task.selection"; taskID: string; evidenceID?: string }
+  | {
+      type: "projections.updated";
+      contributions: ProjectionContribution[];
+    }
   | {
       type: "plugin.update";
       id: string;
@@ -1574,6 +1585,7 @@ export function runtimeEventDurability(
     case "chat.turn.started":
     case "chat.turn.phase":
     case "chat.turn.finished":
+    case "projections.updated":
       return "live";
     case "tool.update":
       return ["succeeded", "failed", "rejected", "cancelled"].includes(
@@ -2501,6 +2513,7 @@ export type RuntimeClient = {
     }>
   >;
   capabilities?(): Promise<CapabilityRecordView[]>;
+  projectionContributions?(): Promise<ProjectionContribution[]>;
   workGraphNodes?(): Promise<WorkGraphNodeView[]>;
   workGraphEdges?(): Promise<WorkGraphEdgeView[]>;
   /**

@@ -370,6 +370,39 @@ test("the sidebar prioritizes the plan and keeps agent internals out of view", a
   setup.renderer.destroy();
 });
 
+test("plugin projection contributions render in the sidebar", async () => {
+  const setup = await createTestRenderer({ width: 42, height: 24 });
+  let dispatch: ((event: RuntimeEvent) => void) | undefined;
+  await render(
+    () => (
+      <StateProvider onReady={(bridge) => (dispatch = bridge.dispatch)}>
+        <RouteProvider>
+          <SessionSidebar />
+        </RouteProvider>
+      </StateProvider>
+    ),
+    setup.renderer,
+  );
+  if (!dispatch) throw new Error("state provider did not come up");
+  dispatch({
+    type: "projections.updated",
+    contributions: [
+      {
+        name: "demo.card",
+        title: "Demo card",
+        placement: "sidebar",
+        text: "hello from a plugin",
+      },
+    ],
+  });
+  await Bun.sleep(40);
+  await setup.renderOnce();
+  const frame = setup.captureCharFrame();
+  expect(frame).toContain("Demo card");
+  expect(frame).toContain("hello from a plugin");
+  setup.renderer.destroy();
+});
+
 test("a replayed terminal timeline entry is not counted twice", async () => {
   const { setup, send, state } = await mountState();
   const entry: RuntimeEvent = {

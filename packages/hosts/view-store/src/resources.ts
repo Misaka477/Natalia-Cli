@@ -293,6 +293,11 @@ export function applyResourceEvent(
     case "plugin.update":
       state.plugins = { ...state.plugins, [event.id]: event };
       return true;
+    case "projections.updated":
+      state.pluginProjections = event.contributions.map((entry) => ({
+        ...entry,
+      }));
+      return true;
     case "capability.loaded":
       state.capabilities = { ...state.capabilities, [event.id]: event };
       return true;

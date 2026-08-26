@@ -629,7 +629,12 @@ test("v2 contributions and typed services use the shared ownership channel", asy
         });
         api.services.on("status.service", (value) => seenServices.push(value));
         api.resources.register({ name: "resource" });
-        api.projections.register({ name: "projection" });
+        api.projections.register({
+          name: "projection",
+          title: "Demo card",
+          placement: "sidebar",
+          text: "hello from a plugin",
+        });
         api.workflows.register({ name: "workflow" });
         api.settingsSchema.register({ name: "settings" });
         api.adapters.register({
