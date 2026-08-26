@@ -501,7 +501,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
         `threshold:${event.thresholdPercent}%`,
         `reserved:${event.reserved}`,
       ].slice(0, 7);
-      state.footer = `context ${event.used}/${event.max} source=${event.source}${event.trigger ? ` trigger=${event.trigger}` : ""}`;
+      state.footer = state.facts.footer;
       return;
     case "compaction.begin":
     case "compaction.end":
