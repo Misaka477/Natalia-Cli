@@ -8772,6 +8772,55 @@ test("plan acceptance requires an approval and a reject leaves the plan proposed
   ).toBe(2);
 });
 
+test("rejecting a proposed plan tells Navi and does not stop the chat", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plan-chat-reject-"));
+  const naviTurns: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_chat_reject",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        naviTurns.push(
+          request.messages
+            .filter((message) => message.role === "user")
+            .map((message) => message.content)
+            .join("\n"),
+        );
+        yield { type: "content" as const, text: "okay, I will take another route" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.chatSubmit!({ text: "draft a plan" });
+  const created = await client.planCreate?.({
+    title: "Risky rewrite",
+    author: "live_chat",
+    objective: "rewrite everything",
+    steps: [{ id: "s1", title: "start" }],
+  });
+  const planID = created!.planID!;
+  await client.planPropose?.(planID);
+  expect(
+    await client.planSupersede?.(planID, "rejected in live work chat"),
+  ).toEqual({ superseded: true });
+  await waitFor(() =>
+    naviTurns.some((text) => text.includes(`rejected plan ${planID}`)),
+  );
+  expect((await client.planList!())[0]?.status).toBe("superseded");
+  expect(
+    await client.mailboxSend?.({
+      intent: "next_plan_handoff",
+      text: "start anyway",
+      relatedPlanID: planID,
+    }),
+  ).toMatchObject({ queued: false });
+  await client.dispose?.();
+});
+
 test("a queued-next plan activates automatically at the next turn boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-plan-activate-"));
   const client = createRealRuntimeClient({

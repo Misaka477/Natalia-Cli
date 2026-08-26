@@ -201,17 +201,38 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
           candidate.status !== "archived",
       );
       if (!plan) return { superseded: false };
+      const owner = ctx.ports.getActiveExec();
+      const safeReason = redactReason(reason);
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        owner,
         requireWorkLedger().buildPlanTransition({
           id: `${planID}:superseded:${plan.version + 1}`,
           planID,
           version: plan.version + 1,
           transition: "superseded",
           at: new Date().toISOString(),
-          reason: redactReason(reason),
+          reason: safeReason,
         }),
       );
+      const rejectedInChat =
+        typeof safeReason === "string" &&
+        /rejected in live work chat/iu.test(safeReason);
+      if (rejectedInChat && owner) {
+        const notice = `[user] rejected plan ${planID} (${plan.title}). Do not hand it off. Continue helping without that plan.`;
+        ctx.ports.publishForSession(owner, {
+          type: "chat.message.added",
+          id: `chat:plan-reject:${planID}:${Date.now().toString(36)}`,
+          messageID: `chat:plan-reject:${planID}`,
+          role: "user",
+          text: notice,
+          at: new Date().toISOString(),
+        });
+        owner.pendingChatUserMessages.push({
+          messageID: `chat:plan-reject:${planID}`,
+          text: notice,
+        });
+        ctx.ports.requestNaviWake(owner);
+      }
       return { superseded: true };
     },
     async planCompleted(planID) {
