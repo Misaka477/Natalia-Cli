@@ -183,6 +183,15 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           queued: false as const,
           reason: `no live plan ${planID} for next_plan_handoff`,
         };
+      if (
+        plan.status !== "accepted" &&
+        plan.status !== "queued_next_plan" &&
+        plan.status !== "active"
+      )
+        return {
+          queued: false as const,
+          reason: `plan ${planID} is ${plan.status}; wait for the user to accept it before next_plan_handoff`,
+        };
     }
     const fingerprint = mailboxFingerprint(
       input.intent,

@@ -188,7 +188,7 @@ export function createChatTools(ctx: RuntimeContext) {
       {
         name: "mailbox_send",
         description:
-          "Send a durable intent to the main agent. It is injected as a tagged ordinary user message before the next model step. Call this only after the user has confirmed the directive in the conversation. intent is one of clarification, constraint, reprioritize, pause, cancel, request_report, proposed_change, next_plan_handoff.",
+          "Send a durable intent to the main agent as a tagged ordinary message before the next model step. Ordinary intents (constraint, pause, request_report, …) send immediately. next_plan_handoff requires relatedPlanID of a user-accepted plan — propose the draft first and wait for Accept. intent is one of clarification, constraint, reprioritize, pause, cancel, request_report, proposed_change, next_plan_handoff.",
         requiresApproval: false,
         parameters: {
           type: "object",
@@ -264,7 +264,7 @@ export function createChatTools(ctx: RuntimeContext) {
       {
         name: "plan_create",
         description:
-          "Create a new plan draft (author: live_chat). It does not touch the active plan; the user must accept it before it can be queued and handed off.",
+          "Create a new plan draft (author: live_chat). It does not touch the active plan. After drafting, call plan_propose so the user can Accept in Chat; only an accepted plan may be handed off.",
         requiresApproval: false,
         parameters: {
           type: "object",
@@ -381,7 +381,7 @@ export function createChatTools(ctx: RuntimeContext) {
       {
         name: "plan_propose",
         description:
-          "Move a live_chat plan draft to proposed so the user can review and accept it.",
+          "Move a live_chat plan draft to proposed. This is the confirmation gate: Chat shows Accept/Reject. Do not mailbox_send next_plan_handoff until the user accepts.",
         requiresApproval: false,
         parameters: {
           type: "object",

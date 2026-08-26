@@ -8334,6 +8334,22 @@ test("duplicate mailbox intents and planless handoffs are refused", async () => 
     queued: false,
     reason: "next_plan_handoff requires relatedPlanID",
   });
+  const drafted = await client.planCreate?.({
+    title: "Review remaining modules",
+    author: "live_chat",
+    objective: "finish the read-only review",
+    steps: [{ id: "s1", title: "list remaining gaps" }],
+  });
+  expect(
+    await client.mailboxSend?.({
+      intent: "next_plan_handoff",
+      text: "start the review",
+      relatedPlanID: drafted?.planID,
+    }),
+  ).toMatchObject({
+    queued: false,
+    reason: `plan ${drafted?.planID} is draft; wait for the user to accept it before next_plan_handoff`,
+  });
   await client.dispose?.();
 });
 
@@ -8661,6 +8677,13 @@ test("plan drafts move through the full lifecycle with version bumps", async () 
         event.type === "plan.proposed",
     ).length,
   ).toBe(1);
+  expect(
+    await client.mailboxSend?.({
+      intent: "next_plan_handoff",
+      text: "start the accepted plan",
+      relatedPlanID: planID,
+    }),
+  ).toMatchObject({ queued: true });
 });
 
 test("plan update bumps the version and supersede keeps the reason", async () => {
