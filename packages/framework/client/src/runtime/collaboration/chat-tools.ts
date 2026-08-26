@@ -17,6 +17,7 @@ import {
   type CollaborationService,
 } from "@natalia/collaboration";
 import { chatToolSummary } from "./chat-summary";
+import { createPlansRuntime } from "./plans";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -412,23 +413,10 @@ export function createChatTools(ctx: RuntimeContext) {
                 title: candidate.title,
               })),
             });
-          const workLedgerController =
-            ctx.ports.resolveService<WorkLedgerController>(
-              WORK_LEDGER_CONTROLLER_SERVICE,
-            );
-          if (!workLedgerController)
-            throw new Error("work ledger unavailable (natalia-work-ledger)");
-          publishForSession(
-            exec,
-            workLedgerController.buildPlanTransition({
-              id: `${plan.planID}:proposed:${Date.now().toString(36)}`,
-              planID: plan.planID,
-              version: plan.version,
-              transition: "proposed",
-              at: new Date().toISOString(),
-            }),
+          const outcome = await createPlansRuntime(ctx).planPropose(
+            plan.planID,
           );
-          return JSON.stringify({ proposed: true, planID: plan.planID });
+          return JSON.stringify({ ...outcome, planID: plan.planID });
         },
       },
     );

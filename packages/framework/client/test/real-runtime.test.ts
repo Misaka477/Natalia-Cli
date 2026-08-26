@@ -13062,6 +13062,67 @@ test("chat tool calls surface as conversation actions", async () => {
   await client.dispose?.();
 });
 
+test("chat plan_propose opens Natalia's approval card", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-plan-approve-"));
+  const events: RuntimeEvent[] = [];
+  let streamCalls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_plan_approve",
+    permissionMode: "ask",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        streamCalls += 1;
+        if (streamCalls === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_create",
+                name: "plan_create",
+                arguments: JSON.stringify({
+                  title: "Scan remaining modules",
+                  objective: "read-only review",
+                  steps: [{ id: "s1", title: "list gaps" }],
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (streamCalls === 2) {
+          const planID = (await client.planList!())[0]?.planID;
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_propose",
+                name: "plan_propose",
+                arguments: JSON.stringify({ planID }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "waiting for your approval" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.chatSubmit!({ text: "create a scan plan" });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "approval.request",
+      title: "Accept Navi's plan",
+    }),
+  );
+  expect((await client.planList!())[0]?.status).toBe("proposed");
+  await client.dispose?.();
+});
+
 test("chat mailbox_send refuses a planless handoff and mailbox_cancel drops queued mail", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-chat-mailbox-guard-"));
   let streamCalls = 0;
