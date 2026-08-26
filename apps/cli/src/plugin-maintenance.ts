@@ -24,7 +24,15 @@ export async function runPluginMaintenanceCommand(
   parsed = parsePluginMaintenanceArgs(argv),
   lifecycle: { reinstallOfficialPlugin?: typeof reinstallOfficialPlugin } = {},
 ) {
-  const { action, target, workspaceRoot, pluginID, packageName } = parsed;
+  const {
+    action,
+    target,
+    workspaceRoot,
+    pluginID,
+    packageName,
+    template,
+    language,
+  } = parsed;
   const config = process.env.NATALIA_CONFIG
     ? { globalPath: process.env.NATALIA_CONFIG }
     : {};
@@ -36,6 +44,8 @@ export async function runPluginMaintenanceCommand(
         directory: target!,
         pluginID: pluginID!,
         packageName,
+        template,
+        language,
       }),
     );
     return;
@@ -46,6 +56,8 @@ export async function runPluginMaintenanceCommand(
       await installPlugin({
         pluginStoreRoot: pluginStoreRoot(),
         spec: target!,
+        workspaceRoot,
+        config,
       }),
     );
     return;
@@ -113,7 +125,7 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
     "disable",
   ]);
   const noTargetActions = new Set(["list", "doctor", "reconcile"]);
-  const workspaceActions = new Set(["enable", "disable", "list"]);
+  const workspaceActions = new Set(["install", "enable", "disable", "list"]);
   if (
     !action ||
     (action !== "create" &&
@@ -128,6 +140,8 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
   let workspaceSeen = false;
   let pluginID: string | undefined;
   let packageName: string | undefined;
+  let template: "command" | "tool" | "ui" | undefined;
+  let language: "js" | "ts" | undefined;
   for (let index = 2; index < argv.length; index += 1) {
     const value = argv[index]!;
     if (value === "--workspace") {
@@ -142,7 +156,12 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
       workspaceRoot = workspace;
       continue;
     }
-    if (value === "--id" || value === "--package") {
+    if (
+      value === "--id" ||
+      value === "--package" ||
+      value === "--template" ||
+      value === "--language"
+    ) {
       if (action !== "create") throw new Error(`unknown flag: ${value}`);
       const option = argv[++index];
       if (!option || option.startsWith("--"))
@@ -150,10 +169,22 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
       if (value === "--id") {
         if (pluginID) throw new Error("--id may only be specified once");
         pluginID = option;
-      } else {
+      } else if (value === "--package") {
         if (packageName)
           throw new Error("--package may only be specified once");
         packageName = option;
+      } else if (value === "--template") {
+        if (template) throw new Error("--template may only be specified once");
+        if (option !== "command" && option !== "tool" && option !== "ui")
+          throw new Error(
+            "plugin create --template must be command, tool, or ui",
+          );
+        template = option;
+      } else {
+        if (language) throw new Error("--language may only be specified once");
+        if (option !== "js" && option !== "ts")
+          throw new Error("plugin create --language must be js or ts");
+        language = option;
       }
       continue;
     }
@@ -181,5 +212,7 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
     workspaceRoot,
     pluginID,
     packageName,
+    template,
+    language,
   };
 }

@@ -154,8 +154,20 @@ Because the start directory is fixed, `--workspace` decides which project the
 agent works on. Without it the workspace becomes the Natalia repository itself.
 
 The TUI mounts through the same generic UI adapter host as every other UI
-(`createUiAdapterHost` in `@natalia/client`); an installed UI package can be
-launched instead with `natalia ui <kind>`.
+(`createUiAdapterHost` in `@natalia/client`). A UI package is an ordinary
+plugin: create it with `--template ui`, install it once into the Natalia
+instance plugin store, then launch it by adapter kind:
+
+```bash
+npm run ts:cli -- plugin create ./my-ui --id yourco.web --template ui
+npm run ts:cli -- plugin install ./my-ui
+npm run ts:cli -- ui ui.yourco.web
+```
+
+`plugin install` enables the package in the current workspace. Disable,
+re-enable, or uninstall it with the same plugin commands used for tools. The
+complete from-zero paths for a new plugin and a new UI are in the
+[plugin guide](plugin-guide.md#2-from-zero-a-new-plugin-and-a-new-ui).
 
 | Flag                | Effect                                                                                                              |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -336,6 +348,8 @@ start pays a cold-start cost on Windows.
 | Contents                                      | Location                                                             |
 | --------------------------------------------- | -------------------------------------------------------------------- |
 | Project config, sessions, checkpoints, skills | `<workspace>/.natalia/`                                              |
+| Plugin enablement for this workspace          | `<workspace>/.natalia/config.json` (`plugins.enabled`)               |
+| Installed plugin packages                     | Natalia instance `plugin-store` (`natalia.lock` + `node_modules`)    |
 | Global config                                 | `%APPDATA%\natalia-cli\` (Windows), `~/.config/natalia-cli/` (POSIX) |
 | Terminal runtime files                        | `%LOCALAPPDATA%` (Windows), `$XDG_RUNTIME_DIR` (POSIX)               |
 

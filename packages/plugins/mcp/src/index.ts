@@ -15,24 +15,24 @@ export type McpRuntimeInput = {
   publish(event: RuntimeEvent): void;
 };
 
-let mcpInstance: Plugin | undefined;
-const mcpPlugin: Plugin = {
-  manifest: {
-    ...MCP_PLUGIN_MANIFEST,
-    entry: "index.js",
-    requires: [MCP_INPUT_SERVICE],
-  },
-  async setup(api: PluginAPI) {
-    const input = api.services.get<McpRuntimeInput>(MCP_INPUT_SERVICE);
-    if (!input)
-      throw new Error(`missing runtime service: ${MCP_INPUT_SERVICE}`);
-    mcpInstance = createMcpPlugin(input);
-    await mcpInstance.setup(api);
-  },
-  async dispose() {
-    await mcpInstance?.dispose?.();
-    mcpInstance = undefined;
-  },
-};
-
-export default mcpPlugin;
+export default function mcpPlugin(): Plugin {
+  let instance: Plugin | undefined;
+  return {
+    manifest: {
+      ...MCP_PLUGIN_MANIFEST,
+      entry: "index.js",
+      requires: [MCP_INPUT_SERVICE],
+    },
+    async setup(api: PluginAPI) {
+      const input = api.services.get<McpRuntimeInput>(MCP_INPUT_SERVICE);
+      if (!input)
+        throw new Error(`missing runtime service: ${MCP_INPUT_SERVICE}`);
+      instance = createMcpPlugin(input);
+      await instance.setup(api);
+    },
+    async dispose() {
+      await instance?.dispose?.();
+      instance = undefined;
+    },
+  };
+}

@@ -13,6 +13,7 @@ import {
   resolvePluginDependencies,
   resolvePluginConfig,
   resolveInstalledPluginEntries,
+  loadPluginEntries,
   runPluginConformance,
 } from "../src";
 
@@ -51,6 +52,58 @@ test("plugin discovery scans unscoped and scoped installed packages", async () =
       .map((entry) => entry.manifest.id)
       .sort(),
   ).toEqual(["fixture.plugin.0", "fixture.plugin.1"]);
+});
+
+test("separate registries load isolated plugin module lifecycles", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-plugin-module-lifecycle-"),
+  );
+  const manifest = pluginManifestSchema.parse({
+    apiVersion: 1,
+    id: "fixture.module-lifecycle",
+    version: "1.0.0",
+    name: "Module lifecycle fixture",
+    entry: "index.ts",
+    scope: "workspace",
+  });
+  await writeFile(join(root, "natalia.plugin.json"), JSON.stringify(manifest));
+  await writeFile(
+    join(root, "index.ts"),
+    `export default () => {
+  let instance = 0;
+  return {
+  setup(api) {
+    instance = Number(api.config);
+  },
+  dispose() {
+    globalThis.__nataliaPluginLifecycle ??= [];
+    globalThis.__nataliaPluginLifecycle.push(instance);
+  },
+  };
+};`,
+  );
+  const lifecycle = [] as number[];
+  Object.assign(globalThis, { __nataliaPluginLifecycle: lifecycle });
+  const first = createPluginRegistry({ tools: createToolRegistry([]) });
+  const second = createPluginRegistry({ tools: createToolRegistry([]) });
+  const entries = [{ manifest, path: join(root, "natalia.plugin.json") }];
+
+  await loadPluginEntries({
+    entries,
+    registry: first,
+    settings: { [manifest.id]: 1 },
+  });
+  await loadPluginEntries({
+    entries,
+    registry: second,
+    settings: { [manifest.id]: 2 },
+  });
+  await second.unloadAll();
+  await first.unloadAll();
+
+  expect(lifecycle).toEqual([2, 1]);
+  delete (globalThis as { __nataliaPluginLifecycle?: number[] })
+    .__nataliaPluginLifecycle;
 });
 
 test("installed plugin entries require matching lock and manifest", async () => {

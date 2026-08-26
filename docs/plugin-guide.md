@@ -4,12 +4,20 @@
 > metadata, `natalia.plugin.json`, entry module, and implementation. The plugin
 > API is an in-process host extension surface, not an RPC surface.
 
+Read this guide in two passes:
+
+1. [From zero](#2-from-zero-a-new-plugin-and-a-new-ui) if you want to create,
+   install, enable, disable, or uninstall a plugin or UI today.
+2. The later sections for manifest, API, store semantics, and UI host details.
+
 ## 1. One plugin system
 
-Natalia has one plugin type. Runtime defaults and packages installed by users
+Natalia has one plugin type. Official plugins and packages installed by users
 use the same registry, declared names, permissions, dependency resolution, and
-load/unload lifecycle. A runtime default is only distribution configuration; it
-does not receive a privileged API or a separate lifecycle.
+load/unload lifecycle. An official plugin is only distribution configuration; it
+does not receive a privileged API or a separate lifecycle. UI adapters are the
+same plugin type: create, install, enable, disable, and uninstall them with the
+plugin commands.
 
 Plugins do not wrap Natalia's own framework. Agent turn/step execution,
 providers and model selection, sessions and configuration, transport/SDK/daemon,
@@ -33,7 +41,82 @@ commands keep the names they declare; Natalia does not add a plugin prefix.
 Tool approval follows each tool's `requiresApproval` declaration and the normal
 runtime policy path. There is no plugin-class-based forced approval.
 
-## 2. Package layout
+## 2. From zero: a new plugin and a new UI
+
+UI is not a second system. Both paths create one package, install it once into
+the Natalia instance `plugin-store`, and enable it in the current workspace.
+Replace `npm run ts:cli --` with `natalia-ts` in an installed release.
+
+### New plugin (command or tool)
+
+```bash
+# 1. Scaffold. Use --template tool for a tool, --language ts for TypeScript.
+npm run ts:cli -- plugin create ./demo-plugin \
+  --id yourco.demo \
+  --package @yourco/natalia-demo
+
+# 2. Edit src/index.js (and src/index.ts if you used --language ts).
+#    Keep natalia.plugin.json identical to the exported manifest.
+
+# 3. Install into the instance store. This also enables the plugin here.
+npm run ts:cli -- plugin install ./demo-plugin
+npm run ts:cli -- plugin list
+npm run ts:cli -- plugin doctor
+
+# 4. Use it, then toggle or remove it without reinstalling in other workspaces.
+npm run ts:cli -- plugin disable yourco.demo
+npm run ts:cli -- plugin enable yourco.demo
+npm run ts:cli -- plugin uninstall yourco.demo
+```
+
+A TypeScript scaffold still installs `src/index.js`. After editing
+`src/index.ts`, copy or compile that change into `src/index.js` before
+`plugin install`. Do not set the manifest `entry` to a `.ts` file.
+
+### New UI
+
+```bash
+# 1. Scaffold a UI adapter plugin.
+npm run ts:cli -- plugin create ./demo-ui \
+  --id yourco.web \
+  --package @yourco/natalia-ui-web \
+  --template ui
+
+# 2. Edit src/index.js. Registration is inert until a host mounts the kind.
+#    The template kind is ui.yourco.web unless the plugin id already starts
+#    with ui.
+
+# 3. Install once, then launch by adapter kind.
+npm run ts:cli -- plugin install ./demo-ui
+npm run ts:cli -- ui
+npm run ts:cli -- ui ui.yourco.web
+
+# 4. The same enable/disable/uninstall commands apply.
+npm run ts:cli -- plugin disable yourco.web
+npm run ts:cli -- plugin enable yourco.web
+npm run ts:cli -- plugin uninstall yourco.web
+```
+
+`natalia-ts ui` lists adapter kinds from enabled plugins.
+`natalia-ts ui <kind>` mounts that UI in-process against a real runtime.
+
+### After the first install
+
+```bash
+# Source changes: reinstall the same directory or a packed tarball.
+npm run ts:cli -- plugin install ./demo-plugin
+npm pack ./demo-plugin
+npm run ts:cli -- plugin install ./yourco-natalia-demo-1.0.0.tgz
+
+# Restart or reload a long-running Natalia process to pick up desired state.
+npm run ts:cli -- plugin doctor
+```
+
+The TUI Plugin Manager can install, enable, disable, uninstall, audit, and
+repair the same instance store. Doctor and reconcile do not replace
+`plugin install`.
+
+## 3. Package layout
 
 A publishable plugin package has this shape:
 
@@ -51,13 +134,21 @@ Create this package with the CLI. The installed release command is currently
 natalia-ts plugin create ./my-natalia-plugin \
   --id yourco.demo \
   --package @yourco/natalia-demo
+natalia-ts plugin create ./my-tool --id yourco.echo --template tool
+natalia-ts plugin create ./my-ui --id yourco.web --template ui
+natalia-ts plugin create ./my-ts --id yourco.ts --language ts
 ```
 
-`--package` is optional and defaults to the directory basename. The directory
-is resolved from the process working directory; `--workspace` does not relocate
-scaffold output. Creation fails if the target directory already exists. The
-generated package uses plain ESM JavaScript so the installed entry does not
-depend on Bun or a TypeScript source loader.
+`--package` is optional and defaults to the directory basename. `--template`
+selects `command` (default), `tool`, or `ui`. `--language` selects `js`
+(default) or `ts`. The directory is resolved from the process working
+directory; `--workspace` does not relocate scaffold output. Creation fails if
+the target directory already exists. Natalia installs `src/index.js`; a
+TypeScript scaffold also writes `src/index.ts` for editing, but the published
+entry remains JavaScript so the installed package does not depend on Bun or a
+TypeScript source loader. A UI package is a normal plugin; it is installed,
+uninstalled, enabled, and disabled with the same commands. The TUI Plugin
+Manager can also audit and repair the instance plugin store.
 
 The package declares every Natalia package it imports as a dependency:
 
@@ -82,7 +173,7 @@ Add `@natalia/contracts`, `@natalia/tools`, or another Natalia package only when
 the implementation imports it. `@natalia/sdk` is the RPC client SDK and is not
 the plugin authoring API.
 
-## 3. Manifest v2
+## 4. Manifest v2
 
 ```json
 {
@@ -122,7 +213,7 @@ Manifest validation, dependency checks, and configuration validation complete
 before activation. If `setup` fails, registrations made during that activation
 are rolled back and the plugin is audited as `failed`.
 
-## 4. Implement a plugin
+## 5. Implement a plugin
 
 ```js
 import { definePlugin } from "@natalia/plugin";
@@ -300,7 +391,7 @@ Manifest dependencies do not install another plugin. Put JavaScript package
 dependencies in `package.json`; install each required Natalia plugin separately
 and declare its plugin relationship in the manifest.
 
-## 5. Lifecycle commands
+## 6. Lifecycle commands
 
 The CLI is the authoritative maintenance entry point. The examples below use
 the installed release command:
@@ -315,21 +406,25 @@ natalia-ts plugin reconcile
 natalia-ts plugin uninstall yourco.demo
 ```
 
-Add `--workspace /path/to/project` to any maintenance command above to target
-another workspace. `plugin create` writes to its explicit directory relative to
-the current process working directory and does not use workspace state.
+`--workspace /path/to/project` applies only to `install`, `enable`, `disable`,
+and `list`. It selects the workspace configuration used for enablement; it does
+not create a second plugin store. `plugin create` writes to its explicit
+directory relative to the current process working directory and does not use
+workspace state.
 
 - `install <spec>` stages and validates one package, installs its dependency
-  closure, writes `.natalia/natalia.lock`, records the package configuration,
-  and enables the plugin in one transaction. A failed operation restores the
-  previous closure, lock, and configuration.
-- `list` returns one catalog for runtime defaults and installed packages with
+  closure into the Natalia instance `plugin-store`, writes
+  `<plugin-store>/natalia.lock`, and enables the plugin in the selected
+  workspace. A failed operation restores the previous closure and does not
+  write a lock entry.
+- `list` returns one catalog for official and user-installed packages with
   `id`, `name`, `version`, `scope`, `enabled`, `installed`, `source`, and
   `packageName`.
-- `disable <id>` and `enable <id>` only change desired activation state.
-- `uninstall <id>` removes an installed package's configuration, closure, and
-  lock entry. For a runtime-distributed default, uninstall durably disables it
-  because its files belong to the runtime distribution.
+- `disable <id>` and `enable <id>` only change desired activation state in the
+  selected workspace.
+- `uninstall <id>` removes an installed package's closure and lock entry from
+  the instance plugin store. Official plugins can be restored with
+  `plugin reinstall <id>`.
 - `doctor` audits installed state; `reconcile` repairs the desired package
   closure. They are recovery commands, not extra installation steps.
 
@@ -352,15 +447,15 @@ result shapes are:
 
 ```json
 { "created": true, "directory": "/absolute/path/my-natalia-plugin", "pluginID": "yourco.demo", "packageName": "@yourco/natalia-demo" }
-{ "installed": true, "pluginID": "yourco.demo", "packageName": "@yourco/natalia-demo", "metadata": {} }
+{ "installed": true, "pluginID": "yourco.demo", "packageName": "@yourco/natalia-demo", "metadata": {}, "enabled": true }
 { "pluginID": "yourco.demo", "enabled": false }
 { "uninstalled": true, "pluginID": "yourco.demo", "disposition": "removed for next reconcile" }
 ```
 
-`plugin list` returns a sorted JSON array. Runtime defaults have
-`source.type: "runtime"` and `packageName: null`; installed packages report
-their recorded registry, path, Git, or tarball source. `enabled` is false only
-when configuration explicitly disables that ID.
+`plugin list` returns a sorted JSON array of packages in the instance plugin
+store. Installed packages report their recorded registry, path, Git, or tarball
+source. `enabled` is false only when the selected workspace configuration
+explicitly disables that ID.
 
 These CLI commands persist desired state; they do not directly mutate a plugin
 registry already running in another process. A long-running client must reload
@@ -389,7 +484,7 @@ validates all of the following before committing state:
    and `setup()`.
 6. The exported manifest equals the file manifest after schema defaults are
    applied.
-7. The plugin ID is not reserved by a runtime default and ownership does not
+7. The plugin ID is not reserved by an official plugin and ownership does not
    conflict with the existing lock.
 
 The live closure and `natalia.lock` are owned by the Natalia instance's single
@@ -431,25 +526,24 @@ The runtime RPC methods `pluginUnload` and `pluginReload` operate on an already
 running registry. They do not replace the CLI's durable install, uninstall,
 enable, or disable operations.
 
-## 6. UI adapters
+## 7. UI adapters in depth
 
-A UI is a normal v2 plugin using the existing `adapters` integration point. The
-repository example demonstrates the host contract, but an external UI package
-must use the same publishable ESM JavaScript layout as every other external
-plugin. This section is the complete authoring path for that package.
+A UI is a normal v2 plugin using the existing `adapters` integration point.
+The from-zero create/install/launch path is in [section 2](#2-from-zero-a-new-plugin-and-a-new-ui).
+This section is the host contract: mount, dispose, checkpoints, and testing.
 
 ### Create an external UI package
 
-Start with the ordinary scaffold, then change its manifest scope and integration
-point:
+Use the UI template. It writes `scope: "process"`,
+`integrationPoints: ["adapters"]`, a unique adapter `kind`, and the
+`@natalia/contracts` dependency:
 
 ```bash
-natalia-ts plugin create ./my-ui --id yourco.ui.web --package @yourco/natalia-ui-web
+natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-web --template ui
 ```
 
-Use `scope: "process"`, `integrationPoints: ["adapters"]`, and a unique adapter
-`kind`. The published package needs `@natalia/plugin` to register the adapter
-and `@natalia/contracts` only when it imports `RuntimeClient`, `RuntimeEvent`,
+The published package needs `@natalia/plugin` to register the adapter
+and `@natalia/contracts` when it imports `RuntimeClient`, `RuntimeEvent`,
 or other public types:
 
 ```json
@@ -604,42 +698,7 @@ process registry, and materializes the requested kind(s) against one shared
 `UiAdapterMountInput`. Closing is idempotent and fail-closed (materializer,
 then registry, then runtime).
 
-## 7. End-to-end tutorial
-
-This sequence exercises the complete external-plugin lifecycle from a source
-checkout. Replace `npm run ts:cli --` with `natalia-ts` in an installed release:
-
-```bash
-# 1. Create a JavaScript package.
-npm run ts:cli -- plugin create ./demo-plugin \
-  --id yourco.demo \
-  --package @yourco/natalia-demo
-
-# 2. Edit demo-plugin/src/index.js and keep both manifests identical.
-
-# 3. Install from the local directory and inspect durable state.
-npm run ts:cli -- plugin install ./demo-plugin
-npm run ts:cli -- plugin list
-npm run ts:cli -- plugin doctor
-
-# 4. Exercise desired activation state.
-npm run ts:cli -- plugin disable yourco.demo
-npm run ts:cli -- plugin enable yourco.demo
-
-# 5. Verify the publication payload and install the packed artifact.
-npm pack --dry-run ./demo-plugin
-npm pack ./demo-plugin
-npm run ts:cli -- plugin install ./yourco-natalia-demo-1.0.0.tgz
-
-# 6. Remove the installed package and audit the result.
-npm run ts:cli -- plugin uninstall yourco.demo
-npm run ts:cli -- plugin doctor
-```
-
-After source changes, reinstall the directory or tarball. Restart or reload a
-long-running Natalia process before testing the new desired state.
-
-## 8. Runtime-distributed plugin catalog
+## 8. Official plugin catalog
 
 These IDs are reserved by the Natalia distribution and therefore cannot be
 claimed by an installed package. They appear in `plugin list`; unless explicitly
@@ -683,7 +742,7 @@ have a plugin lifecycle switch.
 6. Do not depend on `preinstall`, `postinstall`, uninstall scripts, or manifest
    hooks; npm scripts are disabled and manifest `hooks` must be `{}`.
 7. Run `npm pack --dry-run`, inspect the file list, install the resulting
-   tarball into a clean workspace, then run `plugin doctor`.
+   tarball into the instance plugin store, then run `plugin doctor`.
 8. Publish a scoped public package with `npm publish --access public` when the
    npm scope is not configured as public. A package lock is optional source
    metadata; npm constructs and Natalia records the installed closure itself.

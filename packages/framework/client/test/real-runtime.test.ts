@@ -7058,6 +7058,7 @@ test("real runtime client provides provider-independent doctor and help commands
     "the application-layer host allowlist only covers fetch-style tools",
   );
   expect(output).toContain("run_shell and native terminal input");
+  await client.dispose?.();
 });
 
 test("real runtime client records provider usage checkpoints", async () => {

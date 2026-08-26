@@ -81,6 +81,24 @@ async function mkdtemp(prefix: string) {
   return path;
 }
 
+async function spawnBuffered(command: string[], options: { cwd: string }) {
+  const child = Bun.spawn(command, {
+    ...options,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).arrayBuffer(),
+    new Response(child.stderr).arrayBuffer(),
+    child.exited,
+  ]);
+  return {
+    stdout: new Uint8Array(stdout),
+    stderr: new Uint8Array(stderr),
+    exitCode,
+  };
+}
+
 afterEach(async () => {
   const paths = [...temporaryDirectories];
   temporaryDirectories.clear();
@@ -280,7 +298,7 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
     join(root, ".natalia", "tasks", "nightly.yaml"),
     "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nalerts:\n  - journal\n  - webhook:ops\nflow:\n  flowID: flow_review\n",
   );
-  const child = Bun.spawnSync(
+  const child = await spawnBuffered(
     [
       process.execPath,
       join(import.meta.dir, "..", "src", "main.ts"),
@@ -291,7 +309,7 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
       root,
       "--json",
     ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
+    { cwd: root },
   );
   expect(child.exitCode).toBe(0);
   const output = new TextDecoder()
@@ -340,7 +358,7 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
   });
   // A second unsuccessful run accumulates the failure count and still refuses
   // to advance any cross-execution watermark.
-  const second = Bun.spawnSync(
+  const second = await spawnBuffered(
     [
       process.execPath,
       join(import.meta.dir, "..", "src", "main.ts"),
@@ -351,7 +369,7 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
       root,
       "--json",
     ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
+    { cwd: root },
   );
   expect(second.exitCode).toBe(0);
   const secondOutput = new TextDecoder()
@@ -430,7 +448,7 @@ test("CLI task status reports history without creating an execution", async () =
     crossExecutionState: { consecutiveFailures: 0, watermarks: [] },
     alerts: { entries: [] },
   });
-  const run = Bun.spawnSync(
+  const run = await spawnBuffered(
     [
       process.execPath,
       join(import.meta.dir, "..", "src", "main.ts"),
@@ -441,7 +459,7 @@ test("CLI task status reports history without creating an execution", async () =
       root,
       "--json",
     ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
+    { cwd: root },
   );
   expect(run.exitCode).toBe(0);
   const after = runStatus();
@@ -3888,7 +3906,7 @@ test("a bare alert channel stays silent on success and on a retried attempt", as
       ],
     },
   });
-  const run = Bun.spawnSync(
+  const run = await spawnBuffered(
     [
       process.execPath,
       join(import.meta.dir, "..", "src", "main.ts"),
@@ -3899,7 +3917,7 @@ test("a bare alert channel stays silent on success and on a retried attempt", as
       root,
       "--json",
     ],
-    { cwd: root, stdout: "pipe", stderr: "pipe" },
+    { cwd: root },
   );
   expect(run.exitCode).toBe(0);
   const events = new TextDecoder()

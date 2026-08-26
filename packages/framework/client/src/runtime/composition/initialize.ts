@@ -96,7 +96,11 @@ export function wireInitialize(
     deliverQueuedMailboxAtBoundary:
       features.boundary.deliverQueuedMailboxAtBoundary,
     effectiveFlowPermissions,
-    createRealRuntimeClient: createRuntimeClient,
+    createRealRuntimeClient: (nestedOptions) =>
+      createRuntimeClient({
+        ...nestedOptions,
+        pluginStoreRoot: options.pluginStoreRoot,
+      }),
     mountPlugins,
     moduleToolPolicy,
     agentPolicyLayer: features.permissions.agentPolicyLayer,

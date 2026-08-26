@@ -35,6 +35,8 @@ function installer(overrides: Partial<PluginInstaller> = {}) {
     enable: async () => ({ pluginID: officialRow.id, enabled: false }),
     uninstall: async () => ({ uninstalled: true }),
     reinstallOfficial: async () => ({ installed: true }),
+    doctor: async () => [],
+    reconcile: async () => ({ reconciled: true, findings: [], remaining: [] }),
     ...overrides,
   } as unknown as PluginInstaller;
 }
@@ -102,11 +104,15 @@ test("plugin manager renders physical catalog rows and official actions", async 
     await mounted.renderOnce();
     let frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Installed Plugins");
+    expect(frame).toContain("Audit Plugin Store");
+    expect(frame).toContain("Repair Plugin Store");
     expect(frame).toContain("Ask 1.2.3 · enabled");
     expect(frame).not.toContain("runtime synthetic");
     expect(listInputs).toEqual([{ pluginStoreRoot, workspaceRoot }]);
     expect(pluginStoreRoot).not.toContain(workspaceRoot);
 
+    mounted.keys.pressArrow("down");
+    mounted.keys.pressArrow("down");
     mounted.keys.pressArrow("down");
     mounted.keys.pressEnter();
     await mounted.renderOnce();
@@ -136,6 +142,8 @@ test("plugin mutation reports committed state when runtime reload is refused", a
   });
   try {
     await mounted.renderOnce();
+    mounted.keys.pressArrow("down");
+    mounted.keys.pressArrow("down");
     mounted.keys.pressArrow("down");
     mounted.keys.pressEnter();
     await mounted.renderOnce();
@@ -174,6 +182,8 @@ test("official reinstall uses the distribution sibling store, not the workspace"
   try {
     await mounted.renderOnce();
     mounted.keys.pressArrow("down");
+    mounted.keys.pressArrow("down");
+    mounted.keys.pressArrow("down");
     mounted.keys.pressEnter();
     await mounted.renderOnce();
     mounted.keys.pressArrow("down");
@@ -187,6 +197,65 @@ test("official reinstall uses the distribution sibling store, not the workspace"
     });
     expect(reinstallInput).not.toHaveProperty("workspaceRoot");
     expect(reinstallInput!.pluginStoreRoot).not.toContain(workspaceRoot);
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("plugin manager audits the instance store", async () => {
+  let doctorRoot: string | undefined;
+  const mounted = await mount({
+    backend: { reloadConfig: async () => ({ applied: true }) },
+    installer: installer({
+      doctor: async (pluginStoreRoot) => {
+        doctorRoot = pluginStoreRoot;
+        return [
+          {
+            pluginID: officialRow.id,
+            code: "package_missing",
+            message: "plugin natalia-tool-ask package is missing",
+          },
+        ];
+      },
+    }),
+  });
+  try {
+    await mounted.renderOnce();
+    mounted.keys.pressArrow("down");
+    mounted.keys.pressEnter();
+    await mounted.renderOnce();
+    expect(doctorRoot).toBe(pluginStoreRoot);
+    expect(mounted.setup.captureCharFrame()).toContain("Plugin Store Audit");
+    expect(mounted.setup.captureCharFrame()).toContain("natalia-tool-ask");
+    expect(mounted.setup.captureCharFrame()).toContain("package_missing");
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("plugin manager repairs the instance store", async () => {
+  let reconcileRoot: string | undefined;
+  const mounted = await mount({
+    backend: { reloadConfig: async () => ({ applied: true }) },
+    installer: installer({
+      reconcile: async (pluginStoreRoot) => {
+        reconcileRoot = pluginStoreRoot;
+        return { reconciled: true, findings: [], remaining: [] };
+      },
+    }),
+  });
+  try {
+    await mounted.renderOnce();
+    mounted.keys.pressArrow("down");
+    mounted.keys.pressArrow("down");
+    mounted.keys.pressEnter();
+    await mounted.renderOnce();
+    expect(mounted.setup.captureCharFrame()).toContain("Repair Plugin Store");
+    mounted.keys.pressArrow("right");
+    mounted.keys.pressEnter();
+    await mounted.renderOnce();
+    expect(reconcileRoot).toBe(pluginStoreRoot);
+    expect(mounted.setup.captureCharFrame()).toContain("Plugin store repaired");
   } finally {
     mounted.dispose();
   }

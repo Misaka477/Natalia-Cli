@@ -449,12 +449,13 @@ provider 请求：
   `providerRemove`（幂等；被模型引用的 provider 拒绝）。apiKey 只在这些调用
   的请求体里过线——接触它们的凭据请用带 `management` 组的作用域凭据。
 - **插件** — CLI 是持久化维护面：
-  `natalia-ts plugin create <directory> --id <plugin-id>`、`install <spec>`、
+  `natalia-ts plugin create <directory> --id <plugin-id> [--template command|tool|ui] [--language js|ts]`、
+  `install <spec>`、
   `uninstall <id>`、`enable <id>`、`disable <id>`、`list`、`doctor` 和
-  `reconcile`。create 生成可发布的 ESM JavaScript 脚手架；install 校验并记录单个
-  插件包及其依赖闭包；enable/disable 改变 desired activation；uninstall 删除用户
-  安装 closure，或持久禁用 runtime 随附默认项；doctor 审计 lock、配置与 package
-  一致性；reconcile 修复缺失 package，并让 package 配置与 lock 对齐。RPC 的
+  `reconcile`。create 生成可发布的 ESM JavaScript 脚手架，包括 UI adapter 模板；
+  install 把插件记入实例 plugin-store，并在所选 workspace 启用；enable/disable
+  改变 desired activation；uninstall 删除已安装 closure；doctor 审计 lock 与
+  package 一致性；reconcile 修复缺失 package。RPC 的
   `pluginUnload`（幂等）和 `pluginReload`（按 manifest 路径卸载并重新 import）只操作
   当前运行 registry，不安装 package，也不持久化 desired state。完整开发和维护契约见
   `docs/plugin-guide.zh-CN.md`。

@@ -35,24 +35,24 @@ export type SkillsRuntimeInput = {
   };
 };
 
-let skillsInstance: Plugin | undefined;
-const skillsPlugin: Plugin = {
-  manifest: {
-    ...SKILLS_PLUGIN_MANIFEST,
-    entry: "index.js",
-    requires: [SKILLS_INPUT_SERVICE],
-  },
-  async setup(api: PluginAPI) {
-    const input = api.services.get<SkillsRuntimeInput>(SKILLS_INPUT_SERVICE);
-    if (!input)
-      throw new Error(`missing runtime service: ${SKILLS_INPUT_SERVICE}`);
-    skillsInstance = createSkillsPlugin(input);
-    await skillsInstance.setup(api);
-  },
-  async dispose() {
-    await skillsInstance?.dispose?.();
-    skillsInstance = undefined;
-  },
-};
-
-export default skillsPlugin;
+export default function skillsPlugin(): Plugin {
+  let instance: Plugin | undefined;
+  return {
+    manifest: {
+      ...SKILLS_PLUGIN_MANIFEST,
+      entry: "index.js",
+      requires: [SKILLS_INPUT_SERVICE],
+    },
+    async setup(api: PluginAPI) {
+      const input = api.services.get<SkillsRuntimeInput>(SKILLS_INPUT_SERVICE);
+      if (!input)
+        throw new Error(`missing runtime service: ${SKILLS_INPUT_SERVICE}`);
+      instance = createSkillsPlugin(input);
+      await instance.setup(api);
+    },
+    async dispose() {
+      await instance?.dispose?.();
+      instance = undefined;
+    },
+  };
+}

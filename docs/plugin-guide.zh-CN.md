@@ -3,11 +3,17 @@
 > `PLUGIN_API_VERSION` 为 `2`。一个插件就是一个包，包内同时包含 package 元数据、
 > `natalia.plugin.json`、入口模块和实现。插件 API 是进程内 host 扩展面，不是 RPC 面。
 
+这份指南分两层读：
+
+1. 先看 [从零开始](#2-从零开始新插件和新-ui)，用来今天就创建、安装、启用、禁用或卸载插件/UI。
+2. 后面各节是 manifest、API、store 语义和 UI host 细节。
+
 ## 1. 单一插件体系
 
-Natalia 只有一种插件。runtime 默认随附插件和用户安装插件使用同一 registry、声明名、
-权限、依赖解析及装载/卸载生命周期。runtime 默认项只是分发配置，不拥有特权 API，
-也不走第二套生命周期。
+Natalia 只有一种插件。官方插件和用户安装插件使用同一 registry、声明名、权限、
+依赖解析及装载/卸载生命周期。官方插件只是分发配置，不拥有特权 API，也不走第二套
+生命周期。UI adapter 也是同一种插件：创建、安装、启用、禁用、卸载都走 plugin
+命令。
 
 插件不用于包装 Natalia 框架自身。Agent turn/step、Provider 与模型选择、会话与配置、
 传输/SDK/daemon、CLI/TUI host、权限与审批、sandbox、checkpoint、工程智能、workspace、
@@ -26,7 +32,80 @@ v2 integration point 包括 `tools`、`commands`、`events`、`services`、
 Natalia 不添加插件前缀。工具审批尊重每个工具的 `requiresApproval` 声明，并继续经过
 runtime 的常规策略路径；不存在按插件类别强制审批。
 
-## 2. 单包布局
+## 2. 从零开始：新插件和新 UI
+
+UI 不是第二套系统。两条路径都是：创建一个包，装进 Natalia 实例唯一的
+`plugin-store`，并在当前 workspace 启用。发行版中用 `natalia-ts` 替换
+`npm run ts:cli --`。
+
+### 新插件（command 或 tool）
+
+```bash
+# 1. 生成脚手架。工具用 --template tool，TypeScript 用 --language ts。
+npm run ts:cli -- plugin create ./demo-plugin \
+  --id yourco.demo \
+  --package @yourco/natalia-demo
+
+# 2. 编辑 src/index.js（若用了 --language ts，同时改 src/index.ts）。
+#    保持 natalia.plugin.json 与导出的 manifest 完全一致。
+
+# 3. 安装到实例 store。这一步也会在当前 workspace 启用该插件。
+npm run ts:cli -- plugin install ./demo-plugin
+npm run ts:cli -- plugin list
+npm run ts:cli -- plugin doctor
+
+# 4. 使用后可禁用/启用/卸载；其他 workspace 不必再装一遍。
+npm run ts:cli -- plugin disable yourco.demo
+npm run ts:cli -- plugin enable yourco.demo
+npm run ts:cli -- plugin uninstall yourco.demo
+```
+
+TypeScript 脚手架安装的仍是 `src/index.js`。改完 `src/index.ts` 后，先把同样的
+改动同步或编译进 `src/index.js`，再执行 `plugin install`。不要把 manifest
+`entry` 设成 `.ts` 文件。
+
+### 新 UI
+
+```bash
+# 1. 生成 UI adapter 插件。
+npm run ts:cli -- plugin create ./demo-ui \
+  --id yourco.web \
+  --package @yourco/natalia-ui-web \
+  --template ui
+
+# 2. 编辑 src/index.js。注册是惰性的，只有 host 挂载对应 kind 才会 mount。
+#    模板 kind 为 ui.yourco.web（除非 plugin id 已经以 ui 开头）。
+
+# 3. 只安装一次，然后按 adapter kind 启动。
+npm run ts:cli -- plugin install ./demo-ui
+npm run ts:cli -- ui
+npm run ts:cli -- ui ui.yourco.web
+
+# 4. 启用、禁用、卸载与普通插件相同。
+npm run ts:cli -- plugin disable yourco.web
+npm run ts:cli -- plugin enable yourco.web
+npm run ts:cli -- plugin uninstall yourco.web
+```
+
+`natalia-ts ui` 列出已启用插件贡献的 adapter kind。
+`natalia-ts ui <kind>` 在进程内对真实 runtime 挂载该 UI。
+
+### 首次安装之后
+
+```bash
+# 源码变更：重新安装同一目录或打包后的 tarball。
+npm run ts:cli -- plugin install ./demo-plugin
+npm pack ./demo-plugin
+npm run ts:cli -- plugin install ./yourco-natalia-demo-1.0.0.tgz
+
+# 长时间运行的 Natalia 进程需要重启或 reload 才会读到新状态。
+npm run ts:cli -- plugin doctor
+```
+
+TUI Plugin Manager 也能对同一实例 store 执行安装、启用、禁用、卸载、审计和修复。
+`doctor` / `reconcile` 不能替代 `plugin install`。
+
+## 3. 单包布局
 
 可发布插件包的最小结构：
 
@@ -44,11 +123,18 @@ my-natalia-plugin/
 natalia-ts plugin create ./my-natalia-plugin \
   --id yourco.demo \
   --package @yourco/natalia-demo
+natalia-ts plugin create ./my-tool --id yourco.echo --template tool
+natalia-ts plugin create ./my-ui --id yourco.web --template ui
+natalia-ts plugin create ./my-ts --id yourco.ts --language ts
 ```
 
-`--package` 可省略，默认使用目录 basename。目录相对当前进程工作目录解析；
-`--workspace` 不会改变脚手架输出位置。目标目录已存在时创建会失败。生成物使用普通
-ESM JavaScript，因此安装后的入口不依赖 Bun 或 TypeScript 源码 loader。
+`--package` 可省略，默认使用目录 basename。`--template` 可选 `command`（默认）、
+`tool` 或 `ui`。`--language` 可选 `js`（默认）或 `ts`。目录相对当前进程工作目录
+解析；`--workspace` 不会改变脚手架输出位置。目标目录已存在时创建会失败。Natalia
+安装的是 `src/index.js`；TypeScript 脚手架额外写入 `src/index.ts` 供编辑，但发布
+入口仍是 JavaScript，因此安装后的包不依赖 Bun 或 TypeScript 源码 loader。UI 包是
+普通插件，使用同一套安装、卸载、启用和禁用命令。TUI Plugin Manager 也可以审计和
+修复实例 plugin-store。
 
 包必须把实现直接导入的每个 Natalia 包声明为依赖：
 
@@ -71,7 +157,7 @@ Natalia 实例唯一的 `plugin-store`；所有 workspace 共用这份安装。�
 只有实现确实导入时才添加 `@natalia/contracts`、`@natalia/tools` 或其他 Natalia 包。
 `@natalia/sdk` 是 RPC client SDK，不是插件 authoring API。
 
-## 3. Manifest v2
+## 4. Manifest v2
 
 ```json
 {
@@ -107,7 +193,7 @@ Natalia 实例唯一的 `plugin-store`；所有 workspace 共用这份安装。�
 manifest、依赖和配置校验在激活前完成。`setup` 失败时，本次激活产生的注册项全部
 回滚，插件 audit 状态为 `failed`。
 
-## 4. 实现插件
+## 5. 实现插件
 
 ```js
 import { definePlugin } from "@natalia/plugin";
@@ -272,7 +358,7 @@ Manifest `dependencies` 描述插件之间的关系：
 Manifest dependency 不会自动安装另一个插件。JavaScript package dependency 应放在
 `package.json`；每个必需 Natalia 插件需要单独安装，并在 manifest 中声明插件关系。
 
-## 5. 生命周期命令
+## 6. 生命周期命令
 
 CLI 是权威维护入口。以下示例使用已安装发行版命令：
 
@@ -286,17 +372,19 @@ natalia-ts plugin reconcile
 natalia-ts plugin uninstall yourco.demo
 ```
 
-上述维护命令都可使用 `--workspace /path/to/project` 指定其他工作区。`plugin create`
+`--workspace /path/to/project` 只适用于 `install`、`enable`、`disable` 和 `list`，
+用来选择启用状态写入的 workspace 配置，不会再创建一份插件 store。`plugin create`
 相对当前进程工作目录写入显式目录，不使用 workspace 状态。
 
-- `install <spec>` 在一个事务中完成 package staging 与校验、安装依赖闭包、写入
-  `.natalia/natalia.lock`、记录 package 配置并启用插件。失败时恢复原 closure、
-  lock 和配置。
-- `list` 用一张 catalog 同时列出 runtime 默认项和用户安装包，字段包括 `id`、
+- `install <spec>` 在一个事务中完成 package staging 与校验，把依赖闭包装进 Natalia
+  实例 `plugin-store`，写入 `<plugin-store>/natalia.lock`，并在所选 workspace 启用
+  该插件。失败时恢复原 closure，不写入 lock。
+- `list` 用一张 catalog 同时列出官方插件和用户安装包，字段包括 `id`、
   `name`、`version`、`scope`、`enabled`、`installed`、`source`、`packageName`。
-- `disable <id>` 和 `enable <id>` 只改变 desired activation state。
-- `uninstall <id>` 删除用户安装包的配置、closure 和 lock entry。runtime 分发的
-  默认插件文件属于 runtime 本身，因此对它执行 uninstall 会持久化为禁用。
+- `disable <id>` 和 `enable <id>` 只改变所选 workspace 的 desired activation
+  state。
+- `uninstall <id>` 从实例 plugin-store 删除已安装包的 closure 和 lock entry。
+  官方插件可用 `plugin reinstall <id>` 恢复。
 - `doctor` 审计安装状态，`reconcile` 修复 desired package closure；二者是恢复命令，
   不是安装的额外步骤。
 
@@ -317,14 +405,14 @@ natalia-ts plugin install ./yourco-natalia-demo-1.0.0.tgz
 
 ```json
 { "created": true, "directory": "/absolute/path/my-natalia-plugin", "pluginID": "yourco.demo", "packageName": "@yourco/natalia-demo" }
-{ "installed": true, "pluginID": "yourco.demo", "packageName": "@yourco/natalia-demo", "metadata": {} }
+{ "installed": true, "pluginID": "yourco.demo", "packageName": "@yourco/natalia-demo", "metadata": {}, "enabled": true }
 { "pluginID": "yourco.demo", "enabled": false }
 { "uninstalled": true, "pluginID": "yourco.demo", "disposition": "removed for next reconcile" }
 ```
 
-`plugin list` 返回按 ID 排序的 JSON 数组。runtime 默认项的 `source.type` 为
-`"runtime"`、`packageName` 为 `null`；安装包会返回已记录的 registry、path、Git 或
-tarball 来源。只有配置显式禁用某个 ID 时，其 `enabled` 才为 false。
+`plugin list` 返回实例 plugin-store 中按 ID 排序的 JSON 数组。安装包会返回已记录
+的 registry、path、Git 或 tarball 来源。只有所选 workspace 配置显式禁用某个 ID
+时，其 `enabled` 才为 false。
 
 这些 CLI 命令持久化 desired state，不会直接修改另一个进程中已经运行的 plugin
 registry。长时间运行的 client 必须重新加载配置/协调 desired catalog，或者重启进程。
@@ -345,7 +433,7 @@ plugin ID 转给另一个 package；确实需要改变身份时，应先卸载�
 4. `package.json.version`、lock 解析版本和 manifest `version` 一致。
 5. entry 可成功导入，default export 是包含 `manifest` 和 `setup()` 的对象。
 6. 应用 schema 默认值后，导出 manifest 与文件 manifest 完全一致。
-7. plugin ID 不被 runtime 默认项保留，并且与现有 lock 没有所有权冲突。
+7. plugin ID 不被官方插件保留，并且与现有 lock 没有所有权冲突。
 
 live closure 和 `natalia.lock` 归 Natalia 实例唯一的 `plugin-store` 所有。安装和卸载
 不会创建 workspace 本地 package closure。workspace 配置只记录启用状态、settings 等
@@ -386,23 +474,23 @@ live closure 和 `natalia.lock` 归 Natalia 实例唯一的 `plugin-store` 所�
 runtime RPC 的 `pluginUnload` 和 `pluginReload` 只操作已运行 registry，不能替代 CLI
 持久化的 install、uninstall、enable、disable。
 
-## 6. UI adapter
+## 7. UI adapter 深入
 
-UI 是使用现有 `adapters` integration point 的普通 v2 插件。仓库内示例演示 host
-contract，但外部 UI 包必须和其他外部插件一样使用可发布的 ESM JavaScript 布局。本节给出
-该包从零开始的完整开发路径。
+UI 是使用现有 `adapters` integration point 的普通 v2 插件。
+从零创建/安装/启动路径见 [第 2 节](#2-从零开始新插件和新-ui)。
+本节是 host 契约：mount、dispose、checkpoint 和测试。
 
 ### 创建外部 UI package
 
-先用普通脚手架创建包，再调整 manifest 的 scope 和 integration point：
+直接使用 UI 模板。它会写入 `scope: "process"`、`integrationPoints: ["adapters"]`、
+唯一 adapter `kind`，以及 `@natalia/contracts` 依赖：
 
 ```bash
-natalia-ts plugin create ./my-ui --id yourco.ui.web --package @yourco/natalia-ui-web
+natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-web --template ui
 ```
 
-使用 `scope: "process"`、`integrationPoints: ["adapters"]` 和唯一的 adapter
-`kind`。发布包需要 `@natalia/plugin` 注册 adapter；只有在导入 `RuntimeClient`、
-`RuntimeEvent` 或其他公共类型时，才添加 `@natalia/contracts`：
+发布包需要 `@natalia/plugin` 注册 adapter；导入 `RuntimeClient`、`RuntimeEvent`
+或其他公共类型时使用 `@natalia/contracts`：
 
 ```json
 {
@@ -545,42 +633,7 @@ adapter-capable 的 process 插件装入一个进程 registry，并对同一个�
 `UiAdapterMountInput` materialize 请求的 kind(s)。关闭幂等且 fail-closed（先
 materializer，再 registry，最后 runtime）。
 
-## 7. 端到端教程
-
-以下步骤从源码 checkout 完整运行外部插件生命周期。发行版中用 `natalia-ts` 替换
-`npm run ts:cli --`：
-
-```bash
-# 1. 创建 JavaScript package。
-npm run ts:cli -- plugin create ./demo-plugin \
-  --id yourco.demo \
-  --package @yourco/natalia-demo
-
-# 2. 编辑 demo-plugin/src/index.js，并保持两份 manifest 一致。
-
-# 3. 从本地目录安装并检查持久化状态。
-npm run ts:cli -- plugin install ./demo-plugin
-npm run ts:cli -- plugin list
-npm run ts:cli -- plugin doctor
-
-# 4. 验证 desired activation state。
-npm run ts:cli -- plugin disable yourco.demo
-npm run ts:cli -- plugin enable yourco.demo
-
-# 5. 检查发布内容并安装打包产物。
-npm pack --dry-run ./demo-plugin
-npm pack ./demo-plugin
-npm run ts:cli -- plugin install ./yourco-natalia-demo-1.0.0.tgz
-
-# 6. 删除安装包并审计结果。
-npm run ts:cli -- plugin uninstall yourco.demo
-npm run ts:cli -- plugin doctor
-```
-
-源码变更后需要重新安装目录或 tarball。测试新 desired state 前，应重启或 reload 长时间
-运行的 Natalia 进程。
-
-## 8. Runtime 分发插件目录
+## 8. 官方插件目录
 
 以下 ID 由 Natalia 发行版保留，安装包不能使用。它们会出现在 `plugin list`；只要配置
 没有显式禁用，catalog 就报告为 enabled。部分插件只有在当前 host 提供构造输入时才会

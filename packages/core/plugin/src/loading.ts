@@ -52,7 +52,10 @@ export async function loadPluginEntries(input: {
       const module = (await import(pathToFileURL(entry).href)) as {
         default?: unknown;
       };
-      const plugin = module.default;
+      const plugin =
+        typeof module.default === "function"
+          ? module.default()
+          : module.default;
       if (!plugin || typeof plugin !== "object")
         throw new Error(`plugin module has no default export: ${manifest.id}`);
       const candidate = plugin as Partial<Plugin>;

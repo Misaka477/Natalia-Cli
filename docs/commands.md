@@ -86,6 +86,9 @@ The `fs` commands stay within the selected workspace and return JSON.
 ```bash
 npm run ts:cli -- plugin create ./my-plugin --id yourco.demo
 npm run ts:cli -- plugin create ./my-plugin --id yourco.demo --package @yourco/demo
+npm run ts:cli -- plugin create ./my-tool --id yourco.echo --template tool
+npm run ts:cli -- plugin create ./my-ui --id yourco.web --template ui
+npm run ts:cli -- plugin create ./my-ts --id yourco.ts --language ts
 npm run ts:cli -- plugin list
 npm run ts:cli -- plugin install <spec>
 npm run ts:cli -- plugin uninstall <id>
@@ -95,30 +98,37 @@ npm run ts:cli -- plugin doctor
 npm run ts:cli -- plugin reconcile
 ```
 
-`plugin create` writes a publishable JavaScript starter package and refuses to
-overwrite an existing directory. It requires exactly one directory and
-`--id <plugin-id>`; `--package <npm-name>` is optional and defaults to the
-directory basename. The directory is resolved from the current process working
-directory. Although the shared parser accepts `--workspace`, that option does
-not relocate or otherwise affect scaffold output.
+`plugin create` writes a publishable starter package and refuses to overwrite
+an existing directory. It requires exactly one directory and `--id <plugin-id>`;
+`--package <npm-name>` is optional and defaults to the directory basename.
+`--template command|tool|ui` selects the starter implementation (`command` is
+the default). `--language js|ts` selects the source language (`js` is the
+default). A TypeScript scaffold still publishes `src/index.js` as the install
+entry; edit `src/index.ts` and keep the JavaScript entry in sync before
+`plugin install`. The directory is resolved from the current process working
+directory; `--workspace` does not relocate scaffold output. A UI template is a
+normal plugin that registers an adapter kind.
 
-`plugin list` reports runtime defaults and user-installed plugins through one
-catalogue. Install, uninstall, enable, and disable each perform the complete
-lifecycle operation in one command. `doctor` audits the installed state and
-`reconcile` repairs the desired package closure. All plugins use the same
-registry, permissions, naming, and cleanup path.
-Natalia has exactly one plugin installation store. `install`, `uninstall`,
-`doctor`, `reconcile`, and `reinstall` always operate on that store and have no
-installation scope. `--workspace <path>` only selects the project configuration
-used by `enable`, `disable`, and the enablement state shown by `list`.
+`plugin list` reports installed packages through one catalogue. Install,
+uninstall, enable, and disable each perform the complete lifecycle operation in
+one command. `doctor` audits the installed state and `reconcile` repairs the
+desired package closure. UI adapters use this same catalogue and lifecycle.
+Natalia has exactly one plugin installation store. `uninstall`, `doctor`,
+`reconcile`, and `reinstall` always operate on that store and have no
+installation scope. `--workspace <path>` selects the project configuration used
+by `install` (to enable the new plugin there), `enable`, `disable`, and the
+enablement state shown by `list`.
 
 `install <spec>` accepts npm registry specs, local directories, Git specs, and
 local or remote tarballs. It installs the package into the Natalia instance's
-single `plugin-store` and updates that store's `natalia.lock`. No package is
-installed beneath a workspace. The durable enable/disable state is read when a runtime starts or
-reconciles configuration; these commands do not mutate another process's live
-registry. See the [plugin guide](plugin-guide.md) for API contracts, output
-shapes, diagnostics, built-in plugin IDs, and the complete authoring tutorial.
+single `plugin-store`, updates that store's `natalia.lock`, and enables the
+plugin in the selected workspace. A failed install rolls the store closure back
+and does not write a lock entry. No package is installed beneath a workspace.
+The durable enable/disable state is read when a runtime starts or reconciles
+configuration; these commands do not mutate another process's live registry.
+See the [plugin guide](plugin-guide.md#2-from-zero-a-new-plugin-and-a-new-ui)
+for the from-zero plugin and UI tutorials, then the later sections for API
+contracts, output shapes, diagnostics, and built-in plugin IDs.
 
 ## Transport Recording
 

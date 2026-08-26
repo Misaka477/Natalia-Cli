@@ -28,28 +28,28 @@ export type TaskWorkflowRuntimeInput = Parameters<
   typeof createTaskWorkflowController
 >[0];
 
-let taskWorkflowInstance: Plugin | undefined;
-const taskWorkflowPlugin: Plugin = {
-  manifest: {
-    ...TASK_WORKFLOW_PLUGIN_MANIFEST,
-    entry: "index.js",
-    requires: [TASK_WORKFLOW_INPUT_SERVICE],
-  },
-  async setup(api: PluginAPI) {
-    const input = api.services.get<TaskWorkflowRuntimeInput>(
-      TASK_WORKFLOW_INPUT_SERVICE,
-    );
-    if (!input)
-      throw new Error(
-        `missing runtime service: ${TASK_WORKFLOW_INPUT_SERVICE}`,
+export default function taskWorkflowPlugin(): Plugin {
+  let instance: Plugin | undefined;
+  return {
+    manifest: {
+      ...TASK_WORKFLOW_PLUGIN_MANIFEST,
+      entry: "index.js",
+      requires: [TASK_WORKFLOW_INPUT_SERVICE],
+    },
+    async setup(api: PluginAPI) {
+      const input = api.services.get<TaskWorkflowRuntimeInput>(
+        TASK_WORKFLOW_INPUT_SERVICE,
       );
-    taskWorkflowInstance = createTaskWorkflowPlugin(input);
-    await taskWorkflowInstance.setup(api);
-  },
-  async dispose() {
-    await taskWorkflowInstance?.dispose?.();
-    taskWorkflowInstance = undefined;
-  },
-};
-
-export default taskWorkflowPlugin;
+      if (!input)
+        throw new Error(
+          `missing runtime service: ${TASK_WORKFLOW_INPUT_SERVICE}`,
+        );
+      instance = createTaskWorkflowPlugin(input);
+      await instance.setup(api);
+    },
+    async dispose() {
+      await instance?.dispose?.();
+      instance = undefined;
+    },
+  };
+}

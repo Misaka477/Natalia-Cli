@@ -554,14 +554,15 @@ table except the two reads:
   the wire only in the request body of these calls — use a scoped credential
   with the `management` group for anything that touches them.
 - **Plugins** — the CLI is the durable maintenance surface:
-  `natalia-ts plugin create <directory> --id <plugin-id>`, `install <spec>`,
+  `natalia-ts plugin create <directory> --id <plugin-id> [--template command|tool|ui] [--language js|ts]`,
+  `install <spec>`,
   `uninstall <id>`, `enable <id>`, `disable <id>`, `list`, `doctor`, and
-  `reconcile`. Create writes a publishable ESM JavaScript scaffold. Install
-  validates and records one package and its dependency closure; enable/disable
-  changes desired activation; uninstall removes an installed closure (or
-  durably disables a runtime-distributed default); doctor audits lock, config,
-  and package consistency; reconcile repairs missing packages and aligns
-  package config with the lock. The RPC members `pluginUnload` (idempotent) and
+  `reconcile`. Create writes a publishable ESM JavaScript scaffold, including a
+  UI adapter template. Install records one package in the instance plugin store
+  and enables it in the selected workspace; enable/disable
+  changes desired activation; uninstall removes an installed closure; doctor
+  audits lock and package consistency; reconcile repairs missing packages. The
+  RPC members `pluginUnload` (idempotent) and
   `pluginReload` (unload and re-import from the manifest path) only operate on
   the current running registry. They do not install packages or persist desired
   state. See `docs/plugin-guide.md` for the authoring and maintenance contract.

@@ -49,6 +49,8 @@ type LifecycleSeams = {
 export async function installPlugin(input: {
   pluginStoreRoot: string;
   spec: string;
+  workspaceRoot?: string;
+  config?: InstallerConfigOptions;
   runPackageManager?: PackageManagerRun;
   seams?: LifecycleSeams;
 }) {
@@ -59,46 +61,74 @@ export async function installPlugin(input: {
       loadNataliaLock(input.pluginStoreRoot),
       closureDependencies(paths.pluginsDir),
     ]);
-    await run({
-      cwd: input.pluginStoreRoot,
-      args: npmInstallArgs(paths.pluginsDir, input.spec),
-    });
-    const afterDependencies = await closureDependencies(paths.pluginsDir);
-    const packageName = resolveInstalledPackageName({
-      spec: input.spec,
-      beforeDependencies,
-      afterDependencies,
-      lock: beforeLock,
-    });
-    const installed = await validateStagedPackage(
-      paths.pluginsDir,
-      input.spec,
-      packageName,
-    );
-    assertPackageOwnership(
-      beforeLock,
-      installed.packageName,
-      installed.manifest.id,
-    );
-    const lock = structuredClone(beforeLock);
-    lock.plugins[installed.manifest.id] = {
-      packageName: installed.packageName,
-      manifest: join(
-        packageDirectory(paths.pluginsDir, installed.packageName),
-        installed.relativeManifest,
-      ),
-      metadata: installed.metadata,
-    };
-    await (input.seams?.saveLock ?? saveNataliaLock)(
-      input.pluginStoreRoot,
-      lock,
-    );
-    return {
-      installed: true as const,
-      pluginID: installed.manifest.id,
-      packageName: installed.packageName,
-      metadata: installed.metadata,
-    };
+    try {
+      await run({
+        cwd: input.pluginStoreRoot,
+        args: npmInstallArgs(paths.pluginsDir, input.spec),
+      });
+      const afterDependencies = await closureDependencies(paths.pluginsDir);
+      const packageName = resolveInstalledPackageName({
+        spec: input.spec,
+        beforeDependencies,
+        afterDependencies,
+        lock: beforeLock,
+      });
+      const installed = await validateStagedPackage(
+        paths.pluginsDir,
+        input.spec,
+        packageName,
+      );
+      assertPackageOwnership(
+        beforeLock,
+        installed.packageName,
+        installed.manifest.id,
+      );
+      const lock = structuredClone(beforeLock);
+      lock.plugins[installed.manifest.id] = {
+        packageName: installed.packageName,
+        manifest: join(
+          packageDirectory(paths.pluginsDir, installed.packageName),
+          installed.relativeManifest,
+        ),
+        metadata: installed.metadata,
+      };
+      await (input.seams?.saveLock ?? saveNataliaLock)(
+        input.pluginStoreRoot,
+        lock,
+      );
+      if (input.workspaceRoot)
+        await (input.seams?.updateConfig ?? updateConfig)(
+          input.workspaceRoot,
+          {
+            plugins: { enabled: { [installed.manifest.id]: true } },
+          },
+          input.config,
+        );
+      return {
+        installed: true as const,
+        pluginID: installed.manifest.id,
+        packageName: installed.packageName,
+        metadata: installed.metadata,
+        ...(input.workspaceRoot
+          ? { enabled: true as const, workspaceRoot: input.workspaceRoot }
+          : {}),
+      };
+    } catch (error) {
+      const afterDependencies = await closureDependencies(paths.pluginsDir);
+      const extras = Object.keys(afterDependencies).filter(
+        (name) => beforeDependencies[name] !== afterDependencies[name],
+      );
+      for (const packageName of extras)
+        try {
+          await run({
+            cwd: input.pluginStoreRoot,
+            args: npmUninstallArgs(paths.pluginsDir, packageName),
+          });
+        } catch {
+          // Keep the original install failure; leftover packages are best-effort.
+        }
+      throw error;
+    }
   });
 }
 

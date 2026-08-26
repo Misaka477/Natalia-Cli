@@ -51,7 +51,11 @@ function desiredEntry(
         ? `${modulePath}?reload=${cacheBust}`
         : pathToFileURL(modulePath).href;
       const module = (await import(specifier)) as { default?: unknown };
-      const candidate = module.default as Partial<Plugin> | undefined;
+      const candidate = (
+        typeof module.default === "function"
+          ? module.default()
+          : module.default
+      ) as Partial<Plugin> | undefined;
       if (!candidate?.setup || typeof candidate.setup !== "function")
         throw new Error(`plugin module has no setup function: ${manifest.id}`);
       return { ...candidate, manifest } as Plugin;

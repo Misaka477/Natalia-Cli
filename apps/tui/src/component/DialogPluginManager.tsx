@@ -1,8 +1,10 @@
 import type { RuntimeClient } from "@natalia/contracts";
 import {
+  doctorPlugins,
   installPlugin,
   listInstalledPlugins,
   OFFICIAL_PLUGIN_PACKAGES,
+  reconcilePlugins,
   reinstallOfficialPlugin,
   setPluginEnabled,
   uninstallPlugin,
@@ -26,6 +28,8 @@ export type PluginInstaller = {
   enable: typeof setPluginEnabled;
   uninstall: typeof uninstallPlugin;
   reinstallOfficial: typeof reinstallOfficialPlugin;
+  doctor: typeof doctorPlugins;
+  reconcile: typeof reconcilePlugins;
 };
 
 const defaultInstaller: PluginInstaller = {
@@ -34,6 +38,8 @@ const defaultInstaller: PluginInstaller = {
   enable: setPluginEnabled,
   uninstall: uninstallPlugin,
   reinstallOfficial: reinstallOfficialPlugin,
+  doctor: doctorPlugins,
+  reconcile: reconcilePlugins,
 };
 
 export function DialogPluginManager(props: {
@@ -165,6 +171,56 @@ export function DialogPluginManager(props: {
     ));
   };
 
+  const openDoctor = () => {
+    void (async () => {
+      if (busy()) return;
+      setBusy(true);
+      try {
+        const findings = await installer.doctor(props.pluginStoreRoot);
+        if (!findings.length) {
+          toast.show({
+            variant: "success",
+            message: "Plugin store is healthy",
+          });
+          return;
+        }
+        dialog.push(() => (
+          <DialogSelect
+            title="Plugin Store Audit"
+            renderFilter={false}
+            options={findings.map((finding) => ({
+              title: finding.pluginID,
+              value: finding.pluginID,
+              description: finding.message,
+              footer: finding.code,
+              readonly: true,
+            }))}
+          />
+        ));
+      } catch (error) {
+        toast.error(error);
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+
+  const openReconcile = () => {
+    dialog.push(() => (
+      <DialogConfirm
+        title="Repair Plugin Store"
+        message="Reinstall packages reported missing from this Natalia plugin store? Manifest mismatches are left for a manual reinstall."
+        defaultChoice="cancel"
+        onConfirm={() =>
+          void mutate(
+            () => installer.reconcile(props.pluginStoreRoot),
+            "Plugin store repaired",
+          )
+        }
+      />
+    ));
+  };
+
   const openInstall = () => {
     dialog.push(() => (
       <DialogPrompt
@@ -178,6 +234,7 @@ export function DialogPluginManager(props: {
             () =>
               installer.install({
                 pluginStoreRoot: props.pluginStoreRoot,
+                workspaceRoot: props.workspaceRoot,
                 spec: value,
               }),
             "Plugin installed",
@@ -201,6 +258,20 @@ export function DialogPluginManager(props: {
           description: "Add a package, tarball, or local package",
           category: "Actions",
           onSelect: openInstall,
+        },
+        {
+          title: "Audit Plugin Store",
+          value: "__doctor__",
+          description: "Check the instance plugin store for missing packages",
+          category: "Actions",
+          onSelect: openDoctor,
+        },
+        {
+          title: "Repair Plugin Store",
+          value: "__reconcile__",
+          description: "Reinstall packages missing from the plugin store",
+          category: "Actions",
+          onSelect: openReconcile,
         },
         ...(plugins() ?? []).map((row) => ({
           title: row.name ?? row.id,

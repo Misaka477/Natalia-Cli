@@ -21,7 +21,7 @@ use the same `RuntimeClient` contract and event model.
   an automatic safety checkpoint.
 - Managed processes and PTYs, directory-copy or Git-worktree sandboxes, MCP
   servers, skills, workflows, and trusted in-process plugins.
-- One plugin registry and lifecycle for runtime-provided and user-installed
+- One plugin registry and lifecycle for official and user-installed
   tools, commands, events, services, resources, projections, workflows,
   settings, adapters, and scheduler jobs.
 - Authenticated local HTTP/RPC, SSE, WebSocket, Unix-socket, and TLS transports,
@@ -34,11 +34,11 @@ Natalia is local-first. It does not provide cloud accounts, organization managem
 
 ### Architecture
 
-Natalia has three layers: **kernel + runtime + plugin**. The kernel provides
+Natalia has three layers: **kernel + framework + plugin**. The kernel provides
 generic registry, lifecycle, ownership, event, and storage mechanisms. The
-runtime composes the product surface, including sessions, providers, policy,
-transport, and the CLI. Product features use one trusted, in-process plugin
-system; runtime defaults and user-installed packages have the same permissions
+framework composes product internals such as sessions, providers, policy, and
+runtime composition. Product features use one trusted, in-process plugin
+system; official plugins and user-installed packages have the same permissions
 and lifecycle. The CLI is the authoritative maintenance entry point. The TUI
 is a UI adapter plugin over the same `RuntimeClient`, event stream, and command
 catalog available to any other UI package.
@@ -81,8 +81,8 @@ Never commit API keys or place them in prompts, diagnostic fixtures, screenshots
 - [API reference](docs/api-reference.md) — the stable HTTP/RPC protocol: auth, failure kinds, events, the write surface. Bilingual.
 - [Types reference](docs/types-reference.md) — complete field shapes of every result type, nested objects expanded.
 - [Config reference](docs/config-reference.md) — the full `.natalia/config.json` shape (types, optionality, defaults).
-- [Plugin guide](docs/plugin-guide.md) — creating, authoring, packaging,
-  installing, diagnosing, and publishing trusted in-process plugins.
+- [Plugin guide](docs/plugin-guide.md) — from-zero plugin and UI authoring,
+  then packaging, installation, diagnostics, and publishing.
 - [Provider guide](docs/provider-guide.md) — writing a provider adapter.
 - [CLI commands](docs/commands.md) — runtime, session, filesystem, plugin, UI,
   daemon, diagnostics, and recording commands.
@@ -100,7 +100,10 @@ npm run ts:cli -- daemon-status
 npm run ts:cli -- daemon-stop
 
 npm run ts:cli -- plugin create ./my-plugin --id yourco.plugin --package @yourco/natalia-plugin
+npm run ts:cli -- plugin create ./my-ui --id yourco.web --template ui
+npm run ts:cli -- plugin create ./my-ts --id yourco.ts --language ts
 npm run ts:cli -- plugin install ./my-plugin
+npm run ts:cli -- ui ui.yourco.web
 npm run ts:cli -- plugin list
 npm run ts:cli -- plugin disable yourco.plugin
 npm run ts:cli -- plugin enable yourco.plugin
@@ -206,7 +209,7 @@ OpenTUI 应用、自动化 CLI、类型化 SDK 与本地 transport 统一使用�
   的确认 rollback。
 - 提供托管 process 与 PTY、目录副本或 Git worktree sandbox、MCP server、
   skill、workflow，以及可信的进程内插件。
-- runtime 默认能力与用户安装插件共用同一套 registry 和 lifecycle，可贡献 tool、
+- 官方插件与用户安装插件共用同一套 registry 和 lifecycle，可贡献 tool、
   command、event、service、resource、projection、workflow、setting、adapter 与
   scheduler job。
 - 提供带鉴权的本地 HTTP/RPC、SSE、WebSocket、Unix socket 与 TLS transport，
@@ -218,12 +221,12 @@ Natalia 是 local-first runtime，不提供云账号、组织管理、账单、b
 
 ### 架构
 
-Natalia 只有三层：**kernel + runtime + plugin**。kernel 提供通用 registry、
-lifecycle、ownership、事件与存储机制；runtime 装配 session、provider、policy、
-transport 和 CLI 等产品面；产品功能统一使用一种可信的进程内插件体系。runtime
-默认随附插件与用户安装包具有相同权限和生命周期。CLI 是权威维护入口；TUI 是基于
-同一 `RuntimeClient`、事件流和 command catalog 的 UI adapter 插件，其他 UI 包与其
-使用相同通道。
+Natalia 只有三层：**kernel + framework + plugin**。kernel 提供通用 registry、
+lifecycle、ownership、事件与存储机制；framework 装配 session、provider、policy
+和 runtime composition 等内部产品面；产品功能统一使用一种可信的进程内插件体系。
+官方插件与用户安装包具有相同权限和生命周期。CLI 是权威维护入口；TUI 是基于同一
+`RuntimeClient`、事件流和 command catalog 的 UI adapter 插件，其他 UI 包与其使用
+相同通道。
 
 ### 环境要求
 
@@ -266,8 +269,8 @@ NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-2.5-pro" npm
   嵌套对象已展开。
 - [配置参考](docs/config-reference.zh-CN.md) — `.natalia/config.json` 的完整
   形状（类型、可选性、默认值）。
-- [插件指南](docs/plugin-guide.zh-CN.md) — 可信进程内插件的创建、开发、打包、
-  安装、诊断与发布。
+- [插件指南](docs/plugin-guide.zh-CN.md) — 从零开发插件和 UI，以及打包、安装、
+  诊断与发布。
 - [Provider 指南](docs/provider-guide.zh-CN.md) — 编写 provider adapter。
 - [CLI 命令参考](docs/commands.md) — runtime、session、filesystem、plugin、UI、
   daemon、diagnostics 与 recording 命令。
@@ -285,7 +288,10 @@ npm run ts:cli -- daemon-status
 npm run ts:cli -- daemon-stop
 
 npm run ts:cli -- plugin create ./my-plugin --id yourco.plugin --package @yourco/natalia-plugin
+npm run ts:cli -- plugin create ./my-ui --id yourco.web --template ui
+npm run ts:cli -- plugin create ./my-ts --id yourco.ts --language ts
 npm run ts:cli -- plugin install ./my-plugin
+npm run ts:cli -- ui ui.yourco.web
 npm run ts:cli -- plugin list
 npm run ts:cli -- plugin disable yourco.plugin
 npm run ts:cli -- plugin enable yourco.plugin

@@ -137,7 +137,6 @@ test("official reinstall has explicit parsing and lifecycle routing", async () =
   );
   expect(routed!.pluginStoreRoot).not.toContain("/workspace");
   for (const argv of [
-    ["plugin", "install", "demo", "--workspace", "/workspace"],
     ["plugin", "uninstall", "demo", "--workspace", "/workspace"],
     ["plugin", "reinstall", "natalia-tool-ask", "--workspace", "/workspace"],
     ["plugin", "doctor", "--workspace", "/workspace"],
@@ -179,6 +178,8 @@ test("plugin maintenance parser rejects missing, extra, and unknown arguments", 
     ["plugin", "create", "demo", "--id"],
     ["plugin", "create", "one", "two", "--id", "demo.plugin"],
     ["plugin", "install", "demo", "--id", "demo.plugin"],
+    ["plugin", "create", "demo", "--id", "demo.plugin", "--template", "web"],
+    ["plugin", "create", "demo", "--id", "demo.plugin", "--language", "python"],
   ]) {
     expect(() => parsePluginMaintenanceArgs(argv)).toThrow();
   }
@@ -203,6 +204,9 @@ test("plugin create writes a publishable JavaScript package", async () => {
     directory,
     pluginID: "demo.plugin",
     packageName: "@demo/natalia-plugin",
+    template: "command",
+    language: "js",
+    entry: "src/index.js",
   });
   const manifest = JSON.parse(
     await readFile(join(directory, "natalia.plugin.json"), "utf8"),
@@ -227,6 +231,116 @@ test("plugin create writes a publishable JavaScript package", async () => {
   expect(
     runCli(root, "plugin", "create", directory, "--id", "demo.plugin").exitCode,
   ).not.toBe(0);
+});
+
+test("plugin create writes tool and UI adapter templates", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-plugin-create-templates-"),
+  );
+  const toolDirectory = join(root, "demo-tool");
+  const uiDirectory = join(root, "demo-ui");
+  const tool = runCli(
+    root,
+    "plugin",
+    "create",
+    toolDirectory,
+    "--id",
+    "demo.echo",
+    "--template",
+    "tool",
+  );
+  const ui = runCli(
+    root,
+    "plugin",
+    "create",
+    uiDirectory,
+    "--id",
+    "demo.web",
+    "--package",
+    "@demo/natalia-ui-web",
+    "--template",
+    "ui",
+  );
+  expect(tool.exitCode).toBe(0);
+  expect(ui.exitCode).toBe(0);
+  expect(JSON.parse(text(tool.stdout))).toMatchObject({
+    created: true,
+    template: "tool",
+  });
+  expect(JSON.parse(text(ui.stdout))).toMatchObject({
+    created: true,
+    template: "ui",
+    kind: "ui.demo.web",
+  });
+  expect(
+    JSON.parse(
+      await readFile(join(toolDirectory, "natalia.plugin.json"), "utf8"),
+    ),
+  ).toMatchObject({
+    integrationPoints: ["tools"],
+    scope: "workspace",
+  });
+  expect(
+    JSON.parse(
+      await readFile(join(uiDirectory, "natalia.plugin.json"), "utf8"),
+    ),
+  ).toMatchObject({
+    integrationPoints: ["adapters"],
+    scope: "process",
+  });
+  expect(
+    await readFile(join(toolDirectory, "src", "index.js"), "utf8"),
+  ).toContain("api.tools.register");
+  expect(
+    await readFile(join(uiDirectory, "src", "index.js"), "utf8"),
+  ).toContain("api.adapters.registerUi");
+  expect(
+    JSON.parse(await readFile(join(uiDirectory, "package.json"), "utf8"))
+      .dependencies["@natalia/contracts"],
+  ).toBeDefined();
+});
+
+test("plugin create writes TypeScript source with a JavaScript install entry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-create-ts-"));
+  const directory = join(root, "demo-ts");
+  const result = runCli(
+    root,
+    "plugin",
+    "create",
+    directory,
+    "--id",
+    "demo.ts",
+    "--template",
+    "tool",
+    "--language",
+    "ts",
+  );
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(text(result.stdout))).toMatchObject({
+    created: true,
+    template: "tool",
+    language: "ts",
+    entry: "src/index.js",
+  });
+  const packageJSON = JSON.parse(
+    await readFile(join(directory, "package.json"), "utf8"),
+  );
+  expect(packageJSON.exports).toEqual({ ".": "./src/index.js" });
+  expect(packageJSON.files).toEqual([
+    "src/index.js",
+    "src/index.ts",
+    "natalia.plugin.json",
+  ]);
+  expect(
+    JSON.parse(await readFile(join(directory, "natalia.plugin.json"), "utf8"))
+      .entry,
+  ).toBe("src/index.js");
+  expect(await readFile(join(directory, "src", "index.ts"), "utf8")).toContain(
+    "input: { text: string }",
+  );
+  expect(await readFile(join(directory, "src", "index.js"), "utf8")).toContain(
+    "api.tools.register",
+  );
 });
 
 function runCli(root: string, ...argv: string[]) {

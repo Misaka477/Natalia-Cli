@@ -142,8 +142,19 @@ bun run src/main.tsx --workspace /path/to/your/project
 就是 Natalia 仓库本身。
 
 TUI 与其它所有 UI 一样，通过同一个通用 UI adapter host
-（`@natalia/client` 的 `createUiAdapterHost`）挂载；已安装的 UI 包也可以用
-`natalia ui <kind>` 启动。
+（`@natalia/client` 的 `createUiAdapterHost`）挂载。UI 包就是普通插件：用
+`--template ui` 创建，安装进 Natalia 实例的唯一 `plugin-store`，再按 adapter
+kind 启动：
+
+```bash
+npm run ts:cli -- plugin create ./my-ui --id yourco.web --template ui
+npm run ts:cli -- plugin install ./my-ui
+npm run ts:cli -- ui ui.yourco.web
+```
+
+`plugin install` 会在当前 workspace 启用该包。禁用、重新启用和卸载都走同一套
+plugin 命令。从零开发新插件和新 UI 的完整路径见
+[插件指南](plugin-guide.zh-CN.md#2-从零开始新插件和新-ui)。
 
 | 参数                 | 作用                                                                             |
 | -------------------- | -------------------------------------------------------------------------------- |
@@ -313,6 +324,8 @@ Skill 也可以从 `.natalia/config.json` 的 `skills.urls` 声明的 URL 拉取
 | 内容                          | 位置                                                                   |
 | ----------------------------- | ---------------------------------------------------------------------- |
 | 项目配置、会话、检查点、skill | `<工作区>/.natalia/`                                                   |
+| 当前 workspace 的插件启用状态 | `<工作区>/.natalia/config.json`（`plugins.enabled`）                   |
+| 已安装插件包                  | Natalia 实例 `plugin-store`（`natalia.lock` + `node_modules`）         |
 | 全局配置                      | `%APPDATA%\natalia-cli\`（Windows）、`~/.config/natalia-cli/`（POSIX） |
 | 终端运行时文件                | `%LOCALAPPDATA%`（Windows）、`$XDG_RUNTIME_DIR`（POSIX）               |
 

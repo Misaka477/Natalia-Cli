@@ -92,12 +92,13 @@ export async function validateStagedPackage(
 }
 
 function validatePluginModule(value: unknown, manifest: unknown) {
-  if (!value || typeof value !== "object")
-    throw new Error("plugin entry must have a default object export");
-  const plugin = value as { manifest?: unknown; setup?: unknown };
-  if (typeof plugin.setup !== "function")
+  const plugin = typeof value === "function" ? value() : value;
+  if (!plugin || typeof plugin !== "object")
+    throw new Error("plugin entry must have a default plugin or factory export");
+  const candidate = plugin as { manifest?: unknown; setup?: unknown };
+  if (typeof candidate.setup !== "function")
     throw new Error("plugin entry default export must have a setup function");
-  const exportedManifest = pluginManifestSchema.parse(plugin.manifest);
+  const exportedManifest = pluginManifestSchema.parse(candidate.manifest);
   if (JSON.stringify(exportedManifest) !== JSON.stringify(manifest))
     throw new Error("plugin entry manifest does not match natalia.plugin.json");
 }
