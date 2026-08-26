@@ -8299,6 +8299,66 @@ test("mailbox defer and supersede move a queued message out of the way", async (
   });
 });
 
+test("duplicate mailbox intents and planless handoffs are refused", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-mailbox-dedupe-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_mailbox_dedupe",
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  const first = await client.mailboxSend?.({
+    intent: "request_report",
+    text: "stop and list remaining gaps",
+  });
+  expect(first?.queued).toBe(true);
+  const duplicate = await client.mailboxSend?.({
+    intent: "request_report",
+    text: "stop and list remaining gaps",
+  });
+  expect(duplicate).toMatchObject({
+    queued: false,
+    messageID: first?.messageID,
+    reason: "duplicate mailbox intent already pending",
+  });
+  expect(await client.mailboxList!()).toHaveLength(1);
+  expect(
+    await client.mailboxSend?.({
+      intent: "next_plan_handoff",
+      text: "continue from the lost draft",
+    }),
+  ).toMatchObject({
+    queued: false,
+    reason: "next_plan_handoff requires relatedPlanID",
+  });
+  await client.dispose?.();
+});
+
+test("mailbox_cancel drops a queued duplicate before Natalia consumes it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-mailbox-cancel-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_mailbox_cancel",
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+  const sent = await client.mailboxSend?.({
+    intent: "pause",
+    text: "please pause after this step",
+  });
+  expect(
+    await client.mailboxSupersede?.(sent!.messageID!, "cancelled by live chat"),
+  ).toEqual({ superseded: true });
+  expect((await client.mailboxList!())[0]?.status).toBe("superseded");
+  await client.dispose?.();
+});
+
 test("mailboxSend redacts secrets from the recorded safe summary", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-redact-"));
   const client = createRealRuntimeClient({
@@ -12890,6 +12950,86 @@ test("chat tool calls surface as conversation actions", async () => {
       phase: "using_tool",
       toolName: "mailbox_send",
     }),
+  );
+  await client.dispose?.();
+});
+
+test("chat mailbox_send refuses a planless handoff and mailbox_cancel drops queued mail", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-mailbox-guard-"));
+  let streamCalls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_mailbox_guard",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        streamCalls += 1;
+        if (streamCalls === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_handoff",
+                name: "mailbox_send",
+                arguments: JSON.stringify({
+                  intent: "next_plan_handoff",
+                  text: "continue the lost draft",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (streamCalls === 2) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_send",
+                name: "mailbox_send",
+                arguments: JSON.stringify({
+                  intent: "request_report",
+                  text: "stop after this file",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        if (streamCalls === 3) {
+          const queued = (await client.mailboxList!()).find(
+            (message) => message.status === "queued",
+          );
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_cancel",
+                name: "mailbox_cancel",
+                arguments: JSON.stringify({
+                  messageID: queued?.messageID,
+                  reason: "duplicate handoff",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "cancelled the extra intent" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.chatSubmit!({ text: "send the plan to Natalia" });
+  const mailbox = await client.mailboxList!();
+  expect(
+    mailbox.some((message) => message.intent === "next_plan_handoff"),
+  ).toBe(false);
+  expect(mailbox.every((message) => message.status === "superseded")).toBe(
+    true,
   );
   await client.dispose?.();
 });

@@ -6,8 +6,15 @@
  * and the plan draft writer. Reads live state through `RuntimeContext` at call
  * time.
  */
-import { sessionRunCoordinator } from "@natalia/session";
-import { buildMailboxQueued } from "@natalia/runtime-services";
+import {
+  projectedMailboxMessages,
+  projectedPlans,
+  sessionRunCoordinator,
+} from "@natalia/session";
+import {
+  buildMailboxQueued,
+  buildMailboxStatus,
+} from "@natalia/runtime-services";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
   type WorkLedgerController,
@@ -25,6 +32,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
   return {
     createCollabChatTool,
     enqueueMailboxMessage,
+    cancelMailboxMessage,
     createPlanDraft,
   };
 
@@ -155,6 +163,47 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       input.text.trim().length === 0
     )
       return { queued: false as const };
+    if (input.intent === "next_plan_handoff") {
+      const planID = input.relatedPlanID?.trim();
+      if (!planID)
+        return {
+          queued: false as const,
+          reason: "next_plan_handoff requires relatedPlanID",
+        };
+      const plan = projectedPlans(owner.session.events).find(
+        (candidate) => candidate.planID === planID,
+      );
+      if (
+        !plan ||
+        plan.status === "superseded" ||
+        plan.status === "completed" ||
+        plan.status === "archived"
+      )
+        return {
+          queued: false as const,
+          reason: `no live plan ${planID} for next_plan_handoff`,
+        };
+    }
+    const fingerprint = mailboxFingerprint(
+      input.intent,
+      input.text,
+      input.relatedPlanID,
+    );
+    const duplicate = projectedMailboxMessages(owner.session.events).find(
+      (message) =>
+        (message.status === "queued" || message.status === "delivered") &&
+        mailboxFingerprint(
+          message.intent,
+          message.text,
+          message.relatedPlanID,
+        ) === fingerprint,
+    );
+    if (duplicate)
+      return {
+        queued: false as const,
+        messageID: duplicate.messageID,
+        reason: "duplicate mailbox intent already pending",
+      };
     const now = new Date();
     const messageID = `mailbox:${Date.now().toString(36)}:${nextMailboxSequence()}`;
     publishForSession(
@@ -201,6 +250,37 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       });
     }
     return { queued: true as const, messageID };
+  }
+
+  async function cancelMailboxMessage(
+    messageID: string,
+    reason?: string,
+    targetExec?: SessionExecutionState,
+  ) {
+    const owner = targetExec ?? ctx.ports.getActiveExec();
+    if (!owner || !messageID.trim()) return { cancelled: false as const };
+    const message = projectedMailboxMessages(owner.session.events).find(
+      (candidate) => candidate.messageID === messageID,
+    );
+    if (
+      !message ||
+      (message.status !== "queued" && message.status !== "delivered")
+    )
+      return { cancelled: false as const };
+    ctx.ports.publishForSession(
+      owner,
+      buildMailboxStatus({
+        id: `${messageID}:superseded:${ctx.ports.nextMailboxSequence()}`,
+        messageID,
+        status: "superseded",
+        at: new Date().toISOString(),
+        reason:
+          ctx.ports
+            .redactToolOutput(reason ?? "cancelled by live chat", true)
+            .slice(0, 500) || "cancelled by live chat",
+      }),
+    );
+    return { cancelled: true as const, messageID };
   }
 
   async function createPlanDraft(
@@ -272,4 +352,12 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     );
     return { created: true as const, planID };
   }
+}
+
+function mailboxFingerprint(
+  intent: string,
+  text: string,
+  relatedPlanID?: string,
+) {
+  return `${intent}\n${relatedPlanID ?? ""}\n${text.trim()}`;
 }

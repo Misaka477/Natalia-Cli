@@ -114,6 +114,11 @@ export type RuntimePorts = {
     },
     targetExec?: SessionExecutionState,
   ) => Promise<unknown>;
+  cancelMailboxMessage: (
+    messageID: string,
+    reason?: string,
+    targetExec?: SessionExecutionState,
+  ) => Promise<unknown>;
   createPlanDraft: (
     input: {
       title: string;

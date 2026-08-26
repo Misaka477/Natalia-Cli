@@ -73,6 +73,7 @@ export function wireFeatures(
   const mailboxPlans = createMailboxPlans(ctx);
   ports.createCollabChatTool = mailboxPlans.createCollabChatTool;
   ports.enqueueMailboxMessage = mailboxPlans.enqueueMailboxMessage;
+  ports.cancelMailboxMessage = mailboxPlans.cancelMailboxMessage;
   ports.createPlanDraft = mailboxPlans.createPlanDraft;
   ports.createPlanDraftForClient = (input) =>
     mailboxPlans.createPlanDraft(input);

@@ -20,7 +20,14 @@ export function chatToolSummary(
         outcome && typeof outcome.messageID === "string"
           ? ` (${outcome.messageID})`
           : "";
+      if (outcome && outcome.queued === false)
+        return `mailbox intent not queued: ${intent}${messageID}`;
       return `queued mailbox intent: ${intent}${messageID}`;
+    }
+    case "mailbox_cancel": {
+      const messageID =
+        typeof args.messageID === "string" ? args.messageID : "unknown";
+      return `cancelled mailbox ${messageID}`;
     }
     case "plan_create": {
       const title = typeof args.title === "string" ? args.title : "untitled";

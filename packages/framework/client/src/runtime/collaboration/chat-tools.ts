@@ -45,6 +45,7 @@ export function createChatTools(ctx: RuntimeContext) {
       wakeMainForCollaboration,
       createCollabChatTool,
       enqueueMailboxMessage,
+      cancelMailboxMessage,
       createPlanDraft,
     } = ctx.ports;
     const { tools } = ctx.state;
@@ -238,6 +239,29 @@ export function createChatTools(ctx: RuntimeContext) {
         },
       },
       {
+        name: "mailbox_cancel",
+        description:
+          "Cancel a queued or delivered mailbox message that should not reach or remain with the main agent. Use the exact messageID from mailbox_send or the pending mailbox list.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            messageID: { type: "string" },
+            reason: { type: "string" },
+          },
+          required: ["messageID"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { messageID?: string; reason?: string };
+          if (typeof args.messageID !== "string")
+            return "mailbox_cancel requires messageID";
+          return JSON.stringify(
+            await cancelMailboxMessage(args.messageID, args.reason, exec),
+          );
+        },
+      },
+      {
         name: "plan_create",
         description:
           "Create a new plan draft (author: live_chat). It does not touch the active plan; the user must accept it before it can be queued and handed off.",
@@ -371,13 +395,23 @@ export function createChatTools(ctx: RuntimeContext) {
           const args = parsed as { planID?: string };
           if (typeof args.planID !== "string")
             return "plan_propose requires planID";
-          const plan = projectedPlans(exec?.session.events ?? []).find(
+          const known = projectedPlans(exec?.session.events ?? []);
+          const plan = known.find(
             (candidate) =>
               candidate.planID === args.planID &&
               candidate.author === "live_chat",
           );
           if (!plan || plan.status !== "draft")
-            return `no draftable live_chat plan ${args.planID}`;
+            return JSON.stringify({
+              proposed: false,
+              planID: args.planID,
+              reason: `no draftable live_chat plan ${args.planID}`,
+              knownPlans: known.map((candidate) => ({
+                planID: candidate.planID,
+                status: candidate.status,
+                title: candidate.title,
+              })),
+            });
           const workLedgerController =
             ctx.ports.resolveService<WorkLedgerController>(
               WORK_LEDGER_CONTROLLER_SERVICE,
