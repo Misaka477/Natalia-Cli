@@ -477,22 +477,15 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       return;
     }
     case "session.ready":
-      state.status = "ready";
+      // Chrome adapter: view-store already set facts.status.
+      state.status = state.facts.status;
       return;
     case "status.update":
-      state.status = event.status;
-      state.footer = [event.status, event.detail].filter(Boolean).join(" - ");
+      state.status = state.facts.status;
+      state.footer = state.facts.footer;
       return;
     case "status.snapshot":
-      state.statusSegments = [
-        "mode:runtime",
-        `model:${event.model}`,
-        `provider:${event.provider}`,
-        `ctx:${event.context}`,
-        `step:${event.step}`,
-        event.permissions,
-        `bg:${event.background}`,
-      ];
+      state.statusSegments = [...state.facts.statusSegments];
       return;
     case "context.status":
       state.statusSegments = [
