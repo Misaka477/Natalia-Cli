@@ -8,7 +8,7 @@ import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 type Surface = Pick<
   RuntimeServiceClient,
-  "chatSubmit" | "chatMessages" | "chatRollback"
+  "chatSubmit" | "chatAbort" | "chatMessages" | "chatRollback"
 >;
 function redactToolOutput(output: string, redact: boolean | undefined) {
   if (!redact) return output;
@@ -48,6 +48,16 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         at: new Date().toISOString(),
       });
       return { rolledBackTo: input.toMessageID, removed };
+    },
+    async chatAbort() {
+      const exec = ctx.ports.getActiveExec();
+      const controller = ctx.ports.resolveService<ProviderModelController>(
+        PROVIDER_MODEL_CONTROLLER_SERVICE,
+      );
+      if (!exec || !controller?.abortChat) return { aborted: false as const };
+      return {
+        aborted: controller.abortChat(exec.session.id as SessionID),
+      };
     },
     async chatSubmit(input: { text: string }) {
       await ctx.ports.getReady();

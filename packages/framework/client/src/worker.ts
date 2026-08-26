@@ -115,6 +115,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "constitution.override.approve": "approveOverride",
   "chat.messages": "chatMessages",
   "chat.submit": "chatSubmit",
+  "chat.abort": "chatAbort",
   "chat.rollback": "chatRollback",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
@@ -207,6 +208,7 @@ type WorkerRequest = {
     | "constitution.override.request"
     | "constitution.override.approve"
     | "chat.messages"
+    | "chat.abort"
     | "chat.submit"
     | "chat.rollback"
     | "flow.save"
@@ -792,6 +794,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["chatSubmit"]>>
       >;
     },
+    async chatAbort() {
+      return (await request("chat.abort")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["chatAbort"]>>
+      >;
+    },
     async chatRollback(input) {
       return (await request("chat.rollback", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatRollback"]>>
@@ -1112,6 +1119,7 @@ export async function handleWorkerRequest(
   if (request.method === "chat.messages") return await client.chatMessages?.();
   if (request.method === "chat.submit")
     return await client.chatSubmit?.(request.value as { text: string });
+  if (request.method === "chat.abort") return await client.chatAbort?.();
   if (request.method === "chat.rollback")
     return await client.chatRollback?.(
       request.value as { toMessageID: string },

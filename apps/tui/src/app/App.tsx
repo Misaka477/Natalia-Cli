@@ -22,6 +22,7 @@ import {
 import { usePromptRef } from "../context/prompt";
 import { useRouteController, type AppRoute } from "../context/route";
 import { StateProvider, useAppState } from "../context/state";
+import { activeModal } from "@natalia/ui-model";
 import { useClipboard } from "../context/clipboard";
 import { ToastRegion, useToast } from "../context/toast";
 import type {
@@ -1774,6 +1775,13 @@ function Shell(props: {
                   }`.slice(0, 160),
                 }),
               );
+            }}
+            onStop={() => {
+              void props.backend.chatAbort?.();
+            }}
+            approvalRequest={() => {
+              const request = activeModal(state.modal);
+              return request?.kind === "approval" ? request : undefined;
             }}
             onRollback={(toMessageID) => {
               void props.backend.chatRollback?.({ toMessageID });

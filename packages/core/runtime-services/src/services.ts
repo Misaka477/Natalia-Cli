@@ -430,6 +430,7 @@ export interface ProviderModelController {
   runChatTurn(turn: ProviderChatTurnInput): Promise<void>;
   requestChatWake(sessionID: SessionID): void;
   chatBusy?(sessionID: SessionID): boolean;
+  abortChat?(sessionID: SessionID): boolean;
   dispose(): Promise<void>;
 }
 

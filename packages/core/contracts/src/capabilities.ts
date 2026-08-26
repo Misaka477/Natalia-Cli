@@ -250,7 +250,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "planCompleted",
   ],
   /** The always-available Live Work Chat conversation (P8 Phase C2). */
-  chat: ["chatSubmit", "chatMessages", "chatRollback"],
+  chat: ["chatSubmit", "chatAbort", "chatMessages", "chatRollback"],
 } as const satisfies Record<string, readonly (keyof RuntimeClient)[]>;
 
 export type RuntimeCapabilityGroup = keyof typeof RUNTIME_CAPABILITY_GROUPS;

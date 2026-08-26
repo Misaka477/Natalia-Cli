@@ -372,6 +372,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "a Chat message either enters the conversation or does not; a rejected submission has no partial value to report",
   },
+  chatAbort: {
+    refusal: "value",
+    expressedBy: "aborted",
+    note: "stops the in-flight Chat turn; false means nothing was running",
+  },
 
   // --- automation ---
   // These report per-entry problems in the result rather than failing the call,

@@ -237,6 +237,7 @@ export const RPC_ROUTE_MEMBERS = {
   // P8 C2: the always-available Live Work Chat conversation (read + rollback).
   "chat.messages": "chatMessages",
   "chat.submit": "chatSubmit",
+  "chat.abort": "chatAbort",
   "chat.rollback": "chatRollback",
   // P0-G: the flow write surface, previously CLI-only.
   "flow.save": "saveFlowDocument",
@@ -1970,6 +1971,14 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.chatMessages(),
+      };
+    }
+    if (body.method === "chat.abort") {
+      optionsGuard(client, "chatAbort");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.chatAbort?.(),
       };
     }
     if (body.method === "chat.submit") {

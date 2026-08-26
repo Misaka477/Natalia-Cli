@@ -17,6 +17,8 @@ import {
   onMount,
 } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
+import type { ModalRequest } from "@natalia/ui-model";
+import { PermissionPrompt } from "../routes/session/permission";
 import type {
   ChatActivityView,
   SessionIntelligenceView,
@@ -77,9 +79,13 @@ export function LiveChatView(props: {
   onEscape(): void;
   onInputRef(value: InputRenderable | undefined): void;
   onSend(text: string): void;
+  onStop?(): void;
   onRollback(toMessageID: string): void;
   onPlanAccept(planID: string): void;
   onPlanReject(planID: string): void;
+  approvalRequest?: () =>
+    | Extract<ModalRequest, { kind: "approval" }>
+    | undefined;
   onIntentDeliver(messageID: string): void | Promise<void>;
   selectedTaskID?: () => string | undefined;
   /** The composer's max height, matching the reference TUI's `max(6, h/3)`. */
@@ -527,12 +533,30 @@ export function LiveChatView(props: {
               paddingTop={1}
               justifyContent="flex-end"
             >
-              <text fg={theme.accent} onMouseUp={submitDraft}>
-                ↑ Send
+              <text
+                fg={props.activity() ? theme.danger : theme.accent}
+                onMouseUp={() => {
+                  if (props.activity()) {
+                    props.onStop?.();
+                    return;
+                  }
+                  submitDraft();
+                }}
+              >
+                {props.activity() ? "■ Stop" : "↑ Send"}
               </text>
             </box>
           </box>
         </box>
+        <Show when={props.approvalRequest?.()}>
+          {(request) => (
+            <PermissionPrompt
+              request={request()}
+              backend={props.backend}
+              onExit={props.onEscape}
+            />
+          )}
+        </Show>
         <box
           height={1}
           width="100%"

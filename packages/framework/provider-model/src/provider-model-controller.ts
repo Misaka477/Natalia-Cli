@@ -121,5 +121,19 @@ export function createProviderModelController(
     return chatAborts.has(sessionID);
   }
 
-  return { runTurn, runChatTurn, requestChatWake, chatBusy, dispose };
+  function abortChat(sessionID: SessionID) {
+    const abort = chatAborts.get(sessionID);
+    if (!abort) return false;
+    abort.abort(new Error("live work chat aborted"));
+    return true;
+  }
+
+  return {
+    runTurn,
+    runChatTurn,
+    requestChatWake,
+    chatBusy,
+    abortChat,
+    dispose,
+  };
 }

@@ -2545,6 +2545,7 @@ export type RuntimeClient = {
    * streamed `chat.message.delta` and settles with `chat.message.added`.
    */
   chatSubmit?(input: { text: string }): Promise<{ messageID: string }>;
+  chatAbort?(): Promise<{ aborted: boolean }>;
   /**
    * The durable Chat conversation, oldest first. `chat.rollback` truncates it
    * at a message boundary, so the projection returns the effective history.
