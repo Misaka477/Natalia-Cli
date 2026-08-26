@@ -23,6 +23,11 @@ export const terminalTimelineLimit = 200;
 export const subagentHistoryLimit = 100;
 export const policyDecisionLimit = 200;
 export const checkpointLimit = 200;
+export const evidenceLimit = 200;
+export const completionLimit = 100;
+export const decisionLimit = 200;
+export const constitutionConflictLimit = 50;
+export const constitutionOverrideLimit = 100;
 /**
  * A terminal's transcript grows for as long as the pane lives, so the projection
  * keeps a bounded tail with an explicit note about what was dropped. Storing the
@@ -234,6 +239,64 @@ export type AppState = {
   workGraphEdges: Record<string, WorkGraphEdgeView>;
   intelligence?: SessionIntelligenceView;
   pluginProjections: ProjectionContribution[];
+  constitutionRules: Record<
+    string,
+    Extract<RuntimeEvent, { type: "constitution.rule_added" }>
+  >;
+  constitutionOverrides: Array<
+    Extract<RuntimeEvent, { type: "constitution.override_granted" }>
+  >;
+  constitutionConflicts: Array<
+    Extract<RuntimeEvent, { type: "constitution.check" }>
+  >;
+  decisions: Array<Extract<RuntimeEvent, { type: "decision.recorded" }>>;
+  evidence: Array<Extract<RuntimeEvent, { type: "evidence.recorded" }>>;
+  completions: Array<Extract<RuntimeEvent, { type: "completion.recorded" }>>;
+  mailbox: Record<string, MailboxMessageView>;
+  plans: Record<string, PlanView>;
+};
+
+export type MailboxMessageView = {
+  messageID: string;
+  source: "user_via_live_chat" | "system";
+  priority: "normal" | "high" | "urgent";
+  intent: Extract<RuntimeEvent, { type: "mailbox.queued" }>["intent"];
+  text: string;
+  safeSummary: string;
+  relatedPlanID?: string;
+  deliveryPolicy: Extract<
+    RuntimeEvent,
+    { type: "mailbox.queued" }
+  >["deliveryPolicy"];
+  createdAt: string;
+  status: "queued" | "delivered" | "acknowledged" | "deferred" | "superseded";
+  reason?: string;
+};
+
+export type PlanView = {
+  planID: string;
+  version: number;
+  title: string;
+  author: "user" | "live_chat" | "main_agent";
+  objective: string;
+  steps: Extract<RuntimeEvent, { type: "plan.draft.created" }>["steps"];
+  constraints: string[];
+  verification: string[];
+  riskNotes: string[];
+  relatedMailboxMessageID?: string;
+  taskID?: string;
+  supersedesPlanID?: string;
+  createdAt: string;
+  status:
+    | "draft"
+    | "proposed"
+    | "accepted"
+    | "queued_next_plan"
+    | "active"
+    | "completed"
+    | "superseded"
+    | "archived";
+  reason?: string;
 };
 
 export function initialState(): AppState {
@@ -273,6 +336,14 @@ export function initialState(): AppState {
     workGraphNodes: {},
     workGraphEdges: {},
     pluginProjections: [],
+    constitutionRules: {},
+    constitutionOverrides: [],
+    constitutionConflicts: [],
+    decisions: [],
+    evidence: [],
+    completions: [],
+    mailbox: {},
+    plans: {},
   };
 }
 
@@ -317,6 +388,20 @@ export function cloneState(state: AppState): AppState {
     workGraphNodes: { ...state.workGraphNodes },
     workGraphEdges: { ...state.workGraphEdges },
     pluginProjections: [...state.pluginProjections],
+    constitutionRules: { ...state.constitutionRules },
+    constitutionOverrides: [...state.constitutionOverrides],
+    constitutionConflicts: [...state.constitutionConflicts],
+    decisions: [...state.decisions],
+    evidence: [...state.evidence],
+    completions: [...state.completions],
+    mailbox: mapRecord(state.mailbox, (value) => ({ ...value })),
+    plans: mapRecord(state.plans, (value) => ({
+      ...value,
+      steps: [...value.steps],
+      constraints: [...value.constraints],
+      verification: [...value.verification],
+      riskNotes: [...value.riskNotes],
+    })),
     ...(state.rollback ? { rollback: { ...state.rollback } } : {}),
   };
 }

@@ -29,12 +29,9 @@
  * Deliberately **not** projected, and why:
  *   - `dialog.open` / `dialog.close`, `terminal.pane.select` — UI-only state,
  *     owned by whichever UI renders it.
- *   - `constitution.rule_added`, `decision.recorded`, `evidence.recorded`,
- *     `drift.finding_opened` — no production writer exists yet, so projecting
- *     them would advertise a feature the runtime does not have. Work Graph and
- *     tool registration events are deliberate exceptions: the client emits
- *     secret-safe facts for both in production, while their consumer-specific
- *     projections remain owned by session queries.
+ *   - `drift.finding_opened` stays a session query until a second UI needs the
+ *     live list in `facts`; constitution/decision/evidence/plan/mailbox/workgraph
+ *     now have production writers and project here for any host.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
 import { applyActivityEvent } from "./activity";
@@ -86,6 +83,8 @@ export {
   type TranscriptBound,
   type WorkGraphEdgeView,
   type WorkGraphNodeView,
+  type MailboxMessageView,
+  type PlanView,
 } from "./state";
 export {
   applyActivityEvent,
@@ -108,6 +107,11 @@ export {
 export { applyResourceEvent } from "./resources";
 export { applyStatusEvent } from "./status";
 export { applyChatEvent, applyConversationEvent } from "./conversation";
+export {
+  selectUnattributedWorkGraphNodes,
+  selectWorkGraphNeighborhood,
+  type WorkGraphSlice,
+} from "./graph";
 
 /**
  * Mutates `state` in place. Unknown and deliberately unprojected events are

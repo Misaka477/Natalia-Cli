@@ -202,6 +202,29 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
       delete state.activities[questionActivityID(event.id)];
       return;
     case "plan.draft.created":
+      state.plans = {
+        ...state.plans,
+        [event.planID]: {
+          planID: event.planID,
+          version: event.version,
+          title: event.title,
+          author: event.author,
+          objective: event.objective,
+          steps: event.steps,
+          constraints: event.constraints ?? [],
+          verification: event.verification ?? [],
+          riskNotes: event.riskNotes ?? [],
+          ...(event.relatedMailboxMessageID
+            ? { relatedMailboxMessageID: event.relatedMailboxMessageID }
+            : {}),
+          ...(event.taskID ? { taskID: event.taskID } : {}),
+          ...(event.supersedesPlanID
+            ? { supersedesPlanID: event.supersedesPlanID }
+            : {}),
+          createdAt: event.createdAt,
+          status: "draft",
+        },
+      };
       upsertActivity(state, {
         id: planActivityID(event.planID),
         turnID: event.id,
@@ -212,6 +235,9 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
       });
       return;
     case "plan.draft.updated":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        if (event.reason) plan.reason = event.reason;
+      });
       upsertActivity(state, {
         id: planActivityID(event.planID),
         turnID: event.id,
@@ -220,6 +246,9 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
       });
       return;
     case "plan.proposed":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        plan.status = "proposed";
+      });
       upsertActivity(state, {
         id: planActivityID(event.planID),
         turnID: event.id,
@@ -228,8 +257,31 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
       });
       return;
     case "plan.accepted":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        plan.status = "accepted";
+      });
+      upsertActivity(state, {
+        id: planActivityID(event.planID),
+        turnID: event.id,
+        kind: "planning",
+        state: "active",
+      });
+      return;
     case "plan.queued":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        plan.status = "queued_next_plan";
+      });
+      upsertActivity(state, {
+        id: planActivityID(event.planID),
+        turnID: event.id,
+        kind: "planning",
+        state: "active",
+      });
+      return;
     case "plan.activated":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        plan.status = "active";
+      });
       upsertActivity(state, {
         id: planActivityID(event.planID),
         turnID: event.id,
@@ -238,9 +290,64 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
       });
       return;
     case "plan.superseded":
-    case "plan.completed":
-    case "plan.archived":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        plan.status = "superseded";
+        plan.reason = event.reason;
+      });
       delete state.activities[planActivityID(event.planID)];
+      return;
+    case "plan.completed":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        plan.status = "completed";
+      });
+      delete state.activities[planActivityID(event.planID)];
+      return;
+    case "plan.archived":
+      updatePlan(state, event.planID, event.version, (plan) => {
+        plan.status = "archived";
+      });
+      delete state.activities[planActivityID(event.planID)];
+      return;
+    case "mailbox.queued":
+      state.mailbox = {
+        ...state.mailbox,
+        [event.messageID]: {
+          messageID: event.messageID,
+          source: event.source,
+          priority: event.priority,
+          intent: event.intent,
+          text: event.text,
+          safeSummary: event.safeSummary,
+          ...(event.relatedPlanID
+            ? { relatedPlanID: event.relatedPlanID }
+            : {}),
+          deliveryPolicy: event.deliveryPolicy,
+          createdAt: event.createdAt,
+          status: "queued",
+        },
+      };
+      return;
+    case "mailbox.delivered":
+      updateMailbox(state, event.messageID, (message) => {
+        message.status = "delivered";
+      });
+      return;
+    case "mailbox.acknowledged":
+      updateMailbox(state, event.messageID, (message) => {
+        message.status = "acknowledged";
+      });
+      return;
+    case "mailbox.deferred":
+      updateMailbox(state, event.messageID, (message) => {
+        message.status = "deferred";
+        message.reason = event.reason;
+      });
+      return;
+    case "mailbox.superseded":
+      updateMailbox(state, event.messageID, (message) => {
+        message.status = "superseded";
+        message.reason = event.reason;
+      });
       return;
     case "compaction.begin":
       upsertActivity(state, {
@@ -290,6 +397,31 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
     default:
       return;
   }
+}
+
+function updatePlan(
+  state: AppState,
+  planID: string,
+  version: number,
+  mutate: (plan: NonNullable<AppState["plans"][string]>) => void,
+) {
+  const existing = state.plans[planID];
+  if (!existing) return;
+  const next = { ...existing, version };
+  mutate(next);
+  state.plans = { ...state.plans, [planID]: next };
+}
+
+function updateMailbox(
+  state: AppState,
+  messageID: string,
+  mutate: (message: NonNullable<AppState["mailbox"][string]>) => void,
+) {
+  const existing = state.mailbox[messageID];
+  if (!existing) return;
+  const next = { ...existing };
+  mutate(next);
+  state.mailbox = { ...state.mailbox, [messageID]: next };
 }
 
 function upsertActivity(state: AppState, next: ActivityView) {

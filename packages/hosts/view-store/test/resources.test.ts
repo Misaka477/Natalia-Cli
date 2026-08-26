@@ -5,6 +5,8 @@ import {
   boundTranscript,
   initialState,
   projectEvents,
+  selectUnattributedWorkGraphNodes,
+  selectWorkGraphNeighborhood,
   subagentHistoryLimit,
   terminalTimelineLimit,
   terminalTranscriptChars,
@@ -656,6 +658,148 @@ test("Work Graph events project into stable node and edge indexes", () => {
     kind: "caused",
     episodeID: "epi_1",
   });
+});
+
+test("constitution, plans, mailbox and evidence project as host-agnostic facts", () => {
+  const state = projectEvents([
+    {
+      type: "constitution.rule_added",
+      id: "constitution:c-rel-001",
+      ruleID: "C-REL-001",
+      statement: "默认不 commit/push",
+      scope: "release",
+      priority: "critical",
+      source: "policy",
+      enforcement: "deny",
+      overridePolicy: "user_scoped",
+    },
+    {
+      type: "constitution.check",
+      id: "check:1",
+      ruleID: "C-REL-001",
+      statement: "默认不 commit/push",
+      priority: "critical",
+      enforcement: "deny",
+      action: "run_shell",
+      resource: "global",
+      conflict: true,
+    },
+    {
+      type: "decision.recorded",
+      id: "decision:1",
+      decision: "ship from a sandbox",
+      status: "accepted",
+    },
+    {
+      type: "evidence.recorded",
+      id: "evidence:1",
+      taskID: "task_build",
+      objective: "verify the build",
+      status: "promoted",
+    },
+    {
+      type: "completion.recorded",
+      id: "completion:1",
+      taskID: "task_build",
+      objective: "verify the build",
+      changeSummary: "1 files promoted from sandbox box",
+      validations: [],
+      recordedAt: "2026-08-26T00:00:00.000Z",
+    },
+    {
+      type: "mailbox.queued",
+      id: "mbq:1",
+      messageID: "mb:1",
+      source: "user_via_live_chat",
+      priority: "normal",
+      intent: "constraint",
+      text: "keep it small",
+      safeSummary: "keep it small",
+      deliveryPolicy: "next_safe_boundary",
+      createdAt: "2026-08-26T00:00:00.000Z",
+    },
+    {
+      type: "mailbox.acknowledged",
+      id: "mba:1",
+      messageID: "mb:1",
+      acknowledgedAt: "2026-08-26T00:00:01.000Z",
+    },
+    {
+      type: "plan.draft.created",
+      id: "plan:1:draft",
+      planID: "plan:1",
+      version: 1,
+      title: "Build plan",
+      author: "main_agent",
+      objective: "verify the build",
+      steps: [],
+      createdAt: "2026-08-26T00:00:00.000Z",
+      taskID: "task_build",
+    },
+    {
+      type: "plan.proposed",
+      id: "plan:1:proposed",
+      planID: "plan:1",
+      version: 1,
+      proposedAt: "2026-08-26T00:00:02.000Z",
+    },
+  ] as RuntimeEvent[]);
+  expect(state.constitutionRules["C-REL-001"]?.enforcement).toBe("deny");
+  expect(state.constitutionConflicts).toHaveLength(1);
+  expect(state.decisions[0]?.decision).toBe("ship from a sandbox");
+  expect(state.evidence[0]?.taskID).toBe("task_build");
+  expect(state.completions[0]?.id).toBe("completion:1");
+  expect(state.mailbox["mb:1"]?.status).toBe("acknowledged");
+  expect(state.plans["plan:1"]).toMatchObject({
+    status: "proposed",
+    taskID: "task_build",
+  });
+});
+
+test("work graph neighbourhood and unattributed changes are selectable", () => {
+  const state = projectEvents([
+    {
+      type: "workgraph.node_added",
+      id: "wg:action:t1",
+      nodeID: "wg:action:t1",
+      kind: "agent_action",
+      summary: "turn",
+    },
+    {
+      type: "workgraph.node_added",
+      id: "wg:tool:t1:c1",
+      nodeID: "wg:tool:t1:c1",
+      kind: "tool_call",
+      summary: "write · succeeded",
+    },
+    {
+      type: "workgraph.node_added",
+      id: "wg:change:orphan",
+      nodeID: "wg:change:orphan",
+      kind: "workspace_change",
+      summary: "external.txt",
+      target: "external.txt",
+    },
+    {
+      type: "workgraph.edge_added",
+      id: "wg:edge:t1:c1",
+      sourceID: "wg:action:t1",
+      targetID: "wg:tool:t1:c1",
+      kind: "caused",
+    },
+  ] as RuntimeEvent[]);
+  const slice = selectWorkGraphNeighborhood(state, "wg:action:t1", 1);
+  expect(slice.nodes.map((node) => node.nodeID).sort()).toEqual([
+    "wg:action:t1",
+    "wg:tool:t1:c1",
+  ]);
+  expect(slice.edges).toHaveLength(1);
+  expect(
+    selectUnattributedWorkGraphNodes(state).map((node) => node.nodeID),
+  ).toEqual(["wg:change:orphan"]);
+  expect(slice.unattributed.map((node) => node.nodeID)).toEqual([
+    "wg:change:orphan",
+  ]);
 });
 
 test("UI-only events are ignored, because they are not runtime facts", () => {

@@ -10,6 +10,11 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { resetStreamsForRetry } from "./conversation";
 import {
   appendBounded,
+  completionLimit,
+  constitutionConflictLimit,
+  constitutionOverrideLimit,
+  decisionLimit,
+  evidenceLimit,
   policyDecisionLimit,
   upsertBlock,
   type AppState,
@@ -128,6 +133,7 @@ export function applyStatusEvent(
       state.selectedEvidenceID = event.evidenceID;
       return true;
     case "evidence.recorded":
+      state.evidence = appendBounded(state.evidence, event, evidenceLimit);
       upsertBlock(
         state,
         event.id,
@@ -136,6 +142,43 @@ export function applyStatusEvent(
         event.status,
         { taskID: event.taskID },
       );
+      return true;
+    case "completion.recorded":
+      state.completions = appendBounded(
+        state.completions,
+        event,
+        completionLimit,
+      );
+      return true;
+    case "constitution.rule_added":
+      state.constitutionRules = {
+        ...state.constitutionRules,
+        [event.ruleID]: event,
+      };
+      return true;
+    case "constitution.rule_updated": {
+      const existing = state.constitutionRules[event.ruleID];
+      if (!existing) return true;
+      state.constitutionRules = {
+        ...state.constitutionRules,
+        [event.ruleID]: {
+          ...existing,
+          statement: event.statement ?? existing.statement,
+          priority: event.priority ?? existing.priority,
+        },
+      };
+      return true;
+    }
+    case "constitution.override_granted":
+      state.constitutionOverrides = appendBounded(
+        state.constitutionOverrides,
+        event,
+        constitutionOverrideLimit,
+      );
+      return true;
+    case "decision.recorded":
+      if (state.decisions.some((record) => record.id === event.id)) return true;
+      state.decisions = appendBounded(state.decisions, event, decisionLimit);
       return true;
     case "policy.decision":
       // Kept so a UI can explain why a tool did not run. Allows are recorded
@@ -151,6 +194,11 @@ export function applyStatusEvent(
       // news. Note this projection is empty in practice today: no production
       // code emits constitution rules, so nothing can conflict with them.
       if (!event.conflict) return true;
+      state.constitutionConflicts = appendBounded(
+        state.constitutionConflicts,
+        event,
+        constitutionConflictLimit,
+      );
       upsertBlock(
         state,
         `constitution:${event.id}`,
