@@ -71,6 +71,35 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
         at: new Date().toISOString(),
       }),
     );
+    const queued = projectedPlans(owner.session.events).find(
+      (candidate) => candidate.planID === planID,
+    );
+    if (queued?.status === "accepted") {
+      ctx.ports.publishForSession(
+        owner,
+        requireWorkLedger().buildPlanTransition({
+          id: `${planID}:queued:${queued.version + 1}`,
+          planID,
+          version: queued.version + 1,
+          transition: "queued",
+          at: new Date().toISOString(),
+        }),
+      );
+    }
+    const notice = `[user] accepted plan ${planID} (${plan.title}). Send next_plan_handoff with this relatedPlanID now so Natalia can start.`;
+    ctx.ports.publishForSession(owner, {
+      type: "chat.message.added",
+      id: `chat:plan-accept:${planID}:${Date.now().toString(36)}`,
+      messageID: `chat:plan-accept:${planID}`,
+      role: "user",
+      text: notice,
+      at: new Date().toISOString(),
+    });
+    owner.pendingChatUserMessages.push({
+      messageID: `chat:plan-accept:${planID}`,
+      text: notice,
+    });
+    ctx.ports.requestNaviWake(owner);
     return { accepted: true as const };
   }
 
