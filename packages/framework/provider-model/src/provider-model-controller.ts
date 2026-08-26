@@ -37,8 +37,10 @@ export function createProviderModelController(
     if (disposed) throw new Error("provider/model controller disposed");
     if (!input.chat.available(turn.sessionID))
       throw new Error("provider unavailable for live work chat");
-    if (chatAborts.has(turn.sessionID))
+    if (chatAborts.has(turn.sessionID)) {
+      if (turn.internal) return;
       throw new Error("live work chat is already busy for this session");
+    }
 
     const startedAt = Date.now();
     input.chat.publish(turn.sessionID, {
@@ -115,5 +117,9 @@ export function createProviderModelController(
     runners.clear();
   }
 
-  return { runTurn, runChatTurn, requestChatWake, dispose };
+  function chatBusy(sessionID: SessionID) {
+    return chatAborts.has(sessionID);
+  }
+
+  return { runTurn, runChatTurn, requestChatWake, chatBusy, dispose };
 }

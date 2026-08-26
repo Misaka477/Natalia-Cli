@@ -172,6 +172,8 @@ export function createSessionExecution(
       selectedModel: projection.selectedModel,
       paused: false,
       pauseWaiters: [],
+      injectedMailboxIDs: new Set(),
+      pendingChatUserMessages: [],
     };
     executionBySession.set(sessionID, exec);
     applyAgentProvider(exec);

@@ -335,13 +335,6 @@ export type ProviderRunnerInput = {
   activeSkill(): SkillMetadata | undefined;
   skillsList(): SkillMetadata[];
   skillService?(): SkillService | undefined;
-  mailboxMessages(): Array<{
-    messageID: string;
-    intent: string;
-    text: string;
-    priority: string;
-    source: "user_via_live_chat" | "system";
-  }>;
   naviSuggestions(): Array<{
     id: string;
     suggestion: string;
@@ -404,6 +397,7 @@ export type ProviderRunnerInput = {
     assistant: string,
     materialized: ToolMaterialization,
   ): Promise<import("@natalia/runtime").ProviderMessage[]>;
+  takeLiveUserMessages?(): Array<{ source: "user" | "navi"; text: string }>;
   reloadConfig(): Promise<{ providerReconfigured: boolean }>;
   runtimeStatusSnapshot(): Promise<RuntimeEvent>;
   effectiveMaxSteps(): number;
@@ -435,6 +429,7 @@ export interface ProviderModelController {
   runTurn(sessionID: SessionID, turn: ProviderTurnInput): Promise<void>;
   runChatTurn(turn: ProviderChatTurnInput): Promise<void>;
   requestChatWake(sessionID: SessionID): void;
+  chatBusy?(sessionID: SessionID): boolean;
   dispose(): Promise<void>;
 }
 

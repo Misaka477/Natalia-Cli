@@ -74,6 +74,9 @@ export type RuntimePorts = {
     forSessionID?: SessionID,
   ) => Promise<void>;
   settleMailboxAtBoundary: (exec?: SessionExecutionState) => void;
+  takeLiveUserMessages: (
+    exec?: SessionExecutionState,
+  ) => Array<{ source: "user" | "navi"; text: string }>;
   activateQueuedPlanAtBoundary: (exec?: SessionExecutionState) => void;
   reconcileWorkspaceObservation: (
     exec?: SessionExecutionState,

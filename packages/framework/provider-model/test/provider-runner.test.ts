@@ -35,12 +35,9 @@ function usage(inputTokens: number, outputTokens: number): ProviderStreamChunk {
 function makeHarness(
   provider: StreamingProvider | undefined,
   options?: {
-    mailboxMessages?: Array<{
-      messageID: string;
-      intent: string;
+    takeLiveUserMessages?: () => Array<{
+      source: "user" | "navi";
       text: string;
-      priority: string;
-      source: "user_via_live_chat" | "system";
     }>;
     naviSuggestions?: Array<{
       id: string;
@@ -149,7 +146,7 @@ function makeHarness(
       },
     activeSkill: () => undefined,
     skillsList: () => [],
-    mailboxMessages: () => options?.mailboxMessages ?? [],
+    takeLiveUserMessages: () => options?.takeLiveUserMessages?.() ?? [],
     naviSuggestions: () => options?.naviSuggestions ?? [],
     naviIntro: () => options?.naviIntro ?? false,
     naviAnswers: () => options?.naviAnswers ?? [],
@@ -770,38 +767,36 @@ test("a turn keeps the context budget snapshotted with its active model", async 
   expect(events.some((event) => event.type === "compaction.begin")).toBe(false);
 });
 
-test("delivered mailbox intents render into the system prompt", async () => {
-  let systemPrompt = "";
+test("live user messages inject as ordinary tagged user turns", async () => {
+  let live = [
+    { source: "user" as const, text: "[user] focus on the docs task first" },
+  ];
+  const seen: string[] = [];
   const { runner } = makeHarness(
     {
       provider: "scripted",
       model: "m1",
       async *stream(request) {
-        const system = request.messages.find(
-          (message) => message.role === "system",
+        seen.push(
+          request.messages
+            .filter((message) => message.role === "user")
+            .map((message) => message.content)
+            .join("\n"),
         );
-        if (system && typeof system.content === "string")
-          systemPrompt = system.content;
         yield content("acknowledged");
       },
     },
     {
-      mailboxMessages: [
-        {
-          messageID: "mailbox:1",
-          intent: "reprioritize",
-          text: "focus on the docs task first",
-          priority: "high",
-          source: "user_via_live_chat",
-        },
-      ],
+      takeLiveUserMessages: () => {
+        const next = live;
+        live = [];
+        return next;
+      },
     },
   );
   await runner.runTurn(turn);
-  expect(systemPrompt).toContain("<pending_user_intents>");
-  expect(systemPrompt).toContain("[high] reprioritize");
-  expect(systemPrompt).toContain("focus on the docs task first");
-  expect(systemPrompt).toContain("</pending_user_intents>");
+  expect(seen[0]).toContain("hello");
+  expect(seen[0]).toContain("[user] focus on the docs task first");
 });
 
 test("pending Navi chat renders as a required direct reply without becoming user intent", async () => {

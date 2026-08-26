@@ -187,7 +187,7 @@ export function createChatTools(ctx: RuntimeContext) {
       {
         name: "mailbox_send",
         description:
-          "Queue a durable intent for the main agent, delivered at its next safe boundary. Call this only after the user has confirmed the directive in the conversation. intent is one of clarification, constraint, reprioritize, pause, cancel, request_report, proposed_change, next_plan_handoff.",
+          "Send a durable intent to the main agent. It is injected as a tagged ordinary user message before the next model step. Call this only after the user has confirmed the directive in the conversation. intent is one of clarification, constraint, reprioritize, pause, cancel, request_report, proposed_change, next_plan_handoff.",
         requiresApproval: false,
         parameters: {
           type: "object",

@@ -10,7 +10,6 @@
  */
 import {
   projectedCollabMessages,
-  projectedMailboxMessages,
   projectedPlans,
 } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
@@ -132,16 +131,6 @@ export function createTurnRunner(
       activeSkill: () => exec.activeSkill,
       skillsList,
       skillService,
-      mailboxMessages: () =>
-        projectedMailboxMessages(exec.session.events)
-          .filter((message) => message.status === "delivered")
-          .map((message) => ({
-            messageID: message.messageID,
-            intent: message.intent,
-            text: message.text,
-            priority: message.priority,
-            source: message.source,
-          })),
       naviSuggestions: () =>
         projectedCollabMessages(exec.session.events)
           .filter(
@@ -209,6 +198,7 @@ export function createTurnRunner(
       setInFlightOperation: (operation) =>
         setInFlightOperationFor(exec, operation),
       executeToolCalls,
+      takeLiveUserMessages: () => ctx.ports.takeLiveUserMessages(exec),
       reloadConfig: async () => {
         const result = await reloadConfigFromDisk();
         if (result.providerReconfigured) applyAgentProvider(exec);

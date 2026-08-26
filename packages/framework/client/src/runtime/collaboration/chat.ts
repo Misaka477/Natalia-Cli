@@ -68,6 +68,13 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         at: now.toISOString(),
       });
       const responseMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
+      if (controller.chatBusy?.(exec.session.id as SessionID)) {
+        exec.pendingChatUserMessages.push({
+          messageID: userMessageID,
+          text: redactToolOutput(text, true),
+        });
+        return { messageID: userMessageID };
+      }
       try {
         await controller.runChatTurn({
           sessionID: exec.session.id as SessionID,

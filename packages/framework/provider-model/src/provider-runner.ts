@@ -264,7 +264,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           moduleConditions: input.taskModuleContext()?.moduleConditions,
           skills: input.skillsList(),
           activeSkill: input.activeSkill(),
-          pendingIntents: input.mailboxMessages(),
           naviSuggestions: input.naviSuggestions(),
           naviAnswers: input.naviAnswers(),
           naviChats: input.naviChats?.() ?? [],
@@ -281,6 +280,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       while (step < maxSteps) {
         input.activeAbort()?.signal.throwIfAborted();
         await input.waitIfPaused();
+        for (const incoming of input.takeLiveUserMessages?.() ?? [])
+          messages.push({ role: "user", content: incoming.text });
         const pendingNaviReply = requiredNaviReply();
         const reachedStepLimit =
           Number.isFinite(maxSteps) && step + 1 >= maxSteps;
@@ -837,19 +838,6 @@ function runtimeSystemPrompt(input: {
   skills?: SkillMetadata[];
   activeSkill?: SkillMetadata;
   /**
-   * Pending Live Work Chat mailbox messages. Rendered as a
-   * `<pending_user_intents>` block so the main agent sees user intents at the
-   * next turn and can acknowledge them. Omitted entirely when none are pending,
-   * so a session without Live Chat traffic pays no tokens.
-   */
-  pendingIntents?: Array<{
-    messageID: string;
-    intent: string;
-    text: string;
-    priority: string;
-    source: "user_via_live_chat" | "system";
-  }>;
-  /**
    * Navi's pending collaboration suggestions, rendered as a
    * `<navi_collaborations>` block so the main agent sees them at the next turn
    * and can adopt, reject or defer without the user prompting it (the 轮巡).
@@ -1001,18 +989,6 @@ function runtimeSystemPrompt(input: {
         ? `Currently loaded: ${input.activeSkill.name}. Do not reload it.`
         : "None is loaded yet.",
       "</available_skills>",
-    );
-  }
-  const intents = input.pendingIntents ?? [];
-  if (intents.length) {
-    lines.push(
-      "<pending_user_intents>",
-      "These are user intents the human confirmed through the Live Work Chat — Navi encoded them, but the decision is the user's. They may adjust, constrain or pause the current plan — act on them when consistent with policy; this turn's normal completion acknowledges them automatically. If you act on one mid-turn, you may acknowledge it immediately with the mailbox_acknowledge tool.",
-      ...intents.map(
-        (intent) =>
-          `- [user] [${intent.priority}] ${intent.intent}: ${promptData(intent.text)}`,
-      ),
-      "</pending_user_intents>",
     );
   }
   const naviSuggestions = input.naviSuggestions ?? [];

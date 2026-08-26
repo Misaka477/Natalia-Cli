@@ -166,6 +166,15 @@ export function createChatTurn(ctx: RuntimeContext) {
       const maxChatSteps = effectiveMaxSteps(input.exec);
       while (step <= maxChatSteps) {
         signal.throwIfAborted();
+        const pendingUser = input.exec.pendingChatUserMessages.splice(0);
+        for (const incoming of pendingUser) {
+          if (messages.some((message) => message.content === incoming.text))
+            continue;
+          messages.push({
+            role: "user",
+            content: incoming.text,
+          });
+        }
         const requiredReply = requiredNataliaReply();
         const reachedStepLimit =
           Number.isFinite(maxChatSteps) && step >= maxChatSteps;

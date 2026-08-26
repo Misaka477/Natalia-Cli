@@ -51,6 +51,7 @@ export function wireFeatures(
 
   const boundary = createCollaborationBoundary(ctx);
   ports.settleMailboxAtBoundary = boundary.settleMailboxAtBoundary;
+  ports.takeLiveUserMessages = boundary.takeLiveUserMessages;
   ports.activateQueuedPlanAtBoundary = boundary.activateQueuedPlanAtBoundary;
   ports.reconcileWorkspaceObservation = boundary.reconcileWorkspaceObservation;
   const snapshot = createSnapshot(ctx);

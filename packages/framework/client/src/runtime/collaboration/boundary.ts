@@ -24,6 +24,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     settleMailboxAtBoundary,
     acknowledgeDeliveredMailboxAtBoundary,
     deliverQueuedMailboxAtBoundary,
+    takeLiveUserMessages,
     activateQueuedPlanAtBoundary,
     reconcileWorkspaceObservation,
   };
@@ -31,9 +32,9 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
   /**
    * P8 C3: settle the mailbox at the turn boundary. Already-delivered messages
    * (injected into the turn that just finished) are acknowledged so they stop
-   * re-injecting; still-queued messages are delivered for the next turn. A turn
-   * that ends cancelled/aborted is NOT a settlement — the model did not finish
-   * the turn, so its delivered intents stay delivered for another chance.
+   * re-injecting. Queued messages are also delivered here as a fallback if a
+   * live step did not already take them. A cancelled/aborted turn is NOT a
+   * settlement.
    */
   function settleMailboxAtBoundary(exec?: SessionExecutionState) {
     acknowledgeDeliveredMailboxAtBoundary(exec);
@@ -43,7 +44,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
   /**
    * Acknowledge every message that is still `delivered` (it was injected into
    * the turn that just finished, so the main agent has seen it). Acknowledged
-   * messages no longer appear in `<pending_user_intents>`.
+   * messages no longer re-inject as ordinary tagged user messages.
    */
   function acknowledgeDeliveredMailboxAtBoundary(exec?: SessionExecutionState) {
     const { getActiveExec, publishForSession, nextMailboxSequence } = ctx.ports;
@@ -91,6 +92,27 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           at,
         }),
       );
+  }
+
+  function takeLiveUserMessages(exec?: SessionExecutionState) {
+    const target = exec ?? ctx.ports.getActiveExec();
+    if (!target?.session) return [];
+    deliverQueuedMailboxAtBoundary(target);
+    const injected = target.injectedMailboxIDs;
+    const fresh = projectedMailboxMessages(target.session.events).filter(
+      (message) =>
+        message.status === "delivered" && !injected.has(message.messageID),
+    );
+    const messages: Array<{ source: "user" | "navi"; text: string }> = [];
+    for (const message of fresh) {
+      injected.add(message.messageID);
+      const tag = message.source === "system" ? "[Navi]" : "[user]";
+      messages.push({
+        source: message.source === "system" ? "navi" : "user",
+        text: `${tag} ${message.text}`,
+      });
+    }
+    return messages;
   }
 
   /**

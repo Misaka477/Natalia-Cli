@@ -8440,44 +8440,59 @@ test("a manually delivered mailbox message is not re-delivered at a boundary", a
   expect((await client.mailboxList!())[0]?.status).toBe("acknowledged");
 });
 
-test("a mailbox message sent mid-turn is delivered when that turn finishes", async () => {
+test("a mailbox message sent mid-turn injects before the next model step", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-midturn-"));
+  const userTurns: string[] = [];
+  let release: (() => void) | undefined;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_ts7_mailbox_midturn",
     provider: {
       provider: "test",
       model: "test",
-      async *stream() {
-        yield { type: "content" as const, text: "working" };
-        await new Promise((resolve) => setTimeout(resolve, 60));
+      async *stream(request) {
+        userTurns.push(
+          request.messages
+            .filter((message) => message.role === "user")
+            .map((message) => message.content)
+            .join("\n"),
+        );
+        if (userTurns.length === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "read1",
+                name: "unknown_probe",
+                arguments: "{}",
+              },
+            ],
+          };
+          await new Promise<void>((resolve) => (release = resolve));
+        }
         yield { type: "done" as const };
       },
     },
   });
-  const events: RuntimeEvent[] = [];
-  client.start((event) => events.push(event));
-
+  client.start(() => undefined);
   const submitting = client.submit("long task");
-  // Wait until the provider is actually streaming so the turn is definitely
-  // active when the message is sent (turn.submitted alone fires before the
-  // drain starts).
-  await waitFor(() => events.some((event) => event.type === "content.delta"));
+  while (!release) await Bun.sleep(1);
   await client.mailboxSend?.({
     intent: "pause",
     text: "please pause after this step",
     safeSummary: "pause requested",
   });
-  expect((await client.mailboxList!())[0]?.status).toBe("queued");
-
+  release();
   await submitting;
   await pollHistoryForFinished(client);
-  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
+  expect(userTurns.some((text) => text.includes("[user] please pause after this step"))).toBe(
+    true,
+  );
 });
 
-test("delivered mailbox intents reach the main agent in the next turn system prompt", async () => {
+test("delivered mailbox intents reach the main agent as ordinary tagged user messages", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-inject-"));
-  let systemPrompts: string[] = [];
+  const userTurns: string[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_ts7_mailbox_inject",
@@ -8485,11 +8500,12 @@ test("delivered mailbox intents reach the main agent in the next turn system pro
       provider: "test",
       model: "test",
       async *stream(request) {
-        const system = request.messages.find(
-          (message) => message.role === "system",
+        userTurns.push(
+          request.messages
+            .filter((message) => message.role === "user")
+            .map((message) => message.content)
+            .join("\n"),
         );
-        if (system && typeof system.content === "string")
-          systemPrompts.push(system.content);
         yield { type: "done" as const };
       },
     },
@@ -8498,8 +8514,6 @@ test("delivered mailbox intents reach the main agent in the next turn system pro
   await client.submit("first");
   await pollHistoryForFinished(client);
 
-  // No turn running: the intent wakes the idle agent, whose wake turn's
-  // system prompt already carries it.
   await client.mailboxSend?.({
     intent: "constraint",
     text: "never commit the lockfile",
@@ -8507,16 +8521,12 @@ test("delivered mailbox intents reach the main agent in the next turn system pro
     priority: "high",
   });
   await waitFor(() =>
-    systemPrompts.some((prompt) => prompt.includes("<pending_user_intents>")),
+    userTurns.some((text) => text.includes("never commit the lockfile")),
   );
-  const wakePrompt =
-    systemPrompts.find((prompt) => prompt.includes("<pending_user_intents>")) ??
-    "";
-  expect(wakePrompt).toContain("<pending_user_intents>");
-  expect(wakePrompt).toContain("[high] constraint");
-  expect(wakePrompt).toContain("never commit the lockfile");
-  expect(wakePrompt).toContain("</pending_user_intents>");
-  // The wake turn finishes after its prompt is captured, so wait for the ack.
+  const injected = userTurns.find((text) =>
+    text.includes("never commit the lockfile"),
+  );
+  expect(injected).toContain("[user] never commit the lockfile");
   await waitForAsync(
     async () => (await client.mailboxList!())[0]?.status === "acknowledged",
   );
@@ -8780,7 +8790,7 @@ test("an auto-activated plan reaches the next turn as a NextPlanHandoff", async 
 test("mailbox_acknowledge marks delivered messages acknowledged and stops re-injection", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-ack-tool-"));
   let ackAttempted = 0;
-  let systemPrompts: string[] = [];
+  const userTurns: string[] = [];
   let sentID = "";
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -8789,16 +8799,12 @@ test("mailbox_acknowledge marks delivered messages acknowledged and stops re-inj
       provider: "test",
       model: "test",
       async *stream(request) {
-        const system = request.messages.find(
-          (message) => message.role === "system",
-        );
-        if (system && typeof system.content === "string")
-          systemPrompts.push(system.content);
-        const pending = systemPrompts
-          .at(-1)
-          ?.includes("<pending_user_intents>");
-        // Acknowledge exactly once, when the pending intent is actually
-        // injected (turn 3) and we know the message id.
+        const users = request.messages
+          .filter((message) => message.role === "user")
+          .map((message) => message.content)
+          .join("\n");
+        userTurns.push(users);
+        const pending = users.includes("never commit the lockfile");
         if (pending && ackAttempted === 0 && sentID) {
           ackAttempted += 1;
           yield {
@@ -8829,29 +8835,21 @@ test("mailbox_acknowledge marks delivered messages acknowledged and stops re-inj
   });
   sentID = (await client.mailboxList!())[0]!.messageID;
 
-  // Turn 2's boundary delivers the intent; turn 3 injects it and the model
-  // acknowledges it via the tool.
   await client.submit("second");
-  await pollHistoryForFinished(client);
-  expect(systemPrompts.at(-1)).not.toContain("never commit the lockfile");
-
-  await client.submit("third");
   await pollHistoryForFinished(client);
   expect(ackAttempted).toBe(1);
   expect(events.some((event) => event.type === "mailbox.acknowledged")).toBe(
     true,
   );
 
-  // Turn 4 no longer injects it (acknowledged messages are excluded).
-  await client.submit("fourth");
+  await client.submit("third");
   await pollHistoryForFinished(client);
-  const last = systemPrompts.at(-1) ?? "";
-  expect(last).not.toContain("never commit the lockfile");
+  expect(userTurns.at(-1)).not.toContain("never commit the lockfile");
 });
 
 test("delivered mailbox intents are auto-acknowledged at the next turn finish (no tool needed)", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-consume-"));
-  let systemPrompts: string[] = [];
+  const userTurns: string[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_ts7_mailbox_consume",
@@ -8859,11 +8857,12 @@ test("delivered mailbox intents are auto-acknowledged at the next turn finish (n
       provider: "test",
       model: "test",
       async *stream(request) {
-        const system = request.messages.find(
-          (message) => message.role === "system",
+        userTurns.push(
+          request.messages
+            .filter((message) => message.role === "user")
+            .map((message) => message.content)
+            .join("\n"),
         );
-        if (system && typeof system.content === "string")
-          systemPrompts.push(system.content);
         yield { type: "done" as const };
       },
     },
@@ -8880,17 +8879,19 @@ test("delivered mailbox intents are auto-acknowledged at the next turn finish (n
     text: "never merge a failing build",
     safeSummary: "a merge constraint",
   });
-  await waitFor(() => systemPrompts.length > 1);
-  expect(systemPrompts.at(-1)).toContain("never merge a failing build");
+  await waitFor(() =>
+    userTurns.some((text) => text.includes("never merge a failing build")),
+  );
+  expect(
+    userTurns.find((text) => text.includes("never merge a failing build")),
+  ).toContain("[user] never merge a failing build");
   await waitForAsync(
     async () => (await client.mailboxList!())[0]?.status === "acknowledged",
   );
 
-  // A later turn no longer injects it.
   await client.submit("next");
   await pollHistoryForFinished(client);
-  const last = systemPrompts.at(-1) ?? "";
-  expect(last).not.toContain("never merge a failing build");
+  expect(userTurns.at(-1)).not.toContain("never merge a failing build");
 });
 
 test("a turn that does not finish normally does not auto-acknowledge delivered intents", async () => {
@@ -13137,7 +13138,7 @@ test("a queued mailbox intent wakes an idle main agent", async () => {
   // The mailbox intent wakes the idle main agent without inventing another
   // user-authored turn; the durable mailbox remains the sole intent source.
   await pollHistoryForFinished(client);
-  expect(systemPrompts[0]).toContain("do not install that dependency");
+  expect(systemPrompts[0]).not.toContain("do not install that dependency");
   const wake = events.find(
     (event): event is Extract<RuntimeEvent, { type: "turn.submitted" }> =>
       event.type === "turn.submitted" && event.id.startsWith("turn_mailbox_"),
@@ -13147,17 +13148,10 @@ test("a queued mailbox intent wakes an idle main agent", async () => {
   expect(
     providerMessages[0]?.some(
       (message) =>
-        message.role === "system" &&
-        message.content.includes("internal mailbox wake"),
+        message.role === "user" &&
+        message.content.includes("[user] do not install that dependency"),
     ),
   ).toBe(true);
-  expect(
-    providerMessages[0]?.some(
-      (message) =>
-        message.role === "user" &&
-        message.content.includes("do not install that dependency"),
-    ),
-  ).toBe(false);
   await client.dispose?.();
 });
 

@@ -38,4 +38,6 @@ export type SessionExecutionState = {
   lastSubmitted?: SubmittedTurn;
   paused: boolean;
   pauseWaiters: Array<() => void>;
+  injectedMailboxIDs: Set<string>;
+  pendingChatUserMessages: Array<{ messageID: string; text: string }>;
 };

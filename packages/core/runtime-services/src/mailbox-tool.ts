@@ -2,12 +2,10 @@
  * The `mailbox_acknowledge` tool — how the main agent acknowledges the Live
  * Work Chat mailbox messages it has acted on.
  *
- * §56.20 injects delivered intents into the next turn's system prompt as
- * `<pending_user_intents>`. Without an acknowledgement, a message stays
- * `delivered` forever and keeps being re-injected every turn. The tool lets the
- * agent explicitly confirm which messages it processed; the runtime marks them
- * `acknowledged` and they stop being re-injected. This is the agent's own
- * confirmation, not a runtime guess, so the acknowledgement is honest.
+ * Delivered intents are injected as ordinary tagged user messages before the
+ * next model step. Without an acknowledgement, a message stays `delivered`
+ * and would keep being eligible; the tool lets the agent confirm which
+ * messages it processed so they stop being re-injected.
  *
  * The tool is a pure shell: it validates the message ids and hands them to the
  * runtime through `onAcknowledge` (which publishes the durable
@@ -26,7 +24,7 @@ export function createMailboxAcknowledgeTool(input: {
   return {
     name: "mailbox_acknowledge",
     description:
-      "Acknowledge Live Work Chat mailbox messages you have read and acted on. Call this after acting on the <pending_user_intents> block; acknowledged messages stop being re-injected.",
+      "Acknowledge Live Work Chat mailbox messages you have read and acted on. Call this after acting on tagged [user]/[Navi] steering messages; acknowledged messages stop being re-injected.",
     requiresApproval: false,
     parameters: {
       type: "object",

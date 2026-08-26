@@ -65,6 +65,8 @@ export async function recoverSession(
     permissionProfile: scope.selectedPermissionProfile,
     paused: false,
     pauseWaiters: [],
+    injectedMailboxIDs: new Set(),
+    pendingChatUserMessages: [],
   };
   scope.activeExec = initialExec;
   scope.executionBySession.set(scope.sessionID, initialExec);
