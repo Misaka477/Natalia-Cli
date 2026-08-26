@@ -92,12 +92,13 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           responseMessageID,
         });
       } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause);
         ctx.ports.publishForSession(exec, {
           type: "chat.message.added",
           id: `${responseMessageID}:chat`,
           messageID: responseMessageID,
           role: "chat",
-          text: `(live work chat error: ${cause instanceof Error ? cause.message : String(cause)})`,
+          text: `Chat could not finish this turn: ${detail.split("\n")[0]!.slice(0, 240)}`,
           at: new Date().toISOString(),
         });
       }

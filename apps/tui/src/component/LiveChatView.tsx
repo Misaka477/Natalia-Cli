@@ -32,7 +32,6 @@ import {
   promptTextareaRows,
 } from "../prompt-border";
 import type { TuiPreferences } from "../settings";
-import { markdownSyntax } from "../routes/session/tool-views";
 
 /**
  * Live Work Chat (P8 C2) as a docked, always-available conversation. The user
@@ -514,7 +513,6 @@ export function LiveChatView(props: {
                 focusedTextColor={theme.text}
                 focusedBackgroundColor={theme.panel}
                 cursorColor={theme.text}
-                syntaxStyle={markdownSyntax()}
                 onMouseDown={(event: MouseEvent) => {
                   setIntentListFocused(false);
                   event.target?.focus();
