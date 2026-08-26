@@ -79,7 +79,7 @@ export function PermissionPrompt(props: {
         key: "return",
         desc: "Confirm permission rejection",
         group: "Permission",
-        cmd: () => reply("reject", input?.plainText),
+        cmd: () => reply("reject", input?.plainText?.trim() || undefined),
       },
     ],
   }));
@@ -231,13 +231,15 @@ export function PermissionPrompt(props: {
               value.traits = { status: "REJECT" };
             }}
             focused
-            placeholder="Tell Natalia what to do differently"
+            placeholder="Optional: tell Natalia or Navi what to do differently"
             placeholderColor={darkTheme.muted}
             textColor={darkTheme.text}
             focusedTextColor={darkTheme.text}
             cursorColor={darkTheme.warning}
           />
-          <text fg={darkTheme.muted}>Enter confirm rejection · Esc cancel</text>
+          <text fg={darkTheme.muted}>
+            Enter confirm rejection · Esc cancel · reason optional
+          </text>
         </box>
       </Show>
       <Show when={stage() === "prompt" && !submitting()}>

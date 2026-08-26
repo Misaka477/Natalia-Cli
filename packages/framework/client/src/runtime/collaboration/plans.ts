@@ -3,6 +3,7 @@ import {
   WORK_LEDGER_CONTROLLER_SERVICE,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { PERMISSION_FAMILIES } from "@natalia/contracts";
 import { projectedPlans } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 
@@ -19,19 +20,6 @@ type PlansRuntime = Pick<
   | "planCompleted"
 >;
 
-function redactReason(reason: string | undefined) {
-  if (!reason) return undefined;
-  return (
-    reason
-      .replace(
-        /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s]+/giu,
-        (match) =>
-          `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
-      )
-      .slice(0, 500) || undefined
-  );
-}
-
 export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
   function requireWorkLedger() {
     const ledger = ctx.ports.resolveService<WorkLedgerController>(
@@ -40,6 +28,91 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
     if (!ledger)
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     return ledger;
+  }
+
+  function notifyPlanRejected(planID: string, title: string, reason?: string) {
+    const owner = ctx.ports.getActiveExec();
+    if (!owner) return;
+    const detail = reason?.trim();
+    const notice = detail
+      ? `[user] rejected plan ${planID} (${title}): ${detail}. Do not hand it off. Continue helping without that plan.`
+      : `[user] rejected plan ${planID} (${title}). Do not hand it off. Continue helping without that plan.`;
+    ctx.ports.publishForSession(owner, {
+      type: "chat.message.added",
+      id: `chat:plan-reject:${planID}:${Date.now().toString(36)}`,
+      messageID: `chat:plan-reject:${planID}`,
+      role: "user",
+      text: notice,
+      at: new Date().toISOString(),
+    });
+    owner.pendingChatUserMessages.push({
+      messageID: `chat:plan-reject:${planID}`,
+      text: notice,
+    });
+    ctx.ports.requestNaviWake(owner);
+  }
+
+  async function acceptProposedPlan(planID: string) {
+    const owner = ctx.ports.getActiveExec();
+    if (!owner || typeof planID !== "string" || !planID)
+      return { accepted: false as const };
+    const plan = projectedPlans(owner.session.events).find(
+      (candidate) =>
+        candidate.planID === planID && candidate.status === "proposed",
+    );
+    if (!plan) return { accepted: false as const };
+    ctx.ports.publishForSession(
+      owner,
+      requireWorkLedger().buildPlanTransition({
+        id: `${planID}:accepted:${plan.version + 1}`,
+        planID,
+        version: plan.version + 1,
+        transition: "accepted",
+        at: new Date().toISOString(),
+      }),
+    );
+    return { accepted: true as const };
+  }
+
+  async function supersedePlan(planID: string, reason?: string) {
+    const session = ctx.ports.getSession();
+    if (!session || typeof planID !== "string" || !planID)
+      return { superseded: false as const };
+    const plan = projectedPlans(session.events).find(
+      (candidate) =>
+        candidate.planID === planID &&
+        candidate.status !== "completed" &&
+        candidate.status !== "archived",
+    );
+    if (!plan) return { superseded: false as const };
+    const owner = ctx.ports.getActiveExec();
+    const safeReason = redactReason(reason);
+    ctx.ports.publishForSession(
+      owner,
+      requireWorkLedger().buildPlanTransition({
+        id: `${planID}:superseded:${plan.version + 1}`,
+        planID,
+        version: plan.version + 1,
+        transition: "superseded",
+        at: new Date().toISOString(),
+        reason: safeReason,
+      }),
+    );
+    notifyPlanRejected(planID, plan.title, safeReason);
+    return { superseded: true as const };
+  }
+
+  function redactReason(reason: string | undefined) {
+    if (!reason) return undefined;
+    return (
+      reason
+        .replace(
+          /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s]+/giu,
+          (match) =>
+            `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
+        )
+        .slice(0, 500) || undefined
+    );
   }
 
   return {
@@ -102,8 +175,9 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
           candidate.planID === planID && candidate.status === "draft",
       );
       if (!plan) return { proposed: false };
+      const owner = ctx.ports.getActiveExec();
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        owner,
         requireWorkLedger().buildPlanTransition({
           id: `${planID}:proposed:${plan.version + 1}`,
           planID,
@@ -112,40 +186,33 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
           at: new Date().toISOString(),
         }),
       );
+      if (owner) {
+        const approvalID = `${planID}:accept:${plan.version + 1}:${crypto.randomUUID().replace(/-/gu, "").slice(0, 8)}`;
+        void ctx.ports
+          .getInteractive()
+          .requirePlanAcceptance({
+            approvalID,
+            planID,
+            title: "Accept Navi's plan",
+            preview: plan.title,
+            detail: `${plan.title}\n${plan.objective}`,
+            sessionID: owner.session.id,
+            permissionMode: owner.permissionMode,
+            permissionFamily: PERMISSION_FAMILIES.planning,
+          })
+          .then(async (response) => {
+            if (!response || response.decision === "reject") {
+              await supersedePlan(planID, response?.feedback?.trim());
+              return;
+            }
+            await acceptProposedPlan(planID);
+          })
+          .catch(() => undefined);
+      }
       return { proposed: true };
     },
     async planAccept(planID) {
-      const owner = ctx.ports.getActiveExec();
-      if (!owner || typeof planID !== "string" || !planID)
-        return { accepted: false };
-      const plan = projectedPlans(owner.session.events).find(
-        (candidate) =>
-          candidate.planID === planID && candidate.status === "proposed",
-      );
-      if (!plan) return { accepted: false };
-      const approvalID = `${planID}:accept:${plan.version + 1}:${crypto.randomUUID().replace(/-/gu, "").slice(0, 8)}`;
-      const response = await ctx.ports.getInteractive().requirePlanAcceptance({
-        approvalID,
-        planID,
-        title: "Accept plan",
-        detail: `${plan.title}\n${plan.objective}`,
-        sessionID: owner.session.id,
-        permissionMode: owner.permissionMode,
-        signal: owner.activeAbort?.signal,
-      });
-      if (!response || response.decision === "reject")
-        return { accepted: false };
-      ctx.ports.publishForSession(
-        owner,
-        requireWorkLedger().buildPlanTransition({
-          id: `${planID}:accepted:${plan.version + 1}`,
-          planID,
-          version: plan.version + 1,
-          transition: "accepted",
-          at: new Date().toISOString(),
-        }),
-      );
-      return { accepted: true };
+      return await acceptProposedPlan(planID);
     },
     async planQueue(planID) {
       const session = ctx.ports.getSession();
@@ -191,49 +258,7 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
       return { activated: true };
     },
     async planSupersede(planID, reason) {
-      const session = ctx.ports.getSession();
-      if (!session || typeof planID !== "string" || !planID)
-        return { superseded: false };
-      const plan = projectedPlans(session.events).find(
-        (candidate) =>
-          candidate.planID === planID &&
-          candidate.status !== "completed" &&
-          candidate.status !== "archived",
-      );
-      if (!plan) return { superseded: false };
-      const owner = ctx.ports.getActiveExec();
-      const safeReason = redactReason(reason);
-      ctx.ports.publishForSession(
-        owner,
-        requireWorkLedger().buildPlanTransition({
-          id: `${planID}:superseded:${plan.version + 1}`,
-          planID,
-          version: plan.version + 1,
-          transition: "superseded",
-          at: new Date().toISOString(),
-          reason: safeReason,
-        }),
-      );
-      const rejectedInChat =
-        typeof safeReason === "string" &&
-        /rejected in live work chat/iu.test(safeReason);
-      if (rejectedInChat && owner) {
-        const notice = `[user] rejected plan ${planID} (${plan.title}). Do not hand it off. Continue helping without that plan.`;
-        ctx.ports.publishForSession(owner, {
-          type: "chat.message.added",
-          id: `chat:plan-reject:${planID}:${Date.now().toString(36)}`,
-          messageID: `chat:plan-reject:${planID}`,
-          role: "user",
-          text: notice,
-          at: new Date().toISOString(),
-        });
-        owner.pendingChatUserMessages.push({
-          messageID: `chat:plan-reject:${planID}`,
-          text: notice,
-        });
-        ctx.ports.requestNaviWake(owner);
-      }
-      return { superseded: true };
+      return await supersedePlan(planID, reason);
     },
     async planCompleted(planID) {
       const session = ctx.ports.getSession();

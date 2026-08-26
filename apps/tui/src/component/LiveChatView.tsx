@@ -359,25 +359,15 @@ export function LiveChatView(props: {
             }
           >
             <text attributes={TextAttributes.BOLD} fg={theme.text}>
-              Chat drafted a plan for your review
+              Navi proposed a plan
             </text>
             <text fg={theme.text} wrapMode="word">
               {plan().title} — {plan().objective}
             </text>
-            <box flexDirection="row" gap={2}>
-              <text
-                fg={theme.success}
-                onMouseUp={() => props.onPlanAccept(plan().planID)}
-              >
-                accept
-              </text>
-              <text
-                fg={theme.danger}
-                onMouseUp={() => props.onPlanReject(plan().planID)}
-              >
-                reject
-              </text>
-            </box>
+            <text fg={theme.muted} wrapMode="word">
+              Confirm with Natalia's approval card: Allow once, Allow session,
+              or Reject.
+            </text>
           </box>
         )}
       </Show>

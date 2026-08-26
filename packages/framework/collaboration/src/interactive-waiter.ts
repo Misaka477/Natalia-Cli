@@ -378,9 +378,11 @@ export function createInteractiveWaiter(
     sessionID?: SessionID;
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;
+    permissionFamily?: import("@natalia/contracts").PermissionFamily;
   }): Promise<ApprovalResponse | undefined> {
     const permissionMode = input.permissionMode ?? deps.permissionMode();
     const sessionID = input.sessionID ?? deps.sessionID();
+    const family = input.permissionFamily ?? PERMISSION_FAMILIES.planning;
     if (permissionMode === "auto")
       return { requestID: input.approvalID, decision: "once" };
     if (permissionMode === "read_only")
@@ -389,11 +391,14 @@ export function createInteractiveWaiter(
         decision: "reject",
         feedback: "read_only",
       };
+    if (sessionApprovedFamilies.get(sessionID)?.has(family.id))
+      return { requestID: input.approvalID, decision: "session" };
     // Establish the pending record before publishing, so a synchronous
     // `respondApproval` from an event sink is not mistaken for a response to a
     // non-pending request (same rule as tool approvals, §waiter).
     pendingApprovalRequests.add(input.approvalID);
     approvalSessionByID.set(input.approvalID, sessionID);
+    approvalFamilyByID.set(input.approvalID, family);
     deps.publishForSession(sessionID, {
       type: "approval.request",
       id: input.approvalID,
@@ -402,7 +407,8 @@ export function createInteractiveWaiter(
       detail: input.detail,
       keyArguments: [input.planID],
       sensitive: false,
-      scope: input.scope ?? "plan_acceptance",
+      scope: input.scope ?? family.scope,
+      permissionFamily: family,
     });
     try {
       return await waitForResponse(

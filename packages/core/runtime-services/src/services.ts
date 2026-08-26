@@ -824,6 +824,7 @@ export interface InteractiveWaiter {
     sessionID?: SessionID;
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;
+    permissionFamily?: import("@natalia/contracts").PermissionFamily;
   }): Promise<ApprovalResponse | undefined>;
 }
 

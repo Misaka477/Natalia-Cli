@@ -153,6 +153,27 @@ test("terminal family spans IDs and risk levels and can be revoked", async () =>
   expect(h.approvalCount()).toBe(2);
 });
 
+test("allow-session plan acceptance skips later plan prompts", async () => {
+  const h = harness();
+  expect(
+    await h.waiter.requirePlanAcceptance({
+      approvalID: "plan-a",
+      planID: "plan_1",
+      title: "Accept Navi's plan",
+      detail: "details",
+    }),
+  ).toMatchObject({ decision: "session" });
+  expect(
+    await h.waiter.requirePlanAcceptance({
+      approvalID: "plan-b",
+      planID: "plan_2",
+      title: "Accept Navi's plan",
+      detail: "details",
+    }),
+  ).toMatchObject({ decision: "session" });
+  expect(h.approvalCount()).toBe(1);
+});
+
 test("plan acceptance never grants a tool family", async () => {
   const h = harness();
   await h.waiter.requirePlanAcceptance({

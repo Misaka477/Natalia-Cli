@@ -8126,7 +8126,12 @@ test("a completed plan drives its task's evidence to accepted (E3 status policy)
     },
   });
   client.start((event) => {
-    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "plan_acceptance" ||
+        event.permissionFamily?.id === "planning" ||
+        event.title.includes("plan"))
+    )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.submit("hello");
@@ -8625,7 +8630,12 @@ test("plan drafts move through the full lifecycle with version bumps", async () 
   const events: RuntimeEvent[] = [];
   client.start((event) => {
     events.push(event);
-    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "plan_acceptance" ||
+        event.permissionFamily?.id === "planning" ||
+        event.title.includes("plan"))
+    )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.submit("hello");
@@ -8656,9 +8666,10 @@ test("plan drafts move through the full lifecycle with version bumps", async () 
   });
 
   expect(await client.planPropose?.(planID)).toEqual({ proposed: true });
-  expect((await client.planList!())[0]?.status).toBe("proposed");
-
-  expect(await client.planAccept?.(planID)).toEqual({ accepted: true });
+  await waitForAsync(
+    async () => (await client.planList!())[0]?.status === "accepted",
+  );
+  expect((await client.planList!())[0]?.status).toBe("accepted");
   expect((await client.planList!())[0]?.status).toBe("accepted");
 
   expect(await client.planQueue?.(planID)).toEqual({ queued: true });
@@ -8700,7 +8711,12 @@ test("plan update bumps the version and supersede keeps the reason", async () =>
     },
   });
   client.start((event) => {
-    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "plan_acceptance" ||
+        event.permissionFamily?.id === "planning" ||
+        event.title.includes("plan"))
+    )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.submit("hello");
@@ -8747,7 +8763,12 @@ test("plan acceptance requires an approval and a reject leaves the plan proposed
   });
   // Reject every plan-acceptance approval.
   client.start((event) => {
-    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "plan_acceptance" ||
+        event.permissionFamily?.id === "planning" ||
+        event.title.includes("plan"))
+    )
       client.respondApproval({ requestID: event.id, decision: "reject" });
   });
   await client.submit("hello");
@@ -8761,15 +8782,10 @@ test("plan acceptance requires an approval and a reject leaves the plan proposed
   });
   const planID = created!.planID!;
   await client.planPropose?.(planID);
-
-  const outcome = await client.planAccept?.(planID);
-  expect(outcome).toEqual({ accepted: false });
-  // Rejection leaves the plan proposed — it is not silently accepted.
-  expect((await client.planList!())[0]?.status).toBe("proposed");
-  expect(
-    (await client.planList!())[0]?.status === "proposed" &&
-      (await client.planList!())[0]?.version,
-  ).toBe(2);
+  await waitForAsync(
+    async () => (await client.planList!())[0]?.status === "superseded",
+  );
+  expect((await client.planList!())[0]?.status).toBe("superseded");
 });
 
 test("rejecting a proposed plan tells Navi and does not stop the chat", async () => {
@@ -8804,11 +8820,16 @@ test("rejecting a proposed plan tells Navi and does not stop the chat", async ()
   });
   const planID = created!.planID!;
   await client.planPropose?.(planID);
+  await waitForAsync(
+    async () => (await client.planList!())[0]?.status === "accepted",
+  );
   expect(
-    await client.planSupersede?.(planID, "rejected in live work chat"),
+    await client.planSupersede?.(planID, "too risky, keep the current approach"),
   ).toEqual({ superseded: true });
   await waitFor(() =>
-    naviTurns.some((text) => text.includes(`rejected plan ${planID}`)),
+    naviTurns.some((text) =>
+      text.includes("too risky, keep the current approach"),
+    ),
   );
   expect((await client.planList!())[0]?.status).toBe("superseded");
   expect(
@@ -8835,7 +8856,12 @@ test("a queued-next plan activates automatically at the next turn boundary", asy
     },
   });
   client.start((event) => {
-    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "plan_acceptance" ||
+        event.permissionFamily?.id === "planning" ||
+        event.title.includes("plan"))
+    )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.submit("first");
@@ -8883,7 +8909,12 @@ test("an auto-activated plan reaches the next turn as a NextPlanHandoff", async 
     },
   });
   client.start((event) => {
-    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "plan_acceptance" ||
+        event.permissionFamily?.id === "planning" ||
+        event.title.includes("plan"))
+    )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.submit("first");
@@ -9328,7 +9359,12 @@ test("a confirmed change diverging from the active plan auto-opens a drift findi
     },
   });
   client.start((event) => {
-    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "plan_acceptance" ||
+        event.permissionFamily?.id === "planning" ||
+        event.title.includes("plan"))
+    )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.submit("hello");

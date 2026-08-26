@@ -307,10 +307,9 @@ test("a Chat-proposed plan shows a review card with accept and reject", async ()
   );
   try {
     const frame = mounted.setup.captureCharFrame();
-    expect(frame).toContain("Chat drafted a plan for your review");
+    expect(frame).toContain("Navi proposed a plan");
     expect(frame).toContain("Switch to Bun-native HTTP");
-    expect(frame).toContain("accept");
-    expect(frame).toContain("reject");
+    expect(frame).toContain("Allow once");
   } finally {
     await mounted.dispose();
   }
