@@ -1,3 +1,8 @@
+import {
+  appendInstanceEvent,
+  loadInstanceGovernance,
+  resolveGovernanceRoot,
+} from "@natalia/governance-ledger";
 import type {
   GovernanceLedgerController,
   InitializeOptions,
@@ -90,13 +95,36 @@ export async function finalizeInitialize(
     scope.applyAgentProvider(scope.activeExec);
   }
   scope.publish({ type: "session.ready", sessionID: scope.sessionID });
+  const governanceRoot = resolveGovernanceRoot(ctx.state.pluginStoreRoot);
+  const instance = loadInstanceGovernance(governanceRoot);
+  if (instance.degraded)
+    scope.publish({
+      type: "diagnostic",
+      level: "warning",
+      message: "governance_store_unavailable",
+    });
+  for (const event of instance.events) {
+    if (
+      session.events.some(
+        (existing) =>
+          existing.type === event.type &&
+          "id" in existing &&
+          "id" in event &&
+          existing.id === event.id,
+      )
+    )
+      continue;
+    scope.publish(event);
+  }
   // The self-protection rules are the first constitution facts: migrate them
   // into the durable journal on every boot (idempotent — replay already holds
   // them) so `constitutionRules()` and the /constitution UI answer real rules,
   // not the empty projection CST1 shipped.
-  for (const rule of governanceLedgerController.seedConstitutionRules(
-    session.events,
-  )) {
+  for (const rule of governanceLedgerController.seedConstitutionRules([
+    ...instance.events,
+    ...session.events,
+  ])) {
+    appendInstanceEvent(governanceRoot, "constitution.jsonl", rule);
     scope.publish(rule);
     // CST4 Work Graph linkage: each seeded rule is a `constraint` node, so
     // tool calls and drift findings can relate to it in the graph.

@@ -4471,6 +4471,86 @@ test("forbidden override policy refuses requestOverride", async () => {
   await client.dispose?.();
 });
 
+test("instance governance decisions survive a new workspace session", async () => {
+  const store = await mkdtemp(join(tmpdir(), "natalia-gov-root-"));
+  const previous = process.env.NATALIA_TEST_GOVERNANCE_ROOT;
+  process.env.NATALIA_TEST_GOVERNANCE_ROOT = store;
+  try {
+    const firstRoot = await mkdtemp(join(tmpdir(), "natalia-gov-ws-a-"));
+    const first = createRealRuntimeClient({
+      workspaceRoot: firstRoot,
+      sessionID: "ses_gov_a",
+      pluginStoreRoot: join(store, "plugin-store"),
+      permissionMode: "auto",
+      provider: scriptedProvider("ready"),
+    });
+    first.start(() => undefined);
+    await first.submit("hello");
+    await pollHistoryForFinished(first);
+    await first.recordDecision?.({
+      decision: "instance-scoped release rule",
+    });
+    await first.dispose?.();
+
+    const secondRoot = await mkdtemp(join(tmpdir(), "natalia-gov-ws-b-"));
+    const second = createRealRuntimeClient({
+      workspaceRoot: secondRoot,
+      sessionID: "ses_gov_b",
+      pluginStoreRoot: join(store, "plugin-store"),
+      permissionMode: "auto",
+      provider: scriptedProvider("ready"),
+    });
+    second.start(() => undefined);
+    await second.submit("hello again");
+    await pollHistoryForFinished(second);
+    const records = await second.decisionRecords!();
+    expect(records).toContainEqual(
+      expect.objectContaining({ decision: "instance-scoped release rule" }),
+    );
+    await second.dispose?.();
+  } finally {
+    if (previous === undefined) delete process.env.NATALIA_TEST_GOVERNANCE_ROOT;
+    else process.env.NATALIA_TEST_GOVERNANCE_ROOT = previous;
+  }
+});
+
+test("truncated instance governance degrades without dropping C-TERM enforcement", async () => {
+  const store = await mkdtemp(join(tmpdir(), "natalia-gov-bad-"));
+  await writeFile(join(store, "constitution.jsonl"), "{truncated");
+  const previous = process.env.NATALIA_TEST_GOVERNANCE_ROOT;
+  process.env.NATALIA_TEST_GOVERNANCE_ROOT = store;
+  try {
+    const root = await mkdtemp(join(tmpdir(), "natalia-gov-ws-bad-"));
+    const events: RuntimeEvent[] = [];
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_gov_bad",
+      pluginStoreRoot: join(store, "plugin-store"),
+      permissionMode: "auto",
+      provider: scriptedProvider("ready"),
+    });
+    client.start((event) => events.push(event));
+    await client.submit("hello");
+    await pollHistoryForFinished(client);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "diagnostic",
+        message: "governance_store_unavailable",
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "constitution.rule_added",
+        ruleID: "C-TERM-001",
+      }),
+    );
+    await client.dispose?.();
+  } finally {
+    if (previous === undefined) delete process.env.NATALIA_TEST_GOVERNANCE_ROOT;
+    else process.env.NATALIA_TEST_GOVERNANCE_ROOT = previous;
+  }
+});
+
 test("security.redactToolOutput drives redaction when no agent overrides it", async () => {
   async function runWithSetting(redact: boolean | undefined) {
     const root = await mkdtemp(join(tmpdir(), "natalia-redact-global-"));

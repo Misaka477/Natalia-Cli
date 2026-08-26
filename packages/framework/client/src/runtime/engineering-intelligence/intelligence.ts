@@ -16,6 +16,11 @@ import {
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
 import type { EpisodeID } from "@natalia/contracts";
+import {
+  appendInstanceEvent,
+  loadInstanceGovernance,
+  resolveGovernanceRoot,
+} from "@natalia/governance-ledger";
 import type { RuntimeContext } from "../context";
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
@@ -78,31 +83,39 @@ export function createIntelligenceSurface(
     },
     async constitutionRules() {
       if (!ctx.ports.getSession()) return [];
-      return projectedConstitutionRules(ctx.ports.getSession()!.events).map(
-        (r) => ({
-          ruleID: r.ruleID,
-          statement: r.statement,
-          scope: r.scope,
-          priority: r.priority,
-          source: r.source,
-          enforcement: r.enforcement,
-          overridePolicy: r.overridePolicy,
-        }),
+      const instance = loadInstanceGovernance(
+        resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
+      return projectedConstitutionRules([
+        ...instance.events,
+        ...ctx.ports.getSession()!.events,
+      ]).map((r) => ({
+        ruleID: r.ruleID,
+        statement: r.statement,
+        scope: r.scope,
+        priority: r.priority,
+        source: r.source,
+        enforcement: r.enforcement,
+        overridePolicy: r.overridePolicy,
+      }));
     },
     async decisionRecords() {
       if (!ctx.ports.getSession()) return [];
-      return projectedDecisionRecords(ctx.ports.getSession()!.events).map(
-        (r) => ({
-          decision: r.decision,
-          rationale: r.rationale ?? [],
-          alternatives: r.alternatives ?? [],
-          consequences: r.consequences ?? [],
-          status: r.status,
-          linkedPlans: r.linkedPlans ?? [],
-          linkedConstraints: r.linkedConstraints ?? [],
-        }),
+      const instance = loadInstanceGovernance(
+        resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
+      return projectedDecisionRecords([
+        ...instance.events,
+        ...ctx.ports.getSession()!.events,
+      ]).map((r) => ({
+        decision: r.decision,
+        rationale: r.rationale ?? [],
+        alternatives: r.alternatives ?? [],
+        consequences: r.consequences ?? [],
+        status: r.status,
+        linkedPlans: r.linkedPlans ?? [],
+        linkedConstraints: r.linkedConstraints ?? [],
+      }));
     },
     /**
      * The `decision.recorded` production writer. Decisions are durable facts —
@@ -127,6 +140,12 @@ export function createIntelligenceSurface(
         id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
         ...input,
       });
+      if (event.status === "accepted")
+        appendInstanceEvent(
+          resolveGovernanceRoot(ctx.state.pluginStoreRoot),
+          "decisions.jsonl",
+          event,
+        );
       ctx.ports.publishForSession(ctx.ports.getActiveExec(), event);
       // CST4 Work Graph linkage: the decision is a `decision` node in the graph.
       ctx.ports.publishForSession(
@@ -426,16 +445,22 @@ export function createIntelligenceSurface(
       });
       if (!response || response.decision === "reject")
         return { requested: false as const, requestID, reason: "rejected" };
-      ctx.ports.publishForSession(ctx.ports.getActiveExec(), {
-        type: "constitution.override_granted",
+      const granted = {
+        type: "constitution.override_granted" as const,
         id: requestID,
         ruleID: input.ruleID,
         reason: input.reason,
-        approvedBy: "user",
+        approvedBy: "user" as const,
         ...(input.paths?.length ? { paths: input.paths } : {}),
         ...(input.taskID ? { taskID: input.taskID } : {}),
         ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
-      });
+      };
+      appendInstanceEvent(
+        resolveGovernanceRoot(ctx.state.pluginStoreRoot),
+        "decisions.jsonl",
+        granted,
+      );
+      ctx.ports.publishForSession(ctx.ports.getActiveExec(), granted);
       return { requested: true as const, requestID };
     },
     async approveOverride(input: {

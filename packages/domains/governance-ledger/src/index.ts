@@ -1,5 +1,10 @@
 export { createGovernanceLedgerController } from "./governance-ledger-controller";
 export {
+  appendInstanceEvent,
+  loadInstanceGovernance,
+  resolveGovernanceRoot,
+} from "./instance-store";
+export {
   SELF_PROTECTION_RULES,
   recordDecision,
   seedConstitutionRules,
