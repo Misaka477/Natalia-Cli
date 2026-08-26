@@ -19,11 +19,8 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/context-ledger": "workspace:*",
     "@natalia/governance-ledger": "workspace:*",
-    "@natalia/plugin-local-tools": "workspace:*",
-    "@natalia/plugin-mcp": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
-    "@natalia/plugin-native-terminal": "workspace:*",
     "@natalia/provider-model": "workspace:*",
     "@natalia/retry": "workspace:*",
     "@natalia/runtime": "workspace:*",
@@ -33,23 +30,10 @@
     "@natalia/sandbox": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/session-store": "workspace:*",
-    "@natalia/plugin-skills": "workspace:*",
     "@natalia/subagents": "workspace:*",
-    "@natalia/plugin-task-module": "workspace:*",
-    "@natalia/plugin-task-workflow": "workspace:*",
-    "@natalia/plugin-team": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*",
-    "@natalia/plugin-tool-ask": "workspace:*",
-    "@natalia/plugin-tool-fs-read": "workspace:*",
-    "@natalia/plugin-tool-fs-write": "workspace:*",
-    "@natalia/plugin-tool-pdf": "workspace:*",
     "@natalia/tool-policy": "workspace:*",
-    "@natalia/plugin-tool-process": "workspace:*",
-    "@natalia/plugin-tool-search": "workspace:*",
-    "@natalia/plugin-tool-shell": "workspace:*",
-    "@natalia/plugin-tool-todo": "workspace:*",
-    "@natalia/plugin-tool-web": "workspace:*",
     "@natalia/turn-orchestration": "workspace:*",
     "@natalia/ui-model": "workspace:*",
     "@natalia/workflow": "workspace:*",
@@ -57,6 +41,7 @@
     "@natalia/workspace": "workspace:*"
   },
   "devDependencies": {
+    "@natalia/installer": "workspace:*",
     "@natalia/workflow-scheduler": "workspace:*"
   }
 }

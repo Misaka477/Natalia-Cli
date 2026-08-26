@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -55,7 +56,9 @@ export async function validateStagedPackage(
     throw new Error(
       `plugin entry escapes package directory: ${manifest.entry}`,
     );
-  const module = (await import(pathToFileURL(entryPath).href)) as {
+  const module = (await import(
+    `${pathToFileURL(entryPath).href}?validation=${randomUUID()}`
+  )) as {
     default?: unknown;
   };
   validatePluginModule(module.default, manifest);

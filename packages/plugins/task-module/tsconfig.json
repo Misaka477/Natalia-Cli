@@ -16,6 +16,9 @@
       "path": "../../core/plugin"
     },
     {
+      "path": "../../core/runtime-services"
+    },
+    {
       "path": "../../core/tools"
     },
     {

@@ -1,25 +1,14 @@
 import { randomUUID } from "node:crypto";
-import {
-  cp,
-  mkdir,
-  readFile,
-  rename,
-  rmdir,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { nataliaLockSchema, type NataliaLock } from "@natalia/contracts";
 
-export function pluginClosurePaths(workspaceRoot: string) {
-  const nataliaDir = resolve(workspaceRoot, ".natalia");
+export function pluginClosurePaths(pluginStoreRoot: string) {
+  const storeRoot = resolve(pluginStoreRoot);
   return {
-    nataliaDir,
-    pluginsDir: join(nataliaDir, "plugins"),
-    stagingDir: join(nataliaDir, "plugin-staging"),
-    backupDir: join(nataliaDir, "plugin-backups"),
-    lockPath: join(nataliaDir, "natalia.lock"),
+    storeRoot,
+    pluginsDir: storeRoot,
+    lockPath: join(storeRoot, "natalia.lock"),
   };
 }
 
@@ -59,73 +48,13 @@ export async function rollbackWith(
   throw originalError;
 }
 
-export async function cleanupInstallStage(stage: string, stagingDir: string) {
-  const errors: unknown[] = [];
-  for (const cleanup of [
-    async () => await rm(stage, { recursive: true, force: true }),
-    async () => await rmdir(stagingDir),
-  ])
-    try {
-      await cleanup();
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-        errors.push(error);
-    }
-  if (errors.length === 1) throw errors[0];
-  if (errors.length > 1)
-    throw new AggregateError(errors, "plugin staging cleanup failed");
-}
-
-export async function backupClosure(workspaceRoot: string) {
-  const paths = pluginClosurePaths(workspaceRoot);
-  const backup = join(paths.backupDir, randomUUID());
-  const existed = await stat(paths.pluginsDir)
-    .then(() => true)
-    .catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw error;
-    });
-  await mkdir(paths.backupDir, { recursive: true, mode: 0o700 });
-  try {
-    if (existed) {
-      await rename(paths.pluginsDir, backup);
-      await cp(backup, paths.pluginsDir, {
-        recursive: true,
-        preserveTimestamps: true,
-      });
-    } else await mkdir(paths.pluginsDir, { recursive: true, mode: 0o700 });
-  } catch (error) {
-    await rm(paths.pluginsDir, { recursive: true, force: true });
-    if (existed) await rename(backup, paths.pluginsDir);
-    throw error;
-  }
-  return { backup, existed, paths };
-}
-
-export async function restoreClosure(
-  snapshot: Awaited<ReturnType<typeof backupClosure>>,
-) {
-  await rm(snapshot.paths.pluginsDir, { recursive: true, force: true });
-  if (snapshot.existed)
-    await rename(snapshot.backup, snapshot.paths.pluginsDir);
-  else await rm(snapshot.backup, { recursive: true, force: true });
-  await rm(snapshot.paths.backupDir).catch(() => undefined);
-}
-
-export async function discardClosureBackup(
-  snapshot: Awaited<ReturnType<typeof backupClosure>>,
-) {
-  await rm(snapshot.backup, { recursive: true, force: true });
-  await rm(snapshot.paths.backupDir).catch(() => undefined);
-}
-
 export async function loadNataliaLock(
-  workspaceRoot: string,
+  pluginStoreRoot: string,
 ): Promise<NataliaLock> {
   try {
     return nataliaLockSchema.parse(
       JSON.parse(
-        await readFile(pluginClosurePaths(workspaceRoot).lockPath, "utf8"),
+        await readFile(pluginClosurePaths(pluginStoreRoot).lockPath, "utf8"),
       ),
     );
   } catch (error) {
@@ -136,11 +65,11 @@ export async function loadNataliaLock(
 }
 
 export async function saveNataliaLock(
-  workspaceRoot: string,
+  pluginStoreRoot: string,
   lock: NataliaLock,
 ) {
   const parsed = nataliaLockSchema.parse(lock);
-  const { lockPath } = pluginClosurePaths(workspaceRoot);
+  const { lockPath } = pluginClosurePaths(pluginStoreRoot);
   await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
   const temporary = `${lockPath}.tmp-${randomUUID()}`;
   try {
@@ -157,6 +86,61 @@ export type PackageManagerRun = (input: {
   args: string[];
   cwd: string;
 }) => Promise<void>;
+
+export async function withStoreLock<T>(
+  pluginStoreRoot: string,
+  name: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const lockDirectory = join(resolve(pluginStoreRoot), `.${name}.lock`);
+  await mkdir(resolve(pluginStoreRoot), { recursive: true, mode: 0o700 });
+  for (;;) {
+    try {
+      await mkdir(lockDirectory, { mode: 0o700 });
+      await writeFile(
+        join(lockDirectory, "owner.json"),
+        JSON.stringify({ pid: process.pid }),
+        { mode: 0o600 },
+      );
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (await lockOwnerIsDead(lockDirectory)) {
+        await rm(lockDirectory, { recursive: true, force: true });
+        continue;
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+    }
+  }
+  try {
+    return await operation();
+  } finally {
+    await rm(lockDirectory, { recursive: true, force: true });
+  }
+}
+
+async function lockOwnerIsDead(lockDirectory: string) {
+  try {
+    const owner = JSON.parse(
+      await readFile(join(lockDirectory, "owner.json"), "utf8"),
+    ) as { pid?: number };
+    if (!Number.isInteger(owner.pid) || owner.pid! <= 0)
+      return await invalidLockIsStale(lockDirectory);
+    try {
+      process.kill(owner.pid!, 0);
+      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ESRCH";
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    return await invalidLockIsStale(lockDirectory);
+  }
+}
+
+async function invalidLockIsStale(lockDirectory: string) {
+  return Date.now() - (await stat(lockDirectory)).mtimeMs > 30_000;
+}
 
 export const runNpm: PackageManagerRun = async ({ args, cwd }) => {
   const child = Bun.spawn(["npm", ...args], {
@@ -181,6 +165,7 @@ export function npmInstallArgs(prefix: string, spec: string) {
     "--no-audit",
     "--no-fund",
     "--ignore-scripts",
+    "--install-links",
     "--save-exact",
     "--prefix",
     prefix,

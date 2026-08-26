@@ -42,9 +42,15 @@ import {
   COMPACTION_SERVICE,
   COLLABORATION_WAITER_SERVICE,
   CONTEXT_LEDGER_FACTORY_SERVICE,
+  LOCAL_TOOLS_INPUT_SERVICE,
+  MCP_INPUT_SERVICE,
   RETRY_SERVICE,
   SANDBOX_SERVICE,
+  SKILLS_INPUT_SERVICE,
   SUBAGENTS_SERVICE,
+  TASK_MODULE_INPUT_SERVICE,
+  TASK_WORKFLOW_INPUT_SERVICE,
+  TERMINAL_INPUT_SERVICE,
   TOOL_POLICY_SERVICE,
   WORKSPACE_FILES_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
@@ -54,6 +60,8 @@ import {
   type ContextLedgerFactory,
   type RetryService,
   type SandboxService,
+  type TaskWorkflowInput,
+  type TerminalInput,
 } from "@natalia/runtime-services";
 import type {
   FrameworkServices,
@@ -235,6 +243,80 @@ export async function wireFrameworkServices(
   }
   refreshRuntimeConfig();
 
+  const pluginInputOwner = registry.registerOwner({
+    id: "natalia-plugin-inputs",
+    name: "Plugin Inputs",
+    version: "1.0.0",
+    scope: "workspace",
+    grants: ["services"],
+  });
+  let pluginInputDisposers: Array<() => void> = [];
+  function refreshPluginInputs() {
+    for (const disposeInput of pluginInputDisposers.splice(0).reverse())
+      disposeInput();
+    const config = ctx.ports.getTsRuntimeConfig();
+    if (!config) return;
+    const contribute = (name: string, value: unknown) => {
+      if (value !== undefined)
+        pluginInputDisposers.push(
+          pluginInputOwner.contribute("services", name, value),
+        );
+    };
+    contribute(
+      LOCAL_TOOLS_INPUT_SERVICE,
+      ctx.state.initialize.localToolsPluginInput(config),
+    );
+    contribute(MCP_INPUT_SERVICE, ctx.state.initialize.mcpPluginInput(config));
+    contribute(
+      SKILLS_INPUT_SERVICE,
+      ctx.state.initialize.skillsPluginInput(config),
+    );
+    contribute(TASK_MODULE_INPUT_SERVICE, options.taskModuleContext);
+    const taskWorkflow: TaskWorkflowInput = {
+      workspaceRoot,
+      ...(options.globalConfigPath
+        ? { globalConfigPath: options.globalConfigPath }
+        : {}),
+      runtimeConfig: ctx.ports.getTsRuntimeConfig,
+      capabilityViews: () => [
+        ctx.state.initialize.capabilityRegistry,
+        ...(ctx.state.initialize.workspaceCapabilityView
+          ? [ctx.state.initialize.workspaceCapabilityView]
+          : []),
+      ],
+      publishDiagnostic: (message) =>
+        ctx.ports.publish({
+          type: "diagnostic",
+          level: "warning",
+          message,
+        }),
+      resolveFlowPermissions: ctx.state.initialize.effectiveFlowPermissions,
+      createRuntimeClient: ctx.state.initialize.createRealRuntimeClient,
+    };
+    contribute(TASK_WORKFLOW_INPUT_SERVICE, taskWorkflow);
+    const terminal: TerminalInput = {
+      workspaceRoot,
+      publish: (event) =>
+        ctx.ports.publishForSession(
+          event.sessionID
+            ? ctx.ports
+                .getExecutionBySession()
+                .get(event.sessionID as SessionID)
+            : undefined,
+          event,
+        ),
+      onPerformance: (name, durationMs) =>
+        ctx.ports.getPerformanceTrace().mark(name, durationMs),
+      runtimeID: ctx.ports.getNativeRuntimeID,
+      userRuntimeHome: ctx.ports.getUserRuntimeHome,
+      windowMode: () =>
+        ctx.ports.getTsRuntimeConfig()?.runtime.terminal.windowMode ?? "auto",
+      ...(options.nativeTerminal ? { external: options.nativeTerminal } : {}),
+    };
+    contribute(TERMINAL_INPUT_SERVICE, terminal);
+  }
+  refreshPluginInputs();
+
   const retryOwner = registry.registerOwner({
     id: "natalia-retry",
     name: "Retry",
@@ -402,10 +484,15 @@ export async function wireFrameworkServices(
   closeHandles.push(runtimeStatus.close);
 
   return {
-    refreshRuntimeConfig,
+    refreshRuntimeConfig() {
+      refreshRuntimeConfig();
+      refreshPluginInputs();
+    },
     close() {
       dispose();
       files.close();
+      for (const disposeInput of pluginInputDisposers.splice(0).reverse())
+        disposeInput();
       runtimeConfigDispose?.();
       runtimeConfigDispose = undefined;
     },

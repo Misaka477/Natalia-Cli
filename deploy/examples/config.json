@@ -91,11 +91,6 @@
               "pattern": "docs/release-notes/**",
               "allow": true,
               "reason": "The drafted notes"
-            },
-            {
-              "pattern": "**",
-              "allow": false,
-              "reason": "Nothing else in the workspace is writable"
             }
           ]
         }

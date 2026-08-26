@@ -37,12 +37,6 @@
       "path": "../../domains/governance-ledger"
     },
     {
-      "path": "../../plugins/local-tools"
-    },
-    {
-      "path": "../../plugins/mcp"
-    },
-    {
       "path": "../../hosts/platform"
     },
     {
@@ -76,58 +70,19 @@
       "path": "../session-store"
     },
     {
-      "path": "../../plugins/skills"
-    },
-    {
       "path": "../subagents"
-    },
-    {
-      "path": "../../plugins/task-module"
-    },
-    {
-      "path": "../../plugins/task-workflow"
-    },
-    {
-      "path": "../../plugins/team"
-    },
-    {
-      "path": "../../plugins/native-terminal"
     },
     {
       "path": "../../tooling/testing"
     },
     {
+      "path": "../../tooling/installer"
+    },
+    {
       "path": "../../core/tools"
     },
     {
-      "path": "../../plugins/tools/ask"
-    },
-    {
-      "path": "../../plugins/tools/fs-read"
-    },
-    {
-      "path": "../../plugins/tools/fs-write"
-    },
-    {
-      "path": "../../plugins/tools/pdf"
-    },
-    {
       "path": "../tool-policy"
-    },
-    {
-      "path": "../../plugins/tools/process"
-    },
-    {
-      "path": "../../plugins/tools/search"
-    },
-    {
-      "path": "../../plugins/tools/shell"
-    },
-    {
-      "path": "../../plugins/tools/todo"
-    },
-    {
-      "path": "../../plugins/tools/web"
     },
     {
       "path": "../turn-orchestration"

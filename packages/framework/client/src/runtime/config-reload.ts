@@ -133,7 +133,6 @@ export function createConfigReload(
       modelRefKeyForSelection,
       runPluginLifecyclePostReconcile,
       publishToolCatalogChanges,
-      buildRuntimePluginCatalog,
     } = ctx.ports;
     const workspaceRoot = getWorkspaceRoot();
     const previous = captureReloadState();
@@ -143,7 +142,6 @@ export function createConfigReload(
         globalPath: options.globalConfigPath,
       });
       setTsRuntimeConfig(tsConfig.config);
-      ctx.state.frameworkServices?.refreshRuntimeConfig();
       resetCheckpointFactory(ctx);
       setMaxSteps(tsConfig.config.runtime.maxStepsPerTurn);
       setRetryPolicy({
@@ -174,6 +172,7 @@ export function createConfigReload(
       // Permission changes (default profile switch, auto/ask flip, profile
       // edits) apply immediately, not on the next restart.
       ctx.ports.reloadPermissionSettings(tsConfig.config);
+      ctx.state.frameworkServices?.refreshRuntimeConfig();
       const permissionMode = getPermissionMode();
       const selectedPermissionProfile = getSelectedPermissionProfile();
       for (const exec of getExecutionBySession().values()) {
@@ -186,9 +185,8 @@ export function createConfigReload(
           exec.activeSkill ? [[id, exec.activeSkill.qualifiedName]] : [],
         ),
       );
-      const defaults = buildRuntimePluginCatalog(tsConfig.config);
       await getPluginsController().reconcileDesired(
-        defaults,
+        [],
         tsConfig.config.plugins,
       );
       await runPluginLifecyclePostReconcile(selectedSkills);
@@ -291,7 +289,6 @@ export function createConfigReload(
   ) {
     const ports = ctx.ports;
     ports.setTsRuntimeConfig(previous.config);
-    ctx.state.frameworkServices?.refreshRuntimeConfig();
     resetCheckpointFactory(ctx);
     ports.setMaxSteps(previous.maxSteps);
     ports.setRetryPolicy(previous.retryPolicy);
@@ -302,6 +299,7 @@ export function createConfigReload(
     ports.setSelectedPermissionProfile(previous.selectedPermissionProfile);
     ports.setDefaultPermissionMode(previous.defaultPermissionMode);
     ports.setDefaultPermissionProfile(previous.defaultPermissionProfile);
+    ctx.state.frameworkServices?.refreshRuntimeConfig();
     ports.setProvider(previous.provider);
     ports.setProviderSource(previous.providerSource);
     ports.setRuntimeContextConfig(previous.runtimeContextConfig);
@@ -316,10 +314,9 @@ export function createConfigReload(
     }
     ports.applyAgentPolicy();
     if (!previous.config) return;
-    const defaults = ports.buildRuntimePluginCatalog(previous.config);
     await ports
       .getPluginsController()
-      .reconcileDesired(defaults, previous.config.plugins);
+      .reconcileDesired([], previous.config.plugins);
     const selectedSkills = new Map(
       [...previous.executions].flatMap(([id, state]) =>
         state.activeSkill ? [[id, state.activeSkill]] : [],

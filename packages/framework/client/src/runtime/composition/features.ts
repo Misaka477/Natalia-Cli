@@ -100,13 +100,6 @@ export function wireFeatures(
   ports.setAgentRegistry = (registry) => {
     state.agentRegistry = registry;
   };
-  ports.setBuildRuntimePluginCatalog = (build) => {
-    state.buildRuntimePluginCatalog = build;
-  };
-  ports.buildRuntimePluginCatalog = (config) =>
-    state.buildRuntimePluginCatalog(config) as ReturnType<
-      typeof import("../plugin-config").runtimePluginCatalog
-    >;
   const configReload = createConfigReload(ctx, options);
   ports.configReloadBlockedReason = configReload.configReloadBlockedReason;
   ports.reloadConfigFromDisk = configReload.reloadConfigFromDisk;

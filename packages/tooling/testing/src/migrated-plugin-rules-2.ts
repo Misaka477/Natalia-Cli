@@ -2,20 +2,6 @@ import type { MigratedPluginRule } from "./migrated-plugin-rule-types";
 
 export const migratedPluginRules2: readonly MigratedPluginRule[] = [
   {
-    id: "natalia-tool-pdf",
-    targets: ["packages/framework/client/src/runtime/main.ts"],
-    forbidden: [
-      {
-        description: "direct PDF package import",
-        pattern: /from\s+["']@natalia\/tool-pdf["']/u,
-      },
-      {
-        description: "direct PDF factory construction",
-        pattern: /\bcreatePdf(?:Plugin|ReadTool)\b/u,
-      },
-    ],
-  },
-  {
     id: "natalia-tool-search",
     targets: [
       "packages/framework/client/src/runtime/main.ts",

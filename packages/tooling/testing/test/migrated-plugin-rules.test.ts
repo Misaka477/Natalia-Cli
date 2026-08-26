@@ -115,8 +115,6 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     ["natalia-skills", "createSkillsController()"],
     ["natalia-skills", "discoverSkills()"],
     ["natalia-skills", "createSkillLoadTool()"],
-    ["natalia-tool-pdf", 'import { x } from "@natalia/tool-pdf"'],
-    ["natalia-tool-pdf", "createPdfPlugin()"],
     ["natalia-tool-ask", 'import { askTools } from "@natalia/tool-ask"'],
     ["natalia-tool-todo", 'import { todoTools } from "@natalia/tool-todo"'],
     [
@@ -1217,7 +1215,7 @@ test("migrated plugin rules only protect declared composition roots", () => {
   expect(
     findMigratedPluginViolations(
       "packages/framework/client/src/runtime/plugin-config/catalog.ts",
-      'import { createPdfPlugin } from "@natalia/tool-pdf"',
+      'import { createSearchPlugin } from "@natalia/tool-search"',
     ),
   ).toEqual([]);
   expect(
@@ -1229,15 +1227,15 @@ test("migrated plugin rules only protect declared composition roots", () => {
   expect(
     findMigratedPluginViolations(
       "packages\\framework\\client\\src\\runtime\\main.ts",
-      "createPdfReadTool()",
+      "createSearchPlugin()",
     ),
-  ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-pdf" })]);
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-search" })]);
   expect(
     findMigratedPluginViolations(
       "packages/framework/client/src/runtime/composition/features.ts",
-      "createPdfReadTool()",
+      "createSearchPlugin()",
     ),
-  ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-pdf" })]);
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-search" })]);
 });
 
 test("migrated plugin matcher accepts new declarative rules", () => {

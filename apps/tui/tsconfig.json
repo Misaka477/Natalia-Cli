@@ -25,6 +25,9 @@
       "path": "../../packages/hosts/config"
     },
     {
+      "path": "../../packages/tooling/installer"
+    },
+    {
       "path": "../../packages/core/plugin"
     },
     {

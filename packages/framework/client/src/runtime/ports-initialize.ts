@@ -38,9 +38,4 @@ export type RuntimeInitializePorts = {
   getRuntimeContext: () => RuntimeContextLedger;
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
   getRetryPolicy: () => import("@natalia/runtime").RetryRunnerOptions["policy"];
-  setBuildRuntimePluginCatalog: (
-    build: (
-      config: ConfigV3,
-    ) => import("./initialize-types").RuntimeDesiredPluginCatalog,
-  ) => void;
 };

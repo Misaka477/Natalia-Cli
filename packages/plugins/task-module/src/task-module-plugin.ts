@@ -9,7 +9,7 @@ export const TASK_MODULE_PLUGIN_MANIFEST: PluginManifest = {
   name: "Task Module",
   description:
     "Task-scoped tools for the active flow module: completion claims, issue reporting and incremental data source reads.",
-  entry: "natalia:task-module",
+  entry: "index.js",
   scope: "session",
   provides: [],
   requires: [],

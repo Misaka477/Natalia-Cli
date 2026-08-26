@@ -193,8 +193,6 @@ export function findFrameworkPluginSurfaceViolation(
   return undefined;
 }
 
-const runtimePluginCatalogDirectory =
-  "packages/framework/client/src/runtime/plugin-config/";
 const productPluginImport = /from\s+["']@natalia\/plugin-[a-z-]+["']/u;
 const productPluginFactory = /\bcreate[A-Z][A-Za-z0-9]*Plugin\s*\(/u;
 const migratedServiceImport = new RegExp(
@@ -211,7 +209,6 @@ export function findRuntimePluginCatalogViolation(
   if (normalized.startsWith("packages/tooling/testing/")) return undefined;
   if (
     normalized.startsWith("packages/framework/client/src/runtime/") &&
-    !normalized.startsWith(runtimePluginCatalogDirectory) &&
     (productPluginImport.test(text) || productPluginFactory.test(text))
   )
     return "runtime product plugin assembly belongs in the ordinary desired catalog";
@@ -262,7 +259,6 @@ export function findClientPluginSurfaceViolation(
   text: string,
 ): string | undefined {
   const normalized = path.replaceAll("\\", "/");
-  if (normalized.startsWith(runtimePluginCatalogDirectory)) return undefined;
   if (
     isRuntimeCompositionPath(normalized) &&
     /(?:from\s+|import\s*\()\s*["']@natalia\/[^"']*-plugin["']/u.test(text)
@@ -290,10 +286,8 @@ export function findClientToolDependencyViolation(
   text: string,
 ): string | undefined {
   const normalized = path.replaceAll("\\", "/");
-  if (normalized.startsWith(runtimePluginCatalogDirectory)) return undefined;
   if (
     /packages\/framework\/client\/(?:src|test)\//u.test(normalized) &&
-    !normalized.startsWith(runtimePluginCatalogDirectory) &&
     clientToolImplementationImport.test(text)
   )
     return "client project imports a concrete tool package";
@@ -338,7 +332,6 @@ export function findClientProductDependencyViolation(
   );
   if (
     /packages\/framework\/client\/(?:src|test)\//u.test(normalized) &&
-    !normalized.startsWith(runtimePluginCatalogDirectory) &&
     importPattern.test(text)
   )
     return "client project imports a concrete product package";
@@ -432,10 +425,8 @@ export function findClientClosureViolation(
 /**
  * Phase 2 boundary (convergence plan §6.2): Chat, Collaboration and Plan stay
  * framework-owned while `@natalia/plugin-team` remains a true plugin, reachable
- * only through the ordinary desired catalog. Collaboration and work-ledger may
- * not name the team plugin, and the client runtime may reach it only inside
- * `runtime/plugin-config`; anywhere else in the runtime is a reverse dependency
- * on a concrete product plugin.
+ * only through the installed desired catalog. Collaboration, work-ledger and
+ * the client runtime may not name the concrete team plugin package.
  */
 const teamPluginBoundaryRoots = [
   "packages/framework/collaboration/src/",
@@ -461,9 +452,9 @@ export function findTeamPluginDependencyViolation(
   const inFrameworkDomain = teamPluginBoundaryRoots.some((root) =>
     normalized.startsWith(root),
   );
-  const inClientRuntime =
-    normalized.startsWith("packages/framework/client/src/runtime/") &&
-    !normalized.startsWith(runtimePluginCatalogDirectory);
+  const inClientRuntime = normalized.startsWith(
+    "packages/framework/client/src/runtime/",
+  );
   if (!inFrameworkDomain && !inClientRuntime) return undefined;
   if (teamPluginPackageImport.test(text))
     return "framework domain or client runtime imports the team plugin package";
@@ -474,51 +465,50 @@ export function findTeamPluginDependencyViolation(
 
 export const migratedPluginRules: readonly MigratedPluginRule[] = [
   migratedPluginRules1[0]!,
-  migratedPluginRules2[0]!,
   migratedPluginRules3[0]!,
   migratedPluginRules4[0]!,
-  migratedPluginRules2[1]!,
+  migratedPluginRules2[0]!,
   migratedPluginRules3[1]!,
   migratedPluginRules4[1]!,
   migratedPluginRules1[1]!,
-  migratedPluginRules2[2]!,
+  migratedPluginRules2[1]!,
   migratedPluginRules3[2]!,
   migratedPluginRules4[2]!,
   migratedPluginRules1[2]!,
-  migratedPluginRules2[3]!,
+  migratedPluginRules2[2]!,
   migratedPluginRules3[3]!,
   migratedPluginRules4[3]!,
   migratedPluginRules1[3]!,
-  migratedPluginRules2[4]!,
+  migratedPluginRules2[3]!,
   migratedPluginRules4[4]!,
-  migratedPluginRules2[5]!,
+  migratedPluginRules2[4]!,
   migratedPluginRules3[4]!,
   migratedPluginRules1[4]!,
-  migratedPluginRules2[6]!,
+  migratedPluginRules2[5]!,
   migratedPluginRules1[5]!,
   migratedPluginRules3[5]!,
-  migratedPluginRules2[7]!,
+  migratedPluginRules2[6]!,
   migratedPluginRules4[5]!,
   migratedPluginRules1[6]!,
-  migratedPluginRules2[8]!,
+  migratedPluginRules2[7]!,
   migratedPluginRules3[6]!,
-  migratedPluginRules2[9]!,
+  migratedPluginRules2[8]!,
   migratedPluginRules1[7]!,
   migratedPluginRules4[6]!,
-  migratedPluginRules2[10]!,
+  migratedPluginRules2[9]!,
   migratedPluginRules1[8]!,
   migratedPluginRules3[7]!,
   migratedPluginRules4[7]!,
   migratedPluginRules3[8]!,
-  migratedPluginRules2[11]!,
+  migratedPluginRules2[10]!,
   migratedPluginRules1[9]!,
   migratedPluginRules4[8]!,
-  migratedPluginRules2[12]!,
+  migratedPluginRules2[11]!,
   migratedPluginRules3[9]!,
   migratedPluginRules1[10]!,
   migratedPluginRules4[9]!,
   migratedPluginRules3[10]!,
-  migratedPluginRules2[13]!,
+  migratedPluginRules2[12]!,
   migratedPluginRules4[10]!,
   migratedPluginRules4[11]!,
   migratedPluginRules4[12]!,

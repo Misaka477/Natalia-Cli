@@ -41,6 +41,7 @@
     "@natalia/client": "workspace:*",
     "@natalia/capability": "workspace:*",
     "@natalia/config": "workspace:*",
+    "@natalia/installer": "workspace:*",
     "@natalia/view-store": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/platform": "workspace:*",

@@ -19,10 +19,6 @@ import {
   type RuntimeServiceClient,
   type TaskWorkflowService,
 } from "@natalia/client";
-import {
-  createWorkflowExecutionStoreService,
-  createWorkflowStoreService,
-} from "@natalia/plugin-task-workflow";
 import type {
   EpisodeID,
   EvaluatorResult,
@@ -36,6 +32,7 @@ import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";
 import {
   createIssueTarget,
+  createWorkflowExecutionStoreService,
   deliverPendingTaskAlerts,
   evaluateAndRecordModule,
   findingFingerprint,

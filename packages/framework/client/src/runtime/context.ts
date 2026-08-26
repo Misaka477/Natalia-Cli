@@ -99,8 +99,8 @@ type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
 /**
  * The host-owned lifecycle of the framework subsystems wired by
  * `initialize/framework-services.ts`. `refreshRuntimeConfig` re-contributes the
- * `runtime.config` service after a config reload; `close` releases the
- * framework resources (workspace watcher, config contribution) at dispose.
+ * config and plugin input services after a config reload; `close` releases the
+ * framework resources at dispose.
  */
 export type FrameworkServices = {
   refreshRuntimeConfig(): void;
@@ -115,6 +115,7 @@ export type RuntimeState = {
   runtimeDisposed: boolean;
   initialize: InitializeDependencies;
   workspaceRoot: string;
+  pluginStoreRoot?: string;
   sessionID: SessionID;
   provider?: StreamingProvider;
   providerSource: "explicit" | "environment" | "ts_config" | "unconfigured";
@@ -159,7 +160,6 @@ export type RuntimeState = {
   sessionPersistence: Promise<void>;
   nativeRuntimeID: string;
   tsRuntimeConfig?: ConfigV3;
-  buildRuntimePluginCatalog: (config: ConfigV3) => unknown[];
   frameworkServices?: FrameworkServices;
   contextWindowResolver: ContextWindowResolver;
   runtimeContextConfig: RuntimeContextStatusConfig;

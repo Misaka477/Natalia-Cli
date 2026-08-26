@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  createOfficialRuntimeClient as createRealRuntimeClient,
+  officialPluginStoreRoot,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
 import { configV3Schema } from "@natalia/contracts";
 import { CapabilityRegistry } from "@natalia/capability";
-import { createRealRuntimeClient } from "../src/runtime/main";
 import { runTaskFromDocument } from "../src/task-controller";
 import { flowOverview, scheduledTaskOverview } from "@natalia/workflow";
 import { workflowContributionsProjection } from "@natalia/workflow";
@@ -245,6 +248,7 @@ test("task execution resolves current contributions and stops after scope unload
 
   const result = await runTaskFromDocument({
     workspaceRoot: root,
+    pluginStoreRoot: officialPluginStoreRoot(root),
     taskID: "task_doctor",
     contributedDocuments: workflowContributionsProjection(registry).documents,
     config,
@@ -260,6 +264,7 @@ test("task execution resolves current contributions and stops after scope unload
   await expect(
     runTaskFromDocument({
       workspaceRoot: root,
+      pluginStoreRoot: officialPluginStoreRoot(root),
       taskID: "task_doctor",
       contributedDocuments: workflowContributionsProjection(registry).documents,
       config,

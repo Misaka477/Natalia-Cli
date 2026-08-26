@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { PluginPackageConfig } from "@natalia/contracts";
 import {
-  discoverPluginManifests,
   resolveInstalledPluginEntries,
   validatePluginPath,
   type DesiredPluginEntry,
@@ -11,52 +10,25 @@ import {
 } from "@natalia/plugin";
 
 export async function discoverDesiredPluginEntries(input: {
-  workspaceRoot: string;
-  paths: string[];
-  packages: Record<string, PluginPackageConfig>;
+  pluginStoreRoot: string;
+  packages?: Record<string, PluginPackageConfig>;
   enabled?: Record<string, boolean>;
   declaredIDs: string[];
   onError(id: string, error: unknown): void;
 }): Promise<DesiredPluginEntry[]> {
   const installed = await resolveInstalledPluginEntries({
-    workspaceRoot: input.workspaceRoot,
-    packages: input.packages,
+    pluginStoreRoot: input.pluginStoreRoot,
     enabled: input.enabled,
   });
   for (const failure of installed.errors)
     input.onError(failure.id, failure.error);
 
   const ids = new Set(input.declaredIDs);
-  const configured = new Set(Object.keys(input.packages));
-  for (const id of configured) {
+  for (const id of installed.entries.map(({ manifest }) => manifest.id)) {
     if (ids.has(id)) throw new Error(`duplicate plugin id: ${id}`);
     ids.add(id);
   }
-  const discovered = [...installed.entries];
-  const roots = new Set([
-    resolve(input.workspaceRoot, ".natalia", "plugins"),
-    ...input.paths.map((path) => resolve(input.workspaceRoot, path)),
-  ]);
-  for (const root of roots)
-    for (const entry of await discoverPluginManifests(root, {
-      nodeModules: false,
-    })) {
-      if (configured.has(entry.manifest.id))
-        throw new Error(
-          `plugin ${entry.manifest.id} is declared by more than one source`,
-        );
-      assertUnique(entry, ids);
-      if (input.enabled?.[entry.manifest.id] === false) continue;
-      discovered.push(entry);
-    }
-
-  return discovered.map((entry) => desiredEntry(entry, input));
-}
-
-function assertUnique(entry: PluginManifestEntry, ids: Set<string>) {
-  if (ids.has(entry.manifest.id))
-    throw new Error(`duplicate plugin id: ${entry.manifest.id}`);
-  ids.add(entry.manifest.id);
+  return installed.entries.map((entry) => desiredEntry(entry, input));
 }
 
 function desiredEntry(

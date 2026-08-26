@@ -8,16 +8,20 @@ export const SKILLS_PLUGIN_ID = "natalia-skills";
 export const SKILLS_REGISTRY_SERVICE = SKILL_SERVICE;
 
 export const SKILLS_PLUGIN_MANIFEST: PluginManifest = {
-  apiVersion: 1,
+  apiVersion: 2,
   id: SKILLS_PLUGIN_ID,
   version: "1.0.0",
   name: "Skills",
   description: "Discovered project, user and remote skills.",
-  entry: "natalia:skills",
-  capabilities: ["tools", "commands"],
+  entry: "index.js",
   scope: "workspace",
   provides: [SKILLS_REGISTRY_SERVICE],
   requires: [],
+  optionalRequires: [],
+  conflicts: [],
+  dependencies: [],
+  hooks: {},
+  integrationPoints: ["tools", "commands", "services"],
 };
 
 export function createSkillsPlugin(input: {

@@ -8,6 +8,7 @@ import { CapabilityHost } from "@natalia/capability";
 const input = workerData as {
   port: import("@natalia/client").RuntimeWorkerPort;
   workspaceRoot: string;
+  pluginStoreRoot: string;
   sessionID: string;
 };
 
@@ -16,6 +17,7 @@ const capabilityHost = new CapabilityHost({
 });
 let runtime = createRealRuntimeClient({
   workspaceRoot: input.workspaceRoot,
+  pluginStoreRoot: input.pluginStoreRoot,
   sessionID: input.sessionID as never,
   useSqliteStore: true,
   capabilityHost,
@@ -23,6 +25,7 @@ let runtime = createRealRuntimeClient({
 const createRuntime = () => {
   runtime = createRealRuntimeClient({
     workspaceRoot: input.workspaceRoot,
+    pluginStoreRoot: input.pluginStoreRoot,
     sessionID: input.sessionID as never,
     useSqliteStore: true,
     capabilityHost,

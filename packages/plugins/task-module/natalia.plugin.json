@@ -1,0 +1,16 @@
+{
+  "apiVersion": 2,
+  "id": "natalia-task-module",
+  "version": "1.0.0",
+  "name": "Task Module",
+  "description": "Task-scoped tools for the active flow module: completion claims, issue reporting and incremental data source reads.",
+  "entry": "index.js",
+  "scope": "session",
+  "provides": [],
+  "requires": ["task-module.input"],
+  "optionalRequires": [],
+  "conflicts": [],
+  "dependencies": [],
+  "hooks": {},
+  "integrationPoints": ["tools"]
+}

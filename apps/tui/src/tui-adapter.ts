@@ -7,6 +7,10 @@ import {
 import { paste100KiB } from "@natalia/testing";
 import { MessageChannel, Worker } from "node:worker_threads";
 import { runTuiShell } from "./app/runtime";
+import {
+  initializeTuiOfficialPlugins,
+  resolveTuiPluginStore,
+} from "./official-plugins";
 
 export type TuiAdapterOptions = {
   workspaceRoot: string;
@@ -28,12 +32,19 @@ type StartTuiAdapter = (
 export async function createTuiAdapterHost(
   options: TuiAdapterOptions,
   start: StartTuiAdapter = startTuiAdapter,
-  createRuntime: (options: TuiAdapterOptions) => RuntimeClient = (input) =>
-    input.smoke
-      ? createFakeBackend()
-      : createWorkerBackend(input.workspaceRoot, input.sessionID),
+  createRuntime: (
+    options: TuiAdapterOptions,
+  ) => RuntimeClient | Promise<RuntimeClient> = async (input) => {
+    if (input.smoke) return createFakeBackend();
+    await initializeTuiOfficialPlugins();
+    return createWorkerBackend(
+      input.workspaceRoot,
+      await resolveTuiPluginStore(),
+      input.sessionID,
+    );
+  },
 ) {
-  const runtime = createRuntime(options);
+  const runtime = await createRuntime(options);
   let adapter: TuiAdapterInstance;
   try {
     adapter = await start(createUiAdapterMountInput(runtime), options);
@@ -69,8 +80,15 @@ async function startTuiAdapter(
   options: TuiAdapterOptions,
 ): Promise<TuiAdapterInstance> {
   let currentWorkspaceRoot = options.workspaceRoot;
-  const createBackend = (nextSessionID?: string) => {
-    return createWorkerBackend(currentWorkspaceRoot, nextSessionID);
+  const pluginStoreRoot = options.smoke
+    ? undefined
+    : await resolveTuiPluginStore();
+  const createBackend = async (nextSessionID?: string) => {
+    return createWorkerBackend(
+      currentWorkspaceRoot,
+      pluginStoreRoot!,
+      nextSessionID,
+    );
   };
   const initialBackend: RuntimeClient = {
     ...input.runtime,
@@ -138,11 +156,17 @@ async function startTuiAdapter(
 
 function createWorkerBackend(
   workspaceRoot: string,
+  pluginStoreRoot: string,
   sessionID = newSessionID(),
 ) {
   const channel = new MessageChannel();
   const worker = new Worker(new URL("./runtime-worker.ts", import.meta.url), {
-    workerData: { port: channel.port1, workspaceRoot, sessionID },
+    workerData: {
+      port: channel.port1,
+      workspaceRoot,
+      pluginStoreRoot,
+      sessionID,
+    },
     transferList: [channel.port1],
   });
   const client = createWorkerRuntimeClient(channel.port2);

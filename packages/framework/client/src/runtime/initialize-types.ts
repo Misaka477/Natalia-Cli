@@ -32,23 +32,21 @@ export type InitializeOptions = {
 type ResolvedConfig = Awaited<
   ReturnType<typeof import("@natalia/config").resolveConfig>
 >;
-type RuntimePluginCatalog = ReturnType<
-  typeof import("./plugin-config").runtimePluginCatalog
->;
-type RuntimePluginInput = Parameters<
-  typeof import("./plugin-config").runtimePluginCatalog
->[0];
-
 export type InitializeDependencies = {
   resolveConfig: typeof import("@natalia/config").resolveConfig;
   reloadPermissionSettings: (config: ConfigV3) => void;
-  skillsPluginInput: (config: ConfigV3) => RuntimePluginInput["skills"];
-  localToolsPluginInput: (config: ConfigV3) => RuntimePluginInput["localTools"];
-  mcpPluginInput: (config: ConfigV3) => RuntimePluginInput["mcp"];
+  skillsPluginInput: (
+    config: ConfigV3,
+  ) => import("@natalia/runtime-services").SkillsInput | undefined;
+  localToolsPluginInput: (
+    config: ConfigV3,
+  ) => import("@natalia/runtime-services").LocalToolsInput | undefined;
+  mcpPluginInput: (
+    config: ConfigV3,
+  ) => import("@natalia/runtime-services").McpInput | undefined;
   providerModelPluginInput: (
     config?: ConfigV3,
   ) => import("@natalia/runtime-services").ProviderModelControllerInput;
-  runtimePluginCatalog: typeof import("./plugin-config").runtimePluginCatalog;
   wireFrameworkServices: (
     ctx: import("./context").RuntimeContext,
     options: InitializeOptions,
@@ -58,9 +56,7 @@ export type InitializeDependencies = {
   waiterDeps: InteractiveWaiterDeps;
   deliverQueuedMailboxAtBoundary: (exec?: SessionExecutionState) => void;
   effectiveFlowPermissions: typeof import("@natalia/workflow").effectiveFlowPermissions;
-  createRealRuntimeClient: NonNullable<
-    RuntimePluginInput["taskWorkflow"]
-  >["controller"]["createRuntimeClient"];
+  createRealRuntimeClient: import("@natalia/runtime-services").TaskWorkflowInput["createRuntimeClient"];
   handleCommand: (
     id: string,
     text: string,
@@ -186,5 +182,3 @@ export type SubagentSupport = {
     content: string,
   ): void;
 };
-
-export type RuntimeDesiredPluginCatalog = RuntimePluginCatalog;

@@ -41,7 +41,7 @@ import {
   createWorkflowStoreService,
   type TaskAlertQueueService,
   type TaskStateService,
-} from "./workflow-store-service";
+} from "@natalia/workflow";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { TaskModuleContext } from "@natalia/workflow";
 

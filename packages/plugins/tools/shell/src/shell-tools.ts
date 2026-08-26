@@ -107,7 +107,7 @@ export const SHELL_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Shell Tools",
   description: "One-shot command execution.",
-  entry: "natalia:tool-shell",
+  entry: "index.js",
   scope: "session",
   provides: [],
   requires: [],

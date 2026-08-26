@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  officialPluginStoreRoot,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
 import {
   configV3Schema,
   nataliaFlowDocumentSchema,
@@ -327,6 +330,7 @@ test("a document preview includes task-scoped issue and data-source tools", asyn
   });
   const preview = await taskPermissionPreviewForDocument({
     workspaceRoot,
+    pluginStoreRoot: officialPluginStoreRoot(workspaceRoot),
     path: "task_context.yaml",
     config,
   });

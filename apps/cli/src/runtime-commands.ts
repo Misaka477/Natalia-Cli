@@ -9,12 +9,15 @@ import { createRecordedFetch } from "@natalia/transport";
 import { createHttpTransportHost } from "./transport-host";
 import { promptArguments } from "./index";
 import { valueAfter, waitSignal, withoutOption } from "./command-helpers";
+import { pluginStoreRoot } from "./official-plugins";
 
 export async function handleRuntimeCommand(argv: string[]) {
   const command = argv[0];
   if (command === "serve" || command === "--serve") {
     const port = parseServePort(argv);
-    const client = createRealRuntimeClient();
+    const client = createRealRuntimeClient({
+      pluginStoreRoot: pluginStoreRoot(),
+    });
     const transport = createHttpTransportHost({
       client,
       port,
@@ -45,7 +48,10 @@ export async function handleRuntimeCommand(argv: string[]) {
     return true;
   }
   if (command === "eval" || command === "--stdio") {
-    const client = createRealRuntimeClient(newHeadlessExecution());
+    const client = createRealRuntimeClient({
+      ...newHeadlessExecution(),
+      pluginStoreRoot: pluginStoreRoot(),
+    });
     let failed = false;
     try {
       client.start((event) => {
@@ -88,9 +94,12 @@ export async function handleRuntimeCommand(argv: string[]) {
     const kind = argv[1];
     if (argv[1]?.startsWith("--"))
       throw new Error(`ui requires a UI adapter kind, got flag ${argv[1]}`);
-    const client = createRealRuntimeClient();
+    const client = createRealRuntimeClient({
+      pluginStoreRoot: pluginStoreRoot(),
+    });
     const host: UiAdapterHost = await createUiAdapterHost({
       workspaceRoot: process.cwd(),
+      pluginStoreRoot: pluginStoreRoot(),
       runtime: client,
       kinds: kind ? [kind] : [],
       configPath: process.env.NATALIA_CONFIG,
@@ -114,7 +123,9 @@ export async function handleRuntimeCommand(argv: string[]) {
   if (command === "record") {
     const cassettePath = argv[1];
     if (!cassettePath) throw new Error("record requires a cassette path");
-    const client = createRealRuntimeClient();
+    const client = createRealRuntimeClient({
+      pluginStoreRoot: pluginStoreRoot(),
+    });
     const transport = createHttpTransportHost({
       client,
       port: Number(argv[2] ?? "8787"),
@@ -149,6 +160,7 @@ async function runOnce(
 ) {
   const client = createRealRuntimeClient({
     ...newHeadlessExecution(),
+    pluginStoreRoot: pluginStoreRoot(),
     permissionProfile,
   });
   let text = "";

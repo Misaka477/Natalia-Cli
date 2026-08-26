@@ -128,7 +128,9 @@ export function resolveWezTermExecutable(
  * is generated locally and intentionally excluded from version control.
  */
 export function nativeTerminalForkBuildDir() {
-  return join(import.meta.dir, "..", "wezterm", "target", "release");
+  return import.meta.url.endsWith(".ts")
+    ? join(import.meta.dir, "..", "wezterm", "target", "release")
+    : join(import.meta.dir, "wezterm");
 }
 
 export function resolveNataliaWezTermForkExecutable(
@@ -1886,7 +1888,12 @@ async function runWezTermCommand(
   // the runtime Worker. This nested worker owns the subprocess streams and is
   // terminated from its parent on deadline, independent of Bun stream state.
   const worker = new Worker(
-    new URL("./wezterm-command-worker.ts", import.meta.url),
+    new URL(
+      import.meta.url.endsWith(".ts")
+        ? "./wezterm-command-worker.ts"
+        : "./wezterm-command-worker.js",
+      import.meta.url,
+    ),
     {
       workerData: { executable, args, stdin, environment },
     },

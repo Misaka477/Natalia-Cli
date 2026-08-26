@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  officialPluginStoreRoot,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
 import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
 import {
   configWithoutPermissionProfile,
@@ -29,7 +33,10 @@ test("a profile still selected by a task cannot be deleted", async () => {
     join(root, ".natalia", "tasks", "nightly.yaml"),
     "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Do it.\npermissionProfile: unattended_read\nflow:\n  flowID: flow_review\n",
   );
-  const usage = await permissionProfileUsage({ workspaceRoot: root });
+  const usage = await permissionProfileUsage({
+    workspaceRoot: root,
+    pluginStoreRoot: officialPluginStoreRoot(root),
+  });
   expect(usage).toEqual({ unattended_read: ["task_nightly"] });
   // Deleting the boundary a task selected would move that task onto a different
   // boundary at its next run, which nobody asked for.

@@ -1,5 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp as createEmptyWorkspace,
+  readFile,
+  readdir,
+  writeFile,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
@@ -33,23 +39,25 @@ import {
 } from "@natalia/testing";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import {
+  createOfficialRuntimeClient,
+  restoreOfficialPluginConfig,
+  installFixturePlugin,
   installPluginSdkLinks,
+  officialPluginWorkspace as mkdtemp,
   pluginSdkImportPath,
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger";
-import {
-  MCP_PLUGIN_ID,
-  PDF_PLUGIN_ID,
-  SKILLS_PLUGIN_ID,
-  TEAM_PLUGIN_ID,
-  TODO_PLUGIN_ID,
-} from "../src/runtime/plugin-config";
+const MCP_PLUGIN_ID = "natalia-mcp";
+const SKILLS_PLUGIN_ID = "natalia-skills";
+const TEAM_PLUGIN_ID = "natalia-team";
+const TODO_PLUGIN_ID = "natalia-tool-todo";
 
 function createRealRuntimeClient(
   options: Parameters<typeof createRuntimeClient>[0] = {},
 ) {
   const workspaceRoot = options.workspaceRoot ?? process.cwd();
+  restoreOfficialPluginConfig(workspaceRoot);
   const globalConfigPath =
     options.globalConfigPath ??
     join(workspaceRoot, ".natalia-test-global.json");
@@ -73,7 +81,7 @@ function createRealRuntimeClient(
       writeFileSync(globalConfigPath, JSON.stringify(modelConfig));
     }
   }
-  return createRuntimeClient({
+  return createOfficialRuntimeClient({
     ...options,
     globalConfigPath,
   });
@@ -1360,6 +1368,7 @@ test("failed config reload restores runtime config and plugin settings", async (
       api.services.provide("rollback.value", api.config?.value);
     } };`,
   );
+  await installFixturePlugin(root, pluginRoot);
   await writeFile(
     configPath,
     JSON.stringify({
@@ -1429,6 +1438,7 @@ test("user plugin config reload reconciles its lifecycle", async () => {
     join(pluginRoot, "index.ts"),
     `export default { setup(api) { api.commands.register({ name: "reload", title: "Reload", run() {} }); } };`,
   );
+  await installFixturePlugin(root, pluginRoot);
   await writeFile(
     configPath,
     JSON.stringify({
@@ -1678,8 +1688,8 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
   ]);
   expect(stops).toBe(0);
 
-  // A reload that keeps windowMode stable leaves the same controller mounted.
-  const secondController = kernel.service<object>(TERMINAL_CONTROLLER_SERVICE);
+  // Re-contributing host input may rebuild the physical plugin, but the
+  // host-owned terminal registry and its sessions remain mounted.
   await writeFile(
     configPath,
     JSON.stringify({
@@ -1688,9 +1698,7 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
     }),
   );
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service<object>(TERMINAL_CONTROLLER_SERVICE)).toBe(
-    secondController,
-  );
+  expect(kernel.service<object>(TERMINAL_CONTROLLER_SERVICE)).toBeDefined();
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "reload_terminal" },
   ]);
@@ -1942,53 +1950,6 @@ test("built-in tool plugin config reload reconciles its lifecycle", async () => 
       tool.name.startsWith("todo_"),
     ),
   ).toBe(false);
-  await client.dispose?.();
-}, 60_000);
-
-test("PDF plugin config reload reconciles its lifecycle", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-pdf-config-reload-"));
-  await mkdir(join(root, ".natalia"), { recursive: true });
-  const configPath = join(root, ".natalia", "config.json");
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  const kernel = new CapabilityRegistry();
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_pdf_config_reload",
-    capabilityRegistry: kernel,
-    provider: scriptedProvider("ready"),
-  });
-  client.start(() => undefined);
-  await client.runtimeStatus?.();
-  expect(kernel.has(PDF_PLUGIN_ID)).toBe(true);
-  expect(
-    (await client.registeredTools?.())?.some(
-      (tool) => tool.name === "pdf_read",
-    ),
-  ).toBe(true);
-
-  await writeFile(
-    configPath,
-    JSON.stringify({
-      version: 3,
-      plugins: { enabled: { [PDF_PLUGIN_ID]: false } },
-    }),
-  );
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(PDF_PLUGIN_ID)).toBe(false);
-  expect(
-    (await client.registeredTools?.())?.some(
-      (tool) => tool.name === "pdf_read",
-    ),
-  ).toBe(false);
-
-  await writeFile(configPath, JSON.stringify({ version: 3 }));
-  await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.has(PDF_PLUGIN_ID)).toBe(true);
-  expect(
-    (await client.registeredTools?.())?.some(
-      (tool) => tool.name === "pdf_read",
-    ),
-  ).toBe(true);
   await client.dispose?.();
 }, 60_000);
 
@@ -3346,6 +3307,67 @@ test("runtime discovers configured remote skills through the local cache", async
   }
 });
 
+test("runtime starts with no plugins when none are present on disk", async () => {
+  const root = await createEmptyWorkspace(
+    join(tmpdir(), "natalia-empty-plugin-runtime-"),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_empty_plugin_runtime",
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined);
+
+  expect(await client.plugins?.()).toEqual([]);
+  await client.dispose?.();
+});
+
+test("a physical plugin consumes its typed host input service", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-input-runtime-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "input-consumer");
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 2,
+      id: "input.consumer",
+      version: "1.0.0",
+      name: "Input Consumer",
+      description: "",
+      entry: "index.ts",
+      scope: "workspace",
+      provides: ["input.workspace"],
+      requires: ["terminal.input"],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["services"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    `export default { setup(api) {
+      const input = api.services.get("terminal.input");
+      if (!input) throw new Error("terminal input unavailable");
+      api.services.provide("input.workspace", input.workspaceRoot);
+    } };`,
+  );
+  await installFixturePlugin(root, pluginRoot);
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_input_runtime",
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined);
+
+  expect(await client.plugins?.()).toContainEqual(
+    expect.objectContaining({ id: "input.consumer" }),
+  );
+  expect(await client.service?.<string>("input.workspace")).toBe(root);
+  await client.dispose?.();
+});
+
 test("runtime loads a local manifest plugin and exposes its owned tool", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-runtime-"));
   const pluginRoot = join(root, ".natalia", "plugins", "demo");
@@ -3366,6 +3388,7 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
     join(pluginRoot, "index.ts"),
     "export default { setup(api) { api.tools.register({ name: 'echo', description: 'Echo', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'plugin ok'; } }) } }",
   );
+  await installFixturePlugin(root, pluginRoot);
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -3439,6 +3462,7 @@ test("unloading a plugin publishes tool.unregistered and drops it from registere
     join(pluginRoot, "index.ts"),
     "export default { setup(api) { api.tools.register({ name: 'echo', description: 'Echo', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'plugin ok'; } }) } }",
   );
+  await installFixturePlugin(root, pluginRoot);
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -3506,6 +3530,7 @@ test("permission profile extension rules do not gate desired plugins", async () 
     join(pluginRoot, "index.ts"),
     "export default { setup(api) { api.tools.register({ name: 'echo', description: 'Echo', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'plugin ok'; } }) } }",
   );
+  await installFixturePlugin(root, pluginRoot);
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_profile_extensions",
@@ -3528,68 +3553,7 @@ test("permission profile extension rules do not gate desired plugins", async () 
       (tool) => tool.name === "skill_load",
     ),
   ).toBe(false);
-  expect(
-    (await client.capabilities?.())?.some(
-      (capability) => capability.id === "natalia-tool-pdf",
-    ),
-  ).toBe(true);
-  expect(
-    (await client.registeredTools?.())?.some(
-      (tool) => tool.name === "pdf_read",
-    ),
-  ).toBe(true);
   await client.dispose?.();
-});
-
-test("PDF built-in plugin is owned by the kernel and can be absent", async () => {
-  const enabledRoot = await mkdtemp(join(tmpdir(), "natalia-pdf-enabled-"));
-  const enabled = createRealRuntimeClient({
-    workspaceRoot: enabledRoot,
-    sessionID: "ses_pdf_enabled",
-    provider: scriptedProvider("unused"),
-  });
-  enabled.start(() => undefined);
-  expect(
-    (await enabled.capabilities?.())?.find(
-      (capability) => capability.id === "natalia-tool-pdf",
-    ),
-  ).toMatchObject({
-    grants: ["tools"],
-    contributions: [{ kind: "tools", name: "pdf_read" }],
-  });
-  expect(
-    (await enabled.registeredTools?.())?.find(
-      (tool) => tool.name === "pdf_read",
-    ),
-  ).toMatchObject({ owner: "natalia-tool-pdf", requiresApproval: false });
-  await enabled.dispose?.();
-
-  const disabledRoot = await mkdtemp(join(tmpdir(), "natalia-pdf-disabled-"));
-  await mkdir(join(disabledRoot, ".natalia"), { recursive: true });
-  await writeFile(
-    join(disabledRoot, ".natalia", "config.json"),
-    JSON.stringify({
-      version: 3,
-      plugins: { enabled: { "natalia-tool-pdf": false } },
-    }),
-  );
-  const disabled = createRealRuntimeClient({
-    workspaceRoot: disabledRoot,
-    sessionID: "ses_pdf_disabled",
-    provider: scriptedProvider("unused"),
-  });
-  disabled.start(() => undefined);
-  expect(
-    (await disabled.capabilities?.())?.some(
-      (capability) => capability.id === "natalia-tool-pdf",
-    ),
-  ).toBe(false);
-  expect(
-    (await disabled.registeredTools?.())?.some(
-      (tool) => tool.name === "pdf_read",
-    ),
-  ).toBe(false);
-  await disabled.dispose?.();
 });
 
 test("permission profile denies injected MCP tools before execution", async () => {
@@ -3674,6 +3638,7 @@ test("read-only runtime preserves a plugin tool approval declaration", async () 
     join(pluginRoot, "index.ts"),
     "export default { setup(api) { api.tools.register({ name: 'mutate', description: 'Mutate', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'mutated'; } }) } }",
   );
+  await installFixturePlugin(root, pluginRoot);
   const requests: ProviderStreamRequest[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -3721,6 +3686,7 @@ test("workspace plugin trust does not alter an approval declaration", async () =
     join(pluginRoot, "index.ts"),
     "export default { setup(api) { api.tools.register({ name: 'observe', description: 'Observe', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'observed'; } }) } }",
   );
+  await installFixturePlugin(root, pluginRoot);
   const requests: ProviderStreamRequest[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -3761,6 +3727,7 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
     join(pluginRoot, "index.ts"),
     "export default { setup(api) { api.commands.register({ name: 'sync', title: 'Sync everything', run(input) { return `synced ${input.args.join(',')}` } }) } }",
   );
+  await installFixturePlugin(root, pluginRoot);
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_plugin_command",
@@ -8121,8 +8088,12 @@ test("delivered mailbox intents reach the main agent in the next turn system pro
     safeSummary: "a commit constraint",
     priority: "high",
   });
-  await waitFor(() => systemPrompts.length > 1);
-  const wakePrompt = systemPrompts.at(-1) ?? "";
+  await waitFor(() =>
+    systemPrompts.some((prompt) => prompt.includes("<pending_user_intents>")),
+  );
+  const wakePrompt =
+    systemPrompts.find((prompt) => prompt.includes("<pending_user_intents>")) ??
+    "";
   expect(wakePrompt).toContain("<pending_user_intents>");
   expect(wakePrompt).toContain("[high] constraint");
   expect(wakePrompt).toContain("never commit the lockfile");
@@ -11533,6 +11504,10 @@ export default definePlugin({
     api.commands.register({ name: "hello", title: "Hello", run() {} });
   },
 });`,
+  );
+  await installFixturePlugin(
+    root,
+    join(root, ".natalia", "plugins", "demo.plugin"),
   );
   await writeFile(
     join(root, ".natalia", "config.json"),

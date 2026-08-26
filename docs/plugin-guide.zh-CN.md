@@ -65,8 +65,9 @@ ESM JavaScript，因此安装后的入口不依赖 Bun 或 TypeScript 源码 loa
 }
 ```
 
-版本应与目标 Natalia 发行版兼容。包管理器会把完整 package closure 安装到
-`.natalia/plugins`；不要要求用户另建 SDK 软链接或单独复制入口文件。
+版本应与目标 Natalia 发行版兼容。包管理器只会把完整 package closure 安装一次，位置是
+Natalia 实例唯一的 `plugin-store`；所有 workspace 共用这份安装。不要要求用户另建 SDK
+软链接或单独复制入口文件。
 只有实现确实导入时才添加 `@natalia/contracts`、`@natalia/tools` 或其他 Natalia 包。
 `@natalia/sdk` 是 RPC client SDK，不是插件 authoring API。
 
@@ -346,23 +347,20 @@ plugin ID 转给另一个 package；确实需要改变身份时，应先卸载�
 6. 应用 schema 默认值后，导出 manifest 与文件 manifest 完全一致。
 7. plugin ID 不被 runtime 默认项保留，并且与现有 lock 没有所有权冲突。
 
-live closure、`<workspace>/.natalia/natalia.lock` 和项目配置作为一个事务更新。失败会
-恢复三者的旧快照。操作已经成功但清理临时文件失败时，会返回 `cleanupWarning`，不会
-改变成功结果。
+live closure 和 `natalia.lock` 归 Natalia 实例唯一的 `plugin-store` 所有。安装和卸载
+不会创建 workspace 本地 package closure。workspace 配置只记录启用状态、settings 等
+运行覆盖项。
 
 ### Doctor 与 reconcile
 
 `plugin doctor` 返回空数组表示安装状态一致。Finding code 含义如下：
 
-| Code                | 含义                                            |
-| ------------------- | ----------------------------------------------- |
-| `config_missing`    | lock 有该插件，但 package 配置缺失。            |
-| `lock_missing`      | 配置有该 package，但 lock 中缺失。              |
-| `package_missing`   | `.natalia/plugins` 中缺少 lock 记录的 package。 |
-| `manifest_mismatch` | 已安装 manifest 的 ID/版本与 lock 不同。        |
+| Code                | 含义                                           |
+| ------------------- | ---------------------------------------------- |
+| `package_missing`   | 实例 plugin store 中缺少 lock 记录的 package。 |
+| `manifest_mismatch` | 已安装 manifest 的 ID/版本与 lock 不同。       |
 
-`plugin reconcile` 会根据 lock 来源重装报告为 `package_missing` 的 package，为 lock
-中存在但配置缺失的项补上 package 配置，并删除没有 lock owner 的 package 配置。
+`plugin reconcile` 会根据 lock 来源重装报告为 `package_missing` 的 package。
 返回值包含 `reconciled: true`、原始 `findings` 和再次审计后的 `remaining`。它不会凭空
 补造缺失 lock entry，也不会静默接受 manifest mismatch；这两类问题应通过重装预期包
 来修复。
@@ -599,7 +597,6 @@ npm run ts:cli -- plugin doctor
 | `natalia-tool-ask`      | Interactive Question Tools | v2  | session   | tools                     |
 | `natalia-tool-fs-read`  | Filesystem Read Tools      | v2  | workspace | tools                     |
 | `natalia-tool-fs-write` | Filesystem Write Tools     | v2  | workspace | tools                     |
-| `natalia-tool-pdf`      | PDF Tools                  | v1  | workspace | tools                     |
 | `natalia-tool-process`  | Managed Process Tools      | v2  | session   | tools, services           |
 | `natalia-tool-search`   | Search Tools               | v2  | workspace | tools                     |
 | `natalia-tool-shell`    | Shell Tools                | v2  | session   | tools                     |

@@ -41,6 +41,7 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
 export function wireFoundation(ctx: RuntimeContext) {
   const { state, ports } = ctx;
   const pluginsController = createPluginsController({
+    pluginStoreRoot: state.pluginStoreRoot,
     workspaceRoot: state.workspaceRoot,
     tools: state.tools,
     capabilityRegistry: state.capabilityRegistry,

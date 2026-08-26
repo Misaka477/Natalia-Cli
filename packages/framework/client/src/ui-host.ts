@@ -30,6 +30,7 @@ import { discoverDesiredPluginEntries } from "./plugin-discovery";
 import { registerPluginOwner } from "./plugin-owner";
 
 export type UiAdapterHostOptions = {
+  pluginStoreRoot?: string;
   workspaceRoot: string;
   runtime: RuntimeClient;
   /** UI adapter kind(s) to materialize. Empty lists only load and inspect. */
@@ -81,14 +82,15 @@ export async function createUiAdapterHost(
     });
     controller = createDesiredPluginController({ registry, onError });
     await controller.reconcileDesired(async () => {
-      const users = await (input.discover ?? discoverDesiredPluginEntries)({
-        workspaceRoot: input.workspaceRoot,
-        paths: plugins.paths,
-        packages: plugins.packages,
-        enabled: plugins.enabled,
-        declaredIDs: (input.extraEntries ?? []).map((entry) => entry.id),
-        onError,
-      });
+      const users = input.pluginStoreRoot
+        ? await (input.discover ?? discoverDesiredPluginEntries)({
+            pluginStoreRoot: input.pluginStoreRoot,
+            packages: plugins.packages,
+            enabled: plugins.enabled,
+            declaredIDs: (input.extraEntries ?? []).map((entry) => entry.id),
+            onError,
+          })
+        : [];
       return resolveDesiredPluginCatalog({
         entries: [...(input.extraEntries ?? []), ...users].filter(
           isAdapterProcessEntry,

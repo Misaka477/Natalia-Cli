@@ -19,7 +19,7 @@ export const MCP_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "MCP Server",
   description: "Native MCP connections and their tools.",
-  entry: "natalia:mcp",
+  entry: "index.js",
   scope: "session",
   provides: [MCP_SERVICE],
   requires: [],

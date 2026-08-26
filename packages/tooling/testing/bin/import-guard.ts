@@ -42,7 +42,6 @@ const dependencyGuarded = [
   "packages/domains/governance-ledger",
   "packages/framework/session-store",
   "packages/framework/workspace",
-  "packages/plugins/tools/pdf",
 ];
 const capabilityRoots = ["packages/core/capability"];
 /**

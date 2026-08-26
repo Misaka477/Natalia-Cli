@@ -382,7 +382,7 @@ export const WEB_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Web Tools",
   description: "Fetching and searching the web.",
-  entry: "natalia:tool-web",
+  entry: "index.js",
   scope: "session",
   provides: [],
   requires: [],

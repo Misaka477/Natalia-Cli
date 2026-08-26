@@ -16,7 +16,7 @@ export const LOCAL_TOOLS_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Local Tools",
   description: "Out-of-tree tool families discovered in configured paths.",
-  entry: "natalia:local-tools",
+  entry: "index.js",
   scope: "workspace",
   provides: [LOCAL_TOOLS_RELOAD_SERVICE],
   requires: [],

@@ -14,6 +14,8 @@ export type RealRuntimeClientOptions = {
   episodeID?: EpisodeID;
   title?: string;
   workspaceRoot?: string;
+  /** Natalia instance plugin store. Hosts resolve this once; workspaces never own it. */
+  pluginStoreRoot?: string;
   /** Override the user-level config path, primarily for isolated hosts/tests. */
   globalConfigPath?: string;
   sessionDir?: string;

@@ -1,6 +1,6 @@
 import { resolveConfig } from "@natalia/config";
 import type { PluginPackageSource } from "@natalia/contracts";
-import { discoverPluginManifests, type PluginManifest } from "@natalia/plugin";
+import { discoverPluginManifests } from "@natalia/plugin";
 import {
   loadNataliaLock,
   packageDirectory,
@@ -14,50 +14,29 @@ export type PluginCatalogRow = {
   scope: "process" | "workspace" | "session";
   enabled: boolean;
   installed: boolean;
-  source: PluginPackageSource | { type: "runtime" };
+  source: PluginPackageSource;
   packageName: string | null;
 };
 
-export function runtimeDefaultPlugin(
-  id: string,
-  additionalManifests: readonly PluginManifest[] = [],
-) {
-  return additionalManifests.find((manifest) => manifest.id === id);
-}
-
-export async function listInstalledPlugins(
-  workspaceRoot: string,
-  options: {
-    globalPath?: string;
-    runtimeManifests?: readonly PluginManifest[];
-  } = {},
-): Promise<PluginCatalogRow[]> {
-  const { runtimeManifests = [], ...configOptions } = options;
+export async function listInstalledPlugins(input: {
+  pluginStoreRoot: string;
+  workspaceRoot: string;
+  globalPath?: string;
+}): Promise<PluginCatalogRow[]> {
   const [lock, { config }] = await Promise.all([
-    loadNataliaLock(workspaceRoot),
-    resolveConfig({ workspaceRoot, ...configOptions }),
+    loadNataliaLock(input.pluginStoreRoot),
+    resolveConfig(input),
   ]);
-  const rows = new Map<string, PluginCatalogRow>();
-  for (const manifest of runtimeManifests)
-    rows.set(manifest.id, {
-      id: manifest.id,
-      name: manifest.name,
-      version: manifest.version,
-      scope: manifest.scope,
-      enabled: config.plugins.enabled[manifest.id] !== false,
-      installed: true,
-      source: { type: "runtime" },
-      packageName: null,
-    });
+  const rows: PluginCatalogRow[] = [];
   for (const entry of Object.values(lock.plugins)) {
     const packageDir = packageDirectory(
-      pluginClosurePaths(workspaceRoot).pluginsDir,
+      pluginClosurePaths(input.pluginStoreRoot).pluginsDir,
       entry.packageName,
     );
     const manifest = (
       await discoverPluginManifests(packageDir, { nodeModules: false })
     )[0]?.manifest;
-    rows.set(entry.metadata.id, {
+    rows.push({
       id: entry.metadata.id,
       name: manifest?.name ?? null,
       version: entry.metadata.resolvedVersion,
@@ -68,7 +47,5 @@ export async function listInstalledPlugins(
       packageName: entry.packageName,
     });
   }
-  return [...rows.values()].sort((left, right) =>
-    left.id.localeCompare(right.id),
-  );
+  return rows.sort((left, right) => left.id.localeCompare(right.id));
 }

@@ -10,11 +10,12 @@ import {
 import { createRealRuntimeClient } from "./runtime/main";
 
 async function withService<T>(
-  input: { workspaceRoot: string },
+  input: { workspaceRoot: string; pluginStoreRoot?: string },
   operation: (service: TaskWorkflowService) => Promise<T>,
 ) {
   const client: RuntimeServiceClient = createRealRuntimeClient({
     workspaceRoot: input.workspaceRoot,
+    pluginStoreRoot: input.pluginStoreRoot,
   });
   try {
     const service = await client.service<TaskWorkflowService>(
@@ -27,16 +28,22 @@ async function withService<T>(
   }
 }
 
-export function runTaskFromDocument(input: TaskRunFromDocumentInput) {
+export function runTaskFromDocument(
+  input: TaskRunFromDocumentInput & { pluginStoreRoot?: string },
+) {
   return withService(input, (service) => service.runTaskFromDocument(input));
 }
 
-export function runTask(input: TaskRunInput) {
+export function runTask(input: TaskRunInput & { pluginStoreRoot?: string }) {
   return withService(input, (service) => service.runTask(input));
 }
 
 export const taskPermissionPreviewForDocument = (
-  input: Parameters<TaskWorkflowService["taskPermissionPreviewForDocument"]>[0],
+  input: Parameters<
+    TaskWorkflowService["taskPermissionPreviewForDocument"]
+  >[0] & {
+    pluginStoreRoot?: string;
+  },
 ) =>
   withService(input, (service) =>
     service.taskPermissionPreviewForDocument(input),

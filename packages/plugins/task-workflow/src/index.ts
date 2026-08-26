@@ -15,4 +15,41 @@ export {
   type TaskStateService,
   type WorkflowExecutionStoreService,
   type WorkflowStoreService,
-} from "./workflow-store-service";
+} from "@natalia/workflow";
+import type { Plugin, PluginAPI } from "@natalia/plugin";
+import {
+  createTaskWorkflowPlugin,
+  TASK_WORKFLOW_PLUGIN_MANIFEST,
+} from "./task-workflow-plugin";
+import { createTaskWorkflowController } from "./task-workflow-controller";
+
+export const TASK_WORKFLOW_INPUT_SERVICE = "task-workflow.input";
+export type TaskWorkflowRuntimeInput = Parameters<
+  typeof createTaskWorkflowController
+>[0];
+
+let taskWorkflowInstance: Plugin | undefined;
+const taskWorkflowPlugin: Plugin = {
+  manifest: {
+    ...TASK_WORKFLOW_PLUGIN_MANIFEST,
+    entry: "index.js",
+    requires: [TASK_WORKFLOW_INPUT_SERVICE],
+  },
+  async setup(api: PluginAPI) {
+    const input = api.services.get<TaskWorkflowRuntimeInput>(
+      TASK_WORKFLOW_INPUT_SERVICE,
+    );
+    if (!input)
+      throw new Error(
+        `missing runtime service: ${TASK_WORKFLOW_INPUT_SERVICE}`,
+      );
+    taskWorkflowInstance = createTaskWorkflowPlugin(input);
+    await taskWorkflowInstance.setup(api);
+  },
+  async dispose() {
+    await taskWorkflowInstance?.dispose?.();
+    taskWorkflowInstance = undefined;
+  },
+};
+
+export default taskWorkflowPlugin;

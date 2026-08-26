@@ -13,17 +13,20 @@ import { join } from "node:path";
 import { resolveConfig, updateConfig } from "@natalia/config";
 import {
   doctorPlugins,
+  initializeOfficialPlugins,
   installPlugin,
   listInstalledPlugins,
   loadNataliaLock,
+  OFFICIAL_PLUGIN_PACKAGES,
   reconcilePlugins,
+  reinstallOfficialPlugin,
+  resolveOfficialPluginPackage,
   saveNataliaLock,
   setPluginEnabled,
   uninstallPlugin,
   type PackageManagerRun,
 } from "../src";
 import { rollbackWith } from "../src/closure";
-import type { PluginManifest } from "@natalia/plugin";
 
 const packageName = "@fixture/natalia-plugin";
 const pluginID = "fixture.plugin";
@@ -31,33 +34,6 @@ const pluginID = "fixture.plugin";
 function pluginModule(manifest: object) {
   return `export default { manifest: ${JSON.stringify(manifest)}, setup() {} };`;
 }
-
-const runtimeManifests: PluginManifest[] = [
-  {
-    apiVersion: 1,
-    id: "natalia-cli",
-    version: "1.0.0",
-    name: "CLI",
-    description: "CLI adapter.",
-    entry: "natalia:cli",
-    capabilities: ["commands"],
-    scope: "process",
-    provides: [],
-    requires: [],
-  },
-  {
-    apiVersion: 1,
-    id: "natalia-tool-todo",
-    version: "1.0.0",
-    name: "Todo",
-    description: "Todo tools.",
-    entry: "natalia:tool-todo",
-    capabilities: ["tools"],
-    scope: "session",
-    provides: [],
-    requires: [],
-  },
-];
 
 function fixturePackageManager(runs: string[][]): PackageManagerRun {
   return async ({ args }) => {
@@ -107,35 +83,24 @@ function fixturePackageManager(runs: string[][]): PackageManagerRun {
 }
 
 async function installedWorkspace() {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-transaction-"));
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-transaction-"));
   const runs: string[][] = [];
   const runPackageManager = fixturePackageManager(runs);
   await installPlugin({
-    workspaceRoot,
+    pluginStoreRoot,
     spec: `${packageName}@1.2.3`,
     runPackageManager,
   });
-  return { workspaceRoot, runs, runPackageManager };
+  return { pluginStoreRoot, runs, runPackageManager };
 }
 
-async function transactionState(workspaceRoot: string) {
-  const natalia = join(workspaceRoot, ".natalia");
-  return Promise.all(
-    [
-      "plugins/package.json",
-      "plugins/package-lock.json",
-      "natalia.lock",
-      "config.json",
-    ].map(async (path) => readFile(join(natalia, path), "utf8")),
-  );
-}
-
-test("plugin lifecycle stages, catalogs, toggles, reconciles, and fully uninstalls", async () => {
+test("plugin lifecycle installs, catalogs, toggles, reconciles, and fully uninstalls", async () => {
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-store-"));
   const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-installer-"));
   const runs: string[][] = [];
   const runPackageManager = fixturePackageManager(runs);
   const installed = await installPlugin({
-    workspaceRoot,
+    pluginStoreRoot,
     spec: `${packageName}@1.2.3`,
     runPackageManager,
   });
@@ -145,18 +110,12 @@ test("plugin lifecycle stages, catalogs, toggles, reconciles, and fully uninstal
     packageName,
     metadata: { resolvedVersion: "1.2.3", integrity: "sha512-fixture" },
   });
-  expect(runs).toHaveLength(2);
-  expect(runs[0]!.join(" ")).toContain("plugin-staging");
-  expect(runs[1]!.join(" ")).toContain("plugins");
-  expect(await doctorPlugins(workspaceRoot)).toEqual([]);
+  expect(runs).toHaveLength(1);
+  expect(runs[0]!.join(" ")).toContain(`--prefix ${pluginStoreRoot}`);
+  expect(runs[0]!.join(" ")).not.toContain("plugin-staging");
+  expect(await doctorPlugins(pluginStoreRoot)).toEqual([]);
 
-  const rows = await listInstalledPlugins(workspaceRoot, { runtimeManifests });
-  expect(rows.find((row) => row.id === "natalia-cli")).toMatchObject({
-    name: "CLI",
-    installed: true,
-    source: { type: "runtime" },
-    packageName: null,
-  });
+  const rows = await listInstalledPlugins({ pluginStoreRoot, workspaceRoot });
   expect(rows.find((row) => row.id === pluginID)).toMatchObject({
     name: "Fixture",
     installed: true,
@@ -169,19 +128,17 @@ test("plugin lifecycle stages, catalogs, toggles, reconciles, and fully uninstal
     new Set(rows.map((row) => Object.keys(row).sort().join(","))).size,
   ).toBe(1);
 
-  await setPluginEnabled({ workspaceRoot, pluginID, enabled: false });
   await setPluginEnabled({
+    pluginStoreRoot,
     workspaceRoot,
-    pluginID: "natalia-tool-todo",
+    pluginID,
     enabled: false,
-    runtimeManifests,
   });
   const toggled = JSON.parse(
     await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
   );
   expect(toggled.plugins.enabled).toMatchObject({
     [pluginID]: false,
-    "natalia-tool-todo": false,
   });
   expect(toggled.tools?.enabled).toBeUndefined();
 
@@ -192,21 +149,19 @@ test("plugin lifecycle stages, catalogs, toggles, reconciles, and fully uninstal
       readOnly: { [pluginID]: true },
     },
   });
-  await uninstallPlugin({ workspaceRoot, pluginID, runPackageManager });
-  expect((await loadNataliaLock(workspaceRoot)).plugins).toEqual({});
+  expect(
+    await uninstallPlugin({ pluginStoreRoot, pluginID, runPackageManager }),
+  ).toMatchObject({ disposition: "removed" });
+  expect((await loadNataliaLock(pluginStoreRoot)).plugins).toEqual({});
   const config = (await resolveConfig({ workspaceRoot })).config.plugins;
-  for (const key of [
-    "packages",
-    "enabled",
-    "settings",
-    "capabilities",
-    "readOnly",
-  ] as const)
-    expect(config[key][pluginID]).toBeUndefined();
+  expect(config.enabled[pluginID]).toBe(false);
+  expect(config.settings[pluginID]).toEqual({ key: true });
+  expect(config.capabilities[pluginID]).toEqual(["tools"]);
+  expect(config.readOnly[pluginID]).toBe(true);
 });
 
-test("invalid staged install leaves no live package, lock, or config", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-invalid-"));
+test("invalid installed package does not create a Natalia lock", async () => {
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-invalid-"));
   const runPackageManager: PackageManagerRun = async ({ args }) => {
     const prefix = args[args.indexOf("--prefix") + 1]!;
     const packageDir = join(prefix, "node_modules", "invalid-plugin");
@@ -223,19 +178,18 @@ test("invalid staged install leaves no live package, lock, or config", async () 
     );
   };
   await expect(
-    installPlugin({ workspaceRoot, spec: "invalid-plugin", runPackageManager }),
+    installPlugin({
+      pluginStoreRoot,
+      spec: "invalid-plugin",
+      runPackageManager,
+    }),
   ).rejects.toThrow("exactly one natalia.plugin.json");
-  expect(existsSync(join(workspaceRoot, ".natalia", "plugins"))).toBe(false);
-  expect(existsSync(join(workspaceRoot, ".natalia", "natalia.lock"))).toBe(
-    false,
-  );
-  expect(existsSync(join(workspaceRoot, ".natalia", "config.json"))).toBe(
-    false,
-  );
+  expect(existsSync(join(pluginStoreRoot, "node_modules"))).toBe(true);
+  expect(existsSync(join(pluginStoreRoot, "natalia.lock"))).toBe(false);
 });
 
 test("install rejects an entry manifest that differs from the package manifest", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-mismatch-"));
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-mismatch-"));
   const base = fixturePackageManager([]);
   const runPackageManager: PackageManagerRun = async (input) => {
     await base(input);
@@ -260,218 +214,101 @@ test("install rejects an entry manifest that differs from the package manifest",
     );
   };
   await expect(
-    installPlugin({ workspaceRoot, spec: packageName, runPackageManager }),
+    installPlugin({ pluginStoreRoot, spec: packageName, runPackageManager }),
   ).rejects.toThrow("does not match natalia.plugin.json");
 });
 
-test("uninstalling a runtime default durably disables it", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-default-off-"));
-  const result = await uninstallPlugin({
-    workspaceRoot,
-    pluginID: "natalia-tool-todo",
-    runtimeManifests,
-  });
-  expect(result).toMatchObject({
-    uninstalled: false,
-    enabled: false,
-    disposition: "runtime default disabled",
-  });
+test("installer state is not synthesized without a physical package", async () => {
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-no-store-"));
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-no-runtime-"));
   expect(
-    (await resolveConfig({ workspaceRoot })).config.plugins.enabled[
-      "natalia-tool-todo"
-    ],
-  ).toBe(false);
-});
-
-test("runtime default uninstall restores config after a reported write failure", async () => {
-  const workspaceRoot = await mkdtemp(
-    join(tmpdir(), "natalia-default-rollback-"),
-  );
-  const configPath = join(workspaceRoot, ".natalia", "config.json");
-  await mkdir(join(workspaceRoot, ".natalia"), { recursive: true });
-  const before = '{"version":3,"plugins":{"enabled":{"natalia-cli":false}}}\n';
-  await writeFile(configPath, before);
+    await listInstalledPlugins({ pluginStoreRoot, workspaceRoot }),
+  ).toEqual([]);
+  await expect(
+    setPluginEnabled({
+      pluginStoreRoot,
+      workspaceRoot,
+      pluginID: "runtime.plugin",
+      enabled: false,
+    }),
+  ).rejects.toThrow("unknown plugin");
   await expect(
     uninstallPlugin({
-      workspaceRoot,
-      pluginID: "natalia-tool-todo",
-      runtimeManifests,
-      seams: {
-        updateConfig: async (root, patch, options) => {
-          await updateConfig(root, patch, options);
-          throw new Error("config write failed");
-        },
-      },
+      pluginStoreRoot,
+      pluginID: "runtime.plugin",
     }),
-  ).rejects.toThrow("config write failed");
-  expect(await readFile(configPath, "utf8")).toBe(before);
+  ).rejects.toThrow("unknown plugin");
+
+  const physicalRoot = await mkdtemp(join(tmpdir(), "natalia-runtime-id-"));
+  const installed = await installPlugin({
+    pluginStoreRoot: physicalRoot,
+    spec: packageName,
+    runPackageManager: fixturePackageManager([]),
+  });
+  expect(installed.pluginID).toBe(pluginID);
 });
 
 test("plugin doctor reports and reconciles a package missing from disk", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-doctor-"));
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-doctor-"));
   const runs: string[][] = [];
   const runPackageManager = fixturePackageManager(runs);
   await installPlugin({
-    workspaceRoot,
+    pluginStoreRoot,
     spec: `${packageName}@1.2.3`,
     runPackageManager,
   });
   await rm(
-    join(
-      workspaceRoot,
-      ".natalia",
-      "plugins",
-      "node_modules",
-      "@fixture",
-      "natalia-plugin",
-    ),
+    join(pluginStoreRoot, "node_modules", "@fixture", "natalia-plugin"),
     { recursive: true },
   );
-  expect(await doctorPlugins(workspaceRoot)).toContainEqual(
+  expect(await doctorPlugins(pluginStoreRoot)).toContainEqual(
     expect.objectContaining({ code: "package_missing" }),
   );
-  await reconcilePlugins(workspaceRoot, runPackageManager);
-  expect(await doctorPlugins(workspaceRoot)).toEqual([]);
+  await reconcilePlugins(pluginStoreRoot, runPackageManager);
+  expect(await doctorPlugins(pluginStoreRoot)).toEqual([]);
 });
 
-test("reinstall restores the complete working closure after live npm failure", async () => {
-  const { workspaceRoot, runPackageManager } = await installedWorkspace();
-  const before = await transactionState(workspaceRoot);
-  let runs = 0;
+test("package manager failure does not mutate Natalia metadata", async () => {
+  const { pluginStoreRoot } = await installedWorkspace();
+  const beforeLock = await loadNataliaLock(pluginStoreRoot);
   await expect(
     installPlugin({
-      workspaceRoot,
+      pluginStoreRoot,
       spec: `${packageName}@2.0.0`,
-      runPackageManager: async (input) => {
-        runs += 1;
-        await runPackageManager(input);
-        if (runs === 2) {
-          await writeFile(
-            join(input.args[input.args.indexOf("--prefix") + 1]!, "corrupt"),
-            "yes",
-          );
-          throw new Error("live npm failed");
-        }
+      runPackageManager: async () => {
+        throw new Error("npm failed");
       },
     }),
-  ).rejects.toThrow("live npm failed");
-  expect(await transactionState(workspaceRoot)).toEqual(before);
-  expect(
-    existsSync(join(workspaceRoot, ".natalia", "plugins", "corrupt")),
-  ).toBe(false);
+  ).rejects.toThrow("npm failed");
+  expect(await loadNataliaLock(pluginStoreRoot)).toEqual(beforeLock);
 });
 
-test("install restores closure, lock, and config after metadata commit failures", async () => {
-  for (const failure of ["lock", "config"] as const) {
-    const { workspaceRoot, runPackageManager } = await installedWorkspace();
-    const before = await transactionState(workspaceRoot);
-    await expect(
-      installPlugin({
-        workspaceRoot,
-        spec: `${packageName}@1.2.3`,
-        runPackageManager,
-        seams:
-          failure === "lock"
-            ? {
-                saveLock: async (root, lock) => {
-                  await saveNataliaLock(root, lock);
-                  throw new Error("lock write failed");
-                },
-              }
-            : {
-                updateConfig: async (root, patch, options) => {
-                  await updateConfig(root, patch, options);
-                  throw new Error("config write failed");
-                },
-              },
-      }),
-    ).rejects.toThrow(`${failure} write failed`);
-    expect(await transactionState(workspaceRoot)).toEqual(before);
-  }
-});
-
-test("committed install reports staging cleanup failure as a warning", async () => {
-  const workspaceRoot = await mkdtemp(
-    join(tmpdir(), "natalia-cleanup-warning-"),
-  );
-  const result = await installPlugin({
-    workspaceRoot,
-    spec: packageName,
-    runPackageManager: fixturePackageManager([]),
-    seams: {
-      cleanupStage: async () => {
-        throw new Error("staging cleanup failed");
+test("lock failure does not roll back a successful package install", async () => {
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-metadata-"));
+  await expect(
+    installPlugin({
+      pluginStoreRoot,
+      spec: `${packageName}@1.2.3`,
+      runPackageManager: fixturePackageManager([]),
+      seams: {
+        saveLock: async () => {
+          throw new Error("lock write failed");
+        },
       },
-    },
-  });
-  expect(result).toMatchObject({
-    installed: true,
-    pluginID,
-    cleanupWarning: "staging cleanup failed",
-  });
-  expect(
-    (await loadNataliaLock(workspaceRoot)).plugins[pluginID],
-  ).toBeDefined();
-});
-
-test("install keeps its live closure when a missing backup cannot be discarded", async () => {
-  const workspaceRoot = await mkdtemp(
-    join(tmpdir(), "natalia-discard-install-"),
-  );
-  const result = await installPlugin({
-    workspaceRoot,
-    spec: packageName,
-    runPackageManager: fixturePackageManager([]),
-    seams: {
-      discardBackup: async (snapshot) => {
-        await rm(snapshot.backup, { recursive: true, force: true });
-        throw new Error("missing backup cleanup failed");
-      },
-    },
-  });
-  expect(result.cleanupWarning).toContain("missing backup cleanup failed");
+    }),
+  ).rejects.toThrow("lock write failed");
   expect(
     existsSync(
-      join(
-        workspaceRoot,
-        ".natalia",
-        "plugins",
-        "node_modules",
-        "@fixture",
-        "natalia-plugin",
-      ),
+      join(pluginStoreRoot, "node_modules", "@fixture", "natalia-plugin"),
     ),
   ).toBe(true);
   expect(
-    (await loadNataliaLock(workspaceRoot)).plugins[pluginID],
-  ).toBeDefined();
-});
-
-test("failed install aggregates staging cleanup failure after original error", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-cleanup-error-"));
-  const original = new Error("package manager failed");
-  const cleanup = new Error("staging cleanup failed");
-  try {
-    await installPlugin({
-      workspaceRoot,
-      spec: packageName,
-      runPackageManager: async () => {
-        throw original;
-      },
-      seams: {
-        cleanupStage: async () => {
-          throw cleanup;
-        },
-      },
-    });
-  } catch (error) {
-    expect(error).toBeInstanceOf(AggregateError);
-    expect((error as AggregateError).errors).toEqual([original, cleanup]);
-  }
+    (await loadNataliaLock(pluginStoreRoot)).plugins[pluginID],
+  ).toBeUndefined();
 });
 
 test("install rejects duplicate plugin IDs and package manifest ID changes", async () => {
-  const { workspaceRoot } = await installedWorkspace();
+  const { pluginStoreRoot } = await installedWorkspace();
   const manager =
     (name: string, id: string): PackageManagerRun =>
     async ({ args }) => {
@@ -493,175 +330,110 @@ test("install rejects duplicate plugin IDs and package manifest ID changes", asy
         id,
         version: "1.0.0",
         name,
-        entry: "index.ts",
+        entry: `index-${id}.ts`,
         scope: "workspace",
       } as const;
       await writeFile(
         join(dir, "natalia.plugin.json"),
         JSON.stringify(manifest),
       );
-      await writeFile(join(dir, "index.ts"), pluginModule(manifest));
+      await writeFile(join(dir, manifest.entry), pluginModule(manifest));
     };
   await expect(
     installPlugin({
-      workspaceRoot,
+      pluginStoreRoot,
       spec: "other-package",
       runPackageManager: manager("other-package", pluginID),
     }),
   ).rejects.toThrow("already owned");
   await expect(
     installPlugin({
-      workspaceRoot,
+      pluginStoreRoot,
       spec: packageName,
       runPackageManager: manager(packageName, "changed.id"),
     }),
   ).rejects.toThrow("changing plugin id");
 });
 
-test("uninstall rolls back config, closure, and lock on every mutation failure", async () => {
-  for (const failure of ["config", "npm", "lock"] as const) {
-    const { workspaceRoot, runPackageManager } = await installedWorkspace();
-    const before = await transactionState(workspaceRoot);
-    await expect(
-      uninstallPlugin({
-        workspaceRoot,
-        pluginID,
-        runPackageManager:
-          failure === "npm"
-            ? async (input) => {
-                await runPackageManager(input);
-                throw new Error("npm uninstall failed");
-              }
-            : runPackageManager,
-        seams:
-          failure === "config"
-            ? {
-                updateConfig: async () => {
-                  throw new Error("config removal failed");
-                },
-              }
-            : failure === "lock"
-              ? {
-                  saveLock: async (root, lock) => {
-                    await saveNataliaLock(root, lock);
-                    throw new Error("lock removal failed");
-                  },
-                }
-              : undefined,
-      }),
-    ).rejects.toThrow();
-    expect(await transactionState(workspaceRoot)).toEqual(before);
-  }
+test("reinstall resolves an unchanged scoped registry dependency", async () => {
+  const { pluginStoreRoot, runPackageManager } = await installedWorkspace();
+  const installed = await installPlugin({
+    pluginStoreRoot,
+    spec: `${packageName}@1.2.3`,
+    runPackageManager,
+  });
+  expect(installed.packageName).toBe(packageName);
+  expect(installed.pluginID).toBe(pluginID);
 });
 
-test("uninstall keeps its committed closure after partial backup disposal fails", async () => {
-  const { workspaceRoot, runPackageManager } = await installedWorkspace();
-  const result = await uninstallPlugin({
-    workspaceRoot,
-    pluginID,
-    runPackageManager,
-    seams: {
-      discardBackup: async (snapshot) => {
-        await rm(join(snapshot.backup, "node_modules"), {
-          recursive: true,
-          force: true,
-        });
-        throw new Error("partial backup cleanup failed");
+test("uninstall leaves Natalia metadata unchanged when npm fails", async () => {
+  const { pluginStoreRoot } = await installedWorkspace();
+  const beforeLock = await loadNataliaLock(pluginStoreRoot);
+  await expect(
+    uninstallPlugin({
+      pluginStoreRoot,
+      pluginID,
+      runPackageManager: async () => {
+        throw new Error("npm uninstall failed");
       },
-    },
-  });
-  expect(result).toMatchObject({
-    uninstalled: true,
-    cleanupWarning: "partial backup cleanup failed",
-  });
-  expect(
-    existsSync(join(workspaceRoot, ".natalia", "plugins", "package.json")),
-  ).toBe(true);
+    }),
+  ).rejects.toThrow("npm uninstall failed");
+  expect(await loadNataliaLock(pluginStoreRoot)).toEqual(beforeLock);
+});
+
+test("uninstall does not restore a package after metadata cleanup fails", async () => {
+  const { pluginStoreRoot, runPackageManager } = await installedWorkspace();
+  await expect(
+    uninstallPlugin({
+      pluginStoreRoot,
+      pluginID,
+      runPackageManager,
+      seams: {
+        saveLock: async () => {
+          throw new Error("lock removal failed");
+        },
+      },
+    }),
+  ).rejects.toThrow("lock removal failed");
   expect(
     existsSync(
-      join(
-        workspaceRoot,
-        ".natalia",
-        "plugins",
-        "node_modules",
-        "@fixture",
-        "natalia-plugin",
-      ),
+      join(pluginStoreRoot, "node_modules", "@fixture", "natalia-plugin"),
     ),
   ).toBe(false);
   expect(
-    (await loadNataliaLock(workspaceRoot)).plugins[pluginID],
-  ).toBeUndefined();
+    (await loadNataliaLock(pluginStoreRoot)).plugins[pluginID],
+  ).toBeDefined();
 });
 
-test("reconcile restores closure and config when a second package repair fails", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-reconcile-npm-"));
-  const paths = join(workspaceRoot, ".natalia");
-  await mkdir(join(paths, "plugins"), { recursive: true });
-  await writeFile(join(paths, "plugins", "sentinel"), "before");
-  const configPath = join(paths, "config.json");
-  const configBefore = '{"version":3,"plugins":{"enabled":{}}}\n';
-  await writeFile(configPath, configBefore);
-  await saveNataliaLock(workspaceRoot, {
+test("reconcile delegates every physical package repair to installPlugin", async () => {
+  const pluginStoreRoot = await mkdtemp(
+    join(tmpdir(), "natalia-reconcile-npm-"),
+  );
+  await writeFile(join(pluginStoreRoot, "sentinel"), "before");
+  await saveNataliaLock(pluginStoreRoot, {
     version: 1,
     plugins: {
       "first.plugin": lockEntry("first-package", "first.plugin"),
       "second.plugin": lockEntry("second-package", "second.plugin"),
     },
   });
-  let repairs = 0;
+  const repairs: string[] = [];
   await expect(
-    reconcilePlugins(workspaceRoot, async ({ args }) => {
-      repairs += 1;
-      const prefix = args[args.indexOf("--prefix") + 1]!;
-      await writeFile(join(prefix, `repair-${repairs}`), "changed");
-      if (repairs === 2) throw new Error("second repair failed");
+    reconcilePlugins(pluginStoreRoot, undefined, {
+      installPlugin: async (input) => {
+        repairs.push(input.spec);
+        if (repairs.length === 2) throw new Error("second repair failed");
+        return {} as never;
+      },
     }),
   ).rejects.toThrow("second repair failed");
-  expect(await readFile(join(paths, "plugins", "sentinel"), "utf8")).toBe(
+  expect(repairs).toHaveLength(2);
+  expect(await readFile(join(pluginStoreRoot, "sentinel"), "utf8")).toBe(
     "before",
   );
-  expect(existsSync(join(paths, "plugins", "repair-1"))).toBe(false);
-  expect(existsSync(join(paths, "plugins", "repair-2"))).toBe(false);
-  expect(await readFile(configPath, "utf8")).toBe(configBefore);
-});
-
-test("reconcile restores repaired packages after a config failure", async () => {
-  const workspaceRoot = await mkdtemp(
-    join(tmpdir(), "natalia-reconcile-config-"),
-  );
-  const paths = join(workspaceRoot, ".natalia");
-  await mkdir(join(paths, "plugins"), { recursive: true });
-  const configPath = join(paths, "config.json");
-  const configBefore = '{"version":3,"plugins":{"enabled":{}}}\n';
-  await writeFile(configPath, configBefore);
-  await saveNataliaLock(workspaceRoot, {
-    version: 1,
-    plugins: { [pluginID]: lockEntry(packageName, pluginID) },
-  });
-  await expect(
-    reconcilePlugins(
-      workspaceRoot,
-      fixturePackageManager([]),
-      {},
-      {
-        updateConfig: async (root, patch, options) => {
-          await updateConfig(root, patch, options);
-          throw new Error("reconcile config failed");
-        },
-      },
-    ),
-  ).rejects.toThrow("reconcile config failed");
-  expect(
-    existsSync(
-      join(paths, "plugins", "node_modules", "@fixture", "natalia-plugin"),
-    ),
-  ).toBe(false);
-  expect(await readFile(configPath, "utf8")).toBe(configBefore);
 });
 
 test("package validation enforces package, manifest, entry, and lock boundaries", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-boundary-"));
   const manager =
     (
       mode: "dependency" | "entryEscape" | "packageEscape" | "missing",
@@ -715,29 +487,37 @@ test("package validation enforces package, manifest, entry, and lock boundaries"
         await writeFile(join(dependency, "natalia.plugin.json"), "{}");
       }
     };
+  const entryRoot = await mkdtemp(join(tmpdir(), "natalia-boundary-entry-"));
   await expect(
     installPlugin({
-      workspaceRoot: root,
+      pluginStoreRoot: entryRoot,
       spec: "boundary-plugin",
       runPackageManager: manager("entryEscape"),
     }),
   ).rejects.toThrow("entry escapes");
+  const packageRoot = await mkdtemp(
+    join(tmpdir(), "natalia-boundary-package-"),
+  );
   await expect(
     installPlugin({
-      workspaceRoot: root,
+      pluginStoreRoot: packageRoot,
       spec: "boundary-plugin",
       runPackageManager: manager("packageEscape"),
     }),
   ).rejects.toThrow("package escapes node_modules");
+  const missingRoot = await mkdtemp(join(tmpdir(), "natalia-boundary-lock-"));
   await expect(
     installPlugin({
-      workspaceRoot: root,
+      pluginStoreRoot: missingRoot,
       spec: "boundary-plugin",
       runPackageManager: manager("missing"),
     }),
   ).rejects.toThrow("package-lock is missing");
+  const dependencyRoot = await mkdtemp(
+    join(tmpdir(), "natalia-boundary-dependency-"),
+  );
   const installed = await installPlugin({
-    workspaceRoot: root,
+    pluginStoreRoot: dependencyRoot,
     spec: "boundary-plugin",
     runPackageManager: manager("dependency"),
   });
@@ -768,7 +548,7 @@ test("rollback attempts every restoration and aggregates failures", async () => 
   expect(attempts).toEqual(["closure", "lock", "config"]);
 });
 
-test("real and symlink workspace paths share one operation queue", async () => {
+test("real and symlink store paths share one operation queue", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-realpath-"));
   const alias = `${root}-alias`;
   await symlink(root, alias, "dir");
@@ -784,12 +564,12 @@ test("real and symlink workspace paths share one operation queue", async () => {
   };
   await Promise.all([
     installPlugin({
-      workspaceRoot: root,
+      pluginStoreRoot: root,
       spec: packageName,
       runPackageManager: manager,
     }),
     installPlugin({
-      workspaceRoot: alias,
+      pluginStoreRoot: alias,
       spec: packageName,
       runPackageManager: manager,
     }),
@@ -797,38 +577,242 @@ test("real and symlink workspace paths share one operation queue", async () => {
   expect(maximum).toBe(1);
 });
 
+test("workspaces share one plugin store and keep independent enabled config", async () => {
+  const pluginStoreRoot = await mkdtemp(
+    join(tmpdir(), "natalia-shared-store-"),
+  );
+  const firstWorkspaceRoot = await mkdtemp(
+    join(tmpdir(), "natalia-workspace-a-"),
+  );
+  const secondWorkspaceRoot = await mkdtemp(
+    join(tmpdir(), "natalia-workspace-b-"),
+  );
+  await installPlugin({
+    pluginStoreRoot,
+    spec: packageName,
+    runPackageManager: fixturePackageManager([]),
+  });
+
+  let active = 0;
+  let maximum = 0;
+  const apply = async () => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    active -= 1;
+  };
+  await Promise.all([
+    setPluginEnabled({
+      pluginStoreRoot,
+      workspaceRoot: firstWorkspaceRoot,
+      pluginID,
+      enabled: false,
+      apply,
+    }),
+    setPluginEnabled({
+      pluginStoreRoot,
+      workspaceRoot: secondWorkspaceRoot,
+      pluginID,
+      enabled: true,
+      apply,
+    }),
+  ]);
+
+  expect(maximum).toBe(1);
+  expect(Object.keys((await loadNataliaLock(pluginStoreRoot)).plugins)).toEqual(
+    [pluginID],
+  );
+  expect(
+    existsSync(
+      join(pluginStoreRoot, "node_modules", "@fixture", "natalia-plugin"),
+    ),
+  ).toBe(true);
+  for (const workspaceRoot of [firstWorkspaceRoot, secondWorkspaceRoot]) {
+    expect(existsSync(join(workspaceRoot, "natalia.lock"))).toBe(false);
+    expect(existsSync(join(workspaceRoot, "node_modules"))).toBe(false);
+  }
+  expect(
+    (
+      await listInstalledPlugins({
+        pluginStoreRoot,
+        workspaceRoot: firstWorkspaceRoot,
+      })
+    )[0]?.enabled,
+  ).toBe(false);
+  expect(
+    (
+      await listInstalledPlugins({
+        pluginStoreRoot,
+        workspaceRoot: secondWorkspaceRoot,
+      })
+    )[0]?.enabled,
+  ).toBe(true);
+});
+
 test("custom global config participates in maintenance reads and writes", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-custom-config-"));
-  const globalPath = join(root, "custom-global.json");
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-store-"));
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-custom-config-"));
+  const globalPath = join(workspaceRoot, "custom-global.json");
   await writeFile(
     globalPath,
     JSON.stringify({
       version: 3,
-      plugins: { enabled: { "natalia-cli": false } },
+      plugins: { enabled: { [pluginID]: false } },
     }),
   );
-  expect(
-    (await listInstalledPlugins(root, { globalPath, runtimeManifests })).find(
-      (row) => row.id === "natalia-cli",
-    )?.enabled,
-  ).toBe(false);
-  await setPluginEnabled({
-    workspaceRoot: root,
-    pluginID: "natalia-cli",
-    enabled: true,
-    config: { globalPath },
-    runtimeManifests,
+  await installPlugin({
+    pluginStoreRoot,
+    spec: packageName,
+    runPackageManager: fixturePackageManager([]),
   });
   expect(
-    (await resolveConfig({ workspaceRoot: root, globalPath })).config.plugins
-      .enabled["natalia-cli"],
+    (
+      await listInstalledPlugins({
+        pluginStoreRoot,
+        workspaceRoot,
+        globalPath,
+      })
+    )[0]?.enabled,
+  ).toBe(false);
+  await setPluginEnabled({
+    pluginStoreRoot,
+    workspaceRoot,
+    pluginID,
+    enabled: true,
+    config: { globalPath },
+  });
+  expect(
+    (await resolveConfig({ workspaceRoot, globalPath })).config.plugins.enabled[
+      pluginID
+    ],
   ).toBe(true);
 });
+
+test("official catalog contains 15 prebuilt packages and excludes PDF", () => {
+  expect(OFFICIAL_PLUGIN_PACKAGES).toHaveLength(15);
+  expect(
+    OFFICIAL_PLUGIN_PACKAGES.map(({ id }) => id) as readonly string[],
+  ).not.toContain("natalia-tool-pdf");
+});
+
+test("first initialization physically installs through installPlugin", async () => {
+  const pluginStoreRoot = await mkdtemp(
+    join(tmpdir(), "natalia-official-first-"),
+  );
+  const distributionRoot = await officialDistribution("natalia-tool-ask");
+  const calls: string[] = [];
+  const result = await initializeOfficialPlugins({
+    pluginStoreRoot,
+    distributionRoot,
+    pluginIDs: ["natalia-tool-ask"],
+    runPackageManager: fixturePackageManager([]),
+    seams: {
+      installPlugin: async (input) => {
+        calls.push(input.spec);
+        return await installPlugin(input);
+      },
+    },
+  });
+  expect(result.initialized).toBe(true);
+  expect(calls).toEqual([
+    await resolveOfficialPluginPackage(distributionRoot, "natalia-tool-ask"),
+  ]);
+  expect(
+    (await loadNataliaLock(pluginStoreRoot)).plugins[pluginID],
+  ).toBeDefined();
+});
+
+test("uninstalled official plugin stays absent after re-init and reconcile", async () => {
+  const pluginStoreRoot = await mkdtemp(
+    join(tmpdir(), "natalia-official-absent-"),
+  );
+  const distributionRoot = await officialDistribution("natalia-tool-ask");
+  const runPackageManager = fixturePackageManager([]);
+  await initializeOfficialPlugins({
+    pluginStoreRoot,
+    distributionRoot,
+    pluginIDs: ["natalia-tool-ask"],
+    runPackageManager,
+  });
+  await uninstallPlugin({ pluginStoreRoot, pluginID, runPackageManager });
+  expect(
+    await initializeOfficialPlugins({
+      pluginStoreRoot,
+      distributionRoot,
+      pluginIDs: ["natalia-tool-ask"],
+      runPackageManager,
+    }),
+  ).toEqual({ initialized: false, installed: [] });
+  await reconcilePlugins(pluginStoreRoot, runPackageManager);
+  expect((await loadNataliaLock(pluginStoreRoot)).plugins).toEqual({});
+});
+
+test("official reinstall resolves the current bundled source", async () => {
+  const pluginStoreRoot = await mkdtemp(
+    join(tmpdir(), "natalia-official-reinstall-"),
+  );
+  const firstRoot = await officialDistribution("natalia-tool-ask");
+  const currentRoot = await officialDistribution("natalia-tool-ask");
+  const calls: string[] = [];
+  await reinstallOfficialPlugin({
+    pluginStoreRoot,
+    distributionRoot: firstRoot,
+    pluginID: "natalia-tool-ask",
+    runPackageManager: fixturePackageManager([]),
+  });
+  await reinstallOfficialPlugin({
+    pluginStoreRoot,
+    distributionRoot: currentRoot,
+    pluginID: "natalia-tool-ask",
+    seams: {
+      installPlugin: async (input) => {
+        calls.push(input.spec);
+        return await installPlugin({
+          ...input,
+          runPackageManager: fixturePackageManager([]),
+        });
+      },
+    },
+  });
+  expect(calls).toEqual([
+    await resolveOfficialPluginPackage(currentRoot, "natalia-tool-ask"),
+  ]);
+  expect(
+    (await loadNataliaLock(pluginStoreRoot)).plugins[pluginID],
+  ).toBeDefined();
+});
+
+test("zero official plugins is a valid initialized state", async () => {
+  const pluginStoreRoot = await mkdtemp(
+    join(tmpdir(), "natalia-official-zero-"),
+  );
+  const distributionRoot = await mkdtemp(join(tmpdir(), "natalia-dist-zero-"));
+  expect(
+    await initializeOfficialPlugins({
+      pluginStoreRoot,
+      distributionRoot,
+      pluginIDs: [],
+    }),
+  ).toEqual({ initialized: true, installed: [] });
+  expect((await loadNataliaLock(pluginStoreRoot)).plugins).toEqual({});
+  expect(
+    await initializeOfficialPlugins({ pluginStoreRoot, distributionRoot }),
+  ).toEqual({ initialized: false, installed: [] });
+});
+
+async function officialDistribution(id: "natalia-tool-ask") {
+  const root = await mkdtemp(join(tmpdir(), "natalia-distribution-"));
+  const entry = OFFICIAL_PLUGIN_PACKAGES.find(
+    (candidate) => candidate.id === id,
+  )!;
+  await mkdir(join(root, entry.directory), { recursive: true });
+  return root;
+}
 
 function lockEntry(packageName: string, id: string) {
   return {
     packageName,
-    manifest: `.natalia/plugins/node_modules/${packageName}/natalia.plugin.json`,
+    manifest: `plugin-store/node_modules/${packageName}/natalia.plugin.json`,
     metadata: {
       id,
       source: { type: "registry" as const, spec: `${packageName}@1.2.3` },

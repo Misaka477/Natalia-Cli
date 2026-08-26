@@ -19,10 +19,6 @@ import {
   type RuntimeServiceClient,
   type TaskWorkflowService,
 } from "@natalia/client";
-import {
-  createWorkflowExecutionStoreService,
-  createWorkflowStoreService,
-} from "@natalia/plugin-task-workflow";
 import type {
   EpisodeID,
   EvaluatorResult,

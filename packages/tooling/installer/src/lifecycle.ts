@@ -1,42 +1,34 @@
-import { randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { resolveConfig, updateConfig, type ConfigPatch } from "@natalia/config";
+import { updateConfig } from "@natalia/config";
+import type { NataliaLock } from "@natalia/contracts";
 import {
-  pluginPackageConfigSchema,
-  type NataliaLock,
-  type PluginPackageConfig,
-} from "@natalia/contracts";
-import type { PluginManifest } from "@natalia/plugin";
-import { runtimeDefaultPlugin } from "./catalog";
-import {
+  closureDependencies,
   loadNataliaLock,
-  backupClosure,
-  cleanupInstallStage,
-  discardClosureBackup,
   npmInstallArgs,
   npmUninstallArgs,
   packageDirectory,
   pluginClosurePaths,
   runNpm,
   saveNataliaLock,
-  restoreClosure,
-  restoreFile,
-  rollbackWith,
-  snapshotFile,
+  withStoreLock,
   type PackageManagerRun,
 } from "./closure";
 import { validateStagedPackage } from "./package-metadata";
+import { packageSource, sourceSpec } from "./package-metadata";
 
 const workspaceOperations = new Map<string, Promise<void>>();
 
 export async function serialized<T>(
-  workspaceRoot: string,
+  pluginStoreRoot: string,
   operation: () => Promise<T>,
 ) {
-  const key = await realpath(resolve(workspaceRoot));
+  await mkdir(resolve(pluginStoreRoot), { recursive: true, mode: 0o700 });
+  const key = await realpath(resolve(pluginStoreRoot));
   const previous = workspaceOperations.get(key) ?? Promise.resolve();
-  const result = previous.catch(() => undefined).then(operation);
+  const result = previous
+    .catch(() => undefined)
+    .then(() => withStoreLock(key, "operation", operation));
   const pending = result.then(
     () => undefined,
     () => undefined,
@@ -52,156 +44,76 @@ export type InstallerConfigOptions = { globalPath?: string };
 type LifecycleSeams = {
   saveLock?: typeof saveNataliaLock;
   updateConfig?: typeof updateConfig;
-  cleanupStage?: typeof cleanupInstallStage;
-  discardBackup?: typeof discardClosureBackup;
 };
 
 export async function installPlugin(input: {
-  workspaceRoot: string;
+  pluginStoreRoot: string;
   spec: string;
   runPackageManager?: PackageManagerRun;
-  config?: InstallerConfigOptions;
-  runtimeManifests?: readonly PluginManifest[];
   seams?: LifecycleSeams;
 }) {
-  return await serialized(input.workspaceRoot, async () => {
-    const paths = pluginClosurePaths(input.workspaceRoot);
-    const stage = join(paths.stagingDir, randomUUID());
+  return await serialized(input.pluginStoreRoot, async () => {
+    const paths = pluginClosurePaths(input.pluginStoreRoot);
     const run = input.runPackageManager ?? runNpm;
-    let closureSnapshot: Awaited<ReturnType<typeof backupClosure>> | undefined;
-    let lockSnapshot: Awaited<ReturnType<typeof snapshotFile>> | undefined;
-    let configSnapshot: Awaited<ReturnType<typeof snapshotFile>> | undefined;
-    let result:
-      | {
-          installed: true;
-          pluginID: string;
-          packageName: string;
-          metadata: Awaited<
-            ReturnType<typeof validateStagedPackage>
-          >["metadata"];
-          cleanupWarning?: string;
-        }
-      | undefined;
-    try {
-      await run({
-        cwd: input.workspaceRoot,
-        args: npmInstallArgs(stage, input.spec),
-      });
-      const staged = await validateStagedPackage(stage, input.spec);
-      if (runtimeDefaultPlugin(staged.manifest.id, input.runtimeManifests))
-        throw new Error(
-          `plugin id is reserved by a runtime default: ${staged.manifest.id}`,
-        );
-      const beforeLock = await loadNataliaLock(input.workspaceRoot);
-      assertPackageOwnership(
-        beforeLock,
-        staged.packageName,
-        staged.manifest.id,
-      );
-      const resolved = await resolveConfig({
-        workspaceRoot: input.workspaceRoot,
-        ...input.config,
-      });
-      lockSnapshot = await snapshotFile(paths.lockPath);
-      configSnapshot = await snapshotFile(resolved.projectConfigPath);
-      closureSnapshot = await backupClosure(input.workspaceRoot);
-      await run({
-        cwd: input.workspaceRoot,
-        args: npmInstallArgs(paths.pluginsDir, input.spec),
-      });
-      const live = await validateStagedPackage(
-        paths.pluginsDir,
-        input.spec,
-        staged.packageName,
-      );
-      if (
-        live.packageName !== staged.packageName ||
-        live.manifest.id !== staged.manifest.id ||
-        live.metadata.resolvedVersion !== staged.metadata.resolvedVersion
-      )
-        throw new Error("live plugin install does not match validated staging");
-      const lock = structuredClone(beforeLock);
-      lock.plugins[live.manifest.id] = {
-        packageName: live.packageName,
-        manifest: join(
-          packageDirectory(paths.pluginsDir, live.packageName),
-          live.relativeManifest,
-        ),
-        metadata: live.metadata,
-      };
-      await (input.seams?.saveLock ?? saveNataliaLock)(
-        input.workspaceRoot,
-        lock,
-      );
-      await (input.seams?.updateConfig ?? updateConfig)(
-        input.workspaceRoot,
-        {
-          plugins: {
-            enabled: { [live.manifest.id]: true },
-            packages: {
-              [live.manifest.id]: configPackage(live.metadata),
-            },
-          },
-        },
-        input.config,
-      );
-      result = {
-        installed: true as const,
-        pluginID: live.manifest.id,
-        packageName: live.packageName,
-        metadata: live.metadata,
-      };
-    } catch (error) {
-      const closure = closureSnapshot;
-      const lockFile = lockSnapshot;
-      const configFile = configSnapshot;
-      await rollbackWith(error, [
-        ...(closure ? [async () => await restoreClosure(closure)] : []),
-        ...(lockFile ? [async () => await restoreFile(lockFile)] : []),
-        ...(configFile ? [async () => await restoreFile(configFile)] : []),
-        async () =>
-          await (input.seams?.cleanupStage ?? cleanupInstallStage)(
-            stage,
-            paths.stagingDir,
-          ),
-      ]);
-    }
-    const cleanupErrors: unknown[] = [];
-    try {
-      await (input.seams?.discardBackup ?? discardClosureBackup)(
-        closureSnapshot!,
-      );
-    } catch (error) {
-      cleanupErrors.push(error);
-    }
-    try {
-      await (input.seams?.cleanupStage ?? cleanupInstallStage)(
-        stage,
-        paths.stagingDir,
-      );
-    } catch (error) {
-      cleanupErrors.push(error);
-    }
-    if (cleanupErrors.length)
-      result!.cleanupWarning = cleanupErrors.map(errorMessage).join("; ");
-    return result!;
+    const [beforeLock, beforeDependencies] = await Promise.all([
+      loadNataliaLock(input.pluginStoreRoot),
+      closureDependencies(paths.pluginsDir),
+    ]);
+    await run({
+      cwd: input.pluginStoreRoot,
+      args: npmInstallArgs(paths.pluginsDir, input.spec),
+    });
+    const afterDependencies = await closureDependencies(paths.pluginsDir);
+    const packageName = resolveInstalledPackageName({
+      spec: input.spec,
+      beforeDependencies,
+      afterDependencies,
+      lock: beforeLock,
+    });
+    const installed = await validateStagedPackage(
+      paths.pluginsDir,
+      input.spec,
+      packageName,
+    );
+    assertPackageOwnership(
+      beforeLock,
+      installed.packageName,
+      installed.manifest.id,
+    );
+    const lock = structuredClone(beforeLock);
+    lock.plugins[installed.manifest.id] = {
+      packageName: installed.packageName,
+      manifest: join(
+        packageDirectory(paths.pluginsDir, installed.packageName),
+        installed.relativeManifest,
+      ),
+      metadata: installed.metadata,
+    };
+    await (input.seams?.saveLock ?? saveNataliaLock)(
+      input.pluginStoreRoot,
+      lock,
+    );
+    return {
+      installed: true as const,
+      pluginID: installed.manifest.id,
+      packageName: installed.packageName,
+      metadata: installed.metadata,
+    };
   });
 }
 
 export async function setPluginEnabled(input: {
+  pluginStoreRoot: string;
   workspaceRoot: string;
   pluginID: string;
   enabled: boolean;
+  apply?: () => Promise<void>;
   config?: InstallerConfigOptions;
-  runtimeManifests?: readonly PluginManifest[];
   seams?: LifecycleSeams;
 }) {
-  return await serialized(input.workspaceRoot, async () => {
-    const lock = await loadNataliaLock(input.workspaceRoot);
-    if (
-      !lock.plugins[input.pluginID] &&
-      !runtimeDefaultPlugin(input.pluginID, input.runtimeManifests)
-    )
+  return await serialized(input.pluginStoreRoot, async () => {
+    const lock = await loadNataliaLock(input.pluginStoreRoot);
+    if (!lock.plugins[input.pluginID])
       throw new Error(`unknown plugin: ${input.pluginID}`);
     await (input.seams?.updateConfig ?? updateConfig)(
       input.workspaceRoot,
@@ -210,105 +122,69 @@ export async function setPluginEnabled(input: {
       },
       input.config,
     );
+    await input.apply?.();
     return { pluginID: input.pluginID, enabled: input.enabled };
   });
 }
 
 export async function uninstallPlugin(input: {
-  workspaceRoot: string;
+  pluginStoreRoot: string;
   pluginID: string;
   runPackageManager?: PackageManagerRun;
-  config?: InstallerConfigOptions;
-  runtimeManifests?: readonly PluginManifest[];
   seams?: LifecycleSeams;
 }) {
-  return await serialized(input.workspaceRoot, async () => {
-    const lock = await loadNataliaLock(input.workspaceRoot);
+  return await serialized(input.pluginStoreRoot, async () => {
+    const lock = await loadNataliaLock(input.pluginStoreRoot);
     const installed = lock.plugins[input.pluginID];
-    if (!installed) {
-      if (!runtimeDefaultPlugin(input.pluginID, input.runtimeManifests))
-        throw new Error(`unknown plugin: ${input.pluginID}`);
-      const resolved = await resolveConfig({
-        workspaceRoot: input.workspaceRoot,
-        ...input.config,
-      });
-      const configSnapshot = await snapshotFile(resolved.projectConfigPath);
-      try {
-        await (input.seams?.updateConfig ?? updateConfig)(
-          input.workspaceRoot,
-          { plugins: { enabled: { [input.pluginID]: false } } },
-          input.config,
-        );
-      } catch (error) {
-        await rollbackWith(error, [
-          async () => await restoreFile(configSnapshot),
-        ]);
-      }
-      return {
-        uninstalled: false as const,
-        pluginID: input.pluginID,
-        enabled: false as const,
-        disposition: "runtime default disabled" as const,
-      };
-    }
-    const paths = pluginClosurePaths(input.workspaceRoot);
-    const resolved = await resolveConfig({
-      workspaceRoot: input.workspaceRoot,
-      ...input.config,
+    if (!installed) throw new Error(`unknown plugin: ${input.pluginID}`);
+    const paths = pluginClosurePaths(input.pluginStoreRoot);
+    await (input.runPackageManager ?? runNpm)({
+      cwd: input.pluginStoreRoot,
+      args: npmUninstallArgs(paths.pluginsDir, installed.packageName),
     });
-    const lockSnapshot = await snapshotFile(paths.lockPath);
-    const configSnapshot = await snapshotFile(resolved.projectConfigPath);
-    const closureSnapshot = await backupClosure(input.workspaceRoot);
-    const removed = { [input.pluginID]: undefined };
-    try {
-      await (input.seams?.updateConfig ?? updateConfig)(
-        input.workspaceRoot,
-        {
-          plugins: {
-            packages: removed,
-            enabled: removed,
-            settings: removed,
-            capabilities: removed,
-            readOnly: removed,
-          },
-        } as ConfigPatch,
-        input.config,
-      );
-      await (input.runPackageManager ?? runNpm)({
-        cwd: input.workspaceRoot,
-        args: npmUninstallArgs(paths.pluginsDir, installed.packageName),
-      });
-      delete lock.plugins[input.pluginID];
-      await (input.seams?.saveLock ?? saveNataliaLock)(
-        input.workspaceRoot,
-        lock,
-      );
-    } catch (error) {
-      await rollbackWith(error, [
-        async () => await restoreClosure(closureSnapshot),
-        async () => await restoreFile(lockSnapshot),
-        async () => await restoreFile(configSnapshot),
-      ]);
-    }
-    const result: {
-      uninstalled: true;
-      pluginID: string;
-      disposition: "removed for next reconcile";
-      cleanupWarning?: string;
-    } = {
+    delete lock.plugins[input.pluginID];
+    await (input.seams?.saveLock ?? saveNataliaLock)(
+      input.pluginStoreRoot,
+      lock,
+    );
+    return {
       uninstalled: true,
       pluginID: input.pluginID,
-      disposition: "removed for next reconcile",
+      disposition: "removed" as const,
     };
-    try {
-      await (input.seams?.discardBackup ?? discardClosureBackup)(
-        closureSnapshot,
-      );
-    } catch (error) {
-      result.cleanupWarning = errorMessage(error);
-    }
-    return result;
   });
+}
+
+function resolveInstalledPackageName(input: {
+  spec: string;
+  beforeDependencies: Record<string, string>;
+  afterDependencies: Record<string, string>;
+  lock: NataliaLock;
+}) {
+  const changed = Object.keys(input.afterDependencies).filter(
+    (name) => input.beforeDependencies[name] !== input.afterDependencies[name],
+  );
+  if (changed.length === 1) return changed[0]!;
+  const source = packageSource(input.spec);
+  if (source.type === "registry") {
+    const packageName = registryPackageName(source.spec);
+    if (packageName && input.afterDependencies[packageName]) return packageName;
+  }
+  const locked = Object.values(input.lock.plugins).filter(
+    (entry) => sourceSpec(entry.metadata.source) === sourceSpec(source),
+  );
+  if (changed.length === 0 && locked.length === 1)
+    return locked[0]!.packageName;
+  if (changed.length === 0 && Object.keys(input.afterDependencies).length === 1)
+    return Object.keys(input.afterDependencies)[0]!;
+  throw new Error(
+    `plugin install must change exactly one direct dependency; found ${changed.length}`,
+  );
+}
+
+function registryPackageName(spec: string) {
+  const match = /^(?<name>@[^/]+\/[^@]+|[^@/][^@]*)?(?:@.*)?$/u.exec(spec);
+  return match?.groups?.name;
 }
 
 function assertPackageOwnership(
@@ -328,24 +204,4 @@ function assertPackageOwnership(
     throw new Error(
       `package ${packageName} is already installed as plugin ${packageOwner[0]}; changing plugin id to ${pluginID} is not supported`,
     );
-}
-
-function configPackage(metadata: {
-  source: PluginPackageConfig["source"];
-  resolvedVersion: string;
-  integrity?: string;
-  signature?: string;
-  scope: PluginPackageConfig["scope"];
-}): PluginPackageConfig {
-  return pluginPackageConfigSchema.parse({
-    source: metadata.source,
-    version: metadata.resolvedVersion,
-    integrity: metadata.integrity,
-    signature: metadata.signature,
-    scope: metadata.scope,
-  });
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }

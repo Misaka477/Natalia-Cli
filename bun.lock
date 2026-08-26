@@ -30,7 +30,6 @@
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/plugin-local-tools": "workspace:*",
-        "@natalia/plugin-task-workflow": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/session-store": "workspace:*",
@@ -48,6 +47,7 @@
         "@natalia/client": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/installer": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/session": "workspace:*",
@@ -63,9 +63,6 @@
     "packages/core/capability": {
       "name": "@natalia/capability",
       "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-      },
     },
     "packages/core/contracts": {
       "name": "@natalia/contracts",
@@ -88,6 +85,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/agent": "workspace:*",
+        "@natalia/capability": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/session": "workspace:*",
@@ -191,22 +189,6 @@
         "@natalia/governance-ledger": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
-        "@natalia/plugin-local-tools": "workspace:*",
-        "@natalia/plugin-mcp": "workspace:*",
-        "@natalia/plugin-native-terminal": "workspace:*",
-        "@natalia/plugin-skills": "workspace:*",
-        "@natalia/plugin-task-module": "workspace:*",
-        "@natalia/plugin-task-workflow": "workspace:*",
-        "@natalia/plugin-team": "workspace:*",
-        "@natalia/plugin-tool-ask": "workspace:*",
-        "@natalia/plugin-tool-fs-read": "workspace:*",
-        "@natalia/plugin-tool-fs-write": "workspace:*",
-        "@natalia/plugin-tool-pdf": "workspace:*",
-        "@natalia/plugin-tool-process": "workspace:*",
-        "@natalia/plugin-tool-search": "workspace:*",
-        "@natalia/plugin-tool-shell": "workspace:*",
-        "@natalia/plugin-tool-todo": "workspace:*",
-        "@natalia/plugin-tool-web": "workspace:*",
         "@natalia/provider-model": "workspace:*",
         "@natalia/retry": "workspace:*",
         "@natalia/runtime": "workspace:*",
@@ -227,6 +209,7 @@
         "@natalia/workspace": "workspace:*",
       },
       "devDependencies": {
+        "@natalia/installer": "workspace:*",
         "@natalia/workflow-scheduler": "workspace:*",
       },
     },
@@ -419,7 +402,7 @@
     },
     "packages/plugins/local-tools": {
       "name": "@natalia/plugin-local-tools",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/config": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -429,7 +412,7 @@
     },
     "packages/plugins/mcp": {
       "name": "@natalia/plugin-mcp",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -439,7 +422,7 @@
     },
     "packages/plugins/native-terminal": {
       "name": "@natalia/plugin-native-terminal",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/platform": "workspace:*",
@@ -450,7 +433,7 @@
     },
     "packages/plugins/skills": {
       "name": "@natalia/plugin-skills",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -460,18 +443,19 @@
     },
     "packages/plugins/task-module": {
       "name": "@natalia/plugin-task-module",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/capability": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/plugin": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/workflow": "workspace:*",
       },
     },
     "packages/plugins/task-workflow": {
       "name": "@natalia/plugin-task-workflow",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/agent": "workspace:*",
         "@natalia/capability": "workspace:*",
@@ -485,7 +469,7 @@
     },
     "packages/plugins/team": {
       "name": "@natalia/plugin-team",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -499,7 +483,7 @@
     },
     "packages/plugins/tools/ask": {
       "name": "@natalia/plugin-tool-ask",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -507,7 +491,7 @@
     },
     "packages/plugins/tools/fs-read": {
       "name": "@natalia/plugin-tool-fs-read",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -515,25 +499,15 @@
     },
     "packages/plugins/tools/fs-write": {
       "name": "@natalia/plugin-tool-fs-write",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/plugins/tools/pdf": {
-      "name": "@natalia/plugin-tool-pdf",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@napi-rs/canvas": "1.0.7",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/tools": "workspace:*",
-        "pdfjs-dist": "6.2.108",
       },
     },
     "packages/plugins/tools/process": {
       "name": "@natalia/plugin-tool-process",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -542,7 +516,7 @@
     },
     "packages/plugins/tools/search": {
       "name": "@natalia/plugin-tool-search",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -550,7 +524,7 @@
     },
     "packages/plugins/tools/shell": {
       "name": "@natalia/plugin-tool-shell",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -558,7 +532,7 @@
     },
     "packages/plugins/tools/todo": {
       "name": "@natalia/plugin-tool-todo",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -566,7 +540,7 @@
     },
     "packages/plugins/tools/web": {
       "name": "@natalia/plugin-tool-web",
-      "version": "0.0.0-m13",
+      "version": "1.0.0",
       "dependencies": {
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -672,30 +646,6 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@napi-rs/canvas": ["@napi-rs/canvas@1.0.7", "", { "optionalDependencies": { "@napi-rs/canvas-android-arm64": "1.0.7", "@napi-rs/canvas-darwin-arm64": "1.0.7", "@napi-rs/canvas-darwin-x64": "1.0.7", "@napi-rs/canvas-linux-arm-gnueabihf": "1.0.7", "@napi-rs/canvas-linux-arm64-gnu": "1.0.7", "@napi-rs/canvas-linux-arm64-musl": "1.0.7", "@napi-rs/canvas-linux-riscv64-gnu": "1.0.7", "@napi-rs/canvas-linux-x64-gnu": "1.0.7", "@napi-rs/canvas-linux-x64-musl": "1.0.7", "@napi-rs/canvas-win32-arm64-msvc": "1.0.7", "@napi-rs/canvas-win32-x64-msvc": "1.0.7" } }, "sha512-26wVFEgs6gbe7wmzCrud1pK8q6oOgcUu7OOF24BuazB8ZUCskU9ZSLrCjoWIFVxx09rjAxsXxPleaWowHvdPCA=="],
-
-    "@napi-rs/canvas-android-arm64": ["@napi-rs/canvas-android-arm64@1.0.7", "", { "os": "android", "cpu": "arm64" }, "sha512-d5p4hHTykc/9PjiBXkvCH/IC5hT5jH7BjQ1u8ITq+G8x4VmvveOHdy/4BWYcC3ebWRmrG9zEc/oCTy+Yf3iZ4A=="],
-
-    "@napi-rs/canvas-darwin-arm64": ["@napi-rs/canvas-darwin-arm64@1.0.7", "", { "os": "darwin", "cpu": "arm64" }, "sha512-jKfZl2QDqBr6/Ap/8NKkX0Po9SFfVjUPBJbQQmYGVtQQIazWWIAO60riH3Mz2sOyysa2oJO39sLEfXerypu0vg=="],
-
-    "@napi-rs/canvas-darwin-x64": ["@napi-rs/canvas-darwin-x64@1.0.7", "", { "os": "darwin", "cpu": "x64" }, "sha512-v1asrnKBu0tD+sdSD2qVIUfhoXSrr8LFTn7z76pN+8xsiOrmFcAVty57R/5DB8ZNqNLKsUBDXFSrzf4Wt9NaSg=="],
-
-    "@napi-rs/canvas-linux-arm-gnueabihf": ["@napi-rs/canvas-linux-arm-gnueabihf@1.0.7", "", { "os": "linux", "cpu": "arm" }, "sha512-c4Hcu4L5bXCgLY8jrZ2hy/Avl65MsbfH9DqNWrrd9InbpBZZF/rmrh7XkgmTUmOFcUrt/PaFSBinW2C0moDgcA=="],
-
-    "@napi-rs/canvas-linux-arm64-gnu": ["@napi-rs/canvas-linux-arm64-gnu@1.0.7", "", { "os": "linux", "cpu": "arm64" }, "sha512-OVW6T1x65BTVfWb//xylCoWxbdII+nzHu3L5T035aerBAnZ5e0nmeTMkMEO9qQrVJq4WcWW8hp+T0dF+JvJPUQ=="],
-
-    "@napi-rs/canvas-linux-arm64-musl": ["@napi-rs/canvas-linux-arm64-musl@1.0.7", "", { "os": "linux", "cpu": "arm64" }, "sha512-KX/k1UO61XdKlXxhtIkq1ZUH8uP+NNK4vSrBcM2/4wWUUCZaG93BU5s0KuE9n+TFn0jEoqLSlXOuH1pYuV5dcQ=="],
-
-    "@napi-rs/canvas-linux-riscv64-gnu": ["@napi-rs/canvas-linux-riscv64-gnu@1.0.7", "", { "os": "linux", "cpu": "none" }, "sha512-r+0Bg+fK8r2AsrbeT7JwBUAERZSjlyhfAMQfZE/zxYGmbswS92hN0FPjynVWbeuz5fIrLfZ6JA5pH8V6drN6qw=="],
-
-    "@napi-rs/canvas-linux-x64-gnu": ["@napi-rs/canvas-linux-x64-gnu@1.0.7", "", { "os": "linux", "cpu": "x64" }, "sha512-0tT9KzEcTfb6MWdUWIDfy6uq6UNF691r/9NfXxxl8s9+G5QrD7VP1UC+PAwzsCzJTClIKyidNau/grYTL+QmHw=="],
-
-    "@napi-rs/canvas-linux-x64-musl": ["@napi-rs/canvas-linux-x64-musl@1.0.7", "", { "os": "linux", "cpu": "x64" }, "sha512-rvT0xo1xA+C7e+U/2ngsxWsl9gC5knHU+z8KTT5VK0Zos4AQbWZvtjvegrmzxm4o2yHE32Lexj6CDEJNvuTczA=="],
-
-    "@napi-rs/canvas-win32-arm64-msvc": ["@napi-rs/canvas-win32-arm64-msvc@1.0.7", "", { "os": "win32", "cpu": "arm64" }, "sha512-N6s3yoFFPUDkfRpjUiKERVYkli7ex5Sf0Bu/My6D6gOGYxYolC1KvL6x8U0aN+ScCWAzbkIWcMYR9g0OGsFuVw=="],
-
-    "@napi-rs/canvas-win32-x64-msvc": ["@napi-rs/canvas-win32-x64-msvc@1.0.7", "", { "os": "win32", "cpu": "x64" }, "sha512-SKTNdBV/ljfhkPsLhXjm4x2PQ0ILpc0PhkBzRHuroJXidZUaF5yh0j3s3dIzB8PrRmW+nEASzyMTaWT3nH1ywQ=="],
-
     "@natalia/agent": ["@natalia/agent@workspace:packages/framework/agent"],
 
     "@natalia/attachments": ["@natalia/attachments@workspace:packages/framework/attachments"],
@@ -749,8 +699,6 @@
     "@natalia/plugin-tool-fs-read": ["@natalia/plugin-tool-fs-read@workspace:packages/plugins/tools/fs-read"],
 
     "@natalia/plugin-tool-fs-write": ["@natalia/plugin-tool-fs-write@workspace:packages/plugins/tools/fs-write"],
-
-    "@natalia/plugin-tool-pdf": ["@natalia/plugin-tool-pdf@workspace:packages/plugins/tools/pdf"],
 
     "@natalia/plugin-tool-process": ["@natalia/plugin-tool-process@workspace:packages/plugins/tools/process"],
 
@@ -933,8 +881,6 @@
     "path-parse": ["path-parse@1.0.7", "", {}, "sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw=="],
 
     "path-scurry": ["path-scurry@1.11.1", "", { "dependencies": { "lru-cache": "^10.2.0", "minipass": "^5.0.0 || ^6.0.2 || ^7.0.0" } }, "sha512-Xa4Nw17FS9ApQFJ9umLiJS4orGjm7ZzwUrwamcGQuHSzDyth9boKDaycYdDcZDuqYATXw4HFXgaqWTctW/v1HA=="],
-
-    "pdfjs-dist": ["pdfjs-dist@6.2.108", "", { "optionalDependencies": { "@napi-rs/canvas": "^1.0.0" } }, "sha512-YxFb+SQcodN2rnX9Tn3dHYlqfb7NjlzzfONPpJd+AKoKtUjEdevTfbC07d5TcczzOK6261auRkP/M8OBHs9vFQ=="],
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
 

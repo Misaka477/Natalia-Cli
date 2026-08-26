@@ -53,12 +53,11 @@ test("plugin discovery scans unscoped and scoped installed packages", async () =
   ).toEqual(["fixture.plugin.0", "fixture.plugin.1"]);
 });
 
-test("installed plugin entries require matching config, lock, and manifest", async () => {
+test("installed plugin entries require matching lock and manifest", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-closure-"));
+  const pluginStoreRoot = join(root, "plugin-store");
   const packageRoot = join(
-    root,
-    ".natalia",
-    "plugins",
+    pluginStoreRoot,
     "node_modules",
     "@fixture",
     "plugin",
@@ -77,9 +76,9 @@ test("installed plugin entries require matching config, lock, and manifest", asy
     }),
   );
   await writeFile(join(packageRoot, "index.ts"), "export default {};");
-  await mkdir(join(root, ".natalia"), { recursive: true });
+  const lockPath = join(pluginStoreRoot, "natalia.lock");
   await writeFile(
-    join(root, ".natalia", "natalia.lock"),
+    lockPath,
     JSON.stringify({
       version: 1,
       plugins: {
@@ -98,15 +97,8 @@ test("installed plugin entries require matching config, lock, and manifest", asy
       },
     }),
   );
-  const configured = {
-    source: { type: "registry" as const, spec: "@fixture/plugin@1.2.3" },
-    version: "1.2.3",
-    integrity: "sha512-fixture",
-    scope: "workspace" as const,
-  };
   const resolved = await resolveInstalledPluginEntries({
-    workspaceRoot: root,
-    packages: { "fixture.plugin": configured },
+    pluginStoreRoot,
   });
   expect(resolved.errors).toEqual([]);
   expect(resolved.entries).toEqual([
@@ -116,13 +108,43 @@ test("installed plugin entries require matching config, lock, and manifest", asy
     }),
   ]);
 
-  const mismatch = await resolveInstalledPluginEntries({
-    workspaceRoot: root,
-    packages: {
-      "fixture.plugin": { ...configured, version: "2.0.0" },
-      "missing.plugin": configured,
-    },
-  });
+  await writeFile(
+    lockPath,
+    JSON.stringify({
+      version: 1,
+      plugins: {
+        "fixture.plugin": {
+          packageName: "@fixture/plugin",
+          manifest: manifestPath,
+          metadata: {
+            id: "fixture.plugin",
+            source: { type: "registry", spec: "@fixture/plugin@2.0.0" },
+            resolvedVersion: "2.0.0",
+            integrity: "sha512-fixture",
+            scope: "workspace",
+            dependencies: [],
+          },
+        },
+        "missing.plugin": {
+          packageName: "missing-plugin",
+          manifest: join(
+            pluginStoreRoot,
+            "node_modules",
+            "missing-plugin",
+            "natalia.plugin.json",
+          ),
+          metadata: {
+            id: "missing.plugin",
+            source: { type: "registry", spec: "missing-plugin@1.0.0" },
+            resolvedVersion: "1.0.0",
+            scope: "workspace",
+            dependencies: [],
+          },
+        },
+      },
+    }),
+  );
+  const mismatch = await resolveInstalledPluginEntries({ pluginStoreRoot });
   expect(mismatch.entries).toEqual([]);
   expect(mismatch.errors.map(({ id }) => id).sort()).toEqual([
     "fixture.plugin",
@@ -132,18 +154,12 @@ test("installed plugin entries require matching config, lock, and manifest", asy
 
 test("installed plugin entries reject lock paths outside their package", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-escape-"));
-  const packageRoot = join(
-    root,
-    ".natalia",
-    "plugins",
-    "node_modules",
-    "fixture-plugin",
-  );
+  const pluginStoreRoot = join(root, "plugin-store");
+  const packageRoot = join(pluginStoreRoot, "node_modules", "fixture-plugin");
   await mkdir(packageRoot, { recursive: true });
   await writeFile(join(packageRoot, "index.ts"), "export default {};");
-  await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
-    join(root, ".natalia", "natalia.lock"),
+    join(pluginStoreRoot, "natalia.lock"),
     JSON.stringify({
       version: 1,
       plugins: {
@@ -162,14 +178,7 @@ test("installed plugin entries reject lock paths outside their package", async (
     }),
   );
   const resolved = await resolveInstalledPluginEntries({
-    workspaceRoot: root,
-    packages: {
-      "fixture.plugin": {
-        source: { type: "registry", spec: "fixture-plugin" },
-        version: "1.0.0",
-        scope: "workspace",
-      },
-    },
+    pluginStoreRoot,
   });
   expect(resolved.entries).toEqual([]);
   expect(resolved.errors[0]?.error.message).toContain(

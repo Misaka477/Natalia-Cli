@@ -30,6 +30,9 @@ export function createCompositionContext(
   const state = {
     runtimeDisposed: false,
     workspaceRoot: resolve(options.workspaceRoot ?? process.cwd()),
+    pluginStoreRoot: options.pluginStoreRoot
+      ? resolve(options.pluginStoreRoot)
+      : undefined,
     provider: options.provider,
     providerSource: options.provider ? "explicit" : "unconfigured",
     capabilityRegistry: options.capabilityRegistry ?? new CapabilityRegistry(),

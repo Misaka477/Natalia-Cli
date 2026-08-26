@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  createOfficialRuntimeClient as createRealRuntimeClient,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
+import {
   createToolPolicyHookLayer,
-  createRealRuntimeClient,
   type ToolHooks,
   type ToolPolicy,
   type RuntimeEvent,

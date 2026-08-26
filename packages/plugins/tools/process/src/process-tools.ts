@@ -792,7 +792,7 @@ export const PROCESS_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Managed Process Tools",
   description: "Long-running background processes.",
-  entry: "natalia:tool-process",
+  entry: "index.js",
   scope: "session",
   provides: [MANAGED_PROCESS_REGISTRY_SERVICE],
   requires: [],

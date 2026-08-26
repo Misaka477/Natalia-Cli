@@ -30,7 +30,7 @@ import {
   taskPermissionPreview,
   taskRetryMaxAttempts,
 } from "@natalia/workflow";
-import { createWorkflowStoreService } from "./workflow-store-service";
+import { createWorkflowStoreService } from "@natalia/workflow";
 import { runCapabilityTask } from "./capability-execution-service";
 
 type Method<K extends keyof RuntimeClient> = NonNullable<RuntimeClient[K]>;

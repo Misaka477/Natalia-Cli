@@ -15,7 +15,7 @@ import type {
   NataliaFlowDocument,
   NataliaTaskDocument,
 } from "@natalia/contracts";
-import { createWorkflowStoreService } from "./workflow-store-service";
+import { createWorkflowStoreService } from "@natalia/workflow";
 
 export function runCapabilityTask(input: {
   capabilities: WorkflowCapabilityHost;

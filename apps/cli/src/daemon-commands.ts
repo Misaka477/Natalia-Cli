@@ -17,10 +17,6 @@ import {
   taskPermissionPreview,
   type RuntimeServiceClient,
 } from "@natalia/client";
-import {
-  createWorkflowExecutionStoreService,
-  createWorkflowStoreService,
-} from "@natalia/plugin-task-workflow";
 import { createWorkflowSchedulerHost } from "@natalia/workflow-scheduler";
 import type {
   EpisodeID,
@@ -33,6 +29,7 @@ import type {
 import { resolveConfig } from "@natalia/config";
 import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";
+import { pluginStoreRoot } from "./official-plugins";
 import {
   createIssueTarget,
   deliverPendingTaskAlerts,
@@ -138,6 +135,7 @@ export async function handleDaemonCommands(argv: string[]) {
             const capabilities = new CapabilityHost({ workspaceRoot: root });
             const runtime = createRealRuntimeClient({
               workspaceRoot: root,
+              pluginStoreRoot: pluginStoreRoot(),
               capabilityHost: capabilities,
             });
             return {
@@ -152,7 +150,9 @@ export async function handleDaemonCommands(argv: string[]) {
           workspaceHosts.set(root, created);
           return await created;
         };
-        const client = createRealRuntimeClient();
+        const client = createRealRuntimeClient({
+          pluginStoreRoot: pluginStoreRoot(),
+        });
         const transport = createHttpTransportHost({
           client,
           port,

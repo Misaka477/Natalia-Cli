@@ -1,5 +1,5 @@
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { cp, mkdir, readdir, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 const target =
   process.env.NATALIA_BUILD_TARGET ?? `${process.platform}-${process.arch}`;
@@ -21,6 +21,132 @@ if (!result.success) {
   throw new Error("TS release build failed");
 }
 await mkdir(outdir, { recursive: true });
+
+type PluginManifest = {
+  apiVersion: number;
+  id: string;
+  version: string;
+  entry: string;
+  [key: string]: unknown;
+};
+type PackageManifest = {
+  name: string;
+  version: string;
+  license?: string;
+  [key: string]: unknown;
+};
+
+const pluginRoots = [
+  "packages/plugins/local-tools",
+  "packages/plugins/mcp",
+  "packages/plugins/native-terminal",
+  "packages/plugins/skills",
+  "packages/plugins/task-module",
+  "packages/plugins/task-workflow",
+  "packages/plugins/team",
+  "packages/plugins/tools/ask",
+  "packages/plugins/tools/fs-read",
+  "packages/plugins/tools/fs-write",
+  "packages/plugins/tools/process",
+  "packages/plugins/tools/search",
+  "packages/plugins/tools/shell",
+  "packages/plugins/tools/todo",
+  "packages/plugins/tools/web",
+] as const;
+const pluginsOutdir = resolve(outdir, "plugins");
+await rm(pluginsOutdir, { recursive: true, force: true });
+await mkdir(pluginsOutdir, { recursive: true });
+
+const pluginOutputs: string[] = [];
+for (const root of pluginRoots) {
+  const sourcePackage = (await Bun.file(
+    join(root, "package.json"),
+  ).json()) as PackageManifest;
+  const manifest = (await Bun.file(
+    join(root, "natalia.plugin.json"),
+  ).json()) as PluginManifest;
+  if (sourcePackage.version !== manifest.version)
+    throw new Error(`${root}: package and plugin manifest versions disagree`);
+  if (manifest.entry !== "index.js")
+    throw new Error(`${root}: release plugin entry must be index.js`);
+
+  const packageOutdir = join(pluginsOutdir, manifest.id);
+  await mkdir(packageOutdir, { recursive: true });
+  const build = await Bun.build({
+    entrypoints: [join(root, "src/index.ts")],
+    outdir: packageOutdir,
+    target: "bun",
+    format: "esm",
+    naming: "index.js",
+    packages: "bundle",
+  });
+  if (!build.success) {
+    for (const log of build.logs) console.error(log);
+    throw new Error(`${root}: plugin release build failed`);
+  }
+
+  const releaseFiles = [manifest.entry, "natalia.plugin.json", "LICENSE"];
+  if (manifest.id === "natalia-tool-terminal") {
+    const worker = await Bun.build({
+      entrypoints: [join(root, "src/wezterm-command-worker.ts")],
+      outdir: packageOutdir,
+      target: "bun",
+      format: "esm",
+      naming: "wezterm-command-worker.js",
+      packages: "bundle",
+    });
+    if (!worker.success)
+      throw new Error(`${root}: terminal worker build failed`);
+    const nativeRelease = join(root, "wezterm/target/release");
+    const nativeOutdir = join(packageOutdir, "wezterm");
+    const executableSuffix = process.platform === "win32" ? ".exe" : "";
+    const executables = ["wezterm", "wezterm-gui", "wezterm-mux-server"].map(
+      (name) => `${name}${executableSuffix}`,
+    );
+    for (const executable of executables)
+      if (!(await Bun.file(join(nativeRelease, executable)).exists()))
+        throw new Error(`${root}: missing terminal executable ${executable}`);
+    await mkdir(nativeOutdir, { recursive: true });
+    for (const executable of executables)
+      await cp(join(nativeRelease, executable), join(nativeOutdir, executable));
+    releaseFiles.push("wezterm");
+    releaseFiles.push("wezterm-command-worker.js");
+  }
+
+  const releasePackage = {
+    name: sourcePackage.name,
+    version: manifest.version,
+    type: "module",
+    license: sourcePackage.license ?? "Apache-2.0",
+    exports: { ".": `./${manifest.entry}` },
+    files: releaseFiles,
+  };
+  await Bun.write(
+    join(packageOutdir, "package.json"),
+    `${JSON.stringify(releasePackage, null, 2)}\n`,
+  );
+  await Bun.write(
+    join(packageOutdir, "natalia.plugin.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  await Bun.write(join(packageOutdir, "LICENSE"), Bun.file(resolve("LICENSE")));
+
+  const module = await import(
+    `${Bun.pathToFileURL(join(packageOutdir, manifest.entry)).href}?build=${Date.now()}`
+  );
+  if (!module.default || typeof module.default.setup !== "function")
+    throw new Error(`${root}: built entry must default-export a Plugin`);
+  if (module.default.manifest?.version !== manifest.version)
+    throw new Error(`${root}: exported plugin and manifest versions disagree`);
+  const emitted = await Bun.file(join(packageOutdir, manifest.entry)).text();
+  if (/\b(?:from\s*|import\s*\()?["']@natalia\//u.test(emitted))
+    throw new Error(`${root}: built entry contains a bare @natalia import`);
+  for (const entry of await readdir(packageOutdir))
+    pluginOutputs.push(resolve(packageOutdir, entry));
+}
+
+if (pluginRoots.length !== 15)
+  throw new Error(`expected 15 release plugins, got ${pluginRoots.length}`);
 for (const artifact of [
   "LICENSE",
   "NOTICE",
@@ -38,6 +164,7 @@ console.log(
       target,
       outputs: [
         ...result.outputs.map((output) => output.path),
+        ...pluginOutputs,
         ...[
           "LICENSE",
           "NOTICE",

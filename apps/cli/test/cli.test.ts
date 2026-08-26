@@ -1,6 +1,14 @@
-import { expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp as createTemporaryDirectory,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -32,6 +40,65 @@ import {
   workGraphLines,
   workspaceFilesystemCommand,
 } from "../src";
+
+const temporaryDirectories = new Set<string>();
+let testPluginDistribution: string;
+let testNataliaInstance: string;
+const previousNodeEnvironment = process.env.NODE_ENV;
+const previousTestPluginDistribution =
+  process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION;
+
+beforeAll(async () => {
+  testNataliaInstance = await createTemporaryDirectory(
+    join(tmpdir(), "natalia-cli-instance-"),
+  );
+  testPluginDistribution = join(testNataliaInstance, "plugins");
+  await cp(
+    join(import.meta.dir, "../../../dist/ts/plugins"),
+    testPluginDistribution,
+    {
+      recursive: true,
+    },
+  );
+  const terminalRoot = join(testPluginDistribution, "natalia-tool-terminal");
+  await rm(join(terminalRoot, "wezterm"), { recursive: true, force: true });
+  const terminalPackagePath = join(terminalRoot, "package.json");
+  const terminalPackage = JSON.parse(
+    await readFile(terminalPackagePath, "utf8"),
+  ) as { files: string[] };
+  terminalPackage.files = terminalPackage.files.filter(
+    (entry) => entry !== "wezterm",
+  );
+  await writeFile(terminalPackagePath, JSON.stringify(terminalPackage));
+  process.env.NODE_ENV = "test";
+  process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION =
+    testPluginDistribution;
+});
+
+async function mkdtemp(prefix: string) {
+  const path = await createTemporaryDirectory(prefix);
+  temporaryDirectories.add(path);
+  return path;
+}
+
+afterEach(async () => {
+  const paths = [...temporaryDirectories];
+  temporaryDirectories.clear();
+  await Promise.all(
+    paths.map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
+
+afterAll(async () => {
+  await rm(testNataliaInstance, { recursive: true, force: true });
+  if (previousNodeEnvironment === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = previousNodeEnvironment;
+  if (previousTestPluginDistribution === undefined)
+    delete process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION;
+  else
+    process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION =
+      previousTestPluginDistribution;
+});
 
 async function isolateGlobalModelConfig(root: string) {
   const globalPath =
@@ -505,11 +572,14 @@ test("CLI task run evaluates a claimed module without advancing task success", a
     async fetch(request) {
       const body = (await request.json()) as {
         model: string;
-        tools?: unknown[];
+        tools?: Array<{ function?: { name?: string } }>;
         messages: Array<{ content: string }>;
       };
       const evaluator = body.model === "evaluator-model";
-      if (!evaluator)
+      const moduleExecution = body.tools?.some(
+        (tool) => tool.function?.name === "flow_module_complete",
+      );
+      if (!evaluator && moduleExecution)
         executionSystemPrompts.push(body.messages[0]?.content ?? "");
       const readArguments = JSON.stringify({ path: "README.md" });
       const claimArguments = JSON.stringify({
@@ -572,16 +642,18 @@ test("CLI task run evaluates a claimed module without advancing task success", a
               "",
             ].join("\n");
           })()
-        : executionRequests++ === 0
-          ? toolCall("read_1", "read_file", readArguments)
-          : executionRequests === 2
-            ? toolCall("claim_1", "flow_module_complete", claimArguments)
-            : body.messages[0]?.content.includes(
-                  "<active_flow_module_continuation>",
-                ) && !continuationClaimed
-              ? ((continuationClaimed = true),
-                toolCall("claim_2", "flow_module_complete", claimArguments))
-              : "data: [DONE]\n\n";
+        : !moduleExecution
+          ? "data: [DONE]\n\n"
+          : executionRequests++ === 0
+            ? toolCall("read_1", "read_file", readArguments)
+            : executionRequests === 2
+              ? toolCall("claim_1", "flow_module_complete", claimArguments)
+              : body.messages[0]?.content.includes(
+                    "<active_flow_module_continuation>",
+                  ) && !continuationClaimed
+                ? ((continuationClaimed = true),
+                  toolCall("claim_2", "flow_module_complete", claimArguments))
+                : "data: [DONE]\n\n";
       return new Response(response, {
         headers: { "content-type": "text/event-stream" },
       });
@@ -634,7 +706,15 @@ test("CLI task run evaluates a claimed module without advancing task success", a
         },
         defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
-          unattended: { approval: "auto", description: "Task profile" },
+          unattended: {
+            approval: "auto",
+            description: "Task profile",
+            permissions: {
+              tools: {
+                allow: ["read_file", "glob", "grep", "flow_module_complete"],
+              },
+            },
+          },
         },
       }),
     );
@@ -720,6 +800,7 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
     async fetch(request) {
       const body = (await request.json()) as {
         model: string;
+        tools?: Array<{ function?: { name?: string } }>;
         messages: Array<{ content: string }>;
       };
       const evaluator = body.model === "evaluator-model";
@@ -768,8 +849,11 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
           ].join("\n"),
         );
       }
+      const moduleExecution = body.tools?.some(
+        (tool) => tool.function?.name === "flow_module_complete",
+      );
+      if (!moduleExecution) return stream("data: [DONE]\n\n");
       executionSystemPrompts.push(body.messages[0]?.content ?? "");
-      const system = body.messages[0]?.content ?? "";
       const toolCall = (id: string, name: string, arguments_: string) =>
         stream(
           [
@@ -811,7 +895,7 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
         gaps: [],
         recommendedAction: "Evaluate the report evidence.",
       });
-      if (system.includes("Read only the source evidence.")) {
+      if (evaluatorPayloads.length === 0) {
         readRequests += 1;
         if (readRequests === 1)
           return toolCall(
@@ -823,7 +907,7 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
           return toolCall("read_claim", "flow_module_complete", readClaim);
         return stream("data: [DONE]\n\n");
       }
-      if (system.includes("Produce the final report.")) {
+      if (evaluatorPayloads.length === 1) {
         reportRequests += 1;
         // The second stage has to do real work too: a stage where no tool ever
         // succeeded cannot be completed.
@@ -887,7 +971,15 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
         },
         defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
-          unattended: { approval: "auto", description: "Task profile" },
+          unattended: {
+            approval: "auto",
+            description: "Task profile",
+            permissions: {
+              tools: {
+                allow: ["read_file", "glob", "grep", "flow_module_complete"],
+              },
+            },
+          },
         },
       }),
     );

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { agentsFromConfig } from "@natalia/agent";
-import { runtimePluginCatalog } from "../plugin-config";
 import { resolveConfig } from "@natalia/config";
 import {
   contextEntriesToProviderMessages,
@@ -88,7 +87,6 @@ export function wireInitialize(
     localToolsPluginInput: features.pluginAssembly.localToolsPluginInput,
     mcpPluginInput: features.pluginAssembly.mcpPluginInput,
     providerModelPluginInput: features.pluginAssembly.providerModelPluginInput,
-    runtimePluginCatalog,
     wireFrameworkServices,
     capabilityRegistry: state.capabilityRegistry,
     workspaceCapabilityView: state.workspaceCapabilityView,

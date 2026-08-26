@@ -275,7 +275,7 @@ export const FS_WRITE_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Filesystem Write Tools",
   description: "Writing and editing workspace files.",
-  entry: "natalia:tool-fs-write",
+  entry: "index.js",
   scope: "workspace",
   provides: [],
   requires: [],

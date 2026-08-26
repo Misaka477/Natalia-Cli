@@ -179,7 +179,7 @@ export const TODO_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Todo Tools",
   description: "The session's task list.",
-  entry: "natalia:tool-todo",
+  entry: "index.js",
   scope: "session",
   provides: [],
   requires: [],

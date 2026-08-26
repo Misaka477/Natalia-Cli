@@ -2,14 +2,15 @@ import { readdir } from "node:fs/promises";
 import type { NataliaTaskDocument } from "@natalia/contracts";
 import {
   NataliaDocumentStore,
-  NataliaTaskAlertQueue,
-  NataliaTaskStateStore,
-  NataliaUnattendedStateStore,
   type ContributedNataliaDocuments,
+} from "./natalia-document-store";
+import {
+  NataliaTaskStateStore,
   type NataliaFlowModuleEvent,
-} from "@natalia/workflow";
+} from "./natalia-task-state-store";
+import { NataliaTaskAlertQueue } from "./natalia-task-alert-queue";
+import { NataliaUnattendedStateStore } from "./natalia-unattended-state";
 
-/** Store construction owned by the task-workflow plugin package. */
 export function createWorkflowStoreService(input: {
   workspaceRoot: string;
   contributedDocuments?: ContributedNataliaDocuments;

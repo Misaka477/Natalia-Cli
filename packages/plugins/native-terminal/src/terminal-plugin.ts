@@ -16,7 +16,7 @@ export const TERMINAL_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Terminal Tools",
   description: "Native terminal panes and interactive programs.",
-  entry: "natalia:tool-terminal",
+  entry: "index.js",
   scope: "session",
   provides: [TERMINAL_CONTROLLER_SERVICE],
   requires: [],

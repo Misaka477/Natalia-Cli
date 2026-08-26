@@ -19,3 +19,6 @@ export {
   TEAM_PLUGIN_MANIFEST,
 } from "./team-plugin";
 export { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
+import { createTeamPlugin } from "./team-plugin";
+
+export default createTeamPlugin();

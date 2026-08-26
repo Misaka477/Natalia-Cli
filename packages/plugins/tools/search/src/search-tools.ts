@@ -197,7 +197,7 @@ export const SEARCH_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Search Tools",
   description: "Finding files by name and content in the workspace.",
-  entry: "natalia:tool-search",
+  entry: "index.js",
   scope: "workspace",
   provides: [],
   requires: [],

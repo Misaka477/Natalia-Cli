@@ -30,7 +30,7 @@ export const TEAM_PLUGIN_MANIFEST: PluginManifest = {
   name: "Team",
   description:
     "Parallel fan-out of sandboxed subagents and the lead reviewer's merge.",
-  entry: "natalia:team",
+  entry: "index.js",
   scope: "workspace",
   provides: [TEAM_BEHAVIOR_SERVICE],
   requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],

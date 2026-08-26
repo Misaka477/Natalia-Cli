@@ -195,7 +195,7 @@ export const FS_READ_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Filesystem Read Tools",
   description: "Reading workspace files and media metadata.",
-  entry: "natalia:tool-fs-read",
+  entry: "index.js",
   scope: "workspace",
   provides: [],
   requires: [],

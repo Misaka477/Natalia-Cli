@@ -2,22 +2,29 @@ import {
   doctorPlugins,
   installPlugin,
   listInstalledPlugins,
+  OFFICIAL_PLUGIN_PACKAGES,
   reconcilePlugins,
+  reinstallOfficialPlugin,
   setPluginEnabled,
   uninstallPlugin,
 } from "@natalia/installer";
-import { RUNTIME_PLUGIN_MANIFESTS } from "@natalia/client";
 import { createPluginScaffold } from "./plugin-scaffold";
-
-const runtimeManifests = Object.values(RUNTIME_PLUGIN_MANIFESTS);
+import {
+  officialPluginDistributionRoot,
+  officialPluginID,
+  pluginStoreRoot,
+} from "./official-plugins";
 
 export function isPluginMaintenanceCommand(argv: readonly string[]) {
   return argv[0] === "plugin";
 }
 
-export async function runPluginMaintenanceCommand(argv: readonly string[]) {
-  const { action, target, workspaceRoot, pluginID, packageName } =
-    parsePluginMaintenanceArgs(argv);
+export async function runPluginMaintenanceCommand(
+  argv: readonly string[],
+  parsed = parsePluginMaintenanceArgs(argv),
+  lifecycle: { reinstallOfficialPlugin?: typeof reinstallOfficialPlugin } = {},
+) {
+  const { action, target, workspaceRoot, pluginID, packageName } = parsed;
   const config = process.env.NATALIA_CONFIG
     ? { globalPath: process.env.NATALIA_CONFIG }
     : {};
@@ -37,10 +44,8 @@ export async function runPluginMaintenanceCommand(argv: readonly string[]) {
   if (action === "install") {
     print(
       await installPlugin({
-        workspaceRoot,
+        pluginStoreRoot: pluginStoreRoot(),
         spec: target!,
-        config,
-        runtimeManifests,
       }),
     );
     return;
@@ -49,11 +54,11 @@ export async function runPluginMaintenanceCommand(argv: readonly string[]) {
     const enabled = action === "enable";
     print(
       await setPluginEnabled({
+        pluginStoreRoot: pluginStoreRoot(),
         workspaceRoot,
         pluginID: target!,
         enabled,
         config,
-        runtimeManifests,
       }),
     );
     return;
@@ -61,29 +66,38 @@ export async function runPluginMaintenanceCommand(argv: readonly string[]) {
   if (action === "uninstall") {
     print(
       await uninstallPlugin({
-        workspaceRoot,
+        pluginStoreRoot: pluginStoreRoot(),
         pluginID: target!,
-        config,
-        runtimeManifests,
       }),
     );
     return;
   }
   if (action === "list") {
     print(
-      await listInstalledPlugins(workspaceRoot, {
+      await listInstalledPlugins({
+        pluginStoreRoot: pluginStoreRoot(),
+        workspaceRoot,
         ...config,
-        runtimeManifests,
+      }),
+    );
+    return;
+  }
+  if (action === "reinstall") {
+    print(
+      await (lifecycle.reinstallOfficialPlugin ?? reinstallOfficialPlugin)({
+        pluginStoreRoot: pluginStoreRoot(),
+        distributionRoot: officialPluginDistributionRoot(),
+        pluginID: officialPluginID(target!),
       }),
     );
     return;
   }
   if (action === "reconcile") {
-    print(await reconcilePlugins(workspaceRoot, undefined, config));
+    print(await reconcilePlugins(pluginStoreRoot()));
     return;
   }
   if (action === "doctor") {
-    print(await doctorPlugins(workspaceRoot, config));
+    print(await doctorPlugins(pluginStoreRoot()));
     return;
   }
   throw new Error("unreachable plugin action");
@@ -91,8 +105,15 @@ export async function runPluginMaintenanceCommand(argv: readonly string[]) {
 
 export function parsePluginMaintenanceArgs(argv: readonly string[]) {
   const action = argv[1];
-  const targetActions = new Set(["install", "uninstall", "enable", "disable"]);
+  const targetActions = new Set([
+    "install",
+    "reinstall",
+    "uninstall",
+    "enable",
+    "disable",
+  ]);
   const noTargetActions = new Set(["list", "doctor", "reconcile"]);
+  const workspaceActions = new Set(["enable", "disable", "list"]);
   if (
     !action ||
     (action !== "create" &&
@@ -100,7 +121,7 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
       !noTargetActions.has(action))
   )
     throw new Error(
-      "plugin requires create, install, enable, disable, uninstall, list, reconcile, or doctor",
+      "plugin requires create, install, reinstall, enable, disable, uninstall, list, reconcile, or doctor",
     );
   const positional: string[] = [];
   let workspaceRoot = process.cwd();
@@ -110,6 +131,8 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
   for (let index = 2; index < argv.length; index += 1) {
     const value = argv[index]!;
     if (value === "--workspace") {
+      if (!workspaceActions.has(action))
+        throw new Error(`plugin ${action} does not accept --workspace`);
       if (workspaceSeen)
         throw new Error("--workspace may only be specified once");
       workspaceSeen = true;
@@ -139,7 +162,7 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
   }
   if (targetActions.has(action) && positional.length !== 1)
     throw new Error(
-      `plugin ${action} requires exactly one ${action === "install" ? "package spec" : "plugin id"}`,
+      `plugin ${action} requires exactly one ${action === "install" ? "package spec" : action === "reinstall" ? "official plugin id" : "plugin id"}`,
     );
   if (noTargetActions.has(action) && positional.length)
     throw new Error(`plugin ${action} does not accept a target`);
@@ -147,6 +170,11 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
     throw new Error(
       "plugin create requires exactly one directory and --id <plugin-id>",
     );
+  if (
+    action === "reinstall" &&
+    !OFFICIAL_PLUGIN_PACKAGES.some(({ id }) => id === positional[0])
+  )
+    throw new Error(`unknown official plugin: ${positional[0]}`);
   return {
     action,
     target: positional[0],

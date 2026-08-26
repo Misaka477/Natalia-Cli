@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  officialPluginStoreRoot,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
 import {
   configV3Schema,
   nataliaFlowDocumentSchema,
@@ -41,6 +44,7 @@ test("task cancellation reaches a durable terminal invocation", async () => {
 
   const result = await runTask({
     workspaceRoot: root,
+    pluginStoreRoot: officialPluginStoreRoot(root),
     task,
     flow,
     config: configV3Schema.parse({ version: 3 }),
@@ -75,6 +79,7 @@ test("a task cancelled before admission creates no durable invocation", async ()
   await expect(
     runTask({
       workspaceRoot: root,
+      pluginStoreRoot: officialPluginStoreRoot(root),
       task: nataliaTaskDocumentSchema.parse({
         kind: "natalia-task",
         version: 1,

@@ -28,7 +28,6 @@
     { "path": "packages/hosts/platform" },
     { "path": "packages/framework/provider-model" },
     { "path": "packages/core/tools" },
-    { "path": "packages/plugins/tools/pdf" },
     { "path": "packages/framework/sandbox" },
     { "path": "packages/plugins/skills" },
     { "path": "packages/domains/workflow" },

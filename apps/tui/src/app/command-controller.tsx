@@ -3,7 +3,7 @@ import { type TextareaRenderable } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import { useKeymap, useKeymapSelector } from "@opentui/keymap/solid";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { readClipboardImage } from "../clipboard";
 import type {
   ConfigV3,
@@ -93,11 +93,12 @@ import type { TuiPreferences } from "../settings";
 import {
   parseCompactionThreshold,
   parseSettingsStringRecord,
-  parseSettingsRecord,
 } from "./settings-utils";
 import { previewCommandRuleImport } from "./permission-command-rules";
 import { themeTokens as darkTheme } from "../theme/theme";
 import { DialogToolMultiSelect } from "../component/DialogToolMultiSelect";
+import { DialogPluginManager } from "../component/DialogPluginManager";
+import { resolveOfficialPluginsDistribution } from "../official-plugins";
 
 export interface CommandContext {
   backend: RuntimeClient;
@@ -685,7 +686,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
       {
         title: "Extensions",
         value: "extensions",
-        description: "Remote skills and local plugin policy",
+        description: "Installed plugins and skills",
       },
       {
         title: "Runtime Config",
@@ -1978,43 +1979,37 @@ export async function runCommand(command: string, ctx: CommandContext) {
                   title="Extensions"
                   options={[
                     {
-                      title: "Remote Skill URLs",
+                      title: "Installed Plugins",
+                      value: "installed-plugins",
+                      description: "Manage physical plugin packages",
+                    },
+                    {
+                      title: "Skills",
                       value: "skills",
-                      description: `${resolved.skills.urls.length} sources`,
-                    },
-                    {
-                      title: "Plugin Paths",
-                      value: "plugin-paths",
-                      description: `${resolved.plugins.paths.length} roots`,
-                    },
-                    {
-                      title: "Plugin Enabled Overrides",
-                      value: "plugin-enabled",
-                      description: `${Object.keys(resolved.plugins.enabled).length} overrides`,
-                    },
-                    {
-                      title: "Plugin Capabilities",
-                      value: "plugin-capabilities",
-                      description: `${Object.keys(resolved.plugins.capabilities).length} overrides`,
-                    },
-                    {
-                      title: "Plugin Read-only Overrides",
-                      value: "plugin-readonly",
-                      description: `${Object.keys(resolved.plugins.readOnly).length} overrides`,
-                    },
-                    {
-                      title: "Checkpoint Additional Directories",
-                      value: "checkpoint-dirs",
-                      description: `${resolved.checkpoint.additionalDirs.length} directories`,
-                    },
-                    {
-                      title: "Workspace Additional Directories",
-                      value: "workspace-dirs",
-                      description: `${resolved.workspace.additionalDirs.length} directories`,
+                      description: `${resolved.skills.urls.length} remote sources`,
                     },
                   ]}
                   onSelect={(opt) => {
                     const next = structuredClone(resolved);
+                    if (opt.value === "installed-plugins") {
+                      void resolveOfficialPluginsDistribution()
+                        .then((distributionRoot) =>
+                          ctx.dialog.push(() => (
+                            <DialogPluginManager
+                              workspaceRoot={ctx.workspaceRoot ?? process.cwd()}
+                              pluginStoreRoot={resolve(
+                                distributionRoot,
+                                "..",
+                                "plugin-store",
+                              )}
+                              backend={ctx.backend}
+                              distributionRoot={distributionRoot}
+                            />
+                          )),
+                        )
+                        .catch((error) => ctx.toast.error(error));
+                      return;
+                    }
                     if (opt.value === "skills") {
                       ctx.dialog.push(() => (
                         <DialogPrompt
@@ -2034,84 +2029,6 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       ));
                       return;
                     }
-                    if (
-                      opt.value === "plugin-paths" ||
-                      opt.value.endsWith("dirs")
-                    ) {
-                      const target =
-                        opt.value === "plugin-paths"
-                          ? next.plugins.paths
-                          : opt.value === "checkpoint-dirs"
-                            ? next.checkpoint.additionalDirs
-                            : next.workspace.additionalDirs;
-                      ctx.dialog.push(() => (
-                        <DialogPrompt
-                          title={
-                            opt.value === "plugin-paths"
-                              ? "Plugin Paths"
-                              : "Additional Directories"
-                          }
-                          description={() =>
-                            "Comma-separated workspace-relative paths."
-                          }
-                          placeholder={target.join(", ")}
-                          onConfirm={(value) => {
-                            const paths = value
-                              .split(",")
-                              .map((item) => item.trim())
-                              .filter(Boolean);
-                            if (opt.value === "plugin-paths")
-                              next.plugins.paths = paths;
-                            else if (opt.value === "checkpoint-dirs")
-                              next.checkpoint.additionalDirs = paths;
-                            else next.workspace.additionalDirs = paths;
-                            void saveConfig(next);
-                          }}
-                        />
-                      ));
-                      return;
-                    }
-                    const current =
-                      opt.value === "plugin-enabled"
-                        ? next.plugins.enabled
-                        : opt.value === "plugin-capabilities"
-                          ? next.plugins.capabilities
-                          : next.plugins.readOnly;
-                    ctx.dialog.push(() => (
-                      <DialogPrompt
-                        title={
-                          opt.value === "plugin-enabled"
-                            ? "Plugin Enabled Overrides"
-                            : opt.value === "plugin-capabilities"
-                              ? "Plugin Capabilities"
-                              : "Plugin Read-only Overrides"
-                        }
-                        description={() =>
-                          "JSON record keyed by plugin ID. Values are not shown in this menu."
-                        }
-                        placeholder={JSON.stringify(current)}
-                        onConfirm={(value) => {
-                          const parsed = parseSettingsRecord(value);
-                          if (!parsed) return;
-                          if (opt.value === "plugin-enabled")
-                            next.plugins.enabled = parsed as Record<
-                              string,
-                              boolean
-                            >;
-                          else if (opt.value === "plugin-capabilities")
-                            next.plugins.capabilities = parsed as Record<
-                              string,
-                              Array<"tools" | "events">
-                            >;
-                          else
-                            next.plugins.readOnly = parsed as Record<
-                              string,
-                              boolean
-                            >;
-                          void saveConfig(next);
-                        }}
-                      />
-                    ));
                   }}
                 />
               ));
@@ -2158,6 +2075,11 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       description: String(
                         resolved.runtime?.terminal?.windowMode ?? "auto",
                       ),
+                    },
+                    {
+                      title: "Checkpoint Directories",
+                      value: "checkpoint-dirs",
+                      description: `${resolved.checkpoint.additionalDirs.length} additional directories`,
                     },
                   ]}
                   onSelect={async (opt) => {
@@ -2218,6 +2140,27 @@ export async function runCommand(command: string, ctx: CommandContext) {
                               windowMode: chosen.value,
                             };
                             void saveConfig(target);
+                          }}
+                        />
+                      ));
+                      return;
+                    }
+                    if (opt.value === "checkpoint-dirs") {
+                      ctx.dialog.push(() => (
+                        <DialogPrompt
+                          title="Checkpoint Directories"
+                          description={() =>
+                            "Comma-separated workspace-relative paths included in checkpoint and rollback."
+                          }
+                          placeholder={next.checkpoint.additionalDirs.join(
+                            ", ",
+                          )}
+                          onConfirm={(value) => {
+                            next.checkpoint.additionalDirs = value
+                              .split(",")
+                              .map((item) => item.trim())
+                              .filter(Boolean);
+                            void saveConfig(next);
                           }}
                         />
                       ));

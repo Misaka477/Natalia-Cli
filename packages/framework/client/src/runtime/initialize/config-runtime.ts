@@ -16,10 +16,8 @@ export async function configureRuntime(
 ) {
   const scope = createInitializeRuntime(ctx);
   ctx.state.frameworkServices = await scope.wireFrameworkServices(ctx, options);
-  const defaults = scope.buildRuntimePluginCatalog(runtimeConfig);
   await scope.mountPlugins({
     controller: scope.pluginsController,
-    defaults,
     config: tsConfig.config.plugins,
   });
   const resolvedSessionStore = scope.resolveService<SessionStoreController>(

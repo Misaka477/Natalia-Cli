@@ -16,12 +16,6 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     set tsRuntimeConfig(value) {
       ctx.ports.setTsRuntimeConfig(value);
     },
-    get buildRuntimePluginCatalog() {
-      return ctx.ports.buildRuntimePluginCatalog;
-    },
-    set buildRuntimePluginCatalog(value) {
-      ctx.ports.setBuildRuntimePluginCatalog(value);
-    },
     get interactive() {
       return ctx.ports.getInteractive();
     },

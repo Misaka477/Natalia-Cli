@@ -16,9 +16,11 @@ export type PermissionProfileUsage = Record<string, string[]>;
  */
 export async function permissionProfileUsage(input: {
   workspaceRoot: string;
+  pluginStoreRoot?: string;
 }): Promise<PermissionProfileUsage> {
   const client = createRealRuntimeClient({
     workspaceRoot: input.workspaceRoot,
+    pluginStoreRoot: input.pluginStoreRoot,
   });
   try {
     const service = await client.service<TaskWorkflowService>(

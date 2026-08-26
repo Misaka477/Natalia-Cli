@@ -66,7 +66,6 @@
       "@natalia/plugin-tool-fs-write": [
         "packages/plugins/tools/fs-write/src/index.ts"
       ],
-      "@natalia/plugin-tool-pdf": ["packages/plugins/tools/pdf/src/index.ts"],
       "@natalia/plugin-tool-search": [
         "packages/plugins/tools/search/src/index.ts"
       ],

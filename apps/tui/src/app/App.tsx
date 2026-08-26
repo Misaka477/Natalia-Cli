@@ -122,7 +122,9 @@ type TuiRuntimeClient = RuntimeClient;
 export function App(props: {
   backend: TuiRuntimeClient;
   commands?: UiAdapterMountInput["commands"];
-  createBackend?: (sessionID?: string) => TuiRuntimeClient;
+  createBackend?: (
+    sessionID?: string,
+  ) => TuiRuntimeClient | Promise<TuiRuntimeClient>;
   onBackendChange?: (backend: RuntimeClient) => void;
   onWorkspaceRootChange?: (root: string) => void;
   workspaceRoot?: string;
@@ -154,7 +156,7 @@ export function App(props: {
     historyHydrate = undefined;
     if (props.createBackend) {
       const previous = backend();
-      const next = props.createBackend(sessionID);
+      const next = await props.createBackend(sessionID);
       setBackend(next);
       props.onBackendChange?.(next);
       await previous.dispose?.();
@@ -184,7 +186,7 @@ export function App(props: {
       }
       setWorkspaceRoot(nextRoot);
       props.onWorkspaceRootChange(nextRoot);
-      const next = props.createBackend();
+      const next = await props.createBackend();
       setBackend(next);
       props.onBackendChange?.(next);
       await previous.dispose?.();

@@ -107,13 +107,15 @@ catalogue. Install, uninstall, enable, and disable each perform the complete
 lifecycle operation in one command. `doctor` audits the installed state and
 `reconcile` repairs the desired package closure. All plugins use the same
 registry, permissions, naming, and cleanup path.
-`install`, `uninstall`, `enable`, `disable`, `list`, `doctor`, and `reconcile`
-accept `--workspace <path>`.
+Natalia has exactly one plugin installation store. `install`, `uninstall`,
+`doctor`, `reconcile`, and `reinstall` always operate on that store and have no
+installation scope. `--workspace <path>` only selects the project configuration
+used by `enable`, `disable`, and the enablement state shown by `list`.
 
 `install <spec>` accepts npm registry specs, local directories, Git specs, and
-local or remote tarballs. It validates a staged package before transactionally
-updating `.natalia/plugins`, `.natalia/natalia.lock`, and project configuration.
-The durable enable/disable/install state is read when a runtime starts or
+local or remote tarballs. It installs the package into the Natalia instance's
+single `plugin-store` and updates that store's `natalia.lock`. No package is
+installed beneath a workspace. The durable enable/disable state is read when a runtime starts or
 reconciles configuration; these commands do not mutate another process's live
 registry. See the [plugin guide](plugin-guide.md) for API contracts, output
 shapes, diagnostics, built-in plugin IDs, and the complete authoring tutorial.

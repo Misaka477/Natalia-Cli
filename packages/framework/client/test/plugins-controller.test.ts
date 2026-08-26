@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createToolRegistry } from "@natalia/tools";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createPluginsController } from "../src/plugins-controller";
-import type { Plugin } from "@natalia/plugin";
-import type { DesiredPluginEntry } from "@natalia/plugin";
+import {
+  discoverPluginManifests,
+  validatePluginPath,
+  type Plugin,
+  type DesiredPluginEntry,
+} from "@natalia/plugin";
 import type { PluginConfigSnapshot } from "../src/plugins-controller";
 import {
   installPluginSdkLinks,
@@ -46,12 +51,59 @@ function makeController(
   } = {},
 ) {
   const controller = createPluginsController({
+    pluginStoreRoot: join(root, "plugin-store"),
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry,
+    discoverDesiredEntries: fixtureDiscovery(root),
     publish: () => undefined,
   });
   return { controller };
+}
+
+function fixtureDiscovery(root: string) {
+  return async (
+    input: Parameters<
+      NonNullable<
+        Parameters<typeof createPluginsController>[0]["discoverDesiredEntries"]
+      >
+    >[0],
+  ) => {
+    const entries = await discoverPluginManifests(
+      join(root, ".natalia", "plugins"),
+      { nodeModules: false },
+    );
+    const ids = new Set(input.declaredIDs);
+    return entries.flatMap((entry) => {
+      if (ids.has(entry.manifest.id))
+        throw new Error(`duplicate plugin id: ${entry.manifest.id}`);
+      ids.add(entry.manifest.id);
+      if (input.enabled?.[entry.manifest.id] === false) return [];
+      return [
+        {
+          id: entry.manifest.id,
+          enabled: true,
+          fingerprint: JSON.stringify({
+            manifest: entry.manifest,
+            path: entry.path,
+          }),
+          manifest: entry.manifest,
+          onError: (error: unknown) => input.onError(entry.manifest.id, error),
+          async load(cacheBust?: string) {
+            const modulePath = validatePluginPath(
+              resolve(entry.path, ".."),
+              entry.manifest.entry,
+            );
+            const specifier = cacheBust
+              ? `${modulePath}?reload=${cacheBust}`
+              : pathToFileURL(modulePath).href;
+            const module = (await import(specifier)) as { default: Plugin };
+            return { ...module.default, manifest: entry.manifest };
+          },
+        } satisfies DesiredPluginEntry,
+      ];
+    });
+  };
 }
 
 async function initialize(
@@ -199,7 +251,8 @@ test("plugins controller loads, unloads idempotently and reloads", async () => {
 
 test("plugins controller loads only configured lock-backed packages", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugins-closure-"));
-  const modulesRoot = join(root, ".natalia", "plugins", "node_modules");
+  const pluginStoreRoot = join(root, "plugin-store");
+  const modulesRoot = join(pluginStoreRoot, "node_modules");
   const configuredRoot = join(modulesRoot, "configured-plugin");
   const neighborRoot = join(modulesRoot, "neighbor-plugin");
   await Promise.all([
@@ -229,7 +282,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "${id}", version: "
     );
   }
   await writeFile(
-    join(root, ".natalia", "natalia.lock"),
+    join(pluginStoreRoot, "natalia.lock"),
     JSON.stringify({
       version: 1,
       plugins: {
@@ -248,6 +301,7 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "${id}", version: "
     }),
   );
   const controller = createPluginsController({
+    pluginStoreRoot,
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
@@ -334,9 +388,11 @@ test("a failing plugin's diagnostic is attributed to the plugin", async () => {
   );
   const diagnostics: Array<{ owner?: string; message: string }> = [];
   const controller = createPluginsController({
+    pluginStoreRoot: join(root, "plugin-store"),
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
+    discoverDesiredEntries: fixtureDiscovery(root),
     publish: (event) => {
       if (event.type === "diagnostic") diagnostics.push(event);
     },
@@ -758,6 +814,7 @@ test("a default plugin can depend on a discovered user plugin", async () => {
     },
   });
   const controller = createPluginsController({
+    pluginStoreRoot: join(root, "plugin-store"),
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
@@ -799,6 +856,7 @@ test("default and user plugin conflicts deny both sources symmetrically", async 
   const user = conflicting("user.conflict", "default.conflict");
   const defaultEntry = conflicting("default.conflict", "user.conflict");
   const controller = createPluginsController({
+    pluginStoreRoot: join(root, "plugin-store"),
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
@@ -1179,6 +1237,7 @@ test("discovery and reconcile use queued immutable config snapshots", async () =
   });
   const seen: string[] = [];
   const controller = createPluginsController({
+    pluginStoreRoot: join(root, "plugin-store"),
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
@@ -1367,9 +1426,11 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "bad.plugin", versi
   );
   const diagnostics: string[] = [];
   const controller = createPluginsController({
+    pluginStoreRoot: join(root, "plugin-store"),
     workspaceRoot: root,
     tools: createToolRegistry([]),
     capabilityRegistry: new CapabilityRegistry(),
+    discoverDesiredEntries: fixtureDiscovery(root),
     publish: (event) => {
       if (event.type === "diagnostic") diagnostics.push(event.message);
     },

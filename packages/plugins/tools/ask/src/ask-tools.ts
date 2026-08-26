@@ -106,7 +106,7 @@ export const ASK_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Interactive Question Tools",
   description: "Asking the user a structured question.",
-  entry: "natalia:tool-ask",
+  entry: "index.js",
   scope: "session",
   provides: [],
   requires: [],

@@ -12,7 +12,7 @@ export const TASK_WORKFLOW_PLUGIN_MANIFEST: PluginManifest = {
   version: "1.0.0",
   name: "Task Workflow",
   description: "Task and workflow documents, preflight and scheduling.",
-  entry: "natalia:task-workflow",
+  entry: "index.js",
   scope: "workspace",
   provides: [TASK_WORKFLOW_CONTROLLER_SERVICE],
   requires: [],

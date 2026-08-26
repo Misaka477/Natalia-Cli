@@ -1,26 +1,22 @@
 import { createCliCommandAdapterHost } from "./cli-command-adapter";
 import {
   isPluginMaintenanceCommand,
+  parsePluginMaintenanceArgs,
   runPluginMaintenanceCommand,
 } from "./plugin-maintenance";
+import { initializeOfficialPluginsForHostCommand } from "./official-plugins";
 
 const argv = process.argv.slice(2);
 
 if (isPluginMaintenanceCommand(argv)) {
-  await runPluginMaintenanceCommand(argv);
+  const command = parsePluginMaintenanceArgs(argv);
+  await runPluginMaintenanceCommand(argv, command);
 } else {
+  await initializeOfficialPluginsForHostCommand(argv);
   const host = await createCliCommandAdapterHost();
   try {
     await host.done;
   } finally {
     await host.close();
   }
-}
-
-function argumentValue(argv: readonly string[], name: string) {
-  const index = argv.indexOf(name);
-  const value = index >= 0 ? argv[index + 1] : undefined;
-  if (index >= 0 && (!value || value.startsWith("--")))
-    throw new Error(`${name} requires an absolute or relative path`);
-  return value;
 }

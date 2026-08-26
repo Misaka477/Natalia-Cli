@@ -19,10 +19,6 @@ import {
   type RuntimeServiceClient,
   type TaskWorkflowService,
 } from "@natalia/client";
-import {
-  createWorkflowExecutionStoreService,
-  createWorkflowStoreService,
-} from "@natalia/plugin-task-workflow";
 import type {
   EpisodeID,
   EvaluatorResult,
@@ -36,6 +32,7 @@ import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";
 import {
   createIssueTarget,
+  createWorkflowStoreService,
   deliverPendingTaskAlerts,
   evaluateAndRecordModule,
   findingFingerprint,
@@ -79,6 +76,7 @@ import {
   workGraphLines,
 } from "./index";
 import { valueAfter, daemonDir, waitSignal } from "./command-helpers";
+import { pluginStoreRoot } from "./official-plugins";
 import {
   taskListLines,
   taskPreviewLines,
@@ -194,6 +192,7 @@ export async function handleTaskCommands(argv: string[]) {
         );
         const result = await runTask({
           workspaceRoot,
+          pluginStoreRoot: pluginStoreRoot(),
           task,
           flow,
           config: runConfig,
@@ -302,6 +301,7 @@ export async function handleTaskCommands(argv: string[]) {
       );
       const result = await runTask({
         workspaceRoot,
+        pluginStoreRoot: pluginStoreRoot(),
         task: manualFlowTask(flow, config),
         flow,
         config,

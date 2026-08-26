@@ -3,10 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapabilityRegistry, type CapabilityGrant } from "@natalia/capability";
-import {
-  createPluginAdapterMaterializer,
-  type DesiredPluginEntry,
-} from "@natalia/plugin";
+import { createPluginAdapterMaterializer } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import { discoverDesiredPluginEntries } from "../src/plugin-discovery";
 import { createPluginsController } from "../src/plugins-controller";
@@ -35,7 +32,7 @@ type PersistenceService = {
 
 async function installedFixture(): Promise<{
   root: string;
-  entry: DesiredPluginEntry;
+  pluginStoreRoot: string;
   config: {
     packages: Record<
       string,
@@ -48,13 +45,8 @@ async function installedFixture(): Promise<{
   };
 }> {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-symmetry-"));
-  const packageRoot = join(
-    root,
-    ".natalia",
-    "plugins",
-    "node_modules",
-    packageName,
-  );
+  const pluginStoreRoot = join(root, "plugin-store");
+  const packageRoot = join(pluginStoreRoot, "node_modules", packageName);
   await mkdir(packageRoot, { recursive: true });
   const manifest = {
     apiVersion: 2,
@@ -113,7 +105,7 @@ export default definePlugin({
   );
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
-    join(root, ".natalia", "natalia.lock"),
+    join(pluginStoreRoot, "natalia.lock"),
     JSON.stringify({
       version: 1,
       plugins: {
@@ -144,8 +136,7 @@ export default definePlugin({
     },
   };
   const entries = await discoverDesiredPluginEntries({
-    workspaceRoot: root,
-    paths: [],
+    pluginStoreRoot,
     packages: config.packages,
     declaredIDs: [],
     onError: (_id, error) => {
@@ -153,7 +144,7 @@ export default definePlugin({
     },
   });
   expect(entries).toHaveLength(1);
-  return { root, entry: entries[0]!, config };
+  return { root, pluginStoreRoot, config };
 }
 
 function assertPresent(kernel: CapabilityRegistry) {
@@ -177,65 +168,57 @@ function assertAbsent(kernel: CapabilityRegistry) {
   expect(kernel.has(pluginID)).toBe(false);
 }
 
-for (const origin of [
-  "runtime initial desired",
-  "installed discovery",
-] as const)
-  test(`${origin} uses the same complete lifecycle`, async () => {
-    const { root, entry, config } = await installedFixture();
-    const kernel = new CapabilityRegistry();
-    const tools = createToolRegistry([]);
-    const controller = createPluginsController({
-      workspaceRoot: root,
-      tools,
-      capabilityRegistry: kernel,
-      publish: () => undefined,
-      ...(origin === "runtime initial desired"
-        ? { discoverDesiredEntries: async () => [] }
-        : {}),
-    });
-    const defaults = origin === "runtime initial desired" ? [entry] : [];
-    const pluginConfig = origin === "runtime initial desired" ? {} : config;
-    controller.init();
-    await controller.reconcileDesired(defaults, pluginConfig);
-
-    assertPresent(kernel);
-    expect(tools.has("symmetry_tool")).toBe(true);
-    expect(
-      controller
-        .get()
-        .commands()
-        .map(({ name }) => name),
-    ).toContain("symmetry_command");
-    const persistence = kernel.service<PersistenceService>(
-      "symmetry.persistence",
-    )!;
-    await persistence.write(origin);
-    expect(await persistence.read()).toBe(origin);
-    const materializer = createPluginAdapterMaterializer(kernel);
-    await materializer.materialize("symmetry.adapter", {});
-    await materializer.materialize("symmetry.ui", {} as never);
-    await materializer.close();
-
-    await controller.unload(pluginID);
-    assertAbsent(kernel);
-    expect(tools.has("symmetry_tool")).toBe(false);
-    expect(controller.get().commands()).toEqual([]);
-    await expect(
-      createPluginAdapterMaterializer(kernel).materialize(
-        "symmetry.ui",
-        {} as never,
-      ),
-    ).rejects.toThrow("adapter is not available");
-
-    await controller.reconcileDesired(defaults, pluginConfig);
-    assertPresent(kernel);
-    expect(
-      await kernel.service<PersistenceService>("symmetry.persistence")?.read(),
-    ).toBe(origin);
-    const recoveredUi = createPluginAdapterMaterializer(kernel);
-    await recoveredUi.materialize("symmetry.ui", {} as never);
-    await recoveredUi.close();
-    await controller.close();
-    assertAbsent(kernel);
+test("installed discovery uses the complete lifecycle", async () => {
+  const { root, pluginStoreRoot, config } = await installedFixture();
+  const kernel = new CapabilityRegistry();
+  const tools = createToolRegistry([]);
+  const controller = createPluginsController({
+    pluginStoreRoot,
+    workspaceRoot: root,
+    tools,
+    capabilityRegistry: kernel,
+    publish: () => undefined,
   });
+  controller.init();
+  await controller.reconcileDesired([], config);
+
+  assertPresent(kernel);
+  expect(tools.has("symmetry_tool")).toBe(true);
+  expect(
+    controller
+      .get()
+      .commands()
+      .map(({ name }) => name),
+  ).toContain("symmetry_command");
+  const persistence = kernel.service<PersistenceService>(
+    "symmetry.persistence",
+  )!;
+  await persistence.write("installed discovery");
+  expect(await persistence.read()).toBe("installed discovery");
+  const materializer = createPluginAdapterMaterializer(kernel);
+  await materializer.materialize("symmetry.adapter", {});
+  await materializer.materialize("symmetry.ui", {} as never);
+  await materializer.close();
+
+  await controller.unload(pluginID);
+  assertAbsent(kernel);
+  expect(tools.has("symmetry_tool")).toBe(false);
+  expect(controller.get().commands()).toEqual([]);
+  await expect(
+    createPluginAdapterMaterializer(kernel).materialize(
+      "symmetry.ui",
+      {} as never,
+    ),
+  ).rejects.toThrow("adapter is not available");
+
+  await controller.reconcileDesired([], config);
+  assertPresent(kernel);
+  expect(
+    await kernel.service<PersistenceService>("symmetry.persistence")?.read(),
+  ).toBe("installed discovery");
+  const recoveredUi = createPluginAdapterMaterializer(kernel);
+  await recoveredUi.materialize("symmetry.ui", {} as never);
+  await recoveredUi.close();
+  await controller.close();
+  assertAbsent(kernel);
+});

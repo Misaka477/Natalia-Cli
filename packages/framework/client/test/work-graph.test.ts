@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import {
+  createOfficialRuntimeClient as createRealRuntimeClient,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
 import {
@@ -9,7 +13,6 @@ import {
   projectedWorkGraphNodes,
 } from "@natalia/session";
 import { workGraphEdgeSchema, workGraphNodeSchema } from "@natalia/contracts";
-import { createRealRuntimeClient } from "../src";
 import {
   agentActionNodeID,
   approvalNodeID,

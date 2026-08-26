@@ -18,6 +18,10 @@ import { RouteProvider } from "../context/route";
 import type { AppRoute } from "../context/route";
 import { registerNataliaKeymap } from "../modal/mode-stack";
 import { App } from "./App";
+import {
+  initializeTuiOfficialPlugins,
+  resolveTuiPluginStore,
+} from "../official-plugins";
 
 export type RuntimeHandle = {
   renderer: CliRenderer;
@@ -45,7 +49,9 @@ export async function runTuiShell(
     initialPrompt?: string;
     backend?: RuntimeClient;
     commands?: UiAdapterMountInput["commands"];
-    createBackend?: (sessionID?: string) => RuntimeClient;
+    createBackend?: (
+      sessionID?: string,
+    ) => RuntimeClient | Promise<RuntimeClient>;
     /** Re-points the workspace root before a fresh backend is created. */
     onWorkspaceRootChange?: (root: string) => void;
     workspaceRoot?: string;
@@ -60,6 +66,18 @@ export async function runTuiShell(
     }) => void;
   } = {},
 ): Promise<RuntimeHandle> {
+  let backend = input.backend;
+  if (!backend) {
+    if (input.fixture) backend = createFakeBackend();
+    else {
+      const workspaceRoot = input.workspaceRoot ?? process.cwd();
+      await initializeTuiOfficialPlugins();
+      backend = createRealRuntimeClient({
+        workspaceRoot,
+        pluginStoreRoot: await resolveTuiPluginStore(),
+      });
+    }
+  }
   const renderer = await createCliRenderer({
     width: input.rendererSize?.width,
     height: input.rendererSize?.height,
@@ -70,11 +88,6 @@ export async function runTuiShell(
     consoleMode: "disabled",
     openConsoleOnError: false,
   });
-  const backend =
-    input.backend ??
-    (input.fixture
-      ? createFakeBackend()
-      : createRealRuntimeClient({ workspaceRoot: input.workspaceRoot }));
   let activeBackend: RuntimeClient | undefined = backend;
   const events: RuntimeEvent[] = [];
   const disposeBackend = async () => {

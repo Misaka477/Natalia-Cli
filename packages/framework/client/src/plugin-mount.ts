@@ -9,14 +9,12 @@
  *
  * Defaults and discovered entries enter one source-neutral dependency catalog.
  */
-import type { DesiredPluginEntry } from "@natalia/plugin";
 import type { createPluginsController } from "./plugins-controller";
 
 export async function mountPlugins(input: {
   controller: ReturnType<typeof createPluginsController>;
-  defaults: DesiredPluginEntry[];
   config: import("./plugins-controller").PluginConfigSnapshot;
 }): Promise<void> {
   input.controller.init();
-  await input.controller.reconcileDesired(input.defaults, input.config);
+  await input.controller.reconcileDesired([], input.config);
 }

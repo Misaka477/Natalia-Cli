@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  createOfficialRuntimeClient as createRealRuntimeClient,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
 import { CapabilityHost } from "@natalia/capability";
 import { configV3Schema } from "@natalia/contracts";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import type { WorkflowExecutionHandle } from "@natalia/workflow";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
 import { createWorkflowSchedulerHost } from "@natalia/workflow-scheduler";
-import { createRealRuntimeClient } from "../src/runtime/main";
 import {
   TASK_WORKFLOW_CONTROLLER_SERVICE,
   type TaskWorkflowService,

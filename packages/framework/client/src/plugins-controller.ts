@@ -8,8 +8,25 @@ import {
   type PluginManifest,
 } from "@natalia/plugin";
 import type { ToolRegistry } from "@natalia/tools";
+import {
+  LOCAL_TOOLS_INPUT_SERVICE,
+  MCP_INPUT_SERVICE,
+  SKILLS_INPUT_SERVICE,
+  TASK_MODULE_INPUT_SERVICE,
+  TASK_WORKFLOW_INPUT_SERVICE,
+  TERMINAL_INPUT_SERVICE,
+} from "@natalia/runtime-services";
 import { discoverDesiredPluginEntries } from "./plugin-discovery";
 import { registerPluginOwner } from "./plugin-owner";
+
+const HOST_INPUT_SERVICES = new Set([
+  LOCAL_TOOLS_INPUT_SERVICE,
+  MCP_INPUT_SERVICE,
+  SKILLS_INPUT_SERVICE,
+  TASK_MODULE_INPUT_SERVICE,
+  TASK_WORKFLOW_INPUT_SERVICE,
+  TERMINAL_INPUT_SERVICE,
+]);
 
 export type PluginConfigSnapshot = {
   paths?: string[];
@@ -19,6 +36,7 @@ export type PluginConfigSnapshot = {
 };
 
 export function createPluginsController(input: {
+  pluginStoreRoot?: string;
   workspaceRoot: string;
   tools: ToolRegistry;
   capabilityRegistry: CapabilityRegistryHost;
@@ -28,6 +46,7 @@ export function createPluginsController(input: {
   let registry: ReturnType<typeof createPluginRegistry> | undefined;
   let controller: ReturnType<typeof createDesiredPluginController> | undefined;
   let closed = false;
+  let hostInputGeneration = 0;
 
   function init() {
     closed = false;
@@ -62,24 +81,32 @@ export function createPluginsController(input: {
   }
 
   async function reconcileDesired(
-    defaults: DesiredPluginEntry[],
+    injectedEntries: DesiredPluginEntry[],
     config: PluginConfigSnapshot,
   ) {
     const snapshot = structuredClone(config);
     const current = getController();
+    const inputGeneration = ++hostInputGeneration;
     await current.reconcileDesired(async () => {
-      const users = await (
-        input.discoverDesiredEntries ?? discoverDesiredPluginEntries
-      )({
-        workspaceRoot: input.workspaceRoot,
-        paths: snapshot.paths ?? [],
-        packages: snapshot.packages ?? {},
-        enabled: snapshot.enabled,
-        declaredIDs: defaults.map((entry) => entry.id),
-        onError: publishLoadError,
-      });
+      const users = input.pluginStoreRoot
+        ? await (input.discoverDesiredEntries ?? discoverDesiredPluginEntries)({
+            pluginStoreRoot: input.pluginStoreRoot,
+            packages: snapshot.packages ?? {},
+            enabled: snapshot.enabled,
+            declaredIDs: injectedEntries.map((entry) => entry.id),
+            onError: publishLoadError,
+          })
+        : [];
+      const entries = [...injectedEntries, ...users].map((entry) =>
+        entry.manifest?.requires.some((name) => HOST_INPUT_SERVICES.has(name))
+          ? {
+              ...entry,
+              fingerprint: `${entry.fingerprint}:host-input:${inputGeneration}`,
+            }
+          : entry,
+      );
       return await resolveDesiredPluginCatalog({
-        entries: [...defaults, ...users],
+        entries,
         previous: current.previous,
         onError: publishLoadError,
       });

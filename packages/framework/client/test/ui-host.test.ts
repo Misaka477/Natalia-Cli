@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
-import type { DesiredPluginEntry, PluginManifest } from "@natalia/plugin";
+import {
+  discoverPluginManifests,
+  validatePluginPath,
+  type DesiredPluginEntry,
+  type Plugin,
+  type PluginManifest,
+} from "@natalia/plugin";
 import { createUiAdapterHost } from "../src/ui-host";
 import {
   installPluginSdkLinks,
@@ -101,19 +108,57 @@ async function discoveredUiWorkspace(config: Record<string, unknown> = {}) {
     join(pluginRoot, "index.ts"),
     uiEntry("fixture.ui", "ui.fixture"),
   );
-  return root;
+  return { root, pluginStoreRoot: join(root, "plugin-store") };
+}
+
+function directUiDiscovery(root: string) {
+  return async (
+    input: Parameters<
+      NonNullable<Parameters<typeof createUiAdapterHost>[0]["discover"]>
+    >[0],
+  ) => {
+    const entries = await discoverPluginManifests(join(root, "ui-plugins"), {
+      nodeModules: false,
+    });
+    const ids = new Set(input.declaredIDs);
+    return entries.flatMap((entry) => {
+      if (ids.has(entry.manifest.id))
+        throw new Error(`duplicate plugin id: ${entry.manifest.id}`);
+      ids.add(entry.manifest.id);
+      if (input.enabled?.[entry.manifest.id] === false) return [];
+      return [
+        {
+          id: entry.manifest.id,
+          enabled: true,
+          fingerprint: JSON.stringify({
+            manifest: entry.manifest,
+            path: entry.path,
+          }),
+          manifest: entry.manifest,
+          onError: (error: unknown) => input.onError(entry.manifest.id, error),
+          async load(cacheBust?: string) {
+            const modulePath = validatePluginPath(
+              resolve(entry.path, ".."),
+              entry.manifest.entry,
+            );
+            const specifier = cacheBust
+              ? `${modulePath}?reload=${cacheBust}`
+              : pathToFileURL(modulePath).href;
+            const module = (await import(specifier)) as { default: Plugin };
+            return { ...module.default, manifest: entry.manifest };
+          },
+        } satisfies DesiredPluginEntry,
+      ];
+    });
+  };
 }
 
 async function installedUiWorkspace() {
   const root = await mkdtemp(join(tmpdir(), "natalia-ui-installed-"));
-  const packageRoot = join(
-    root,
-    ".natalia",
-    "plugins",
-    "node_modules",
-    "fixture-ui",
-  );
+  const pluginStoreRoot = join(root, "plugin-store");
+  const packageRoot = join(pluginStoreRoot, "node_modules", "fixture-ui");
   await mkdir(packageRoot, { recursive: true });
+  await mkdir(join(root, ".natalia"), { recursive: true });
   await installPluginSdkLinks(root);
   await writeFile(
     join(root, ".natalia", "config.json"),
@@ -131,7 +176,7 @@ async function installedUiWorkspace() {
     }),
   );
   await writeFile(
-    join(root, ".natalia", "natalia.lock"),
+    join(pluginStoreRoot, "natalia.lock"),
     JSON.stringify({
       version: 1,
       plugins: {
@@ -157,18 +202,20 @@ async function installedUiWorkspace() {
     join(packageRoot, "index.ts"),
     uiEntry("fixture.ui", "ui.fixture"),
   );
-  return root;
+  return { root, pluginStoreRoot };
 }
 
 test("an enabled discovered UI plugin mounts and disposes through the generic host", async () => {
   resetCounters();
-  const root = await discoveredUiWorkspace();
+  const { root, pluginStoreRoot } = await discoveredUiWorkspace();
   const fixture = runtimeFixture();
   const host = await createUiAdapterHost({
+    pluginStoreRoot,
     workspaceRoot: root,
     runtime: fixture.runtime,
     kinds: ["ui.fixture"],
     configPath: join(root, "missing-global.json"),
+    discover: directUiDiscovery(root),
   });
   expect(
     (globalThis as unknown as { __uiHostMounts: number }).__uiHostMounts,
@@ -190,9 +237,10 @@ test("an enabled discovered UI plugin mounts and disposes through the generic ho
 
 test("an enabled installed (lock-backed) UI plugin mounts through the generic host", async () => {
   resetCounters();
-  const root = await installedUiWorkspace();
+  const { root, pluginStoreRoot } = await installedUiWorkspace();
   const fixture = runtimeFixture();
   const host = await createUiAdapterHost({
+    pluginStoreRoot,
     workspaceRoot: root,
     runtime: fixture.runtime,
     kinds: ["ui.fixture"],
@@ -211,7 +259,7 @@ test("an enabled installed (lock-backed) UI plugin mounts through the generic ho
 
 test("a disabled discovered UI plugin mounts nothing and fails closed", async () => {
   resetCounters();
-  const root = await discoveredUiWorkspace({
+  const { root, pluginStoreRoot } = await discoveredUiWorkspace({
     plugins: {
       paths: ["ui-plugins"],
       enabled: { "fixture.ui": false },
@@ -220,10 +268,12 @@ test("a disabled discovered UI plugin mounts nothing and fails closed", async ()
   const fixture = runtimeFixture();
   await expect(
     createUiAdapterHost({
+      pluginStoreRoot,
       workspaceRoot: root,
       runtime: fixture.runtime,
       kinds: ["ui.fixture"],
       configPath: join(root, "missing-global.json"),
+      discover: directUiDiscovery(root),
     }),
   ).rejects.toThrow("adapter is not available: ui.fixture");
   expect(
@@ -234,14 +284,16 @@ test("a disabled discovered UI plugin mounts nothing and fails closed", async ()
 
 test("an explicit missing UI kind fails closed without mounting anything", async () => {
   resetCounters();
-  const root = await discoveredUiWorkspace();
+  const { root, pluginStoreRoot } = await discoveredUiWorkspace();
   const fixture = runtimeFixture();
   await expect(
     createUiAdapterHost({
+      pluginStoreRoot,
       workspaceRoot: root,
       runtime: fixture.runtime,
       kinds: ["ui.missing"],
       configPath: join(root, "missing-global.json"),
+      discover: directUiDiscovery(root),
     }),
   ).rejects.toThrow("adapter is not available: ui.missing");
   expect(
@@ -287,10 +339,12 @@ export default definePlugin({
   );
   const fixture = runtimeFixture();
   const host = await createUiAdapterHost({
+    pluginStoreRoot: join(root, "plugin-store"),
     workspaceRoot: root,
     runtime: fixture.runtime,
     kinds: [],
     configPath: join(root, "missing-global.json"),
+    discover: directUiDiscovery(root),
   });
   expect(
     (globalThis as unknown as { __uiHostNonAdapterSetup: number })

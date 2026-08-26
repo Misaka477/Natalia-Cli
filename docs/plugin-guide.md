@@ -75,8 +75,9 @@ The package declares every Natalia package it imports as a dependency:
 ```
 
 Use versions compatible with the Natalia distribution you target. The package
-manager installs the complete package closure under `.natalia/plugins`; do not
-ask users to create SDK symlinks or copy an entry file separately.
+manager installs the complete package closure once in the Natalia instance's
+`plugin-store`; every workspace uses that same installation. Do not ask users
+to create SDK symlinks or copy an entry file separately.
 Add `@natalia/contracts`, `@natalia/tools`, or another Natalia package only when
 the implementation imports it. `@natalia/sdk` is the RPC client SDK and is not
 the plugin authoring API.
@@ -391,27 +392,24 @@ validates all of the following before committing state:
 7. The plugin ID is not reserved by a runtime default and ownership does not
    conflict with the existing lock.
 
-The live closure, `<workspace>/.natalia/natalia.lock`, and project config are
-updated as one transaction. A failure restores their previous snapshots.
-Successful cleanup problems are returned as `cleanupWarning` without changing
-the successful operation result.
+The live closure and `natalia.lock` are owned by the Natalia instance's single
+`plugin-store`. Installation and uninstallation never create a workspace-local
+package closure. Workspace config only records runtime overrides such as
+enablement and settings.
 
 ### Doctor and reconcile
 
 An empty array from `plugin doctor` means the installed state is consistent.
 Findings use these codes:
 
-| Code                | Meaning                                                        |
-| ------------------- | -------------------------------------------------------------- |
-| `config_missing`    | Lock contains the plugin but package configuration does not.   |
-| `lock_missing`      | Configuration contains a package that is absent from the lock. |
-| `package_missing`   | The locked package is absent from `.natalia/plugins`.          |
-| `manifest_mismatch` | Installed manifest ID/version differs from the lock.           |
+| Code                | Meaning                                                      |
+| ------------------- | ------------------------------------------------------------ |
+| `package_missing`   | The locked package is absent from the instance plugin store. |
+| `manifest_mismatch` | Installed manifest ID/version differs from the lock.         |
 
 `plugin reconcile` reinstalls packages reported as `package_missing` using their
-locked source, adds config entries missing for locked packages, and removes
-package config entries that have no lock owner. Its result contains
-`reconciled: true`, the original `findings`, and a second `remaining` audit. It
+locked source. Its result contains `reconciled: true`, the original `findings`,
+and a second `remaining` audit. It
 does not invent a missing lock entry or silently accept a manifest mismatch;
 repair those by reinstalling the intended package.
 
@@ -659,7 +657,6 @@ materialized when the current host supplies their required construction input.
 | `natalia-tool-ask`      | Interactive Question Tools | v2  | session   | tools                     |
 | `natalia-tool-fs-read`  | Filesystem Read Tools      | v2  | workspace | tools                     |
 | `natalia-tool-fs-write` | Filesystem Write Tools     | v2  | workspace | tools                     |
-| `natalia-tool-pdf`      | PDF Tools                  | v1  | workspace | tools                     |
 | `natalia-tool-process`  | Managed Process Tools      | v2  | session   | tools, services           |
 | `natalia-tool-search`   | Search Tools               | v2  | workspace | tools                     |
 | `natalia-tool-shell`    | Shell Tools                | v2  | session   | tools                     |

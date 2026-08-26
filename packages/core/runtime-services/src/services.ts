@@ -59,6 +59,65 @@ import type {
   WorkflowExecutionSchedulerService,
 } from "@natalia/workflow";
 
+export type LocalToolsInput = {
+  roots: string[];
+  trust?: {
+    workspaceRoot: string;
+    verify(
+      key: string,
+      entryPath: string,
+    ): Promise<{ verified: boolean; expected?: string; actual?: string }>;
+  };
+  onError?(id: string, error: unknown): void;
+  onChange?(familyID: string, entryPath: string): void;
+};
+
+export type McpInput = {
+  servers(): Record<string, import("@natalia/contracts").MCPServerConfig>;
+  workspaceRoot: string;
+  enabled(): boolean;
+  publish(event: RuntimeEvent): void;
+};
+
+export type SkillsInput = {
+  workspaceRoot: string;
+  userRoot?: string;
+  remoteURLs?: string[];
+  onLoad?(
+    skill: SkillMetadata,
+    output: string,
+    context: import("@natalia/tools").ToolExecutionContext,
+  ): void;
+  commandSession?: {
+    active(sessionID: SessionID): SkillMetadata | undefined;
+    activate(sessionID: SessionID, skill: SkillMetadata): void;
+  };
+};
+
+export type TaskModuleInput = TaskModuleContext;
+
+export type TaskWorkflowInput = {
+  workspaceRoot: string;
+  globalConfigPath?: string;
+  runtimeConfig(): ConfigV3 | undefined;
+  capabilityViews(): Array<
+    import("@natalia/capability").CapabilityRegistryView
+  >;
+  publishDiagnostic(message: string): void;
+  resolveFlowPermissions: typeof import("@natalia/workflow").effectiveFlowPermissions;
+  createRuntimeClient(options: {
+    episodeID: import("@natalia/contracts").EpisodeID;
+    sessionID: SessionID;
+    title: string;
+    useSqliteStore: boolean;
+    workspaceRoot: string;
+    permissionProfile: string;
+    taskModuleContext: TaskModuleContext;
+  }): RuntimeClient;
+};
+
+export type TerminalInput = TerminalControllerInput;
+
 export type AttachmentService = {
   store(paths: string[]): Promise<LocalAttachment[]>;
   dataURL(attachment: LocalAttachment): Promise<string>;

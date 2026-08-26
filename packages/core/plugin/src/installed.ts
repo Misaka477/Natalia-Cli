@@ -1,10 +1,6 @@
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import {
-  nataliaLockSchema,
-  type NataliaLock,
-  type PluginPackageConfig,
-} from "@natalia/contracts";
+import { nataliaLockSchema, type NataliaLock } from "@natalia/contracts";
 import { pluginManifestSchema, type PluginManifest } from "./manifest";
 
 export type PluginManifestEntry = { manifest: PluginManifest; path: string };
@@ -14,13 +10,11 @@ export type InstalledPluginEntryResolution = {
 };
 
 export async function loadNataliaPluginLock(
-  workspaceRoot: string,
+  pluginStoreRoot: string,
 ): Promise<NataliaLock> {
   try {
     return nataliaLockSchema.parse(
-      JSON.parse(
-        await readFile(join(workspaceRoot, ".natalia", "natalia.lock"), "utf8"),
-      ),
+      JSON.parse(await readFile(join(pluginStoreRoot, "natalia.lock"), "utf8")),
     );
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
@@ -30,37 +24,31 @@ export async function loadNataliaPluginLock(
 }
 
 export async function resolveInstalledPluginEntries(input: {
-  workspaceRoot: string;
-  packages: Record<string, PluginPackageConfig>;
+  pluginStoreRoot: string;
   enabled?: Record<string, boolean>;
 }): Promise<InstalledPluginEntryResolution> {
   const entries: PluginManifestEntry[] = [];
   const errors: InstalledPluginEntryResolution["errors"] = [];
   let lock: NataliaLock;
   try {
-    lock = await loadNataliaPluginLock(input.workspaceRoot);
+    lock = await loadNataliaPluginLock(input.pluginStoreRoot);
   } catch (error) {
     return {
       entries,
-      errors: Object.keys(input.packages).map((id) => ({
-        id,
-        error: new Error(
-          `could not read natalia.lock: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      })),
+      errors: [
+        {
+          id: "plugin-store",
+          error: new Error(
+            `could not read natalia.lock: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        },
+      ],
     };
   }
-  const modulesRoot = resolve(
-    input.workspaceRoot,
-    ".natalia",
-    "plugins",
-    "node_modules",
-  );
-  for (const [id, configured] of Object.entries(input.packages)) {
+  const modulesRoot = resolve(input.pluginStoreRoot, "node_modules");
+  for (const [id, locked] of Object.entries(lock.plugins)) {
     if (input.enabled?.[id] === false) continue;
     try {
-      const locked = lock.plugins[id];
-      if (!locked) throw new Error(`plugin ${id} is missing from natalia.lock`);
       if (locked.metadata.id !== id)
         throw new Error(`plugin ${id} lock entry has id ${locked.metadata.id}`);
       if (!/^(?:@[a-z0-9_.-]+\/)?[a-z0-9_.-]+$/iu.test(locked.packageName))
@@ -103,26 +91,10 @@ export async function resolveInstalledPluginEntries(input: {
       );
       if (manifest.id !== id)
         throw new Error(`plugin ${id} manifest has id ${manifest.id}`);
-      if (
-        manifest.version !== configured.version ||
-        manifest.version !== locked.metadata.resolvedVersion
-      )
-        throw new Error(`plugin ${id} version does not match config and lock`);
-      if (
-        manifest.scope !== configured.scope ||
-        manifest.scope !== locked.metadata.scope
-      )
-        throw new Error(`plugin ${id} scope does not match config and lock`);
-      if (
-        JSON.stringify(configured.source) !==
-        JSON.stringify(locked.metadata.source)
-      )
-        throw new Error(`plugin ${id} source does not match config and lock`);
-      for (const field of ["integrity", "signature"] as const)
-        if (configured[field] !== locked.metadata[field])
-          throw new Error(
-            `plugin ${id} ${field} does not match config and lock`,
-          );
+      if (manifest.version !== locked.metadata.resolvedVersion)
+        throw new Error(`plugin ${id} version does not match natalia.lock`);
+      if (manifest.scope !== locked.metadata.scope)
+        throw new Error(`plugin ${id} scope does not match natalia.lock`);
       const entry = validatePluginPath(
         resolve(actualManifestPath, ".."),
         manifest.entry,

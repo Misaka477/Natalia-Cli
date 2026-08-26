@@ -170,6 +170,14 @@ export {
   type WorkflowContributionView,
 } from "./workflow-contributions";
 export {
+  createWorkflowExecutionStoreService,
+  createWorkflowStoreService,
+  type TaskAlertQueueService,
+  type TaskStateService,
+  type WorkflowExecutionStoreService,
+  type WorkflowStoreService,
+} from "./workflow-store-service";
+export {
   newHeadlessExecution,
   plainRuntimeEvent,
   taskPermissionPreview,

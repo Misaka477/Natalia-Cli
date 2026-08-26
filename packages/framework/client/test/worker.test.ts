@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  createOfficialRuntimeClient as createRealRuntimeClient,
+  officialPluginWorkspace as mkdtemp,
+} from "./plugin-test-helpers";
 import type {
   MCPCatalogSnapshot,
   RuntimeClient,
@@ -13,7 +17,6 @@ import {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
 } from "../src/worker";
-import { createRealRuntimeClient } from "../src/runtime/main";
 import { CapabilityHost } from "@natalia/capability";
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
