@@ -79,6 +79,7 @@ export function LiveChatView(props: {
   onRollback(toMessageID: string): void;
   onPlanAccept(planID: string): void;
   onPlanReject(planID: string): void;
+  onIntentDeliver(messageID: string): void | Promise<void>;
   /** The composer's max height, matching the reference TUI's `max(6, h/3)`. */
   promptMaxHeight: number;
   contentWidth: number;
@@ -106,6 +107,8 @@ export function LiveChatView(props: {
   const [mailbox, setMailbox] = createSignal<MailboxStatusRow[]>([]);
   const [plans, setPlans] = createSignal<PlanRow[]>([]);
   const [inputTarget, setInputTarget] = createSignal<InputRenderable>();
+  const [intentListFocused, setIntentListFocused] = createSignal(false);
+  const [intentCursor, setIntentCursor] = createSignal(0);
   let input: TextareaRenderable | undefined;
   let chatScroll: ScrollBoxRenderable | undefined;
 
@@ -122,6 +125,8 @@ export function LiveChatView(props: {
   };
   const proposedPlan = () => plans().find((plan) => plan.status === "proposed");
   const liveAgentStatus = () => props.intelligence?.() ?? agentStatus();
+  const queuedIntents = () =>
+    mailbox().filter((message) => message.status === "queued");
   const pendingIntents = () =>
     mailbox().filter(
       (message) =>
@@ -138,6 +143,19 @@ export function LiveChatView(props: {
     props.onSend(text);
   };
 
+  const deliverIntent = async (messageID: string) => {
+    await props.onIntentDeliver(messageID);
+    await refresh();
+  };
+
+  const deliverHighlightedIntent = () => {
+    const queued = queuedIntents();
+    if (queued.length === 0) return;
+    const index = Math.min(Math.max(0, intentCursor()), queued.length - 1);
+    const target = queued[index];
+    if (target) void deliverIntent(target.messageID);
+  };
+
   const refresh = async () => {
     const [snapshot, mailboxRows, planRows] = await Promise.all([
       props.backend.sessionSnapshot?.() ?? Promise.resolve(undefined),
@@ -151,7 +169,7 @@ export function LiveChatView(props: {
 
   onMount(() => void refresh());
   createEffect(() => {
-    if (!props.focused()) return;
+    if (!props.focused() || intentListFocused()) return;
     queueMicrotask(() => {
       if (!input || input.isDestroyed) return;
       input.focus();
@@ -193,7 +211,8 @@ export function LiveChatView(props: {
   useBindings(() => ({
     mode: "base",
     target: inputTarget,
-    enabled: props.focused() && inputTarget() !== undefined,
+    enabled:
+      props.focused() && inputTarget() !== undefined && !intentListFocused(),
     priority: 1,
     bindings: [
       {
@@ -207,6 +226,41 @@ export function LiveChatView(props: {
         desc: "Return focus to the main feed",
         group: "Live Work Chat",
         cmd: props.onEscape,
+      },
+    ],
+  }));
+  useBindings(() => ({
+    mode: "base",
+    enabled:
+      props.focused() && intentListFocused() && queuedIntents().length > 0,
+    priority: 2,
+    bindings: [
+      {
+        key: "return",
+        desc: "Deliver the highlighted mailbox intent",
+        group: "Live Work Chat",
+        cmd: deliverHighlightedIntent,
+      },
+      {
+        key: "up",
+        desc: "Highlight the previous mailbox intent",
+        group: "Live Work Chat",
+        cmd: () => setIntentCursor((current) => Math.max(0, current - 1)),
+      },
+      {
+        key: "down",
+        desc: "Highlight the next mailbox intent",
+        group: "Live Work Chat",
+        cmd: () =>
+          setIntentCursor((current) =>
+            Math.min(queuedIntents().length - 1, current + 1),
+          ),
+      },
+      {
+        key: "escape",
+        desc: "Return focus to the Chat composer",
+        group: "Live Work Chat",
+        cmd: () => setIntentListFocused(false),
       },
     ],
   }));
@@ -348,16 +402,51 @@ export function LiveChatView(props: {
           paddingRight={2}
           paddingTop={1}
         >
-          <text attributes={TextAttributes.BOLD} fg={theme.text}>
+          <text
+            attributes={TextAttributes.BOLD}
+            fg={theme.text}
+            onMouseUp={() => {
+              if (queuedIntents().length === 0) return;
+              input?.blur();
+              setIntentListFocused(true);
+              setIntentCursor(0);
+            }}
+          >
             Intents
           </text>
           <For each={[...pendingIntents(), ...acknowledgedIntents().slice(-2)]}>
-            {(message) => (
-              <text fg={theme.muted} wrapMode="word">
-                [{message.priority}] {message.intent}:{" "}
-                {message.safeSummary ?? ""} · {message.status}
-              </text>
-            )}
+            {(message) => {
+              const queued = message.status === "queued";
+              const queuedIndex = queued
+                ? queuedIntents().findIndex(
+                    (entry) => entry.messageID === message.messageID,
+                  )
+                : -1;
+              const highlighted =
+                intentListFocused() && queued && queuedIndex === intentCursor();
+              return (
+                <text
+                  fg={
+                    queued
+                      ? highlighted
+                        ? theme.accent
+                        : theme.text
+                      : theme.muted
+                  }
+                  wrapMode="word"
+                  onMouseUp={() => {
+                    if (!queued) return;
+                    input?.blur();
+                    setIntentListFocused(true);
+                    setIntentCursor(Math.max(0, queuedIndex));
+                    void deliverIntent(message.messageID);
+                  }}
+                >
+                  [{message.priority}] {message.intent}:{" "}
+                  {message.safeSummary ?? ""} · {message.status}
+                </text>
+              );
+            }}
           </For>
         </box>
       </Show>
@@ -401,7 +490,10 @@ export function LiveChatView(props: {
                 focusedBackgroundColor={theme.panel}
                 cursorColor={theme.text}
                 syntaxStyle={markdownSyntax()}
-                onMouseDown={(event: MouseEvent) => event.target?.focus()}
+                onMouseDown={(event: MouseEvent) => {
+                  setIntentListFocused(false);
+                  event.target?.focus();
+                }}
                 onContentChange={() => {
                   setDraft(input?.plainText ?? "");
                   setTextareaRows(

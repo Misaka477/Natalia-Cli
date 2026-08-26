@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { CodeRenderable, type Renderable } from "@opentui/core";
 import {
   createMockKeys,
+  createMockMouse,
   createTestRenderer,
   MockTreeSitterClient,
 } from "@opentui/core/testing";
@@ -54,6 +55,7 @@ async function mountChat(
     onRollback?: (toMessageID: string) => void;
     onPlanAccept?: (planID: string) => void;
     onPlanReject?: (planID: string) => void;
+    onIntentDeliver?: (messageID: string) => void;
     activity?: () => ChatActivityView | undefined;
     intelligence?: () => SessionIntelligenceView | undefined;
   } = {},
@@ -67,6 +69,7 @@ async function mountChat(
   const rolledBack: string[] = [];
   const accepted: string[] = [];
   const rejected: string[] = [];
+  const delivered: string[] = [];
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
@@ -95,6 +98,10 @@ async function mountChat(
             onPlanReject={(planID) => {
               rejected.push(planID);
               callbacks.onPlanReject?.(planID);
+            }}
+            onIntentDeliver={(messageID) => {
+              delivered.push(messageID);
+              callbacks.onIntentDeliver?.(messageID);
             }}
             promptMaxHeight={6}
             contentWidth={156}
@@ -126,10 +133,12 @@ async function mountChat(
       await treeSitterClient.destroy();
     },
     keys: createMockKeys(setup.renderer, { kittyKeyboard: true }),
+    mouse: createMockMouse(setup.renderer),
     sent,
     rolledBack,
     accepted,
     rejected,
+    delivered,
   };
 }
 
@@ -335,6 +344,7 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
             onRollback={() => {}}
             onPlanAccept={() => {}}
             onPlanReject={() => {}}
+            onIntentDeliver={() => {}}
             promptMaxHeight={6}
             contentWidth={156}
             density="comfortable"
@@ -383,5 +393,110 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
     disposeKeymap();
     setup.renderer.destroy();
     await treeSitterClient.destroy();
+  }
+});
+
+const mailboxFixture = [
+  {
+    messageID: "mb:1",
+    source: "user_via_live_chat",
+    priority: "normal",
+    intent: "narrow-scope",
+    safeSummary: "first queued intent",
+    deliveryPolicy: "next_safe_point",
+    createdAt: "2026-08-26T00:00:00.000Z",
+    status: "queued",
+  },
+  {
+    messageID: "mb:2",
+    source: "user_via_live_chat",
+    priority: "high",
+    intent: "add-tests",
+    safeSummary: "second queued intent",
+    deliveryPolicy: "next_safe_point",
+    createdAt: "2026-08-26T00:00:01.000Z",
+    status: "queued",
+  },
+  {
+    messageID: "mb:3",
+    source: "user_via_live_chat",
+    priority: "normal",
+    intent: "already-done",
+    safeSummary: "acknowledged intent",
+    deliveryPolicy: "next_safe_point",
+    createdAt: "2026-08-26T00:00:02.000Z",
+    status: "acknowledged",
+  },
+];
+
+function clickLabel(
+  mouse: ReturnType<typeof createMockMouse>,
+  frame: string,
+  label: string,
+) {
+  const lines = frame.split("\n");
+  const y = lines.findIndex((line) => line.includes(label));
+  if (y < 0) throw new Error(`label not found: ${label}`);
+  const x = lines[y]!.indexOf(label) + Math.floor(label.length / 2);
+  return mouse.click(x, y);
+}
+
+test("clicking a queued intent delivers only that mailbox id", async () => {
+  const mounted = await mountChat(
+    history,
+    {},
+    { mailboxList: async () => mailboxFixture },
+  );
+  try {
+    await mounted.setup.renderOnce();
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("first queued intent");
+    expect(frame).toContain("second queued intent");
+    await clickLabel(mounted.mouse, frame, "first queued intent");
+    await Bun.sleep(20);
+    await mounted.setup.renderOnce();
+    expect(mounted.delivered).toEqual(["mb:1"]);
+  } finally {
+    await mounted.dispose();
+  }
+});
+
+test("an acknowledged intent is not clickable", async () => {
+  const mounted = await mountChat(
+    history,
+    {},
+    { mailboxList: async () => mailboxFixture },
+  );
+  try {
+    await mounted.setup.renderOnce();
+    const frame = mounted.setup.captureCharFrame();
+    await clickLabel(mounted.mouse, frame, "acknowledged intent");
+    await Bun.sleep(20);
+    await mounted.setup.renderOnce();
+    expect(mounted.delivered).toEqual([]);
+  } finally {
+    await mounted.dispose();
+  }
+});
+
+test("Enter on the intents list delivers the highlighted queued intent", async () => {
+  const mounted = await mountChat(
+    history,
+    {},
+    { mailboxList: async () => mailboxFixture },
+  );
+  try {
+    await mounted.setup.renderOnce();
+    const frame = mounted.setup.captureCharFrame();
+    await clickLabel(mounted.mouse, frame, "Intents");
+    await Bun.sleep(20);
+    await mounted.setup.renderOnce();
+    mounted.keys.pressEnter();
+    await Bun.sleep(20);
+    await mounted.setup.renderOnce();
+    expect(mounted.delivered).toEqual(["mb:1"]);
+    expect(mounted.sent).toHaveLength(0);
+  } finally {
+    await mounted.dispose();
   }
 });

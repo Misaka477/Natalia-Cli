@@ -1794,6 +1794,9 @@ function Shell(props: {
                 "rejected in live work chat",
               );
             }}
+            onIntentDeliver={async (messageID) => {
+              await props.backend.mailboxDeliver?.(messageID);
+            }}
             promptMaxHeight={Math.min(
               preferences().prompt.maxHeight,
               layout().promptMaxHeight,
