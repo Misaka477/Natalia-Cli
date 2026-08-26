@@ -12,6 +12,7 @@ export function PermissionPrompt(props: {
   request: Extract<ModalRequest, { kind: "approval" }>;
   backend: RuntimeClient;
   onExit(): void;
+  compact?: boolean;
 }) {
   // The prompt is an inline bottom card, not an overlay: it registers the mode
   // that gates its keys for as long as it is mounted and releases it when it
@@ -156,15 +157,15 @@ export function PermissionPrompt(props: {
   return (
     <box
       flexShrink={0}
-      marginLeft={2}
-      marginRight={2}
+      marginLeft={props.compact ? 0 : 2}
+      marginRight={props.compact ? 0 : 2}
       marginTop={1}
       backgroundColor={darkTheme.panel}
       border
       borderColor={darkTheme.warning}
       flexDirection="column"
-      paddingLeft={2}
-      paddingRight={2}
+      paddingLeft={props.compact ? 1 : 2}
+      paddingRight={props.compact ? 1 : 2}
       paddingTop={1}
       paddingBottom={1}
       gap={1}
@@ -261,7 +262,7 @@ function Actions(props: {
   onSelect(index: number): void;
 }) {
   return (
-    <box flexDirection="row" gap={1}>
+    <box flexDirection="column" gap={1}>
       <For
         each={
           props.submitting
@@ -271,7 +272,6 @@ function Actions(props: {
       >
         {(label, index) => (
           <box
-            flexShrink={0}
             backgroundColor={
               index() === props.selected
                 ? darkTheme.warning
@@ -282,6 +282,7 @@ function Actions(props: {
             onMouseUp={() => props.onSelect(index())}
           >
             <text
+              wrapMode="word"
               fg={
                 index() === props.selected
                   ? darkTheme.background

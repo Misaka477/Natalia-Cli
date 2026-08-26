@@ -1443,6 +1443,7 @@ function Shell(props: {
             }}
             backend={props.backend}
             onExit={exitOrCancel}
+            showInteractivePrompt={viewActive() !== "chat"}
           />
           {/* The composer box, copied line for line from the reference TUI's prompt
               (packages/tui/src/component/prompt/index.tsx): an outer anchor, a

@@ -554,6 +554,7 @@ export function LiveChatView(props: {
               request={request()}
               backend={props.backend}
               onExit={props.onEscape}
+              compact
             />
           )}
         </Show>
