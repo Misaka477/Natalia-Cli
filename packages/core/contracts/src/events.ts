@@ -2544,7 +2544,12 @@ export type RuntimeClient = {
    * project/execution context, not a stateless second agent; it answers with a
    * streamed `chat.message.delta` and settles with `chat.message.added`.
    */
-  chatSubmit?(input: { text: string }): Promise<{ messageID: string }>;
+  chatSubmit?(input: {
+    text: string;
+    /** Optional per-turn Chat model override (normal or expert profile). */
+    model?: { modelID?: string; variant?: string };
+    reasoningEffort?: RuntimeReasoningEffort;
+  }): Promise<{ messageID: string }>;
   chatAbort?(): Promise<{ aborted: boolean }>;
   /**
    * The durable Chat conversation, oldest first. `chat.rollback` truncates it

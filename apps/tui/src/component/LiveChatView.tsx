@@ -87,6 +87,12 @@ export function LiveChatView(props: {
   onChatRollback?(toMessageID: string): void;
   pendingRollback?: () => PendingRollback | undefined;
   onUndoRollback?: () => void;
+  chatModelLabel?: () => string;
+  chatExpertModelLabel?: () => string;
+  onOpenChatModel?: (kind: "normal" | "expert") => void;
+  onOpenChatReasoning?: (kind: "normal" | "expert") => void;
+  chatUseExpert?: () => boolean;
+  onToggleExpert?: () => void;
   onPlanRollback?(mailboxMessageID: string): void;
   onPlanAccept(planID: string): void;
   onPlanReject(planID: string): void;
@@ -265,6 +271,55 @@ export function LiveChatView(props: {
           Live Work Chat
         </text>
       </box>
+      <Show
+        when={
+          props.onOpenChatModel ||
+          props.onOpenChatReasoning ||
+          props.onToggleExpert
+        }
+      >
+        <box
+          flexShrink={0}
+          flexDirection="row"
+          gap={2}
+          paddingLeft={2}
+          paddingRight={2}
+          paddingBottom={1}
+        >
+          <Show when={props.onOpenChatModel}>
+            <text
+              fg={theme.muted}
+              onMouseUp={() => props.onOpenChatModel?.("normal")}
+            >
+              {props.chatModelLabel?.() ?? "Chat"}
+            </text>
+          </Show>
+          <Show when={props.onOpenChatModel}>
+            <text
+              fg={theme.warning}
+              onMouseUp={() => props.onOpenChatModel?.("expert")}
+            >
+              {props.chatExpertModelLabel?.() ?? "Expert"}
+            </text>
+          </Show>
+          <Show when={props.onOpenChatReasoning}>
+            <text
+              fg={theme.muted}
+              onMouseUp={() => props.onOpenChatReasoning?.("normal")}
+            >
+              {props.chatUseExpert?.() ? "Expert reasoning" : "Chat reasoning"}
+            </text>
+          </Show>
+          <Show when={props.onToggleExpert}>
+            <text
+              fg={props.chatUseExpert?.() ? theme.warning : theme.muted}
+              onMouseUp={props.onToggleExpert}
+            >
+              {props.chatUseExpert?.() ? "Expert ON" : "Expert OFF"}
+            </text>
+          </Show>
+        </box>
+      </Show>
       <Show when={liveAgentStatus()}>
         {(status) => (
           <box

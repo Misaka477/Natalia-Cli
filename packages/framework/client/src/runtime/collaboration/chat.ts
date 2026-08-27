@@ -3,7 +3,8 @@ import {
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   type ProviderModelController,
 } from "@natalia/runtime-services";
-import type { SessionID } from "@natalia/contracts";
+import { providerForModel } from "@natalia/runtime";
+import type { RuntimeReasoningEffort, SessionID } from "@natalia/contracts";
 import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 type Surface = Pick<
@@ -64,7 +65,11 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         aborted: controller.abortChat(exec.session.id as SessionID),
       };
     },
-    async chatSubmit(input: { text: string }) {
+    async chatSubmit(input: {
+      text: string;
+      model?: { modelID?: string; variant?: string };
+      reasoningEffort?: RuntimeReasoningEffort;
+    }) {
       await ctx.ports.getReady();
       const text = typeof input.text === "string" ? input.text.trim() : "";
       const exec = ctx.ports.getActiveExec();
@@ -72,6 +77,16 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       );
       if (!text || !exec?.provider || !controller) return { messageID: "" };
+      let provider = exec.provider;
+      if (input.model?.modelID) {
+        const config = ctx.ports.getTsRuntimeConfig();
+        provider =
+          (config &&
+            providerForModel(config, input.model.modelID, input.model.variant, {
+              reasoningEffort: input.reasoningEffort,
+            })) ||
+          provider;
+      }
       const now = new Date();
       const userMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
       ctx.ports.publishForSession(exec, {
@@ -95,6 +110,8 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           sessionID: exec.session.id as SessionID,
           text,
           responseMessageID,
+          provider,
+          reasoningEffort: input.reasoningEffort,
         });
       } catch (cause) {
         const detail = cause instanceof Error ? cause.message : String(cause);

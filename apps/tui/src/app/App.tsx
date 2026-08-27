@@ -454,6 +454,15 @@ function Shell(props: {
   const [modelSubmissions, setModelSubmissions] = createSignal(0);
   const [quickModel, setQuickModel] = createSignal<RuntimeModelSelection>({});
   const [quickReasoning, setQuickReasoning] = createSignal<ReasoningEffort>();
+  const [chatNormalModel, setChatNormalModel] =
+    createSignal<RuntimeModelSelection>({});
+  const [chatExpertModel, setChatExpertModel] =
+    createSignal<RuntimeModelSelection>({});
+  const [chatNormalReasoning, setChatNormalReasoning] =
+    createSignal<ReasoningEffort>();
+  const [chatExpertReasoning, setChatExpertReasoning] =
+    createSignal<ReasoningEffort>();
+  const [chatUseExpert, setChatUseExpert] = createSignal(false);
   const [quickProfile, setQuickProfile] = createSignal("ask");
   let composerControlTimer: ReturnType<typeof setTimeout> | undefined;
   let ignoreStopUntil = 0;
@@ -684,6 +693,72 @@ function Shell(props: {
             .setReasoningEffort?.(reasoningEffort)
             .then(() => setQuickReasoning(reasoningEffort))
             .catch(toast.error);
+        }}
+      />
+    ));
+  }
+
+  function openChatModelPicker(kind: "normal" | "expert") {
+    const current = kind === "normal" ? chatNormalModel() : chatExpertModel();
+    dialog.push(() => (
+      <DialogModel
+        workspaceRoot={props.workspaceRoot ?? process.cwd()}
+        catalog={props.backend.modelCatalog}
+        selection={async () => current}
+        loadConfig={() =>
+          props.backend.configGet?.() ??
+          Promise.reject(new Error("runtime config read unavailable"))
+        }
+        onPersist={async () => true}
+        onSelected={(selection) => {
+          if (kind === "normal") setChatNormalModel(selection);
+          else setChatExpertModel(selection);
+        }}
+      />
+    ));
+  }
+
+  function openChatReasoningPicker(kind: "normal" | "expert") {
+    const model =
+      kind === "normal"
+        ? (chatNormalModel().modelID ??
+          quickModel().modelID ??
+          state.facts.modelSelection?.modelID)
+        : (chatExpertModel().modelID ??
+          quickModel().modelID ??
+          state.facts.modelSelection?.modelID);
+    if (!model) {
+      toast.show({ variant: "warning", message: "Select a Chat model first" });
+      return;
+    }
+    const current =
+      kind === "normal" ? chatNormalReasoning() : chatExpertReasoning();
+    dialog.push(() => (
+      <DialogSelect
+        title={`${kind === "normal" ? "Chat" : "Expert"} reasoning effort`}
+        renderFilter={false}
+        current={current ?? ""}
+        options={
+          [
+            { title: "Default", value: "" },
+            { title: "Minimal", value: "minimal" },
+            { title: "Low", value: "low" },
+            { title: "Medium", value: "medium" },
+            { title: "High", value: "high" },
+            { title: "XHigh", value: "xhigh" },
+          ] as Array<
+            DialogSelectOption<
+              "" | "minimal" | "low" | "medium" | "high" | "xhigh"
+            >
+          >
+        }
+        onSelect={(option) => {
+          dialog.pop();
+          const reasoningEffort = (option.value || undefined) as
+            | ReasoningEffort
+            | undefined;
+          if (kind === "normal") setChatNormalReasoning(reasoningEffort);
+          else setChatExpertReasoning(reasoningEffort);
         }}
       />
     ));
@@ -1872,14 +1947,30 @@ function Shell(props: {
             }}
             onInputRef={setChatInput}
             onSend={(text) => {
-              void props.backend.chatSubmit?.({ text }).catch((error) =>
-                toast.show({
-                  variant: "error",
-                  message: `Chat message not delivered: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`.slice(0, 160),
-                }),
-              );
+              const activeChatModel = chatUseExpert()
+                ? chatExpertModel()
+                : chatNormalModel();
+              const activeReasoning = chatUseExpert()
+                ? chatExpertReasoning()
+                : chatNormalReasoning();
+              void props.backend
+                .chatSubmit?.({
+                  text,
+                  ...(activeChatModel.modelID
+                    ? { model: activeChatModel }
+                    : {}),
+                  ...(activeReasoning
+                    ? { reasoningEffort: activeReasoning }
+                    : {}),
+                })
+                .catch((error) =>
+                  toast.show({
+                    variant: "error",
+                    message: `Chat message not delivered: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`.slice(0, 160),
+                  }),
+                );
             }}
             onStop={() => {
               void props.backend.chatAbort?.();
@@ -1887,6 +1978,29 @@ function Shell(props: {
             onCopy={copyMessage}
             pendingRollback={() => state.pendingRollback}
             onUndoRollback={undoChatRollback}
+            chatModelLabel={() =>
+              compactModelLabel(
+                chatUseExpert()
+                  ? (chatExpertModel().modelID ??
+                      quickModel().modelID ??
+                      "Expert")
+                  : (chatNormalModel().modelID ??
+                      quickModel().modelID ??
+                      state.facts.modelSelection?.modelID ??
+                      "Chat"),
+                minimalComposerControls() ? 7 : 12,
+              )
+            }
+            chatExpertModelLabel={() =>
+              compactModelLabel(
+                chatExpertModel().modelID ?? "Expert",
+                minimalComposerControls() ? 7 : 10,
+              )
+            }
+            onOpenChatModel={openChatModelPicker}
+            onOpenChatReasoning={openChatReasoningPicker}
+            chatUseExpert={chatUseExpert}
+            onToggleExpert={() => setChatUseExpert((value) => !value)}
             onChatRollback={(messageID) => {
               if (!props.backend.chatRollback) {
                 toast.show({

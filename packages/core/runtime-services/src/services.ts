@@ -260,6 +260,8 @@ export type ProviderChatTurnInput = {
   text: string;
   responseMessageID: string;
   internal?: boolean;
+  provider?: import("@natalia/runtime").StreamingProvider;
+  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
 };
 export type SkillMetadata = {
   name: string;

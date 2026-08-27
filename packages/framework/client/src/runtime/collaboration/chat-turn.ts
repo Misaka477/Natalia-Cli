@@ -43,6 +43,8 @@ export function createChatTurn(ctx: RuntimeContext) {
       responseMessageID: string;
       exec: SessionExecutionState;
       internal?: boolean;
+      provider?: import("@natalia/runtime").StreamingProvider;
+      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
     },
     signal: AbortSignal,
   ) {
@@ -56,7 +58,7 @@ export function createChatTurn(ctx: RuntimeContext) {
       redactToolOutput,
       getWorkspaceRoot,
     } = ctx.ports;
-    const activeProvider = input.exec.provider;
+    const activeProvider = input.provider ?? input.exec.provider;
     if (!activeProvider)
       throw new Error("provider unavailable for live work chat");
     const chatSequence = nextChatSequence;
