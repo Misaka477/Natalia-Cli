@@ -337,6 +337,7 @@ export type {
   ProjectedCapability,
   ProjectedDriftFinding,
   ProjectedCollabMessage,
+  ProjectedPlan,
   SessionProjection,
 } from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";

@@ -260,34 +260,19 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
       updatePlan(state, event.planID, event.version, (plan) => {
         plan.status = "accepted";
       });
-      upsertActivity(state, {
-        id: planActivityID(event.planID),
-        turnID: event.id,
-        kind: "planning",
-        state: "active",
-      });
+      delete state.activities[planActivityID(event.planID)];
       return;
     case "plan.queued":
       updatePlan(state, event.planID, event.version, (plan) => {
         plan.status = "queued_next_plan";
       });
-      upsertActivity(state, {
-        id: planActivityID(event.planID),
-        turnID: event.id,
-        kind: "planning",
-        state: "active",
-      });
+      delete state.activities[planActivityID(event.planID)];
       return;
     case "plan.activated":
       updatePlan(state, event.planID, event.version, (plan) => {
         plan.status = "active";
       });
-      upsertActivity(state, {
-        id: planActivityID(event.planID),
-        turnID: event.id,
-        kind: "planning",
-        state: "active",
-      });
+      delete state.activities[planActivityID(event.planID)];
       return;
     case "plan.superseded":
       updatePlan(state, event.planID, event.version, (plan) => {

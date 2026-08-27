@@ -28,7 +28,7 @@ function planTool(): RuntimeTool {
   return {
     name: "plan",
     description: "Create or update this session's durable execution plan.",
-    requiresApproval: true,
+    requiresApproval: false,
     parameters: {
       type: "object",
       properties: { items: { type: "array" } },
@@ -89,7 +89,7 @@ function todoWriteTool(): RuntimeTool {
   return {
     name: "todo_write",
     description: "Replace this session's durable todo items.",
-    requiresApproval: true,
+    requiresApproval: false,
     parameters: {
       type: "object",
       properties: { items: { type: "array" } },

@@ -96,12 +96,13 @@ export function createCoreSurface(
           await turnController.persistPromotion(pendingSessionID!);
         }
         await coordinator.interrupt();
-        // `interrupt` intentionally clears stale wakeups. A prompt admitted with
-        // queue delivery is durable work, not a stale wakeup, so start a fresh
-        // drain after cancellation to promote it at the new idle boundary.
-        await coordinator.wake(
-          ctx.ports.drainSessionFor(pendingSessionID ?? cancelledSessionID),
-        );
+        // `interrupt` clears stale wakeups. Only restart the drain when a queued
+        // prompt is already admitted; a user Stop should stay idle until they
+        // send the next message.
+        if (pendingInput)
+          await coordinator.wake(
+            ctx.ports.drainSessionFor(pendingSessionID ?? cancelledSessionID),
+          );
       })().catch((error) =>
         ctx.ports.publishForSession(cancelledExec, {
           type: "diagnostic",

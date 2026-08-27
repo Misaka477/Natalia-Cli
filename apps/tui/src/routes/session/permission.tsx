@@ -6,8 +6,12 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useToast } from "../../context/toast";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { useModeStack } from "../../modal/mode-stack";
+import { isLiveChatPlanApproval } from "./live-chat-plan-approval";
+
+export { isLiveChatPlanApproval };
 
 const MODE = "approval";
+
 export function PermissionPrompt(props: {
   request: Extract<ModalRequest, { kind: "approval" }>;
   backend: RuntimeClient;
@@ -89,32 +93,25 @@ export function PermissionPrompt(props: {
     mode: MODE,
     enabled: stage() === "prompt" && !submitting(),
     bindings: [
-      {
-        key: "left",
+      ...(props.compact
+        ? (["up", "k"] as const)
+        : (["left", "h"] as const)
+      ).map((key) => ({
+        key,
         desc: "Previous permission option",
         group: "Permission",
         cmd: () =>
           setSelected((selected() + actions.length - 1) % actions.length),
-      },
-      {
-        key: "h",
-        desc: "Previous permission option",
-        group: "Permission",
-        cmd: () =>
-          setSelected((selected() + actions.length - 1) % actions.length),
-      },
-      {
-        key: "right",
+      })),
+      ...(props.compact
+        ? (["down", "j"] as const)
+        : (["right", "l"] as const)
+      ).map((key) => ({
+        key,
         desc: "Next permission option",
         group: "Permission",
         cmd: () => setSelected((selected() + 1) % actions.length),
-      },
-      {
-        key: "l",
-        desc: "Next permission option",
-        group: "Permission",
-        cmd: () => setSelected((selected() + 1) % actions.length),
-      },
+      })),
       {
         key: "return",
         desc: "Select permission option",
@@ -132,7 +129,7 @@ export function PermissionPrompt(props: {
         cmd: () => select(actions.indexOf("reject")),
       },
       {
-        key: "d",
+        key: "alt+d",
         desc: "Toggle permission detail",
         group: "Permission",
         cmd: () => setExpanded((value) => !value),
@@ -154,15 +151,15 @@ export function PermissionPrompt(props: {
     queueMicrotask(() => input?.focus());
   }
 
-  return (
+  const card = (
     <box
       flexShrink={0}
       marginLeft={props.compact ? 0 : 2}
       marginRight={props.compact ? 0 : 2}
-      marginTop={1}
+      marginTop={props.compact ? 0 : 1}
       backgroundColor={darkTheme.panel}
-      border
-      borderColor={darkTheme.warning}
+      border={props.compact ? false : true}
+      borderColor={props.compact ? undefined : darkTheme.warning}
       flexDirection="column"
       paddingLeft={props.compact ? 1 : 2}
       paddingRight={props.compact ? 1 : 2}
@@ -213,6 +210,7 @@ export function PermissionPrompt(props: {
             selected={selected()}
             sessionLabel={sessionLabel()}
             submitting={submitting()}
+            compact={props.compact}
             onSelect={select}
           />
         }
@@ -245,24 +243,27 @@ export function PermissionPrompt(props: {
       </Show>
       <Show when={stage() === "prompt" && !submitting()}>
         <text fg={darkTheme.muted}>
-          ← → select · Enter confirm · Esc reject
+          {props.compact ? "↑ ↓ select" : "← → select"} · Enter confirm · Esc
+          reject
           {props.request.detail
-            ? ` · d ${expanded() ? "hide" : "details"}`
+            ? ` · Alt+d ${expanded() ? "hide plan" : "show full plan"}`
             : ""}
         </text>
       </Show>
     </box>
   );
+  return card;
 }
 
 function Actions(props: {
   selected: number;
   sessionLabel: string;
   submitting: boolean;
+  compact?: boolean;
   onSelect(index: number): void;
 }) {
   return (
-    <box flexDirection="column" gap={1}>
+    <box flexDirection={props.compact ? "column" : "row"} gap={1}>
       <For
         each={
           props.submitting
@@ -272,6 +273,7 @@ function Actions(props: {
       >
         {(label, index) => (
           <box
+            flexShrink={props.compact ? undefined : 0}
             backgroundColor={
               index() === props.selected
                 ? darkTheme.warning
@@ -282,7 +284,7 @@ function Actions(props: {
             onMouseUp={() => props.onSelect(index())}
           >
             <text
-              wrapMode="word"
+              wrapMode={props.compact ? "word" : undefined}
               fg={
                 index() === props.selected
                   ? darkTheme.background

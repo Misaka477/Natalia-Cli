@@ -42,6 +42,7 @@ import {
   applyChatEvent,
 } from "@natalia/view-store";
 import { messageBlockFromProjection } from "./view-store-adapter";
+import { isLiveChatPlanApproval } from "../routes/session/live-chat-plan-approval";
 
 export type MessageBlock = {
   id: string;
@@ -676,6 +677,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
     case "approval.request":
       enqueueApproval(state.modal, event);
       state.dialog = activeModal(state.modal)?.kind;
+      if (isLiveChatPlanApproval(event, state.facts.plans)) return;
       upsertBlock(
         state,
         event.id,
@@ -692,6 +694,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
         feedback: event.feedback,
       });
       state.dialog = activeModal(state.modal)?.kind;
+      if (!state.messages.some((message) => message.id === event.id)) return;
       upsertBlock(
         state,
         event.id,
@@ -750,9 +753,13 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       // The cancellation row itself comes from the projection.
       cancelPendingModals(state.modal, event.reason);
       state.dialog = undefined;
+      state.status = "ready";
       return;
     case "turn.finished":
-      state.status = event.stopReason === "done" ? "ready" : event.stopReason;
+      state.status =
+        event.stopReason === "done" || event.stopReason === "cancelled"
+          ? "ready"
+          : event.stopReason;
       if (
         event.model ||
         event.profile ||

@@ -1,12 +1,15 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
-import { createTestRenderer } from "@opentui/core/testing";
+import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
-import { PermissionPrompt } from "../src/routes/session/permission";
+import {
+  isLiveChatPlanApproval,
+  PermissionPrompt,
+} from "../src/routes/session/permission";
 import { PromptRefProvider } from "../src/context/prompt";
 import { ToastProvider, ToastRegion } from "../src/context/toast";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
@@ -59,7 +62,8 @@ async function mountApproval(
     setup.renderer,
   );
   await setup.renderOnce();
-  return { setup, responses, setMounted, disposeKeymap };
+  const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+  return { setup, keys, responses, setMounted, disposeKeymap };
 }
 
 test("an approval states that escape does not answer it outright", async () => {
@@ -91,6 +95,48 @@ test("an approval offers all three explicit decisions", async () => {
     expect(frame).toContain("┌");
     expect(frame).toContain("└");
     expect(responses).toEqual([]);
+  } finally {
+    setMounted(false);
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
+test("only a live_chat plan approval belongs in Chat", () => {
+  const planRequest = {
+    ...request,
+    keyArguments: ["plan:navi"],
+    permissionFamily: { id: "planning" },
+  } as Extract<ModalRequest, { kind: "approval" }>;
+  expect(
+    isLiveChatPlanApproval(planRequest, {
+      "plan:navi": { author: "live_chat" },
+    }),
+  ).toBe(true);
+  expect(
+    isLiveChatPlanApproval(planRequest, {
+      "plan:navi": { author: "main_agent" },
+    }),
+  ).toBe(false);
+  expect(isLiveChatPlanApproval(request)).toBe(false);
+});
+
+test("a plan approval keeps the full plan collapsed until d is pressed", async () => {
+  const planRequest = {
+    ...request,
+    title: "Accept Navi's plan",
+    preview: "Scan remaining modules",
+    detail:
+      "Plan plan:navi\nTitle: Scan remaining modules\nObjective: read-only review\nSteps:\n- s1: list gaps",
+    permissionFamily: { id: "planning", label: "Planning" },
+  } as Extract<ModalRequest, { kind: "approval" }>;
+  const { setup, keys, setMounted, disposeKeymap } =
+    await mountApproval(planRequest);
+  try {
+    const collapsed = setup.captureCharFrame();
+    expect(collapsed).toContain("Scan remaining modules");
+    expect(collapsed).toContain("Alt+d show full plan");
+    expect(collapsed).not.toContain("list gaps");
   } finally {
     setMounted(false);
     disposeKeymap();

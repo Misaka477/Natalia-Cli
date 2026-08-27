@@ -17,8 +17,11 @@ test("the todo family describes the tools it ships", () => {
   expect(family.scope).toBe("session");
   expect(family.tools).toEqual(todoTools);
   expect(todoTools.find((tool) => tool.name === "plan")?.requiresApproval).toBe(
-    true,
+    false,
   );
+  expect(
+    todoTools.find((tool) => tool.name === "todo_write")?.requiresApproval,
+  ).toBe(false);
 });
 
 test("the todo plugin owns its stable tools and unloads cleanly", async () => {

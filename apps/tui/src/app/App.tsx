@@ -92,6 +92,7 @@ import {
   SessionSidebar,
   SubagentRoute,
 } from "../routes/session/SessionRoute";
+import { isLiveChatPlanApproval } from "../routes/session/permission";
 import { darkTheme } from "../theme/theme";
 import { ThemeProvider, useTheme } from "../context/theme";
 import { LocalProvider, useLocal } from "../context/local";
@@ -395,8 +396,14 @@ function Shell(props: {
     );
   const compactComposerControls = () => layout().contentWidth < 64;
   const minimalComposerControls = () => layout().contentWidth < 34;
-  const interactivePromptActive = () =>
-    state.dialog === "approval" || state.dialog === "question";
+  const interactivePromptActive = () => {
+    if (state.dialog === "question") return true;
+    if (state.dialog !== "approval") return false;
+    return !isLiveChatPlanApproval(
+      activeModal(state.modal),
+      state.facts.plans,
+    );
+  };
   // The pane owns the keyboard: chat hands focus to the view's input, main (or
   // a closed view) hands it back to the composer. LiveChatView itself focuses
   // its input when focused(), so this only blurs the side leaving focus.
@@ -752,7 +759,10 @@ function Shell(props: {
     // While an approval or question is pending, Enter is owned by the inline
     // prompt card; this guard exists for the other submit paths so a turn can
     // never be launched past a decision the runtime is waiting on.
-    if (state.dialog === "approval" || state.dialog === "question") {
+    if (
+      (state.dialog === "approval" || state.dialog === "question") &&
+      viewFocus() !== "chat"
+    ) {
       if (control !== "/pause" && control !== "/resume") {
         toast.show({
           variant: "warning",
@@ -840,20 +850,24 @@ function Shell(props: {
       setAttachmentPaths([]);
       setMentionAgents([]);
       setMentionResources([]);
-      if (attachments.length || agents.length || resources.length || queued)
-        await props.backend.submitInput!({
-          text,
-          delivery: queued ? "queue" : "steer",
-          attachments,
-          agents: agents.map((name) => ({ name })),
-          resources: resources.map((resource) => ({
-            server: resource.server,
-            uri: resource.uri,
-            name: resource.name,
-            mimeType: resource.mimeType,
-          })),
-        });
-      else await props.backend.submit(text);
+      const admitted =
+        attachments.length || agents.length || resources.length || queued
+          ? props.backend.submitInput!({
+              text,
+              delivery: queued ? "queue" : "steer",
+              attachments,
+              agents: agents.map((name) => ({ name })),
+              resources: resources.map((resource) => ({
+                server: resource.server,
+                uri: resource.uri,
+                name: resource.name,
+                mimeType: resource.mimeType,
+              })),
+            })
+          : props.backend.submit(text);
+      void admitted.catch((error: unknown) => {
+        toast.error(error);
+      });
       if (queued)
         toast.show({
           variant: "info",
@@ -987,9 +1001,7 @@ function Shell(props: {
   }
 
   function modelBusy() {
-    return Boolean(
-      state.facts.activeTurn || modelSubmissions() > 0 || hasQueuedPrompts(),
-    );
+    return Boolean(state.facts.activeTurn || hasQueuedPrompts());
   }
 
   function modelActive() {
@@ -1014,7 +1026,6 @@ function Shell(props: {
       exitOrCancel();
       return;
     }
-    if (modelSubmissions() > 0) return;
     if (composerControlTimer) clearTimeout(composerControlTimer);
     composerControlTimer = setTimeout(() => {
       composerControlTimer = undefined;
@@ -1443,7 +1454,13 @@ function Shell(props: {
             }}
             backend={props.backend}
             onExit={exitOrCancel}
-            showInteractivePrompt={viewActive() !== "chat"}
+            showInteractivePrompt={
+              viewActive() !== "chat" ||
+              !isLiveChatPlanApproval(
+                activeModal(state.modal),
+                state.facts.plans,
+              )
+            }
           />
           {/* The composer box, copied line for line from the reference TUI's prompt
               (packages/tui/src/component/prompt/index.tsx): an outer anchor, a
@@ -1782,10 +1799,10 @@ function Shell(props: {
             }}
             approvalRequest={() => {
               const request = activeModal(state.modal);
-              return request?.kind === "approval" ? request : undefined;
-            }}
-            onRollback={(toMessageID) => {
-              void props.backend.chatRollback?.({ toMessageID });
+              if (request?.kind !== "approval") return undefined;
+              return isLiveChatPlanApproval(request, state.facts.plans)
+                ? request
+                : undefined;
             }}
             onPlanAccept={(planID) => {
               void props.backend.planAccept?.(planID).catch((error) =>
@@ -1802,9 +1819,6 @@ function Shell(props: {
                 planID,
                 "rejected in live work chat",
               );
-            }}
-            onIntentDeliver={async (messageID) => {
-              await props.backend.mailboxDeliver?.(messageID);
             }}
             selectedTaskID={() => state.facts.selectedTaskID}
             promptMaxHeight={Math.min(

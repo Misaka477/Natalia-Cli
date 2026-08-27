@@ -283,6 +283,7 @@ export function applyConversationEvent(
       markTurnCancelled(state, event.id);
       state.paused = false;
       state.lastStopReason = "cancelled";
+      state.status = "ready";
       state.footer = `cancelled: ${event.reason}`;
       dropStreamTail(state, event.id);
       upsertBlock(
@@ -308,12 +309,18 @@ export function applyConversationEvent(
       if (state.activeTurn === event.id) state.activeTurn = undefined;
       state.paused = false;
       state.lastStopReason = event.stopReason;
+      state.status =
+        event.stopReason === "done" || event.stopReason === "cancelled"
+          ? "ready"
+          : event.stopReason;
       state.footer =
         event.stopReason === "done"
           ? "Ready"
-          : event.stopReason === "waiting_human"
-            ? "Waiting for a human on a terminal"
-            : `turn ${event.stopReason}${event.reason ? `: ${event.reason}` : ""}`;
+          : event.stopReason === "cancelled"
+            ? `cancelled: ${event.reason ?? "user cancel"}`
+            : event.stopReason === "waiting_human"
+              ? "Waiting for a human on a terminal"
+              : `turn ${event.stopReason}${event.reason ? `: ${event.reason}` : ""}`;
       if (event.stopReason !== "done") {
         state.pendingApprovals = [];
         state.pendingQuestions = [];

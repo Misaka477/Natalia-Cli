@@ -150,6 +150,39 @@ test("activity facts reach the reactive TUI store for active work and user input
   setup.renderer.destroy();
 });
 
+test("a live_chat plan approval does not appear in the main transcript", async () => {
+  const { setup, send, state } = await mountState();
+  await send(
+    {
+      type: "plan.draft.created",
+      id: "plan:navi:draft",
+      planID: "plan:navi",
+      version: 1,
+      title: "Scan remaining modules",
+      author: "live_chat",
+      objective: "read-only review",
+      steps: [],
+      createdAt: "now",
+    },
+    {
+      type: "approval.request",
+      id: "a-navi",
+      title: "Accept Navi's plan",
+      preview: "Scan remaining modules",
+      keyArguments: ["plan:navi"],
+      permissionFamily: { id: "planning", label: "Planning" },
+    } as RuntimeEvent,
+  );
+  expect(
+    state().messages.some((message) => message.id === "a-navi"),
+  ).toBe(false);
+  await send({ type: "approval.response", id: "a-navi", decision: "once" });
+  expect(
+    state().messages.some((message) => message.id === "a-navi"),
+  ).toBe(false);
+  setup.renderer.destroy();
+});
+
 test("the footer renders English activity text and prioritizes input requests", async () => {
   const setup = await createTestRenderer({ width: 100, height: 8 });
   let dispatch: ((event: RuntimeEvent) => void) | undefined;

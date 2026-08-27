@@ -189,6 +189,8 @@ test("cancelling a queued turn clears its queued marker", () => {
   expect(state.messages.find((block) => block.id === "t1:user")?.status).toBe(
     "cancelled",
   );
+  expect(state.status).toBe("ready");
+  expect(state.activeTurn).toBeUndefined();
 });
 
 test("content.done does not duplicate a response that already streamed", () => {
@@ -409,6 +411,50 @@ test("activity facts follow a turn and prioritize user input", () => {
   expect(selectPrimaryActivity(state)).toBeUndefined();
 });
 
+test("an accepted plan is not live planning work", () => {
+  let state = projectEvents([
+    {
+      type: "plan.draft.created",
+      id: "plan:1:draft",
+      planID: "plan:1",
+      version: 1,
+      title: "Scan remaining modules",
+      author: "live_chat",
+      objective: "read-only review",
+      steps: [],
+      createdAt: "now",
+    },
+    {
+      type: "plan.proposed",
+      id: "plan:1:proposed",
+      planID: "plan:1",
+      version: 2,
+      proposedAt: "now",
+    },
+  ]);
+  expect(selectPrimaryActivity(state)).toMatchObject({
+    kind: "planning",
+    state: "waiting",
+  });
+  state = reduceState(state, {
+    type: "plan.accepted",
+    id: "plan:1:accepted",
+    planID: "plan:1",
+    version: 3,
+    acceptedBy: "user",
+    acceptedAt: "now",
+  });
+  expect(selectPrimaryActivity(state)).toBeUndefined();
+  state = reduceState(state, {
+    type: "plan.queued",
+    id: "plan:1:queued",
+    planID: "plan:1",
+    version: 4,
+    queuedAt: "now",
+  });
+  expect(selectPrimaryActivity(state)).toBeUndefined();
+});
+
 test("retry and compaction activities clear after their terminal events", () => {
   let state = projectEvents([
     submitted("t1", "continue"),
@@ -501,6 +547,7 @@ test("cancelling a turn keeps the answer already read and drops only the unfinis
   // The half sentence is not kept as though the model had said it.
   expect(assistant?.pendingText).toBe("");
   expect(displayText(assistant!)).not.toContain("half a sen");
+  expect(state.status).toBe("ready");
 });
 
 test("closing a segment confirms only what markdown had completed", () => {

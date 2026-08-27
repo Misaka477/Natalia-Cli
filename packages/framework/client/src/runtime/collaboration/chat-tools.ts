@@ -382,7 +382,7 @@ export function createChatTools(ctx: RuntimeContext) {
       {
         name: "plan_propose",
         description:
-          "Move a live_chat plan draft to proposed. This is the confirmation gate: Chat shows Accept/Reject. Do not mailbox_send next_plan_handoff until the user accepts.",
+          "Move a live_chat plan draft to proposed and wait for the user's Allow once / Allow session / Reject decision. Do not mailbox_send next_plan_handoff until this tool returns accepted.",
         requiresApproval: false,
         parameters: {
           type: "object",
@@ -392,7 +392,7 @@ export function createChatTools(ctx: RuntimeContext) {
           required: ["planID"],
           additionalProperties: false,
         },
-        async execute(parsed) {
+        async execute(parsed, context) {
           const args = parsed as { planID?: string };
           if (typeof args.planID !== "string")
             return "plan_propose requires planID";
@@ -413,10 +413,42 @@ export function createChatTools(ctx: RuntimeContext) {
                 title: candidate.title,
               })),
             });
-          const outcome = await createPlansRuntime(ctx).planPropose(
+          const outcome = await createPlansRuntime(ctx).proposeAndWait(
             plan.planID,
+            { signal: context.signal, blockingCaller: true },
           );
-          return JSON.stringify({ ...outcome, planID: plan.planID });
+          if (!outcome.proposed)
+            return JSON.stringify({ ...outcome, planID: plan.planID });
+          if (outcome.decision === "reject") {
+            const feedback = outcome.feedback?.trim();
+            return JSON.stringify({
+              proposed: true,
+              planID: plan.planID,
+              accepted: false,
+              decision: "reject",
+              ...(feedback ? { feedback } : {}),
+              instruction: feedback
+                ? `The user rejected this plan: ${feedback}. Do not hand it off. Continue helping without that plan.`
+                : "The user rejected this plan. Do not hand it off. Continue helping without that plan.",
+            });
+          }
+          if (outcome.decision === "cancelled")
+            return JSON.stringify({
+              proposed: true,
+              planID: plan.planID,
+              accepted: false,
+              decision: "cancelled",
+              instruction:
+                "Plan approval was cancelled before the user decided. Do not hand it off.",
+            });
+          return JSON.stringify({
+            proposed: true,
+            planID: plan.planID,
+            accepted: true,
+            decision: outcome.decision ?? "once",
+            instruction:
+              "The user accepted this plan. Immediately mailbox_send next_plan_handoff with this relatedPlanID so Natalia can start.",
+          });
         },
       },
     );

@@ -48,14 +48,6 @@ import type { TuiPreferences } from "../settings";
  * second hand-written renderer (§8.3).
  */
 
-type MailboxStatusRow = {
-  messageID: string;
-  priority: string;
-  intent: string;
-  safeSummary?: string;
-  status: string;
-};
-
 type PlanRow = {
   planID: string;
   title: string;
@@ -79,13 +71,11 @@ export function LiveChatView(props: {
   onInputRef(value: InputRenderable | undefined): void;
   onSend(text: string): void;
   onStop?(): void;
-  onRollback(toMessageID: string): void;
   onPlanAccept(planID: string): void;
   onPlanReject(planID: string): void;
   approvalRequest?: () =>
     | Extract<ModalRequest, { kind: "approval" }>
     | undefined;
-  onIntentDeliver(messageID: string): void | Promise<void>;
   selectedTaskID?: () => string | undefined;
   /** The composer's max height, matching the reference TUI's `max(6, h/3)`. */
   promptMaxHeight: number;
@@ -111,25 +101,10 @@ export function LiveChatView(props: {
       }
     | undefined
   >();
-  const [mailbox, setMailbox] = createSignal<MailboxStatusRow[]>([]);
   const [plans, setPlans] = createSignal<PlanRow[]>([]);
   const [inputTarget, setInputTarget] = createSignal<InputRenderable>();
-  const [intentListFocused, setIntentListFocused] = createSignal(false);
-  const [intentCursor, setIntentCursor] = createSignal(0);
   let input: TextareaRenderable | undefined;
   let chatScroll: ScrollBoxRenderable | undefined;
-
-  /** The last user message id, so rollback can rewind the conversation. */
-  const lastUserMessage = () => {
-    for (let index = props.messages().length - 1; index >= 0; index--) {
-      const block = props.messages()[index];
-      if (block?.role !== "user") continue;
-      // The projected id is `chat:<messageID>:user`.
-      const match = /^chat:(.+):user$/u.exec(block.id);
-      if (match) return match[1];
-    }
-    return undefined;
-  };
   const proposedPlan = () => plans().find((plan) => plan.status === "proposed");
   const alignedPlan = () => {
     const taskID = props.selectedTaskID?.();
@@ -137,15 +112,6 @@ export function LiveChatView(props: {
     return plans().find((plan) => plan.taskID === taskID);
   };
   const liveAgentStatus = () => props.intelligence?.() ?? agentStatus();
-  const queuedIntents = () =>
-    mailbox().filter((message) => message.status === "queued");
-  const pendingIntents = () =>
-    mailbox().filter(
-      (message) =>
-        message.status === "queued" || message.status === "delivered",
-    );
-  const acknowledgedIntents = () =>
-    mailbox().filter((message) => message.status === "acknowledged");
 
   const submitDraft = () => {
     const text = draft().trim();
@@ -155,33 +121,22 @@ export function LiveChatView(props: {
     props.onSend(text);
   };
 
-  const deliverIntent = async (messageID: string) => {
-    await props.onIntentDeliver(messageID);
-    await refresh();
-  };
-
-  const deliverHighlightedIntent = () => {
-    const queued = queuedIntents();
-    if (queued.length === 0) return;
-    const index = Math.min(Math.max(0, intentCursor()), queued.length - 1);
-    const target = queued[index];
-    if (target) void deliverIntent(target.messageID);
-  };
-
   const refresh = async () => {
-    const [snapshot, mailboxRows, planRows] = await Promise.all([
+    const [snapshot, planRows] = await Promise.all([
       props.backend.sessionSnapshot?.() ?? Promise.resolve(undefined),
-      props.backend.mailboxList?.() ?? Promise.resolve([]),
       props.backend.planList?.() ?? Promise.resolve([]),
     ]);
     setAgentStatus(snapshot ?? undefined);
-    setMailbox(mailboxRows as MailboxStatusRow[]);
     setPlans(planRows as PlanRow[]);
   };
 
   onMount(() => void refresh());
   createEffect(() => {
-    if (!props.focused() || intentListFocused()) return;
+    if (props.approvalRequest?.()) {
+      input?.blur();
+      return;
+    }
+    if (!props.focused()) return;
     queueMicrotask(() => {
       if (!input || input.isDestroyed) return;
       input.focus();
@@ -224,7 +179,9 @@ export function LiveChatView(props: {
     mode: "base",
     target: inputTarget,
     enabled:
-      props.focused() && inputTarget() !== undefined && !intentListFocused(),
+      props.focused() &&
+      inputTarget() !== undefined &&
+      !props.approvalRequest?.(),
     priority: 1,
     bindings: [
       {
@@ -241,42 +198,6 @@ export function LiveChatView(props: {
       },
     ],
   }));
-  useBindings(() => ({
-    mode: "base",
-    enabled:
-      props.focused() && intentListFocused() && queuedIntents().length > 0,
-    priority: 2,
-    bindings: [
-      {
-        key: "return",
-        desc: "Deliver the highlighted mailbox intent",
-        group: "Live Work Chat",
-        cmd: deliverHighlightedIntent,
-      },
-      {
-        key: "up",
-        desc: "Highlight the previous mailbox intent",
-        group: "Live Work Chat",
-        cmd: () => setIntentCursor((current) => Math.max(0, current - 1)),
-      },
-      {
-        key: "down",
-        desc: "Highlight the next mailbox intent",
-        group: "Live Work Chat",
-        cmd: () =>
-          setIntentCursor((current) =>
-            Math.min(queuedIntents().length - 1, current + 1),
-          ),
-      },
-      {
-        key: "escape",
-        desc: "Return focus to the Chat composer",
-        group: "Live Work Chat",
-        cmd: () => setIntentListFocused(false),
-      },
-    ],
-  }));
-
   return (
     <box
       position="relative"
@@ -301,16 +222,6 @@ export function LiveChatView(props: {
         <text attributes={TextAttributes.BOLD} fg={theme.accent}>
           Live Work Chat
         </text>
-        <box flexDirection="row" gap={2}>
-          <Show when={lastUserMessage()}>
-            <text
-              fg={theme.muted}
-              onMouseUp={() => props.onRollback(lastUserMessage()!)}
-            >
-              ↩ rollback
-            </text>
-          </Show>
-        </box>
       </box>
       <Show when={liveAgentStatus()}>
         {(status) => (
@@ -415,147 +326,88 @@ export function LiveChatView(props: {
           </For>
         </Show>
       </scrollbox>
-      <Show
-        when={pendingIntents().length > 0 || acknowledgedIntents().length > 0}
-      >
-        <box
-          flexShrink={0}
-          flexDirection="column"
-          gap={1}
-          paddingLeft={2}
-          paddingRight={2}
-          paddingTop={1}
-        >
-          <text
-            attributes={TextAttributes.BOLD}
-            fg={theme.text}
-            onMouseUp={() => {
-              if (queuedIntents().length === 0) return;
-              input?.blur();
-              setIntentListFocused(true);
-              setIntentCursor(0);
-            }}
-          >
-            Intents
-          </text>
-          <For each={[...pendingIntents(), ...acknowledgedIntents().slice(-2)]}>
-            {(message) => {
-              const queued = message.status === "queued";
-              const queuedIndex = queued
-                ? queuedIntents().findIndex(
-                    (entry) => entry.messageID === message.messageID,
-                  )
-                : -1;
-              const highlighted =
-                intentListFocused() && queued && queuedIndex === intentCursor();
-              return (
-                <text
-                  fg={
-                    queued
-                      ? highlighted
-                        ? theme.accent
-                        : theme.text
-                      : theme.muted
-                  }
-                  wrapMode="word"
-                  onMouseUp={() => {
-                    if (!queued) return;
-                    input?.blur();
-                    setIntentListFocused(true);
-                    setIntentCursor(Math.max(0, queuedIndex));
-                    void deliverIntent(message.messageID);
-                  }}
-                >
-                  [{message.priority}] {message.intent}:{" "}
-                  {message.safeSummary ?? ""} · {message.status}
-                </text>
-              );
-            }}
-          </For>
-        </box>
-      </Show>
-      {/* The composer box, copied line for line from the reference TUI's prompt
-          (packages/tui/src/component/prompt/index.tsx): an outer anchor, a left
-          frame with a rounded bottom-left corner, a padded panel box holding
-          the textarea and a meta row, and a one-line bottom frame. */}
-      <box visible={true} width="100%" flexShrink={0}>
+      <box width="100%" flexShrink={0} backgroundColor={theme.background}>
         <box
           width="100%"
           border={["left"]}
           borderColor={theme.accent}
           customBorderChars={PROMPT_FRAME_BORDER}
         >
-          <box
-            paddingLeft={2}
-            paddingRight={2}
-            paddingTop={1}
-            flexShrink={0}
-            backgroundColor={theme.panel}
-            flexGrow={1}
-            width="100%"
-          >
-            <box width="100%" flexDirection="row" alignItems="flex-end">
-              <textarea
-                ref={(value: TextareaRenderable) => {
-                  input = value;
-                  setInputTarget(value as unknown as InputRenderable);
-                  props.onInputRef(value as unknown as InputRenderable);
-                  if (draft()) queueMicrotask(() => value.setText(draft()));
-                }}
-                height={textareaRows()}
-                minHeight={1}
-                maxHeight={props.promptMaxHeight}
+          <Show
+            when={props.approvalRequest?.()}
+            fallback={
+              <box
+                paddingLeft={2}
+                paddingRight={2}
+                paddingTop={1}
+                flexShrink={0}
+                backgroundColor={theme.panel}
                 flexGrow={1}
-                minWidth={0}
-                placeholder="Ask the Chat..."
-                placeholderColor={theme.muted}
-                textColor={theme.text}
-                focusedTextColor={theme.text}
-                focusedBackgroundColor={theme.panel}
-                cursorColor={theme.text}
-                onMouseDown={(event: MouseEvent) => {
-                  setIntentListFocused(false);
-                  event.target?.focus();
-                }}
-                onContentChange={() => {
-                  setDraft(input?.plainText ?? "");
-                  setTextareaRows(
-                    promptTextareaRows(input, props.promptMaxHeight),
-                  );
-                }}
-              />
-            </box>
-            <box
-              flexDirection="row"
-              flexShrink={0}
-              paddingTop={1}
-              justifyContent="flex-end"
-            >
-              <text
-                fg={props.activity() ? theme.danger : theme.accent}
-                onMouseUp={() => {
-                  if (props.activity()) {
-                    props.onStop?.();
-                    return;
-                  }
-                  submitDraft();
-                }}
+                width="100%"
               >
-                {props.activity() ? "■ Stop" : "↑ Send"}
-              </text>
-            </box>
-          </box>
+                <box width="100%" flexDirection="row" alignItems="flex-end">
+                  <textarea
+                    ref={(value: TextareaRenderable) => {
+                      input = value;
+                      setInputTarget(value as unknown as InputRenderable);
+                      props.onInputRef(value as unknown as InputRenderable);
+                      if (draft())
+                        queueMicrotask(() => value.setText(draft()));
+                    }}
+                    height={textareaRows()}
+                    minHeight={1}
+                    maxHeight={props.promptMaxHeight}
+                    flexGrow={1}
+                    minWidth={0}
+                    placeholder="Ask the Chat..."
+                    placeholderColor={theme.muted}
+                    textColor={theme.text}
+                    focusedTextColor={theme.text}
+                    focusedBackgroundColor={theme.panel}
+                    cursorColor={theme.text}
+                    onMouseDown={(event: MouseEvent) => {
+                      event.target?.focus();
+                    }}
+                    onContentChange={() => {
+                      setDraft(input?.plainText ?? "");
+                      setTextareaRows(
+                        promptTextareaRows(input, props.promptMaxHeight),
+                      );
+                    }}
+                  />
+                </box>
+                <box
+                  flexDirection="row"
+                  flexShrink={0}
+                  paddingTop={1}
+                  justifyContent="flex-end"
+                >
+                  <text
+                    fg={props.activity() ? theme.danger : theme.accent}
+                    onMouseUp={() => {
+                      if (props.activity()) {
+                        props.onStop?.();
+                        return;
+                      }
+                      submitDraft();
+                    }}
+                  >
+                    {props.activity() ? "■ Stop" : "↑ Send"}
+                  </text>
+                </box>
+              </box>
+            }
+          >
+            {(request) => (
+              <PermissionPrompt
+                request={request()}
+                backend={props.backend}
+                onExit={props.onEscape}
+                compact
+              />
+            )}
+          </Show>
         </box>
-        <Show when={props.approvalRequest?.()}>
-          {(request) => (
-            <PermissionPrompt
-              request={request()}
-              backend={props.backend}
-              onExit={props.onEscape}
-              compact
-            />
-          )}
-        </Show>
         <box
           height={1}
           width="100%"

@@ -119,10 +119,8 @@ export function createSessionAdmission(
     });
     const targetCoordinator = () => sessionRunCoordinator(targetSessionID);
     if (existing) {
-      if (!existing.promotedAt && delivery === "steer") {
+      if (!existing.promotedAt && delivery === "steer")
         void targetCoordinator().wake(drainSessionFor(targetSessionID));
-        await targetCoordinator().run(drainSessionFor(targetSessionID));
-      }
       return submitted;
     }
     targetExec.lastSubmitted = submitted;
@@ -139,16 +137,8 @@ export function createSessionAdmission(
         agent: targetExec?.selectedAgent?.name,
       }),
     );
-    // Persist admission before a command or provider can observe this turn.
-    await getSessionPersistence();
     if (!input.internal) rememberTitleInput(targetSessionID, text);
-    if (delivery === "queue") {
-      void targetCoordinator().wake(drainSessionFor(targetSessionID));
-      return submitted;
-    }
     void targetCoordinator().wake(drainSessionFor(targetSessionID));
-    await targetCoordinator().run(drainSessionFor(targetSessionID));
-    await getSessionPersistence();
     return submitted;
   }
 }

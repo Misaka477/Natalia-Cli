@@ -4,8 +4,14 @@ import {
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { PERMISSION_FAMILIES } from "@natalia/contracts";
-import { projectedPlans } from "@natalia/session";
+import { projectedPlans, type ProjectedPlan } from "@natalia/session";
 import type { RuntimeContext } from "../context";
+
+type PlanProposeOutcome = {
+  proposed: boolean;
+  decision?: "once" | "session" | "reject" | "cancelled";
+  feedback?: string;
+};
 
 type PlansRuntime = Pick<
   RuntimeServiceClient,
@@ -18,7 +24,12 @@ type PlansRuntime = Pick<
   | "planActivate"
   | "planSupersede"
   | "planCompleted"
->;
+> & {
+  proposeAndWait(
+    planID: string,
+    options?: { signal?: AbortSignal; blockingCaller?: boolean },
+  ): Promise<PlanProposeOutcome>;
+};
 
 export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
   function requireWorkLedger() {
@@ -30,7 +41,13 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
     return ledger;
   }
 
-  function notifyPlanRejected(planID: string, title: string, reason?: string) {
+  function notifyPlanRejected(
+    planID: string,
+    title: string,
+    reason?: string,
+    notifyChat = true,
+  ) {
+    if (!notifyChat) return;
     const owner = ctx.ports.getActiveExec();
     if (!owner) return;
     const detail = reason?.trim();
@@ -52,7 +69,10 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
     ctx.ports.requestNaviWake(owner);
   }
 
-  async function acceptProposedPlan(planID: string) {
+  async function acceptProposedPlan(
+    planID: string,
+    options?: { notifyChat?: boolean },
+  ) {
     const owner = ctx.ports.getActiveExec();
     if (!owner || typeof planID !== "string" || !planID)
       return { accepted: false as const };
@@ -86,6 +106,7 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
         }),
       );
     }
+    if (options?.notifyChat === false) return { accepted: true as const };
     const notice = `[user] accepted plan ${planID} (${plan.title}). Send next_plan_handoff with this relatedPlanID now so Natalia can start.`;
     ctx.ports.publishForSession(owner, {
       type: "chat.message.added",
@@ -103,7 +124,11 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
     return { accepted: true as const };
   }
 
-  async function supersedePlan(planID: string, reason?: string) {
+  async function supersedePlan(
+    planID: string,
+    reason?: string,
+    options?: { notifyChat?: boolean },
+  ) {
     const session = ctx.ports.getSession();
     if (!session || typeof planID !== "string" || !planID)
       return { superseded: false as const };
@@ -127,8 +152,46 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
         reason: safeReason,
       }),
     );
-    notifyPlanRejected(planID, plan.title, safeReason);
+    notifyPlanRejected(
+      planID,
+      plan.title,
+      safeReason,
+      options?.notifyChat !== false,
+    );
     return { superseded: true as const };
+  }
+
+  function formatPlanApprovalDetail(plan: ProjectedPlan) {
+    const lines = [
+      `Plan ${plan.planID}`,
+      `Title: ${plan.title}`,
+      `Objective: ${plan.objective}`,
+    ];
+    if (plan.steps.length) {
+      lines.push("Steps:");
+      for (const step of plan.steps) {
+        const extras = [
+          step.detail,
+          step.verification ? `verify: ${step.verification}` : undefined,
+        ].filter(Boolean);
+        lines.push(
+          extras.length
+            ? `- ${step.id}: ${step.title} (${extras.join("; ")})`
+            : `- ${step.id}: ${step.title}`,
+        );
+      }
+    }
+    if (plan.constraints.length)
+      lines.push("Constraints:", ...plan.constraints.map((item) => `- ${item}`));
+    if (plan.verification.length)
+      lines.push(
+        "Verification:",
+        ...plan.verification.map((item) => `- ${item}`),
+      );
+    if (plan.riskNotes.length)
+      lines.push("Risks:", ...plan.riskNotes.map((item) => `- ${item}`));
+    if (plan.taskID) lines.push(`Task: ${plan.taskID}`);
+    return lines.join("\n");
   }
 
   function redactReason(reason: string | undefined) {
@@ -142,6 +205,69 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
         )
         .slice(0, 500) || undefined
     );
+  }
+
+  async function proposeAndWait(
+    planID: string,
+    options?: { signal?: AbortSignal; blockingCaller?: boolean },
+  ): Promise<PlanProposeOutcome> {
+    const session = ctx.ports.getSession();
+    if (!session || typeof planID !== "string" || !planID)
+      return { proposed: false };
+    const plan = projectedPlans(session.events).find(
+      (candidate) =>
+        candidate.planID === planID && candidate.status === "draft",
+    );
+    if (!plan) return { proposed: false };
+    const owner = ctx.ports.getActiveExec();
+    ctx.ports.publishForSession(
+      owner,
+      requireWorkLedger().buildPlanTransition({
+        id: `${planID}:proposed:${plan.version + 1}`,
+        planID,
+        version: plan.version + 1,
+        transition: "proposed",
+        at: new Date().toISOString(),
+      }),
+    );
+    if (!owner) return { proposed: true };
+    const approvalID = `${planID}:accept:${plan.version + 1}:${crypto.randomUUID().replace(/-/gu, "").slice(0, 8)}`;
+    let response:
+      | Awaited<
+          ReturnType<
+            ReturnType<typeof ctx.ports.getInteractive>["requirePlanAcceptance"]
+          >
+        >
+      | undefined;
+    try {
+      response = await ctx.ports.getInteractive().requirePlanAcceptance({
+        approvalID,
+        planID,
+        title: "Accept Navi's plan",
+        preview: plan.title,
+        detail: formatPlanApprovalDetail(plan),
+        sessionID: owner.session.id,
+        permissionMode: owner.permissionMode,
+        permissionFamily: PERMISSION_FAMILIES.planning,
+        signal: options?.signal,
+      });
+    } catch {
+      return { proposed: true, decision: "cancelled" as const };
+    }
+    if (!response || response.decision === "reject") {
+      await supersedePlan(planID, response?.feedback?.trim(), {
+        notifyChat: !options?.blockingCaller,
+      });
+      return {
+        proposed: true,
+        decision: "reject" as const,
+        ...(response?.feedback?.trim()
+          ? { feedback: response.feedback.trim() }
+          : {}),
+      };
+    }
+    await acceptProposedPlan(planID, { notifyChat: !options?.blockingCaller });
+    return { proposed: true, decision: response.decision };
   }
 
   return {
@@ -196,50 +322,10 @@ export function createPlansRuntime(ctx: RuntimeContext): PlansRuntime {
       return { updated: true };
     },
     async planPropose(planID) {
-      const session = ctx.ports.getSession();
-      if (!session || typeof planID !== "string" || !planID)
-        return { proposed: false };
-      const plan = projectedPlans(session.events).find(
-        (candidate) =>
-          candidate.planID === planID && candidate.status === "draft",
-      );
-      if (!plan) return { proposed: false };
-      const owner = ctx.ports.getActiveExec();
-      ctx.ports.publishForSession(
-        owner,
-        requireWorkLedger().buildPlanTransition({
-          id: `${planID}:proposed:${plan.version + 1}`,
-          planID,
-          version: plan.version + 1,
-          transition: "proposed",
-          at: new Date().toISOString(),
-        }),
-      );
-      if (owner) {
-        const approvalID = `${planID}:accept:${plan.version + 1}:${crypto.randomUUID().replace(/-/gu, "").slice(0, 8)}`;
-        void ctx.ports
-          .getInteractive()
-          .requirePlanAcceptance({
-            approvalID,
-            planID,
-            title: "Accept Navi's plan",
-            preview: plan.title,
-            detail: `${plan.title}\n${plan.objective}`,
-            sessionID: owner.session.id,
-            permissionMode: owner.permissionMode,
-            permissionFamily: PERMISSION_FAMILIES.planning,
-          })
-          .then(async (response) => {
-            if (!response || response.decision === "reject") {
-              await supersedePlan(planID, response?.feedback?.trim());
-              return;
-            }
-            await acceptProposedPlan(planID);
-          })
-          .catch(() => undefined);
-      }
-      return { proposed: true };
+      const outcome = await proposeAndWait(planID);
+      return { proposed: outcome.proposed };
     },
+    proposeAndWait,
     async planAccept(planID) {
       return await acceptProposedPlan(planID);
     },

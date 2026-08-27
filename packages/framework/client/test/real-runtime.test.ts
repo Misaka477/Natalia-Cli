@@ -6260,6 +6260,56 @@ test("cancelling a pending approval settles the active turn without polling", as
   ).toHaveLength(1);
 });
 
+test("submit after cancel returns without waiting for the next turn to finish", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-submit-after-cancel-"));
+  let streamCalls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_submit_after_cancel",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        streamCalls += 1;
+        if (streamCalls === 1) {
+          await new Promise(() => undefined);
+          return;
+        }
+        yield { type: "content" as const, text: "continued" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  void client.submit("hang until cancelled");
+  await waitFor(
+    () => events.some((event) => event.type === "turn.submitted"),
+    3000,
+    "the first turn to be admitted",
+  );
+  client.cancel("user cancel");
+  const started = Date.now();
+  const second = await Promise.race([
+    client.submit("continue after stop"),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("submit hung")), 1000),
+    ),
+  ]);
+  expect(Date.now() - started).toBeLessThan(500);
+  expect(second.text).toBe("continue after stop");
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "turn.submitted" && event.id === second.id,
+      ),
+    3000,
+    "the second turn to be admitted",
+  );
+  await client.dispose?.();
+});
+
 test("provider admission is persisted before the provider turn begins", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-admission-"));
   let started = false;
@@ -6278,6 +6328,7 @@ test("provider admission is persisted before the provider turn begins", async ()
   });
   client.start(() => undefined);
   const submitted = await client.submit("persist me first");
+  await waitFor(() => started, 3000, "the admitted turn to start streaming");
   expect(started).toBe(true);
   const stored = JSON.parse(
     await readFile(
@@ -8822,7 +8873,7 @@ test("rejecting a proposed plan tells Navi and does not stop the chat", async ()
   await waitForAsync(async () => {
     const status = (await client.planList!())[0]?.status;
     return status === "accepted" || status === "queued_next_plan";
-  mar });
+  });
   expect(
     await client.planSupersede?.(planID, "too risky, keep the current approach"),
   ).toEqual({ superseded: true });
@@ -13112,14 +13163,32 @@ test("chat plan_propose opens Natalia's approval card", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.chatSubmit!({ text: "create a scan plan" });
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "approval.request",
-      title: "Accept Navi's plan",
-    }),
+  const submitted = client.chatSubmit!({ text: "create a scan plan" });
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "approval.request" &&
+          event.title === "Accept Navi's plan",
+      ),
+    3000,
+    "Navi plan approval card",
   );
   expect((await client.planList!())[0]?.status).toBe("proposed");
+  const request = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
+      event.type === "approval.request" && event.title === "Accept Navi's plan",
+  );
+  expect(request).toBeDefined();
+  expect(request!.preview).toBe("Scan remaining modules");
+  expect(request!.detail).toContain("Objective: read-only review");
+  expect(request!.detail).toContain("- s1: list gaps");
+  client.respondApproval({ requestID: request!.id, decision: "once" });
+  await submitted;
+  await waitForAsync(
+    async () => (await client.planList!())[0]?.status === "queued_next_plan",
+  );
+  expect(streamCalls).toBeGreaterThanOrEqual(3);
   await client.dispose?.();
 });
 

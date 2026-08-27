@@ -867,9 +867,14 @@ export function attachRuntimeClientWorker(
     port.postMessage({ type: "runtime.event", event } satisfies WorkerEvent);
   };
   activeClient.start(forwardEvent);
-  port.addEventListener("message", async (event: MessageEvent<unknown>) => {
+  port.addEventListener("message", (event: MessageEvent<unknown>) => {
     const request = event.data as WorkerRequest;
     if (request.type !== "runtime.request") return;
+    void handlePortRequest(request);
+  });
+  port.start?.();
+
+  async function handlePortRequest(request: WorkerRequest) {
     try {
       let value: unknown;
       if (request.method === "config.reload") {
@@ -924,8 +929,7 @@ export function attachRuntimeClientWorker(
         error: error instanceof Error ? error.message : String(error),
       } satisfies WorkerResponse);
     }
-  });
-  port.start?.();
+  }
 }
 
 export async function handleWorkerRequest(

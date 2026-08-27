@@ -49,7 +49,27 @@ export function createClientSurface(
     ...createWorkGraphRuntime(ctx),
     ...createIntelligenceSurface(ctx, options),
     ...createMailboxSurface(ctx),
-    ...createPlansRuntime(ctx),
+    ...(({
+      planList,
+      planCreate,
+      planUpdate,
+      planPropose,
+      planAccept,
+      planQueue,
+      planActivate,
+      planSupersede,
+      planCompleted,
+    }) => ({
+      planList,
+      planCreate,
+      planUpdate,
+      planPropose,
+      planAccept,
+      planQueue,
+      planActivate,
+      planSupersede,
+      planCompleted,
+    }))(createPlansRuntime(ctx)),
     ...createChatSurface(ctx),
   };
 }

@@ -623,7 +623,7 @@ function footerStatus(viewState: AppState, activity?: ActivityView) {
   if (modal?.kind === "question")
     return { label: "Waiting for answer", tone: "waiting" };
   if (viewState.status === "error") return { label: "Error", tone: "error" };
-  if (viewState.status === "stopped" || viewState.status === "cancelled")
+  if (viewState.status === "stopped")
     return { label: "Stopped", tone: "waiting" };
   if (viewState.status === "waiting_human")
     return { label: "Waiting for human input", tone: "waiting" };
