@@ -84,6 +84,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       text: string;
       model?: { modelID?: string; variant?: string };
       reasoningEffort?: RuntimeReasoningEffort;
+      attachments?: import("@natalia/contracts").LocalAttachment[];
     }) {
       await ctx.ports.getReady();
       const text = typeof input.text === "string" ? input.text.trim() : "";
@@ -127,6 +128,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           responseMessageID,
           provider,
           reasoningEffort: input.reasoningEffort,
+          attachments: input.attachments,
         });
       } catch (cause) {
         const detail = cause instanceof Error ? cause.message : String(cause);

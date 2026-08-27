@@ -262,6 +262,7 @@ export type ProviderChatTurnInput = {
   internal?: boolean;
   provider?: import("@natalia/runtime").StreamingProvider;
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+  attachments?: import("@natalia/contracts").LocalAttachment[];
 };
 export type SkillMetadata = {
   name: string;

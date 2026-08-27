@@ -18,6 +18,10 @@ import {
   normalizeRawToolCallProtocol,
   requireNativeToolCallProtocol,
 } from "@natalia/runtime";
+import {
+  ATTACHMENT_SERVICE,
+  type AttachmentService,
+} from "@natalia/runtime-services";
 import type { ProviderMessage, ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
@@ -45,6 +49,7 @@ export function createChatTurn(ctx: RuntimeContext) {
       internal?: boolean;
       provider?: import("@natalia/runtime").StreamingProvider;
       reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+      attachments?: import("@natalia/contracts").LocalAttachment[];
     },
     signal: AbortSignal,
   ) {
@@ -89,6 +94,36 @@ export function createChatTurn(ctx: RuntimeContext) {
           content:
             "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply you have already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Set continueConversation=true if your reply asks a question, invites a follow-up, or says you will wait for more; false explicitly closes the conversation. Keep replies concise.",
         });
+      }
+      if (input.attachments?.length) {
+        const attachmentService =
+          ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
+        if (attachmentService) {
+          const images = await Promise.all(
+            input.attachments
+              .filter(
+                (attachment) =>
+                  attachment.mediaType === "image/png" ||
+                  attachment.mediaType === "image/jpeg" ||
+                  attachment.mediaType === "image/webp" ||
+                  attachment.mediaType === "image/gif",
+              )
+              .map(async (attachment) => ({
+                mediaType: attachment.mediaType as
+                  | "image/png"
+                  | "image/jpeg"
+                  | "image/webp"
+                  | "image/gif",
+                dataURL: await attachmentService.dataURL(attachment),
+              })),
+          );
+          const userMessage = messages.findLast(
+            (message) => message.role === "user",
+          );
+          if (userMessage && images.length) {
+            userMessage.images = images;
+          }
+        }
       }
       const visibleTools = chatTools(input.exec);
       const toolSchemas = visibleTools.map((tool) => ({
