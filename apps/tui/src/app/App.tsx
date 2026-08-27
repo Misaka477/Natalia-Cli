@@ -826,16 +826,16 @@ function Shell(props: {
     const agents = mentionAgents();
     const resources = mentionResources();
     const previousSubmissionID = state.facts.lastSubmission?.id;
-    const queued = modelBusy();
+    // Busy stays steer: a follow-up joins the live turn at its next safe
+    // boundary (admission is durable) instead of parking behind queue
+    // delivery. Explicit queue delivery stays available to the CLI/API.
     if (
-      (attachments.length || agents.length || resources.length || queued) &&
+      (attachments.length || agents.length || resources.length) &&
       !props.backend.submitInput
     ) {
       toast.show({
         variant: "warning",
-        message: queued
-          ? "This runtime transport does not support queued prompts"
-          : "This runtime transport does not support attachments",
+        message: "This runtime transport does not support attachments",
       });
       return;
     }
@@ -850,29 +850,35 @@ function Shell(props: {
       setAttachmentPaths([]);
       setMentionAgents([]);
       setMentionResources([]);
+      // A live follow-up steers through submitInput so its admission is
+      // durable and never blocks on the running drain; an idle text submit
+      // keeps the plain submit path for transports without an inbox.
+      const steerLive = Boolean(props.backend.submitInput && modelBusy());
       const admitted =
-        attachments.length || agents.length || resources.length || queued
-          ? props.backend.submitInput!({
+        props.backend.submitInput &&
+        (attachments.length || agents.length || resources.length || steerLive)
+          ? props.backend.submitInput({
               text,
-              delivery: queued ? "queue" : "steer",
-              attachments,
-              agents: agents.map((name) => ({ name })),
-              resources: resources.map((resource) => ({
-                server: resource.server,
-                uri: resource.uri,
-                name: resource.name,
-                mimeType: resource.mimeType,
-              })),
+              delivery: "steer",
+              ...(attachments.length ? { attachments } : {}),
+              ...(agents.length
+                ? { agents: agents.map((name) => ({ name })) }
+                : {}),
+              ...(resources.length
+                ? {
+                    resources: resources.map((resource) => ({
+                      server: resource.server,
+                      uri: resource.uri,
+                      name: resource.name,
+                      mimeType: resource.mimeType,
+                    })),
+                  }
+                : {}),
             })
           : props.backend.submit(text);
       void admitted.catch((error: unknown) => {
         toast.error(error);
       });
-      if (queued)
-        toast.show({
-          variant: "info",
-          message: "Message queued for the next turn",
-        });
     } catch (error) {
       // Runtime events are batched before they reach the projection. Give an
       // admission event a chance to land before deciding this draft was lost.
@@ -1001,11 +1007,13 @@ function Shell(props: {
   }
 
   function modelBusy() {
-    return Boolean(state.facts.activeTurn || hasQueuedPrompts());
+    // Queued inbox rows are durable pending work, not a live turn: Stop stays
+    // idle with them until the next prompt wakes the drain.
+    return Boolean(state.facts.activeTurn);
   }
 
   function modelActive() {
-    return Boolean(state.facts.activeTurn || hasQueuedPrompts());
+    return Boolean(state.facts.activeTurn);
   }
 
   function hasQueuedPrompts() {
@@ -1517,7 +1525,7 @@ function Shell(props: {
                         : route.route().kind !== "none"
                           ? "Press Escape to return"
                           : modelBusy()
-                            ? "Type the next message and press Enter to queue..."
+                            ? "Working — your message joins the current turn"
                             : "Ask anything..."
                     }
                     placeholderColor={theme.theme.muted}
@@ -1639,7 +1647,10 @@ function Shell(props: {
                           ? hasQueuedPrompts()
                             ? `${queuedPromptCount()} queued`
                             : "Working"
-                          : (statusValues(state.statusSegments).ctx ?? "Ready")}
+                          : hasQueuedPrompts()
+                            ? `${queuedPromptCount()} queued`
+                            : (statusValues(state.statusSegments).ctx ??
+                              "Ready")}
                       </text>
                     </Show>
                     <text

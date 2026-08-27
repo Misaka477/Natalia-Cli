@@ -403,7 +403,7 @@ test("a slower second click does not stop the turn it just sent", async () => {
   }
 });
 
-test("Enter queues another prompt while the current turn is active", async () => {
+test("Enter steers a follow-up into the active turn", async () => {
   const mounted = await mountComposer();
   try {
     await mounted.keys.typeText("first turn");
@@ -411,7 +411,7 @@ test("Enter queues another prompt while the current turn is active", async () =>
     await Bun.sleep(30);
     await mounted.setup.renderOnce();
     expect(mounted.setup.captureCharFrame()).toContain(
-      "Type the next message and press Enter to queue...",
+      "Working — your message joins the current turn",
     );
 
     await mounted.keys.typeText("next turn");
@@ -419,11 +419,11 @@ test("Enter queues another prompt while the current turn is active", async () =>
     await Bun.sleep(30);
 
     expect(mounted.controls.queued).toEqual([
-      expect.objectContaining({ text: "next turn", delivery: "queue" }),
+      expect.objectContaining({ text: "next turn", delivery: "steer" }),
     ]);
     await mounted.setup.renderOnce();
-    expect(mounted.setup.captureCharFrame()).toContain("QUEUED");
     expect(mounted.setup.captureCharFrame()).toContain("■ Stop");
+    expect(mounted.setup.captureCharFrame()).not.toContain("QUEUED");
   } finally {
     mounted.controls.finish();
     mounted.disposeKeymap();

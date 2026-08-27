@@ -6383,6 +6383,7 @@ test("queued input wakes an idle session after durable admission", async () => {
     { id: submitted.id, text: "wait for idle", delivery: "queue" },
   ]);
   expect(stored.inbox?.[0]?.promotedAt).toEqual(expect.any(String));
+  await client.dispose?.();
 });
 
 test("queued inputs promote in FIFO order after the active turn becomes idle", async () => {
@@ -6396,8 +6397,9 @@ test("queued inputs promote in FIFO order after the active turn becomes idle", a
       provider: "test",
       model: "test",
       async *stream(request) {
-        requests.push(request.messages.at(-1)?.content ?? "");
-        if (requests.length === 1)
+        const text = request.messages.at(-1)?.content ?? "";
+        requests.push(text);
+        if (text === "first")
           await new Promise<void>((resolve) => (release = resolve));
         yield { type: "content" as const, text: "done" };
         yield { type: "done" as const };
@@ -6414,12 +6416,20 @@ test("queued inputs promote in FIFO order after the active turn becomes idle", a
   );
   release();
   await first;
-  expect(requests).toEqual([
-    "first",
-    "queued one",
-    "queued two",
-    "queued three",
-  ]);
+  // Admission is fire-and-forget: queued rows promote through the coalesced
+  // successor drain once the active turn goes idle.
+  await waitFor(
+    () =>
+      requests.includes("queued one") &&
+      requests.includes("queued two") &&
+      requests.includes("queued three"),
+    5000,
+    "the queued inputs to promote in order",
+  );
+  expect(requests.filter((text) => text === "first")).toHaveLength(1);
+  expect(
+    requests.filter((text) => text.startsWith("queued")),
+  ).toEqual(["queued one", "queued two", "queued three"]);
   const stored = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_queued_promotion.json"),
@@ -6433,9 +6443,10 @@ test("queued inputs promote in FIFO order after the active turn becomes idle", a
         undefined,
     ),
   ).toBe(true);
+  await client.dispose?.();
 });
 
-test("queued input still promotes after the active turn is cancelled", async () => {
+test("a queued input survives cancellation and drains on the next prompt", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-cancel-queue-"));
   const requests: string[] = [];
   const client = createRealRuntimeClient({
@@ -6461,14 +6472,20 @@ test("queued input still promotes after the active turn is cancelled", async () 
   const first = client.submit("first");
   await waitFor(() => requests.length === 1, 5000, "the first turn to start");
   await client.submitInput!({ text: "queued", delivery: "queue" });
-  client.cancel("skip to queued");
+  client.cancel("stop mid-turn");
   await first;
+  // Stop interrupts the running drain and leaves durable inbox work alone:
+  // nothing auto-promotes until the next admission wakes the session.
+  await Bun.sleep(30);
+  expect(requests).toEqual(["first"]);
+  await client.submitInput!({ text: "resume please", delivery: "steer" });
   await waitFor(
     () => requests.includes("queued"),
     5000,
-    "the queued input to run after cancellation",
+    "the queued input to drain after the next prompt",
   );
-  expect(requests).toEqual(["first", "queued"]);
+  expect(requests).toEqual(["first", "resume please", "queued"]);
+  await client.dispose?.();
 });
 
 test("cancelling after admission but before execution does not start the turn", async () => {
@@ -6501,6 +6518,7 @@ test("cancelling after admission but before execution does not start the turn", 
       reason: "cancel admission",
     }),
   );
+  await client.dispose?.();
 });
 
 test("exact input retry does not duplicate a completed provider turn", async () => {
@@ -8931,13 +8949,17 @@ test("a queued-next plan activates automatically at the next turn boundary", asy
   expect((await client.planList!())[0]?.status).toBe("queued_next_plan");
 
   // A finished turn is the safe completion point: the queued plan activates.
+  // Submit no longer blocks on the turn, so poll for the activation itself.
   await client.submit("second");
-  await pollHistoryForFinished(client);
+  await waitForAsync(
+    async () => (await client.planList!())[0]?.status === "active",
+  );
   const plan = (await client.planList!())[0];
   expect(plan?.status).toBe("active");
   // Version bumped on activation (created v1 -> proposed v2 -> accepted v3 ->
   // queued v4 -> active v5).
   expect(plan?.version).toBe(5);
+  await client.dispose?.();
 });
 
 test("an auto-activated plan reaches the next turn as a NextPlanHandoff", async () => {

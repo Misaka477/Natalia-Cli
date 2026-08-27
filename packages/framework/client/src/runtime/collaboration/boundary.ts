@@ -180,6 +180,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     }>
   > {
     return (async () => {
+      if (ctx.ports.isDisposed()) return [];
       const { getActiveExec, publishForSession } = ctx.ports;
       const workLedgerController =
         ctx.ports.resolveService<WorkLedgerController>(
@@ -192,8 +193,18 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           WORKSPACE_FILES_SERVICE,
         );
       const target = exec ?? getActiveExec();
-      if (!target?.session) return [];
-      const confirmed = (await workspaceFilesController?.reconcile()) ?? [];
+      if (!target?.session || ctx.ports.isDisposed()) return [];
+      let confirmed: Awaited<
+        ReturnType<NonNullable<typeof workspaceFilesController>["reconcile"]>
+      > = [];
+      try {
+        confirmed = (await workspaceFilesController?.reconcile()) ?? [];
+      } catch (error) {
+        if (ctx.ports.isDisposed()) return [];
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") return [];
+        throw error;
+      }
       for (const change of confirmed) {
         if (change.attribution === "attributed") continue;
         publishForSession(

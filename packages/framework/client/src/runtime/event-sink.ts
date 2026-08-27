@@ -214,7 +214,16 @@ export function createEventSink(
       // WG4: a finished turn is a natural reconcile point — discover external
       // edits the watcher saw, graph them as isolated nodes, and drift-check
       // them against the active plan. No explicit call needed.
-      void reconcileWorkspaceObservation(exec);
+      void reconcileWorkspaceObservation(exec).catch((error) => {
+        if (ctx.ports.isDisposed()) return;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") return;
+        publishForSession(exec, {
+          type: "diagnostic",
+          level: "warning",
+          message: `workspace observation reconcile failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      });
     }
   }
 }

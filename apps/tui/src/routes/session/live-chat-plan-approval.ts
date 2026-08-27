@@ -10,7 +10,7 @@ type ApprovalLike = {
 
 export function isLiveChatPlanApproval(
   request: ApprovalLike | undefined,
-  plans: PlanAuthorLookup | undefined,
+  plans?: PlanAuthorLookup,
 ) {
   if (!request) return false;
   if (request.kind !== "approval" && request.type !== "approval.request")

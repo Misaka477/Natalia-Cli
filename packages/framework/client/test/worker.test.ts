@@ -19,6 +19,72 @@ import {
 } from "../src/worker";
 import { CapabilityHost } from "@natalia/capability";
 
+async function waitForWorker(
+  predicate: () => boolean,
+  timeoutMs = 5000,
+  label = "condition",
+) {
+  for (let elapsed = 0; elapsed < timeoutMs; elapsed += 10) {
+    if (predicate()) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+test("worker transport: submit after cancel starts the next turn instead of queueing forever", async () => {
+  // The real-device Stop-then-send flow crosses the worker channel: the TUI
+  // submits through createWorkerRuntimeClient, and the worker dispatches the
+  // request into the live runtime. A serialized channel or an admission that
+  // awaits the whole previous turn would make the second submit never reach
+  // the provider — the message "sends" into a dead queue.
+  const root = await mkdtemp(join(tmpdir(), "natalia-worker-cancel-submit-"));
+  const requests: string[] = [];
+  let release: (() => void) | undefined;
+  const createRuntime = () =>
+    createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_worker_cancel_submit",
+      provider: {
+        provider: "test",
+        model: "test",
+        async *stream(request) {
+          const text = request.messages.at(-1)?.content ?? "";
+          requests.push(text);
+          if (text === "first")
+            await new Promise<void>((resolve) => (release = resolve));
+          yield { type: "done" as const };
+        },
+      },
+    });
+  const channel = new MessageChannel();
+  attachRuntimeClientWorker(channel.port1, createRuntime());
+  const client = createWorkerRuntimeClient(channel.port2);
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+
+  await client.submit("first");
+  await waitForWorker(() => requests.includes("first"), 5000, "first turn");
+  client.cancel("stop");
+  while (!release) await Bun.sleep(1);
+  release?.();
+  await waitForWorker(() =>
+    events.some(
+      (event) => event.type === "turn.finished" || event.type === "turn.cancelled",
+    ),
+  );
+  // The second submit must be admitted and woken even though the previous
+  // turn's drain may still be settling in the worker.
+  await client.submit("second");
+  await waitForWorker(
+    () => requests.includes("second"),
+    5000,
+    "the second turn to reach the provider",
+  );
+  expect(requests.filter((text) => text === "first")).toHaveLength(1);
+  expect(requests).toContain("second");
+  await client.dispose?.();
+});
+
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
   const channel = new MessageChannel();
   let sink: ((event: RuntimeEvent) => void) | undefined;
