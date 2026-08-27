@@ -536,18 +536,6 @@ export function LiveChatView(props: {
                           {props.chatUseExpert?.() ? "Expert" : "Std"}
                         </text>
                       </Show>
-                      <Show when={props.onOpenChatReasoning}>
-                        <text
-                          fg={theme.muted}
-                          onMouseUp={() =>
-                            props.onOpenChatReasoning?.("normal")
-                          }
-                        >
-                          {props.chatUseExpert?.()
-                            ? "Expert reasoning"
-                            : "Reasoning"}
-                        </text>
-                      </Show>
                     </box>
                   </Show>
                   <text
@@ -563,6 +551,27 @@ export function LiveChatView(props: {
                     {props.activity() ? "■ Stop" : "↑ Send"}
                   </text>
                 </box>
+                <Show when={props.onOpenChatReasoning}>
+                  <box
+                    flexDirection="row"
+                    gap={1}
+                    flexShrink={0}
+                    paddingTop={1}
+                  >
+                    <text
+                      fg={theme.muted}
+                      onMouseUp={() => props.onOpenChatReasoning?.("normal")}
+                    >
+                      Reasoning
+                    </text>
+                    <text
+                      fg={theme.warning}
+                      onMouseUp={() => props.onOpenChatReasoning?.("expert")}
+                    >
+                      Exp R
+                    </text>
+                  </box>
+                </Show>
               </box>
             }
           >
