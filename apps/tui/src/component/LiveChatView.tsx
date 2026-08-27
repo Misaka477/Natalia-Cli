@@ -25,7 +25,7 @@ import type {
 } from "@natalia/view-store";
 import { themeTokens as theme } from "../theme/theme";
 import { MessageBlockView } from "../routes/session/message-rows";
-import type { MessageBlock } from "../context/state";
+import type { MessageBlock, PendingRollback } from "../context/state";
 import {
   PROMPT_BOTTOM_BORDER,
   PROMPT_FRAME_BORDER,
@@ -48,6 +48,17 @@ import type { TuiPreferences } from "../settings";
  * second hand-written renderer (§8.3).
  */
 
+function chatMessageIDFromBlock(blockID: string): string {
+  // Chat messageIDs themselves contain colons (chat:<timestamp>:<seq>), so a
+  // plain split cannot extract the id. Strip the leading `chat:` and the
+  // trailing row kind (`:user`, `:assistant`, `:collab`, `:tool`, or a
+  // streamed segment suffix) to recover the full durable message id.
+  const match = blockID.match(
+    /^chat:(.+):(?:user|assistant|collab|tool)(?::.*)?$/u,
+  );
+  return match?.[1] ?? "";
+}
+
 type PlanRow = {
   planID: string;
   title: string;
@@ -55,6 +66,7 @@ type PlanRow = {
   status: string;
   author: string;
   taskID?: string;
+  mailboxMessageID?: string;
 };
 
 export function LiveChatView(props: {
@@ -71,6 +83,11 @@ export function LiveChatView(props: {
   onInputRef(value: InputRenderable | undefined): void;
   onSend(text: string): void;
   onStop?(): void;
+  onCopy?(text: string): void;
+  onChatRollback?(toMessageID: string): void;
+  pendingRollback?: () => PendingRollback | undefined;
+  onUndoRollback?: () => void;
+  onPlanRollback?(mailboxMessageID: string): void;
   onPlanAccept(planID: string): void;
   onPlanReject(planID: string): void;
   approvalRequest?: () =>
@@ -106,6 +123,14 @@ export function LiveChatView(props: {
   let input: TextareaRenderable | undefined;
   let chatScroll: ScrollBoxRenderable | undefined;
   const proposedPlan = () => plans().find((plan) => plan.status === "proposed");
+  const handoffPlan = () =>
+    plans().find(
+      (plan) =>
+        plan.mailboxMessageID &&
+        plan.status !== "proposed" &&
+        plan.status !== "superseded" &&
+        plan.status !== "completed",
+    );
   const alignedPlan = () => {
     const taskID = props.selectedTaskID?.();
     if (!taskID) return undefined;
@@ -122,12 +147,29 @@ export function LiveChatView(props: {
   };
 
   const refresh = async () => {
-    const [snapshot, planRows] = await Promise.all([
+    const [snapshot, planRows, mailboxRows] = await Promise.all([
       props.backend.sessionSnapshot?.() ?? Promise.resolve(undefined),
       props.backend.planList?.() ?? Promise.resolve([]),
+      props.backend.mailboxList?.() ?? Promise.resolve([]),
     ]);
     setAgentStatus(snapshot ?? undefined);
-    setPlans(planRows as PlanRow[]);
+    const mailboxes = mailboxRows as Array<{
+      messageID: string;
+      intent?: string;
+      relatedPlanID?: string;
+      status?: string;
+    }>;
+    setPlans(
+      (planRows as PlanRow[]).map((plan) => ({
+        ...plan,
+        mailboxMessageID: mailboxes.find(
+          (message) =>
+            message.intent === "next_plan_handoff" &&
+            message.relatedPlanID === plan.planID &&
+            (message.status === "queued" || message.status === "delivered"),
+        )?.messageID,
+      })),
+    );
   };
 
   onMount(() => void refresh());
@@ -239,11 +281,33 @@ export function LiveChatView(props: {
           </box>
         )}
       </Show>
+      <Show when={props.pendingRollback?.()?.kind === "chat"}>
+        <box
+          flexShrink={0}
+          flexDirection="row"
+          justifyContent="space-between"
+          paddingLeft={2}
+          paddingRight={2}
+          paddingTop={1}
+          paddingBottom={1}
+          border={["left"]}
+          borderColor={theme.warning}
+        >
+          <text fg={theme.warning} wrapMode="word">
+            Chat rollback pending — edit the restored message and send, or undo.
+          </text>
+          <text fg={theme.warning} onMouseUp={props.onUndoRollback}>
+            undo
+          </text>
+        </box>
+      </Show>
       <Show when={alignedPlan()}>
         {(plan) => (
           <Show when={plan().planID !== proposedPlan()?.planID}>
             <box
               flexShrink={0}
+              flexDirection="row"
+              justifyContent="space-between"
               paddingLeft={2}
               paddingRight={2}
               paddingBottom={1}
@@ -253,6 +317,46 @@ export function LiveChatView(props: {
               <text fg={theme.accent} wrapMode="word">
                 Plan · {plan().title} · {plan().status}
               </text>
+              <Show when={plan().mailboxMessageID && props.onPlanRollback}>
+                <text
+                  fg={theme.warning}
+                  onMouseUp={() =>
+                    props.onPlanRollback?.(plan().mailboxMessageID!)
+                  }
+                >
+                  restore...
+                </text>
+              </Show>
+            </box>
+          </Show>
+        )}
+      </Show>
+      <Show when={handoffPlan()}>
+        {(plan) => (
+          <Show when={plan().planID !== alignedPlan()?.planID}>
+            <box
+              flexShrink={0}
+              flexDirection="row"
+              justifyContent="space-between"
+              paddingLeft={2}
+              paddingRight={2}
+              paddingBottom={1}
+              border={["left"]}
+              borderColor={theme.warning}
+            >
+              <text fg={theme.warning} wrapMode="word">
+                Navi handoff · {plan().title} · {plan().status}
+              </text>
+              <Show when={props.onPlanRollback}>
+                <text
+                  fg={theme.warning}
+                  onMouseUp={() =>
+                    props.onPlanRollback?.(plan().mailboxMessageID!)
+                  }
+                >
+                  restore...
+                </text>
+              </Show>
             </box>
           </Show>
         )}
@@ -315,6 +419,10 @@ export function LiveChatView(props: {
             {(block) => (
               <MessageBlockView
                 block={block}
+                onCopy={props.onCopy}
+                onRestoreBlock={(blockID) =>
+                  props.onChatRollback?.(chatMessageIDFromBlock(blockID))
+                }
                 density={props.density}
                 toolDetails={props.toolDetails}
                 reasoning={props.reasoning}
@@ -330,7 +438,7 @@ export function LiveChatView(props: {
         <box
           width="100%"
           border={["left"]}
-          borderColor={theme.accent}
+          borderColor={props.approvalRequest?.() ? theme.warning : theme.accent}
           customBorderChars={PROMPT_FRAME_BORDER}
         >
           <Show
@@ -351,8 +459,7 @@ export function LiveChatView(props: {
                       input = value;
                       setInputTarget(value as unknown as InputRenderable);
                       props.onInputRef(value as unknown as InputRenderable);
-                      if (draft())
-                        queueMicrotask(() => value.setText(draft()));
+                      if (draft()) queueMicrotask(() => value.setText(draft()));
                     }}
                     height={textareaRows()}
                     minHeight={1}
@@ -412,7 +519,7 @@ export function LiveChatView(props: {
           height={1}
           width="100%"
           border={["left"]}
-          borderColor={theme.accent}
+          borderColor={props.approvalRequest?.() ? theme.warning : theme.accent}
           customBorderChars={PROMPT_BOTTOM_BORDER}
         />
       </box>

@@ -213,6 +213,43 @@ export async function runExecuteStage(
     )
       ? await workspaceWriteLock.acquire()
       : undefined;
+    // E1: create a pre-tool checkpoint for side-effecting calls so a tool card
+    // can offer a precise "restore to just before this call".  The checkpoint
+    // captures the workspace object tree and the Main Agent context before the
+    // tool actually runs.  Failure is surfaced as a diagnostic rather than
+    // blocking the side effect: rollback remains best-effort for calls where
+    // the checkpoint system could not capture a safe snapshot.
+    try {
+      const checkpointPath = toolPolicy.workspaceWritePathForTool(
+        tool.name,
+        parsed as Record<string, unknown>,
+      );
+      const command = toolPolicy.commandTextForTool(
+        tool.name,
+        parsed as Record<string, unknown>,
+      );
+      if (exec && (checkpointPath || command)) {
+        const checkpointController =
+          await ctx.ports.initializeCheckpointController(exec);
+        if (checkpointController?.isEnabled()) {
+          await checkpointController.createCheckpoint({
+            reason: "pre_tool",
+            context: exec.context,
+            step: exec.context.journalStatus().messageCount,
+            turnID,
+            stepID: toolID,
+            model: exec.provider?.model,
+            status: tool.name,
+          });
+        }
+      }
+    } catch (error) {
+      ctx.ports.publishForSession(exec, {
+        type: "diagnostic",
+        level: "warning",
+        message: `pre-tool checkpoint failed for ${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
     // WG4 Phase 3: register the expected mutation before the tool runs.
     const writePath = toolPolicy.workspaceWritePathForTool(
       tool.name,

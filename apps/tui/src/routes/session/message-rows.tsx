@@ -20,6 +20,8 @@ export function MessageBlockView(props: {
   onCopy?: (text: string) => void;
   onFork?: (turnID: string, prompt: string) => void;
   onRestore?: (turnID: string) => void;
+  onRestoreBlock?: (blockID: string) => void;
+  onToolRestore?: (turnID: string, callID: string) => void;
   density: TuiPreferences["density"];
   toolDetails: TuiPreferences["toolDetails"];
   reasoning: TuiPreferences["reasoning"];
@@ -31,16 +33,34 @@ export function MessageBlockView(props: {
     return (
       <InlineInteractiveBlock block={props.block} backend={props.backend} />
     );
-  if (props.block.tool)
+  if (props.block.tool) {
+    const toolMarker = props.block.id.lastIndexOf(":tool:");
+    const toolTurnID =
+      toolMarker >= 0 ? props.block.id.slice(0, toolMarker) : props.block.id;
+    const callID =
+      toolMarker >= 0 ? props.block.id.slice(toolMarker + ":tool:".length) : "";
     return (
-      <ToolBlockView
-        block={props.block}
-        toolDetails={props.toolDetails}
-        diffStyle={props.diffStyle}
-        terminalWidth={props.terminalWidth}
-        toolPreviewLines={props.toolPreviewLines}
-      />
+      <box flexDirection="column" marginRight={1}>
+        <ToolBlockView
+          block={props.block}
+          toolDetails={props.toolDetails}
+          diffStyle={props.diffStyle}
+          terminalWidth={props.terminalWidth}
+          toolPreviewLines={props.toolPreviewLines}
+        />
+        <Show when={props.onToolRestore && callID}>
+          <box flexDirection="row" justifyContent="flex-end" paddingTop={1}>
+            <text
+              fg={darkTheme.warning}
+              onMouseUp={() => props.onToolRestore?.(toolTurnID, callID)}
+            >
+              restore...
+            </text>
+          </box>
+        </Show>
+      </box>
     );
+  }
   const role = props.block.role;
   if (role === "user")
     return (
@@ -50,6 +70,7 @@ export function MessageBlockView(props: {
         onCopy={props.onCopy}
         onFork={props.onFork}
         onRestore={props.onRestore}
+        onRestoreBlock={props.onRestoreBlock}
       />
     );
   if (role === "thinking")
@@ -67,6 +88,7 @@ export function MessageBlockView(props: {
         density={props.density}
         onCopy={props.onCopy}
         onRestore={props.onRestore}
+        onRestoreBlock={props.onRestoreBlock}
       />
     );
   if (role === "turn_footer")
@@ -95,6 +117,7 @@ function UserBlock(props: {
   onCopy?: (text: string) => void;
   onFork?: (turnID: string, prompt: string) => void;
   onRestore?: (turnID: string) => void;
+  onRestoreBlock?: (blockID: string) => void;
 }) {
   const [actionsOpen, setActionsOpen] = createSignal(false);
   return (
@@ -126,7 +149,8 @@ function UserBlock(props: {
           actionsOpen() &&
           (props.onCopy ||
             (props.onFork && props.block.text) ||
-            props.onRestore)
+            props.onRestore ||
+            props.onRestoreBlock)
         }
       >
         <box flexDirection="row" gap={2} paddingTop={1}>
@@ -155,12 +179,14 @@ function UserBlock(props: {
               fork
             </text>
           </Show>
-          <Show when={props.onRestore}>
+          <Show when={props.onRestore || props.onRestoreBlock}>
             <text
               fg={darkTheme.warning}
               onMouseUp={(event: { stopPropagation(): void }) => {
                 event.stopPropagation();
-                props.onRestore?.(turnIDForBlock(props.block.id));
+                props.onRestoreBlock
+                  ? props.onRestoreBlock(props.block.id)
+                  : props.onRestore?.(turnIDForBlock(props.block.id));
               }}
             >
               restore...
@@ -177,6 +203,7 @@ function AssistantBlock(props: {
   density: TuiPreferences["density"];
   onCopy?: (text: string) => void;
   onRestore?: (turnID: string) => void;
+  onRestoreBlock?: (blockID: string) => void;
 }) {
   const [actionsOpen, setActionsOpen] = createSignal(false);
   return (
@@ -211,12 +238,14 @@ function AssistantBlock(props: {
               copy
             </text>
           </Show>
-          <Show when={props.onRestore}>
+          <Show when={props.onRestore || props.onRestoreBlock}>
             <text
               fg={darkTheme.warning}
               onMouseUp={(event: { stopPropagation(): void }) => {
                 event.stopPropagation();
-                props.onRestore?.(turnIDForBlock(props.block.id));
+                props.onRestoreBlock
+                  ? props.onRestoreBlock(props.block.id)
+                  : props.onRestore?.(turnIDForBlock(props.block.id));
               }}
             >
               restore...

@@ -40,6 +40,11 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       );
       if (index === -1) return { rolledBackTo: input.toMessageID, removed: 0 };
       const removed = history.length - (index + 1);
+      if (process.env.NATALIA_DEBUG_CHAT_ROLLBACK)
+        console.error("[chatRollback] published", {
+          toMessageID: input.toMessageID,
+          removed,
+        });
       ctx.ports.publish({
         type: "chat.rollback",
         id: `chat:rollback:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`,

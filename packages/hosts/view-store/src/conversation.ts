@@ -762,11 +762,15 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
     }
     case "chat.rollback": {
       const boundary = `chat:${event.toMessageID}`;
-      const index = state.chatMessages.findIndex(
-        (block) => block.id === `${boundary}:user`,
+      const index = state.chatMessages.findIndex((block) =>
+        block.id.startsWith(`${boundary}:`),
       );
-      if (index !== -1) state.chatMessages.splice(index + 1);
-      else state.chatMessages.length = 0;
+      if (index !== -1) {
+        const isUser = state.chatMessages[index]?.role === "user";
+        // A user-message rollback moves that message into the composer as a
+        // draft, so remove the card itself as well as everything after it.
+        state.chatMessages.splice(isUser ? index : index + 1);
+      } else state.chatMessages.length = 0;
       state.chatStreams = {};
       state.chatStreamPhases = {};
       return true;

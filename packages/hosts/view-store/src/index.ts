@@ -128,11 +128,42 @@ export function applyEvent(state: AppState, event: RuntimeEvent): void {
     return;
   }
   if (applyResourceEvent(state, event)) {
+    if (event.type === "rollback.end")
+      truncateHistoryAfterRollback(state, event);
     applyActivityEvent(state, event);
     return;
   }
   applyStatusEvent(state, event);
   applyActivityEvent(state, event);
+}
+
+/**
+ * A Main Agent checkpoint rollback is a return to a prior execution point.
+ * Keep the rollback-fact resource projection intact, but also drop the visible
+ * transcript rows for turns after that checkpoint so the UI does not show
+ * work the runtime has undone.
+ */
+function truncateHistoryAfterRollback(
+  state: AppState,
+  event: Extract<RuntimeEvent, { type: "rollback.end" }>,
+): void {
+  const checkpoint = state.checkpoints.find(
+    (candidate) => candidate.id === event.checkpointID,
+  );
+  const turnID = checkpoint?.turnID;
+  if (!turnID) return;
+  const prefix = `${turnID}:`;
+  const index = state.messages.findIndex((block) =>
+    block.id.startsWith(prefix),
+  );
+  if (index === -1) return;
+  state.messages.splice(index);
+  for (const key of Object.keys(state.streams))
+    if (!key.startsWith(prefix)) delete state.streams[key];
+  for (const key of Object.keys(state.streamPhases))
+    if (!key.startsWith(prefix)) delete state.streamPhases[key];
+  for (const key of Object.keys(state.tools))
+    if (!key.startsWith(prefix)) delete state.tools[key];
 }
 
 /**

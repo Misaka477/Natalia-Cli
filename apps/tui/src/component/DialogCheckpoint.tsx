@@ -14,6 +14,8 @@ import { DialogSelect } from "../dialog/DialogSelect";
 export function DialogCheckpoint(props: {
   backend: RuntimeClient;
   turnID?: string;
+  stepID?: string;
+  onRestored?: (turnID: string) => void;
 }) {
   const dialog = useDialog();
   const [checkpoints, setCheckpoints] = createSignal<RuntimeCheckpoint[]>([]);
@@ -37,10 +39,20 @@ export function DialogCheckpoint(props: {
   onMount(() => void refresh());
   return (
     <DialogSelect
-      title={props.turnID ? "Restore This Turn" : "Workspace Checkpoints"}
+      title={
+        props.stepID
+          ? props.turnID
+            ? "Restore This Tool Call"
+            : "Restore Plan Handoff"
+          : props.turnID
+            ? "Restore This Turn"
+            : "Workspace Checkpoints"
+      }
       options={[...checkpoints()]
         .filter(
-          (checkpoint) => !props.turnID || checkpoint.turnID === props.turnID,
+          (checkpoint) =>
+            (!props.turnID || checkpoint.turnID === props.turnID) &&
+            (!props.stepID || checkpoint.stepID === props.stepID),
         )
         .reverse()
         .map((checkpoint) => ({
@@ -66,6 +78,7 @@ export function DialogCheckpoint(props: {
           <CheckpointDetail
             backend={props.backend}
             checkpoint={option.value}
+            onRestored={props.onRestored}
             onChanged={() => {
               void refresh();
               dialog.pop();
@@ -80,6 +93,7 @@ export function DialogCheckpoint(props: {
 function CheckpointDetail(props: {
   backend: RuntimeClient;
   checkpoint: RuntimeCheckpoint;
+  onRestored?: (turnID: string) => void;
   onChanged(): void;
 }) {
   const dialog = useDialog();
@@ -109,7 +123,10 @@ function CheckpointDetail(props: {
         }),
       );
       setError(undefined);
-      if (!dryRun) props.onChanged();
+      if (!dryRun) {
+        props.onChanged();
+        props.onRestored?.(props.checkpoint.turnID ?? "");
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -126,14 +143,14 @@ function CheckpointDetail(props: {
         cmd: () => void loadPreview(),
       },
       {
-        key: "d",
-        desc: "Dry-run rollback",
+        key: "alt+d",
+        desc: "Alt+D Dry-run rollback",
         group: "Checkpoint",
         cmd: () => void rollback(true),
       },
       {
-        key: "r",
-        desc: "Restore checkpoint",
+        key: "alt+r",
+        desc: "Alt+R Restore checkpoint",
         group: "Checkpoint",
         cmd: () => {
           if (!props.checkpoint.complete || busy()) return;
@@ -176,7 +193,7 @@ function CheckpointDetail(props: {
       <text fg={darkTheme.muted}>
         {busy()
           ? "processing..."
-          : "p preview · d dry-run · r restore · escape close"}
+          : "p preview · Alt+D dry-run · Alt+R restore · escape close"}
       </text>
     </box>
   );

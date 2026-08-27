@@ -215,6 +215,33 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       };
     const now = new Date();
     const messageID = `mailbox:${Date.now().toString(36)}:${nextMailboxSequence()}`;
+    // E2: a next_plan_handoff is a formal Main Agent handoff. Capture a
+    // checkpoint before the mailbox is queued/woken so the user can restore
+    // the exact pre-handoff Main Agent context and workspace state.
+    if (input.intent === "next_plan_handoff") {
+      try {
+        const checkpointController =
+          await ctx.ports.initializeCheckpointController(owner);
+        if (checkpointController?.isEnabled()) {
+          await checkpointController.createCheckpoint({
+            reason: "manual",
+            context: owner.context,
+            step: owner.context.journalStatus().messageCount,
+            stepID: `mailbox:${messageID}`,
+            model: owner.provider?.model,
+            status: "next_plan_handoff",
+          });
+        }
+      } catch (error) {
+        ctx.ports.publishForSession(owner, {
+          type: "diagnostic",
+          level: "warning",
+          message: `plan handoff checkpoint failed for ${messageID}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+      }
+    }
     publishForSession(
       owner,
       buildMailboxQueued({

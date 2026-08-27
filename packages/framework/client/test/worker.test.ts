@@ -69,7 +69,8 @@ test("worker transport: submit after cancel starts the next turn instead of queu
   release?.();
   await waitForWorker(() =>
     events.some(
-      (event) => event.type === "turn.finished" || event.type === "turn.cancelled",
+      (event) =>
+        event.type === "turn.finished" || event.type === "turn.cancelled",
     ),
   );
   // The second submit must be admitted and woken even though the previous
@@ -83,6 +84,58 @@ test("worker transport: submit after cancel starts the next turn instead of queu
   expect(requests.filter((text) => text === "first")).toHaveLength(1);
   expect(requests).toContain("second");
   await client.dispose?.();
+});
+
+test("worker client buffers runtime events published before start", async () => {
+  const channel = new MessageChannel();
+  let sink: ((event: RuntimeEvent) => void) | undefined;
+  const host: RuntimeClient = {
+    start(handler) {
+      sink = handler;
+    },
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_buffered",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      } satisfies SubmittedTurn;
+    },
+    cancel() {},
+    snapshot: () => ({
+      type: "snapshot.created",
+      id: "snapshot_worker",
+      files: [],
+    }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
+  };
+  attachRuntimeClientWorker(channel.port1, host);
+  const client = createWorkerRuntimeClient(channel.port2);
+  // The worker can start and emit early events before the TUI mounts and calls
+  // start(). Buffering them keeps workspace/session switches from losing the
+  // initial session.ready/history stream.
+  sink?.({
+    type: "session.ready",
+    sessionID: "ses_buffered",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "session.ready",
+      sessionID: "ses_buffered",
+    }),
+  );
 });
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {

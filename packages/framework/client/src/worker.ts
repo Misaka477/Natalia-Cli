@@ -271,10 +271,12 @@ export function createWorkerRuntimeClient(
   >();
   let sequence = 0;
   let sink: ((event: RuntimeEvent) => void) | undefined;
+  const bufferedEvents: RuntimeEvent[] = [];
   const onMessage = (event: MessageEvent<unknown>) => {
     const message = event.data as WorkerResponse | WorkerEvent;
     if (message.type === "runtime.event") {
-      sink?.(message.event);
+      if (sink) sink(message.event);
+      else bufferedEvents.push(message.event);
       return;
     }
     if (message.type !== "runtime.response") return;
@@ -338,6 +340,7 @@ export function createWorkerRuntimeClient(
   return {
     start(onEvent) {
       sink = onEvent;
+      for (const event of bufferedEvents.splice(0)) onEvent(event);
     },
     /** What this channel can reach: the worker route table intersected with the runtime. */
     async availability() {

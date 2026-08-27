@@ -106,6 +106,27 @@ export type ToolBlockState = {
 
 export type SubagentView = ViewAppState["subagents"][string];
 
+export type PendingRollback =
+  | {
+      kind: "main";
+      safetyCheckpointID?: string;
+      beforeMessages: MessageBlock[];
+      beforeFactsMessages: ViewAppState["messages"];
+      beforeFactsTools: ViewAppState["tools"];
+      beforeFactsStreams: ViewAppState["streams"];
+      beforeFactsStreamPhases: ViewAppState["streamPhases"];
+    }
+  | {
+      kind: "chat";
+      beforeChatMessages: MessageBlock[];
+      beforeFactsChatMessages: ViewAppState["chatMessages"];
+    };
+
+/** JSON round-trip clone for TUI-only snapshots (Solid proxies are not safe for structuredClone). */
+function clonePlain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 const eventBatchMs = 16;
 
 export type AppState = {
@@ -151,6 +172,12 @@ export type AppState = {
    * text, and the transcript rows it narrates itself.
    */
   facts: ViewAppState;
+  /**
+   * A rollback the user has not yet confirmed by sending a new message. The UI
+   * keeps the pre-rollback transcript snapshots so "undo rollback" can restore
+   * the exact visible state.
+   */
+  pendingRollback?: PendingRollback;
   /** Stable timing anchor for the active turn, retained across route remounts. */
   activeTurnStartedAt?: number;
   /** Full TUI states isolated by subagent identity, using this same reducer. */
@@ -178,6 +205,7 @@ export function createInitialState(): AppState {
     ],
     modal: structuredClone(initialModalState),
     facts: initialFacts(),
+    pendingRollback: undefined,
     subagentStates: {},
     terminalPane: {},
     chatMessages: [],
@@ -321,6 +349,56 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     projectSubagentEvent(state, event.agentID, event);
     return;
   }
+  const customType = (event as { type?: string }).type;
+  if (event.type === "turn.submitted" && !event.internal)
+    state.pendingRollback = undefined;
+  if (event.type === "chat.message.added" && event.role === "user")
+    state.pendingRollback = undefined;
+  if (customType === "tui.rollback.undo") {
+    const pending = state.pendingRollback;
+    if (!pending) return;
+    if (pending.kind === "chat") {
+      state.chatMessages = pending.beforeChatMessages;
+      state.facts.chatMessages = pending.beforeFactsChatMessages;
+    }
+    state.pendingRollback = undefined;
+    return;
+  }
+  if (event.type === "chat.rollback") {
+    state.pendingRollback = {
+      kind: "chat",
+      beforeChatMessages: clonePlain(state.chatMessages),
+      beforeFactsChatMessages: clonePlain(state.facts.chatMessages),
+    };
+  } else if (
+    event.type === "rollback.end" &&
+    state.pendingRollback?.kind === "main"
+  ) {
+    const pending = state.pendingRollback;
+    if (pending.safetyCheckpointID === event.checkpointID) {
+      // This rollback.end is the undo itself: restore the visible snapshots
+      // captured before the original rollback was applied.
+      state.messages = pending.beforeMessages;
+      state.facts.messages = pending.beforeFactsMessages;
+      state.facts.tools = pending.beforeFactsTools;
+      state.facts.streams = pending.beforeFactsStreams;
+      state.facts.streamPhases = pending.beforeFactsStreamPhases;
+      state.pendingRollback = undefined;
+    }
+  } else if (event.type === "rollback.end") {
+    const checkpoint = state.facts.checkpoints.find(
+      (candidate) => candidate.id === event.checkpointID,
+    );
+    state.pendingRollback = {
+      kind: "main",
+      safetyCheckpointID: event.safetyCheckpointID,
+      beforeMessages: clonePlain(state.messages),
+      beforeFactsMessages: clonePlain(state.facts.messages),
+      beforeFactsTools: clonePlain(state.facts.tools),
+      beforeFactsStreams: clonePlain(state.facts.streams),
+      beforeFactsStreamPhases: clonePlain(state.facts.streamPhases),
+    };
+  }
   const previousActiveTurn = state.facts.activeTurn;
   projectFacts(state, event);
   if (!state.facts.activeTurn) state.activeTurnStartedAt = undefined;
@@ -451,6 +529,17 @@ function syncProjectedChat(state: AppState) {
 
 function applyTuiEvent(state: AppState, event: RuntimeEvent) {
   switch (event.type) {
+    case "chat.rollback": {
+      const boundary = `chat:${event.toMessageID}`;
+      const index = state.chatMessages.findIndex((block) =>
+        block.id.startsWith(`${boundary}:`),
+      );
+      if (index !== -1) {
+        const isUser = state.chatMessages[index]?.role === "user";
+        state.chatMessages.splice(isUser ? index : index + 1);
+      } else state.chatMessages.length = 0;
+      return;
+    }
     // TUI-only chrome: flow progress in the transcript.
     case "flow.module_event":
       handleFlowModuleEvent(state, event);
@@ -518,6 +607,8 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
     case "rollback.failed":
       applyResourceEvent(state.facts, event);
       handleCheckpointEvent(state, event);
+      if (event.type === "rollback.end")
+        truncateMainHistoryAfterRollback(state, event);
       return;
     case "terminal.update": {
       const previousTerminal = state.facts.terminals[event.id];
@@ -823,6 +914,35 @@ export function formatTurnFooter(
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/**
+ * A Main Agent checkpoint rollback returns the runtime to a prior execution
+ * point. Remove visible transcript rows after that checkpoint's turn so the UI
+ * does not keep showing work the runtime has undone.
+ */
+function truncateMainHistoryAfterRollback(
+  state: AppState,
+  event: Extract<RuntimeEvent, { type: "rollback.end" }>,
+) {
+  const checkpoint = state.facts.checkpoints.find(
+    (candidate) => candidate.id === event.checkpointID,
+  );
+  const turnID = checkpoint?.turnID;
+  if (!turnID) return;
+  const prefix = `${turnID}:`;
+  const index = state.facts.messages.findIndex((block) =>
+    block.id.startsWith(prefix),
+  );
+  if (index === -1) return;
+  state.facts.messages.splice(index);
+  for (const key of Object.keys(state.facts.streams))
+    if (!key.startsWith(prefix)) delete state.facts.streams[key];
+  for (const key of Object.keys(state.facts.streamPhases))
+    if (!key.startsWith(prefix)) delete state.facts.streamPhases[key];
+  for (const key of Object.keys(state.facts.tools))
+    if (!key.startsWith(prefix)) delete state.facts.tools[key];
+  syncProjectedRows(state);
 }
 
 function handleCheckpointEvent(

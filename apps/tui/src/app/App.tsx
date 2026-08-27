@@ -296,16 +296,16 @@ const commandHostCache = new WeakMap<
 >();
 /**
  * The full adapter command host for a backend the app itself created (a worker
- * after a session/workspace switch). Derived from `createUiAdapterMountInput`
- * like the host derives it, but cached per backend: re-deriving would re-enter
- * `runtime.start` and clobber the event sink the shell installs.
+ * after a session/workspace switch). Use the command-only host builder: the
+ * mount-input variant calls `runtime.start` and would clobber the event sink
+ * installed by StateProvider. Cached per backend for object identity stability.
  */
 function commandHostFor(
   runtime: RuntimeClient,
 ): UiAdapterMountInput["commands"] {
   let host = commandHostCache.get(runtime);
   if (!host) {
-    host = createUiAdapterMountInput(runtime).commands;
+    host = createUiAdapterCommandHost(runtime);
     commandHostCache.set(runtime, host);
   }
   return host;
@@ -399,10 +399,7 @@ function Shell(props: {
   const interactivePromptActive = () => {
     if (state.dialog === "question") return true;
     if (state.dialog !== "approval") return false;
-    return !isLiveChatPlanApproval(
-      activeModal(state.modal),
-      state.facts.plans,
-    );
+    return !isLiveChatPlanApproval(activeModal(state.modal), state.facts.plans);
   };
   // The pane owns the keyboard: chat hands focus to the view's input, main (or
   // a closed view) hands it back to the composer. LiveChatView itself focuses
@@ -749,6 +746,38 @@ function Shell(props: {
 
   function openAttachmentManager() {
     onCommand("prompt.attachment.list");
+  }
+
+  function undoMainRollback() {
+    const pending = state.pendingRollback;
+    if (!pending || pending.kind !== "main") return;
+    composer()?.setText?.("");
+    setComposerText("");
+    composer()?.gotoBufferEnd();
+    if (!props.backend.checkpointRollback || !pending.safetyCheckpointID) {
+      toast.show({
+        variant: "warning",
+        message: "Rollback undo is unavailable",
+      });
+      return;
+    }
+    void props.backend
+      .checkpointRollback({ id: pending.safetyCheckpointID })
+      .then(
+        () => {
+          toast.show({ variant: "success", message: "Rollback undone" });
+          setViewFocus("main");
+        },
+        (error) => toast.error(error),
+      );
+  }
+
+  function undoChatRollback() {
+    const pending = state.pendingRollback;
+    if (!pending || pending.kind !== "chat") return;
+    chatInput()?.setText?.("");
+    dispatch({ type: "tui.rollback.undo" } as never);
+    setViewFocus("chat");
   }
 
   async function submit() {
@@ -1457,7 +1486,39 @@ function Shell(props: {
                 return;
               }
               dialog.push(() => (
-                <DialogCheckpoint backend={props.backend} turnID={turnID} />
+                <DialogCheckpoint
+                  backend={props.backend}
+                  turnID={turnID}
+                  onRestored={(restoredTurnID) => {
+                    const source = state.messages.find(
+                      (block) =>
+                        block.role === "user" &&
+                        block.id === `${restoredTurnID}:user`,
+                    );
+                    if (!source) return;
+                    composer()?.setText?.(source.text);
+                    setComposerText(source.text);
+                    composer()?.gotoBufferEnd();
+                    setViewFocus("main");
+                  }}
+                />
+              ));
+            }}
+            onToolRestore={(turnID, callID) => {
+              if (!props.backend.checkpointList) {
+                toast.show({
+                  variant: "warning",
+                  message:
+                    "Checkpoint management is unavailable in this runtime",
+                });
+                return;
+              }
+              dialog.push(() => (
+                <DialogCheckpoint
+                  backend={props.backend}
+                  turnID={turnID}
+                  stepID={`${turnID}:${callID}`}
+                />
               ));
             }}
             backend={props.backend}
@@ -1494,6 +1555,21 @@ function Shell(props: {
                 flexGrow={1}
                 width="100%"
               >
+                <Show when={state.pendingRollback?.kind === "main"}>
+                  <box
+                    flexDirection="row"
+                    justifyContent="space-between"
+                    paddingBottom={1}
+                  >
+                    <text fg={theme.theme.warning} wrapMode="word">
+                      Rollback pending — edit the restored message and send, or
+                      undo.
+                    </text>
+                    <text fg={theme.theme.warning} onMouseUp={undoMainRollback}>
+                      undo
+                    </text>
+                  </box>
+                </Show>
                 <box width="100%" flexDirection="row" alignItems="flex-end">
                   <textarea
                     ref={(value: TextareaRenderable) => {
@@ -1808,12 +1884,68 @@ function Shell(props: {
             onStop={() => {
               void props.backend.chatAbort?.();
             }}
+            onCopy={copyMessage}
+            pendingRollback={() => state.pendingRollback}
+            onUndoRollback={undoChatRollback}
+            onChatRollback={(messageID) => {
+              if (!props.backend.chatRollback) {
+                toast.show({
+                  variant: "warning",
+                  message: "Chat rollback is unavailable in this runtime",
+                });
+                return;
+              }
+              const source = state.chatMessages.find(
+                (block) =>
+                  block.role === "user" &&
+                  (block.id === `chat:${messageID}:user` ||
+                    block.id.startsWith(`chat:${messageID}:user:`)),
+              );
+              void DialogConfirm.show(
+                dialog,
+                "Rollback Chat",
+                "Roll the Chat conversation back to this message? This only affects Chat context; workspace and Main Agent state are not touched.",
+              ).then((confirmed) => {
+                if (!confirmed) return;
+                void props.backend.chatRollback!({
+                  toMessageID: messageID,
+                }).then(
+                  (result) => {
+                    toast.show({
+                      variant: "success",
+                      message: `Chat rolled back (removed ${result.removed} messages)`,
+                    });
+                    if (source?.text) {
+                      chatInput()?.setText?.(source.text);
+                      setViewFocus("chat");
+                    }
+                  },
+                  (error) => toast.error(error),
+                );
+              });
+            }}
             approvalRequest={() => {
               const request = activeModal(state.modal);
               if (request?.kind !== "approval") return undefined;
               return isLiveChatPlanApproval(request, state.facts.plans)
                 ? request
                 : undefined;
+            }}
+            onPlanRollback={(mailboxMessageID) => {
+              if (!props.backend.checkpointList) {
+                toast.show({
+                  variant: "warning",
+                  message:
+                    "Checkpoint management is unavailable in this runtime",
+                });
+                return;
+              }
+              dialog.push(() => (
+                <DialogCheckpoint
+                  backend={props.backend}
+                  stepID={`mailbox:${mailboxMessageID}`}
+                />
+              ));
             }}
             onPlanAccept={(planID) => {
               void props.backend.planAccept?.(planID).catch((error) =>
