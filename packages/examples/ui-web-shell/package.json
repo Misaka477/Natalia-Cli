@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/example-ui-web-shell",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@natalia/contracts": "workspace:*",
+    "@natalia/example-ui-web-plugin": "workspace:*",
+    "@natalia/ui-host": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "7.1.5"
+  }
+}
