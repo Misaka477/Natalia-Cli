@@ -2551,6 +2551,8 @@ export type RuntimeClient = {
     reasoningEffort?: RuntimeReasoningEffort;
   }): Promise<{ messageID: string }>;
   chatAbort?(): Promise<{ aborted: boolean }>;
+  chatModelProfile?(): Promise<ChatModelProfile>;
+  setChatModelProfile?(profile: ChatModelProfile): Promise<{ saved: boolean }>;
   /**
    * The durable Chat conversation, oldest first. `chat.rollback` truncates it
    * at a message boundary, so the projection returns the effective history.
@@ -2563,6 +2565,19 @@ export type RuntimeClient = {
   chatRollback?(input: {
     toMessageID: string;
   }): Promise<{ rolledBackTo: string; removed: number }>;
+};
+
+export type ChatModelProfile = {
+  normal?: {
+    modelID?: string;
+    variant?: string;
+    reasoningEffort?: RuntimeReasoningEffort;
+  };
+  expert?: {
+    modelID?: string;
+    variant?: string;
+    reasoningEffort?: RuntimeReasoningEffort;
+  };
 };
 
 export type ChatMessageRow = {

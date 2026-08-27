@@ -9,6 +9,10 @@ export type LocalTuiState = {
   activeAgent?: string;
   mcpEnabled: Record<string, boolean>;
   promptStash: PromptStashEntry[];
+  chatNormalModel?: { modelID?: string; variant?: string };
+  chatExpertModel?: { modelID?: string; variant?: string };
+  chatNormalReasoning?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  chatExpertReasoning?: "minimal" | "low" | "medium" | "high" | "xhigh";
 };
 
 export type PromptStashEntry = { input: string; timestamp: number };

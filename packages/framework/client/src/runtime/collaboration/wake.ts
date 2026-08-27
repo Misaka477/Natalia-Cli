@@ -11,6 +11,7 @@ import {
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   type ProviderModelController,
 } from "@natalia/runtime-services";
+import { providerForModel } from "@natalia/runtime";
 import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -68,12 +69,40 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     );
     if (!exec.provider || !controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
+    const expert = exec.advisorPending === true;
+    const expertProfile = exec.chatModelProfile?.expert;
+    let provider = exec.provider;
+    if (expert && expertProfile?.modelID) {
+      const config = ctx.ports.getTsRuntimeConfig();
+      provider =
+        (config &&
+          providerForModel(
+            config,
+            expertProfile.modelID,
+            expertProfile.variant,
+            {
+              reasoningEffort: expertProfile.reasoningEffort,
+            },
+          )) ||
+        provider;
+      publishForSession(exec, {
+        type: "chat.message.added",
+        id: `${responseMessageID}:advisor`,
+        messageID: responseMessageID,
+        role: "user",
+        text: "(internal advisor request: Natalia hit a problem and needs expert guidance. Read the Main context and give concise technical advice.)",
+        at: new Date().toISOString(),
+      });
+      exec.advisorPending = false;
+    }
     try {
       await controller.runChatTurn({
         sessionID: exec.session.id as SessionID,
         text: "",
         responseMessageID,
         internal: true,
+        provider,
+        reasoningEffort: expertProfile?.reasoningEffort,
       });
     } catch (cause) {
       publishForSession(exec, {

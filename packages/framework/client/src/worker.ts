@@ -117,6 +117,8 @@ export const WORKER_ROUTE_MEMBERS = {
   "chat.submit": "chatSubmit",
   "chat.abort": "chatAbort",
   "chat.rollback": "chatRollback",
+  "chat.model.profile": "chatModelProfile",
+  "chat.model.profile.set": "setChatModelProfile",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /** The member names this channel routes, for reachability reporting. */
@@ -211,6 +213,8 @@ type WorkerRequest = {
     | "chat.abort"
     | "chat.submit"
     | "chat.rollback"
+    | "chat.model.profile"
+    | "chat.model.profile.set"
     | "flow.save"
     | "flow.delete"
     | "task.save"
@@ -807,6 +811,16 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["chatRollback"]>>
       >;
     },
+    async chatModelProfile() {
+      return (await request("chat.model.profile")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["chatModelProfile"]>>
+      >;
+    },
+    async setChatModelProfile(profile) {
+      return (await request("chat.model.profile.set", profile)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["setChatModelProfile"]>>
+      >;
+    },
     async dispose() {
       await request("dispose");
       port.removeEventListener("message", onMessage);
@@ -1130,6 +1144,12 @@ export async function handleWorkerRequest(
   if (request.method === "chat.rollback")
     return await client.chatRollback?.(
       request.value as { toMessageID: string },
+    );
+  if (request.method === "chat.model.profile")
+    return await client.chatModelProfile?.();
+  if (request.method === "chat.model.profile.set")
+    return await client.setChatModelProfile?.(
+      request.value as import("@natalia/contracts").ChatModelProfile,
     );
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);

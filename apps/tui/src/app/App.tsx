@@ -595,6 +595,26 @@ function Shell(props: {
     );
   }
 
+  function syncChatModelProfileToBackend() {
+    const profile: import("@natalia/contracts").ChatModelProfile = {
+      normal: chatNormalModel().modelID
+        ? {
+            modelID: chatNormalModel().modelID,
+            variant: chatNormalModel().variant,
+            reasoningEffort: chatNormalReasoning(),
+          }
+        : undefined,
+      expert: chatExpertModel().modelID
+        ? {
+            modelID: chatExpertModel().modelID,
+            variant: chatExpertModel().variant,
+            reasoningEffort: chatExpertReasoning(),
+          }
+        : undefined,
+    };
+    void props.backend.setChatModelProfile?.(profile).catch(() => undefined);
+  }
+
   async function refreshQuickControls() {
     const root = props.workspaceRoot ?? process.cwd();
     const [selection, profiles, reasoning] = await Promise.all([
@@ -609,6 +629,19 @@ function Shell(props: {
 
   onMount(() => {
     void refreshQuickControls().catch(() => undefined);
+  });
+
+  createEffect(() => {
+    if (!local.ready) return;
+    if (local.state.chatNormalModel)
+      setChatNormalModel(local.state.chatNormalModel);
+    if (local.state.chatExpertModel)
+      setChatExpertModel(local.state.chatExpertModel);
+    if (local.state.chatNormalReasoning)
+      setChatNormalReasoning(local.state.chatNormalReasoning);
+    if (local.state.chatExpertReasoning)
+      setChatExpertReasoning(local.state.chatExpertReasoning);
+    syncChatModelProfileToBackend();
   });
 
   createEffect(() => {
@@ -711,8 +744,14 @@ function Shell(props: {
         }
         onPersist={async () => true}
         onSelected={(selection) => {
-          if (kind === "normal") setChatNormalModel(selection);
-          else setChatExpertModel(selection);
+          if (kind === "normal") {
+            setChatNormalModel(selection);
+            local.setChatNormalModel(selection);
+          } else {
+            setChatExpertModel(selection);
+            local.setChatExpertModel(selection);
+          }
+          syncChatModelProfileToBackend();
         }}
       />
     ));
@@ -757,8 +796,14 @@ function Shell(props: {
           const reasoningEffort = (option.value || undefined) as
             | ReasoningEffort
             | undefined;
-          if (kind === "normal") setChatNormalReasoning(reasoningEffort);
-          else setChatExpertReasoning(reasoningEffort);
+          if (kind === "normal") {
+            setChatNormalReasoning(reasoningEffort);
+            local.setChatNormalReasoning(reasoningEffort);
+          } else {
+            setChatExpertReasoning(reasoningEffort);
+            local.setChatExpertReasoning(reasoningEffort);
+          }
+          syncChatModelProfileToBackend();
         }}
       />
     ));
@@ -1947,10 +1992,11 @@ function Shell(props: {
             }}
             onInputRef={setChatInput}
             onSend={(text) => {
-              const activeChatModel = chatUseExpert()
+              const usedExpert = chatUseExpert();
+              const activeChatModel = usedExpert
                 ? chatExpertModel()
                 : chatNormalModel();
-              const activeReasoning = chatUseExpert()
+              const activeReasoning = usedExpert
                 ? chatExpertReasoning()
                 : chatNormalReasoning();
               void props.backend
@@ -1962,6 +2008,9 @@ function Shell(props: {
                   ...(activeReasoning
                     ? { reasoningEffort: activeReasoning }
                     : {}),
+                })
+                .then(() => {
+                  if (usedExpert) setChatUseExpert(false);
                 })
                 .catch((error) =>
                   toast.show({

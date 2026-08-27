@@ -363,6 +363,15 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read of the durable Chat conversation",
   },
+  chatModelProfile: {
+    refusal: "none",
+    note: "reads the Chat model profile",
+  },
+  setChatModelProfile: {
+    refusal: "value",
+    expressedBy: "saved",
+    note: "saves the Chat model profile for this runtime",
+  },
   chatRollback: {
     refusal: "value",
     expressedBy: "removed",

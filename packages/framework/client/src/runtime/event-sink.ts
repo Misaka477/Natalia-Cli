@@ -48,6 +48,7 @@ export function createEventSink(
       settleMailboxAtBoundary,
       activateQueuedPlanAtBoundary,
       reconcileWorkspaceObservation,
+      requestNaviWake,
       toolEventTurnID,
       isSessionSnapshotTrigger,
       publishSessionSnapshot,
@@ -193,6 +194,15 @@ export function createEventSink(
     // is not a trigger, so this cannot recurse. Only a turn that finished on
     // purpose is a settlement: a cancelled/aborted/error turn did not complete
     // its context, so its delivered intents stay delivered for another chance.
+    if (
+      !event.agentID &&
+      event.type === "turn.finished" &&
+      exec?.session &&
+      event.stopReason === "error"
+    ) {
+      exec.advisorPending = true;
+      requestNaviWake(exec);
+    }
     if (
       !event.agentID &&
       event.type === "turn.finished" &&

@@ -22,6 +22,14 @@ export type LocalTuiContext = {
   selectAgent(agent?: string): void;
   stashPrompt(input: string): boolean;
   removeStash(index: number): void;
+  setChatNormalModel(model: { modelID?: string; variant?: string }): void;
+  setChatExpertModel(model: { modelID?: string; variant?: string }): void;
+  setChatNormalReasoning(
+    effort?: "minimal" | "low" | "medium" | "high" | "xhigh",
+  ): void;
+  setChatExpertReasoning(
+    effort?: "minimal" | "low" | "medium" | "high" | "xhigh",
+  ): void;
 };
 
 const LocalContext = createContext<LocalTuiContext>();
@@ -96,6 +104,22 @@ export function LocalProvider(props: ParentProps<{ workspaceRoot?: string }>) {
       setState("promptStash", (entries) =>
         entries.filter((_, current) => current !== index),
       );
+      persist();
+    },
+    setChatNormalModel(model) {
+      setState("chatNormalModel", model);
+      persist();
+    },
+    setChatExpertModel(model) {
+      setState("chatExpertModel", model);
+      persist();
+    },
+    setChatNormalReasoning(effort) {
+      setState("chatNormalReasoning", effort);
+      persist();
+    },
+    setChatExpertReasoning(effort) {
+      setState("chatExpertReasoning", effort);
       persist();
     },
   };

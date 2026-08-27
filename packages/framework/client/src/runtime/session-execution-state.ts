@@ -38,6 +38,8 @@ export type SessionExecutionState = {
   lastSubmitted?: SubmittedTurn;
   paused: boolean;
   pauseWaiters: Array<() => void>;
+  chatModelProfile?: import("@natalia/contracts").ChatModelProfile;
+  advisorPending?: boolean;
   injectedMailboxIDs: Set<string>;
   pendingChatUserMessages: Array<{ messageID: string; text: string }>;
 };

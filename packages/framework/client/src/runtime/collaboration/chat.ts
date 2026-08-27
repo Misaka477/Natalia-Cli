@@ -9,7 +9,12 @@ import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 type Surface = Pick<
   RuntimeServiceClient,
-  "chatSubmit" | "chatAbort" | "chatMessages" | "chatRollback"
+  | "chatSubmit"
+  | "chatAbort"
+  | "chatMessages"
+  | "chatRollback"
+  | "chatModelProfile"
+  | "setChatModelProfile"
 >;
 function redactToolOutput(output: string, redact: boolean | undefined) {
   if (!redact) return output;
@@ -54,6 +59,16 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         at: new Date().toISOString(),
       });
       return { rolledBackTo: input.toMessageID, removed };
+    },
+    async chatModelProfile() {
+      const exec = ctx.ports.getActiveExec();
+      return exec?.chatModelProfile ?? {};
+    },
+    async setChatModelProfile(profile) {
+      const exec = ctx.ports.getActiveExec();
+      if (!exec) return { saved: false };
+      exec.chatModelProfile = profile;
+      return { saved: true };
     },
     async chatAbort() {
       const exec = ctx.ports.getActiveExec();
