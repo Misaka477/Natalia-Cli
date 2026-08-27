@@ -1,7 +1,11 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
+  ATTACHMENT_SERVICE,
   PROVIDER_MODEL_CONTROLLER_SERVICE,
-  type ProviderModelController,
+} from "@natalia/runtime-services";
+import type {
+  AttachmentService,
+  ProviderModelController,
+  RuntimeServiceClient,
 } from "@natalia/runtime-services";
 import { providerForModel } from "@natalia/runtime";
 import type { RuntimeReasoningEffort, SessionID } from "@natalia/contracts";
@@ -84,8 +88,13 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       text: string;
       model?: { modelID?: string; variant?: string };
       reasoningEffort?: RuntimeReasoningEffort;
-      attachments?: import("@natalia/contracts").LocalAttachment[];
+      attachments?: string[];
     }) {
+      const storedAttachments = input.attachments?.length
+        ? await ctx.ports
+            .resolveService<AttachmentService>(ATTACHMENT_SERVICE)
+            ?.store(input.attachments)
+        : undefined;
       await ctx.ports.getReady();
       const text = typeof input.text === "string" ? input.text.trim() : "";
       const exec = ctx.ports.getActiveExec();
@@ -128,7 +137,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           responseMessageID,
           provider,
           reasoningEffort: input.reasoningEffort,
-          attachments: input.attachments,
+          attachments: storedAttachments,
         });
       } catch (cause) {
         const detail = cause instanceof Error ? cause.message : String(cause);

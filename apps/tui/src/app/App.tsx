@@ -83,7 +83,9 @@ import {
   type ConfigWriteScope,
 } from "@natalia/config";
 import { statSync } from "node:fs";
-import { relative as relativePath, resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, relative as relativePath, resolve } from "node:path";
+import { readClipboardImage } from "../clipboard";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
 import {
@@ -463,6 +465,9 @@ function Shell(props: {
   const [chatExpertReasoning, setChatExpertReasoning] =
     createSignal<ReasoningEffort>();
   const [chatUseExpert, setChatUseExpert] = createSignal(false);
+  const [chatAttachmentPaths, setChatAttachmentPaths] = createSignal<string[]>(
+    [],
+  );
   const [quickProfile, setQuickProfile] = createSignal("ask");
   let composerControlTimer: ReturnType<typeof setTimeout> | undefined;
   let ignoreStopUntil = 0;
@@ -866,6 +871,71 @@ function Shell(props: {
 
   function openAttachmentManager() {
     onCommand("prompt.attachment.list");
+  }
+
+  function openChatAttachmentManager() {
+    dialog.push(() => (
+      <DialogAttachment
+        paths={chatAttachmentPaths}
+        add={() => addChatAttachment()}
+        pasteImage={() => void pasteChatAttachmentImage()}
+        remove={(path) =>
+          setChatAttachmentPaths((current) =>
+            current.filter((item) => item !== path),
+          )
+        }
+      />
+    ));
+  }
+
+  function addChatAttachment() {
+    dialog.push(() => (
+      <DialogPrompt
+        title="Queue Chat attachment"
+        placeholder="workspace-relative path, e.g. assets/diagram.png"
+        validate={(value) => {
+          const path = value.trim();
+          if (!path) return "Attachment path is required";
+          if (path.startsWith("/") || path.split(/[\/]/u).includes(".."))
+            return "Path must remain within the workspace";
+          return undefined;
+        }}
+        onConfirm={(value) => {
+          const path = value.trim();
+          setChatAttachmentPaths((current) =>
+            current.includes(path) ? current : [...current, path],
+          );
+          dialog.pop();
+          setViewFocus("chat");
+        }}
+      />
+    ));
+  }
+
+  async function pasteChatAttachmentImage() {
+    const root = props.workspaceRoot ?? process.cwd();
+    const bytes = await readClipboardImage();
+    if (!bytes || !bytes.length) {
+      toast.show({
+        variant: "error",
+        message:
+          "no image on the system clipboard (needs wl-paste/xclip on Linux, osascript on macOS, or PowerShell on Windows)",
+      });
+      return;
+    }
+    const dir = join(root, ".natalia", "attachments");
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    const filename = `chat-pasted-${Date.now()}.png`;
+    await writeFile(join(dir, filename), bytes);
+    const relative = `.natalia/attachments/${filename}`;
+    setChatAttachmentPaths((current) =>
+      current.includes(relative) ? current : [...current, relative],
+    );
+    toast.show({
+      variant: "success",
+      message: `queued clipboard image: ${relative}`,
+    });
+    setViewFocus("chat");
   }
 
   function undoMainRollback() {
@@ -1999,6 +2069,7 @@ function Shell(props: {
               const activeReasoning = usedExpert
                 ? chatExpertReasoning()
                 : chatNormalReasoning();
+              const attachments = chatAttachmentPaths();
               void props.backend
                 .chatSubmit?.({
                   text,
@@ -2008,6 +2079,10 @@ function Shell(props: {
                   ...(activeReasoning
                     ? { reasoningEffort: activeReasoning }
                     : {}),
+                  ...(attachments.length ? { attachments } : {}),
+                })
+                .then(() => {
+                  if (attachments.length) setChatAttachmentPaths([]);
                 })
                 .then(() => {
                   if (usedExpert) setChatUseExpert(false);
@@ -2027,6 +2102,8 @@ function Shell(props: {
             onCopy={copyMessage}
             pendingRollback={() => state.pendingRollback}
             onUndoRollback={undoChatRollback}
+            attachments={chatAttachmentPaths}
+            onOpenAttachment={openChatAttachmentManager}
             chatModelLabel={() =>
               compactModelLabel(
                 chatUseExpert()

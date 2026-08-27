@@ -2549,7 +2549,7 @@ export type RuntimeClient = {
     /** Optional per-turn Chat model override (normal or expert profile). */
     model?: { modelID?: string; variant?: string };
     reasoningEffort?: RuntimeReasoningEffort;
-    attachments?: LocalAttachment[];
+    attachments?: string[];
   }): Promise<{ messageID: string }>;
   chatAbort?(): Promise<{ aborted: boolean }>;
   chatModelProfile?(): Promise<ChatModelProfile>;
