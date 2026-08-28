@@ -3,7 +3,7 @@ import { Show, createSignal, onCleanup, onMount } from "solid-js";
 export function WorkspacePanel(props: {
   open: boolean;
   onClose: () => void;
-  onAdd?: (path: string) => unknown;
+  onAdd?: (path: string) => Promise<void> | void;
   error?: string;
 }) {
   const [path, setPath] = createSignal("");
@@ -54,9 +54,16 @@ export function WorkspacePanel(props: {
                 type="button"
                 class="neu-form-btn neu-form-primary"
                 onClick={() => {
-                  props.onAdd?.(path().trim());
-                  props.onClose();
-                  setPath("");
+                  const result = props.onAdd?.(path().trim());
+                  if (result && typeof (result as Promise<void>).then === "function") {
+                    void (result as Promise<void>).then(() => {
+                      props.onClose();
+                      setPath("");
+                    });
+                  } else {
+                    props.onClose();
+                    setPath("");
+                  }
                 }}
               >
                 添加

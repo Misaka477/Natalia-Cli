@@ -581,26 +581,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={workspaceOpen()}
         onClose={() => setWorkspaceOpen(false)}
         error={workspaceError()}
-        onAdd={(path) => {
+        onAdd={async (path) => {
           setWorkspaceError("");
           if (!path) return;
           if (!props.ctx.runtime.workspaceAdd) {
             setWorkspaceError("当前 runtime 不支持 workspaceAdd，请确认连接的是 Natalia runtime serve");
-            return;
+            throw new Error("unsupported workspaceAdd");
           }
-          void (props.ctx.runtime.workspaceAdd({ path }) as Promise<WorkspaceSummary>)
-            .then((workspace) => {
-              setWorkspaces((prev) =>
-                prev.some((item) => item.workspaceID === workspace.workspaceID)
-                  ? prev
-                  : [...prev, workspace],
-              );
-            })
-            .catch((error: unknown) => {
-              setWorkspaceError(
-                error instanceof Error ? error.message : String(error),
-              );
-            });
+          const workspace = (await props.ctx.runtime.workspaceAdd({ path })) as WorkspaceSummary;
+          setWorkspaces((prev) =>
+            prev.some((item) => item.workspaceID === workspace.workspaceID)
+              ? prev
+              : [...prev, workspace],
+          );
         }}
       />
       <SessionActionsPanel
