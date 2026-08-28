@@ -15,6 +15,7 @@ import { nataliaNeuStyles } from "./styles-neu";
 import { nataliaNeuLightStyles } from "./styles-neu-light";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { WorkspacePanel } from "./workspace-panel";
+import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { CheckpointPanel } from "./checkpoint-panel";
 import { PermissionPanel } from "./permission-panel";
 import { StatusPanel } from "./status-panel";
@@ -140,6 +141,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   );
   const [sessionMenuOpen, setSessionMenuOpen] = createSignal(false);
   const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
   const [checkpointOpen, setCheckpointOpen] = createSignal(false);
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
@@ -410,6 +412,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               >
                 工作区
               </button>
+              <button
+                type="button"
+                class="neu-session-toolbar-btn"
+                onClick={() => setWorkspaceSettingsOpen(true)}
+              >
+                设置
+              </button>
             </div>
             <div class="neu-sidebar-content">
               <SessionTree
@@ -567,6 +576,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setPermissionOpen(false);
           setCurrentApproval(null);
         }}
+      />
+      <WorkspaceSettingsPanel
+        open={workspaceSettingsOpen()}
+        workspaceID={workspaces().find((entry) => entry.status === "active")?.workspaceID}
+        runtime={props.ctx.runtime}
+        onClose={() => setWorkspaceSettingsOpen(false)}
       />
       <WorkspacePanel
         open={workspaceOpen()}
