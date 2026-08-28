@@ -242,6 +242,7 @@ export function ExtensionSettingsContent(props: {
                   <button
                     type="button"
                     class="neu-extension-btn neu-extension-remove"
+                    disabled={section.id === "plugins" && !props.onRemovePlugin}
                     onClick={() => removeRow(section.id, index())}
                   >
                     删除
@@ -322,9 +323,14 @@ export function ExtensionSettingsContent(props: {
             </Show>
 
             <div class="neu-extension-actions">
-              <button type="button" class="neu-extension-add" onClick={() => setAddingTo(section.id)}>
-                {section.addLabel}
-              </button>
+              <Show
+                when={section.id !== "plugins" || props.onAddPlugin}
+                fallback={<span class="neu-extension-disabled">Web 端暂不支持安装插件</span>}
+              >
+                <button type="button" class="neu-extension-add" onClick={() => setAddingTo(section.id)}>
+                  {section.addLabel}
+                </button>
+              </Show>
             </div>
           </div>
         )}

@@ -1,4 +1,5 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show, onMount } from "solid-js";
+import type { RuntimeClient, RuntimeNativeTerminalSession } from "@natalia/contracts";
 
 export type RightPanelTab = "review" | "terminal" | "browser" | "file";
 
@@ -63,80 +64,7 @@ export function RightPanel(props: RightPanelProps) {
     </aside>
   );
 }
-
 export function ReviewPane() {
-  const files = [
-    {
-      name: "apps/tui/src/app/App.tsx",
-      status: "M",
-      additions: 14490,
-      deletions: 1039,
-    },
-    {
-      name: "apps/tui/src/runtime.tsx",
-      status: "M",
-      additions: 458,
-      deletions: 48,
-    },
-    {
-      name: "apps/tui/src/context/theme.tsx",
-      status: "M",
-      additions: 67,
-      deletions: 12,
-    },
-    { name: "src/utils/helpers.ts", status: "A", additions: 120, deletions: 0 },
-    {
-      name: "src/components/NewPanel.tsx",
-      status: "A",
-      additions: 340,
-      deletions: 0,
-    },
-  ];
-  const [selectedFile, setSelectedFile] = createSignal(files[0]);
-  const [fileWidth, setFileWidth] = createSignal(140);
-  function startFileResize(event: PointerEvent) {
-    event.preventDefault();
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture?.(event.pointerId);
-    const startX = event.clientX;
-    const startWidth = fileWidth();
-    const move = (next: PointerEvent) =>
-      setFileWidth(
-        Math.max(120, Math.min(190, startWidth + next.clientX - startX)),
-      );
-    const finish = (next: PointerEvent) => {
-      target.releasePointerCapture?.(next.pointerId);
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", finish);
-      target.removeEventListener("pointercancel", finish);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", finish);
-    target.addEventListener("pointercancel", finish);
-  }
-  const diffLines = [
-    { type: "context", text: 'import { render } from "solid-js/web";' },
-    { type: "removed", text: 'import { openDB } from "idb";' },
-    { type: "added", text: 'import { createDB } from "@solid-primitives/db";' },
-    { type: "context", text: "" },
-    { type: "context", text: "export function createStore<T>(key: string) {" },
-    { type: "removed", text: "const db = await openDB(key, 1);" },
-    { type: "added", text: "const db = await createDB<T>({ name: key });" },
-    { type: "context", text: "return new Proxy(db, {" },
-    {
-      type: "removed",
-      text: "get(target, prop) { return target.get(prop as string); }",
-    },
-    {
-      type: "added",
-      text: "get(target, prop) { return target.read(prop as string); }",
-    },
-    { type: "context", text: "});" },
-    { type: "context", text: "}" },
-  ];
-  const totalAdditions = files.reduce((sum, file) => sum + file.additions, 0);
-  const totalDeletions = files.reduce((sum, file) => sum + file.deletions, 0);
-
   return (
     <div class="review-pane">
       <div class="review-header">
@@ -152,160 +80,44 @@ export function ReviewPane() {
           <span>Changes</span>
         </div>
         <div class="review-meta">
-          <span class="review-count">{files.length} files</span>
-          <span class="review-additions">+{totalAdditions.toLocaleString()}</span>
-          <span class="review-deletions">-{totalDeletions.toLocaleString()}</span>
+          <span class="review-count">0 files</span>
+          <span class="review-additions">+0</span>
+          <span class="review-deletions">-0</span>
         </div>
       </div>
       <div class="review-body">
-        <div class="review-files" data-narrow={fileWidth() < 170} style={{ width: `${fileWidth()}px` }}>
-          <div class="review-files-heading">Files changed</div>
-          <For each={files}>
-            {(file) => (
-              <button
-                type="button"
-                class="review-file-row"
-                data-active={selectedFile()?.name === file.name}
-                onClick={() => setSelectedFile(file)}
-              >
-                <span
-                  class={`review-file-status ${file.status === "A" ? "is-added" : "is-modified"}`}
-                >
-                  {file.status}
-                </span>
-                <span class="review-file-name">{file.name}</span>
-                <span class="review-file-stats">
-                  <span class="review-additions">
-                    +{file.additions.toLocaleString()}
-                  </span>
-                  <span class="review-deletions">
-                    -{file.deletions.toLocaleString()}
-                  </span>
-                </span>
-              </button>
-            )}
-          </For>
-        </div>
-        <div
-          class="review-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          onPointerDown={startFileResize}
-        />
-        <div class="review-diff">
-          <div class="review-diff-header">
-            <span class="review-diff-path">{selectedFile()?.name}</span>
-            <span class="review-diff-actions">
-              <button type="button" class="review-icon-btn" title="Copy path">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <rect
-                    x="5"
-                    y="5"
-                    width="7"
-                    height="7"
-                    rx="1"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                  />
-                  <path
-                    d="M3 8H2V2C2 1.44772 2.44772 1 3 1H9V2"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                  />
-                </svg>
-              </button>
-              <button type="button" class="review-icon-btn" title="Open file">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path
-                    d="M5 9L9 5M9 5H6.5M9 5V7.5"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </button>
-            </span>
-          </div>
-          <div class="review-diff-content">
-            <For each={diffLines}>
-              {(line, idx) => (
-                <div class={`review-diff-line is-${line.type}`}>
-                  <span class="review-diff-pos">{idx() + 1}</span>
-                  <span class="review-diff-sign">
-                    {line.type === "added"
-                      ? "+"
-                      : line.type === "removed"
-                        ? "-"
-                        : " "}
-                  </span>
-                  <span class="review-diff-text">{line.text || " "}</span>
-                </div>
-              )}
-            </For>
-          </div>
-          <div class="review-diff-footer">
-            <button type="button" class="review-commit-btn">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path
-                  d="M7 1V7M7 7L4 4M7 7L10 4M3 10H11C11.5523 10 12 10.4477 12 11V12C12 12.5523 11.5523 13 11 13H3C2.44772 13 2 12.5523 2 12V11C2 10.4477 2.44772 10 3 10Z"
-                  stroke="currentColor"
-                  stroke-width="1.3"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              提交或推送
-            </button>
-          </div>
+        <div class="review-empty">
+          <div class="review-empty-icon">⊞</div>
+          <p>暂无 diff 数据。运行时提供 diff/checkpoint 能力后，这里会显示真实的变更列表。</p>
         </div>
       </div>
     </div>
   );
 }
 
-export function TerminalPane() {
-  const lines = [
-    {
-      text: "(base) aquama@zephyrus-M16: ~/Development/Natalia_Project/natalia-cli$",
-      type: "prompt" as const,
-    },
-    { text: "$ bun test --timeout 60000 \\", type: "command" as const },
-    {
-      text: "  ./test/workflow-execution.test.ts \\",
-      type: "command" as const,
-    },
-    {
-      text: "  ./test/prompt-autocomplete.test.ts \\",
-      type: "command" as const,
-    },
-    {
-      text: "  ./test/prompt-autocomplete-ui.test.tsx",
-      type: "command" as const,
-    },
-    { text: "", type: "output" as const },
-    { text: "纯文本", type: "header" as const },
-    { text: "8 pass", type: "success" as const },
-    { text: "0 fail", type: "success" as const },
-  ];
+export function TerminalPane(props: { runtime?: RuntimeClient } = {}) {
+  const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
+  onMount(() => {
+    void props.runtime?.nativeTerminalList?.().then((value) => {
+      if (value) setSessions(value);
+    });
+  });
 
   return (
     <div class="terminal-pane">
       <div class="terminal-output">
-        <For each={lines}>
-          {(line) => (
-            <div class={`terminal-line terminal-line-${line.type}`}>
-              {line.text}
+        <For each={sessions()}>
+          {(session) => (
+            <div class="terminal-line terminal-line-output">
+              <span class="terminal-prompt">{session.command}</span>
+              <span class="terminal-line terminal-line-success">{session.status}</span>
+              {session.cwd ? <span class="terminal-line terminal-line-header"> · {session.cwd}</span> : null}
             </div>
           )}
         </For>
-        <div class="terminal-input-line">
-          <span class="terminal-prompt">
-            (base)
-            aquama@zephyrus-M16:~/Development/Natalia_Project/natalia-cli$
-          </span>
-          <span class="terminal-cursor" />
-        </div>
+        <Show when={!sessions().length}>
+          <div class="terminal-line terminal-line-header">暂无连接的原生终端会话</div>
+        </Show>
       </div>
     </div>
   );

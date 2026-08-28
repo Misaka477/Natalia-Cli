@@ -66,7 +66,7 @@ function SessionTree(props: {
   selected: string;
   sessions: RuntimeSessionSummary[];
   workspaces: WorkspaceSummary[];
-  onSelect: (name: string) => void;
+  onSelect: (id: string, name: string) => void;
 }) {
   const groups = createMemo(() => {
     const byWorkspace = new Map<string, RuntimeSessionSummary[]>();
@@ -81,6 +81,7 @@ function SessionTree(props: {
     return props.workspaces.map((workspace) => ({
       workspace: workspace.title,
       sessions: (byWorkspace.get(workspace.workspaceID) ?? []).map((session) => ({
+        id: session.id,
         name: session.title,
         status: session.status ?? (session.cancelled ? "error" : session.resumable ? "idle" : "running"),
       })),
@@ -104,7 +105,7 @@ function SessionTree(props: {
                   selected={props.selected === session.name}
                   status={session.status}
                   depth={1}
-                  onClick={() => props.onSelect(session.name)}
+                  onClick={() => props.onSelect(session.id, session.name)}
                 />
               )}
             </For>
@@ -127,6 +128,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
   const [selectedSession, setSelectedSession] = createSignal("");
+  const [selectedSessionID, setSelectedSessionID] = createSignal("");
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
   const [workspaces, setWorkspaces] = createSignal<WorkspaceSummary[]>([]);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
@@ -164,7 +166,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const sessions = await props.ctx.runtime.sessionList?.();
     if (sessions) {
       setSessionList(sessions);
-      if (!selectedSession() && sessions.length) {
+      if (!selectedSessionID() && sessions.length) {
+        setSelectedSessionID(sessions[0].id);
         setSelectedSession(sessions[0].title);
       }
     }
@@ -439,7 +442,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 selected={selectedSession()}
                 sessions={sessionList()}
                 workspaces={workspaces()}
-                onSelect={setSelectedSession}
+                onSelect={(id, name) => {
+                  setSelectedSessionID(id);
+                  setSelectedSession(name);
+                }}
               />
             </div>
           </aside>
@@ -560,7 +566,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <ReviewPane />
               </Show>
               <Show when={rightTab() === "terminal"}>
-                <TerminalPane />
+                <TerminalPane runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "files"}>
                 <FileEditor transport={props.ctx.transport} runtime={props.ctx.runtime} />
@@ -653,21 +659,45 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onClose={() => setSessionMenuOpen(false)}
         onNew={async () => {
           await props.ctx.runtime.sessionNew?.();
-          const sessions = await props.ctx.runtime.sessionList?.();
-          if (sessions) setSessionList(sessions);
+          await refreshSessions();
         }}
         onFork={() =>
           props.ctx.runtime.sessionDuplicate?.(
-            state().sessionID ?? "current",
+            selectedSessionID() || state().sessionID || "current",
             `Fork of ${selectedSession()}`,
           )
         }
+        onRename={async () => {
+          if (!selectedSessionID()) return;
+          const title = window.prompt("新标题", selectedSession());
+          if (!title) return;
+          await props.ctx.runtime.sessionRename?.(selectedSessionID(), title);
+          await refreshSessions();
+        }}
+        onPin={async () => {
+          if (!selectedSessionID()) return;
+          const target = sessionList().find((entry) => entry.id === selectedSessionID());
+          await props.ctx.runtime.sessionPin?.(selectedSessionID(), !target?.pinned);
+          await refreshSessions();
+        }}
+        onAttach={async () => {
+          if (!selectedSessionID()) return;
+          await props.ctx.runtime.sessionAttach?.(selectedSessionID());
+          await refreshSessions();
+        }}
         onSnapshot={() => props.ctx.runtime.snapshot()}
         onRollback={() =>
           props.ctx.runtime.checkpointRollback?.({
             id: state().checkpoints[state().checkpoints.length - 1]?.id ?? "",
           })
         }
+        onDelete={async () => {
+          if (!selectedSessionID()) return;
+          await props.ctx.runtime.sessionDelete?.(selectedSessionID());
+          setSelectedSessionID("");
+          setSelectedSession("");
+          await refreshSessions();
+        }}
       />
       <CheckpointPanel
         open={checkpointOpen()}
@@ -775,16 +805,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }
         onAddMcp={(input) => props.ctx.runtime.mcpServerAdd?.(input)}
         onRemoveMcp={(name) => props.ctx.runtime.mcpServerRemove?.(name)}
-        onAddPlugin={(spec) =>
-          (props.ctx.runtime as RuntimeClient & {
-            pluginInstall(input: { spec: string }): Promise<unknown>;
-          }).pluginInstall?.({ spec })
-        }
-        onRemovePlugin={(name) =>
-          (props.ctx.runtime as RuntimeClient & {
-            pluginUninstall(pluginID: string): Promise<unknown>;
-          }).pluginUninstall?.(name)
-        }
       />
     </div>
   );
