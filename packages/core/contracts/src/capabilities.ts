@@ -126,6 +126,10 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "workspaceAdd",
     "workspaceRemove",
     "workspaceActivate",
+    "workspacePermissionGet",
+    "workspacePermissionSet",
+    "workspaceToolGet",
+    "workspaceToolSet",
   ],
   /** The native terminal host, including secure input and approval scopes. */
   nativeTerminal: [

@@ -142,6 +142,10 @@ export const RPC_ROUTE_MEMBERS = {
   "workspace.add": "workspaceAdd",
   "workspace.remove": "workspaceRemove",
   "workspace.activate": "workspaceActivate",
+  "workspace.permission.get": "workspacePermissionGet",
+  "workspace.permission.set": "workspacePermissionSet",
+  "workspace.tool.get": "workspaceToolGet",
+  "workspace.tool.set": "workspaceToolSet",
   "checkpoint.list": "checkpointList",
   "checkpoint.preview": "checkpointPreview",
   "checkpoint.rollback": "checkpointRollback",
@@ -857,6 +861,53 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.workspaceActivate?.(workspaceID),
+      };
+    }
+
+    if (body.method === "workspace.permission.get") {
+      optionsGuard(client, "workspacePermissionGet");
+      const workspaceID = stringParam(body.params, "workspaceID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspacePermissionGet?.(workspaceID),
+      };
+    }
+    if (body.method === "workspace.permission.set") {
+      optionsGuard(client, "workspacePermissionSet");
+      const workspaceID = stringParam(body.params, "workspaceID");
+      if (!body.params || typeof body.params.settings !== "object" || body.params.settings === null)
+        throw invalidParams("workspace.permission.set.params.settings must be an object");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspacePermissionSet?.(
+          workspaceID,
+          body.params.settings as never,
+        ),
+      };
+    }
+    if (body.method === "workspace.tool.get") {
+      optionsGuard(client, "workspaceToolGet");
+      const workspaceID = stringParam(body.params, "workspaceID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceToolGet?.(workspaceID),
+      };
+    }
+    if (body.method === "workspace.tool.set") {
+      optionsGuard(client, "workspaceToolSet");
+      const workspaceID = stringParam(body.params, "workspaceID");
+      if (!body.params || typeof body.params.settings !== "object" || body.params.settings === null)
+        throw invalidParams("workspace.tool.set.params.settings must be an object");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceToolSet?.(
+          workspaceID,
+          body.params.settings as never,
+        ),
       };
     }
 

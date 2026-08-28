@@ -1827,6 +1827,16 @@ export type RuntimeClient = {
   workspaceRemove?(workspaceID: string): Promise<{ removed: boolean }>;
   /** Makes a workspace root the active target for runtime operations. */
   workspaceActivate?(workspaceID: string): Promise<WorkspaceSummary>;
+  workspacePermissionGet?(workspaceID: string): Promise<WorkspacePermissionSettings>;
+  workspacePermissionSet?(
+    workspaceID: string,
+    settings: WorkspacePermissionSettings,
+  ): Promise<WorkspacePermissionSettings>;
+  workspaceToolGet?(workspaceID: string): Promise<WorkspaceToolSettings>;
+  workspaceToolSet?(
+    workspaceID: string,
+    settings: WorkspaceToolSettings,
+  ): Promise<WorkspaceToolSettings>;
   workspaceGlob?(input: {
     pattern: string;
     path?: string;

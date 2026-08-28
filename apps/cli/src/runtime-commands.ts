@@ -1,6 +1,8 @@
 import {
   createRealRuntimeClient,
   createUiAdapterHost,
+  createWorkspaceManager,
+  createWorkspaceRuntimeClient,
   newHeadlessExecution,
   plainRuntimeEvent,
   type UiAdapterHost,
@@ -15,9 +17,11 @@ export async function handleRuntimeCommand(argv: string[]) {
   const command = argv[0];
   if (command === "serve" || command === "--serve") {
     const port = parseServePort(argv);
-    const client = createRealRuntimeClient({
+    const manager = createWorkspaceManager({
       pluginStoreRoot: pluginStoreRoot(),
     });
+    await manager.add({ path: process.cwd(), title: "Natalia CLI" });
+    const client = createWorkspaceRuntimeClient(manager);
     const transport = createHttpTransportHost({
       client,
       port,
@@ -33,7 +37,7 @@ export async function handleRuntimeCommand(argv: string[]) {
     );
     await waitSignal();
     await transport.close();
-    await client.dispose?.();
+    await manager.dispose();
     return true;
   }
   if (command === "run" || command === "--once") {

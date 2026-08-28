@@ -174,6 +174,16 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "workspace root policy refuses",
   },
+  workspacePermissionGet: { refusal: "none", note: "pure read" },
+  workspacePermissionSet: {
+    refusal: "error",
+    note: "workspace permission policy refuses",
+  },
+  workspaceToolGet: { refusal: "none", note: "pure read" },
+  workspaceToolSet: {
+    refusal: "error",
+    note: "workspace tool policy refuses",
+  },
 
   // --- nativeTerminal ---
   // No routes until the API plan's P0-C, which is also when the I2 interlock's

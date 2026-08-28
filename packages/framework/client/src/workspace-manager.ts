@@ -1,7 +1,8 @@
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import type { WorkspaceSummary } from "@natalia/contracts";
+import type { WorkspaceSummary, WorkspacePermissionSettings, WorkspaceToolSettings } from "@natalia/contracts";
 import { createRealRuntimeClient } from "./runtime/main";
 import type { RealRuntimeClientOptions } from "./runtime/options";
 
@@ -16,7 +17,66 @@ export type WorkspaceRuntime = {
   title: string;
   client: RuntimeServiceClient;
   status: WorkspaceSummary["status"];
+  permissionSettings: WorkspacePermissionSettings;
+  toolSettings: WorkspaceToolSettings;
 };
+
+function workspaceSettingsPath(root: string) {
+  return join(root, ".natalia", "workspace-settings.json");
+}
+
+async function readSettings(root: string): Promise<{
+  permissionSettings: WorkspacePermissionSettings;
+  toolSettings: WorkspaceToolSettings;
+}> {
+  try {
+    const raw = JSON.parse(
+      await readFile(workspaceSettingsPath(root), "utf8"),
+    ) as Partial<{
+      permissionSettings?: WorkspacePermissionSettings;
+      toolSettings?: WorkspaceToolSettings;
+    }>;
+    return {
+      permissionSettings: raw.permissionSettings ?? {
+        permissionProfile: "default",
+        approval: "ask",
+      },
+      toolSettings: raw.toolSettings ?? {
+        enabledTools: [],
+        disabledTools: [],
+      },
+    };
+  } catch {
+    return {
+      permissionSettings: {
+        permissionProfile: "default",
+        approval: "ask",
+      },
+      toolSettings: {
+        enabledTools: [],
+        disabledTools: [],
+      },
+    };
+  }
+}
+
+async function writeSettings(
+  root: string,
+  update: {
+    permissionSettings?: WorkspacePermissionSettings;
+    toolSettings?: WorkspaceToolSettings;
+  },
+) {
+  const path = workspaceSettingsPath(root);
+  const current = await readSettings(root);
+  const next = {
+    permissionSettings: update.permissionSettings ?? current.permissionSettings,
+    toolSettings: update.toolSettings ?? current.toolSettings,
+  };
+  await mkdir(join(root, ".natalia"), { recursive: true, mode: 0o700 });
+  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  return next;
+}
 
 export type WorkspaceManager = {
   list(): Promise<WorkspaceSummary[]>;
@@ -25,6 +85,10 @@ export type WorkspaceManager = {
   activate(workspaceID: string): Promise<WorkspaceSummary>;
   get(workspaceID: string): WorkspaceRuntime | undefined;
   getActive(): WorkspaceRuntime | undefined;
+  workspacePermissionGet(workspaceID: string): Promise<WorkspacePermissionSettings>;
+  workspacePermissionSet(workspaceID: string, settings: WorkspacePermissionSettings): Promise<WorkspacePermissionSettings>;
+  workspaceToolGet(workspaceID: string): Promise<WorkspaceToolSettings>;
+  workspaceToolSet(workspaceID: string, settings: WorkspaceToolSettings): Promise<WorkspaceToolSettings>;
   dispose(): Promise<void>;
 };
 
@@ -67,6 +131,30 @@ export function createWorkspaceManager(
     async list() {
       return [...runtimes.values()].map(summary);
     },
+    async workspacePermissionGet(workspaceID) {
+      const ws = runtimes.get(workspaceID);
+      if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
+      return ws.permissionSettings;
+    },
+    async workspacePermissionSet(workspaceID, settings) {
+      const ws = runtimes.get(workspaceID);
+      if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
+      const saved = await writeSettings(ws.root, { permissionSettings: settings });
+      ws.permissionSettings = saved.permissionSettings;
+      return ws.permissionSettings;
+    },
+    async workspaceToolGet(workspaceID) {
+      const ws = runtimes.get(workspaceID);
+      if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
+      return ws.toolSettings;
+    },
+    async workspaceToolSet(workspaceID, settings) {
+      const ws = runtimes.get(workspaceID);
+      if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
+      const saved = await writeSettings(ws.root, { toolSettings: settings });
+      ws.toolSettings = saved.toolSettings;
+      return ws.toolSettings;
+    },
     async add(input) {
       const root = resolve(input.path);
       const existing = [...runtimes.values()].find((ws) => ws.root === root);
@@ -78,12 +166,15 @@ export function createWorkspaceManager(
         globalConfigPath: options.globalConfigPath,
         useSqliteStore: options.useSqliteStore,
       });
+      const settings = await readSettings(root);
       const ws: WorkspaceRuntime = {
         workspaceID: `ws_${randomUUID().replace(/-/gu, "").slice(0, 12)}`,
         root,
         title: input.title ?? root.split("/").pop() ?? root,
         client,
         status: "idle",
+        permissionSettings: settings.permissionSettings,
+        toolSettings: settings.toolSettings,
       };
       runtimes.set(ws.workspaceID, ws);
       if (!activeWorkspaceID) await activate(ws.workspaceID);

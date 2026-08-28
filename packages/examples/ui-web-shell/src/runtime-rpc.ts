@@ -13,6 +13,8 @@ import type {
   RuntimeWorkspaceContent,
   ConfigV3,
   WorkspaceSummary,
+  WorkspacePermissionSettings,
+  WorkspaceToolSettings,
 } from "@natalia/contracts";
 import { callRuntimeRPC } from "@natalia/transport";
 
@@ -168,6 +170,18 @@ export function createWebRuntimeClient(
     },
     async workspaceActivate(workspaceID) {
       return (await call<WorkspaceSummary>("workspace.activate", { workspaceID })) as never;
+    },
+    async workspacePermissionGet(workspaceID) {
+      return (await call<WorkspacePermissionSettings>("workspace.permission.get", { workspaceID })) as never;
+    },
+    async workspacePermissionSet(workspaceID, settings) {
+      return (await call<WorkspacePermissionSettings>("workspace.permission.set", { workspaceID, settings })) as never;
+    },
+    async workspaceToolGet(workspaceID) {
+      return (await call<WorkspaceToolSettings>("workspace.tool.get", { workspaceID })) as never;
+    },
+    async workspaceToolSet(workspaceID, settings) {
+      return (await call<WorkspaceToolSettings>("workspace.tool.set", { workspaceID, settings })) as never;
     },
     async workspaceSearch(input) {
       return (await call<RuntimeWorkspaceMatch[]>("workspace.search", { ...input })) as never;
