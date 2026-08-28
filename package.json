@@ -43,7 +43,7 @@
     "smoke:tui:approval-overlay": "npm --workspace @natalia/tui run smoke:approval-overlay",
     "smoke:cli:automation": "npx bun scripts/cli-automation-smoke.ts",
     "guard:imports": "npx bun run packages/tooling/testing/bin/import-guard.ts",
-    "ts:ui": "npm --workspace @natalia/example-ui-web-shell run dev",
+    "ts:ui": "bun apps/cli/src/main.ts serve 8787 & npm --workspace @natalia/example-ui-web-shell run dev",
     "ts:tui": "npm --workspace @natalia/tui run dev",
     "ts:cli": "npx bun apps/cli/src/main.ts",
     "ts:release-check": "npm run licenses:check && npx bun scripts/ts-release-check.ts",
