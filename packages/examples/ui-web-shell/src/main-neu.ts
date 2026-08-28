@@ -11,7 +11,7 @@ if (!root) throw new Error("missing #root mount point");
 
 const runtimeURL =
   (import.meta as { env?: Record<string, string> }).env?.VITE_NATALIA_RUNTIME_URL ??
-  "http://127.0.0.1:8787";
+  "http://127.0.0.1:8790";
 
 const runtime = createWebRuntimeClient({
   url: runtimeURL,

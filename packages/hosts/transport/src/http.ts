@@ -223,7 +223,7 @@ export function createRuntimeHttpServer(
         subscriber.controller.enqueue(encodeSSE(encoder, id, event));
       }
     });
-  const fetchHandler = async (request: Request) => {
+  const handleRequest = async (request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/healthz")
       return Response.json({ ok: true, apiVersion: API_VERSION });
@@ -573,6 +573,35 @@ export function createRuntimeHttpServer(
     );
     if (result.error) return Response.json(result, { status: 400 });
     return Response.json(result);
+  };
+
+  function corsHeaders(request: Request) {
+    const origin = request.headers.get("origin");
+    const base = {
+      "access-control-allow-origin": origin ?? "*",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "content-type,authorization,last-event-id",
+      "access-control-expose-headers": "last-event-id",
+    };
+    return base;
+  }
+
+  const fetchHandler = async (request: Request) => {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(request),
+      });
+    }
+    const response = await handleRequest(request);
+    const headers = new Headers(response.headers);
+    for (const [key, value] of Object.entries(corsHeaders(request)))
+      headers.set(key, value);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
   };
   // Bun's default idle timeout is 10s, which would kill an SSE subscription
   // that goes quiet — the runtime's default is to stay silent until it has
