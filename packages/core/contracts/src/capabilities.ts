@@ -122,7 +122,10 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "workspaceList",
     "workspaceRead",
     "workspaceGlob",
+    "workspaceRoots",
     "workspaceAdd",
+    "workspaceRemove",
+    "workspaceActivate",
   ],
   /** The native terminal host, including secure input and approval scopes. */
   nativeTerminal: [

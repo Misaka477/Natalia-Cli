@@ -161,7 +161,16 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "path and pattern policy refuse",
   },
+  workspaceRoots: { refusal: "none", note: "pure read" },
   workspaceAdd: {
+    refusal: "error",
+    note: "workspace root policy refuses",
+  },
+  workspaceRemove: {
+    refusal: "error",
+    note: "workspace root policy refuses",
+  },
+  workspaceActivate: {
     refusal: "error",
     note: "workspace root policy refuses",
   },

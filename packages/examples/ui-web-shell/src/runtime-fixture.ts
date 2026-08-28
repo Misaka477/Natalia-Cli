@@ -390,7 +390,15 @@ export function createWebFixtureRuntime(): RuntimeClient {
       };
     },
     async workspaceAdd(input) {
-      return { workspace: String(input?.path ?? ""), added: true };
+      const root = String(input?.path ?? "");
+      return {
+        workspaceID: "ws_fixture",
+        root,
+        title: root.split("/").pop() ?? root,
+        status: "active",
+        sessionCount: 1,
+        runningSessionCount: 0,
+      };
     },
     async workspaceRead(input) {
       const path = String(input?.path ?? "");

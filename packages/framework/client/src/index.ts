@@ -198,3 +198,6 @@ export const runtimeTransports: RuntimeTransportDescriptor[] = [
     stable: false,
   },
 ];
+
+export { createWorkspaceManager, createWorkspaceRuntimeClient } from "./workspace-manager";
+export type { WorkspaceManager, WorkspaceRuntime, WorkspaceManagerOptions } from "./workspace-manager";

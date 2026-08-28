@@ -1,5 +1,5 @@
 import type { UiPluginContext } from "@natalia/ui-host";
-import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ConfigV3, RuntimeClient } from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ConfigV3, RuntimeClient, WorkspaceSummary } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
@@ -64,12 +64,12 @@ function TreeRow(props: {
 function SessionTree(props: {
   selected: string;
   sessions: RuntimeSessionSummary[];
-  workspaces: string[];
+  workspaces: WorkspaceSummary[];
   onSelect: (name: string) => void;
 }) {
   const groups = [
     ...(props.workspaces.map((workspace) => ({
-      workspace,
+      workspace: workspace.title,
       sessions: [] as { name: string; status: string }[],
     }))),
     ...(props.sessions.length
@@ -133,9 +133,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [chatDraft, setChatDraft] = createSignal("");
   const [selectedSession, setSelectedSession] = createSignal("修 rollback");
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
-  const [workspaces, setWorkspaces] = createSignal<string[]>(
-    props.ctx.preferences.get<string[]>("workspaces") ?? [],
-  );
+  const [workspaces, setWorkspaces] = createSignal<WorkspaceSummary[]>([]);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [themeMode, setThemeMode] = createSignal(
     props.ctx.preferences.get<string>("themeMode") ?? "light",
@@ -206,6 +204,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setSelectedSession(sessions[0].title);
       }
     });
+    void props.ctx.runtime.workspaceRoots?.().then((roots) => setWorkspaces(roots));
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
   });
 
@@ -577,12 +576,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           if (!path) return;
           const result = props.ctx.runtime.workspaceAdd?.({ path });
           if (!result) return;
-          void (result as Promise<{ workspace: string; added: boolean }>).then(({ workspace }) => {
-            setWorkspaces((prev) => (prev.includes(workspace) ? prev : [...prev, workspace]));
-            const next = workspaces().includes(workspace)
-              ? workspaces()
-              : [...workspaces(), workspace];
-            props.ctx.preferences.set("workspaces", next);
+          void (result as Promise<WorkspaceSummary>).then((workspace) => {
+            setWorkspaces((prev) =>
+              prev.some((item) => item.workspaceID === workspace.workspaceID)
+                ? prev
+                : [...prev, workspace],
+            );
           });
         }}
       />

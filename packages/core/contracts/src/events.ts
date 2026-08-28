@@ -1558,6 +1558,25 @@ export type RuntimeTerminalObservationSession = Omit<
   screen?: TerminalScreenSnapshot;
   transcript?: string;
 };
+export type WorkspaceSummary = {
+  workspaceID: string;
+  root: string;
+  title: string;
+  status: "active" | "idle" | "stopped" | "error";
+  sessionCount: number;
+  runningSessionCount: number;
+};
+
+export type WorkspacePermissionSettings = {
+  permissionProfile: string;
+  approval: "ask" | "auto" | "read_only";
+};
+
+export type WorkspaceToolSettings = {
+  enabledTools: string[];
+  disabledTools: string[];
+};
+
 export type RuntimeSessionSummary = {
   id: string;
   title: string;
@@ -1798,10 +1817,16 @@ export type RuntimeClient = {
     offset?: number;
     limit?: number;
   }): Promise<RuntimeWorkspaceContent>;
-  /** Adds a workspace root to the runtime's workspace set. */
+  /** Lists all workspace roots managed by this runtime host. */
+  workspaceRoots?(): Promise<WorkspaceSummary[]>;
+  /** Adds a workspace root to the runtime host. */
   workspaceAdd?(input: {
     path: string;
-  }): Promise<{ workspace: string; added: boolean }>;
+  }): Promise<WorkspaceSummary>;
+  /** Removes a workspace root from the runtime host. */
+  workspaceRemove?(workspaceID: string): Promise<{ removed: boolean }>;
+  /** Makes a workspace root the active target for runtime operations. */
+  workspaceActivate?(workspaceID: string): Promise<WorkspaceSummary>;
   workspaceGlob?(input: {
     pattern: string;
     path?: string;

@@ -138,6 +138,10 @@ export const RPC_ROUTE_MEMBERS = {
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
   "workspace.glob": "workspaceGlob",
+  "workspace.roots": "workspaceRoots",
+  "workspace.add": "workspaceAdd",
+  "workspace.remove": "workspaceRemove",
+  "workspace.activate": "workspaceActivate",
   "checkpoint.list": "checkpointList",
   "checkpoint.preview": "checkpointPreview",
   "checkpoint.rollback": "checkpointRollback",
@@ -820,6 +824,42 @@ export async function handleRPCMessage(
         }),
       };
     }
+    if (body.method === "workspace.roots") {
+      optionsGuard(client, "workspaceRoots");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceRoots?.(),
+      };
+    }
+    if (body.method === "workspace.add") {
+      optionsGuard(client, "workspaceAdd");
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceAdd?.({ path }),
+      };
+    }
+    if (body.method === "workspace.remove") {
+      optionsGuard(client, "workspaceRemove");
+      const workspaceID = stringParam(body.params, "workspaceID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceRemove?.(workspaceID),
+      };
+    }
+    if (body.method === "workspace.activate") {
+      optionsGuard(client, "workspaceActivate");
+      const workspaceID = stringParam(body.params, "workspaceID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceActivate?.(workspaceID),
+      };
+    }
+
     if (body.method === "checkpoint.list") {
       optionsGuard(client, "checkpointList");
       return {
