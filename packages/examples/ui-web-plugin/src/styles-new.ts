@@ -660,9 +660,17 @@ body {
   background: var(--surface-1);
 }
 .right-panel-tab-icon { font-size: 12px; }
+.right-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.right-panel-content > * { flex: 1; min-height: 0; }
 
 /* Review Tab - GitHub-inspired */
-.gh-review { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.gh-review { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .gh-review-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px; border-bottom: 1px solid var(--border-subtle);
@@ -678,6 +686,14 @@ body {
 .gh-additions { color: #3fb950; font-weight: 500; }
 .gh-deletions { color: #f85149; font-weight: 500; }
 .gh-review-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.gh-review-resizer {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--transition-fast);
+}
+.gh-review-resizer:hover { background: var(--border-emphasis); }
 .gh-review-files {
   width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-subtle);
   overflow-y: auto; background: var(--surface-1);
@@ -847,6 +863,55 @@ body {
 @media (max-width: 800px) {
   .natalia-sidebar { display: none; }
   .right-panel { width: 100%; }
+}
+
+/* File Pane - VS Code-like */
+.file-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.file-pane-header {
+  padding: 10px 14px; font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+  color: var(--text-primary); background: var(--surface-1);
+}
+.file-pane-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.file-tree {
+  flex: 0 0 auto; overflow-y: auto; border-right: 1px solid var(--border-subtle);
+  padding: 6px 0; background: var(--surface-1); min-width: 0;
+}
+.file-pane-resizer {
+  width: 6px; flex-shrink: 0; flex-basis: 6px; cursor: col-resize;
+  background: transparent; touch-action: none;
+  transition: background var(--transition-fast);
+}
+.file-pane-resizer:hover { background: var(--border-emphasis); }
+.file-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.file-editor-tabs {
+  display: flex; align-items: center; gap: 4px; padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle); background: var(--surface-1); flex-shrink: 0;
+}
+.file-editor-tab {
+  padding: 4px 10px; background: transparent; border: none; border-radius: 6px;
+  color: var(--text-tertiary); font-family: inherit; font-size: 11px; cursor: pointer;
+}
+.file-editor-tab:hover { background: var(--surface-2); }
+.file-editor-tab[data-active="true"] { background: var(--surface-active); color: var(--text-primary); }
+.file-editor-path {
+  margin-left: auto; font-family: var(--font-family-mono); font-size: 10px;
+  color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%;
+}
+.file-editor-content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.file-editor-textarea {
+  flex: 1; width: 100%; resize: none; border: none; outline: none;
+  background: var(--surface-0); color: var(--text-primary);
+  font-family: var(--font-family-mono); font-size: 12px; line-height: 1.7;
+  padding: 14px; box-sizing: border-box;
+}
+.markdown-preview {
+  flex: 1; overflow-y: auto; padding: 16px; background: var(--surface-0);
+  color: var(--text-primary);
+}
+.file-editor-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); font-size: 12px;
 }
 
 /* ===== Scrollbars ===== */

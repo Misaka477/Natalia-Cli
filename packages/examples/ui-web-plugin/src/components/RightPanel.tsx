@@ -93,6 +93,22 @@ function ReviewPane() {
     },
   ];
   const [selectedFile, setSelectedFile] = createSignal(files[0]);
+  const [fileWidth, setFileWidth] = createSignal(240);
+  function startFileResize(event: PointerEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = fileWidth();
+    const move = (next: PointerEvent) =>
+      setFileWidth(
+        Math.max(180, Math.min(360, startWidth + next.clientX - startX)),
+      );
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
   const diffLines = [
     { type: "context", text: 'import { render } from "solid-js/web";' },
     { type: "removed", text: 'import { openDB } from "idb";' },
@@ -137,7 +153,7 @@ function ReviewPane() {
         </div>
       </div>
       <div class="gh-review-body">
-        <div class="gh-review-files">
+        <div class="gh-review-files" style={{ width: `${fileWidth()}px` }}>
           <div class="gh-review-files-heading">Files changed</div>
           <For each={files}>
             {(file) => (
@@ -165,6 +181,12 @@ function ReviewPane() {
             )}
           </For>
         </div>
+        <div
+          class="gh-review-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={startFileResize}
+        />
         <div class="gh-diff">
           <div class="gh-diff-header">
             <span class="gh-diff-path">{selectedFile()?.name}</span>
@@ -347,6 +369,9 @@ function FilePane() {
   const [expanded, setExpanded] = createSignal<Set<string>>(
     new Set(["root", "src", "packages"]),
   );
+  const [selectedPath, setSelectedPath] = createSignal<string | null>(null);
+  const [fileWidth, setFileWidth] = createSignal(240);
+  const [preview, setPreview] = createSignal(false);
 
   function toggle(path: string) {
     setExpanded((prev) => {
@@ -355,6 +380,22 @@ function FilePane() {
       else next.add(path);
       return next;
     });
+  }
+
+  function startFileResize(event: PointerEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = fileWidth();
+    const move = (next: PointerEvent) =>
+      setFileWidth(
+        Math.max(180, Math.min(360, startWidth + next.clientX - startX)),
+      );
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
 
   const tree = [
@@ -387,29 +428,8 @@ function FilePane() {
       type: "dir",
       status: null,
       children: [
-        {
-          name: "core",
-          type: "dir",
-          status: null,
-          children: [
-            { name: "contracts", type: "dir", status: null, children: [] },
-            {
-              name: "runtime-services",
-              type: "dir",
-              status: null,
-              children: [],
-            },
-          ],
-        },
-        {
-          name: "hosts",
-          type: "dir",
-          status: null,
-          children: [
-            { name: "ui-host", type: "dir", status: null, children: [] },
-            { name: "view-store", type: "dir", status: null, children: [] },
-          ],
-        },
+        { name: "core", type: "dir", status: null, children: [] },
+        { name: "hosts", type: "dir", status: null, children: [] },
         { name: "framework", type: "dir", status: null, children: [] },
         { name: "domains", type: "dir", status: null, children: [] },
         { name: "plugins", type: "dir", status: null, children: [] },
@@ -433,6 +453,7 @@ function FilePane() {
                 { name: "app.tsx", type: "file", status: "M" },
                 { name: "runtime.tsx", type: "file", status: "M" },
                 { name: "main.tsx", type: "file", status: null },
+                { name: "README.md", type: "file", status: "A" },
               ],
             },
           ],
@@ -444,6 +465,24 @@ function FilePane() {
     { name: "tsconfig.json", type: "file", status: null },
     { name: "bun.lock", type: "file", status: null },
   ];
+
+  const fileContents: Record<string, string> = {
+    "app.tsx":
+      'import { render } from "solid-js/web";\n\nexport function App() { return <div>Hello</div>; }\n',
+    "runtime.tsx":
+      'import { createWorkerRuntimeClient } from "@natalia/client";\n\ntype Runtime = ReturnType<typeof createWorkerRuntimeClient>;\n',
+    "main.tsx":
+      'import { createRoot } from "solid-js";\nimport { App } from "./app";\n\ncreateRoot(() => <App />);\n',
+    "README.md":
+      "# Natalia\n\nA local-first agent runtime.\n\n## Features\n\n- Multi-agent collaboration\n- Interactive terminal\n- Self-modification\n- Checkpoints and rollback\n",
+    "package.json":
+      '{\n  "name": "natalia-cli",\n  "version": "0.0.0-m13",\n  "private": true\n}\n',
+  };
+
+  function selectFile(path: string) {
+    setSelectedPath(path);
+    setPreview(path.endsWith(".md"));
+  }
 
   function renderTree(items: typeof tree, depth: number) {
     return (
@@ -473,20 +512,11 @@ function FilePane() {
                     />
                   </svg>
                   <svg class="file-tree-icon" viewBox="0 0 16 16" fill="none">
-                    {item.name === ".git" ? (
-                      <path
-                        d="M3 10V13C3 13.5523 3.44772 14 4 14H12C12.5523 14 13 13.5523 13 13V10"
-                        stroke="currentColor"
-                        stroke-width="1.2"
-                        stroke-linecap="round"
-                      />
-                    ) : (
-                      <path
-                        d="M2 4C2 2.89543 2.89543 2 4 2H7.5L9.5 4H12C13.1046 4 14 4.89543 14 6V12C14 13.1046 13.1046 14 12 14H4C2.89543 14 2 13.1046 2 12V4Z"
-                        stroke="currentColor"
-                        stroke-width="1.2"
-                      />
-                    )}
+                    <path
+                      d="M2 4C2 2.89543 2.89543 2 4 2H7.5L9.5 4H12C13.1046 4 14 4.89543 14 6V12C14 13.1046 13.1046 14 12 14H4C2.89543 14 2 13.1046 2 12V4Z"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                    />
                   </svg>
                   <span class="file-tree-name">{item.name}</span>
                 </button>
@@ -495,9 +525,12 @@ function FilePane() {
                 </Show>
               </>
             ) : (
-              <div
+              <button
+                type="button"
                 class="file-tree-item file-tree-file"
+                data-active={selectedPath() === item.name}
                 style={{ "padding-left": `${depth * 16 + 24}px` }}
+                onClick={() => selectFile(item.name)}
               >
                 <svg
                   class="file-tree-icon file-tree-file-icon"
@@ -524,7 +557,7 @@ function FilePane() {
                     {item.status}
                   </span>
                 )}
-              </div>
+              </button>
             )}
           </div>
         )}
@@ -532,12 +565,74 @@ function FilePane() {
     );
   }
 
+  const selectedContent = () =>
+    selectedPath() ? (fileContents[selectedPath()!] ?? "") : "";
+
   return (
     <div class="file-pane">
       <div class="file-pane-header">
         <span class="file-pane-title">资源管理器</span>
       </div>
-      <div class="file-tree">{renderTree(tree, 0)}</div>
+      <div class="file-pane-body">
+        <div class="file-tree" style={{ width: `${fileWidth()}px` }}>
+          {renderTree(tree, 0)}
+        </div>
+        <div
+          class="file-pane-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={startFileResize}
+        />
+        <div class="file-editor">
+          <div class="file-editor-tabs">
+            <button
+              type="button"
+              class="file-editor-tab"
+              data-active={!preview()}
+              onClick={() => setPreview(false)}
+            >
+              编辑
+            </button>
+            <button
+              type="button"
+              class="file-editor-tab"
+              data-active={preview()}
+              onClick={() => setPreview(true)}
+            >
+              预览
+            </button>
+            <span class="file-editor-path">
+              {selectedPath() ?? "未选择文件"}
+            </span>
+          </div>
+          <div class="file-editor-content">
+            {selectedPath() ? (
+              preview() ? (
+                <div class="markdown-preview">
+                  <pre
+                    style={{
+                      "white-space": "pre-wrap",
+                      "font-family": "var(--font-family-sans)",
+                      "font-size": "13px",
+                      "line-height": "1.7",
+                    }}
+                  >
+                    {selectedContent()}
+                  </pre>
+                </div>
+              ) : (
+                <textarea
+                  class="file-editor-textarea"
+                  value={selectedContent()}
+                  readOnly
+                />
+              )
+            ) : (
+              <div class="file-editor-empty">从左侧选择文件</div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
