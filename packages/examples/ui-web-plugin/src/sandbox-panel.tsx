@@ -1,21 +1,15 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { SandboxView } from "@natalia/view-store";
-import type { RuntimeClient } from "@natalia/contracts";
-
-type Sandbox = {
-  id: string;
-  isolationLevel: string;
-  changedFiles: number;
-  resources: Array<{ id: string; status: string; command: string }>;
-};
+import type { RuntimeClient, RuntimeSandbox, RuntimeSandboxResource } from "@natalia/contracts";
 
 export function SandboxPanel(props: {
   open: boolean;
   onClose: () => void;
   sandboxes: Record<string, SandboxView>;
-  runtime?: Pick<RuntimeClient, "sandboxMerge" | "sandboxDelete">;
+  runtime?: Pick<RuntimeClient, "sandboxMerge" | "sandboxDelete" | "sandboxList" | "sandboxDiff" | "sandboxResources">;
 }) {
   const [selected, setSelected] = createSignal<SandboxView | null>(null);
+  const [list, setList] = createSignal<RuntimeSandbox[] | undefined>(undefined);
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -23,7 +17,24 @@ export function SandboxPanel(props: {
     };
     window.addEventListener("keydown", handleKeydown);
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
+    void props.runtime?.sandboxList?.().then((value) => {
+      if (value) setList(value);
+    });
   });
+
+  const rows = () =>
+    list()?.map((sandbox) => ({
+      id: sandbox.id,
+      isolationLevel: sandbox.isolationLevel,
+      changedFiles: sandbox.changedFiles,
+      runningResources: sandbox.runningResources,
+    })) ??
+    Object.values(props.sandboxes).map((sandbox) => ({
+      id: sandbox.id,
+      isolationLevel: sandbox.isolationLevel,
+      changedFiles: sandbox.changedFiles,
+      runningResources: sandbox.runningResources,
+    }));
 
   return (
     <Show when={props.open}>
@@ -49,9 +60,9 @@ export function SandboxPanel(props: {
           </div>
           <div class="neu-sandbox-body">
             <Show when={!selected()}>
-              <For each={Object.values(props.sandboxes)}>
+              <For each={rows()}>
                 {(sandbox) => (
-                  <button type="button" class="neu-flow-card" onClick={() => setSelected(sandbox)}>
+                  <button type="button" class="neu-flow-card" onClick={() => setSelected(sandbox as SandboxView)}>
                     <span class="neu-flow-card-title">{sandbox.id}</span>
                     <span class="neu-flow-card-meta">
                       {sandbox.isolationLevel} · {sandbox.changedFiles} changes · {sandbox.runningResources} resources

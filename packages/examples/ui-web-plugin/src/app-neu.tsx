@@ -68,18 +68,24 @@ function SessionTree(props: {
   workspaces: WorkspaceSummary[];
   onSelect: (name: string) => void;
 }) {
-  const groups = createMemo(() =>
-    props.workspaces.map((workspace) => ({
+  const groups = createMemo(() => {
+    const byWorkspace = new Map<string, RuntimeSessionSummary[]>();
+    const activeID = props.workspaces.find((workspace) => workspace.status === "active")?.workspaceID;
+    for (const session of props.sessions) {
+      const key = session.workspaceID ?? activeID;
+      if (!key) continue;
+      const list = byWorkspace.get(key) ?? [];
+      list.push(session);
+      byWorkspace.set(key, list);
+    }
+    return props.workspaces.map((workspace) => ({
       workspace: workspace.title,
-      sessions:
-        workspace.status === "active"
-          ? props.sessions.map((session) => ({
-              name: session.title,
-              status: session.cancelled ? "error" : session.resumable ? "idle" : "running",
-            }))
-          : [],
-    })),
-  );
+      sessions: (byWorkspace.get(workspace.workspaceID) ?? []).map((session) => ({
+        name: session.title,
+        status: session.status ?? (session.cancelled ? "error" : session.resumable ? "idle" : "running"),
+      })),
+    }));
+  });
 
   return (
     <div class="neu-tree">
@@ -149,6 +155,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     props.ctx.projection.subscribe((next) => setState(cloneState(next))),
   );
 
+  async function refreshWorkspaces() {
+    const roots = await props.ctx.runtime.workspaceRoots?.();
+    if (roots) setWorkspaces(roots);
+  }
+
+  async function refreshSessions() {
+    const sessions = await props.ctx.runtime.sessionList?.();
+    if (sessions) {
+      setSessionList(sessions);
+      if (!selectedSession() && sessions.length) {
+        setSelectedSession(sessions[0].title);
+      }
+    }
+  }
+
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
@@ -164,12 +185,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
 
     // Real runtime integration: open the approval modal when the model asks
-    // for permission during a turn.
+    // for permission during a turn, and refresh workspace/session navigation
+    // whenever the multi-workspace runtime publishes a routing event.
     onCleanup(
       props.ctx.events.subscribe((event) => {
         if (event.type === "approval.request") {
           setCurrentApproval(event);
           setPermissionOpen(true);
+        }
+        if (
+          event.type.startsWith("workspace.") ||
+          event.type === "session.created" ||
+          event.type === "session.ready"
+        ) {
+          void refreshWorkspaces();
+          void refreshSessions();
         }
       }),
     );
@@ -189,13 +219,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => themeStyle.remove());
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
-    void props.ctx.runtime.sessionList?.().then((sessions) => {
-      setSessionList(sessions);
-      if (sessions.length && !selectedSession()) {
-        setSelectedSession(sessions[0].title);
-      }
-    });
-    void props.ctx.runtime.workspaceRoots?.().then((roots) => setWorkspaces(roots));
+    void refreshSessions();
+    void refreshWorkspaces();
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
   });
 
@@ -576,6 +601,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={workspaceOpen()}
         onClose={() => setWorkspaceOpen(false)}
         error={workspaceError()}
+        workspaces={workspaces()}
         onAdd={async (path) => {
           setWorkspaceError("");
           try {
@@ -586,16 +612,38 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             }
             const workspace = (await props.ctx.runtime.workspaceAdd({ path })) as WorkspaceSummary;
             if (!workspace) throw new Error("workspaceAdd returned no workspace");
-            setWorkspaces((prev) =>
-              prev.some((item) => item.workspaceID === workspace.workspaceID)
-                ? prev
-                : [...prev, workspace],
-            );
+            if (workspace.status !== "active") {
+              await props.ctx.runtime.workspaceActivate?.(workspace.workspaceID);
+            }
+            await refreshWorkspaces();
+            await refreshSessions();
           } catch (error: unknown) {
             setWorkspaceError(
               error instanceof Error ? error.message : String(error),
             );
             throw error;
+          }
+        }}
+        onActivate={async (workspaceID) => {
+          try {
+            await props.ctx.runtime.workspaceActivate?.(workspaceID);
+            await refreshWorkspaces();
+            await refreshSessions();
+          } catch (error: unknown) {
+            setWorkspaceError(
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+        }}
+        onRemove={async (workspaceID) => {
+          try {
+            await props.ctx.runtime.workspaceRemove?.(workspaceID);
+            await refreshWorkspaces();
+            await refreshSessions();
+          } catch (error: unknown) {
+            setWorkspaceError(
+              error instanceof Error ? error.message : String(error),
+            );
           }
         }}
       />
@@ -638,6 +686,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       <FlowTaskPanel
         open={flowTaskOpen()}
         onClose={() => setFlowTaskOpen(false)}
+        runtime={props.ctx.runtime}
         onSaveFlow={(flow) =>
           props.ctx.runtime.saveFlowDocument?.({
             path: `${flow.flowID}.yaml`,
@@ -706,7 +755,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
         onAddProvider={(input) => props.ctx.runtime.providerAdd?.(input)}
       />
-      <StatusPanel open={statusOpen()} onClose={() => setStatusOpen(false)} state={state()} />
+      <StatusPanel open={statusOpen()} onClose={() => setStatusOpen(false)} state={state()} runtime={props.ctx.runtime} />
       <SettingsPanel
         open={settingsOpen()}
         onClose={() => setSettingsOpen(false)}

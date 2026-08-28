@@ -1,9 +1,13 @@
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createSignal, onCleanup, onMount, For } from "solid-js";
+import type { WorkspaceSummary } from "@natalia/contracts";
 
 export function WorkspacePanel(props: {
   open: boolean;
   onClose: () => void;
   onAdd?: (path: string) => Promise<void> | void;
+  onActivate?: (workspaceID: string) => Promise<void> | void;
+  onRemove?: (workspaceID: string) => Promise<void> | void;
+  workspaces?: WorkspaceSummary[];
   error?: string;
 }) {
   const [path, setPath] = createSignal("");
@@ -43,6 +47,33 @@ export function WorkspacePanel(props: {
           <div class="neu-workspace-body">
             <Show when={props.error || localError()}>
               <div class="neu-workspace-error">{props.error || localError()}</div>
+            </Show>
+            <Show when={props.workspaces?.length}>
+              <div class="neu-form-section-title">已添加工作区</div>
+              <For each={props.workspaces ?? []}>
+                {(workspace) => (
+                  <div class="neu-extension-row">
+                    <span class="neu-extension-name">
+                      {workspace.title} {workspace.status === "active" ? "（当前）" : ""}
+                    </span>
+                    <button
+                      type="button"
+                      class="neu-extension-btn"
+                      disabled={workspace.status === "active"}
+                      onClick={() => { void props.onActivate?.(workspace.workspaceID); }}
+                    >
+                      切换
+                    </button>
+                    <button
+                      type="button"
+                      class="neu-extension-btn neu-extension-remove"
+                      onClick={() => { void props.onRemove?.(workspace.workspaceID); }}
+                    >
+                      删除
+                    </button>
+                  </div>
+                )}
+              </For>
             </Show>
             <input
               class="neu-form-input"

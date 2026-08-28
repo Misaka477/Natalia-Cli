@@ -1,37 +1,18 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
-import type { AppState, CapabilityView, PluginView, ToolBlock } from "@natalia/view-store";
+import type { AppState, CapabilityView, ToolBlock } from "@natalia/view-store";
+import type { RuntimeClient, RuntimeDiagnostic, RuntimeStatusSnapshot } from "@natalia/contracts";
 
 type Tab = "status" | "diagnostics" | "tools";
-
-const tools = [
-  { name: "bash", description: "运行 shell 命令", status: "已启用" },
-  { name: "read", description: "读取文件内容", status: "已启用" },
-  { name: "write", description: "写入 / 修改文件", status: "已启用" },
-  { name: "search", description: "搜索工作区", status: "已启用" },
-  { name: "todo", description: "维护任务清单", status: "已启用" },
-  { name: "web", description: "联网检索 / 浏览器", status: "需审批" },
-];
-
-const capabilities = [
-  { name: "Runtime", version: "1.0", id: "runtime", grants: ["session", "turn", "checkpoint"] },
-  { name: "Filesystem", version: "1.0", id: "fs", grants: ["read", "write"] },
-  { name: "Terminal", version: "1.0", id: "terminal", grants: ["pty", "io"] },
-  { name: "Web", version: "0.3", id: "web", grants: ["search", "fetch"] },
-];
-
-const diagnostics = [
-  { level: "info", message: "Runtime worker connected", time: "10:22" },
-  { level: "info", message: "Provider Opus 4 authenticated", time: "10:22" },
-  { level: "warn", message: "Compaction threshold reached 85%", time: "10:35" },
-  { level: "error", message: "Web fetch failed: timeout", time: "10:41" },
-];
 
 export function StatusPanel(props: {
   open: boolean;
   onClose: () => void;
   state: AppState;
+  runtime?: RuntimeClient;
 }) {
   const [tab, setTab] = createSignal<Tab>("status");
+  const [statusData, setStatusData] = createSignal<RuntimeStatusSnapshot | undefined>();
+  const [diagRows, setDiagRows] = createSignal<RuntimeDiagnostic[]>([]);
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -39,6 +20,13 @@ export function StatusPanel(props: {
     };
     window.addEventListener("keydown", handleKeydown);
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
+
+    if (props.runtime) {
+      void props.runtime.runtimeStatus?.().then((value) => setStatusData(value));
+      void props.runtime.diagnostics?.().then((value) => {
+        if (value) setDiagRows(value);
+      });
+    }
   });
 
   return (
@@ -98,26 +86,34 @@ export function StatusPanel(props: {
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">当前模型</span>
-                  <span class="neu-status-card-value">{props.state.modelSelection?.modelID ?? "未选择"}</span>
+                  <span class="neu-status-card-value">{statusData()?.model ?? props.state.modelSelection?.modelID ?? "未选择"}</span>
+                </div>
+                <div class="neu-status-card">
+                  <span class="neu-status-card-label">Provider</span>
+                  <span class="neu-status-card-value">{statusData()?.provider ?? "未选择"}</span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">工作区</span>
-                  <span class="neu-status-card-value">natalia-cli</span>
+                  <span class="neu-status-card-value">{statusData()?.cwd ?? "unknown"}</span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">会话</span>
                   <span class="neu-status-card-value">{props.state.sessionID ?? "无"}</span>
                 </div>
+                <div class="neu-status-card">
+                  <span class="neu-status-card-label">上下文</span>
+                  <span class="neu-status-card-value">{statusData()?.context ?? "—"}</span>
+                </div>
               </div>
             </Show>
             <Show when={tab() === "diagnostics"}>
               <div class="neu-status-diagnostics">
-                <For each={diagnostics}>
+                <For each={diagRows()}>
                   {(item) => (
                     <div class="neu-diagnostic-row" data-level={item.level}>
                       <span class="neu-diagnostic-level">{item.level}</span>
                       <span class="neu-diagnostic-message">{item.message}</span>
-                      <span class="neu-diagnostic-time">{item.time}</span>
+                      <span class="neu-diagnostic-time">{item.at ?? ""}</span>
                     </div>
                   )}
                 </For>

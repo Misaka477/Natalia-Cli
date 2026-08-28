@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show, onMount } from "solid-js";
 import type { UiTransport } from "@natalia/ui-host";
 import type { RuntimeClient } from "@natalia/contracts";
 
@@ -10,7 +10,7 @@ type FileNode = {
   children?: FileNode[];
 };
 
-const tree: FileNode[] = [
+const initialTree: FileNode[] = [
   {
     name: "natalia-cli",
     path: ".",
@@ -166,6 +166,28 @@ bun run dev
 `,
 };
 
+
+function buildTree(entries: Array<{ path: string; type: "file" | "directory" }>): FileNode[] {
+  const root: FileNode = { name: ".", path: ".", type: "dir", children: [] };
+  for (const entry of entries) {
+    const parts = entry.path.replace(/^\.\//u, "").split("/").filter(Boolean);
+    if (!parts.length) continue;
+    let node = root;
+    for (let index = 0; index < parts.length; index++) {
+      const part = parts[index]!;
+      const path = parts.slice(0, index + 1).join("/");
+      const isFile = index === parts.length - 1 && entry.type === "file";
+      let child = node.children?.find((candidate) => candidate.path === path);
+      if (!child) {
+        child = { name: part, path, type: isFile ? "file" : "dir", children: isFile ? undefined : [] };
+        node.children?.push(child);
+      }
+      node = child;
+    }
+  }
+  return root.children ?? [];
+}
+
 export function FileEditor(props: {
   transport?: UiTransport;
   runtime?: RuntimeClient;
@@ -189,6 +211,12 @@ export function FileEditor(props: {
   );
   const [preview, setPreview] = createSignal(false);
   const [fileWidth, setFileWidth] = createSignal(140);
+  const [tree, setTree] = createSignal<FileNode[]>(initialTree);
+  onMount(() => {
+    void props.runtime?.workspaceList?.().then((page) => {
+      if (page?.entries?.length) setTree(buildTree(page.entries));
+    });
+  });
 
   function toggle(path: string) {
     setExpanded((prev) => {
@@ -382,7 +410,7 @@ export function FileEditor(props: {
       </div>
       <div class="neu-file-body">
         <div class="file-tree neu-file-tree" style={{ width: `${fileWidth()}px` }}>
-          {renderTree(tree, 0)}
+          {renderTree(tree(), 0)}
         </div>
         <div
           class="file-pane-resizer"

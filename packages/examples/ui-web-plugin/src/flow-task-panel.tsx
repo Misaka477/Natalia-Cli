@@ -1,4 +1,5 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import type { RuntimeClient } from "@natalia/contracts";
 
 type FlowModule = {
   id: string;
@@ -97,6 +98,7 @@ const initialTasks: Task[] = [
 export function FlowTaskPanel(props: {
   open: boolean;
   onClose: () => void;
+  runtime?: RuntimeClient;
   onSaveFlow?: (flow: Flow) => unknown;
   onDeleteFlow?: (flowID: string) => unknown;
   onSaveTask?: (task: Task) => unknown;
@@ -136,6 +138,31 @@ export function FlowTaskPanel(props: {
     };
     window.addEventListener("keydown", handleKeydown);
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
+
+    void props.runtime?.flowOverview?.().then((overview) => {
+      if (!overview?.flows?.length) return;
+      setFlows(overview.flows.map((flow) => ({
+        flowID: flow.flowID,
+        displayName: flow.displayName,
+        permissionProfile: "default",
+        directRunProfile: undefined,
+        usedBy: flow.usedBy,
+        modules: [],
+      })));
+    });
+    void props.runtime?.taskOverview?.().then((overview) => {
+      if (!overview?.tasks?.length) return;
+      setTaskRows(overview.tasks.map((task) => ({
+        taskID: task.taskID,
+        displayName: task.displayName,
+        schedule: task.schedule,
+        prompt: "",
+        permissionProfile: task.permissionProfile,
+        flowID: task.flowID,
+        retry: typeof task.retry === "string" ? task.retry : "none",
+        alerts: task.alertEvents,
+      })));
+    });
   });
 
   function openFlow(flow: Flow) {

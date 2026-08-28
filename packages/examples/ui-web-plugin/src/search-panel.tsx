@@ -1,12 +1,7 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { RuntimeWorkspaceMatch } from "@natalia/contracts";
 
-const fallbackResults: RuntimeWorkspaceMatch[] = [
-  { path: "packages/examples/ui-web-plugin/src/app-neu.tsx", line: 12, text: "export function AppNeu(props: { ctx: UiPluginContext })" },
-  { path: "packages/examples/ui-web-plugin/src/file-editor.tsx", line: 167, text: "export function FileEditor()" },
-  { path: "packages/examples/ui-web-plugin/src/settings-panel.tsx", line: 31, text: "const categories: Category[] = [" },
-  { path: "packages/examples/ui-web-shell/src/main-neu.ts", line: 1, text: "import { createNataliaNeuPlugin } from" },
-];
+type SearchResult = RuntimeWorkspaceMatch & { path: string; line: number; text: string };
 
 export function SearchPanel(props: {
   open: boolean;
@@ -14,12 +9,12 @@ export function SearchPanel(props: {
   onSearch?: (query: string) => Promise<RuntimeWorkspaceMatch[]> | void;
 }) {
   const [query, setQuery] = createSignal("");
-  const [results, setResults] = createSignal<RuntimeWorkspaceMatch[]>(fallbackResults);
+  const [results, setResults] = createSignal<RuntimeWorkspaceMatch[]>([]);
 
   function runSearch(value: string) {
     setQuery(value);
     if (!value.trim()) {
-      setResults(fallbackResults);
+      setResults([]);
       return;
     }
     if (props.onSearch) {
@@ -28,7 +23,7 @@ export function SearchPanel(props: {
         void (promise as Promise<RuntimeWorkspaceMatch[]>).then(setResults);
       }
     } else {
-      setResults(fallbackResults);
+      setResults([]);
     }
   }
 
