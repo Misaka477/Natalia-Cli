@@ -606,6 +606,26 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onDeleteFlow={(flowID) =>
           props.ctx.runtime.deleteFlowDocument?.({ path: `${flowID}.yaml` })
         }
+        onSaveTask={(task) =>
+          props.ctx.runtime.saveTaskDocument?.({
+            path: `${task.taskID}.yaml`,
+            document: {
+              kind: "natalia-task",
+              version: 1,
+              taskID: task.taskID,
+              displayName: task.displayName,
+              schedule: task.schedule,
+              prompt: task.prompt,
+              permissionProfile: task.permissionProfile,
+              flow: { flowID: task.flowID },
+              retry: task.retry as never,
+              alerts: task.alerts,
+            },
+          })
+        }
+        onDeleteTask={(taskID) =>
+          props.ctx.runtime.deleteTaskDocument?.({ path: `${taskID}.yaml` })
+        }
       />
       <StashPanel open={stashOpen()} onClose={() => setStashOpen(false)} />
       <HelpPanel open={helpOpen()} onClose={() => setHelpOpen(false)} />

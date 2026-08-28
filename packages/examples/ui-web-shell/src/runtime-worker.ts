@@ -71,6 +71,8 @@ async function dispatch(method: string, value: unknown) {
   if (method === "flow.save") return runtime.saveFlowDocument?.(value as never);
   if (method === "provider.add") return runtime.providerAdd?.(value as never);
   if (method === "flow.delete") return runtime.deleteFlowDocument?.(value as never);
+  if (method === "task.save") return runtime.saveTaskDocument?.(value as never);
+  if (method === "task.delete") return runtime.deleteTaskDocument?.(value as never);
   if (method === "snapshot") return runtime.snapshot();
   if (method === "diagnostic") {
     const input = (value ?? {}) as { message?: unknown; level?: unknown };

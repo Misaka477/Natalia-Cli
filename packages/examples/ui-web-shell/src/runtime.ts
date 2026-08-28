@@ -159,6 +159,12 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async deleteFlowDocument(input) {
       return (await call("flow.delete", input)) as never;
     },
+    async saveTaskDocument(input) {
+      return (await call("task.save", input)) as never;
+    },
+    async deleteTaskDocument(input) {
+      return (await call("task.delete", input)) as never;
+    },
     async dispose() {
       worker.terminate();
     },

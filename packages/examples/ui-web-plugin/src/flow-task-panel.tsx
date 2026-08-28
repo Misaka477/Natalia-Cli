@@ -71,7 +71,7 @@ const initialFlows: Flow[] = [
   },
 ];
 
-const tasks: Task[] = [
+const initialTasks: Task[] = [
   {
     taskID: "release-checklist",
     displayName: "发布检查",
@@ -99,9 +99,22 @@ export function FlowTaskPanel(props: {
   onClose: () => void;
   onSaveFlow?: (flow: Flow) => unknown;
   onDeleteFlow?: (flowID: string) => unknown;
+  onSaveTask?: (task: Task) => unknown;
+  onDeleteTask?: (taskID: string) => unknown;
 }) {
   const [tab, setTab] = createSignal<"flows" | "tasks">("flows");
   const [flows, setFlows] = createSignal<Flow[]>(initialFlows.map((flow) => ({ ...flow, modules: flow.modules.map((mod) => ({ ...mod })) })));
+  const [taskRows, setTaskRows] = createSignal<Task[]>(
+    initialTasks.map((task) => ({ ...task })),
+  );
+  const [showTaskForm, setShowTaskForm] = createSignal(false);
+  const [newTaskID, setNewTaskID] = createSignal("");
+  const [newTaskName, setNewTaskName] = createSignal("");
+  const [newTaskSchedule, setNewTaskSchedule] = createSignal("");
+  const [newTaskPrompt, setNewTaskPrompt] = createSignal("");
+  const [newTaskProfile, setNewTaskProfile] = createSignal("default");
+  const [newTaskFlow, setNewTaskFlow] = createSignal("");
+  const [newTaskRetry, setNewTaskRetry] = createSignal("none");
   const [selectedFlow, setSelectedFlow] = createSignal<Flow | null>(null);
   const [selectedTask, setSelectedTask] = createSignal<Task | null>(null);
   const [editingModule, setEditingModule] = createSignal<FlowModule | null>(null);
@@ -158,6 +171,31 @@ export function FlowTaskPanel(props: {
     if (flowID) props.onDeleteFlow?.(flowID);
     setFlows((prev) => prev.filter((flow) => flow.flowID !== flowID));
     setSelectedFlow(null);
+  }
+
+  function saveNewTask() {
+    const taskID = newTaskID().trim();
+    if (!taskID || !newTaskName().trim() || !newTaskPrompt().trim()) return;
+    const task: Task = {
+      taskID,
+      displayName: newTaskName().trim(),
+      schedule: newTaskSchedule().trim() || "0 9 * * *",
+      prompt: newTaskPrompt().trim(),
+      permissionProfile: newTaskProfile(),
+      flowID: newTaskFlow().trim() || "code-review-flow",
+      retry: newTaskRetry(),
+      alerts: [],
+    };
+    setTaskRows((prev) => [task, ...prev]);
+    props.onSaveTask?.(task);
+    setShowTaskForm(false);
+    setNewTaskID("");
+    setNewTaskName("");
+    setNewTaskSchedule("");
+    setNewTaskPrompt("");
+    setNewTaskProfile("default");
+    setNewTaskFlow("");
+    setNewTaskRetry("none");
   }
 
   function startAddModule() {
@@ -381,7 +419,7 @@ export function FlowTaskPanel(props: {
             </Show>
 
             <Show when={tab() === "tasks" && !selectedTask()}>
-              <For each={tasks}>
+              <For each={taskRows()}>
                 {(task) => (
                   <button type="button" class="neu-flow-card" onClick={() => setSelectedTask(task)}>
                     <span class="neu-flow-card-title">{task.displayName}</span>
@@ -390,8 +428,49 @@ export function FlowTaskPanel(props: {
                   </button>
                 )}
               </For>
+              <Show when={showTaskForm()}>
+                <div class="neu-form">
+                  <div class="neu-form-field">
+                    <label class="neu-form-label">Task ID</label>
+                    <input class="neu-form-input" value={newTaskID()} onInput={(event) => setNewTaskID(event.currentTarget.value)} />
+                  </div>
+                  <div class="neu-form-field">
+                    <label class="neu-form-label">显示名称</label>
+                    <input class="neu-form-input" value={newTaskName()} onInput={(event) => setNewTaskName(event.currentTarget.value)} />
+                  </div>
+                  <div class="neu-form-field">
+                    <label class="neu-form-label">Schedule</label>
+                    <input class="neu-form-input" value={newTaskSchedule()} placeholder="0 9 * * *" onInput={(event) => setNewTaskSchedule(event.currentTarget.value)} />
+                  </div>
+                  <div class="neu-form-field">
+                    <label class="neu-form-label">Prompt</label>
+                    <textarea class="neu-form-input neu-stash-textarea" value={newTaskPrompt()} onInput={(event) => setNewTaskPrompt(event.currentTarget.value)} />
+                  </div>
+                  <div class="neu-form-field">
+                    <label class="neu-form-label">Permission Profile</label>
+                    <input class="neu-form-input" value={newTaskProfile()} onInput={(event) => setNewTaskProfile(event.currentTarget.value)} />
+                  </div>
+                  <div class="neu-form-field">
+                    <label class="neu-form-label">Flow ID</label>
+                    <input class="neu-form-input" value={newTaskFlow()} onInput={(event) => setNewTaskFlow(event.currentTarget.value)} />
+                  </div>
+                  <div class="neu-form-field">
+                    <label class="neu-form-label">Retry</label>
+                    <select class="neu-form-input neu-form-select" value={newTaskRetry()} onChange={(event) => setNewTaskRetry(event.currentTarget.value)}>
+                      <option value="none">none</option>
+                      <option value="once">once</option>
+                      <option value="twice">twice</option>
+                      <option value="three_times">three_times</option>
+                    </select>
+                  </div>
+                  <div class="neu-form-actions">
+                    <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setShowTaskForm(false)}>取消</button>
+                    <button type="button" class="neu-form-btn neu-form-primary" onClick={saveNewTask}>保存 Task</button>
+                  </div>
+                </div>
+              </Show>
               <div class="neu-extension-actions">
-                <button type="button" class="neu-extension-add">新建 Task</button>
+                <button type="button" class="neu-extension-add" onClick={() => setShowTaskForm((value) => !value)}>新建 Task</button>
               </div>
             </Show>
             <Show when={tab() === "tasks" && selectedTask()}>
@@ -404,6 +483,22 @@ export function FlowTaskPanel(props: {
               <div class="neu-flow-detail-field">retry：{selectedTask()?.retry}</div>
               <div class="neu-flow-detail-field">alerts：{selectedTask()?.alerts.join(", ")}</div>
               <div class="neu-flow-prompt">{selectedTask()?.prompt}</div>
+              <div class="neu-form-actions">
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-cancel"
+                  onClick={() => {
+                    const task = selectedTask();
+                    if (task) {
+                      props.onDeleteTask?.(task.taskID);
+                      setTaskRows((prev) => prev.filter((entry) => entry.taskID !== task.taskID));
+                    }
+                    setSelectedTask(null);
+                  }}
+                >
+                  删除 Task
+                </button>
+              </div>
             </Show>
           </div>
         </div>

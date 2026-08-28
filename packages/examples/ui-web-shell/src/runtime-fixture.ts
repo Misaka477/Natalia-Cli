@@ -447,5 +447,12 @@ export function createWebFixtureRuntime(): RuntimeClient {
     async providerAdd(input) {
       return { saved: true };
     },
+    async saveTaskDocument(input) {
+      const taskID = input.document.taskID;
+      return { path: input.path ?? `${taskID}.yaml`, taskID, created: true, updated: false };
+    },
+    async deleteTaskDocument(input) {
+      return { path: input.path, deleted: true, alreadyDeleted: false };
+    },
   };
 }
