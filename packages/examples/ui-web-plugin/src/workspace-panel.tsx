@@ -8,6 +8,7 @@ export function WorkspacePanel(props: {
 }) {
   const [path, setPath] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const [localError, setLocalError] = createSignal("");
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -40,8 +41,8 @@ export function WorkspacePanel(props: {
             </button>
           </div>
           <div class="neu-workspace-body">
-            <Show when={props.error}>
-              <div class="neu-workspace-error">{props.error}</div>
+            <Show when={props.error || localError()}>
+              <div class="neu-workspace-error">{props.error || localError()}</div>
             </Show>
             <input
               class="neu-form-input"
@@ -59,24 +60,26 @@ export function WorkspacePanel(props: {
                 class="neu-form-btn neu-form-primary"
                 onClick={() => {
                   if (busy()) return;
+                  const trimmed = path().trim();
+                  if (!trimmed) return;
                   setBusy(true);
-                  const result = props.onAdd?.(path().trim());
-                  if (result && typeof (result as Promise<void>).then === "function") {
-                    void (result as Promise<void>)
-                      .then(() => {
-                        setBusy(false);
-                        props.onClose();
-                        setPath("");
-                      })
-                      .catch(() => {
-                        setBusy(false);
-                        // Keep the panel open so the error prop can render.
-                      });
-                  } else {
+                  setLocalError("");
+                  const result = props.onAdd?.(trimmed);
+                  if (!result || typeof (result as Promise<void>).then !== "function") {
                     setBusy(false);
-                    props.onClose();
-                    setPath("");
+                    setLocalError("内部错误：添加请求未返回 Promise，请查看控制台");
+                    return;
                   }
+                  void (result as Promise<void>)
+                    .then(() => {
+                      setBusy(false);
+                      props.onClose();
+                      setPath("");
+                    })
+                    .catch(() => {
+                      setBusy(false);
+                      // Keep the panel open so the error prop can render.
+                    });
                 }}
               >
                 添加
