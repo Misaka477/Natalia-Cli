@@ -1,4 +1,5 @@
 import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
@@ -78,11 +79,39 @@ async function writeSettings(
   return next;
 }
 
+function workspaceRegistryPath() {
+  return join(homedir(), ".config", "natalia-cli", "workspaces.json");
+}
+
+async function readWorkspaceRegistry(): Promise<Array<{ path: string; title?: string }>> {
+  try {
+    const raw = JSON.parse(
+      await readFile(workspaceRegistryPath(), "utf8"),
+    ) as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((entry) => typeof entry === "object" && entry !== null);
+  } catch {
+    return [];
+  }
+}
+
+async function writeWorkspaceRegistry(
+  entries: Array<{ path: string; title?: string }>,
+) {
+  const path = workspaceRegistryPath();
+  await mkdir(join(homedir(), ".config", "natalia-cli"), {
+    recursive: true,
+    mode: 0o700,
+  });
+  await writeFile(path, `${JSON.stringify(entries, null, 2)}\n`, { mode: 0o600 });
+}
+
 export type WorkspaceManager = {
   list(): Promise<WorkspaceSummary[]>;
   add(input: { path: string; title?: string }): Promise<WorkspaceSummary>;
   remove(workspaceID: string): Promise<{ removed: boolean }>;
   activate(workspaceID: string): Promise<WorkspaceSummary>;
+  load(): Promise<void>;
   workspaceRoots(): Promise<WorkspaceSummary[]>;
   workspaceAdd(input: { path: string; title?: string }): Promise<WorkspaceSummary>;
   workspaceRemove(workspaceID: string): Promise<{ removed: boolean }>;
@@ -153,6 +182,12 @@ export function createWorkspaceManager(
     };
     runtimes.set(ws.workspaceID, ws);
     if (!activeWorkspaceID) await activate(ws.workspaceID);
+    await writeWorkspaceRegistry(
+      [...runtimes.values()].map((runtime) => ({
+        path: runtime.root,
+        title: runtime.title,
+      })),
+    );
     return summary(ws);
   }
 
@@ -166,10 +201,24 @@ export function createWorkspaceManager(
       activeWorkspaceID = next?.workspaceID;
       if (next) next.status = "active";
     }
+    await writeWorkspaceRegistry(
+      [...runtimes.values()].map((runtime) => ({
+        path: runtime.root,
+        title: runtime.title,
+      })),
+    );
     return { removed: true };
   }
 
   return {
+    async load() {
+      const entries = await readWorkspaceRegistry();
+      for (const entry of entries) {
+        if (entry.path && ![...runtimes.values()].some((ws) => ws.root === resolve(entry.path))) {
+          await addWorkspace({ path: entry.path, title: entry.title });
+        }
+      }
+    },
     async list() {
       return [...runtimes.values()].map(summary);
     },
@@ -226,8 +275,46 @@ export function createWorkspaceManager(
 export function createWorkspaceRuntimeClient(
   manager: WorkspaceManager,
 ): RuntimeServiceClient & WorkspaceManager {
+  const listeners = new Set<(event: import("@natalia/contracts").RuntimeEvent) => void>();
+  const startedClients = new Set<string>();
+  let started = false;
+
+  function emit(event: import("@natalia/contracts").RuntimeEvent) {
+    for (const listener of listeners) listener(event);
+  }
+
+  function startActiveClient() {
+    const active = manager.getActive();
+    if (!active) return;
+    if (startedClients.has(active.workspaceID)) return;
+    startedClients.add(active.workspaceID);
+    active.client.start(emit);
+  }
+
   const handler: ProxyHandler<object> = {
     get(_target, prop, _receiver) {
+      if (prop === "start") {
+        return (onEvent?: (event: import("@natalia/contracts").RuntimeEvent) => void) => {
+          if (onEvent) listeners.add(onEvent);
+          started = true;
+          startActiveClient();
+        };
+      }
+      if (prop === "workspaceAdd") {
+        return async (input: { path: string; title?: string }) => {
+          const wasEmpty = !manager.getActive();
+          const result = await manager.workspaceAdd(input);
+          if (started && (wasEmpty || result.status === "active")) startActiveClient();
+          return result;
+        };
+      }
+      if (prop === "workspaceActivate") {
+        return async (workspaceID: string) => {
+          const result = await manager.workspaceActivate(workspaceID);
+          if (started) startActiveClient();
+          return result;
+        };
+      }
       if (prop in manager) {
         const value = (manager as unknown as Record<PropertyKey, unknown>)[prop];
         return typeof value === "function"

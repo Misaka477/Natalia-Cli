@@ -20,7 +20,7 @@ export async function handleRuntimeCommand(argv: string[]) {
     const manager = createWorkspaceManager({
       pluginStoreRoot: pluginStoreRoot(),
     });
-    await manager.add({ path: process.cwd(), title: "Natalia CLI" });
+    await manager.load();
     const client = createWorkspaceRuntimeClient(manager);
     const transport = createHttpTransportHost({
       client,
