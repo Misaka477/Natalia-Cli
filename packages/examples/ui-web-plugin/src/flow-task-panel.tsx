@@ -94,7 +94,12 @@ const tasks: Task[] = [
   },
 ];
 
-export function FlowTaskPanel(props: { open: boolean; onClose: () => void }) {
+export function FlowTaskPanel(props: {
+  open: boolean;
+  onClose: () => void;
+  onSaveFlow?: (flow: Flow) => unknown;
+  onDeleteFlow?: (flowID: string) => unknown;
+}) {
   const [tab, setTab] = createSignal<"flows" | "tasks">("flows");
   const [flows, setFlows] = createSignal<Flow[]>(initialFlows.map((flow) => ({ ...flow, modules: flow.modules.map((mod) => ({ ...mod })) })));
   const [selectedFlow, setSelectedFlow] = createSignal<Flow | null>(null);
@@ -130,19 +135,28 @@ export function FlowTaskPanel(props: { open: boolean; onClose: () => void }) {
 
   function saveFlow() {
     if (!selectedFlow()) return;
+    const flow = selectedFlow();
+    if (!flow) return;
+    const nextFlow: Flow = {
+      ...flow,
+      displayName: flowName().trim() || flow.displayName,
+      permissionProfile: permissionProfile(),
+      modules: flow.modules,
+    };
     setFlows((prev) =>
-      prev.map((flow) =>
-        flow.flowID === selectedFlow()?.flowID
-          ? { ...flow, displayName: flowName().trim() || flow.displayName, permissionProfile: permissionProfile(), modules: flow.modules }
-          : flow,
+      prev.map((entry) =>
+        entry.flowID === nextFlow.flowID ? nextFlow : entry,
       ),
     );
+    props.onSaveFlow?.(nextFlow);
     setSelectedFlow(null);
   }
 
   function deleteFlow() {
     if (!selectedFlow()) return;
-    setFlows((prev) => prev.filter((flow) => flow.flowID !== selectedFlow()?.flowID));
+    const flowID = selectedFlow()?.flowID;
+    if (flowID) props.onDeleteFlow?.(flowID);
+    setFlows((prev) => prev.filter((flow) => flow.flowID !== flowID));
     setSelectedFlow(null);
   }
 

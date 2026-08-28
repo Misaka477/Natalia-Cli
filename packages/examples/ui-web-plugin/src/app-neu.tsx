@@ -576,7 +576,37 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         sandboxes={state().sandboxes}
         runtime={props.ctx.runtime}
       />
-      <FlowTaskPanel open={flowTaskOpen()} onClose={() => setFlowTaskOpen(false)} />
+      <FlowTaskPanel
+        open={flowTaskOpen()}
+        onClose={() => setFlowTaskOpen(false)}
+        onSaveFlow={(flow) =>
+          props.ctx.runtime.saveFlowDocument?.({
+            path: `${flow.flowID}.yaml`,
+            document: {
+              kind: "natalia-flow",
+              version: 1,
+              flowID: flow.flowID,
+              displayName: flow.displayName,
+              modules: flow.modules.map((mod) => ({
+                id: mod.id,
+                type: mod.type as "read_search" | "terminal" | "shell_command" | "workspace_changes" | "web_fetch" | "skills" | "mcp" | "plugins" | "subagents" | "report_output",
+                displayName: mod.displayName,
+                enabled: mod.enabled,
+                instructions: mod.instructions,
+                minimumConditions: mod.minimumConditions.map((text) => ({ id: `cond_${mod.id}_${text}`, text })),
+                idealConditions: mod.idealConditions.map((text) => ({ id: `ideal_${mod.id}_${text}`, text })),
+                commandRules: {
+                  mode: mod.commandMode,
+                  rules: mod.commandRules.map((command) => ({ command })),
+                },
+              })),
+            },
+          })
+        }
+        onDeleteFlow={(flowID) =>
+          props.ctx.runtime.deleteFlowDocument?.({ path: `${flowID}.yaml` })
+        }
+      />
       <StashPanel open={stashOpen()} onClose={() => setStashOpen(false)} />
       <HelpPanel open={helpOpen()} onClose={() => setHelpOpen(false)} />
       <SearchPanel

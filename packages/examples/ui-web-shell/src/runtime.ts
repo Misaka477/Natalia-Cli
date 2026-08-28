@@ -150,6 +150,12 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async mcpServerRemove(name) {
       return (await call("mcp.server.remove", name)) as never;
     },
+    async saveFlowDocument(input) {
+      return (await call("flow.save", input)) as never;
+    },
+    async deleteFlowDocument(input) {
+      return (await call("flow.delete", input)) as never;
+    },
     async dispose() {
       worker.terminate();
     },

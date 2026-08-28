@@ -437,5 +437,12 @@ export function createWebFixtureRuntime(): RuntimeClient {
       });
       return { removed: true };
     },
+    async saveFlowDocument(input) {
+      const flowID = input.document.flowID;
+      return { path: input.path ?? `${flowID}.yaml`, flowID, created: true, updated: false };
+    },
+    async deleteFlowDocument(input) {
+      return { path: input.path, deleted: true, alreadyDeleted: false };
+    },
   };
 }
