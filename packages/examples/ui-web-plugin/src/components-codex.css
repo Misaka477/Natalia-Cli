@@ -1,0 +1,397 @@
+/**
+ * Codex-style Components - Buttons, Badges, Icons
+ */
+
+/* Button styles - Codex inspired */
+.codex-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-lg);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.codex-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.codex-button-primary {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.codex-button-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(91, 141, 238, 0.3);
+}
+
+.codex-button-secondary {
+  background: var(--surface-3);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.codex-button-secondary:hover:not(:disabled) {
+  background: var(--surface-4);
+  border-color: var(--border-emphasis);
+}
+
+.codex-button-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.codex-button-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.codex-button-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-md);
+}
+
+.codex-button-sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+}
+
+/* Badge styles */
+.codex-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.codex-badge-default {
+  background: var(--surface-3);
+  color: var(--text-secondary);
+}
+
+.codex-badge-success {
+  background: rgba(80, 216, 144, 0.15);
+  color: var(--accent-success);
+}
+
+.codex-badge-running {
+  background: rgba(80, 216, 144, 0.15);
+  color: var(--accent-success);
+  animation: codex-pulse 2s ease-in-out infinite;
+}
+
+@keyframes codex-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.codex-badge-idle {
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+}
+
+.codex-badge-error {
+  background: rgba(238, 90, 111, 0.15);
+  color: var(--accent-error);
+}
+
+/* Dot indicator */
+.codex-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* Avatar */
+.codex-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.codex-avatar-sm {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.codex-avatar-lg {
+  width: 40px;
+  height: 40px;
+  font-size: var(--font-size-sm);
+}
+
+/* Select/dropdown */
+.codex-select {
+  appearance: none;
+  padding: var(--space-2) var(--space-3);
+  padding-right: var(--space-6);
+  background: var(--surface-2);
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23868B95' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.codex-select:hover {
+  background-color: var(--surface-3);
+  border-color: var(--border-emphasis);
+}
+
+.codex-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(91, 141, 238, 0.15);
+}
+
+/* Icon button for toolbar */
+.codex-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.codex-icon-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.codex-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Send button - special styling */
+.codex-send-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--accent-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.codex-send-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(91, 141, 238, 0.4);
+}
+
+.codex-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.codex-send-btn[data-busy="true"] {
+  background: var(--accent-error);
+}
+
+.codex-send-btn[data-busy="true"]:hover {
+  background: #F5697D;
+}
+
+/* Spinner */
+.codex-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--surface-4);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: codex-spin 0.8s linear infinite;
+}
+
+@keyframes codex-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Divider */
+.codex-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  border: none;
+  margin: var(--space-4) 0;
+}
+
+/* Empty state */
+.codex-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.codex-empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-xl);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.codex-empty-title {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.codex-empty-hint {
+  max-width: 400px;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--text-tertiary);
+}
+
+/* Attachment chip */
+.codex-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.codex-attachment:hover {
+  background: var(--surface-4);
+  border-color: var(--border-emphasis);
+}
+
+.codex-attachment-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent-primary);
+}
+
+.codex-attachment-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-attachment-remove {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: var(--space-1);
+}
+
+.codex-attachment-remove:hover {
+  background: var(--surface-4);
+  color: var(--text-primary);
+}
+
+/* Utility classes */
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.gap-2 {
+  gap: var(--space-2);
+}
+
+.gap-3 {
+  gap: var(--space-3);
+}
+
+.gap-4 {
+  gap: var(--space-4);
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

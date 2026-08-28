@@ -15,13 +15,17 @@ export function createMemoryTransport(
   };
 }
 
-export function createWebTransport(): UiTransport {
+export function createWebTransport(
+  files: Map<string, Uint8Array> = new Map(),
+): UiTransport {
   return {
     async readFile(path) {
-      throw new Error(`web transport cannot read ${path}`);
+      const data = files.get(path);
+      if (!data) throw new Error(`web transport cannot read ${path}`);
+      return data;
     },
-    async writeFile(path) {
-      throw new Error(`web transport cannot write ${path}`);
+    async writeFile(path, data) {
+      files.set(path, data);
     },
     async openPath(path) {
       throw new Error(`web transport cannot open ${path}`);

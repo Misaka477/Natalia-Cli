@@ -9,7 +9,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/contracts": "workspace:*",
     "@natalia/ui-host": "workspace:*",
-    "@natalia/view-store": "workspace:*"
+    "@natalia/view-store": "workspace:*",
+    "solid-js": "1.9.12"
   }
 }

@@ -33,17 +33,31 @@ async function handle(request: WorkerRequest) {
 
 async function dispatch(method: string, value: unknown) {
   if (method === "submit") return runtime.submit(String(value ?? ""));
-  if (method === "chat.submit") {
-    const text =
-      typeof value === "object" && value && "text" in value
-        ? String((value as { text: unknown }).text)
-        : String(value ?? "");
-    return runtime.chatSubmit?.({ text });
-  }
+  if (method === "submit.input") return runtime.submitInput?.(value as never);
+  if (method === "chat.submit")
+    return runtime.chatSubmit?.(value as { text: string });
+  if (method === "chat.abort") return runtime.chatAbort?.();
   if (method === "cancel") {
     runtime.cancel(typeof value === "string" ? value : undefined);
     return;
   }
+  if (method === "model.catalog") return runtime.modelCatalog?.();
+  if (method === "model.selection") return runtime.modelSelection?.();
+  if (method === "model.select") {
+    const input = (value ?? {}) as { modelID?: string; variant?: string };
+    return runtime.selectModel?.(input.modelID, input.variant);
+  }
+  if (method === "model.reasoning") return runtime.reasoningEffort?.();
+  if (method === "model.reasoning.set")
+    return runtime.setReasoningEffort?.(value as never);
+  if (method === "chat.model.profile") return runtime.chatModelProfile?.();
+  if (method === "chat.model.profile.set")
+    return runtime.setChatModelProfile?.(value as never);
+  if (method === "checkpoint.list") return runtime.checkpointList?.();
+  if (method === "checkpoint.rollback")
+    return runtime.checkpointRollback?.(value as never);
+  if (method === "approval") return runtime.respondApproval(value as never);
+  if (method === "question") return runtime.respondQuestion(value as never);
   if (method === "snapshot") return runtime.snapshot();
   if (method === "diagnostic") {
     const input = (value ?? {}) as { message?: unknown; level?: unknown };

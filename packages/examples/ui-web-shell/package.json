@@ -13,9 +13,11 @@
   "dependencies": {
     "@natalia/contracts": "workspace:*",
     "@natalia/example-ui-web-plugin": "workspace:*",
-    "@natalia/ui-host": "workspace:*"
+    "@natalia/ui-host": "workspace:*",
+    "solid-js": "1.9.12"
   },
   "devDependencies": {
-    "vite": "7.1.5"
+    "vite": "7.1.5",
+    "vite-plugin-solid": "2.11.10"
   }
 }

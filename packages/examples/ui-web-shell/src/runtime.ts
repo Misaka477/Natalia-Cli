@@ -57,11 +57,46 @@ export function createWebWorkerRuntime(): RuntimeClient {
         ReturnType<RuntimeClient["submit"]>
       >;
     },
+    async submitInput(input) {
+      return (await call("submit.input", input)) as Awaited<
+        ReturnType<RuntimeClient["submit"]>
+      >;
+    },
     async chatSubmit(input) {
       return (await call("chat.submit", input)) as { messageID: string };
     },
+    async chatAbort() {
+      return (await call("chat.abort")) as { aborted: boolean };
+    },
     cancel(reason) {
       void call("cancel", reason);
+    },
+    async modelCatalog() {
+      return (await call("model.catalog")) as never;
+    },
+    async modelSelection() {
+      return (await call("model.selection")) as never;
+    },
+    async selectModel(modelID, variant) {
+      await call("model.select", { modelID, variant });
+    },
+    async reasoningEffort() {
+      return (await call("model.reasoning")) as never;
+    },
+    async setReasoningEffort(effort) {
+      await call("model.reasoning.set", effort);
+    },
+    async chatModelProfile() {
+      return (await call("chat.model.profile")) as never;
+    },
+    async setChatModelProfile(profile) {
+      return (await call("chat.model.profile.set", profile)) as never;
+    },
+    async checkpointList() {
+      return (await call("checkpoint.list")) as never;
+    },
+    async checkpointRollback(input) {
+      return (await call("checkpoint.rollback", input)) as never;
     },
     snapshot() {
       void call("snapshot");
@@ -77,10 +112,12 @@ export function createWebWorkerRuntime(): RuntimeClient {
     lastSubmission() {
       return undefined;
     },
-    respondApproval(_response: ApprovalResponse) {
+    respondApproval(response: ApprovalResponse) {
+      void call("approval", response);
       return { accepted: true };
     },
-    respondQuestion(_response: QuestionResponse) {
+    respondQuestion(response: QuestionResponse) {
+      void call("question", response);
       return { accepted: true };
     },
     async dispose() {

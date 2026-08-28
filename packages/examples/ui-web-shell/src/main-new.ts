@@ -1,4 +1,4 @@
-import { createNataliaCodexPlugin } from "@natalia/example-ui-web-plugin";
+import { createNataliaWebUiPlugin } from "@natalia/example-ui-web-plugin";
 import {
   createConsoleLogger,
   createUiPluginHost,
@@ -16,5 +16,5 @@ const host = await createUiPluginHost({
   logger: createConsoleLogger("ui-web-shell"),
 });
 
-// Load the Codex-style UI
-await host.load(createNataliaCodexPlugin());
+// Load the new Phase 1 UI
+await host.load(createNataliaWebUiPlugin());
