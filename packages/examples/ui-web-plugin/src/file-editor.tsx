@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { UiTransport } from "@natalia/ui-host";
+import type { RuntimeClient } from "@natalia/contracts";
 
 type FileNode = {
   name: string;
@@ -165,7 +166,10 @@ bun run dev
 `,
 };
 
-export function FileEditor(props: { transport?: UiTransport }) {
+export function FileEditor(props: {
+  transport?: UiTransport;
+  runtime?: RuntimeClient;
+}) {
   const [contents, setContents] = createSignal<Record<string, string>>({
     ...initialContents,
   });
@@ -232,6 +236,16 @@ export function FileEditor(props: { transport?: UiTransport }) {
         () => undefined,
       );
     }
+    void props.runtime?.workspaceRead?.({ path }).then(
+      (result) => {
+        if (!result) return;
+        const text = result.encoding === "base64"
+          ? new TextDecoder().decode(Uint8Array.from(atob(result.content), (ch) => ch.charCodeAt(0)))
+          : result.content;
+        setContents((prev) => ({ ...prev, [path]: text }));
+      },
+      () => undefined,
+    );
   }
 
   function renderMarkdown(markdown: string): string {

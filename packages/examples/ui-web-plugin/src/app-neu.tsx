@@ -516,7 +516,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <TerminalPane />
               </Show>
               <Show when={rightTab() === "files"}>
-                <FileEditor transport={props.ctx.transport} />
+                <FileEditor transport={props.ctx.transport} runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "browser"}>
                 <BrowserPane />
