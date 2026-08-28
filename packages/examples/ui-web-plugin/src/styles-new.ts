@@ -83,6 +83,22 @@ body {
   overflow: hidden;
 }
 
+.sidebar-resizer,
+.right-panel-resizer {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--transition-fast);
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.is-dragging,
+.right-panel-resizer:hover,
+.right-panel-resizer.is-dragging {
+  background: var(--border-emphasis);
+}
+
 /* ===== TopNav ===== */
 .topnav {
   height: 40px;
@@ -645,80 +661,91 @@ body {
 }
 .right-panel-tab-icon { font-size: 12px; }
 
-/* Review Tab */
-.review-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-.review-toolbar {
+/* Review Tab - GitHub-inspired */
+.gh-review { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.gh-review-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
+  padding: 10px 14px; border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-1); flex-shrink: 0;
 }
-.review-branch {
-  font-size: var(--font-size-sm); font-weight: 500; color: var(--text-primary);
+.gh-review-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
 }
-.review-stats { display: flex; gap: var(--space-3); font-size: var(--font-size-xs); }
-.diff-add { color: var(--accent-success); font-weight: 500; }
-.diff-remove { color: var(--status-error); font-weight: 500; }
-
-.review-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.review-file-list {
-  width: 50%; border-right: 1px solid var(--border-subtle);
-  overflow-y: auto; flex-shrink: 0;
+.gh-review-title svg { color: var(--accent-primary); }
+.gh-review-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.gh-review-count { color: var(--text-secondary); }
+.gh-additions { color: #3fb950; font-weight: 500; }
+.gh-deletions { color: #f85149; font-weight: 500; }
+.gh-review-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.gh-review-files {
+  width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-subtle);
+  overflow-y: auto; background: var(--surface-1);
 }
-.review-file-item {
-  display: flex; align-items: center; gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: transparent; border: none; width: 100%;
+.gh-review-files-heading {
+  padding: 10px 12px; font-size: 11px; font-weight: 600;
+  color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em;
+  position: sticky; top: 0; background: var(--surface-1); border-bottom: 1px solid var(--border-subtle);
+}
+.gh-file-row {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 12px;
+  background: transparent; border: none; border-bottom: 1px solid transparent;
   color: var(--text-secondary); font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs); text-align: left; cursor: pointer;
+  font-size: 11px; text-align: left; cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.gh-file-row:hover { background: var(--surface-hover); }
+.gh-file-row[data-active="true"] {
+  background: var(--surface-active); color: var(--text-primary);
+  border-bottom-color: var(--accent-primary);
+}
+.gh-file-status {
+  width: 16px; font-size: 9px; font-weight: 700; text-align: center;
+}
+.gh-file-status.is-added { color: #3fb950; }
+.gh-file-status.is-modified { color: #d29922; }
+.gh-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-file-stats { display: flex; gap: 6px; font-size: 10px; }
+.gh-diff { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.gh-diff-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-family-mono); font-size: 11px; color: var(--text-secondary);
+  flex-shrink: 0; background: var(--surface-1);
+}
+.gh-diff-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-diff-actions { display: flex; gap: 2px; }
+.gh-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; background: transparent; border: none;
+  color: var(--text-tertiary); cursor: pointer; border-radius: 6px;
   transition: all var(--transition-fast);
 }
-.review-file-item:hover { background: var(--surface-2); }
-.review-file-item[data-active="true"] { background: var(--surface-2); color: var(--text-primary); }
-.review-file-status {
-  font-size: var(--font-size-xs); font-weight: 600; width: 16px; text-align: center;
+.gh-icon-btn:hover { background: var(--surface-2); color: var(--text-primary); }
+.gh-diff-content { flex: 1; overflow-y: auto; font-family: var(--font-family-mono); font-size: 11px; line-height: 1.65; }
+.gh-diff-line { display: flex; min-width: 0; }
+.gh-diff-pos {
+  width: 32px; flex-shrink: 0; text-align: right; padding-right: 8px; user-select: none;
+  color: var(--text-dim); background: transparent;
 }
-.status-modified { color: var(--accent-primary); }
-.status-added { color: var(--accent-success); }
-.review-file-name {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.gh-diff-sign { width: 18px; flex-shrink: 0; text-align: center; user-select: none; }
+.gh-diff-text { flex: 1; white-space: pre; padding-right: 12px; }
+.gh-diff-line.is-removed { background: rgba(248, 81, 73, 0.08); }
+.gh-diff-line.is-removed .gh-diff-sign { color: #f85149; }
+.gh-diff-line.is-added { background: rgba(63, 185, 80, 0.08); }
+.gh-diff-line.is-added .gh-diff-sign { color: #3fb950; }
+.gh-diff-footer {
+  display: flex; justify-content: flex-end; padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle); flex-shrink: 0;
 }
-.review-file-stats { display: flex; gap: var(--space-2); font-size: 10px; flex-shrink: 0; }
-.review-diff {
-  flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+.gh-commit-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; background: #238636; color: #fff;
+  border: none; border-radius: 6px; font-family: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: background var(--transition-fast);
 }
-.review-diff-header {
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--font-size-xs); color: var(--text-dim);
-  border-bottom: 1px solid var(--border-subtle);
-  font-family: var(--font-family-mono); flex-shrink: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.review-diff-content { flex: 1; overflow-y: auto; }
-.diff-line {
-  display: flex; font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs); line-height: 1.6;
-}
-.diff-line-num {
-  width: 24px; text-align: center; flex-shrink: 0; user-select: none;
-  color: var(--text-dim);
-}
-.diff-line-text { flex: 1; white-space: pre; overflow-x: auto; }
-.diff-line-removed { background: hsla(0, 76%, 62%, 0.06); }
-.diff-line-removed .diff-line-num { color: var(--status-error); }
-.diff-line-added { background: hsla(152, 76%, 66%, 0.06); }
-.diff-line-added .diff-line-num { color: var(--accent-success); }
-.review-commit-btn {
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  margin: var(--space-3) var(--space-4);
-  padding: var(--space-2) var(--space-4);
-  background: var(--accent-primary); color: var(--surface-0);
-  border: none; border-radius: var(--radius-md);
-  font-family: inherit; font-size: var(--font-size-sm); font-weight: 500;
-  cursor: pointer; transition: all var(--transition-fast);
-  align-self: flex-end;
-}
-.review-commit-btn:hover { background: var(--accent-hover); box-shadow: 0 0 0 3px hsla(195, 92%, 60%, 0.15); }
+.gh-commit-btn:hover { background: #2ea043; }
 
 /* Terminal Tab */
 .terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; }

@@ -10,17 +10,20 @@ import type { NavWorkspace, Message, ToolCall, MessageAction } from "./types";
 
 export function App(props: { ctx: UiPluginContext }) {
   const [state, setState] = createSignal(
-    cloneState(props.ctx.projection.getState())
+    cloneState(props.ctx.projection.getState()),
   );
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
   const [mainAttachments, setMainAttachments] = createSignal<string[]>([]);
   const [chatAttachments, setChatAttachments] = createSignal<string[]>([]);
-  const [rightPanelTab, setRightPanelTab] = createSignal<RightPanelProps["activeTab"]>("review");
+  const [rightPanelTab, setRightPanelTab] =
+    createSignal<RightPanelProps["activeTab"]>("review");
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
+  const [sidebarWidth, setSidebarWidth] = createSignal(250);
+  const [rightPanelWidth, setRightPanelWidth] = createSignal(400);
 
   onCleanup(
-    props.ctx.projection.subscribe((next) => setState(cloneState(next)))
+    props.ctx.projection.subscribe((next) => setState(cloneState(next))),
   );
 
   const mainWorkspaces = (): NavWorkspace[] => [
@@ -64,25 +67,39 @@ export function App(props: { ctx: UiPluginContext }) {
     },
   ];
 
-  const mainMessages = (): Message[] => (state().messages ?? []).map((msg, idx) => ({
-    id: `msg-${idx}`,
-    role: msg.role === "user" ? "user" : msg.role === "thinking" || msg.role === "system" ? "system" : "assistant",
-    content: msg.text + (msg.pendingText || ""),
-    timestamp: undefined,
-    status: state().activeTurn && idx === (state().messages?.length ?? 0) - 1 ? "running" : undefined,
-    streaming: Boolean(state().activeTurn && idx === (state().messages?.length ?? 0) - 1 && (msg.pendingText ?? "").length > 0),
-    toolCalls: msg.tool
-      ? [
-          {
-            name: msg.tool.name,
-            output: msg.tool.result,
-          } satisfies ToolCall,
-        ]
-      : undefined,
-    actions: idx === (state().messages?.length ?? 0) - 1 && msg.role === "user"
-      ? [{ label: "重试", primary: false, onClick: () => {} }]
-      : undefined,
-  }));
+  const mainMessages = (): Message[] =>
+    (state().messages ?? []).map((msg, idx) => ({
+      id: `msg-${idx}`,
+      role:
+        msg.role === "user"
+          ? "user"
+          : msg.role === "thinking" || msg.role === "system"
+            ? "system"
+            : "assistant",
+      content: msg.text + (msg.pendingText || ""),
+      timestamp: undefined,
+      status:
+        state().activeTurn && idx === (state().messages?.length ?? 0) - 1
+          ? "running"
+          : undefined,
+      streaming: Boolean(
+        state().activeTurn &&
+          idx === (state().messages?.length ?? 0) - 1 &&
+          (msg.pendingText ?? "").length > 0,
+      ),
+      toolCalls: msg.tool
+        ? [
+            {
+              name: msg.tool.name,
+              output: msg.tool.result,
+            } satisfies ToolCall,
+          ]
+        : undefined,
+      actions:
+        idx === (state().messages?.length ?? 0) - 1 && msg.role === "user"
+          ? [{ label: "重试", primary: false, onClick: () => {} }]
+          : undefined,
+    }));
 
   function handleMainSubmit() {
     const text = mainDraft();
@@ -107,6 +124,38 @@ export function App(props: { ctx: UiPluginContext }) {
     if (path) setMainAttachments([...mainAttachments(), path]);
   }
 
+  function startSidebarResize(event: PointerEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth();
+    const move = (next: PointerEvent) =>
+      setSidebarWidth(
+        Math.max(180, Math.min(360, startWidth + next.clientX - startX)),
+      );
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function startRightPanelResize(event: PointerEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = rightPanelWidth();
+    const move = (next: PointerEvent) =>
+      setRightPanelWidth(
+        Math.max(280, Math.min(560, startWidth - (next.clientX - startX))),
+      );
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
   return (
     <div class="natalia-app" data-sidebar-collapsed={sidebarCollapsed()}>
       <TopNav ctx={props.ctx} />
@@ -116,8 +165,15 @@ export function App(props: { ctx: UiPluginContext }) {
           workspaces={mainWorkspaces()}
           currentSessionId="session-1"
           collapsed={sidebarCollapsed()}
+          width={sidebarWidth()}
           onSelectSession={(id) => console.log("Select:", id)}
           onNewSession={() => console.log("New session")}
+        />
+        <div
+          class="sidebar-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={startSidebarResize}
         />
 
         <section class="natalia-main-panel">
@@ -154,7 +210,9 @@ export function App(props: { ctx: UiPluginContext }) {
             onStop={handleStop}
             attachments={mainAttachments()}
             onAddAttachment={handleAttachment}
-            onRemoveAttachment={(path) => setMainAttachments(mainAttachments().filter((p) => p !== path))}
+            onRemoveAttachment={(path) =>
+              setMainAttachments(mainAttachments().filter((p) => p !== path))
+            }
           >
             <select class="natalia-select">
               <option>Claude Opus 4</option>
@@ -187,7 +245,10 @@ export function App(props: { ctx: UiPluginContext }) {
                 id: `chat-${idx}`,
                 role: msg.role === "user" ? "user" : "assistant",
                 content: msg.text + (msg.pendingText || ""),
-                streaming: Boolean(state().chatActivity && idx === state().chatMessages.length - 1),
+                streaming: Boolean(
+                  state().chatActivity &&
+                    idx === state().chatMessages.length - 1,
+                ),
               }))}
               emptyTitle="向 Navi 提问"
               emptyHint="聊天用于规划和审查，不会直接操作工作区。"
@@ -205,7 +266,9 @@ export function App(props: { ctx: UiPluginContext }) {
               const path = prompt("文件路径:");
               if (path) setChatAttachments([...chatAttachments(), path]);
             }}
-            onRemoveAttachment={(path) => setChatAttachments(chatAttachments().filter((p) => p !== path))}
+            onRemoveAttachment={(path) =>
+              setChatAttachments(chatAttachments().filter((p) => p !== path))
+            }
           >
             <select class="natalia-select">
               <option>Claude Sonnet 4</option>
@@ -218,7 +281,17 @@ export function App(props: { ctx: UiPluginContext }) {
           </Composer>
         </section>
 
-        <RightPanel activeTab={rightPanelTab()} onTabChange={setRightPanelTab} />
+        <div
+          class="right-panel-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={startRightPanelResize}
+        />
+        <RightPanel
+          width={rightPanelWidth()}
+          activeTab={rightPanelTab()}
+          onTabChange={setRightPanelTab}
+        />
       </div>
     </div>
   );

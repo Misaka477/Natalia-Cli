@@ -5,13 +5,14 @@ export interface SidebarProps {
   workspaces: NavWorkspace[];
   currentSessionId?: string;
   collapsed?: boolean;
+  width?: number;
   onSelectSession?: (sessionId: string) => void;
   onNewSession?: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
   const [expandedWorkspaces, setExpandedWorkspaces] = createSignal<Set<string>>(
-    new Set(props.workspaces.map((w) => w.id))
+    new Set(props.workspaces.map((w) => w.id)),
   );
 
   function toggleWorkspace(workspaceId: string) {
@@ -24,7 +25,11 @@ export function Sidebar(props: SidebarProps) {
   }
 
   return (
-    <aside class="natalia-sidebar" data-collapsed={props.collapsed}>
+    <aside
+      class="natalia-sidebar"
+      data-collapsed={props.collapsed}
+      style={{ width: props.width ? `${props.width}px` : undefined }}
+    >
       <div class="natalia-sidebar-header">
         <div class="natalia-sidebar-brand">
           <div class="natalia-sidebar-brand-mark" />
@@ -35,9 +40,18 @@ export function Sidebar(props: SidebarProps) {
         </div>
       </div>
 
-      <button type="button" class="natalia-sidebar-new-btn" onClick={props.onNewSession}>
+      <button
+        type="button"
+        class="natalia-sidebar-new-btn"
+        onClick={props.onNewSession}
+      >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M7 1V13M1 7H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path
+            d="M7 1V13M1 7H13"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
         </svg>
         <span>新建会话</span>
       </button>
@@ -86,10 +100,24 @@ export function Sidebar(props: SidebarProps) {
                     viewBox="0 0 16 16"
                     fill="none"
                   >
-                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path
+                      d="M6 4L10 8L6 12"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
                   </svg>
-                  <svg class="natalia-workspace-icon" viewBox="0 0 16 16" fill="none">
-                    <path d="M2 5C2 3.89543 2.89543 3 4 3H5.58579C6.11622 3 6.62493 3.21071 7 3.58579L7.41421 4C7.78929 4.37507 8.29799 4.58579 8.82843 4.58579H12C13.1046 4.58579 14 5.48122 14 6.58579V11C14 12.1046 13.1046 13 12 13H4C2.89543 13 2 12.1046 2 11V5Z" stroke="currentColor" stroke-width="1.2"/>
+                  <svg
+                    class="natalia-workspace-icon"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                  >
+                    <path
+                      d="M2 5C2 3.89543 2.89543 3 4 3H5.58579C6.11622 3 6.62493 3.21071 7 3.58579L7.41421 4C7.78929 4.37507 8.29799 4.58579 8.82843 4.58579H12C13.1046 4.58579 14 5.48122 14 6.58579V11C14 12.1046 13.1046 13 12 13H4C2.89543 13 2 12.1046 2 11V5Z"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                    />
                   </svg>
                   <span class="natalia-workspace-name">{workspace.name}</span>
                 </button>
@@ -105,8 +133,12 @@ export function Sidebar(props: SidebarProps) {
                           onClick={() => props.onSelectSession?.(session.id)}
                         >
                           <span class="natalia-session-dot" />
-                          <span class="natalia-session-name">{session.title}</span>
-                          <span class="natalia-session-badge">{session.state}</span>
+                          <span class="natalia-session-name">
+                            {session.title}
+                          </span>
+                          <span class="natalia-session-badge">
+                            {session.state}
+                          </span>
                         </button>
                       )}
                     </For>
@@ -121,15 +153,37 @@ export function Sidebar(props: SidebarProps) {
       <div class="natalia-sidebar-footer">
         <button type="button" class="natalia-sidebar-footer-btn">
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-            <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M7.5 5V7.5L9.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle
+              cx="7.5"
+              cy="7.5"
+              r="5.5"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+            <path
+              d="M7.5 5V7.5L9.5 9.5"
+              stroke="currentColor"
+              stroke-width="1.2"
+              stroke-linecap="round"
+            />
           </svg>
           <span>历史记录</span>
         </button>
         <button type="button" class="natalia-sidebar-footer-btn">
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-            <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M7.5 9V7.5L6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle
+              cx="7.5"
+              cy="7.5"
+              r="5.5"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+            <path
+              d="M7.5 9V7.5L6 6"
+              stroke="currentColor"
+              stroke-width="1.2"
+              stroke-linecap="round"
+            />
           </svg>
           <span>设置</span>
         </button>

@@ -5,6 +5,7 @@ export type RightPanelTab = "review" | "terminal" | "browser" | "file";
 export interface RightPanelProps {
   activeTab: RightPanelTab;
   onTabChange: (tab: RightPanelProps["activeTab"]) => void;
+  width?: number;
 }
 
 const TABS: { id: RightPanelTab; label: string; icon: string }[] = [
@@ -16,7 +17,10 @@ const TABS: { id: RightPanelTab; label: string; icon: string }[] = [
 
 export function RightPanel(props: RightPanelProps) {
   return (
-    <aside class="right-panel">
+    <aside
+      class="right-panel"
+      style={{ width: props.width ? `${props.width}px` : undefined }}
+    >
       <div class="right-panel-tabs">
         <For each={TABS}>
           {(tab) => (
@@ -90,72 +94,70 @@ function ReviewPane() {
   ];
   const [selectedFile, setSelectedFile] = createSignal(files[0]);
   const diffLines = [
+    { type: "context", text: 'import { render } from "solid-js/web";' },
+    { type: "removed", text: 'import { openDB } from "idb";' },
+    { type: "added", text: 'import { createDB } from "@solid-primitives/db";' },
+    { type: "context", text: "" },
+    { type: "context", text: "export function createStore<T>(key: string) {" },
+    { type: "removed", text: "const db = await openDB(key, 1);" },
+    { type: "added", text: "const db = await createDB<T>({ name: key });" },
+    { type: "context", text: "return new Proxy(db, {" },
     {
-      type: "context" as const,
-      text: '﻿import { render } from "solid-js/web";',
-    },
-    { type: "removed" as const, text: '- import { openDB } from "idb";' },
-    {
-      type: "added" as const,
-      text: '+ import { createDB } from "@solid-primitives/db";',
-    },
-    { type: "context" as const, text: "" },
-    {
-      type: "context" as const,
-      text: "export function createStore<T>(key: string) {",
-    },
-    { type: "removed" as const, text: "-   const db = await openDB(key, 1);" },
-    {
-      type: "added" as const,
-      text: "+   const db = await createDB<T>({ name: key });",
-    },
-    { type: "context" as const, text: "   return new Proxy(db, {" },
-    {
-      type: "removed" as const,
-      text: "-     get(target, prop) { return target.get(prop as string); }",
+      type: "removed",
+      text: "get(target, prop) { return target.get(prop as string); }",
     },
     {
-      type: "added" as const,
-      text: "+     get(target, prop) { return target.read(prop as string); }",
+      type: "added",
+      text: "get(target, prop) { return target.read(prop as string); }",
     },
-    { type: "context" as const, text: "   });" },
-    { type: "context" as const, text: "}" },
+    { type: "context", text: "});" },
+    { type: "context", text: "}" },
   ];
+  const totalAdditions = files.reduce((sum, file) => sum + file.additions, 0);
+  const totalDeletions = files.reduce((sum, file) => sum + file.deletions, 0);
 
   return (
-    <div class="review-pane">
-      <div class="review-toolbar">
-        <span class="review-branch">master → origin/master</span>
-        <span class="review-stats">
-          <span class="diff-stat-add">
-            +{selectedFile()?.additions.toLocaleString()}
-          </span>
-          <span class="diff-stat-remove">
-            -{selectedFile()?.deletions.toLocaleString()}
-          </span>
-        </span>
+    <div class="gh-review">
+      <div class="gh-review-header">
+        <div class="gh-review-title">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path
+              d="M2 5C2 3.89543 2.89543 3 4 3H6.5L8 4.5H10C11.1046 4.5 12 5.39543 12 6.5V10C12 11.1046 11.1046 12 10 12H4C2.89543 12 2 11.1046 2 10V5Z"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+            <path d="M2 7H12" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+          <span>Changes</span>
+        </div>
+        <div class="gh-review-meta">
+          <span class="gh-review-count">{files.length} files</span>
+          <span class="gh-additions">+{totalAdditions.toLocaleString()}</span>
+          <span class="gh-deletions">-{totalDeletions.toLocaleString()}</span>
+        </div>
       </div>
-      <div class="review-body">
-        <div class="review-file-list">
+      <div class="gh-review-body">
+        <div class="gh-review-files">
+          <div class="gh-review-files-heading">Files changed</div>
           <For each={files}>
             {(file) => (
               <button
                 type="button"
-                class="review-file-item"
+                class="gh-file-row"
                 data-active={selectedFile()?.name === file.name}
                 onClick={() => setSelectedFile(file)}
               >
                 <span
-                  class={`review-file-status ${file.status === "A" ? "status-added" : "status-modified"}`}
+                  class={`gh-file-status ${file.status === "A" ? "is-added" : "is-modified"}`}
                 >
                   {file.status}
                 </span>
-                <span class="review-file-name">{file.name}</span>
-                <span class="review-file-stats">
-                  <span class="diff-add">
+                <span class="gh-file-name">{file.name}</span>
+                <span class="gh-file-stats">
+                  <span class="gh-additions">
                     +{file.additions.toLocaleString()}
                   </span>
-                  <span class="diff-remove">
+                  <span class="gh-deletions">
                     -{file.deletions.toLocaleString()}
                   </span>
                 </span>
@@ -163,36 +165,72 @@ function ReviewPane() {
             )}
           </For>
         </div>
-        <div class="review-diff">
-          <div class="review-diff-header">{selectedFile()?.name}</div>
-          <div class="review-diff-content">
+        <div class="gh-diff">
+          <div class="gh-diff-header">
+            <span class="gh-diff-path">{selectedFile()?.name}</span>
+            <span class="gh-diff-actions">
+              <button type="button" class="gh-icon-btn" title="Copy path">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect
+                    x="5"
+                    y="5"
+                    width="7"
+                    height="7"
+                    rx="1"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                  />
+                  <path
+                    d="M3 8H2V2C2 1.44772 2.44772 1 3 1H9V2"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                  />
+                </svg>
+              </button>
+              <button type="button" class="gh-icon-btn" title="Open file">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path
+                    d="M5 9L9 5M9 5H6.5M9 5V7.5"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+            </span>
+          </div>
+          <div class="gh-diff-content">
             <For each={diffLines}>
-              {(line) => (
-                <div class={`diff-line diff-line-${line.type}`}>
-                  <span class="diff-line-num">
+              {(line, idx) => (
+                <div class={`gh-diff-line is-${line.type}`}>
+                  <span class="gh-diff-pos">{idx() + 1}</span>
+                  <span class="gh-diff-sign">
                     {line.type === "added"
                       ? "+"
                       : line.type === "removed"
                         ? "-"
                         : " "}
                   </span>
-                  <span class="diff-line-text">{line.text || " "}</span>
+                  <span class="gh-diff-text">{line.text || " "}</span>
                 </div>
               )}
             </For>
           </div>
-          <button type="button" class="review-commit-btn">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M7 1V7M7 7L4 4M7 7L10 4M3 10H11C11.5523 10 12 10.4477 12 11V12C12 12.5523 11.5523 13 11 13H3C2.44772 13 2 12.5523 2 12V11C2 10.4477 2.44772 10 3 10Z"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            提交或推送
-          </button>
+          <div class="gh-diff-footer">
+            <button type="button" class="gh-commit-btn">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path
+                  d="M7 1V7M7 7L4 4M7 7L10 4M3 10H11C11.5523 10 12 10.4477 12 11V12C12 12.5523 11.5523 13 11 13H3C2.44772 13 2 12.5523 2 12V11C2 10.4477 2.44772 10 3 10Z"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              提交或推送
+            </button>
+          </div>
         </div>
       </div>
     </div>
