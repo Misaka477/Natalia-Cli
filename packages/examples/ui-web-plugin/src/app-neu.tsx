@@ -573,17 +573,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={workspaceOpen()}
         onClose={() => setWorkspaceOpen(false)}
         onAdd={(path) => {
+          // Only add when the runtime confirms the workspace.
           if (!path) return;
           const result = props.ctx.runtime.workspaceAdd?.({ path });
-          if (result && typeof (result as Promise<{ workspace: string; added: boolean }>).then === "function") {
-            void (result as Promise<{ workspace: string; added: boolean }>).then(({ workspace }) => {
-              setWorkspaces((prev) => [...prev, workspace]);
-              props.ctx.preferences.set("workspaces", [...workspaces(), workspace]);
-            });
-          } else {
-            setWorkspaces((prev) => [...prev, path]);
-            props.ctx.preferences.set("workspaces", [...workspaces(), path]);
-          }
+          if (!result) return;
+          void (result as Promise<{ workspace: string; added: boolean }>).then(({ workspace }) => {
+            setWorkspaces((prev) => (prev.includes(workspace) ? prev : [...prev, workspace]));
+            const next = workspaces().includes(workspace)
+              ? workspaces()
+              : [...workspaces(), workspace];
+            props.ctx.preferences.set("workspaces", next);
+          });
         }}
       />
       <SessionActionsPanel
