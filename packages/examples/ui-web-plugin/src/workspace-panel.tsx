@@ -9,6 +9,7 @@ export function WorkspacePanel(props: {
   const [path, setPath] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [localError, setLocalError] = createSignal("");
+  const [success, setSuccess] = createSignal("");
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -41,6 +42,9 @@ export function WorkspacePanel(props: {
             </button>
           </div>
           <div class="neu-workspace-body">
+            <Show when={success()}>
+              <div class="neu-workspace-success">{success()}</div>
+            </Show>
             <Show when={props.error || localError()}>
               <div class="neu-workspace-error">{props.error || localError()}</div>
             </Show>
@@ -64,6 +68,7 @@ export function WorkspacePanel(props: {
                   if (!trimmed) return;
                   setBusy(true);
                   setLocalError("");
+                  setSuccess("");
                   const result = props.onAdd?.(trimmed);
                   if (!result || typeof (result as Promise<void>).then !== "function") {
                     setBusy(false);
@@ -73,7 +78,7 @@ export function WorkspacePanel(props: {
                   void (result as Promise<void>)
                     .then(() => {
                       setBusy(false);
-                      props.onClose();
+                      setSuccess("添加成功");
                       setPath("");
                     })
                     .catch(() => {
