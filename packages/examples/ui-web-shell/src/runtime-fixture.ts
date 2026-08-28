@@ -348,6 +348,22 @@ export function createWebFixtureRuntime(): RuntimeClient {
         },
       ];
     },
+    async sessionNew() {
+      return { sessionID: "ses_web_new" as SessionID, created: true };
+    },
+    async sessionDuplicate(id, title) {
+      return {
+        id: `ses_${id}_dup` as SessionID,
+        title: title ?? `Fork of ${id}`,
+        createdAt: new Date().toISOString(),
+        lastAccessedAt: new Date().toISOString(),
+        pinned: false,
+        events: turns,
+        pendingInputs: 0,
+        cancelled: false,
+        resumable: true,
+      };
+    },
     async workspaceSearch(input) {
       const query = String(input?.query ?? "");
       return [

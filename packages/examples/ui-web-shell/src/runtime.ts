@@ -123,6 +123,12 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async sessionList() {
       return (await call("session.list")) as never;
     },
+    async sessionNew(input) {
+      return (await call("session.new", input)) as never;
+    },
+    async sessionDuplicate(id, title) {
+      return (await call("session.duplicate", { id, title })) as never;
+    },
     async workspaceSearch(input) {
       return (await call("workspace.search", input)) as never;
     },

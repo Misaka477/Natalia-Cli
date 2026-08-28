@@ -11,6 +11,10 @@ export function SessionActionsPanel(props: {
   open: boolean;
   session: string;
   onClose: () => void;
+  onNew?: () => unknown;
+  onFork?: () => unknown;
+  onSnapshot?: () => unknown;
+  onRollback?: () => unknown;
 }) {
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -48,7 +52,16 @@ export function SessionActionsPanel(props: {
           <div class="neu-session-actions">
             <For each={actions}>
               {(action) => (
-                <button type="button" class="neu-session-action-row">
+                <button
+                  type="button"
+                  class="neu-session-action-row"
+                  onClick={() => {
+                    if (action.id === "new") props.onNew?.();
+                    else if (action.id === "fork") props.onFork?.();
+                    else if (action.id === "snapshot") props.onSnapshot?.();
+                    else if (action.id === "rollback") props.onRollback?.();
+                  }}
+                >
                   <span class="neu-session-action-label">{action.label}</span>
                   <span class="neu-session-action-description">{action.description}</span>
                 </button>

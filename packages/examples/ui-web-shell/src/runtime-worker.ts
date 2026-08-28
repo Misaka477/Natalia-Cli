@@ -59,6 +59,8 @@ async function dispatch(method: string, value: unknown) {
   if (method === "approval") return runtime.respondApproval(value as never);
   if (method === "question") return runtime.respondQuestion(value as never);
   if (method === "session.list") return runtime.sessionList?.();
+  if (method === "session.new") return runtime.sessionNew?.(value as never);
+  if (method === "session.duplicate") return runtime.sessionDuplicate?.(value as never);
   if (method === "workspace.search") return runtime.workspaceSearch?.(value as never);
   if (method === "workspace.list") return runtime.workspaceList?.(value as never);
   if (method === "workspace.read") return runtime.workspaceRead?.(value as never);

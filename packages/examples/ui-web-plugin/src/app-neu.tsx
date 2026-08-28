@@ -548,6 +548,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={sessionMenuOpen()}
         session={selectedSession()}
         onClose={() => setSessionMenuOpen(false)}
+        onNew={() => props.ctx.runtime.sessionNew?.()}
+        onFork={() =>
+          props.ctx.runtime.sessionDuplicate?.(
+            state().sessionID ?? "current",
+            `Fork of ${selectedSession()}`,
+          )
+        }
+        onSnapshot={() => props.ctx.runtime.snapshot()}
+        onRollback={() =>
+          props.ctx.runtime.checkpointRollback?.({
+            id: state().checkpoints[state().checkpoints.length - 1]?.id ?? "",
+          })
+        }
       />
       <CheckpointPanel
         open={checkpointOpen()}
