@@ -138,6 +138,12 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async updateConfig(input) {
       return (await call("config.update", input)) as never;
     },
+    async mcpServerAdd(input) {
+      return (await call("mcp.server.add", input)) as never;
+    },
+    async mcpServerRemove(name) {
+      return (await call("mcp.server.remove", name)) as never;
+    },
     async dispose() {
       worker.terminate();
     },

@@ -601,6 +601,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             scope: "project",
           })
         }
+        onAddMcp={(input) => props.ctx.runtime.mcpServerAdd?.(input)}
+        onRemoveMcp={(name) => props.ctx.runtime.mcpServerRemove?.(name)}
       />
     </div>
   );

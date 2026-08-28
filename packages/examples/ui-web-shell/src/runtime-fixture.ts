@@ -403,5 +403,23 @@ export function createWebFixtureRuntime(): RuntimeClient {
       publish({ type: "settings.updated", scope: "project" });
       return { applied: true };
     },
+    async mcpServerAdd(input) {
+      publish({
+        type: "mcp.status",
+        server: input.name,
+        status: "connected",
+        tools: 0,
+      });
+      return { saved: true };
+    },
+    async mcpServerRemove(name) {
+      publish({
+        type: "mcp.status",
+        server: name,
+        status: "disabled",
+        tools: 0,
+      });
+      return { removed: true };
+    },
   };
 }

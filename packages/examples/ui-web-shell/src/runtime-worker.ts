@@ -64,6 +64,8 @@ async function dispatch(method: string, value: unknown) {
   if (method === "workspace.read") return runtime.workspaceRead?.(value as never);
   if (method === "config.get") return runtime.configGet?.();
   if (method === "config.update") return runtime.updateConfig?.(value as never);
+  if (method === "mcp.server.add") return runtime.mcpServerAdd?.(value as never);
+  if (method === "mcp.server.remove") return runtime.mcpServerRemove?.(value as never);
   if (method === "snapshot") return runtime.snapshot();
   if (method === "diagnostic") {
     const input = (value ?? {}) as { message?: unknown; level?: unknown };

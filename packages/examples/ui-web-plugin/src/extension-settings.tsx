@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { PluginView, McpView } from "@natalia/view-store";
+import type { MCPServerConfig } from "@natalia/contracts";
 
 type ExtensionKind = "mcp" | "plugins" | "skills";
 
@@ -73,6 +74,8 @@ function buildInitialSections(props: {
 export function ExtensionSettingsContent(props: {
   plugins?: Record<string, PluginView>;
   mcp?: Record<string, McpView>;
+  onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
+  onRemoveMcp?: (name: string) => unknown;
 }) {
   const [sections, setSections] = createSignal<ExtensionSection[]>(
     buildInitialSections(props).map((section) => ({
@@ -107,6 +110,8 @@ export function ExtensionSettingsContent(props: {
   }
 
   function removeRow(kind: ExtensionKind, index: number) {
+    const row = rows(kind)[index];
+    if (kind === "mcp" && row) props.onRemoveMcp?.(row.name);
     setSections((prev) =>
       prev.map((section) =>
         section.id === kind
@@ -149,6 +154,22 @@ export function ExtensionSettingsContent(props: {
           : section,
       ),
     );
+    props.onAddMcp?.({
+      name,
+      config: {
+        type: mcpType(),
+        ...(mcpType() === "stdio"
+          ? { command: mcpCommand().trim().split(/\s+/)[0], args: mcpArgs().trim().split(/\s+/).filter(Boolean) }
+          : { url: mcpUrl().trim() }),
+        enabled: true,
+        headers: {},
+        environment: {},
+        timeoutSec: 30,
+        allowedTools: [],
+        excludedTools: [],
+        readOnly: false,
+      } as MCPServerConfig,
+    });
     closeAdd();
   }
 

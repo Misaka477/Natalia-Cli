@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { AppState } from "@natalia/view-store";
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3, MCPServerConfig } from "@natalia/contracts";
 import { ExtensionSettingsContent } from "./extension-settings";
 
 type CategoryId = "model" | "security" | "runtime" | "extensions" | "interface" | "storage";
@@ -132,6 +132,8 @@ export function SettingsPanel(props: {
   state?: AppState;
   config?: ConfigV3;
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
+  onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
+  onRemoveMcp?: (name: string) => unknown;
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
   const [sections, setSections] = createSignal<ExtensionSection[]>(
@@ -306,7 +308,7 @@ export function SettingsPanel(props: {
                   </>
                 }
               >
-                <ExtensionSettingsContent plugins={props.state?.plugins} mcp={props.state?.mcp} />
+                <ExtensionSettingsContent plugins={props.state?.plugins} mcp={props.state?.mcp} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} />
               </Show>
             </section>
           </div>
