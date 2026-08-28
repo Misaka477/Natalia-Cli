@@ -64,26 +64,33 @@ function TreeRow(props: {
 function SessionTree(props: {
   selected: string;
   sessions: RuntimeSessionSummary[];
+  workspaces: string[];
   onSelect: (name: string) => void;
 }) {
-  const groups = props.sessions.length
-    ? [
-        {
-          workspace: "NATALIA-CLI",
-          sessions: props.sessions.map((session) => ({
-            name: session.title,
-            status: session.cancelled ? "error" : session.resumable ? "idle" : "running",
-          })),
-        },
-      ]
-    : [
-        {
-          workspace: "NATALIA-CLI",
-          sessions: [
-            { name: "Web UI prototype", status: "idle" },
-          ],
-        },
-      ];
+  const groups = [
+    ...(props.workspaces.map((workspace) => ({
+      workspace,
+      sessions: [] as { name: string; status: string }[],
+    }))),
+    ...(props.sessions.length
+      ? [
+          {
+            workspace: "NATALIA-CLI",
+            sessions: props.sessions.map((session) => ({
+              name: session.title,
+              status: session.cancelled ? "error" : session.resumable ? "idle" : "running",
+            })),
+          },
+        ]
+      : [
+          {
+            workspace: "NATALIA-CLI",
+            sessions: [
+              { name: "Web UI prototype", status: "idle" },
+            ],
+          },
+        ]),
+  ];
 
   return (
     <div class="neu-tree">
@@ -126,6 +133,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [chatDraft, setChatDraft] = createSignal("");
   const [selectedSession, setSelectedSession] = createSignal("修 rollback");
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
+  const [workspaces, setWorkspaces] = createSignal<string[]>(
+    props.ctx.preferences.get<string[]>("workspaces") ?? [],
+  );
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [themeMode, setThemeMode] = createSignal(
     props.ctx.preferences.get<string>("themeMode") ?? "light",
@@ -406,6 +416,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <SessionTree
                 selected={selectedSession()}
                 sessions={sessionList()}
+                workspaces={workspaces()}
                 onSelect={setSelectedSession}
               />
             </div>
@@ -561,7 +572,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       <WorkspacePanel
         open={workspaceOpen()}
         onClose={() => setWorkspaceOpen(false)}
-        onAdd={(path) => console.log("add workspace", path)}
+        onAdd={(path) => {
+          if (!path) return;
+          setWorkspaces((prev) => [...prev, path]);
+          props.ctx.preferences.set("workspaces", [...workspaces(), path]);
+        }}
       />
       <SessionActionsPanel
         open={sessionMenuOpen()}
