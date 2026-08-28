@@ -56,10 +56,14 @@ export function WorkspacePanel(props: {
                 onClick={() => {
                   const result = props.onAdd?.(path().trim());
                   if (result && typeof (result as Promise<void>).then === "function") {
-                    void (result as Promise<void>).then(() => {
-                      props.onClose();
-                      setPath("");
-                    });
+                    void (result as Promise<void>)
+                      .then(() => {
+                        props.onClose();
+                        setPath("");
+                      })
+                      .catch(() => {
+                        // Keep the panel open so the error prop can render.
+                      });
                   } else {
                     props.onClose();
                     setPath("");
