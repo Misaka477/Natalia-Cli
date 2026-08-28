@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
+import type { PluginView, McpView } from "@natalia/view-store";
 
 type ExtensionKind = "mcp" | "plugins" | "skills";
 
@@ -16,43 +17,65 @@ type ExtensionSection = {
   rows: ExtensionRow[];
 };
 
-const initialSections: ExtensionSection[] = [
-  {
-    id: "mcp",
-    title: "MCP",
-    addLabel: "添加 MCP",
-    rows: [
-      { id: "filesystem", name: "filesystem", description: "本地文件系统 MCP", enabled: true },
-      { id: "context7", name: "context7", description: "文档检索 MCP", enabled: true },
-      { id: "github", name: "github", description: "GitHub MCP", enabled: false },
-    ],
-  },
-  {
-    id: "plugins",
-    title: "Plugins",
-    addLabel: "安装插件",
-    rows: [
-      { id: "team", name: "team", description: "团队协作插件", enabled: true },
-      { id: "task-workflow", name: "task-workflow", description: "任务工作流插件", enabled: true },
-      { id: "local-tools", name: "local-tools", description: "本地工具集合", enabled: true },
-      { id: "skills", name: "skills", description: "技能扩展包", enabled: false },
-    ],
-  },
-  {
-    id: "skills",
-    title: "Skills",
-    addLabel: "添加技能",
-    rows: [
-      { id: "code-review", name: "code-review", description: "代码审查技能", enabled: true },
-      { id: "plan-writer", name: "plan-writer", description: "计划撰写技能", enabled: true },
-      { id: "debugger", name: "debugger", description: "调试技能", enabled: false },
-    ],
-  },
-];
+function buildInitialSections(props: {
+  plugins?: Record<string, PluginView>;
+  mcp?: Record<string, McpView>;
+}): ExtensionSection[] {
+  const mcpRows = Object.entries(props.mcp ?? {}).map(([id, server]) => ({
+    id,
+    name: id,
+    description: server.message ?? `${server.tools} tools`,
+    enabled: server.status === "connected",
+  }));
+  const pluginRows = Object.entries(props.plugins ?? {}).map(([id, plugin]) => ({
+    id,
+    name: id,
+    description: plugin.detail ?? plugin.status,
+    enabled: plugin.status === "loaded",
+  }));
+  return [
+    {
+      id: "mcp",
+      title: "MCP",
+      addLabel: "添加 MCP",
+      rows: mcpRows.length
+        ? mcpRows
+        : [
+            { id: "filesystem", name: "filesystem", description: "本地文件系统 MCP", enabled: true },
+            { id: "context7", name: "context7", description: "文档检索 MCP", enabled: true },
+            { id: "github", name: "github", description: "GitHub MCP", enabled: false },
+          ],
+    },
+    {
+      id: "plugins",
+      title: "Plugins",
+      addLabel: "安装插件",
+      rows: pluginRows.length
+        ? pluginRows
+        : [
+            { id: "team", name: "team", description: "团队协作插件", enabled: true },
+            { id: "task-workflow", name: "task-workflow", description: "任务工作流插件", enabled: true },
+          ],
+    },
+    {
+      id: "skills",
+      title: "Skills",
+      addLabel: "添加技能",
+      rows: [
+        { id: "code-review", name: "code-review", description: "代码审查技能", enabled: true },
+        { id: "plan-writer", name: "plan-writer", description: "计划撰写技能", enabled: true },
+        { id: "debugger", name: "debugger", description: "调试技能", enabled: false },
+      ],
+    },
+  ];
+}
 
-export function ExtensionSettingsContent() {
+export function ExtensionSettingsContent(props: {
+  plugins?: Record<string, PluginView>;
+  mcp?: Record<string, McpView>;
+}) {
   const [sections, setSections] = createSignal<ExtensionSection[]>(
-    initialSections.map((section) => ({
+    buildInitialSections(props).map((section) => ({
       ...section,
       rows: section.rows.map((row) => ({ ...row })),
     })),

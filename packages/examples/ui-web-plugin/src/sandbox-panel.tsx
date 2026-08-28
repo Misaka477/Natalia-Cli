@@ -1,4 +1,6 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import type { SandboxView } from "@natalia/view-store";
+import type { RuntimeClient } from "@natalia/contracts";
 
 type Sandbox = {
   id: string;
@@ -7,26 +9,13 @@ type Sandbox = {
   resources: Array<{ id: string; status: string; command: string }>;
 };
 
-const sandboxes: Sandbox[] = [
-  {
-    id: "sb-20260828-01",
-    isolationLevel: "workspace",
-    changedFiles: 3,
-    resources: [
-      { id: "dev-server", status: "running", command: "bun run dev" },
-      { id: "test-runner", status: "stopped", command: "bun test" },
-    ],
-  },
-  {
-    id: "sb-20260828-02",
-    isolationLevel: "workspace",
-    changedFiles: 0,
-    resources: [],
-  },
-];
-
-export function SandboxPanel(props: { open: boolean; onClose: () => void }) {
-  const [selected, setSelected] = createSignal<Sandbox | null>(null);
+export function SandboxPanel(props: {
+  open: boolean;
+  onClose: () => void;
+  sandboxes: Record<string, SandboxView>;
+  runtime?: Pick<RuntimeClient, "sandboxMerge" | "sandboxDelete">;
+}) {
+  const [selected, setSelected] = createSignal<SandboxView | null>(null);
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -60,12 +49,12 @@ export function SandboxPanel(props: { open: boolean; onClose: () => void }) {
           </div>
           <div class="neu-sandbox-body">
             <Show when={!selected()}>
-              <For each={sandboxes}>
+              <For each={Object.values(props.sandboxes)}>
                 {(sandbox) => (
                   <button type="button" class="neu-flow-card" onClick={() => setSelected(sandbox)}>
                     <span class="neu-flow-card-title">{sandbox.id}</span>
                     <span class="neu-flow-card-meta">
-                      {sandbox.isolationLevel} · {sandbox.changedFiles} changes · {sandbox.resources.length} resources
+                      {sandbox.isolationLevel} · {sandbox.changedFiles} changes · {sandbox.runningResources} resources
                     </span>
                   </button>
                 )}
@@ -83,23 +72,23 @@ export function SandboxPanel(props: { open: boolean; onClose: () => void }) {
                 <div class="neu-sandbox-change">3 个待合并变更</div>
               </Show>
               <div class="neu-flow-section-title">Resources</div>
-              <For each={selected()?.resources ?? []}>
-                {(resource) => (
-                  <div class="neu-flow-module">
-                    <div class="neu-flow-module-head">
-                      <span class="neu-flow-module-name">{resource.id}</span>
-                      <span class="neu-flow-module-type">{resource.command}</span>
-                      <span class="neu-flow-module-enabled" data-enabled={resource.status === "running"}>
-                        {resource.status}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </For>
+              <div class="neu-flow-detail-field">{selected()?.runningResources ?? 0} running resources</div>
               <div class="neu-form-actions">
-                <button type="button" class="neu-form-btn neu-form-cancel">合并变更</button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-cancel"
+                  onClick={() => props.runtime?.sandboxMerge?.(selected()!.id)}
+                >
+                  合并变更
+                </button>
                 <button type="button" class="neu-form-btn neu-form-cancel">停止资源</button>
-                <button type="button" class="neu-form-btn neu-form-primary">删除沙箱</button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-primary"
+                  onClick={() => props.runtime?.sandboxDelete?.(selected()!.id)}
+                >
+                  删除沙箱
+                </button>
               </div>
             </Show>
           </div>

@@ -1,4 +1,5 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import type { RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
 
 type ModelView = "tree" | "edit-provider";
 
@@ -14,31 +15,6 @@ type HeaderRow = {
   value: string;
 };
 
-const providers = [
-  {
-    name: "Anthropic",
-    status: "已连接",
-    models: [
-      { name: "claude-opus-4", default: true },
-      { name: "claude-sonnet-4", default: false },
-    ],
-  },
-  {
-    name: "OpenAI Compatible",
-    status: "已连接",
-    models: [
-      { name: "gpt-4o", default: false },
-    ],
-  },
-  {
-    name: "Local",
-    status: "未连接",
-    models: [
-      { name: "local-qwen-32b", default: false },
-    ],
-  },
-];
-
 const providerApis = [
   "OpenAI Compatible",
   "Anthropic",
@@ -47,10 +23,32 @@ const providerApis = [
   "Gemini",
 ];
 
-export function ModelPanel(props: { open: boolean; onClose: () => void }) {
+export function ModelPanel(props: {
+  open: boolean;
+  onClose: () => void;
+  catalog?: RuntimeModelCatalogEntry[];
+  selection?: RuntimeModelSelection;
+  onSetDefault?: (modelID: string) => unknown;
+}) {
   const [view, setView] = createSignal<ModelView>("tree");
+  const providers = () => {
+    const groups = new Map<string, RuntimeModelCatalogEntry[]>();
+    for (const entry of props.catalog ?? []) {
+      const list = groups.get(entry.provider) ?? [];
+      list.push(entry);
+      groups.set(entry.provider, list);
+    }
+    return [...groups.entries()].map(([providerName, models]) => ({
+      name: providerName,
+      status: "已连接",
+      models: models.map((entry) => ({
+        name: entry.id,
+        default: props.selection?.modelID === entry.id,
+      })),
+    }));
+  };
   const [expanded, setExpanded] = createSignal<Set<string>>(
-    new Set(["Anthropic", "OpenAI Compatible", "Local"]),
+    new Set(providers().map((provider) => provider.name)),
   );
   const [providerName, setProviderName] = createSignal("");
   const [providerApi, setProviderApi] = createSignal("OpenAI Compatible");
@@ -135,7 +133,7 @@ export function ModelPanel(props: { open: boolean; onClose: () => void }) {
 
           <Show when={view() === "tree"}>
             <div class="neu-model-tree">
-              <For each={providers}>
+              <For each={providers()}>
                 {(provider) => (
                   <div class="neu-model-provider">
                     <button type="button" class="neu-model-provider-header" onClick={() => toggle(provider.name)}>
@@ -167,7 +165,12 @@ export function ModelPanel(props: { open: boolean; onClose: () => void }) {
                               <Show when={model.default}>
                                 <span class="neu-model-default">默认</span>
                               </Show>
-                              <button type="button" class="neu-model-set-default" disabled={model.default}>
+                              <button
+                                type="button"
+                                class="neu-model-set-default"
+                                disabled={model.default}
+                                onClick={() => props.onSetDefault?.(model.name)}
+                              >
                                 设为默认
                               </button>
                             </div>

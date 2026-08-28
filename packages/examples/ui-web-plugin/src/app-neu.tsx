@@ -1,6 +1,7 @@
 import type { UiPluginContext } from "@natalia/ui-host";
+import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
-import { createSignal, onCleanup, onMount, For, Show } from "solid-js";
+import { createSignal, createEffect, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
 import {
@@ -10,6 +11,8 @@ import {
 } from "./components/RightPanel";
 import { FileEditor } from "./file-editor";
 import { SettingsPanel } from "./settings-panel";
+import { nataliaNeuStyles } from "./styles-neu";
+import { nataliaNeuLightStyles } from "./styles-neu-light";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { CheckpointPanel } from "./checkpoint-panel";
 import { PermissionPanel } from "./permission-panel";
@@ -24,87 +27,6 @@ import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
 type RightTab = "diff" | "terminal" | "files" | "browser";
-
-const demoMainMessages: Message[] = [
-  {
-    id: "demo-m1",
-    role: "user",
-    content: "帮我看一下当前项目的计划，并检查 rollback 相关的问题。",
-    timestamp: "10:24",
-  },
-  {
-    id: "demo-a1",
-    role: "assistant",
-    content: "我已经读取了当前项目计划，正在检查 `rollback` 相关改动。",
-    timestamp: "10:25",
-    status: "completed",
-  },
-  {
-    id: "demo-a2",
-    role: "system",
-    content: "当前模型：Opus 4 · 标准推理",
-    timestamp: "10:25",
-  },
-  {
-    id: "demo-a3",
-    role: "assistant",
-    content: "先执行一次检查，看看当前状态。",
-    timestamp: "10:25",
-    status: "completed",
-    toolCalls: [
-      {
-        name: "bash",
-        output: "$ pwd\n/home/aquama/Development/Natalia_Project/natalia-cli",
-      },
-      {
-        name: "read",
-        output: "# natalia-second-ui-as-plugin.zh-CN.md\n> 让 Natalia 第二套 UI 以插件包形态自举",
-      },
-    ],
-  },
-  {
-    id: "demo-a4",
-    role: "assistant",
-    content: "发现一个问题：`stop` 语义与计划不一致，需要确认。",
-    timestamp: "10:26",
-    status: "completed",
-  },
-];
-
-const demoChatMessages: Message[] = [
-  {
-    id: "demo-chat-1",
-    role: "user",
-    content: "你说一下当前 plan 的下一步建议。",
-    timestamp: "10:27",
-  },
-  {
-    id: "demo-chat-a1",
-    role: "assistant",
-    content: "建议先跑完 `tsc -b`，再核对 diff 中的 rollback 行为。",
-    timestamp: "10:27",
-    status: "completed",
-  },
-  {
-    id: "demo-chat-a2",
-    role: "system",
-    content: "Navi 当前上下文：计划 / 审阅",
-    timestamp: "10:27",
-  },
-  {
-    id: "demo-chat-a3",
-    role: "assistant",
-    content: "可以帮你把关键改动整理成 review 清单。",
-    timestamp: "10:28",
-    status: "completed",
-    toolCalls: [
-      {
-        name: "search",
-        output: "matched 3 files\napps/tui/src/app/App.tsx\napps/tui/src/runtime.tsx",
-      },
-    ],
-  },
-];
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -201,11 +123,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [chatDraft, setChatDraft] = createSignal("");
   const [selectedSession, setSelectedSession] = createSignal("修 rollback");
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [themeMode, setThemeMode] = createSignal(
+    props.ctx.preferences.get<string>("themeMode") ?? "light",
+  );
   const [sessionMenuOpen, setSessionMenuOpen] = createSignal(false);
   const [checkpointOpen, setCheckpointOpen] = createSignal(false);
   const [permissionOpen, setPermissionOpen] = createSignal(false);
+  const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [modelOpen, setModelOpen] = createSignal(false);
+  const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [stashOpen, setStashOpen] = createSignal(false);
@@ -231,13 +158,36 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     window.addEventListener("keydown", handleKeydown);
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
 
-    // Prototype: simulate the model requesting permission while working.
-    const timer = window.setTimeout(() => setPermissionOpen(true), 900);
-    onCleanup(() => window.clearTimeout(timer));
+    // Real runtime integration: open the approval modal when the model asks
+    // for permission during a turn.
+    onCleanup(
+      props.ctx.events.subscribe((event) => {
+        if (event.type === "approval.request") {
+          setCurrentApproval(event);
+          setPermissionOpen(true);
+        }
+      }),
+    );
+
+    // Apply theme/mode by overlaying the other stylesheet.
+    const themeStyle = document.createElement("style");
+    themeStyle.id = "neu-theme-override";
+    props.ctx.root.appendChild(themeStyle);
+    const applyTheme = () => {
+      themeStyle.textContent =
+        themeMode() === "dark"
+          ? nataliaNeuStyles
+          : nataliaNeuLightStyles;
+    };
+    applyTheme();
+    createEffect(applyTheme);
+    onCleanup(() => themeStyle.remove());
+
+    void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
   });
 
-  const mainMessages = (): Message[] => {
-    const real: Message[] = (state().messages ?? []).map((msg, idx) => ({
+  const mainMessages = (): Message[] =>
+    (state().messages ?? []).map((msg, idx) => ({
       id: `msg-${idx}`,
       role:
         msg.role === "user"
@@ -256,11 +206,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           (msg.pendingText ?? "").length > 0,
       ),
     }));
-    return real.length > 0 ? real : demoMainMessages;
-  };
 
-  const chatMessages = (): Message[] => {
-    const real: Message[] = (state().chatMessages ?? []).map((msg, idx) => ({
+  const chatMessages = (): Message[] =>
+    (state().chatMessages ?? []).map((msg, idx) => ({
       id: `chat-${idx}`,
       role: msg.role === "user" ? "user" : "assistant",
       content: msg.text + (msg.pendingText || ""),
@@ -268,8 +216,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         state().chatActivity && idx === state().chatMessages.length - 1,
       ),
     }));
-    return real.length > 0 ? real : demoChatMessages;
-  };
 
   function startLeftResize(event: PointerEvent) {
     event.preventDefault();
@@ -311,6 +257,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", finish);
     target.addEventListener("pointercancel", finish);
+  }
+
+  function cycleThemeMode() {
+    const modes = ["light", "dark", "system"] as const;
+    const current = themeMode() as (typeof modes)[number];
+    const next = modes[(modes.indexOf(current) + 1) % modes.length];
+    setThemeMode(next);
+    props.ctx.preferences.set("themeMode", next);
   }
 
   const rightTabs: { id: RightTab; label: string }[] = [
@@ -552,7 +506,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <TerminalPane />
               </Show>
               <Show when={rightTab() === "files"}>
-                <FileEditor />
+                <FileEditor transport={props.ctx.transport} />
               </Show>
               <Show when={rightTab() === "browser"}>
                 <BrowserPane />
@@ -571,7 +525,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         </button>
       )}
       </div>
-      <PermissionPanel open={permissionOpen()} onClose={() => setPermissionOpen(false)} />
+      <PermissionPanel
+        open={permissionOpen()}
+        approval={currentApproval()}
+        runtime={props.ctx.runtime}
+        onClose={() => {
+          setPermissionOpen(false);
+          setCurrentApproval(null);
+        }}
+      />
       <SessionActionsPanel
         open={sessionMenuOpen()}
         session={selectedSession()}
@@ -581,15 +543,37 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={checkpointOpen()}
         session={selectedSession()}
         onClose={() => setCheckpointOpen(false)}
+        checkpoints={state().checkpoints}
+        onRollback={(id) => props.ctx.runtime.checkpointRollback?.({ id })}
       />
-      <GovernancePanel open={governanceOpen()} onClose={() => setGovernanceOpen(false)} />
-      <SandboxPanel open={sandboxOpen()} onClose={() => setSandboxOpen(false)} />
+      <GovernancePanel open={governanceOpen()} onClose={() => setGovernanceOpen(false)} state={state()} />
+      <SandboxPanel
+        open={sandboxOpen()}
+        onClose={() => setSandboxOpen(false)}
+        sandboxes={state().sandboxes}
+        runtime={props.ctx.runtime}
+      />
       <FlowTaskPanel open={flowTaskOpen()} onClose={() => setFlowTaskOpen(false)} />
       <StashPanel open={stashOpen()} onClose={() => setStashOpen(false)} />
       <HelpPanel open={helpOpen()} onClose={() => setHelpOpen(false)} />
-      <SearchPanel open={searchOpen()} onClose={() => setSearchOpen(false)} />
-      <ModelPanel open={modelOpen()} onClose={() => setModelOpen(false)} />
-      <StatusPanel open={statusOpen()} onClose={() => setStatusOpen(false)} />
+      <SearchPanel
+        open={searchOpen()}
+        onClose={() => setSearchOpen(false)}
+        onSearch={(query) =>
+          props.ctx.runtime.workspaceSearch?.({
+            query,
+            limit: 50,
+          })
+        }
+      />
+      <ModelPanel
+        open={modelOpen()}
+        onClose={() => setModelOpen(false)}
+        catalog={modelCatalog()}
+        selection={state().modelSelection ?? undefined}
+        onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
+      />
+      <StatusPanel open={statusOpen()} onClose={() => setStatusOpen(false)} state={state()} />
       <SettingsPanel
         open={settingsOpen()}
         onClose={() => setSettingsOpen(false)}
@@ -597,6 +581,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setModelOpen(true);
           setSettingsOpen(false);
         }}
+        themeMode={themeMode()}
+        onCycleThemeMode={cycleThemeMode}
+        state={state()}
       />
     </div>
   );

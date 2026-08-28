@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
+import type { UiTransport } from "@natalia/ui-host";
 
 type FileNode = {
   name: string;
@@ -164,7 +165,7 @@ bun run dev
 `,
 };
 
-export function FileEditor() {
+export function FileEditor(props: { transport?: UiTransport }) {
   const [contents, setContents] = createSignal<Record<string, string>>({
     ...initialContents,
   });
@@ -222,6 +223,15 @@ export function FileEditor() {
   function selectFile(path: string) {
     setSelectedPath(path);
     setPreview(path.endsWith(".md") || path.endsWith(".markdown"));
+    if (props.transport) {
+      void props.transport.readFile(path).then(
+        (bytes) => {
+          const text = new TextDecoder().decode(bytes);
+          setContents((prev) => ({ ...prev, [path]: text }));
+        },
+        () => undefined,
+      );
+    }
   }
 
   function renderMarkdown(markdown: string): string {

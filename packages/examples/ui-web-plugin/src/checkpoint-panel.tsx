@@ -1,15 +1,12 @@
 import { Show, onCleanup, onMount, For } from "solid-js";
-
-const checkpoints = [
-  { id: "ckpt-20260828-1", time: "10:24", summary: "修复 rollback 前", status: "可回滚" },
-  { id: "ckpt-20260828-2", time: "10:31", summary: "检查 diff 后", status: "当前" },
-  { id: "ckpt-20260828-3", time: "10:38", summary: "完成第一轮验证", status: "可回滚" },
-];
+import type { CheckpointView } from "@natalia/view-store";
 
 export function CheckpointPanel(props: {
   open: boolean;
   session: string;
   onClose: () => void;
+  checkpoints: CheckpointView[];
+  onRollback?: (id: string) => unknown;
 }) {
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -45,20 +42,20 @@ export function CheckpointPanel(props: {
             当前会话：<strong>{props.session}</strong>
           </div>
           <div class="neu-checkpoint-list">
-            <For each={checkpoints}>
-              {(checkpoint) => (
+            <For each={props.checkpoints}>
+              {(checkpoint, index) => (
                 <div class="neu-checkpoint-row">
                   <div class="neu-checkpoint-main">
                     <span class="neu-checkpoint-title">
-                      {checkpoint.summary}
-                      <span class="neu-checkpoint-time">{checkpoint.time}</span>
+                      {checkpoint.reason ?? "checkpoint"}
+                      <span class="neu-checkpoint-time">step {checkpoint.sequence ?? index() + 1}</span>
                     </span>
                     <span class="neu-checkpoint-id">{checkpoint.id}</span>
                   </div>
-                  <span class="neu-checkpoint-status" data-current={checkpoint.status === "当前"}>
-                    {checkpoint.status}
+                  <span class="neu-checkpoint-status" data-current={index() === props.checkpoints.length - 1}>
+                    {index() === props.checkpoints.length - 1 ? "当前" : "可回滚"}
                   </span>
-                  <button type="button" class="neu-checkpoint-action" disabled={checkpoint.status === "当前"}>
+                  <button type="button" class="neu-checkpoint-action" disabled={index() === props.checkpoints.length - 1} onClick={() => props.onRollback?.(checkpoint.id)}>
                     回滚
                   </button>
                 </div>

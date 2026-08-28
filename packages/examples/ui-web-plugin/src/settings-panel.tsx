@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
+import type { AppState } from "@natalia/view-store";
 import { ExtensionSettingsContent } from "./extension-settings";
 
 type CategoryId = "model" | "security" | "runtime" | "extensions" | "interface" | "storage";
@@ -70,8 +71,7 @@ const categories: Category[] = [
     id: "interface",
     label: "界面与服务",
     items: [
-      { label: "Theme", description: "当前主题", value: "浅色 Neumorphism" },
-      { label: "Theme Mode", description: "跟随系统 / 强制浅色 / 强制深色", value: "浅色" },
+      { label: "Theme Mode", description: "切换浅色 / 深色 / 跟随系统", value: "浅色" },
       { label: "Density", description: "界面信息密度", value: "comfortable" },
       { label: "Diff Style", description: "diff 展示风格", value: "auto" },
       { label: "Tool Details", description: "工具卡默认展开状态", value: "expanded" },
@@ -126,6 +126,9 @@ export function SettingsPanel(props: {
   open: boolean;
   onClose: () => void;
   onOpenModels?: () => void;
+  themeMode?: string;
+  onCycleThemeMode?: () => void;
+  state?: AppState;
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
   const [sections, setSections] = createSignal<ExtensionSection[]>(
@@ -240,13 +243,32 @@ export function SettingsPanel(props: {
                         <Show
                           when={item.label === "Providers & Models" && props.onOpenModels}
                           fallback={
-                            <div class="neu-settings-item">
-                              <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{item.label}</span>
-                                <span class="neu-settings-item-description">{item.description}</span>
-                              </div>
-                              <span class="neu-settings-item-value">{item.value}</span>
-                            </div>
+                            <Show
+                              when={item.label === "Theme Mode" && props.onCycleThemeMode}
+                              fallback={
+                                <div class="neu-settings-item">
+                                  <div class="neu-settings-item-main">
+                                    <span class="neu-settings-item-label">{item.label}</span>
+                                    <span class="neu-settings-item-description">{item.description}</span>
+                                  </div>
+                                  <span class="neu-settings-item-value">{item.value}</span>
+                                </div>
+                              }
+                            >
+                              <button
+                                type="button"
+                                class="neu-settings-item neu-settings-item-button"
+                                onClick={() => props.onCycleThemeMode?.()}
+                              >
+                                <div class="neu-settings-item-main">
+                                  <span class="neu-settings-item-label">{item.label}</span>
+                                  <span class="neu-settings-item-description">{item.description}</span>
+                                </div>
+                                <span class="neu-settings-item-value">
+                                  {props.themeMode === "dark" ? "深色" : props.themeMode === "system" ? "系统" : "浅色"}
+                                </span>
+                              </button>
+                            </Show>
                           }
                         >
                           <button
@@ -266,7 +288,7 @@ export function SettingsPanel(props: {
                   </>
                 }
               >
-                <ExtensionSettingsContent />
+                <ExtensionSettingsContent plugins={props.state?.plugins} mcp={props.state?.mcp} />
               </Show>
             </section>
           </div>

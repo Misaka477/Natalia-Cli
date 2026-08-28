@@ -1,14 +1,36 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import type { RuntimeWorkspaceMatch } from "@natalia/contracts";
 
-const results = [
-  { path: "packages/examples/ui-web-plugin/src/app-neu.tsx", line: 12, snippet: "export function AppNeu(props: { ctx: UiPluginContext })" },
-  { path: "packages/examples/ui-web-plugin/src/file-editor.tsx", line: 167, snippet: "export function FileEditor()" },
-  { path: "packages/examples/ui-web-plugin/src/settings-panel.tsx", line: 31, snippet: "const categories: Category[] = [" },
-  { path: "packages/examples/ui-web-shell/src/main-neu.ts", line: 1, snippet: "import { createNataliaNeuPlugin } from" },
+const fallbackResults: RuntimeWorkspaceMatch[] = [
+  { path: "packages/examples/ui-web-plugin/src/app-neu.tsx", line: 12, text: "export function AppNeu(props: { ctx: UiPluginContext })" },
+  { path: "packages/examples/ui-web-plugin/src/file-editor.tsx", line: 167, text: "export function FileEditor()" },
+  { path: "packages/examples/ui-web-plugin/src/settings-panel.tsx", line: 31, text: "const categories: Category[] = [" },
+  { path: "packages/examples/ui-web-shell/src/main-neu.ts", line: 1, text: "import { createNataliaNeuPlugin } from" },
 ];
 
-export function SearchPanel(props: { open: boolean; onClose: () => void }) {
+export function SearchPanel(props: {
+  open: boolean;
+  onClose: () => void;
+  onSearch?: (query: string) => Promise<RuntimeWorkspaceMatch[]> | void;
+}) {
   const [query, setQuery] = createSignal("");
+  const [results, setResults] = createSignal<RuntimeWorkspaceMatch[]>(fallbackResults);
+
+  function runSearch(value: string) {
+    setQuery(value);
+    if (!value.trim()) {
+      setResults(fallbackResults);
+      return;
+    }
+    if (props.onSearch) {
+      const promise = props.onSearch(value.trim());
+      if (promise && typeof (promise as Promise<RuntimeWorkspaceMatch[]>).then === "function") {
+        void (promise as Promise<RuntimeWorkspaceMatch[]>).then(setResults);
+      }
+    } else {
+      setResults(fallbackResults);
+    }
+  }
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -45,16 +67,16 @@ export function SearchPanel(props: { open: boolean; onClose: () => void }) {
               class="neu-form-input neu-search-input"
               value={query()}
               placeholder="正则表达式搜索，例如 createSignal|FileEditor"
-              onInput={(event) => setQuery(event.currentTarget.value)}
+              onInput={(event) => runSearch(event.currentTarget.value)}
             />
             <div class="neu-search-results">
-              <For each={results}>
+              <For each={results()}>
                 {(result) => (
                   <button type="button" class="neu-search-result">
                     <span class="neu-search-path">
                       {result.path}:{result.line}
                     </span>
-                    <span class="neu-search-snippet">{result.snippet}</span>
+                    <span class="neu-search-snippet">{result.text}</span>
                   </button>
                 )}
               </For>

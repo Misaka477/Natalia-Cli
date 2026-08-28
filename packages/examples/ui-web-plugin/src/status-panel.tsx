@@ -1,4 +1,5 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import type { AppState, CapabilityView, PluginView, ToolBlock } from "@natalia/view-store";
 
 type Tab = "status" | "diagnostics" | "tools";
 
@@ -25,7 +26,11 @@ const diagnostics = [
   { level: "error", message: "Web fetch failed: timeout", time: "10:41" },
 ];
 
-export function StatusPanel(props: { open: boolean; onClose: () => void }) {
+export function StatusPanel(props: {
+  open: boolean;
+  onClose: () => void;
+  state: AppState;
+}) {
   const [tab, setTab] = createSignal<Tab>("status");
 
   onMount(() => {
@@ -89,11 +94,11 @@ export function StatusPanel(props: { open: boolean; onClose: () => void }) {
               <div class="neu-status-grid">
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">Runtime</span>
-                  <span class="neu-status-card-value">运行中</span>
+                  <span class="neu-status-card-value">{props.state.status}</span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">当前模型</span>
-                  <span class="neu-status-card-value">Opus 4</span>
+                  <span class="neu-status-card-value">{props.state.modelSelection?.modelID ?? "未选择"}</span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">工作区</span>
@@ -101,7 +106,7 @@ export function StatusPanel(props: { open: boolean; onClose: () => void }) {
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">会话</span>
-                  <span class="neu-status-card-value">3 个</span>
+                  <span class="neu-status-card-value">{props.state.sessionID ?? "无"}</span>
                 </div>
               </div>
             </Show>
@@ -121,24 +126,22 @@ export function StatusPanel(props: { open: boolean; onClose: () => void }) {
             <Show when={tab() === "tools"}>
               <div class="neu-status-tools">
                 <div class="neu-status-section-title">工具</div>
-                <For each={tools}>
-                  {(tool) => (
+                <For each={Object.values(props.state.tools)}>
+                  {(tool: ToolBlock) => (
                     <div class="neu-status-tool-row">
                       <span class="neu-status-tool-name">{tool.name}</span>
-                      <span class="neu-status-tool-description">{tool.description}</span>
-                      <span class="neu-status-tool-status" data-pending={tool.status === "需审批"}>
-                        {tool.status}
-                      </span>
+                      <span class="neu-status-tool-description">{tool.summary}</span>
+                      <span class="neu-status-tool-status">{tool.status}</span>
                     </div>
                   )}
                 </For>
                 <div class="neu-status-section-title">能力</div>
-                <For each={capabilities}>
-                  {(cap) => (
+                <For each={Object.values(props.state.capabilities)}>
+                  {(cap: CapabilityView) => (
                     <div class="neu-status-cap-row">
-                      <span class="neu-status-cap-name">{cap.name}</span>
+                      <span class="neu-status-cap-name">{cap.name ?? cap.id}</span>
                       <span class="neu-status-cap-version">v{cap.version}</span>
-                      <span class="neu-status-cap-grants">{cap.grants.join(" · ")}</span>
+                      <span class="neu-status-cap-grants">{(cap.grants ?? []).join(" · ")}</span>
                     </div>
                   )}
                 </For>

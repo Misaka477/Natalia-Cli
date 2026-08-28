@@ -1,4 +1,5 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import type { AppState } from "@natalia/view-store";
 
 type Tab = "constitution" | "decisions" | "evidence" | "drift" | "workgraph";
 
@@ -36,7 +37,11 @@ const workEdges = [
   { sourceID: "n1", targetID: "n3", kind: "informed_by" },
 ];
 
-export function GovernancePanel(props: { open: boolean; onClose: () => void }) {
+export function GovernancePanel(props: {
+  open: boolean;
+  onClose: () => void;
+  state: AppState;
+}) {
   const [tab, setTab] = createSignal<Tab>("constitution");
 
   onMount(() => {
@@ -78,7 +83,7 @@ export function GovernancePanel(props: { open: boolean; onClose: () => void }) {
           </div>
           <div class="neu-governance-content">
             <Show when={tab() === "constitution"}>
-              <For each={constitutionRules}>
+              <For each={Object.values(props.state.constitutionRules)}>
                 {(rule) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={rule.priority}>{rule.ruleID}</span>
@@ -89,23 +94,23 @@ export function GovernancePanel(props: { open: boolean; onClose: () => void }) {
               </For>
             </Show>
             <Show when={tab() === "decisions"}>
-              <For each={decisions}>
+              <For each={props.state.decisions}>
                 {(record) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={record.status}>{record.status}</span>
                     <span class="neu-gov-text">{record.decision}</span>
-                    <span class="neu-gov-meta">Rationale: {record.rationale.join("; ")}</span>
+                    <span class="neu-gov-meta">Rationale: {(record.rationale ?? []).join("; ")}</span>
                   </div>
                 )}
               </For>
             </Show>
             <Show when={tab() === "evidence"}>
-              <For each={evidence}>
+              <For each={props.state.evidence}>
                 {(record) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={record.status}>{record.status}</span>
                     <span class="neu-gov-text">{record.objective}</span>
-                    <span class="neu-gov-meta">{record.taskID}{record.knownGaps.length ? ` · Gaps: ${record.knownGaps.join("; ")}` : ""}</span>
+                    <span class="neu-gov-meta">{record.taskID}{(record.knownGaps ?? []).length ? ` · Gaps: ${(record.knownGaps ?? []).join("; ")}` : ""}</span>
                   </div>
                 )}
               </For>
@@ -122,7 +127,7 @@ export function GovernancePanel(props: { open: boolean; onClose: () => void }) {
               </For>
             </Show>
             <Show when={tab() === "workgraph"}>
-              <For each={workNodes}>
+              <For each={Object.values(props.state.workGraphNodes)}>
                 {(node) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title">{node.kind}</span>
@@ -132,7 +137,7 @@ export function GovernancePanel(props: { open: boolean; onClose: () => void }) {
                 )}
               </For>
               <div class="neu-gov-section-title">Relations</div>
-              <For each={workEdges}>
+              <For each={Object.values(props.state.workGraphEdges)}>
                 {(edge) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title">{edge.kind}</span>

@@ -1,7 +1,15 @@
 import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import type { RuntimeClient } from "@natalia/contracts";
 
 export function PermissionPanel(props: {
   open: boolean;
+  approval: {
+    id: string;
+    title: string;
+    preview: string;
+    detail?: string;
+  } | null;
+  runtime?: Pick<RuntimeClient, "respondApproval">;
   onClose: () => void;
 }) {
   const [rejecting, setRejecting] = createSignal(false);
@@ -15,16 +23,18 @@ export function PermissionPanel(props: {
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
   });
 
-  function reject() {
-    setRejecting(true);
-  }
-
-  function rejectNow() {
+  function respond(decision: "once" | "session" | "reject", feedback?: string) {
+    if (!props.approval) return;
+    props.runtime?.respondApproval?.({
+      requestID: props.approval.id,
+      decision,
+      ...(feedback ? { feedback } : {}),
+    });
     props.onClose();
   }
 
-  function rejectWithReason() {
-    props.onClose();
+  function rejectReason() {
+    respond("reject", reason().trim() || undefined);
   }
 
   return (
@@ -51,16 +61,15 @@ export function PermissionPanel(props: {
           </div>
           <div class="neu-permission-body">
             <div class="neu-permission-tool">
-              <span class="neu-permission-tool-name">bash</span>
+              <span class="neu-permission-tool-name">{props.approval?.title ?? "权限请求"}</span>
               <span class="neu-permission-tool-badge">需审批</span>
             </div>
             <div class="neu-permission-command">
-              <span class="neu-permission-label">命令</span>
-              <pre class="neu-permission-command-text">rm -rf dist</pre>
+              <span class="neu-permission-label">预览</span>
+              <pre class="neu-permission-command-text">{props.approval?.preview ?? "等待模型请求权限..."}</pre>
             </div>
             <div class="neu-permission-info">
-              <span>工作区：/home/aquama/Development/Natalia_Project/natalia-cli</span>
-              <span>来源：Main Agent</span>
+              {props.approval?.detail ? <span>{props.approval.detail}</span> : <span>来源：运行时</span>}
             </div>
           </div>
           <Show
@@ -78,14 +87,14 @@ export function PermissionPanel(props: {
                   <button
                     type="button"
                     class="neu-permission-btn neu-permission-deny"
-                    onClick={rejectNow}
+                    onClick={() => respond("reject")}
                   >
                     直接拒绝
                   </button>
                   <button
                     type="button"
                     class="neu-permission-btn neu-permission-reject-submit"
-                    onClick={rejectWithReason}
+                    onClick={rejectReason}
                   >
                     提交原因并拒绝
                   </button>
@@ -97,21 +106,21 @@ export function PermissionPanel(props: {
               <button
                 type="button"
                 class="neu-permission-btn neu-permission-deny"
-                onClick={reject}
+                onClick={() => setRejecting(true)}
               >
                 拒绝
               </button>
               <button
                 type="button"
                 class="neu-permission-btn neu-permission-allow"
-                onClick={props.onClose}
+                onClick={() => respond("once")}
               >
                 允许一次
               </button>
               <button
                 type="button"
                 class="neu-permission-btn neu-permission-allow-session"
-                onClick={props.onClose}
+                onClick={() => respond("session")}
               >
                 允许本次会话
               </button>
