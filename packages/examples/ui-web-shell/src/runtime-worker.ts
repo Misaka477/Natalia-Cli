@@ -64,6 +64,7 @@ async function dispatch(method: string, value: unknown) {
   if (method === "workspace.search") return runtime.workspaceSearch?.(value as never);
   if (method === "workspace.list") return runtime.workspaceList?.(value as never);
   if (method === "workspace.read") return runtime.workspaceRead?.(value as never);
+  if (method === "workspace.add") return runtime.workspaceAdd?.(value as never);
   if (method === "config.get") return runtime.configGet?.();
   if (method === "config.update") return runtime.updateConfig?.(value as never);
   if (method === "mcp.server.add") return runtime.mcpServerAdd?.(value as never);

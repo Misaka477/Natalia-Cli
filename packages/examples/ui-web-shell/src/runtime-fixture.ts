@@ -389,6 +389,9 @@ export function createWebFixtureRuntime(): RuntimeClient {
         truncated: false,
       };
     },
+    async workspaceAdd(input) {
+      return { workspace: String(input?.path ?? ""), added: true };
+    },
     async workspaceRead(input) {
       const path = String(input?.path ?? "");
       const content = path.endsWith(".md")

@@ -1798,6 +1798,10 @@ export type RuntimeClient = {
     offset?: number;
     limit?: number;
   }): Promise<RuntimeWorkspaceContent>;
+  /** Adds a workspace root to the runtime's workspace set. */
+  workspaceAdd?(input: {
+    path: string;
+  }): Promise<{ workspace: string; added: boolean }>;
   workspaceGlob?(input: {
     pattern: string;
     path?: string;

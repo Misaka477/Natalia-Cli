@@ -138,6 +138,9 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async workspaceRead(input) {
       return (await call("workspace.read", input)) as never;
     },
+    async workspaceAdd(input) {
+      return (await call("workspace.add", input)) as never;
+    },
     async configGet() {
       return (await call("config.get")) as never;
     },
