@@ -603,7 +603,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={sessionMenuOpen()}
         session={selectedSession()}
         onClose={() => setSessionMenuOpen(false)}
-        onNew={() => props.ctx.runtime.sessionNew?.()}
+        onNew={async () => {
+          await props.ctx.runtime.sessionNew?.();
+          const sessions = await props.ctx.runtime.sessionList?.();
+          if (sessions) setSessionList(sessions);
+        }}
         onFork={() =>
           props.ctx.runtime.sessionDuplicate?.(
             state().sessionID ?? "current",
