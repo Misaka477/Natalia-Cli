@@ -250,7 +250,7 @@ export function ModelPanel(props: {
                 />
               </div>
 
-              <div class="neu-form-section-title">模型</div>
+              <div class="neu-form-section-title">模型（当前 providerAdd 仅保存基础字段，以下为界面草稿）</div>
               <For each={models()}>
                 {(model, index) => (
                   <div class="neu-model-edit-row">
@@ -292,7 +292,7 @@ export function ModelPanel(props: {
                 + 添加模型
               </button>
 
-              <div class="neu-form-section-title">请求头（可选）</div>
+              <div class="neu-form-section-title">请求头（界面草稿，暂不写入 runtime）</div>
               <For each={headers()}>
                 {(header, index) => (
                   <div class="neu-model-edit-row">
