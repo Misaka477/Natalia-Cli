@@ -1,5 +1,5 @@
 import type { UiPluginContext } from "@natalia/ui-host";
-import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ConfigV3 } from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ConfigV3, RuntimeClient } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
@@ -667,6 +667,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }
         onAddMcp={(input) => props.ctx.runtime.mcpServerAdd?.(input)}
         onRemoveMcp={(name) => props.ctx.runtime.mcpServerRemove?.(name)}
+        onAddPlugin={(spec) =>
+          (props.ctx.runtime as RuntimeClient & {
+            pluginInstall(input: { spec: string }): Promise<unknown>;
+          }).pluginInstall?.({ spec })
+        }
+        onRemovePlugin={(name) =>
+          (props.ctx.runtime as RuntimeClient & {
+            pluginUninstall(pluginID: string): Promise<unknown>;
+          }).pluginUninstall?.(name)
+        }
       />
     </div>
   );

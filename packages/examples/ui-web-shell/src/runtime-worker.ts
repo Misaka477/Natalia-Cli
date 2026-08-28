@@ -73,6 +73,17 @@ async function dispatch(method: string, value: unknown) {
   if (method === "flow.delete") return runtime.deleteFlowDocument?.(value as never);
   if (method === "task.save") return runtime.saveTaskDocument?.(value as never);
   if (method === "task.delete") return runtime.deleteTaskDocument?.(value as never);
+  if (method === "plugin.install") {
+    const input = (value ?? {}) as { spec?: string };
+    return (runtime as typeof runtime & {
+      pluginInstall(input: { spec: string }): Promise<unknown>;
+    }).pluginInstall?.({ spec: String(input.spec ?? "") });
+  }
+  if (method === "plugin.uninstall") {
+    return (runtime as typeof runtime & {
+      pluginUninstall(pluginID: string): Promise<unknown>;
+    }).pluginUninstall?.(String(value ?? ""));
+  }
   if (method === "snapshot") return runtime.snapshot();
   if (method === "diagnostic") {
     const input = (value ?? {}) as { message?: unknown; level?: unknown };

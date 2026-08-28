@@ -134,6 +134,8 @@ export function SettingsPanel(props: {
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
+  onAddPlugin?: (spec: string) => unknown;
+  onRemovePlugin?: (name: string) => unknown;
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
   const [sections, setSections] = createSignal<ExtensionSection[]>(
@@ -353,7 +355,7 @@ export function SettingsPanel(props: {
                   </>
                 }
               >
-                <ExtensionSettingsContent plugins={props.state?.plugins} mcp={props.state?.mcp} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} />
+                <ExtensionSettingsContent plugins={props.state?.plugins} mcp={props.state?.mcp} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} onAddPlugin={props.onAddPlugin} onRemovePlugin={props.onRemovePlugin} />
               </Show>
             </section>
           </div>

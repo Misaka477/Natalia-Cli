@@ -76,6 +76,8 @@ export function ExtensionSettingsContent(props: {
   mcp?: Record<string, McpView>;
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
+  onAddPlugin?: (spec: string) => unknown;
+  onRemovePlugin?: (name: string) => unknown;
 }) {
   const [sections, setSections] = createSignal<ExtensionSection[]>(
     buildInitialSections(props).map((section) => ({
@@ -112,6 +114,7 @@ export function ExtensionSettingsContent(props: {
   function removeRow(kind: ExtensionKind, index: number) {
     const row = rows(kind)[index];
     if (kind === "mcp" && row) props.onRemoveMcp?.(row.name);
+    if (kind === "plugins" && row) props.onRemovePlugin?.(row.name);
     setSections((prev) =>
       prev.map((section) =>
         section.id === kind
@@ -190,6 +193,7 @@ export function ExtensionSettingsContent(props: {
           : section,
       ),
     );
+    props.onAddPlugin?.(spec);
     closeAdd();
   }
 

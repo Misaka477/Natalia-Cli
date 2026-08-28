@@ -454,5 +454,24 @@ export function createWebFixtureRuntime(): RuntimeClient {
     async deleteTaskDocument(input) {
       return { path: input.path, deleted: true, alreadyDeleted: false };
     },
+    async pluginInstall(input) {
+      publish({
+        type: "plugin.update",
+        id: input.spec.split("/").pop() ?? input.spec,
+        status: "loaded",
+      });
+      return { pluginID: input.spec, installed: true };
+    },
+    async pluginUninstall(pluginID) {
+      publish({
+        type: "plugin.update",
+        id: pluginID,
+        status: "unloaded",
+      });
+      return { removed: true };
+    },
+  } as RuntimeClient & {
+    pluginInstall(input: { spec: string }): Promise<{ pluginID: string; installed: boolean }>;
+    pluginUninstall(pluginID: string): Promise<{ removed: boolean }>;
   };
 }

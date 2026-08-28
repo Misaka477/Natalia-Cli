@@ -144,6 +144,12 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async updateConfig(input) {
       return (await call("config.update", input)) as never;
     },
+    async pluginInstall(input) {
+      return (await call("plugin.install", input)) as never;
+    },
+    async pluginUninstall(pluginID) {
+      return (await call("plugin.uninstall", pluginID)) as never;
+    },
     async mcpServerAdd(input) {
       return (await call("mcp.server.add", input)) as never;
     },
@@ -168,5 +174,8 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async dispose() {
       worker.terminate();
     },
+  } as RuntimeClient & {
+    pluginInstall(input: { spec: string }): Promise<{ pluginID: string; installed: boolean }>;
+    pluginUninstall(pluginID: string): Promise<{ removed: boolean }>;
   };
 }
