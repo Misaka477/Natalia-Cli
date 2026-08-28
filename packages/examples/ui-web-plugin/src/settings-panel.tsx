@@ -259,51 +259,96 @@ export function SettingsPanel(props: {
                   <>
                     <div class="neu-settings-content-title">{current().label}</div>
                     <For each={current().items}>
-                      {(item) => (
-                        <Show
-                          when={item.label === "Providers & Models" && props.onOpenModels}
-                          fallback={
-                            <Show
-                              when={item.label === "Theme Mode" && props.onCycleThemeMode}
-                              fallback={
-                                <div class="neu-settings-item">
-                                  <div class="neu-settings-item-main">
-                                    <span class="neu-settings-item-label">{item.label}</span>
-                                    <span class="neu-settings-item-description">{item.description}</span>
-                                  </div>
-                                  <span class="neu-settings-item-value">{runtimeValue(item.label) ?? item.value}</span>
-                                </div>
-                              }
+                      {(item) => {
+                        const value = runtimeValue(item.label) ?? item.value;
+                        if (item.label === "Providers & Models" && props.onOpenModels) {
+                          return (
+                            <button
+                              type="button"
+                              class="neu-settings-item neu-settings-item-button"
+                              onClick={() => props.onOpenModels?.()}
                             >
-                              <button
-                                type="button"
-                                class="neu-settings-item neu-settings-item-button"
-                                onClick={() => props.onCycleThemeMode?.()}
-                              >
-                                <div class="neu-settings-item-main">
-                                  <span class="neu-settings-item-label">{item.label}</span>
-                                  <span class="neu-settings-item-description">{item.description}</span>
-                                </div>
-                                <span class="neu-settings-item-value">
-                                  {props.themeMode === "dark" ? "深色" : props.themeMode === "system" ? "系统" : "浅色"}
-                                </span>
-                              </button>
-                            </Show>
-                          }
-                        >
-                          <button
-                            type="button"
-                            class="neu-settings-item neu-settings-item-button"
-                            onClick={() => props.onOpenModels?.()}
-                          >
+                              <div class="neu-settings-item-main">
+                                <span class="neu-settings-item-label">{item.label}</span>
+                                <span class="neu-settings-item-description">{item.description}</span>
+                              </div>
+                              <span class="neu-settings-item-value">{item.value}</span>
+                            </button>
+                          );
+                        }
+                        if (item.label === "Theme Mode" && props.onCycleThemeMode) {
+                          return (
+                            <button
+                              type="button"
+                              class="neu-settings-item neu-settings-item-button"
+                              onClick={() => props.onCycleThemeMode?.()}
+                            >
+                              <div class="neu-settings-item-main">
+                                <span class="neu-settings-item-label">{item.label}</span>
+                                <span class="neu-settings-item-description">{item.description}</span>
+                              </div>
+                              <span class="neu-settings-item-value">
+                                {props.themeMode === "dark" ? "深色" : props.themeMode === "system" ? "系统" : "浅色"}
+                              </span>
+                            </button>
+                          );
+                        }
+                        if (item.label === "Compaction" && props.onUpdateConfig && props.config) {
+                          return (
+                            <button
+                              type="button"
+                              class="neu-settings-item neu-settings-item-button"
+                              onClick={() => {
+                                const next = !props.config?.context?.compactionEnabled;
+                                props.onUpdateConfig?.({
+                                  context: { ...props.config?.context, compactionEnabled: next },
+                                });
+                              }}
+                            >
+                              <div class="neu-settings-item-main">
+                                <span class="neu-settings-item-label">{item.label}</span>
+                                <span class="neu-settings-item-description">{item.description}</span>
+                              </div>
+                              <span class="neu-settings-item-value">{value}</span>
+                            </button>
+                          );
+                        }
+                        if (item.label === "Terminal Window Mode" && props.onUpdateConfig && props.config) {
+                          return (
+                            <button
+                              type="button"
+                              class="neu-settings-item neu-settings-item-button"
+                              onClick={() => {
+                                const modes = ["auto", "windowless", "window"] as const;
+                                const current = props.config?.runtime?.terminal?.windowMode ?? "auto";
+                                const index = modes.indexOf(current as (typeof modes)[number]);
+                                const next = modes[(index + 1) % modes.length];
+                                props.onUpdateConfig?.({
+                                  runtime: {
+                                    ...props.config?.runtime,
+                                    terminal: { windowMode: next },
+                                  },
+                                });
+                              }}
+                            >
+                              <div class="neu-settings-item-main">
+                                <span class="neu-settings-item-label">{item.label}</span>
+                                <span class="neu-settings-item-description">{item.description}</span>
+                              </div>
+                              <span class="neu-settings-item-value">{value}</span>
+                            </button>
+                          );
+                        }
+                        return (
+                          <div class="neu-settings-item">
                             <div class="neu-settings-item-main">
                               <span class="neu-settings-item-label">{item.label}</span>
                               <span class="neu-settings-item-description">{item.description}</span>
                             </div>
-                            <span class="neu-settings-item-value">{item.value}</span>
-                          </button>
-                        </Show>
-                      )}
+                            <span class="neu-settings-item-value">{value}</span>
+                          </div>
+                        );
+                      }}
                     </For>
                   </>
                 }
