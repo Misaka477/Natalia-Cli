@@ -279,6 +279,15 @@ export function FileEditor(props: {
     setContents((prev) => ({ ...prev, [selectedPath()!]: value }));
   }
 
+  function saveCurrentFile() {
+    const path = selectedPath();
+    if (!path || !props.transport) return;
+    void props.transport.writeFile(
+      path,
+      new TextEncoder().encode(contents()[path] ?? ""),
+    );
+  }
+
   function renderTree(items: FileNode[], depth: number) {
     return (
       <For each={items}>
@@ -460,6 +469,7 @@ export function FileEditor(props: {
                   value={selectedContent()}
                   spellcheck={false}
                   onInput={(event) => setContent(event.currentTarget.value)}
+                  onBlur={saveCurrentFile}
                 />
               </>
             )}
