@@ -68,23 +68,18 @@ function SessionTree(props: {
   workspaces: WorkspaceSummary[];
   onSelect: (name: string) => void;
 }) {
-  const groups = createMemo(() => [
-    ...(props.workspaces.map((workspace) => ({
+  const groups = createMemo(() =>
+    props.workspaces.map((workspace) => ({
       workspace: workspace.title,
-      sessions: [] as { name: string; status: string }[],
-    }))),
-    ...(props.sessions.length
-      ? [
-          {
-            workspace: "NATALIA-CLI",
-            sessions: props.sessions.map((session) => ({
+      sessions:
+        workspace.status === "active"
+          ? props.sessions.map((session) => ({
               name: session.title,
               status: session.cancelled ? "error" : session.resumable ? "idle" : "running",
-            })),
-          },
-        ]
-      : []),
-  ]);
+            }))
+          : [],
+    })),
+  );
 
   return (
     <div class="neu-tree">
