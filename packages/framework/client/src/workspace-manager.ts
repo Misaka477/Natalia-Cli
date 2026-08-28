@@ -83,6 +83,10 @@ export type WorkspaceManager = {
   add(input: { path: string; title?: string }): Promise<WorkspaceSummary>;
   remove(workspaceID: string): Promise<{ removed: boolean }>;
   activate(workspaceID: string): Promise<WorkspaceSummary>;
+  workspaceRoots(): Promise<WorkspaceSummary[]>;
+  workspaceAdd(input: { path: string; title?: string }): Promise<WorkspaceSummary>;
+  workspaceRemove(workspaceID: string): Promise<{ removed: boolean }>;
+  workspaceActivate(workspaceID: string): Promise<WorkspaceSummary>;
   get(workspaceID: string): WorkspaceRuntime | undefined;
   getActive(): WorkspaceRuntime | undefined;
   workspacePermissionGet(workspaceID: string): Promise<WorkspacePermissionSettings>;
@@ -118,7 +122,6 @@ export function createWorkspaceManager(
     const ws = runtimes.get(workspaceID);
     if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
     activeWorkspaceID = workspaceID;
-    activeWorkspaceID = workspaceID;
     ws.status = "active";
     for (const other of runtimes.values()) {
       if (other.workspaceID !== workspaceID && other.status === "active")
@@ -127,10 +130,53 @@ export function createWorkspaceManager(
     return summary(ws);
   }
 
+  async function addWorkspace(input: { path: string; title?: string }) {
+    const root = resolve(input.path);
+    const existing = [...runtimes.values()].find((ws) => ws.root === root);
+    if (existing) return summary(existing);
+
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      pluginStoreRoot: options.pluginStoreRoot,
+      globalConfigPath: options.globalConfigPath,
+      useSqliteStore: options.useSqliteStore,
+    });
+    const settings = await readSettings(root);
+    const ws: WorkspaceRuntime = {
+      workspaceID: `ws_${randomUUID().replace(/-/gu, "").slice(0, 12)}`,
+      root,
+      title: input.title ?? root.split("/").pop() ?? root,
+      client,
+      status: "idle",
+      permissionSettings: settings.permissionSettings,
+      toolSettings: settings.toolSettings,
+    };
+    runtimes.set(ws.workspaceID, ws);
+    if (!activeWorkspaceID) await activate(ws.workspaceID);
+    return summary(ws);
+  }
+
+  async function removeWorkspace(workspaceID: string) {
+    const ws = runtimes.get(workspaceID);
+    if (!ws) return { removed: true };
+    await ws.client.dispose?.();
+    runtimes.delete(workspaceID);
+    if (activeWorkspaceID === workspaceID) {
+      const next = runtimes.values().next().value;
+      activeWorkspaceID = next?.workspaceID;
+      if (next) next.status = "active";
+    }
+    return { removed: true };
+  }
+
   return {
     async list() {
       return [...runtimes.values()].map(summary);
     },
+    async workspaceRoots() { return [...runtimes.values()].map(summary); },
+    workspaceAdd: addWorkspace,
+    workspaceRemove: removeWorkspace,
+    workspaceActivate: activate,
     async workspacePermissionGet(workspaceID) {
       const ws = runtimes.get(workspaceID);
       if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
@@ -155,43 +201,8 @@ export function createWorkspaceManager(
       ws.toolSettings = saved.toolSettings;
       return ws.toolSettings;
     },
-    async add(input) {
-      const root = resolve(input.path);
-      const existing = [...runtimes.values()].find((ws) => ws.root === root);
-      if (existing) return summary(existing);
-
-      const client = createRealRuntimeClient({
-        workspaceRoot: root,
-        pluginStoreRoot: options.pluginStoreRoot,
-        globalConfigPath: options.globalConfigPath,
-        useSqliteStore: options.useSqliteStore,
-      });
-      const settings = await readSettings(root);
-      const ws: WorkspaceRuntime = {
-        workspaceID: `ws_${randomUUID().replace(/-/gu, "").slice(0, 12)}`,
-        root,
-        title: input.title ?? root.split("/").pop() ?? root,
-        client,
-        status: "idle",
-        permissionSettings: settings.permissionSettings,
-        toolSettings: settings.toolSettings,
-      };
-      runtimes.set(ws.workspaceID, ws);
-      if (!activeWorkspaceID) await activate(ws.workspaceID);
-      return summary(ws);
-    },
-    async remove(workspaceID) {
-      const ws = runtimes.get(workspaceID);
-      if (!ws) return { removed: true };
-      await ws.client.dispose?.();
-      runtimes.delete(workspaceID);
-      if (activeWorkspaceID === workspaceID) {
-        const next = runtimes.values().next().value;
-        activeWorkspaceID = next?.workspaceID;
-        if (next) next.status = "active";
-      }
-      return { removed: true };
-    },
+    add: addWorkspace,
+    remove: removeWorkspace,
     activate,
     get(workspaceID) {
       return runtimes.get(workspaceID);
@@ -206,7 +217,6 @@ export function createWorkspaceManager(
     },
   };
 }
-
 
 /**
  * A RuntimeClient facade that delegates all active-workspace methods to the
