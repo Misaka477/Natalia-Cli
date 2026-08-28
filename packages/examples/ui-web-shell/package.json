@@ -13,6 +13,7 @@
   "dependencies": {
     "@natalia/contracts": "workspace:*",
     "@natalia/example-ui-web-plugin": "workspace:*",
+    "@natalia/transport": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "solid-js": "1.9.12"
   },

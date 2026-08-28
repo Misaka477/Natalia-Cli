@@ -39,6 +39,7 @@ export default defineConfig({
     alias: {
       "solid-js/web": resolve(solidJs, "web"),
       "solid-js": solidJs,
+      "@natalia/transport": resolve(workspace, "packages/hosts/transport/src/rpc-client.ts"),
     },
   },
   esbuild: { jsx: "automatic", jsxImportSource: "solid-js" },

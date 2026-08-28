@@ -27,6 +27,7 @@
         "packages/domains/governance-ledger/src/index.ts"
       ],
       "@natalia/contracts": ["packages/core/contracts/src/index.ts"],
+      "@natalia/transport": ["packages/hosts/transport/src/index.ts"],
       "@natalia/example-ui-plugin": [
         "packages/examples/ui-plugin/src/index.ts"
       ],

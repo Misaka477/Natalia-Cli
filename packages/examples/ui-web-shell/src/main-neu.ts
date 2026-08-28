@@ -4,17 +4,25 @@ import {
   createUiPluginHost,
   createWebTransport,
 } from "@natalia/ui-host";
-import { createWebWorkerRuntime } from "./runtime";
+import { createWebRuntimeClient } from "./runtime-rpc";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
 
+const runtimeURL =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_NATALIA_RUNTIME_URL ??
+  "http://127.0.0.1:8787";
+
+const runtime = createWebRuntimeClient({
+  url: runtimeURL,
+});
+
 const host = await createUiPluginHost({
   root,
-  runtime: createWebWorkerRuntime(),
+  runtime,
   transport: createWebTransport(),
   logger: createConsoleLogger("ui-web-shell"),
 });
 
-// Load the Neumorphism UI prototype
+// Load the Neumorphism dark UI plugin
 await host.load(createNataliaNeuPlugin());
