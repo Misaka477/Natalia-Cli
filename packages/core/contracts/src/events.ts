@@ -297,7 +297,7 @@ export type CollaborationMessage =
     });
 
 type RuntimeEventData =
-  | { type: "session.created"; sessionID: SessionID; title: string }
+  | { type: "session.created"; sessionID: SessionID; title: string; workspaceID?: string }
   | { type: "session.title.updated"; sessionID: SessionID; title: string }
   | { type: "session.ready"; sessionID: SessionID }
   | {
@@ -942,6 +942,7 @@ type RuntimeEventData =
   | {
       type: "checkpoint.created";
       id: string;
+      workspaceID?: string;
       reason: string;
       turnID?: string;
       stepID?: string;
@@ -1220,7 +1221,28 @@ type RuntimeEventData =
   | {
       type: "settings.updated";
       scope: "global" | "project";
-    };
+    }
+
+  | {
+      type: "workspace.added";
+      workspace: WorkspaceSummary;
+      workspaceID: string;
+    }
+  | {
+      type: "workspace.activated";
+      workspace: WorkspaceSummary;
+      workspaceID: string;
+    }
+  | {
+      type: "workspace.removed";
+      workspaceID: string;
+    }
+  | {
+      type: "workspace.status";
+      workspace: WorkspaceSummary;
+      workspaceID: string;
+    }
+;
 
 /**
  * An episode groups all events emitted by one isolated execution without
@@ -1237,6 +1259,8 @@ type RuntimeEventData =
 export type RuntimeEvent = RuntimeEventData & {
   episodeID?: EpisodeID;
   sessionID?: SessionID;
+  /** Owning workspace for multi-workspace runtime hosts. */
+  workspaceID?: string;
   /** Owning subagent for events projected into a child conversation. */
   agentID?: string;
 };
@@ -1579,6 +1603,7 @@ export type WorkspaceToolSettings = {
 
 export type RuntimeSessionSummary = {
   id: string;
+  workspaceID?: string;
   title: string;
   createdAt: string;
   lastAccessedAt?: string;
@@ -1588,6 +1613,7 @@ export type RuntimeSessionSummary = {
   pendingInputs: number;
   cancelled: boolean;
   resumable: boolean;
+  status?: "idle" | "running" | "error" | "stopped";
   /**
    * TERM-M.3 (c): a terminal the model asked a human to take over, with the
    * turn ended. Present while the runtime is waiting for the human to finish
@@ -1941,6 +1967,7 @@ export type RuntimeClient = {
   sessionNew?(input?: {
     id?: string;
     title?: string;
+    workspaceID?: string;
   }): Promise<{ sessionID: string; created: boolean }>;
   /**
    * Archives a session record: it stays listable with `archived: true` and

@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import type { WorkspaceSummary, WorkspacePermissionSettings, WorkspaceToolSettings } from "@natalia/contracts";
+import type { RuntimeSessionSummary, WorkspaceSummary, WorkspacePermissionSettings, WorkspaceToolSettings } from "@natalia/contracts";
 import { createRealRuntimeClient } from "./runtime/main";
 import type { RealRuntimeClientOptions } from "./runtime/options";
 
@@ -136,14 +136,23 @@ export function createWorkspaceManager(
   const runtimes = new Map<string, WorkspaceRuntime>();
   let activeWorkspaceID: string | undefined;
 
-  function summary(ws: WorkspaceRuntime): WorkspaceSummary {
+  async function summary(ws: WorkspaceRuntime): Promise<WorkspaceSummary> {
+    let sessions: RuntimeSessionSummary[] = [];
+    try {
+      sessions = (await ws.client.sessionList?.()) ?? [];
+    } catch {
+      // A workspace may still be initializing; list failure should not hide the
+      // workspace row from the UI.
+    }
     return {
       workspaceID: ws.workspaceID,
       root: ws.root,
       title: ws.title,
       status: ws.status,
-      sessionCount: 0,
-      runningSessionCount: 0,
+      sessionCount: sessions.length,
+      runningSessionCount: sessions.filter(
+        (session) => session.pendingInputs > 0 || !session.cancelled,
+      ).length,
     };
   }
 
@@ -156,13 +165,13 @@ export function createWorkspaceManager(
       if (other.workspaceID !== workspaceID && other.status === "active")
         other.status = "idle";
     }
-    return summary(ws);
+    return await summary(ws);
   }
 
   async function addWorkspace(input: { path: string; title?: string }) {
     const root = resolve(input.path);
     const existing = [...runtimes.values()].find((ws) => ws.root === root);
-    if (existing) return summary(existing);
+    if (existing) return await summary(existing);
 
     const client = createRealRuntimeClient({
       workspaceRoot: root,
@@ -188,7 +197,7 @@ export function createWorkspaceManager(
         title: runtime.title,
       })),
     );
-    return summary(ws);
+    return await summary(ws);
   }
 
   async function removeWorkspace(workspaceID: string) {
@@ -220,9 +229,9 @@ export function createWorkspaceManager(
       }
     },
     async list() {
-      return [...runtimes.values()].map(summary);
+      return Promise.all([...runtimes.values()].map(summary));
     },
-    async workspaceRoots() { return [...runtimes.values()].map(summary); },
+    async workspaceRoots() { return Promise.all([...runtimes.values()].map(summary)); },
     workspaceAdd: addWorkspace,
     workspaceRemove: removeWorkspace,
     workspaceActivate: activate,
@@ -283,12 +292,37 @@ export function createWorkspaceRuntimeClient(
     for (const listener of listeners) listener(event);
   }
 
+  function decorateSession<T extends RuntimeSessionSummary>(session: T): T {
+    const active = manager.getActive();
+    if (!active) return session;
+    const summarySession = session as RuntimeSessionSummary;
+    const status =
+      summarySession.status ??
+      (summarySession.cancelled
+        ? "error"
+        : summarySession.pendingInputs > 0
+          ? "running"
+          : summarySession.resumable
+            ? "idle"
+            : "stopped");
+    return { ...session, workspaceID: active.workspaceID, status };
+  }
+
+  function startWorkspaceClient(workspace: WorkspaceRuntime) {
+    if (startedClients.has(workspace.workspaceID)) return;
+    startedClients.add(workspace.workspaceID);
+    workspace.client.start((event) =>
+      emit({ ...event, workspaceID: workspace.workspaceID }),
+    );
+  }
+
   function startActiveClient() {
     const active = manager.getActive();
-    if (!active) return;
-    if (startedClients.has(active.workspaceID)) return;
-    startedClients.add(active.workspaceID);
-    active.client.start(emit);
+    if (active) startWorkspaceClient(active);
+  }
+
+  function emitWorkspace(event: import("@natalia/contracts").RuntimeEvent) {
+    emit(event);
   }
 
   const handler: ProxyHandler<object> = {
@@ -305,6 +339,11 @@ export function createWorkspaceRuntimeClient(
           const wasEmpty = !manager.getActive();
           const result = await manager.workspaceAdd(input);
           if (started && (wasEmpty || result.status === "active")) startActiveClient();
+          if (started) emitWorkspace({
+            type: "workspace.added",
+            workspace: result,
+            workspaceID: result.workspaceID,
+          });
           return result;
         };
       }
@@ -312,6 +351,51 @@ export function createWorkspaceRuntimeClient(
         return async (workspaceID: string) => {
           const result = await manager.workspaceActivate(workspaceID);
           if (started) startActiveClient();
+          if (started) emitWorkspace({
+            type: "workspace.activated",
+            workspace: result,
+            workspaceID: result.workspaceID,
+          });
+          return result;
+        };
+      }
+      if (prop === "workspaceRemove") {
+        return async (workspaceID: string) => {
+          const result = await manager.workspaceRemove(workspaceID);
+          if (started) emitWorkspace({
+            type: "workspace.removed",
+            workspaceID,
+          });
+          return result;
+        };
+      }
+      if (
+        prop === "sessionList" ||
+        prop === "sessionRename" ||
+        prop === "sessionPin" ||
+        prop === "sessionDuplicate" ||
+        prop === "sessionFork" ||
+        prop === "sessionDelete" ||
+        prop === "sessionAttach"
+      ) {
+        const activeForSession = manager.getActive();
+        if (!activeForSession) return undefined;
+        const fn = (activeForSession.client as unknown as Record<PropertyKey, unknown>)[prop];
+        if (typeof fn !== "function") return undefined;
+        return async (...args: unknown[]) => {
+          const result = await (fn as (...call: unknown[]) => Promise<unknown>).apply(activeForSession.client, args);
+          if (prop === "sessionList" && Array.isArray(result)) {
+            return result.map((item) => decorateSession(item as RuntimeSessionSummary));
+          }
+          if (
+            result &&
+            typeof result === "object" &&
+            "id" in result &&
+            "title" in result &&
+            !("workspaceID" in result)
+          ) {
+            return decorateSession(result as RuntimeSessionSummary);
+          }
           return result;
         };
       }
