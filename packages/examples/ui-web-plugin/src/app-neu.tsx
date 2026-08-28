@@ -135,6 +135,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [sessionMenuOpen, setSessionMenuOpen] = createSignal(false);
   const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
+  const [workspaceError, setWorkspaceError] = createSignal<string>("");
   const [checkpointOpen, setCheckpointOpen] = createSignal(false);
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
@@ -579,18 +580,27 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       <WorkspacePanel
         open={workspaceOpen()}
         onClose={() => setWorkspaceOpen(false)}
+        error={workspaceError()}
         onAdd={(path) => {
-          // Only add when the runtime confirms the workspace.
+          setWorkspaceError("");
           if (!path) return;
-          const result = props.ctx.runtime.workspaceAdd?.({ path });
-          if (!result) return;
-          void (result as Promise<WorkspaceSummary>).then((workspace) => {
-            setWorkspaces((prev) =>
-              prev.some((item) => item.workspaceID === workspace.workspaceID)
-                ? prev
-                : [...prev, workspace],
-            );
-          });
+          if (!props.ctx.runtime.workspaceAdd) {
+            setWorkspaceError("当前 runtime 不支持 workspaceAdd，请确认连接的是 Natalia runtime serve");
+            return;
+          }
+          void (props.ctx.runtime.workspaceAdd({ path }) as Promise<WorkspaceSummary>)
+            .then((workspace) => {
+              setWorkspaces((prev) =>
+                prev.some((item) => item.workspaceID === workspace.workspaceID)
+                  ? prev
+                  : [...prev, workspace],
+              );
+            })
+            .catch((error: unknown) => {
+              setWorkspaceError(
+                error instanceof Error ? error.message : String(error),
+              );
+            });
         }}
       />
       <SessionActionsPanel

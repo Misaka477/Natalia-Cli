@@ -4,6 +4,7 @@ export function WorkspacePanel(props: {
   open: boolean;
   onClose: () => void;
   onAdd?: (path: string) => unknown;
+  error?: string;
 }) {
   const [path, setPath] = createSignal("");
 
@@ -38,6 +39,9 @@ export function WorkspacePanel(props: {
             </button>
           </div>
           <div class="neu-workspace-body">
+            <Show when={props.error}>
+              <div class="neu-workspace-error">{props.error}</div>
+            </Show>
             <input
               class="neu-form-input"
               value={path()}

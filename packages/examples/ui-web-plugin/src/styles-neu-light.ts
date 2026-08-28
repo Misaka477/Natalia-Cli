@@ -2425,6 +2425,15 @@ button.neu-settings-item.neu-settings-item-button:active {
   gap: 12px;
 }
 
+/* ===== Workspace error ===== */
+.neu-workspace-error {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  color: var(--neu-error);
+  font-size: 12px;
+}
+
 /* ===== Smooth transitions ===== */
 .neu-workspace-row,
 .neu-tree-row,
