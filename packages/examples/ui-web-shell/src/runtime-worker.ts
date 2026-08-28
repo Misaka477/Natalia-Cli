@@ -69,6 +69,7 @@ async function dispatch(method: string, value: unknown) {
   if (method === "mcp.server.add") return runtime.mcpServerAdd?.(value as never);
   if (method === "mcp.server.remove") return runtime.mcpServerRemove?.(value as never);
   if (method === "flow.save") return runtime.saveFlowDocument?.(value as never);
+  if (method === "provider.add") return runtime.providerAdd?.(value as never);
   if (method === "flow.delete") return runtime.deleteFlowDocument?.(value as never);
   if (method === "snapshot") return runtime.snapshot();
   if (method === "diagnostic") {

@@ -153,6 +153,9 @@ export function createWebWorkerRuntime(): RuntimeClient {
     async saveFlowDocument(input) {
       return (await call("flow.save", input)) as never;
     },
+    async providerAdd(input) {
+      return (await call("provider.add", input)) as never;
+    },
     async deleteFlowDocument(input) {
       return (await call("flow.delete", input)) as never;
     },

@@ -625,6 +625,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         catalog={modelCatalog()}
         selection={state().modelSelection ?? undefined}
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
+        onAddProvider={(input) => props.ctx.runtime.providerAdd?.(input)}
       />
       <StatusPanel open={statusOpen()} onClose={() => setStatusOpen(false)} state={state()} />
       <SettingsPanel

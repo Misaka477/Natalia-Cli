@@ -29,6 +29,12 @@ export function ModelPanel(props: {
   catalog?: RuntimeModelCatalogEntry[];
   selection?: RuntimeModelSelection;
   onSetDefault?: (modelID: string) => unknown;
+  onAddProvider?: (input: {
+    name: string;
+    type: string;
+    baseURL?: string;
+    apiKey: string;
+  }) => unknown;
 }) {
   const [view, setView] = createSignal<ModelView>("tree");
   const providers = () => {
@@ -96,6 +102,16 @@ export function ModelPanel(props: {
 
   function backToTree() {
     setView("tree");
+  }
+
+  function submitProvider() {
+    props.onAddProvider?.({
+      name: providerName().trim(),
+      type: providerApi(),
+      baseURL: baseUrl().trim() || undefined,
+      apiKey: apiKey(),
+    });
+    backToTree();
   }
 
   onMount(() => {
@@ -304,7 +320,7 @@ export function ModelPanel(props: {
 
               <div class="neu-form-actions">
                 <button type="button" class="neu-form-btn neu-form-cancel" onClick={backToTree}>取消</button>
-                <button type="button" class="neu-form-btn neu-form-primary" onClick={backToTree}>提交</button>
+                <button type="button" class="neu-form-btn neu-form-primary" onClick={submitProvider}>提交</button>
               </div>
             </div>
           </Show>

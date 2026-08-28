@@ -444,5 +444,8 @@ export function createWebFixtureRuntime(): RuntimeClient {
     async deleteFlowDocument(input) {
       return { path: input.path, deleted: true, alreadyDeleted: false };
     },
+    async providerAdd(input) {
+      return { saved: true };
+    },
   };
 }
