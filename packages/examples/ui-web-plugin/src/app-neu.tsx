@@ -154,7 +154,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [governanceOpen, setGovernanceOpen] = createSignal(false);
 
   onCleanup(
-    props.ctx.projection.subscribe((next) => setState(cloneState(next))),
+    props.ctx.projection.subscribe((next) => {
+      const projected = cloneState(next);
+      setState(projected);
+      if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+      if (projected.sessions.length) setSessionList(projected.sessions);
+    }),
   );
 
   async function refreshWorkspaces() {

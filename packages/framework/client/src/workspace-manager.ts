@@ -118,6 +118,7 @@ export type WorkspaceManager = {
   workspaceActivate(workspaceID: string): Promise<WorkspaceSummary>;
   get(workspaceID: string): WorkspaceRuntime | undefined;
   getActive(): WorkspaceRuntime | undefined;
+  summaryFor(workspace: WorkspaceRuntime): Promise<WorkspaceSummary>;
   workspacePermissionGet(workspaceID: string): Promise<WorkspacePermissionSettings>;
   workspacePermissionSet(workspaceID: string, settings: WorkspacePermissionSettings): Promise<WorkspacePermissionSettings>;
   workspaceToolGet(workspaceID: string): Promise<WorkspaceToolSettings>;
@@ -268,6 +269,9 @@ export function createWorkspaceManager(
     getActive() {
       return activeWorkspaceID ? runtimes.get(activeWorkspaceID) : undefined;
     },
+    async summaryFor(workspace: WorkspaceRuntime) {
+      return summary(workspace);
+    },
     async dispose() {
       for (const ws of runtimes.values()) await ws.client.dispose?.();
       runtimes.clear();
@@ -362,10 +366,20 @@ export function createWorkspaceRuntimeClient(
       if (prop === "workspaceRemove") {
         return async (workspaceID: string) => {
           const result = await manager.workspaceRemove(workspaceID);
-          if (started) emitWorkspace({
-            type: "workspace.removed",
-            workspaceID,
-          });
+          if (started) {
+            emitWorkspace({
+              type: "workspace.removed",
+              workspaceID,
+            });
+            const next = manager.getActive();
+            if (next) {
+              emitWorkspace({
+                type: "workspace.activated",
+                workspace: await manager.summaryFor(next),
+                workspaceID: next.workspaceID,
+              });
+            }
+          }
           return result;
         };
       }
