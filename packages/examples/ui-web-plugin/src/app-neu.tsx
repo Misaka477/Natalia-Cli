@@ -587,9 +587,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             if (!path) return;
             if (!props.ctx.runtime.workspaceAdd) {
               setWorkspaceError("当前 runtime 不支持 workspaceAdd，请确认连接的是 Natalia runtime serve");
-              return;
+              throw new Error("workspaceAdd unsupported");
             }
             const workspace = (await props.ctx.runtime.workspaceAdd({ path })) as WorkspaceSummary;
+            if (!workspace) throw new Error("workspaceAdd returned no workspace");
             setWorkspaces((prev) =>
               prev.some((item) => item.workspaceID === workspace.workspaceID)
                 ? prev

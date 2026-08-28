@@ -7,6 +7,7 @@ export function WorkspacePanel(props: {
   error?: string;
 }) {
   const [path, setPath] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -48,23 +49,31 @@ export function WorkspacePanel(props: {
               placeholder="工作区路径，例如 /home/user/project"
               onInput={(event) => setPath(event.currentTarget.value)}
             />
+            <Show when={busy()}>
+              <div class="neu-workspace-error">正在添加工作区…</div>
+            </Show>
             <div class="neu-form-actions">
-              <button type="button" class="neu-form-btn neu-form-cancel" onClick={props.onClose}>取消</button>
+              <button type="button" class="neu-form-btn neu-form-cancel" onClick={props.onClose} disabled={busy()}>取消</button>
               <button
                 type="button"
                 class="neu-form-btn neu-form-primary"
                 onClick={() => {
+                  if (busy()) return;
+                  setBusy(true);
                   const result = props.onAdd?.(path().trim());
                   if (result && typeof (result as Promise<void>).then === "function") {
                     void (result as Promise<void>)
                       .then(() => {
+                        setBusy(false);
                         props.onClose();
                         setPath("");
                       })
                       .catch(() => {
+                        setBusy(false);
                         // Keep the panel open so the error prop can render.
                       });
                   } else {
+                    setBusy(false);
                     props.onClose();
                     setPath("");
                   }
