@@ -1,7 +1,7 @@
 import type { UiPluginContext } from "@natalia/ui-host";
 import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ConfigV3, RuntimeClient, WorkspaceSummary } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
-import { createSignal, createEffect, onCleanup, onMount, For, Show } from "solid-js";
+import { createSignal, createEffect, createMemo, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
 import {
@@ -68,7 +68,7 @@ function SessionTree(props: {
   workspaces: WorkspaceSummary[];
   onSelect: (name: string) => void;
 }) {
-  const groups = [
+  const groups = createMemo(() => [
     ...(props.workspaces.map((workspace) => ({
       workspace: workspace.title,
       sessions: [] as { name: string; status: string }[],
@@ -84,12 +84,12 @@ function SessionTree(props: {
           },
         ]
       : []),
-  ];
+  ]);
 
   return (
     <div class="neu-tree">
-      <div class="neu-tree-title">工作区</div>
-      <For each={groups}>
+      <div class="neu-tree-title">工作区 ({props.workspaces.length})</div>
+      <For each={groups()}>
         {(group) => (
           <>
             <div class="neu-workspace-row">
