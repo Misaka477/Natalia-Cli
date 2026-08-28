@@ -38,6 +38,7 @@ import { applyActivityEvent } from "./activity";
 import { applyChatEvent, applyConversationEvent } from "./conversation";
 import { applyResourceEvent } from "./resources";
 import { applyStatusEvent } from "./status";
+import { applyWorkspaceEvent } from "./workspace";
 import { cloneState, initialState, type AppState } from "./state";
 
 export {
@@ -106,6 +107,7 @@ export {
  */
 export { applyResourceEvent } from "./resources";
 export { applyStatusEvent } from "./status";
+export { applyWorkspaceEvent } from "./workspace";
 export { applyChatEvent, applyConversationEvent } from "./conversation";
 export {
   selectUnattributedWorkGraphNodes,
@@ -119,6 +121,7 @@ export {
  * working when the runtime adds an event.
  */
 export function applyEvent(state: AppState, event: RuntimeEvent): void {
+  if (applyWorkspaceEvent(state, event)) return;
   if (applyConversationEvent(state, event)) {
     applyActivityEvent(state, event);
     return;

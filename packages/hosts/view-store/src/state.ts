@@ -8,8 +8,10 @@
 import type {
   ProjectionContribution,
   RuntimeEvent,
+  RuntimeSessionSummary,
   SessionID,
   SubmittedTurn,
+  WorkspaceSummary,
 } from "@natalia/contracts";
 import type { TodoView } from "@natalia/ui-model";
 
@@ -184,6 +186,12 @@ export type RollbackView = {
 };
 
 export type AppState = {
+  // workspace / session navigation
+  workspaces: WorkspaceSummary[];
+  sessions: RuntimeSessionSummary[];
+  activeWorkspaceID?: string;
+  activeSessionID?: string;
+
   // conversation
   sessionID?: SessionID;
   title: string;
@@ -301,6 +309,8 @@ export type PlanView = {
 
 export function initialState(): AppState {
   return {
+    workspaces: [],
+    sessions: [],
     title: "New session",
     status: "booting",
     footer: "Ready",
@@ -355,6 +365,8 @@ export function initialState(): AppState {
 export function cloneState(state: AppState): AppState {
   return {
     ...state,
+    workspaces: state.workspaces.map((entry) => ({ ...entry })),
+    sessions: state.sessions.map((entry) => ({ ...entry })),
     statusSegments: [...state.statusSegments],
     messages: state.messages.map((block) => ({
       ...block,
