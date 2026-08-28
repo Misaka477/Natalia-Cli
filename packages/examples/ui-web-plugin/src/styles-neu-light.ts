@@ -2410,6 +2410,21 @@ button.neu-settings-item.neu-settings-item-button:active {
   color: var(--neu-text);
 }
 
+/* ===== Workspace add panel ===== */
+.neu-workspace-window {
+  width: min(480px, 90vw);
+  background: var(--neu-bg-light);
+  border-radius: var(--neu-radius);
+  box-shadow: 6px 6px 16px var(--neu-shadow-dark), -6px -6px 16px var(--neu-shadow-light);
+  overflow: hidden;
+}
+.neu-workspace-body {
+  padding: 14px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 /* ===== Smooth transitions ===== */
 .neu-workspace-row,
 .neu-tree-row,

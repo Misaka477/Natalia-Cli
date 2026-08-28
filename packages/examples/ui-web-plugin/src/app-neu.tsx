@@ -14,6 +14,7 @@ import { SettingsPanel } from "./settings-panel";
 import { nataliaNeuStyles } from "./styles-neu";
 import { nataliaNeuLightStyles } from "./styles-neu-light";
 import { SessionActionsPanel } from "./session-actions-panel";
+import { WorkspacePanel } from "./workspace-panel";
 import { CheckpointPanel } from "./checkpoint-panel";
 import { PermissionPanel } from "./permission-panel";
 import { StatusPanel } from "./status-panel";
@@ -130,6 +131,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     props.ctx.preferences.get<string>("themeMode") ?? "light",
   );
   const [sessionMenuOpen, setSessionMenuOpen] = createSignal(false);
+  const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
   const [checkpointOpen, setCheckpointOpen] = createSignal(false);
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
@@ -188,7 +190,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => themeStyle.remove());
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
-    void props.ctx.runtime.sessionList?.().then((sessions) => setSessionList(sessions));
+    void props.ctx.runtime.sessionList?.().then((sessions) => {
+      setSessionList(sessions);
+      if (sessions.length && selectedSession() === "修 rollback") {
+        setSelectedSession(sessions[0].title);
+      }
+    });
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
   });
 
@@ -387,6 +394,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               >
                 Checkpoint
               </button>
+              <button
+                type="button"
+                class="neu-session-toolbar-btn"
+                onClick={() => setWorkspaceOpen(true)}
+              >
+                工作区
+              </button>
             </div>
             <div class="neu-sidebar-content">
               <SessionTree
@@ -543,6 +557,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setPermissionOpen(false);
           setCurrentApproval(null);
         }}
+      />
+      <WorkspacePanel
+        open={workspaceOpen()}
+        onClose={() => setWorkspaceOpen(false)}
+        onAdd={(path) => console.log("add workspace", path)}
       />
       <SessionActionsPanel
         open={sessionMenuOpen()}
