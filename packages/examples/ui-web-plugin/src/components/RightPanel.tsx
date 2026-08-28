@@ -1,11 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 
-export type RightPanelTab =
-  | "review"
-  | "terminal"
-  | "browser"
-  | "file"
-  | "sidechat";
+export type RightPanelTab = "review" | "terminal" | "browser" | "file";
 
 export interface RightPanelProps {
   activeTab: RightPanelTab;
@@ -17,7 +12,6 @@ const TABS: { id: RightPanelTab; label: string; icon: string }[] = [
   { id: "terminal", label: "终端", icon: "terminal" },
   { id: "browser", label: "浏览器", icon: "browser" },
   { id: "file", label: "文件", icon: "file" },
-  { id: "sidechat", label: "侧边聊天", icon: "chat" },
 ];
 
 export function RightPanel(props: RightPanelProps) {
@@ -60,9 +54,6 @@ export function RightPanel(props: RightPanelProps) {
         </Show>
         <Show when={props.activeTab === "file"}>
           <FilePane />
-        </Show>
-        <Show when={props.activeTab === "sidechat"}>
-          <SideChatPane />
         </Show>
       </div>
     </aside>
@@ -509,47 +500,6 @@ function FilePane() {
         <span class="file-pane-title">资源管理器</span>
       </div>
       <div class="file-tree">{renderTree(tree, 0)}</div>
-    </div>
-  );
-}
-
-function SideChatPane() {
-  return (
-    <div class="side-chat-pane">
-      <div class="side-chat-empty">
-        <div class="side-chat-empty-icon">
-          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-            <circle
-              cx="20"
-              cy="20"
-              r="16"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M14 18C14 16.8954 14.8954 16 16 16H24C25.1046 16 26 16.8954 26 18V26C26 27.1046 25.1046 28 24 28H16C14.8954 28 14 27.1046 14 26V18Z"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M18 12H22M18 12L16 10M18 12L20 10M22 12L24 10M22 12L20 10"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-          </svg>
-        </div>
-        <div class="side-chat-empty-title">侧边聊天</div>
-        <div class="side-chat-empty-hint">
-          侧边聊天是临时聊天，关闭应用会消失。
-        </div>
-        <div
-          class="side-chat-empty-hint"
-          style={{ "margin-top": "var(--space-4)" }}
-        >
-          使用侧边栏 Tab 在新会话间快速切换。
-        </div>
-      </div>
     </div>
   );
 }

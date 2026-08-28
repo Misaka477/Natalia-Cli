@@ -1,40 +1,57 @@
 export const nataliaWebUiStyles = `
 :root {
-  --surface-0: hsl(210, 20%, 4%);
-  --surface-1: hsl(210, 18%, 6%);
-  --surface-2: hsl(210, 16%, 9%);
-  --surface-3: hsl(210, 14%, 13%);
-  --surface-4: hsl(210, 12%, 17%);
-  --accent-primary: hsl(195, 92%, 60%);
-  --accent-hover: hsl(195, 92%, 65%);
-  --accent-muted: hsl(195, 40%, 45%);
-  --accent-success: hsl(152, 76%, 66%);
-  --text-primary: hsl(210, 15%, 92%);
-  --text-secondary: hsl(210, 10%, 70%);
-  --text-tertiary: hsl(210, 8%, 50%);
-  --text-dim: hsl(210, 6%, 35%);
-  --border-subtle: hsl(210, 12%, 20%);
-  --border-emphasis: hsl(210, 10%, 28%);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  text-rendering: auto;
+  color-scheme: dark;
+  --surface-0: oklch(0.145 0 0);
+  --surface-1: oklch(0.168 0 0);
+  --surface-2: oklch(0.195 0 0);
+  --surface-3: oklch(0.235 0 0);
+  --surface-4: oklch(0.274 0 0);
+  --surface-hover: oklch(0.215 0 0);
+  --surface-active: oklch(0.305 0 0);
+  --accent-primary: #7a9dcc;
+  --accent-hover: #9bb8e0;
+  --accent-muted: #4a8caa;
+  --accent-success: #78ebbe;
+  --accent-warning: #ffaf55;
+  --accent-error: #ff6e6e;
+  --text-primary: #e6e7ea;
+  --text-secondary: #c8c8c8;
+  --text-tertiary: #a3a3a3;
+  --text-dim: #737373;
+  --border-subtle: oklch(1 0 0 / 10%);
+  --border-emphasis: oklch(1 0 0 / 18%);
+  --border-strong: oklch(0.32 0 0);
   --status-running: var(--accent-success);
   --status-idle: var(--text-tertiary);
-  --status-error: hsl(0, 76%, 62%);
-  --status-warning: hsl(40, 80%, 60%);
-  --font-family-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
-  --font-family-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
-  --font-size-xs: clamp(0.688rem, 0.65rem + 0.15vw, 0.75rem);
-  --font-size-sm: clamp(0.813rem, 0.76rem + 0.2vw, 0.875rem);
-  --font-size-base: clamp(0.875rem, 0.82rem + 0.22vw, 0.938rem);
-  --font-size-md: clamp(0.938rem, 0.87rem + 0.26vw, 1rem);
-  --font-size-lg: clamp(1.063rem, 0.97rem + 0.36vw, 1.188rem);
-  --font-size-xl: clamp(1.313rem, 1.17rem + 0.55vw, 1.563rem);
+  --status-error: var(--accent-error);
+  --status-warning: var(--accent-warning);
+  --font-family-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-family-mono: "SF Mono", "SFMono-Regular", Menlo, Monaco, monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
   --line-height-tight: 1.2;
   --line-height-snug: 1.4;
   --line-height-normal: 1.6;
   --line-height-relaxed: 1.75;
-  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
-  --space-5: 1.5rem; --space-6: 2rem; --space-8: 3rem;
-  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-pill: 999px;
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.25);
   --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -47,6 +64,7 @@ body {
   color: var(--text-primary);
   background: var(--surface-0);
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 /* ===== App Layout ===== */
@@ -330,6 +348,7 @@ body {
 }
 .natalia-chat-panel {
   display: flex; flex-direction: column; min-width: 0; width: 380px;
+  border-right: 1px solid var(--border-subtle);
 }
 .natalia-chat-header,
 .natalia-chat-panel-header {
@@ -788,21 +807,6 @@ body {
 .status-modified { color: var(--accent-primary); }
 .status-added { color: var(--accent-success); }
 .status-deleted { color: var(--status-error); }
-
-/* Side Chat */
-.side-chat-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-.side-chat-empty {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: var(--space-3);
-  color: var(--text-dim); padding: var(--space-6); text-align: center;
-}
-.side-chat-empty-icon { opacity: 0.25; }
-.side-chat-empty-title {
-  font-size: var(--font-size-md); font-weight: 500; color: var(--text-secondary);
-}
-.side-chat-empty-hint {
-  max-width: 240px; font-size: var(--font-size-xs); color: var(--text-tertiary); line-height: var(--line-height-relaxed);
-}
 
 /* ===== Responsive ===== */
 @media (max-width: 1400px) {
