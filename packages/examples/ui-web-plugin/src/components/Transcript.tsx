@@ -11,6 +11,8 @@ export interface TranscriptProps {
   messages: Message[];
   emptyTitle?: string;
   emptyHint?: string;
+  assistantName?: string;
+  assistantInitial?: string;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -40,7 +42,13 @@ export function Transcript(props: TranscriptProps) {
         }
       >
         <For each={props.messages}>
-          {(message) => <MessageRow message={message} />}
+          {(message) => (
+            <MessageRow
+              message={message}
+              assistantName={props.assistantName}
+              assistantInitial={props.assistantInitial}
+            />
+          )}
         </For>
       </Show>
     </div>
@@ -49,6 +57,8 @@ export function Transcript(props: TranscriptProps) {
 
 export interface MessageRowProps {
   message: Message;
+  assistantName?: string;
+  assistantInitial?: string;
 }
 
 export function MessageRow(props: MessageRowProps) {
@@ -68,11 +78,11 @@ export function MessageRow(props: MessageRowProps) {
     <article class="natalia-message" data-role={props.message.role}>
       <div class="natalia-message-header">
         <div class="natalia-message-avatar" data-role={props.message.role}>
-          {isUser() ? "U" : isSystem() ? "S" : "N"}
+          {isUser() ? "U" : isSystem() ? "S" : (props.assistantInitial ?? "N")}
         </div>
         <div class="natalia-message-meta">
           <span class="natalia-message-author">
-            {isUser() ? "You" : isSystem() ? "System" : "Natalia"}
+            {isUser() ? "You" : isSystem() ? "System" : (props.assistantName ?? "Natalia")}
           </span>
           <span class="natalia-message-time">
             {props.message.timestamp ?? ""}

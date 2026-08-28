@@ -1,4 +1,4 @@
-import { createNataliaWebUiPlugin } from "@natalia/example-ui-web-plugin";
+import { createNataliaNeuLightPlugin } from "@natalia/example-ui-web-plugin";
 import {
   createConsoleLogger,
   createUiPluginHost,
@@ -16,5 +16,5 @@ const host = await createUiPluginHost({
   logger: createConsoleLogger("ui-web-shell"),
 });
 
-// Load the new Phase 1 UI
-await host.load(createNataliaWebUiPlugin());
+// Load the Neumorphism light UI prototype
+await host.load(createNataliaNeuLightPlugin());
