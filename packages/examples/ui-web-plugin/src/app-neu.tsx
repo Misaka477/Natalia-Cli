@@ -83,14 +83,7 @@ function SessionTree(props: {
             })),
           },
         ]
-      : [
-          {
-            workspace: "NATALIA-CLI",
-            sessions: [
-              { name: "Web UI prototype", status: "idle" },
-            ],
-          },
-        ]),
+      : []),
   ];
 
   return (
@@ -132,7 +125,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [rightVisible, setRightVisible] = createSignal(true);
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
-  const [selectedSession, setSelectedSession] = createSignal("修 rollback");
+  const [selectedSession, setSelectedSession] = createSignal("");
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
   const [workspaces, setWorkspaces] = createSignal<WorkspaceSummary[]>([]);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
@@ -202,7 +195,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
     void props.ctx.runtime.sessionList?.().then((sessions) => {
       setSessionList(sessions);
-      if (sessions.length && selectedSession() === "修 rollback") {
+      if (sessions.length && !selectedSession()) {
         setSelectedSession(sessions[0].title);
       }
     });
