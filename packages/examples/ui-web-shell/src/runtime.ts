@@ -120,6 +120,24 @@ export function createWebWorkerRuntime(): RuntimeClient {
       void call("question", response);
       return { accepted: true };
     },
+    async sessionList() {
+      return (await call("session.list")) as never;
+    },
+    async workspaceSearch(input) {
+      return (await call("workspace.search", input)) as never;
+    },
+    async workspaceList(input) {
+      return (await call("workspace.list", input)) as never;
+    },
+    async workspaceRead(input) {
+      return (await call("workspace.read", input)) as never;
+    },
+    async configGet() {
+      return (await call("config.get")) as never;
+    },
+    async updateConfig(input) {
+      return (await call("config.update", input)) as never;
+    },
     async dispose() {
       worker.terminate();
     },

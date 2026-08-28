@@ -333,5 +333,75 @@ export function createWebFixtureRuntime(): RuntimeClient {
       });
       return { accepted: true };
     },
+    async sessionList() {
+      return [
+        {
+          id: sessionID,
+          title: "Web UI prototype",
+          createdAt: new Date().toISOString(),
+          lastAccessedAt: new Date().toISOString(),
+          pinned: false,
+          events: turns,
+          pendingInputs: 0,
+          cancelled: false,
+          resumable: true,
+        },
+      ];
+    },
+    async workspaceSearch(input) {
+      const query = String(input?.query ?? "");
+      return [
+        {
+          path: "packages/examples/ui-web-plugin/src/app-neu.tsx",
+          line: 12,
+          text: query ? `match: ${query}` : "export function AppNeu(...)",
+        },
+        {
+          path: "packages/examples/ui-web-plugin/src/file-editor.tsx",
+          line: 167,
+          text: "export function FileEditor()",
+        },
+      ].filter((match) => !query || match.text.toLowerCase().includes(query.toLowerCase()));
+    },
+    async workspaceList() {
+      return {
+        entries: [
+          { path: "README.md", type: "file" as const },
+          { path: "packages", type: "directory" as const },
+          { path: "apps", type: "directory" as const },
+        ],
+        truncated: false,
+      };
+    },
+    async workspaceRead(input) {
+      const path = String(input?.path ?? "");
+      const content = path.endsWith(".md")
+        ? "# Natalia\n\nA local-first agent runtime."
+        : "// workspace fixture content\nexport const value = 1;\n";
+      return {
+        path,
+        content,
+        encoding: "utf8" as const,
+        mime: path.endsWith(".md")
+          ? "text/markdown"
+          : "text/plain",
+      };
+    },
+    async configGet() {
+      return {
+        version: 3,
+        defaultAgent: "main",
+        defaultModel: { provider: "fake", model: "gpt-5.5-fixture" },
+        permissionProfiles: {},
+        providers: {},
+        runtime: { maxStepsPerTurn: 8, maxAttemptsPerStep: 3 },
+        context: { compactionEnabled: true, compactionThresholdPercent: 85 },
+        checkpoint: { additionalDirs: [] },
+      } as never;
+    },
+    async updateConfig(patch) {
+      publish({ type: "settings.updated", scope: "project" });
+      return { applied: true };
+    },
   };
 }

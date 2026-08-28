@@ -1,5 +1,5 @@
 import type { UiPluginContext } from "@natalia/ui-host";
-import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
@@ -62,25 +62,27 @@ function TreeRow(props: {
 
 function SessionTree(props: {
   selected: string;
+  sessions: RuntimeSessionSummary[];
   onSelect: (name: string) => void;
 }) {
-  const groups = [
-    {
-      workspace: "NATALIA-CLI",
-      sessions: [
-        { name: "修 rollback", status: "running" },
-        { name: "调研 Tauri", status: "idle" },
-        { name: "写第二套 UI", status: "idle" },
-      ],
-    },
-    {
-      workspace: "AUDIO CONTROLLER",
-      sessions: [
-        { name: "音频处理", status: "idle" },
-        { name: "模型调优", status: "error" },
-      ],
-    },
-  ];
+  const groups = props.sessions.length
+    ? [
+        {
+          workspace: "NATALIA-CLI",
+          sessions: props.sessions.map((session) => ({
+            name: session.title,
+            status: session.cancelled ? "error" : session.resumable ? "idle" : "running",
+          })),
+        },
+      ]
+    : [
+        {
+          workspace: "NATALIA-CLI",
+          sessions: [
+            { name: "Web UI prototype", status: "idle" },
+          ],
+        },
+      ];
 
   return (
     <div class="neu-tree">
@@ -122,6 +124,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
   const [selectedSession, setSelectedSession] = createSignal("修 rollback");
+  const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [themeMode, setThemeMode] = createSignal(
     props.ctx.preferences.get<string>("themeMode") ?? "light",
@@ -184,6 +187,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => themeStyle.remove());
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
+    void props.ctx.runtime.sessionList?.().then((sessions) => setSessionList(sessions));
   });
 
   const mainMessages = (): Message[] =>
@@ -383,7 +387,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </button>
             </div>
             <div class="neu-sidebar-content">
-              <SessionTree selected={selectedSession()} onSelect={setSelectedSession} />
+              <SessionTree
+                selected={selectedSession()}
+                sessions={sessionList()}
+                onSelect={setSelectedSession}
+              />
             </div>
           </aside>
           <div
