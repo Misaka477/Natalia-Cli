@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { AppState } from "@natalia/view-store";
+import type { ConfigV3 } from "@natalia/contracts";
 import { ExtensionSettingsContent } from "./extension-settings";
 
 type CategoryId = "model" | "security" | "runtime" | "extensions" | "interface" | "storage";
@@ -129,6 +130,8 @@ export function SettingsPanel(props: {
   themeMode?: string;
   onCycleThemeMode?: () => void;
   state?: AppState;
+  config?: ConfigV3;
+  onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
   const [sections, setSections] = createSignal<ExtensionSection[]>(
@@ -200,6 +203,21 @@ export function SettingsPanel(props: {
   const extensionAddLabel = (sectionId: string) =>
     sections().find((section) => section.id === sectionId)?.addLabel ?? "添加";
 
+  function runtimeValue(label: string): string | undefined {
+    const config = props.config;
+    if (!config) return undefined;
+    switch (label) {
+      case "Max Steps": return String(config.runtime?.maxStepsPerTurn ?? "unlimited");
+      case "Max Retry": return String(config.runtime?.maxAttemptsPerStep ?? 3);
+      case "Request Timeout": return `${config.runtime?.timeouts?.requestSec ?? 120}s`;
+      case "Compaction": return config.context?.compactionEnabled ? "开启" : "关闭";
+      case "Compaction Threshold": return `${config.context?.compactionThresholdPercent ?? 85}%`;
+      case "Checkpoint 目录": return `${(config.checkpoint?.additionalDirs ?? []).length} 个`;
+      case "Terminal Window Mode": return String(config.runtime?.terminal?.windowMode ?? "auto");
+    }
+    return undefined;
+  }
+
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
@@ -251,7 +269,7 @@ export function SettingsPanel(props: {
                                     <span class="neu-settings-item-label">{item.label}</span>
                                     <span class="neu-settings-item-description">{item.description}</span>
                                   </div>
-                                  <span class="neu-settings-item-value">{item.value}</span>
+                                  <span class="neu-settings-item-value">{runtimeValue(item.label) ?? item.value}</span>
                                 </div>
                               }
                             >

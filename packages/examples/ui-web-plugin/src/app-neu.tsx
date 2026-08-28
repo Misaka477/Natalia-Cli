@@ -1,5 +1,5 @@
 import type { UiPluginContext } from "@natalia/ui-host";
-import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary } from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ConfigV3 } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
@@ -136,6 +136,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [modelOpen, setModelOpen] = createSignal(false);
   const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
+  const [config, setConfig] = createSignal<ConfigV3 | undefined>(undefined);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [stashOpen, setStashOpen] = createSignal(false);
@@ -188,6 +189,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
     void props.ctx.runtime.sessionList?.().then((sessions) => setSessionList(sessions));
+    void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
   });
 
   const mainMessages = (): Message[] =>
@@ -592,6 +594,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         themeMode={themeMode()}
         onCycleThemeMode={cycleThemeMode}
         state={state()}
+        config={config()}
+        onUpdateConfig={(patch) =>
+          props.ctx.runtime.updateConfig?.({
+            patch,
+            scope: "project",
+          })
+        }
       />
     </div>
   );
