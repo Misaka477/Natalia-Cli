@@ -413,35 +413,69 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     await props.ctx.runtime.setChatModelProfile?.(next);
   }
   const mainMessages = (): Message[] =>
-    (state().messages ?? []).map((msg, idx) => ({
-      id: `msg-${idx}`,
-      role:
-        msg.role === "user"
-          ? "user"
-          : msg.role === "thinking" || msg.role === "system"
-            ? "system"
-            : "assistant",
-      content: msg.text + (msg.pendingText || ""),
-      status:
-        state().activeTurn && idx === (state().messages?.length ?? 0) - 1
-          ? "running"
-          : undefined,
-      streaming: Boolean(
-        state().activeTurn &&
-          idx === (state().messages?.length ?? 0) - 1 &&
-          (msg.pendingText ?? "").length > 0,
-      ),
-    }));
+    (state().messages ?? []).map((msg, idx) => {
+      if (msg.tool) {
+        return {
+          id: `msg-${idx}`,
+          role: "assistant",
+          content: msg.tool.summary || msg.tool.result || msg.text,
+          status:
+            state().activeTurn && idx === (state().messages?.length ?? 0) - 1
+              ? "running"
+              : (msg.tool.status as Message["status"]),
+          toolCalls: [
+            {
+              name: msg.tool.name,
+              output: msg.tool.result ?? msg.tool.summary,
+            },
+          ],
+        };
+      }
+      return {
+        id: `msg-${idx}`,
+        role:
+          msg.role === "user"
+            ? "user"
+            : msg.role === "thinking" || msg.role === "system"
+              ? "system"
+              : "assistant",
+        content: msg.text + (msg.pendingText || ""),
+        status:
+          state().activeTurn && idx === (state().messages?.length ?? 0) - 1
+            ? "running"
+            : undefined,
+        streaming: Boolean(
+          state().activeTurn &&
+            idx === (state().messages?.length ?? 0) - 1 &&
+            (msg.pendingText ?? "").length > 0,
+        ),
+      };
+    });
 
   const chatMessages = (): Message[] =>
-    (state().chatMessages ?? []).map((msg, idx) => ({
-      id: `chat-${idx}`,
-      role: msg.role === "user" ? "user" : "assistant",
-      content: msg.text + (msg.pendingText || ""),
-      streaming: Boolean(
-        state().chatActivity && idx === state().chatMessages.length - 1,
-      ),
-    }));
+    (state().chatMessages ?? []).map((msg, idx) => {
+      if (msg.tool) {
+        return {
+          id: `chat-${idx}`,
+          role: "assistant",
+          content: msg.tool.summary || msg.tool.result || msg.text,
+          toolCalls: [
+            {
+              name: msg.tool.name,
+              output: msg.tool.result ?? msg.tool.summary,
+            },
+          ],
+        };
+      }
+      return {
+        id: `chat-${idx}`,
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.text + (msg.pendingText || ""),
+        streaming: Boolean(
+          state().chatActivity && idx === state().chatMessages.length - 1,
+        ),
+      };
+    });
 
   function startLeftResize(event: PointerEvent) {
     event.preventDefault();
