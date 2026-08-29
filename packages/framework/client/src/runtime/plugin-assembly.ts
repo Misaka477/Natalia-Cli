@@ -139,7 +139,18 @@ export function createPluginAssembly(
     if (!pluginEnabled(config, "natalia-mcp") || !extensionEnabled("mcp"))
       return undefined;
     return {
-      servers: () => getTsRuntimeConfig()?.mcpServers ?? {},
+      servers: () => {
+        const runtimeConfig = getTsRuntimeConfig();
+        const mode = runtimeConfig?.modes?.[runtimeConfig?.defaultMode ?? ""];
+        const selected = mode?.mcpServers;
+        // An agent mode controls MCP exactly as a whitelist: no selected MCP
+        // means this mode exposes none, even if servers are globally enabled.
+        if (!selected || !selected.length) return {};
+        const all = runtimeConfig?.mcpServers ?? {};
+        return Object.fromEntries(
+          Object.entries(all).filter(([name]) => selected.includes(name)),
+        );
+      },
       workspaceRoot: ctx.ports.getWorkspaceRoot(),
       enabled: () => extensionEnabled("mcp"),
       publish,
