@@ -397,11 +397,11 @@ export function createWebRuntimeClient(
       return undefined;
     },
     respondApproval(response: ApprovalResponse) {
-      void call("approval", { ...response });
+      void call("approval.respond", { ...response });
       return { accepted: true };
     },
     respondQuestion(response: QuestionResponse) {
-      void call("question", { ...response });
+      void call("question.respond", { ...response });
       return { accepted: true };
     },
     async sessionList() {
