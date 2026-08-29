@@ -267,7 +267,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     try {
       await props.ctx.runtime.sessionRestore?.(sessionID);
       await refreshSessions();
-      setShowArchived(false);
     } catch (error: unknown) {
       props.ctx.runtime.diagnostic?.(
         `恢复会话失败：${error instanceof Error ? error.message : String(error)}`,
