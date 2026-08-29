@@ -2702,16 +2702,23 @@ button.neu-settings-item.neu-settings-item-button:active {
   overflow-y: auto;
 }}
 
+
 .neu-tool-select-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   max-height: 260px;
   overflow-y: auto;
   padding: 4px;
 }
+.neu-tool-check {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 12px;
+  gap: 8px;
+  border-radius: 12px;
 }
-
 .neu-tool-check {
   min-height: 38px;
   padding: 8px 10px;
