@@ -21,7 +21,7 @@ const MODULE_TOOL_ALLOWLISTS: Record<NataliaFlowModuleType, string[]> = {
   web_fetch: ["web_fetch", "web_search", "browser_visit", "browser_screenshot"],
   skills: ["skill_load"],
   mcp: ["mcp_*"],
-  plugins: ["plugin_*"],
+  plugins: [],
   subagents: ["agent_*"],
   report_output: ["report_issue"],
 };
