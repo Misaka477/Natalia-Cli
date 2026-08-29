@@ -366,8 +366,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
 
     // After history replay completes, surface only still-unresolved
-    // approvals/questions from the restored session.
-    setTimeout(() => {
+    // approvals/questions from the restored session. Resolved historical
+    // requests are not re-opened because their response events clear them
+    // from the view-store pending state during replay.
+    const openUnresolvedInteractives = () => {
       const approvals = state().pendingApprovals;
       if (approvals.length) {
         setCurrentApproval(approvals[0]);
@@ -378,7 +380,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setCurrentQuestion(questions[0]);
         setQuestionOpen(true);
       }
-    }, 0);
+    };
+    window.addEventListener(
+      "natalia:history-replay-complete",
+      openUnresolvedInteractives,
+    );
+    onCleanup(() =>
+      window.removeEventListener(
+        "natalia:history-replay-complete",
+        openUnresolvedInteractives,
+      ),
+    );
 
     // Apply theme/mode by overlaying the other stylesheet.
     const themeStyle = document.createElement("style");

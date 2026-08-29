@@ -327,6 +327,8 @@ export function createWebRuntimeClient(
       console.log("[web-runtime] history replay failed", error);
     } finally {
       replayGlobal.__nataliaReplayingHistory = false;
+      if (typeof window !== "undefined")
+        window.dispatchEvent(new Event("natalia:history-replay-complete"));
     }
 
     const decoder = new TextDecoder();
