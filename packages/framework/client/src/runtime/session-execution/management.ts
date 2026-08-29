@@ -24,12 +24,25 @@ export function createManagementSurface(
     },
     async permissionSave(input) {
       await ctx.ports.getReady();
+      const profile = input.profile;
       await updateConfigAtScope(
         ctx.ports.getWorkspaceRoot(),
         {
-          permissionProfiles: { [input.name]: input.profile },
+          agentModes: {
+            [input.name]: {
+              description: profile.description ?? "",
+              approval: profile.approval,
+              systemPrompt: "",
+              allowedTools: profile.permissions?.tools?.allow ?? [],
+              excludedTools: profile.permissions?.tools?.exclude ?? [],
+              commandRules: profile.commandRules,
+              interactivePrograms: profile.interactivePrograms,
+              skills: profile.extensions?.skills !== false,
+              mcpServers: [],
+            },
+          },
         } as never,
-        "project",
+        "global",
         { globalPath: options.globalConfigPath },
       );
       const result = await ctx.ports.applyConfigFromDisk();
@@ -50,9 +63,9 @@ export function createManagementSurface(
       await updateConfigAtScope(
         ctx.ports.getWorkspaceRoot(),
         {
-          permissionProfiles: { [name]: undefined },
+          agentModes: { [name]: undefined },
         } as never,
-        "project",
+        "global",
         { globalPath: options.globalConfigPath },
       );
       await ctx.ports.applyConfigFromDisk();
