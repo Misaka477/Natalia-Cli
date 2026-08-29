@@ -21,7 +21,6 @@ const TOOL_FAMILIES = [
   "browser_visit",
   "browser_screenshot",
   "skill_load",
-  "mcp_*",
   "agent_*",
   "report_issue",
 ];
