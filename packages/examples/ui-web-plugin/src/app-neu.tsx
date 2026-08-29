@@ -102,7 +102,7 @@ function SessionTree(props: {
               {(session) => (
                 <TreeRow
                   label={session.name}
-                  selected={props.selected === session.name}
+                  selected={props.selected === session.id}
                   status={session.status}
                   depth={1}
                   onClick={() => props.onSelect(session.id, session.name)}
@@ -176,6 +176,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setSelectedSession(sessions[0].title);
       }
     }
+  }
+
+  async function createSession() {
+    await props.ctx.runtime.sessionNew?.();
+    await refreshSessions();
+  }
+
+  async function deleteSelectedSession() {
+    if (!selectedSessionID()) return;
+    await props.ctx.runtime.sessionDelete?.(selectedSessionID());
+    setSelectedSessionID("");
+    setSelectedSession("");
+    await refreshSessions();
   }
 
   onMount(() => {
@@ -423,6 +436,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <button
                 type="button"
                 class="neu-session-toolbar-btn"
+                onClick={() => void createSession()}
+              >
+                新建
+              </button>
+              <button
+                type="button"
+                class="neu-session-toolbar-btn"
+                disabled={!selectedSessionID()}
+                onClick={() => void deleteSelectedSession()}
+              >
+                删除
+              </button>
+              <button
+                type="button"
+                class="neu-session-toolbar-btn"
                 onClick={() => setCheckpointOpen(true)}
               >
                 Checkpoint
@@ -444,7 +472,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             </div>
             <div class="neu-sidebar-content">
               <SessionTree
-                selected={selectedSession()}
+                selected={selectedSessionID()}
                 sessions={sessionList()}
                 workspaces={workspaces()}
                 onSelect={(id, name) => {
