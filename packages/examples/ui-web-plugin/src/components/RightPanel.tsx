@@ -87,8 +87,19 @@ export function ReviewPane() {
       </div>
       <div class="review-body">
         <div class="review-empty">
-          <div class="review-empty-icon">⊞</div>
-          <p>暂无 diff 数据。运行时提供 diff/checkpoint 能力后，这里会显示真实的变更列表。</p>
+          <div class="review-empty-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+              <rect x="3" y="4" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+              <rect x="3" y="12" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+              <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
+              <circle cx="6" cy="14.5" r="1.2" fill="currentColor" />
+              <path d="M22 6.5h3M22 14.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="review-empty-title">暂无变更</div>
+          <div class="review-empty-desc">
+            当前工作区没有待审阅的 diff。运行时提供 diff/checkpoint 能力后，这里会显示真实的变更列表。
+          </div>
         </div>
       </div>
     </div>

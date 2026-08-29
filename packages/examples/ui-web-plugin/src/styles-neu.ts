@@ -643,6 +643,40 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .review-additions { color: var(--neu-success); font-weight: 600; }
 .review-deletions { color: var(--neu-error); font-weight: 600; }
 .review-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+.review-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--neu-muted);
+}
+.review-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: var(--neu-bg);
+  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+  color: var(--neu-accent);
+}
+.review-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--neu-text);
+}
+.review-empty-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 320px;
+}
+
 .review-resizer {
   width: 6px;
   flex: 0 0 6px;
