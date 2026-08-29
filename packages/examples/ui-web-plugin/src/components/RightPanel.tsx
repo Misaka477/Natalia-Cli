@@ -73,45 +73,59 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
     health: string;
     at: string;
   }>>([]);
-  const [drift, setDrift] = createSignal<Array<{
-    findingID: string;
-    severity: string;
-    status: string;
-    currentActivity: string;
-    evidence: string[];
-  }>>([]);
+  const [selectedPath, setSelectedPath] = createSignal<string | null>(null);
+  const [fileWidth, setFileWidth] = createSignal(180);
   const [loaded, setLoaded] = createSignal(false);
 
   onMount(() => {
-    void Promise.all([
-      props.runtime?.confirmedWorkspaceChanges?.() ?? Promise.resolve([]),
-      props.runtime?.driftFindings?.() ?? Promise.resolve([]),
-    ]).then(([confirmed, driftFindings]) => {
-      const mapped = (confirmed ?? []).map((change) => ({
-        id: change.id,
-        path: change.path,
-        operation: change.operation,
-        origin: change.origin,
-        health: change.health,
-        at: change.at,
-      }));
-      setChanges(mapped);
-      setDrift((driftFindings ?? []).map((item) => ({
-        findingID: item.findingID,
-        severity: item.severity,
-        status: item.status,
-        currentActivity: item.currentActivity,
-        evidence: item.evidence,
-      })));
-      setLoaded(true);
-    });
+    void (props.runtime?.confirmedWorkspaceChanges?.() ?? Promise.resolve([])).then(
+      (confirmed) => {
+        const mapped = (confirmed ?? []).map((change) => ({
+          id: change.id,
+          path: change.path,
+          operation: change.operation,
+          origin: change.origin,
+          health: change.health,
+          at: change.at,
+        }));
+        setChanges(mapped);
+        if (mapped.length) setSelectedPath(mapped[0]!.path);
+        setLoaded(true);
+      },
+    );
   });
 
-  const totalFiles = () => changes().length;
-  const additions = () =>
-    changes().filter((item) => item.operation === "added").length;
-  const deletions = () =>
-    changes().filter((item) => item.operation === "deleted").length;
+  const selectedFile = () =>
+    changes().find((change) => change.path === selectedPath());
+
+  function statusFor(operation: string) {
+    if (operation === "added") return "A";
+    if (operation === "modified") return "M";
+    if (operation === "deleted") return "D";
+    if (operation === "renamed") return "R";
+    return "?";
+  }
+
+  function startFileResize(event: PointerEvent) {
+    event.preventDefault();
+    const target = event.currentTarget as HTMLElement;
+    target.setPointerCapture?.(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = fileWidth();
+    const move = (next: PointerEvent) =>
+      setFileWidth(
+        Math.max(140, Math.min(220, startWidth + next.clientX - startX)),
+      );
+    const finish = (next: PointerEvent) => {
+      target.releasePointerCapture?.(next.pointerId);
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", finish);
+      target.removeEventListener("pointercancel", finish);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", finish);
+    target.addEventListener("pointercancel", finish);
+  }
 
   return (
     <div class="review-pane">
@@ -128,68 +142,80 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
           <span>Changes</span>
         </div>
         <div class="review-meta">
-          <span class="review-count">{totalFiles()} files</span>
-          <span class="review-additions">+{additions()}</span>
-          <span class="review-deletions">-{deletions()}</span>
+          <span class="review-count">{changes().length} files</span>
+          <span class="review-additions">+0</span>
+          <span class="review-deletions">-0</span>
         </div>
       </div>
       <div class="review-body">
-        <Show when={!loaded()}>
-          <div class="review-empty">
-            <div class="review-empty-title">正在读取变更... </div>
-          </div>
-        </Show>
-        <Show when={loaded() && !changes().length && !drift().length}>
-          <div class="review-empty">
-            <div class="review-empty-icon">
-              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                <rect x="3" y="4" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
-                <rect x="3" y="12" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
-                <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
-                <circle cx="6" cy="14.5" r="1.2" fill="currentColor" />
-                <path d="M22 6.5h3M22 14.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-              </svg>
-            </div>
-            <div class="review-empty-title">暂无变更</div>
-            <div class="review-empty-desc">
-              当前工作区没有待审阅的变更。
-            </div>
-          </div>
-        </Show>
-        <For each={changes()}>
-          {(change) => (
-            <div class="review-file" data-operation={change.operation}>
-              <div class="review-file-name">{change.path}</div>
-              <div class="review-file-meta">
-                <span class="review-file-op">{change.operation}</span>
-                <span>{change.origin}</span>
-                <span>{change.health}</span>
-              </div>
-            </div>
-          )}
-        </For>
-        <Show when={drift().length}>
-          <div class="review-section-title">Drift findings</div>
-          <For each={drift()}>
-            {(item) => (
-              <div class="review-drift-card" data-severity={item.severity}>
-                <div class="review-drift-header">
-                  <span class="review-severity">{item.severity}</span>
-                  <span class="review-drift-status">{item.status}</span>
+        <Show
+          when={!loaded()}
+          fallback={
+            <Show
+              when={changes().length}
+              fallback={
+                <div class="review-empty">
+                  <div class="review-empty-icon">
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                      <rect x="3" y="4" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+                      <rect x="3" y="12" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+                      <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
+                      <circle cx="6" cy="14.5" r="1.2" fill="currentColor" />
+                      <path d="M22 6.5h3M22 14.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                    </svg>
+                  </div>
+                  <div class="review-empty-title">暂无变更</div>
+                  <div class="review-empty-desc">
+                    当前工作区没有待审阅的变更。
+                  </div>
                 </div>
-                <div class="review-drift-activity">
-                  {item.currentActivity}
-                </div>
-                <Show when={item.evidence.length}>
-                  <ul class="review-drift-evidence">
-                    <For each={item.evidence}>
-                      {(evidence) => <li>{evidence}</li>}
-                    </For>
-                  </ul>
-                </Show>
+              }
+            >
+              <div class="review-files" data-narrow={fileWidth() < 170} style={{ width: `${fileWidth()}px` }}>
+                <div class="review-files-heading">Files changed</div>
+                <For each={changes()}>
+                  {(change) => (
+                    <button
+                      type="button"
+                      class="review-file-row"
+                      data-active={selectedPath() === change.path}
+                      onClick={() => setSelectedPath(change.path)}
+                    >
+                      <span
+                        class={`review-file-status ${change.operation === "added" ? "is-added" : change.operation === "deleted" ? "is-deleted" : "is-modified"}`}
+                      >
+                        {statusFor(change.operation)}
+                      </span>
+                      <span class="review-file-name">{change.path}</span>
+                    </button>
+                  )}
+                </For>
               </div>
-            )}
-          </For>
+              <div
+                class="review-resizer"
+                role="separator"
+                aria-orientation="vertical"
+                onPointerDown={startFileResize}
+              />
+              <div class="review-diff">
+                <div class="review-diff-header">
+                  <span class="review-diff-path">{selectedFile()?.path ?? ""}</span>
+                </div>
+                <div class="review-diff-content">
+                  <div class="review-empty">
+                    <div class="review-empty-title">暂无 diff 内容</div>
+                    <div class="review-empty-desc">
+                      当前变更还没有可展示的行级差异，后续可接 sandboxDiff / checkpointPreview。
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Show>
+          }
+        >
+          <div class="review-empty">
+            <div class="review-empty-title">正在读取变更...</div>
+          </div>
         </Show>
       </div>
     </div>
