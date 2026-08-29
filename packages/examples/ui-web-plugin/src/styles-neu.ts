@@ -2690,3 +2690,14 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-secondary { position: fixed; inset: 0 0 0 auto; width: 90vw; z-index: 10; }
 }
 `;
+
+
+.neu-edit-window {
+  width: min(480px, 90vw);
+}
+.neu-edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}

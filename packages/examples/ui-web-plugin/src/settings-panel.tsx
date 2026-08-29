@@ -234,22 +234,40 @@ export function SettingsPanel(props: {
     setter(next);
   }
 
+  const [editFieldLabel, setEditFieldLabel] = createSignal<string | undefined>();
+  const [editFieldValue, setEditFieldValue] = createSignal("");
+  let editFieldAction: ((value: string) => void) | undefined;
+
+  function openEdit(
+    label: string,
+    current: string,
+    apply: (value: string) => void,
+  ) {
+    setEditFieldLabel(label);
+    setEditFieldValue(current);
+    editFieldAction = apply;
+  }
+
   const editableActions: Record<string, () => void> = {
     "Agent Mode": () => {
       const current = props.config?.defaultAgent ?? "";
-      const next = window.prompt("Agent Mode（defaultAgent）", current);
-      if (next) props.onUpdateConfig?.({ defaultAgent: next });
+      openEdit("Agent Mode（defaultAgent）", current, (next) => {
+        if (next) props.onUpdateConfig?.({ defaultAgent: next });
+      });
     },
     "子 Agent 并发数": () => {
-      const raw = window.prompt("子 Agent 最大并发数", String(props.config?.team?.maxConcurrent ?? 4));
-      const value = Number(raw);
-      if (raw !== null && Number.isInteger(value) && value >= 1 && value <= 32)
-        props.onUpdateConfig?.({ team: { ...props.config?.team, maxConcurrent: value } });
+      const current = String(props.config?.team?.maxConcurrent ?? 4);
+      openEdit("子 Agent 最大并发数", current, (raw) => {
+        const value = Number(raw);
+        if (Number.isInteger(value) && value >= 1 && value <= 32)
+          props.onUpdateConfig?.({ team: { ...props.config?.team, maxConcurrent: value } });
+      });
     },
     "Permission Profile": () => {
       const current = props.config?.defaultPermission ?? "ask";
-      const next = window.prompt("Permission Profile（defaultPermission）", current);
-      if (next) props.onUpdateConfig?.({ defaultPermission: next });
+      openEdit("Permission Profile（defaultPermission）", current, (next) => {
+        if (next) props.onUpdateConfig?.({ defaultPermission: next });
+      });
     },
     "Approval Mode": () => {
       const config = props.config;
@@ -260,56 +278,70 @@ export function SettingsPanel(props: {
       props.onUpdateConfig?.({
         permissionProfiles: {
           ...config.permissionProfiles,
-          [profile]: {
-            approval: next,
-          },
+          [profile]: { approval: next },
         },
       });
     },
     "Web & Network": () => {
       const current = props.config?.webSearch?.endpoint ?? "";
-      const next = window.prompt("Web Search Endpoint", current);
-      if (next !== null)
+      openEdit("Web Search Endpoint", current, (next) => {
         props.onUpdateConfig?.({
           webSearch: { ...props.config?.webSearch, endpoint: next || null },
         });
+      });
     },
     "Max Steps": () => {
-      const raw = window.prompt("单轮最大执行步数", props.config?.runtime?.maxStepsPerTurn ? String(props.config.runtime.maxStepsPerTurn) : "");
-      if (raw === null) return;
-      const value = raw.trim() ? Number(raw) : undefined;
-      props.onUpdateConfig?.({ runtime: { ...props.config?.runtime, maxStepsPerTurn: value } });
+      const current = props.config?.runtime?.maxStepsPerTurn
+        ? String(props.config.runtime.maxStepsPerTurn)
+        : "";
+      openEdit("单轮最大执行步数", current, (raw) => {
+        props.onUpdateConfig?.({
+          runtime: {
+            ...props.config?.runtime,
+            maxStepsPerTurn: raw.trim() ? Number(raw) : undefined,
+          },
+        });
+      });
     },
     "Max Retry": () => {
-      const raw = window.prompt("单步最大重试次数", String(props.config?.runtime?.maxAttemptsPerStep ?? 3));
-      const value = Number(raw);
-      if (raw !== null && Number.isInteger(value) && value > 0)
-        props.onUpdateConfig?.({ runtime: { ...props.config?.runtime, maxAttemptsPerStep: value } });
+      const current = String(props.config?.runtime?.maxAttemptsPerStep ?? 3);
+      openEdit("单步最大重试次数", current, (raw) => {
+        const value = Number(raw);
+        if (Number.isInteger(value) && value > 0)
+          props.onUpdateConfig?.({ runtime: { ...props.config?.runtime, maxAttemptsPerStep: value } });
+      });
     },
     "Request Timeout": () => {
-      const raw = window.prompt("请求超时（秒）", String(props.config?.runtime?.timeouts?.requestSec ?? 120));
-      const value = Number(raw);
-      if (raw !== null && Number.isInteger(value) && value > 0)
-        props.onUpdateConfig?.({
-          runtime: { ...props.config?.runtime, timeouts: { ...props.config?.runtime?.timeouts, requestSec: value } },
-        });
+      const current = String(props.config?.runtime?.timeouts?.requestSec ?? 120);
+      openEdit("请求超时（秒）", current, (raw) => {
+        const value = Number(raw);
+        if (Number.isInteger(value) && value > 0)
+          props.onUpdateConfig?.({
+            runtime: {
+              ...props.config?.runtime,
+              timeouts: { ...props.config?.runtime?.timeouts, requestSec: value },
+            },
+          });
+      });
     },
     "Compaction Threshold": () => {
-      const raw = window.prompt("Compaction 阈值（%）", String(props.config?.context?.compactionThresholdPercent ?? 85));
-      const value = Number(raw);
-      if (raw !== null && Number.isInteger(value) && value > 0 && value <= 100)
-        props.onUpdateConfig?.({ context: { ...props.config?.context, compactionThresholdPercent: value } });
+      const current = String(props.config?.context?.compactionThresholdPercent ?? 85);
+      openEdit("Compaction 阈值（%）", current, (raw) => {
+        const value = Number(raw);
+        if (Number.isInteger(value) && value > 0 && value <= 100)
+          props.onUpdateConfig?.({ context: { ...props.config?.context, compactionThresholdPercent: value } });
+      });
     },
     "Checkpoint 目录": () => {
       const current = (props.config?.checkpoint?.additionalDirs ?? []).join(",");
-      const raw = window.prompt("额外 checkpoint 目录（逗号分隔）", current);
-      if (raw !== null)
+      openEdit("额外 checkpoint 目录（逗号分隔）", current, (raw) => {
         props.onUpdateConfig?.({
           checkpoint: {
             ...props.config?.checkpoint,
             additionalDirs: raw.split(",").map((entry) => entry.trim()).filter(Boolean),
           },
         });
+      });
     },
     "Density": () => {
       cyclePreference("density", density(), ["comfortable", "compact"], setDensity);
@@ -321,8 +353,7 @@ export function SettingsPanel(props: {
       cyclePreference("toolDetails", toolDetails(), ["expanded", "collapsed"], setToolDetails);
     },
     "Keybinds": () => {
-      cyclePreference("keybinds", "默认", ["默认", "自定义"], () => {});
-      window.alert("当前版本快捷键覆盖请通过 TUI 快捷键配置；这里先切换为“自定义”占位。");
+      window.alert("当前版本快捷键覆盖请通过 TUI 快捷键配置。");
     },
     "界面偏好保存范围": () => {
       cyclePreference("uiWriteScope", uiWriteScope(), ["project", "global"], setUiWriteScope);
@@ -514,6 +545,53 @@ export function SettingsPanel(props: {
           </div>
         </div>
       </div>
+      <Show when={editFieldLabel()}>
+        <div class="neu-settings-backdrop" onClick={() => setEditFieldLabel(undefined)}>
+          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+            <div class="neu-settings-header">
+              <span class="neu-settings-title">{editFieldLabel()}</span>
+              <button
+                type="button"
+                class="neu-settings-close"
+                onClick={() => setEditFieldLabel(undefined)}
+                aria-label="关闭"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div class="neu-settings-body neu-edit-body">
+              <input
+                class="neu-form-input"
+                value={editFieldValue()}
+                onInput={(event) => setEditFieldValue(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    editFieldAction?.(editFieldValue());
+                    setEditFieldLabel(undefined);
+                  }
+                }}
+              />
+              <div class="neu-form-actions">
+                <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setEditFieldLabel(undefined)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-primary"
+                  onClick={() => {
+                    editFieldAction?.(editFieldValue());
+                    setEditFieldLabel(undefined);
+                  }}
+                >
+                  确定
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
     </Show>
   );
 }
