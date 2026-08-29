@@ -2768,4 +2768,14 @@ button.neu-settings-item.neu-settings-item-button:active {
   top: auto;
   bottom: calc(100% + 6px);
 }
+
+/* Question panel */
+.neu-question-item { margin-bottom: 12px; }
+.neu-question-header { font-weight: 600; margin-bottom: 4px; }
+.neu-question-text { color: var(--neu-muted); margin-bottom: 8px; }
+.neu-question-options { display: flex; flex-direction: column; gap: 6px; }
+.neu-question-option { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--neu-border); background: var(--neu-surface); cursor: pointer; }
+.neu-question-option-active { border-color: var(--neu-accent); color: var(--neu-accent); }
+.neu-question-option-description { display: block; font-size: 12px; color: var(--neu-muted); }
+.neu-question-custom { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--neu-border); background: var(--neu-surface); color: var(--neu-text); }
 `;

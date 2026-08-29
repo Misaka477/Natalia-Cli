@@ -19,6 +19,7 @@ import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { NeuSelect } from "./components/NeuSelect";
 import { CheckpointPanel } from "./checkpoint-panel";
 import { PermissionPanel } from "./permission-panel";
+import { QuestionPanel } from "./components/QuestionPanel";
 import { StatusPanel } from "./status-panel";
 import { SearchPanel } from "./search-panel";
 import { HelpPanel } from "./help-panel";
@@ -170,6 +171,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [checkpointOpen, setCheckpointOpen] = createSignal(false);
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
+  const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
+  const [questionOpen, setQuestionOpen] = createSignal(false);
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [modelOpen, setModelOpen] = createSignal(false);
   const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
@@ -342,6 +345,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         if (event.type === "approval.request") {
           setCurrentApproval(event);
           setPermissionOpen(true);
+        }
+        if (event.type === "question.request") {
+          setCurrentQuestion(event);
+          setQuestionOpen(true);
         }
         if (
           event.type.startsWith("workspace.") ||
@@ -945,6 +952,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onClose={() => {
           setPermissionOpen(false);
           setCurrentApproval(null);
+        }}
+      />
+      <QuestionPanel
+        open={questionOpen()}
+        request={currentQuestion()}
+        runtime={props.ctx.runtime}
+        onClose={() => {
+          setQuestionOpen(false);
+          setCurrentQuestion(null);
         }}
       />
       <WorkspaceSettingsPanel
