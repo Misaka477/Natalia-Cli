@@ -185,6 +185,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   onCleanup(
     props.ctx.projection.subscribe((next) => {
+      console.debug("[web-plugin] projection update", {
+        messages: next.messages.length,
+        sessions: next.sessions.length,
+        workspaces: next.workspaces.length,
+      });
       const projected = cloneState(next);
       setState(projected);
       if (projected.workspaces.length) setWorkspaces(projected.workspaces);

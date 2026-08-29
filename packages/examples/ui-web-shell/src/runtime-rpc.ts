@@ -287,6 +287,7 @@ export function createWebRuntimeClient(
   let started = false;
 
   async function start(onEvent: (event: RuntimeEvent) => void) {
+    console.debug("[web-runtime] start called", "listener added");
     starts.push(onEvent);
     if (started) return;
     started = true;
@@ -316,6 +317,7 @@ export function createWebRuntimeClient(
         if (line.startsWith("data: ")) {
           try {
             current = JSON.parse(line.slice(6)) as RuntimeEvent;
+            console.debug("[web-runtime] sse event", current.type);
           } catch {
             current = null;
           }
@@ -330,6 +332,7 @@ export function createWebRuntimeClient(
   const impl: RuntimeClient = {
     start,
     async submit(text) {
+      console.debug("[web-runtime] submit", text);
       return (await call("submit", { text })) as never;
     },
     async submitInput(input) {
