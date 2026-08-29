@@ -2689,8 +2689,6 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-pane-divider { height: 8px; width: auto; }
   .neu-secondary { position: fixed; inset: 0 0 0 auto; width: 90vw; z-index: 10; }
 }
-`;
-
 
 .neu-edit-window {
   width: min(480px, 90vw);
@@ -2701,3 +2699,4 @@ button.neu-settings-item.neu-settings-item-button:active {
   gap: 12px;
   padding: 16px;
 }
+`;
