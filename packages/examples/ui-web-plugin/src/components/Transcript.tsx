@@ -116,6 +116,10 @@ export function MessageRow(props: MessageRowProps) {
             />
           }
         >
+          <div
+            class="natalia-message-text"
+            innerHTML={formatContent(props.message.content)}
+          />
           <div class="natalia-streaming-indicator">
             <div class="natalia-streaming-dot" />
             <div class="natalia-streaming-dot" />
