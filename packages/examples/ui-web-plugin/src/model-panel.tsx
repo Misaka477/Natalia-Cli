@@ -109,11 +109,35 @@ export function ModelPanel(props: {
   function openEditProvider(providerName: string) {
     const provider = props.providers?.[providerName];
     if (!provider) return;
+    const providerModels = (props.catalog ?? [])
+      .filter((entry) => entry.provider === providerName)
+      .map((entry) => ({
+        id: entry.id,
+        name: entry.name || entry.id,
+        reasoning: false,
+        image: false,
+      }));
+    const realHeaders = Object.entries(provider.requestDefaults?.headers ?? {}).map(
+      ([name, value]) => ({ name, value: String(value) }),
+    );
     setEditingProvider(providerName);
-    setProviderName(provider.name ?? providerName);
+    setProviderName(providerName);
     setProviderApi(provider.driver);
     setBaseUrl(provider.connection?.baseURL ?? "");
     setApiKey(provider.connection?.apiKey ?? "");
+    setModels(providerModels.length ? providerModels : [{ id: "", name: "", reasoning: true, image: false }]);
+    setHeaders(realHeaders.length ? realHeaders : [{ name: "", value: "" }]);
+    setView("edit-provider");
+  }
+
+  function openAddProvider() {
+    setEditingProvider(undefined);
+    setProviderName("");
+    setProviderApi("openai-compatible");
+    setBaseUrl("");
+    setApiKey("");
+    setModels([{ id: "", name: "", reasoning: true, image: false }]);
+    setHeaders([{ name: "", value: "" }]);
     setView("edit-provider");
   }
 
@@ -233,7 +257,7 @@ export function ModelPanel(props: {
                 )}
               </For>
               <div class="neu-model-actions">
-                <button type="button" class="neu-model-add" onClick={() => setView("edit-provider")}>
+                <button type="button" class="neu-model-add" onClick={openAddProvider}>
                   添加 Provider
                 </button>
               </div>
