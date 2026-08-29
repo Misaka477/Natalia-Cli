@@ -16,8 +16,8 @@ export function createManagementSurface(
       const config = ctx.ports.getTsRuntimeConfig();
       if (!config) return { default: "ask", profiles: [] };
       return {
-        default: config.defaultPermission,
-        profiles: Object.entries(config.permissionProfiles).map(
+        default: config.defaultAgentMode,
+        profiles: Object.entries(config.agentModes).map(
           ([name, profile]) => ({ name, ...profile }),
         ),
       };
@@ -42,7 +42,7 @@ export function createManagementSurface(
     async permissionDelete(name) {
       await ctx.ports.getReady();
       const config = ctx.ports.getTsRuntimeConfig();
-      if (config && config.defaultPermission === name)
+      if (config && config.defaultAgentMode === name)
         return {
           deleted: false,
           reason: `permission profile is the active default: ${name}`,

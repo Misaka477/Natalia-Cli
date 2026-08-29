@@ -845,7 +845,7 @@ function FlowEditor(props: {
     );
 
   if (screen.kind === "permission-preview-profile") {
-    const profiles = Object.entries(props.config?.permissionProfiles ?? {});
+    const profiles = Object.entries(props.config?.agentModes ?? {});
     return (
       <DialogSelect
         title="Preview Flow Permissions"
@@ -876,7 +876,7 @@ function FlowEditor(props: {
   }
 
   if (screen.kind === "direct-run-profile") {
-    const profiles = Object.entries(props.config?.permissionProfiles ?? {})
+    const profiles = Object.entries(props.config?.agentModes ?? {})
       .filter(([, profile]) => profile.approval === "auto")
       .map(([name, profile]) => ({
         title: name,
@@ -920,7 +920,7 @@ function FlowEditor(props: {
   }
 
   if (screen.kind === "permission-preview") {
-    const profile = props.config?.permissionProfiles[screen.profileName];
+    const profile = props.config?.agentModes[screen.profileName];
     if (!profile)
       return (
         <DialogSelect
@@ -2487,7 +2487,7 @@ export function flowDraftProblems(
   const problems: string[] = [];
   const directProfile = draft.directRun?.permissionProfile;
   if (directProfile && config) {
-    const profile = config.permissionProfiles[directProfile];
+    const profile = config.agentModes[directProfile];
     if (!profile)
       problems.push(`manual run profile not found: ${directProfile}`);
     else if (profile.approval !== "auto")

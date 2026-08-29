@@ -32,11 +32,11 @@ try {
   keys.pressEnter();
   for (let attempts = 0; attempts < 40; attempts++) {
     const config = (await resolveConfig({ workspaceRoot })).config;
-    if (config.defaultMode === "review" && config.modes.review) break;
+    if (config.defaultAgentMode === "review" && config.agentModes.review) break;
     await Bun.sleep(50);
   }
   const config = (await resolveConfig({ workspaceRoot })).config;
-  if (config.defaultMode !== "review" || !config.modes.review)
+  if (config.defaultAgentMode !== "review" || !config.agentModes.review)
     throw new Error("Agent Mode name was not persisted through the TUI prompt");
   console.log("agent mode create keyboard smoke passed");
 } finally {

@@ -52,7 +52,7 @@ export async function configureRuntime(
   // its updates.
   if (
     options.permissionProfile &&
-    !tsConfig.config.permissionProfiles[options.permissionProfile]
+    !tsConfig.config.agentModes[options.permissionProfile]
   )
     throw new Error(
       `permission profile not found: ${options.permissionProfile}`,

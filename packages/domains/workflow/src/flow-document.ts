@@ -94,7 +94,7 @@ export function manualFlowTask(
     throw new Error(
       `flow manual run profile is not configured: ${flow.flowID}`,
     );
-  const profile = config.permissionProfiles[permissionProfile];
+  const profile = config.agentModes[permissionProfile];
   if (!profile)
     throw new Error(`flow manual run profile not found: ${permissionProfile}`);
   if (profile.approval !== "auto")

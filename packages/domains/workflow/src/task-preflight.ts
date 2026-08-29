@@ -7,7 +7,7 @@ export function assertTaskReferences(input: {
   task: NataliaTaskDocument;
   config: ConfigV3;
 }) {
-  const profile = input.config.permissionProfiles[input.task.permissionProfile];
+  const profile = input.config.agentModes[input.task.permissionProfile];
   if (!profile)
     throw new Error(
       `task permission profile not found: ${input.task.permissionProfile}`,

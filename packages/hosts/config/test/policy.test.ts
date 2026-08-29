@@ -129,5 +129,5 @@ test("a rejected configuration file reports why, not just that it failed", async
   // silently drops the profiles and command rules they thought were in effect.
   expect(project.diagnostic).toContain("invalid_config:");
   expect(project.diagnostic).toContain("writePaths");
-  expect(resolved.config.permissionProfiles.unattended).toBeUndefined();
+  expect(resolved.config.agentModes.unattended).toBeUndefined();
 });

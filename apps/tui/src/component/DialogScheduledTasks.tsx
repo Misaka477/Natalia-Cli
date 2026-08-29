@@ -604,7 +604,7 @@ function SystemCommandInstructions(props: {
 }
 
 function taskEditorProfileOptions(config: ConfigV3) {
-  return Object.entries(config.permissionProfiles).map(([key, profile]) => ({
+  return Object.entries(config.agentModes).map(([key, profile]) => ({
     title: key,
     value: key,
     description: profile.description || `approval: ${profile.approval}`,

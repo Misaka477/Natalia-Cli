@@ -219,7 +219,7 @@ export function createTaskWorkflowController(input: {
         problems.push(error instanceof Error ? error.message : String(error));
       }
       const permissions = input.resolveFlowPermissions({
-        profile: config.permissionProfiles[task.permissionProfile],
+        profile: config.agentModes[task.permissionProfile],
         flow,
         taskCapabilities: {
           reportIssue: Boolean(task.issueTarget),

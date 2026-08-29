@@ -83,8 +83,8 @@ test("the default and the last profile are protected, an unused one is removable
     name: "unattended_read",
     usage: {},
   });
-  expect(Object.keys(next.permissionProfiles)).toEqual(["ask"]);
-  expect(next.defaultPermission).toBe("ask");
+  expect(Object.keys(next.agentModes)).toEqual(["ask"]);
+  expect(next.defaultAgentMode).toBe("ask");
 });
 
 test("an allow-list only accepts tools a capability bundle can grant", () => {

@@ -256,7 +256,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
             config?.instructions.enabled === false
               ? undefined
               : agent?.systemPrompt ||
-                config?.modes[config.defaultMode]?.systemPrompt,
+                config?.agentModes[config.defaultAgentMode]?.systemPrompt,
           moduleInstructions: input.taskModuleContext()?.moduleInstructions,
           moduleContinuation: input.taskModuleContext()?.moduleContinuation,
           flowID: input.taskModuleContext()?.flowID,

@@ -122,7 +122,7 @@ async function taskLaunchReadiness(
         `stage has no minimum completion condition: ${conditionless.id}`,
       );
     const blocked = (resolveFlowPermissions ?? effectiveFlowPermissions)({
-      profile: config.permissionProfiles[task.permissionProfile],
+      profile: config.agentModes[task.permissionProfile],
       flow,
       taskCapabilities: {
         reportIssue: Boolean(task.issueTarget),

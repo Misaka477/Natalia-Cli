@@ -141,7 +141,7 @@ export function createPluginAssembly(
     return {
       servers: () => {
         const runtimeConfig = getTsRuntimeConfig();
-        const mode = runtimeConfig?.modes?.[runtimeConfig?.defaultMode ?? ""];
+        const mode = runtimeConfig?.agentModes?.[runtimeConfig?.defaultAgentMode ?? ""];
         const selected = mode?.mcpServers;
         // An agent mode controls MCP exactly as a whitelist: no selected MCP
         // means this mode exposes none, even if servers are globally enabled.

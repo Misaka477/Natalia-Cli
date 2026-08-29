@@ -44,7 +44,7 @@ export function taskPermissionPreview(input: {
     taskID: input.task.taskID,
     permissionProfile: input.task.permissionProfile,
     ...effectiveFlowPermissions({
-      profile: input.config.permissionProfiles[input.task.permissionProfile],
+      profile: input.config.agentModes[input.task.permissionProfile],
       flow: input.flow,
       taskCapabilities: {
         reportIssue: Boolean(input.task.issueTarget),

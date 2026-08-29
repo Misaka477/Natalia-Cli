@@ -152,7 +152,7 @@ export async function runTask(input: {
   input.signal?.throwIfAborted();
   const config = input.config;
   let exitCode = 0;
-  const profile = config.permissionProfiles[input.task.permissionProfile];
+  const profile = config.agentModes[input.task.permissionProfile];
   if (!profile)
     throw new Error(
       `task permission profile not found: ${input.task.permissionProfile}`,

@@ -77,7 +77,7 @@ export async function scheduledTaskOverview(input: {
         problems.push(error instanceof Error ? error.message : String(error));
         return undefined;
       });
-      const profile = input.config.permissionProfiles[task.permissionProfile];
+      const profile = input.config.agentModes[task.permissionProfile];
       if (!profile)
         problems.push(
           `permission profile not found: ${task.permissionProfile}`,
