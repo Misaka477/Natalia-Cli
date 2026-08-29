@@ -933,6 +933,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onClose={() => setModelOpen(false)}
         catalog={modelCatalog()}
         selection={state().modelSelection ?? undefined}
+        providers={config()?.providers}
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
         onAddProvider={(input) => props.ctx.runtime.providerAdd?.(input)}
       />

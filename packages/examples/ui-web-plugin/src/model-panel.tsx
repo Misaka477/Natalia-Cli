@@ -1,5 +1,5 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
-import type { RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
+import type { ConfigV3, RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
 
 type ModelView = "tree" | "edit-provider";
 
@@ -16,11 +16,11 @@ type HeaderRow = {
 };
 
 const providerApis = [
-  "OpenAI Compatible",
-  "Anthropic",
-  "OpenAI",
-  "Anthropic Compatible",
-  "Gemini",
+  { value: "openai", title: "OpenAI" },
+  { value: "anthropic", title: "Anthropic" },
+  { value: "gemini", title: "Gemini" },
+  { value: "openai-compatible", title: "OpenAI Compatible" },
+  { value: "anthropic-compatible", title: "Anthropic Compatible" },
 ];
 
 export function ModelPanel(props: {
@@ -28,6 +28,7 @@ export function ModelPanel(props: {
   onClose: () => void;
   catalog?: RuntimeModelCatalogEntry[];
   selection?: RuntimeModelSelection;
+  providers?: ConfigV3["providers"];
   onSetDefault?: (modelID: string) => unknown;
   onAddProvider?: (input: {
     name: string;
@@ -36,6 +37,7 @@ export function ModelPanel(props: {
     apiKey: string;
   }) => unknown;
 }) {
+  const [editingProvider, setEditingProvider] = createSignal<string | undefined>();
   const [view, setView] = createSignal<ModelView>("tree");
   const providers = () => {
     const groups = new Map<string, RuntimeModelCatalogEntry[]>();
@@ -57,7 +59,7 @@ export function ModelPanel(props: {
     new Set(providers().map((provider) => provider.name)),
   );
   const [providerName, setProviderName] = createSignal("");
-  const [providerApi, setProviderApi] = createSignal("OpenAI Compatible");
+  const [providerApi, setProviderApi] = createSignal("openai-compatible");
   const [baseUrl, setBaseUrl] = createSignal("");
   const [apiKey, setApiKey] = createSignal("");
   const [models, setModels] = createSignal<ModelRow[]>([
@@ -104,13 +106,25 @@ export function ModelPanel(props: {
     setView("tree");
   }
 
+  function openEditProvider(providerName: string) {
+    const provider = props.providers?.[providerName];
+    if (!provider) return;
+    setEditingProvider(providerName);
+    setProviderName(provider.name ?? providerName);
+    setProviderApi(provider.driver);
+    setBaseUrl(provider.connection?.baseURL ?? "");
+    setApiKey(provider.connection?.apiKey ?? "");
+    setView("edit-provider");
+  }
+
   function submitProvider() {
     props.onAddProvider?.({
-      name: providerName().trim(),
+      name: providerName().trim() || editingProvider() || "",
       type: providerApi(),
       baseURL: baseUrl().trim() || undefined,
       apiKey: apiKey(),
     });
+    setEditingProvider(undefined);
     backToTree();
   }
 
@@ -152,7 +166,18 @@ export function ModelPanel(props: {
               <For each={providers()}>
                 {(provider) => (
                   <div class="neu-model-provider">
-                    <button type="button" class="neu-model-provider-header" onClick={() => toggle(provider.name)}>
+                    <div
+                      class="neu-model-provider-header"
+                      role="button"
+                      tabIndex="0"
+                      onClick={() => toggle(provider.name)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          toggle(provider.name);
+                        }
+                      }}
+                    >
                       <svg
                         class="neu-model-chevron"
                         data-expanded={expanded().has(provider.name)}
@@ -171,7 +196,17 @@ export function ModelPanel(props: {
                       <span class="neu-model-status" data-connected={provider.status === "已连接"}>
                         {provider.status}
                       </span>
-                    </button>
+                      <button
+                        type="button"
+                        class="neu-model-edit"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEditProvider(provider.name);
+                        }}
+                      >
+                        编辑
+                      </button>
+                    </div>
                     <Show when={expanded().has(provider.name)}>
                       <div class="neu-model-children">
                         <For each={provider.models}>
@@ -225,7 +260,10 @@ export function ModelPanel(props: {
                   value={providerApi()}
                   onChange={(event) => setProviderApi(event.currentTarget.value)}
                 >
-                  <For each={providerApis}>{(api) => <option value={api}>{api}</option>}</For>
+                  <Show when={!providerApis.some((api) => api.value === providerApi())}>
+                    <option value={providerApi()}>{providerApi()}</option>
+                  </Show>
+                  <For each={providerApis}>{(api) => <option value={api.value}>{api.title}</option>}</For>
                 </select>
               </div>
               <div class="neu-form-field">
