@@ -13,11 +13,17 @@ export interface TranscriptProps {
   emptyHint?: string;
   assistantName?: string;
   assistantInitial?: string;
+  scrollRef?: (el: HTMLDivElement) => void;
+  onScroll?: (event: Event) => void;
 }
 
 export function Transcript(props: TranscriptProps) {
   return (
-    <div class="natalia-transcript">
+    <div
+      class="natalia-transcript"
+      ref={props.scrollRef}
+      onScroll={props.onScroll}
+    >
       <Show
         when={props.messages.length > 0}
         fallback={

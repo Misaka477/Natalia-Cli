@@ -209,14 +209,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       const projected = cloneState(next);
       setState(projected);
       if (projected.workspaces.length) setWorkspaces(projected.workspaces);
-      if (followBottom() && transcriptEl()) {
-        const el = transcriptEl()!;
-        el.scrollTop = el.scrollHeight;
-      }
-      if (chatFollowBottom() && chatTranscriptEl()) {
-        const el = chatTranscriptEl()!;
-        el.scrollTop = el.scrollHeight;
-      }
+      setTimeout(() => {
+        if (followBottom() && transcriptEl()) {
+          const el = transcriptEl()!;
+          el.scrollTop = el.scrollHeight;
+        }
+        if (chatFollowBottom() && chatTranscriptEl()) {
+          const el = chatTranscriptEl()!;
+          el.scrollTop = el.scrollHeight;
+        }
+      }, 0);
       if (projected.sessions.length) setSessionList(projected.sessions);
       const currentTurn = projected.activeTurn;
       if (currentTurn && activeTurnStartedAtValue() === undefined) {
@@ -406,6 +408,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // requests are not re-opened because their response events clear them
     // from the view-store pending state during replay.
     const resetProjectionForSessionSwitch = () => {
+      setFollowBottom(true);
+      setShowJumpToBottom(false);
+      setChatFollowBottom(true);
+      setChatShowJumpToBottom(false);
       props.ctx.projection.reset?.();
     };
     const elapsedTimer = setInterval(() => {
@@ -976,17 +982,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 {state().activeTurn ? "running" : "idle"}
               </span>
             </div>
-            <div
-              class="neu-pane-content"
-              ref={setTranscriptEl}
-              onScroll={handleTranscriptScroll}
-            >
+            <div class="neu-pane-content">
               <Transcript
                 messages={mainMessages()}
                 emptyTitle="Natalia 已准备好"
                 emptyHint="Natalia 会直接处理工作区任务。"
                 assistantName="Natalia"
                 assistantInitial="N"
+                scrollRef={setTranscriptEl}
+                onScroll={handleTranscriptScroll}
               />
               <Show when={showJumpToBottom()}>
                 <button
@@ -1065,17 +1069,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 {state().chatActivity ? "running" : "idle"}
               </span>
             </div>
-            <div
-              class="neu-pane-content"
-              ref={setChatTranscriptEl}
-              onScroll={handleChatTranscriptScroll}
-            >
+            <div class="neu-pane-content">
               <Transcript
                 messages={chatMessages()}
                 emptyTitle="向 Navi 提问"
                 emptyHint="Navi 用于规划和审查，不直接操作工作区。"
                 assistantName="Navi"
                 assistantInitial="V"
+                scrollRef={setChatTranscriptEl}
+                onScroll={handleChatTranscriptScroll}
               />
               <Show when={chatShowJumpToBottom()}>
                 <button
