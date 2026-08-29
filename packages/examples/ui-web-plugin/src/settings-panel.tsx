@@ -68,8 +68,7 @@ const categories: Category[] = [
     id: "security",
     label: "权限与安全",
     items: [
-      { label: "Permission Profile", description: "选择权限 profile", value: "default" },
-      { label: "Approval Mode", description: "工具执行的审批策略", value: "自动审批" },
+      { label: "Permission Profile", description: "选择、新增、编辑权限配置", value: "ask" },
       { label: "Web & Network", description: "搜索、浏览器、网络规则", value: "已配置" },
     ],
   },
@@ -271,6 +270,7 @@ export function SettingsPanel(props: {
   const [modeExcludedTools, setModeExcludedTools] = createSignal("");
   const [modeMcpServers, setModeMcpServers] = createSignal("");
   const [permissionEditorOpen, setPermissionEditorOpen] = createSignal(false);
+  const [permissionListOpen, setPermissionListOpen] = createSignal(false);
   const [permissionName, setPermissionName] = createSignal("ask");
   const [permissionDescription, setPermissionDescription] = createSignal("");
   const [permissionApproval, setPermissionApproval] = createSignal("ask");
@@ -290,6 +290,37 @@ export function SettingsPanel(props: {
     setEditFieldLabel(label);
     setEditFieldValue(current);
     editFieldAction = apply;
+  }
+
+
+  function openPermissionEditorFor(name: string) {
+    const config = props.config;
+    const profile = config?.permissionProfiles?.[name];
+    setPermissionName(name);
+    setPermissionDescription(profile?.description ?? "");
+    setPermissionApproval(profile?.approval ?? "ask");
+    setPermissionAllowedTools((profile?.permissions?.tools?.allow ?? []).join(", "));
+    setPermissionExcludedTools((profile?.permissions?.tools?.exclude ?? []).join(", "));
+    setPermissionCommandMode(profile?.commandRules?.mode ?? "none");
+    setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
+    setPermissionSkills(profile?.extensions?.skills !== false);
+    setPermissionMcp(profile?.extensions?.mcp !== false);
+    setPermissionPlugins(profile?.extensions?.plugins !== false);
+    setPermissionEditorOpen(true);
+  }
+
+  function openNewPermissionEditor() {
+    setPermissionName("");
+    setPermissionDescription("");
+    setPermissionApproval("ask");
+    setPermissionAllowedTools("");
+    setPermissionExcludedTools("");
+    setPermissionCommandMode("none");
+    setPermissionCommandRules("");
+    setPermissionSkills(true);
+    setPermissionMcp(true);
+    setPermissionPlugins(true);
+    setPermissionEditorOpen(true);
   }
 
   const editableActions: Record<string, () => void> = {
@@ -322,33 +353,7 @@ export function SettingsPanel(props: {
       });
     },
     "Permission Profile": () => {
-      const config = props.config;
-      const name = config?.defaultPermission ?? "ask";
-      const profile = config?.permissionProfiles?.[name];
-      setPermissionName(name);
-      setPermissionDescription(profile?.description ?? "");
-      setPermissionApproval(profile?.approval ?? "ask");
-      setPermissionAllowedTools((profile?.permissions?.tools?.allow ?? []).join(", "));
-      setPermissionExcludedTools((profile?.permissions?.tools?.exclude ?? []).join(", "));
-      setPermissionCommandMode(profile?.commandRules?.mode ?? "none");
-      setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
-      setPermissionSkills(profile?.extensions?.skills !== false);
-      setPermissionMcp(profile?.extensions?.mcp !== false);
-      setPermissionPlugins(profile?.extensions?.plugins !== false);
-      setPermissionEditorOpen(true);
-    },
-    "Approval Mode": () => {
-      const config = props.config;
-      if (!config) return;
-      const profile = config.defaultPermission ?? "ask";
-      const current = config.permissionProfiles?.[profile]?.approval ?? "ask";
-      const next = current === "ask" ? "auto" : current === "auto" ? "read_only" : "ask";
-      props.onUpdateConfig?.({
-        permissionProfiles: {
-          ...config.permissionProfiles,
-          [profile]: { approval: next },
-        },
-      });
+      setPermissionListOpen(true);
     },
     "Web & Network": () => {
       const current = props.config?.webSearch?.endpoint ?? "";
@@ -481,7 +486,6 @@ export function SettingsPanel(props: {
       case "自定义 Agent Mode": return config.defaultMode || "code";
       case "子 Agent 并发数": return String(config.team?.maxConcurrent ?? 4);
       case "Permission Profile": return config.defaultPermission ?? "ask";
-      case "Approval Mode": return config.permissionProfiles?.[config.defaultPermission ?? "ask"]?.approval ?? "ask";
       case "Web & Network": return config.webSearch?.endpoint ? "已配置" : "默认";
       case "Max Steps": return String(config.runtime?.maxStepsPerTurn ?? "unlimited");
       case "Max Retry": return String(config.runtime?.maxAttemptsPerStep ?? 3);
@@ -654,6 +658,55 @@ export function SettingsPanel(props: {
           </div>
         </div>
       </div>
+      <Show when={permissionListOpen()}>
+        <div class="neu-settings-backdrop" onClick={() => setPermissionListOpen(false)}>
+          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+            <div class="neu-settings-header">
+              <span class="neu-settings-title">权限配置</span>
+              <button type="button" class="neu-settings-close" onClick={() => setPermissionListOpen(false)} aria-label="关闭">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div class="neu-settings-body neu-edit-body">
+              <For each={Object.entries(props.config?.permissionProfiles ?? {})}>
+                {([name, profile]) => (
+                  <div class="neu-settings-item">
+                    <button
+                      type="button"
+                      class="neu-settings-item-main neu-settings-item-button"
+                      onClick={() => {
+                        props.onUpdateConfig?.({ defaultPermission: name });
+                      }}
+                    >
+                      <div class="neu-settings-item-main">
+                        <span class="neu-settings-item-label">
+                          {name}{props.config?.defaultPermission === name ? "（默认）" : ""}
+                        </span>
+                        <span class="neu-settings-item-description">{profile.description || profile.approval}</span>
+                      </div>
+                      <span class="neu-settings-item-value">{profile.approval}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="neu-settings-item-value neu-settings-item-button"
+                      onClick={() => { setPermissionListOpen(false); openPermissionEditorFor(name); }}
+                    >
+                      编辑
+                    </button>
+                  </div>
+                )}
+              </For>
+              <div class="neu-extension-actions">
+                <button type="button" class="neu-extension-add" onClick={() => { setPermissionListOpen(false); openNewPermissionEditor(); }}>
+                  新增权限配置
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
       <Show when={permissionEditorOpen()}>
         <div class="neu-settings-backdrop" onClick={() => setPermissionEditorOpen(false)}>
           <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
