@@ -681,7 +681,7 @@ export function SettingsPanel(props: {
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Allowed Tools</label>
+                <label class="neu-form-label">Allowed Tools（允许列表，留空表示不限制）</label>
                 <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
@@ -698,7 +698,7 @@ export function SettingsPanel(props: {
                 </div>
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Excluded Tools</label>
+                <label class="neu-form-label">Excluded Tools（黑名单，选中即禁止使用）</label>
                 <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (

@@ -2698,7 +2698,9 @@ button.neu-settings-item.neu-settings-item-button:active {
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-}
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+}}
 
 .neu-tool-select-grid {
   display: grid;
