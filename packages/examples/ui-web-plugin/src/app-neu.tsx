@@ -369,6 +369,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // approvals/questions from the restored session. Resolved historical
     // requests are not re-opened because their response events clear them
     // from the view-store pending state during replay.
+    const resetProjectionForSessionSwitch = () => {
+      props.ctx.projection.reset?.();
+    };
+    window.addEventListener(
+      "natalia:session-switch-reset",
+      resetProjectionForSessionSwitch,
+    );
+    onCleanup(() =>
+      window.removeEventListener(
+        "natalia:session-switch-reset",
+        resetProjectionForSessionSwitch,
+      ),
+    );
+
     const openUnresolvedInteractives = () => {
       const approvals = state().pendingApprovals;
       if (approvals.length) {
@@ -790,6 +804,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onSelect={(id, name) => {
                   setSelectedSessionID(id);
                   setSelectedSession(name);
+                  void props.ctx.runtime.sessionAttach?.(id);
                 }}
                 onRemoveWorkspace={(workspaceID) => {
                   void removeWorkspace(workspaceID);
