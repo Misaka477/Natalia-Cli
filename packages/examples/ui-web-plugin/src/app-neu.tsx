@@ -905,9 +905,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             <div class="neu-pane-header">
               <span class="neu-pane-title">Natalia</span>
               <span class="neu-pane-status" data-running={state().activeTurn}>
-                {state().activeTurn
-                  ? `${activityLabel()} · ${formatDuration(turnElapsedMs())}`
-                  : "idle"}
+                {state().activeTurn ? "running" : "idle"}
               </span>
             </div>
             <div class="neu-pane-content">
@@ -918,6 +916,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantName="Natalia"
                 assistantInitial="N"
               />
+              <div class="neu-activity-bar" data-running={state().activeTurn}>
+                <span class="neu-activity-pulse" />
+                <span class="neu-activity-label">
+                  {state().activeTurn
+                    ? `${activityLabel()} · ${formatDuration(turnElapsedMs())}`
+                    : "idle"}
+                </span>
+              </div>
               <div class="neu-main-toolbar">
                 <NeuSelect
                   value={state().modelSelection?.modelID ?? ""}

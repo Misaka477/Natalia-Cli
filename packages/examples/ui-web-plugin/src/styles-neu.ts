@@ -2792,4 +2792,24 @@ button.neu-settings-item.neu-settings-item-button:active {
   background: var(--neu-accent);
   animation: neu-pulse 1s infinite;
 }
+
+/* Activity bar above composer */
+.neu-activity-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 0;
+  font-size: 12px;
+  color: var(--neu-muted);
+}
+.neu-activity-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neu-muted);
+}
+.neu-activity-bar[data-running="true"] .neu-activity-pulse {
+  background: var(--neu-accent);
+  animation: neu-pulse 1s infinite;
+}
 `;
