@@ -418,7 +418,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         return {
           id: `msg-${idx}`,
           role: "assistant",
-          content: msg.tool.summary || msg.tool.result || msg.text,
+          content: "",
           status:
             state().activeTurn && idx === (state().messages?.length ?? 0) - 1
               ? "running"
@@ -458,7 +458,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         return {
           id: `chat-${idx}`,
           role: "assistant",
-          content: msg.tool.summary || msg.tool.result || msg.text,
+          content: "",
           toolCalls: [
             {
               name: msg.tool.name,

@@ -108,24 +108,28 @@ export function MessageRow(props: MessageRowProps) {
 
       <div class="natalia-message-body">
         <Show
-          when={props.message.streaming}
-          fallback={
+          when={props.message.content || !props.message.toolCalls?.length}
+        >
+          <Show
+            when={props.message.streaming}
+            fallback={
+              <div
+                class="natalia-message-text"
+                innerHTML={formatContent(props.message.content)}
+              />
+            }
+          >
             <div
               class="natalia-message-text"
               innerHTML={formatContent(props.message.content)}
             />
-          }
-        >
-          <div
-            class="natalia-message-text"
-            innerHTML={formatContent(props.message.content)}
-          />
-          <div class="natalia-streaming-indicator">
-            <div class="natalia-streaming-dot" />
-            <div class="natalia-streaming-dot" />
-            <div class="natalia-streaming-dot" />
-            <span class="natalia-streaming-label">正在思考...</span>
-          </div>
+            <div class="natalia-streaming-indicator">
+              <div class="natalia-streaming-dot" />
+              <div class="natalia-streaming-dot" />
+              <div class="natalia-streaming-dot" />
+              <span class="natalia-streaming-label">正在思考...</span>
+            </div>
+          </Show>
         </Show>
       </div>
 
