@@ -1,4 +1,5 @@
 import { For, Show, createSignal } from "solid-js";
+import { marked } from "marked";
 import type { Message } from "../types";
 
 declare global {
@@ -199,29 +200,10 @@ export function MessageRow(props: MessageRowProps) {
 }
 
 function formatContent(text: string): string {
-  let html = escapeHtml(text);
-
-  const codeBlocks: string[] = [];
-  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
-    const idx = codeBlocks.length;
-    codeBlocks.push(code.trim());
-    return `<div class="natalia-code-block"><div class="natalia-code-header"><span>${lang || "plaintext"}</span><button class="natalia-code-copy" onclick="(function(i){const t=document.querySelectorAll('.natalia-code-copy');t[i].textContent='Copied';setTimeout(()=>t[i].textContent='Copy',1500)})(event.target.dataset.idx)" data-idx="${idx}">Copy</button></div><pre><code>${code.trim()}</code></pre></div>`;
-  });
-
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-
-  const paragraphs = html.split(/\n\n+/);
-  html = paragraphs.map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`).join("");
-
-  if (codeBlocks.length > 0) {
-    html = `<div class="natalia-code-blocks">${html}</div>`;
-    window._nataliaCodeBlocks = codeBlocks;
-  }
-
-  return html;
+  return marked.parse(text, {
+    gfm: true,
+    breaks: true,
+  }) as string;
 }
 
 function escapeHtml(text: string): string {

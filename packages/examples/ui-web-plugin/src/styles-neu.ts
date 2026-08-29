@@ -2830,4 +2830,14 @@ button.neu-settings-item.neu-settings-item-button:active {
   z-index: 2;
 }
 .neu-pane-content { position: relative; }
+
+/* Markdown tables and blocks */
+.natalia-message-text table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+.natalia-message-text th, .natalia-message-text td { border: 1px solid var(--neu-border); padding: 6px 8px; text-align: left; }
+.natalia-message-text pre { background: var(--neu-bg); border-radius: 8px; padding: 10px; overflow-x: auto; }
+.natalia-message-text code { background: var(--neu-bg); border-radius: 4px; padding: 1px 4px; }
+.natalia-message-text pre code { background: transparent; padding: 0; }
+.natalia-message-text ul, .natalia-message-text ol { padding-left: 20px; }
+.natalia-message-text blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--neu-accent); color: var(--neu-muted); }
+.natalia-message-text a { color: var(--neu-accent); }
 `;
