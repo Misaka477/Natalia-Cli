@@ -67,6 +67,7 @@ function SessionTree(props: {
   sessions: RuntimeSessionSummary[];
   workspaces: WorkspaceSummary[];
   onSelect: (id: string, name: string) => void;
+  onRemoveWorkspace?: (workspaceID: string) => void;
 }) {
   const groups = createMemo(() => {
     const byWorkspace = new Map<string, RuntimeSessionSummary[]>();
@@ -79,6 +80,7 @@ function SessionTree(props: {
       byWorkspace.set(key, list);
     }
     return props.workspaces.map((workspace) => ({
+      workspaceID: workspace.workspaceID,
       workspace: workspace.title,
       sessions: (byWorkspace.get(workspace.workspaceID) ?? []).map((session) => ({
         id: session.id,
@@ -97,6 +99,19 @@ function SessionTree(props: {
             <div class="neu-workspace-row">
               <span class="neu-workspace-name">{group.workspace}</span>
               <span class="neu-count">{group.sessions.length}</span>
+              <Show when={props.onRemoveWorkspace}>
+                <button
+                  type="button"
+                  class="neu-workspace-remove"
+                  title="移除工作区"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    props.onRemoveWorkspace?.(group.workspaceID);
+                  }}
+                >
+                  ×
+                </button>
+              </Show>
             </div>
             <For each={group.sessions}>
               {(session) => (
@@ -183,6 +198,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     await refreshSessions();
   }
 
+  async function removeWorkspace(workspaceID: string) {
+    try {
+      await props.ctx.runtime.workspaceRemove?.(workspaceID);
+      await refreshWorkspaces();
+      await refreshSessions();
+    } catch (error: unknown) {
+      setWorkspaceError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
   function selectedSessionIsActive() {
     return Boolean(
       selectedSessionID() && selectedSessionID() === state().sessionID,
@@ -190,16 +217,26 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   async function deleteSelectedSession() {
-    if (!selectedSessionID()) return;
-    if (selectedSessionIsActive()) {
-      props.ctx.runtime.diagnostic?.(
-        "不能删除当前 runtime 正在使用的会话，请先切换到其他会话",
-        "warning",
-      );
-      return;
-    }
+    const targetID = selectedSessionID();
+    if (!targetID) return;
     try {
-      await props.ctx.runtime.sessionDelete?.(selectedSessionID());
+      if (selectedSessionIsActive()) {
+        const other = sessionList().find((session) => session.id !== targetID);
+        if (other) {
+          await props.ctx.runtime.sessionAttach?.(other.id);
+        } else {
+          const created = await props.ctx.runtime.sessionNew?.();
+          if (!created?.sessionID) {
+            props.ctx.runtime.diagnostic?.(
+              "删除当前唯一会话前需要先创建并切换到新会话，但当前 runtime 不支持。",
+              "warning",
+            );
+            return;
+          }
+          await props.ctx.runtime.sessionAttach?.(created.sessionID);
+        }
+      }
+      await props.ctx.runtime.sessionDelete?.(targetID);
       setSelectedSessionID("");
       setSelectedSession("");
       await refreshSessions();
@@ -463,7 +500,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <button
                 type="button"
                 class="neu-session-toolbar-btn"
-                disabled={!selectedSessionID() || selectedSessionIsActive()}
+                disabled={!selectedSessionID()}
                 onClick={() => void deleteSelectedSession()}
               >
                 删除
@@ -498,6 +535,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onSelect={(id, name) => {
                   setSelectedSessionID(id);
                   setSelectedSession(name);
+                }}
+                onRemoveWorkspace={(workspaceID) => {
+                  void removeWorkspace(workspaceID);
                 }}
               />
             </div>
@@ -694,17 +734,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             );
           }
         }}
-        onRemove={async (workspaceID) => {
-          try {
-            await props.ctx.runtime.workspaceRemove?.(workspaceID);
-            await refreshWorkspaces();
-            await refreshSessions();
-          } catch (error: unknown) {
-            setWorkspaceError(
-              error instanceof Error ? error.message : String(error),
-            );
-          }
-        }}
+        onRemove={(workspaceID) => removeWorkspace(workspaceID)}
       />
       <SessionActionsPanel
         open={sessionMenuOpen()}

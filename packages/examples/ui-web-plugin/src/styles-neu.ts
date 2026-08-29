@@ -191,6 +191,25 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   font-size: 11px;
   color: var(--neu-muted);
 }
+.neu-workspace-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--neu-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.neu-workspace-remove:hover {
+  background: var(--neu-bg);
+  color: var(--neu-text);
+}
 .neu-tree-row {
   display: flex;
   align-items: center;
