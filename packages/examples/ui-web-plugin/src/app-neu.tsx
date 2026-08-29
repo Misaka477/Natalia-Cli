@@ -176,6 +176,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [questionOpen, setQuestionOpen] = createSignal(false);
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
+  const transcriptRef = createSignal<HTMLDivElement | undefined>(undefined);
+  const [transcriptEl, setTranscriptEl] = transcriptRef;
+  const [followBottom, setFollowBottom] = createSignal(true);
+  const [showJumpToBottom, setShowJumpToBottom] = createSignal(false);
   const activeTurnStartedAt = createSignal<number | undefined>(undefined);
   const [activeTurnStartedAtValue, setActiveTurnStartedAt] = activeTurnStartedAt;
   const [modelOpen, setModelOpen] = createSignal(false);
@@ -200,6 +204,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       const projected = cloneState(next);
       setState(projected);
       if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+      if (followBottom() && transcriptEl()) {
+        const el = transcriptEl()!;
+        el.scrollTop = el.scrollHeight;
+      }
       if (projected.sessions.length) setSessionList(projected.sessions);
       const currentTurn = projected.activeTurn;
       if (currentTurn && activeTurnStartedAtValue() === undefined) {
@@ -545,6 +553,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // not JSON: keep plain text
     }
     return output;
+  }
+
+  function handleTranscriptScroll() {
+    const el = transcriptEl();
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    setFollowBottom(nearBottom);
+    setShowJumpToBottom(!nearBottom);
+  }
+
+  function jumpToBottom() {
+    const el = transcriptEl();
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setFollowBottom(true);
+    setShowJumpToBottom(false);
   }
 
   function formatDuration(ms: number): string {
@@ -908,7 +932,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 {state().activeTurn ? "running" : "idle"}
               </span>
             </div>
-            <div class="neu-pane-content">
+            <div
+              class="neu-pane-content"
+              ref={setTranscriptEl}
+              onScroll={handleTranscriptScroll}
+            >
               <Transcript
                 messages={mainMessages()}
                 emptyTitle="Natalia 已准备好"
@@ -916,6 +944,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantName="Natalia"
                 assistantInitial="N"
               />
+              <Show when={showJumpToBottom()}>
+                <button
+                  type="button"
+                  class="neu-jump-bottom"
+                  onClick={jumpToBottom}
+                  title="跳到底部"
+                >
+                  ↓
+                </button>
+              </Show>
               <div class="neu-activity-bar" data-running={state().activeTurn}>
                 <span class="neu-activity-pulse" />
                 <span class="neu-activity-label">

@@ -2812,4 +2812,22 @@ button.neu-settings-item.neu-settings-item-button:active {
   background: var(--neu-accent);
   animation: neu-pulse 1s infinite;
 }
+
+/* Jump-to-bottom floating button */
+.neu-jump-bottom {
+  position: absolute;
+  right: 16px;
+  bottom: 48px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+  z-index: 2;
+}
+.neu-pane-content { position: relative; }
 `;
