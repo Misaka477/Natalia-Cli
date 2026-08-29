@@ -2721,13 +2721,6 @@ button.neu-settings-item.neu-settings-item-button:active {
   gap: 10px;
   border-radius: 14px;
 }
-.neu-tool-check {
-  min-height: 38px;
-  padding: 8px 10px;
-  font-size: 12px;
-  gap: 8px;
-  border-radius: 12px;
-}
 .neu-tool-check span {
   min-width: 0;
   overflow: hidden;
