@@ -38,7 +38,7 @@ const categories: Category[] = [
       { label: "Providers & Models", description: "配置 provider 并导入模型", value: "3 个 provider" },
       { label: "Default Model", description: "默认使用的模型", value: "Opus 4" },
       { label: "默认 Agent", description: "当前 agent / 默认使用的 agent", value: "默认" },
-      { label: "运行模式", description: "当前运行模式（defaultMode）", value: "code" },
+      { label: "自定义 Agent Mode", description: "创建、编辑并选择自定义 agent 运行模式", value: "code" },
       { label: "子 Agent 并发数", description: "团队子 agent 最大并发数", value: "3" },
     ],
   },
@@ -238,6 +238,15 @@ export function SettingsPanel(props: {
   const [editFieldLabel, setEditFieldLabel] = createSignal<string | undefined>();
   const [editFieldValue, setEditFieldValue] = createSignal("");
   let editFieldAction: ((value: string) => void) | undefined;
+  const [modeEditorOpen, setModeEditorOpen] = createSignal(false);
+  const [modeName, setModeName] = createSignal("code");
+  const [modeDescription, setModeDescription] = createSignal("");
+  const [modeSystemPrompt, setModeSystemPrompt] = createSignal("");
+  const [modeModel, setModeModel] = createSignal("");
+  const [modePermission, setModePermission] = createSignal("");
+  const [modeAllowedTools, setModeAllowedTools] = createSignal("");
+  const [modeExcludedTools, setModeExcludedTools] = createSignal("");
+  const [modeMcpServers, setModeMcpServers] = createSignal("");
 
   function openEdit(
     label: string,
@@ -256,11 +265,19 @@ export function SettingsPanel(props: {
         if (next) props.onUpdateConfig?.({ defaultAgent: next });
       });
     },
-    "运行模式": () => {
-      const current = props.config?.defaultMode ?? "code";
-      openEdit("运行模式（defaultMode）", current, (next) => {
-        if (next) props.onUpdateConfig?.({ defaultMode: next });
-      });
+    "自定义 Agent Mode": () => {
+      const config = props.config;
+      const name = config?.defaultMode ?? "code";
+      const mode = config?.modes?.[name];
+      setModeName(name);
+      setModeDescription(mode?.description ?? "");
+      setModeSystemPrompt(mode?.systemPrompt ?? "");
+      setModeModel(mode?.model ?? "");
+      setModePermission(mode?.permission ?? "");
+      setModeAllowedTools((mode?.allowedTools ?? []).join(", "));
+      setModeExcludedTools((mode?.excludedTools ?? []).join(", "));
+      setModeMcpServers((mode?.mcpServers ?? []).join(", "));
+      setModeEditorOpen(true);
     },
     "子 Agent 并发数": () => {
       const current = String(props.config?.team?.maxConcurrent ?? 4);
@@ -377,7 +394,7 @@ export function SettingsPanel(props: {
       case "Providers & Models": return `${Object.keys(config.providers ?? {}).length} 个 provider`;
       case "Default Model": return modelLabel(config);
       case "默认 Agent": return (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认";
-      case "运行模式": return config.defaultMode || "code";
+      case "自定义 Agent Mode": return config.defaultMode || "code";
       case "子 Agent 并发数": return String(config.team?.maxConcurrent ?? 4);
       case "Permission Profile": return config.defaultPermission ?? "ask";
       case "Approval Mode": return config.permissionProfiles?.[config.defaultPermission ?? "ask"]?.approval ?? "ask";
@@ -553,6 +570,89 @@ export function SettingsPanel(props: {
           </div>
         </div>
       </div>
+      <Show when={modeEditorOpen()}>
+        <div class="neu-settings-backdrop" onClick={() => setModeEditorOpen(false)}>
+          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+            <div class="neu-settings-header">
+              <span class="neu-settings-title">自定义 Agent Mode</span>
+              <button
+                type="button"
+                class="neu-settings-close"
+                onClick={() => setModeEditorOpen(false)}
+                aria-label="关闭"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div class="neu-settings-body neu-edit-body">
+              <div class="neu-form-field">
+                <label class="neu-form-label">Mode 名称</label>
+                <input class="neu-form-input" value={modeName()} onInput={(e) => setModeName(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">描述</label>
+                <input class="neu-form-input" value={modeDescription()} onInput={(e) => setModeDescription(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">System Prompt</label>
+                <textarea class="neu-form-input neu-stash-textarea" value={modeSystemPrompt()} onInput={(e) => setModeSystemPrompt(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Model（可选）</label>
+                <input class="neu-form-input" value={modeModel()} onInput={(e) => setModeModel(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Permission Profile（可选）</label>
+                <input class="neu-form-input" value={modePermission()} onInput={(e) => setModePermission(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Allowed Tools（逗号分隔）</label>
+                <input class="neu-form-input" value={modeAllowedTools()} onInput={(e) => setModeAllowedTools(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Excluded Tools（逗号分隔）</label>
+                <input class="neu-form-input" value={modeExcludedTools()} onInput={(e) => setModeExcludedTools(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">MCP Servers（逗号分隔）</label>
+                <input class="neu-form-input" value={modeMcpServers()} onInput={(e) => setModeMcpServers(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-actions">
+                <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setModeEditorOpen(false)}>取消</button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-primary"
+                  onClick={() => {
+                    const name = modeName().trim();
+                    if (!name) return;
+                    const split = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+                    props.onUpdateConfig?.({
+                      modes: {
+                        ...props.config?.modes,
+                        [name]: {
+                          description: modeDescription(),
+                          systemPrompt: modeSystemPrompt(),
+                          model: modeModel().trim() || undefined,
+                          permission: modePermission().trim() || undefined,
+                          allowedTools: split(modeAllowedTools()),
+                          excludedTools: split(modeExcludedTools()),
+                          mcpServers: split(modeMcpServers()),
+                        },
+                      },
+                      defaultMode: name,
+                    });
+                    setModeEditorOpen(false);
+                  }}
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
       <Show when={editFieldLabel()}>
         <div class="neu-settings-backdrop" onClick={() => setEditFieldLabel(undefined)}>
           <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
