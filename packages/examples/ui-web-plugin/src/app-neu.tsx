@@ -979,7 +979,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       imageInput: model.image ?? false,
                     },
                     limits: {},
-                    status: "manual",
+                    status: "stable",
                     source: "manual",
                   },
                 ]),

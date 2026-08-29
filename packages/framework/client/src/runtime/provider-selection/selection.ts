@@ -221,7 +221,7 @@ export function createSelectionSurface(
                   imageInput: model.image ?? false,
                 },
                 limits: {},
-                status: "manual",
+                status: "stable",
                 source: "manual",
               },
             ]),
