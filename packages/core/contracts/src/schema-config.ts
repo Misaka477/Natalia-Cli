@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agentConfigSchema, permissionProfileSchema } from "./schema-workflow";
+import { agentConfigSchema, permissionProfileSchema, agentModeSchema } from "./schema-workflow";
 import {
   alertChannelConfigSchema,
   dataSourceConfigSchema,
@@ -177,6 +177,21 @@ export const configV3Schema = z.object({
     },
   }),
   defaultPermission: z.string().default("ask"),
+  agentModes: z.record(agentModeSchema).default({
+    ask: {
+      approval: "ask",
+      description: "Ask before write, process, or shell actions",
+    },
+    auto: {
+      approval: "auto",
+      description: "Automatically approve actions",
+    },
+    read_only: {
+      approval: "read_only",
+      description: "Reject write and execution actions",
+    },
+  }),
+  defaultAgentMode: z.string().default("ask"),
   modes: z.record(modeConfigSchema).default({}),
   defaultMode: z.string().default("code"),
   agents: z.record(agentConfigSchema).default({}),

@@ -45,7 +45,9 @@ export function createPermissions(
   function agentPolicyLayer(agent: AgentDefinition | undefined) {
     const { getTsRuntimeConfig, resolveService } = ctx.ports;
     const tsRuntimeConfig = getTsRuntimeConfig();
-    const mode = tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
+    const mode =
+      tsRuntimeConfig?.agentModes?.[tsRuntimeConfig.defaultAgentMode] ??
+      tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
     return resolveService<ToolPolicyService>(
       TOOL_POLICY_SERVICE,
     )!.createHookLayer(deriveAgentToolPolicy({ agent, mode }));

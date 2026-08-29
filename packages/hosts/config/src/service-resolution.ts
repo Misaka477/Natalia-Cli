@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { configV3Schema, parseModelRef } from "@natalia/contracts";
+import { configV3Schema, parseModelRef, type AgentMode, type ConfigV3 } from "@natalia/contracts";
 import { globalConfigHome } from "@natalia/platform";
 import { parseConfigText } from "./file";
 import { mergeConfig } from "./service-merge";
@@ -84,7 +84,7 @@ export async function resolveConfig(input: {
       diagnostic: "NATALIA_MODEL",
     });
   }
-  return { config, sources, projectConfigPath };
+  return { config: ensureAgentModes(config), sources, projectConfigPath };
 }
 
 function configFailureReason(error: unknown) {
@@ -97,6 +97,52 @@ function configFailureReason(error: unknown) {
     return `${path ? `${path}: ` : ""}${first.message ?? "invalid value"}${issues.length > 1 ? ` (+${issues.length - 1} more)` : ""}`;
   }
   return error instanceof Error ? error.message : "parse_error";
+}
+
+
+export function ensureAgentModes(config: ConfigV3): ConfigV3 {
+  const agentModes: Record<string, AgentMode> = { ...config.agentModes };
+  const builtin = new Set(["ask", "auto", "read_only"]);
+  for (const [name, profile] of Object.entries(config.permissionProfiles ?? {})) {
+    if (builtin.has(name) || agentModes[name]) continue;
+    agentModes[name] = {
+      description: profile.description ?? "",
+      approval: profile.approval,
+      systemPrompt: "",
+      model: undefined,
+      allowedTools: profile.permissions?.tools?.allow ?? [],
+      excludedTools: profile.permissions?.tools?.exclude ?? [],
+      commandRules: profile.commandRules,
+      interactivePrograms: profile.interactivePrograms,
+      skills: profile.extensions?.skills !== false,
+      mcpServers: [],
+    };
+  }
+  for (const [name, mode] of Object.entries(config.modes ?? {})) {
+    if (builtin.has(name) || agentModes[name]) continue;
+    agentModes[name] = {
+      description: mode.description ?? "",
+      approval:
+        (mode.permission
+          ? config.permissionProfiles?.[mode.permission]?.approval
+          : undefined) ?? "ask",
+      systemPrompt: mode.systemPrompt ?? "",
+      model: mode.model,
+      allowedTools: mode.allowedTools ?? [],
+      excludedTools: mode.excludedTools ?? [],
+      mcpServers: mode.mcpServers ?? [],
+      skills: true,
+    };
+  }
+  const defaultAgentMode =
+    config.defaultAgentMode ||
+    config.defaultPermission ||
+    "ask";
+  return {
+    ...config,
+    agentModes,
+    defaultAgentMode,
+  };
 }
 
 export function presentGlobalModelConfigKeys(

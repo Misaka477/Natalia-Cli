@@ -286,16 +286,18 @@ export function SettingsPanel(props: {
 
   function openPermissionEditorFor(name: string) {
     const config = props.config;
-    const profile = config?.permissionProfiles?.[name];
+    const profile = config?.agentModes?.[name] ?? config?.permissionProfiles?.[name];
+    const modeLike = profile && "allowedTools" in profile ? profile : undefined;
+    const profileLike = profile && "permissions" in profile ? profile : undefined;
     setPermissionName(name);
     setPermissionDescription(profile?.description ?? "");
     setPermissionApproval(profile?.approval ?? "ask");
-    setPermissionAllowedTools((profile?.permissions?.tools?.allow ?? []).join(", "));
-    setPermissionExcludedTools((profile?.permissions?.tools?.exclude ?? []).join(", "));
+    setPermissionAllowedTools((modeLike?.allowedTools ?? profileLike?.permissions?.tools?.allow ?? []).join(", "));
+    setPermissionExcludedTools((modeLike?.excludedTools ?? profileLike?.permissions?.tools?.exclude ?? []).join(", "));
     setPermissionCommandMode(profile?.commandRules?.mode ?? "none");
     setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
-    setPermissionSkills(profile?.extensions?.skills !== false);
-    setPermissionMcp(profile?.extensions?.mcp !== false);
+    setPermissionSkills(modeLike ? modeLike.skills !== false : profileLike?.extensions?.skills !== false);
+    setPermissionMcp(modeLike ? true : profileLike?.extensions?.mcp !== false);
     setPermissionInteractiveAny(Boolean(profile?.interactivePrograms?.allowAny));
     setPermissionInteractiveAllow((profile?.interactivePrograms?.allow ?? []).map((entry) => entry.command).join(", "));
     setPermissionEditorOpen(true);
@@ -664,12 +666,12 @@ export function SettingsPanel(props: {
             </div>
             <div class="neu-settings-body neu-edit-body">
               <Show
-                when={Object.entries(props.config?.permissionProfiles ?? {})
+                when={Object.entries(props.config?.agentModes ?? {})
                   .filter(([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name))
                   .length}
                 fallback={<div class="neu-settings-item"><div class="neu-settings-item-main"><span class="neu-settings-item-label">暂无自定义权限配置</span><span class="neu-settings-item-description">点击下方“新增权限配置”创建</span></div></div>}
               >
-              <For each={Object.entries(props.config?.permissionProfiles ?? {})
+              <For each={Object.entries(props.config?.agentModes ?? {})
                 .filter(([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name))}>
                 {([name, profile]) => (
                   <div class="neu-permission-row">
@@ -677,12 +679,12 @@ export function SettingsPanel(props: {
                       type="button"
                       class="neu-settings-item neu-settings-item-button"
                       onClick={() => {
-                        props.onUpdateConfig?.({ defaultPermission: name });
+                        props.onUpdateConfig?.({ defaultAgentMode: name, defaultPermission: name });
                       }}
                     >
                       <div class="neu-settings-item-main">
                         <span class="neu-settings-item-label">
-                          {name}{props.config?.defaultPermission === name ? "（默认）" : ""}
+                          {name}{props.config?.defaultAgentMode === name ? "（默认）" : ""}
                         </span>
                         <span class="neu-settings-item-description">{profile.description || profile.approval}</span>
                       </div>
@@ -848,6 +850,28 @@ export function SettingsPanel(props: {
                           },
                         },
                       },
+                      agentModes: {
+                        ...props.config?.agentModes,
+                        [name]: {
+                          description: permissionDescription(),
+                          approval: permissionApproval(),
+                          systemPrompt: "",
+                          model: undefined,
+                          allowedTools: split(permissionAllowedTools()),
+                          excludedTools: split(permissionExcludedTools()),
+                          commandRules: {
+                            mode: permissionCommandMode() as "none" | "blacklist" | "whitelist",
+                            rules: split(permissionCommandRules()),
+                          },
+                          interactivePrograms: {
+                            allowAny: permissionInteractiveAny(),
+                            allow: split(permissionInteractiveAllow()).map((command) => ({ command })),
+                          },
+                          skills: permissionSkills(),
+                          mcpServers: [],
+                        },
+                      },
+                      defaultAgentMode: name,
                       defaultPermission: name,
                     });
                     setPermissionEditorOpen(false);

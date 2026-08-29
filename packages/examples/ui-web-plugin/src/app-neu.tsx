@@ -389,14 +389,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }));
 
   const permissionOptions = () =>
-    Object.entries(config()?.permissionProfiles ?? {}).map(([name, profile]) => ({
+    Object.entries(config()?.agentModes ?? {}).map(([name, mode]) => ({
       value: name,
-      label: `${name}${config()?.defaultPermission === name ? "（默认）" : ""}`,
+      label: `${name}${config()?.defaultAgentMode === name ? "（默认）" : ""} · ${mode.approval}`,
     }));
 
   async function changePermission(permission: string) {
     await props.ctx.runtime.updateConfig?.({
-      patch: { defaultPermission: permission },
+      patch: { defaultAgentMode: permission },
       scope: "global",
     } as never);
     const next = await props.ctx.runtime.configGet?.();
@@ -720,7 +720,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   menuPosition="top"
                 />
                 <NeuSelect
-                  value={config()?.defaultPermission ?? "ask"}
+                  value={config()?.defaultAgentMode ?? "ask"}
                   options={permissionOptions()}
                   onChange={(permission) => void changePermission(permission)}
                   placeholder="选择权限"

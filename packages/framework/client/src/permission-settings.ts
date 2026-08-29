@@ -30,26 +30,69 @@ export function derivePermissionSettings(input: {
   permissionMode: PermissionMode;
 }): DerivedPermissionSettings {
   const { config, requestedProfile, optionMode, permissionMode } = input;
-  const mode = config.modes[config.defaultMode];
-  const modeProfile = mode?.permission
-    ? config.permissionProfiles[mode.permission]
-    : undefined;
-  const defaultProfile = config.permissionProfiles[config.defaultPermission];
+  const agentMode = config.agentModes[config.defaultAgentMode] ?? config.agentModes["ask"];
+  const defaultProfile: PermissionProfile = {
+    approval: agentMode?.approval ?? "ask",
+    description: agentMode?.description ?? "",
+    ...(agentMode?.allowedTools.length || agentMode?.excludedTools.length
+      ? {
+          permissions: {
+            tools: {
+              allow: agentMode?.allowedTools ?? [],
+              exclude: agentMode?.excludedTools ?? [],
+            },
+          },
+        }
+      : {}),
+    ...(agentMode?.commandRules ? { commandRules: agentMode.commandRules } : {}),
+    ...(agentMode?.interactivePrograms
+      ? { interactivePrograms: agentMode.interactivePrograms }
+      : {}),
+    extensions: {
+      skills: agentMode?.skills !== false,
+      mcp: true,
+    },
+  };
 
   if (requestedProfile) {
-    const found = config.permissionProfiles[requestedProfile];
+    const found =
+      config.agentModes[requestedProfile] ?? config.permissionProfiles[requestedProfile];
     if (!found) return { found: false };
-    const nextMode = !optionMode && found ? found.approval : permissionMode;
+    const foundProfile: PermissionProfile = {
+      approval: found.approval,
+      description: "description" in found ? found.description ?? "" : "",
+      ...("allowedTools" in found
+        ? {
+            permissions: {
+              tools: {
+                allow: found.allowedTools ?? [],
+                exclude: (found as { excludedTools?: string[] }).excludedTools ?? [],
+              },
+            },
+          }
+        : {}),
+      ...("commandRules" in found && found.commandRules
+        ? { commandRules: found.commandRules }
+        : {}),
+      ...("interactivePrograms" in found && found.interactivePrograms
+        ? { interactivePrograms: found.interactivePrograms }
+        : {}),
+      extensions: {
+        skills: "skills" in found ? found.skills !== false : true,
+        mcp: true,
+      },
+    };
+    const nextMode = !optionMode && found ? foundProfile.approval : permissionMode;
     return {
       found: true,
-      selectedProfile: found,
+      selectedProfile: foundProfile,
       mode: nextMode,
       defaultMode: nextMode,
-      defaultProfile: found,
+      defaultProfile: foundProfile,
     };
   }
 
-  const selectedProfile = modeProfile ?? defaultProfile;
+  const selectedProfile = defaultProfile;
   const nextMode =
     !optionMode && selectedProfile ? selectedProfile.approval : permissionMode;
   return {

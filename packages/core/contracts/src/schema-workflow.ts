@@ -105,6 +105,24 @@ export const permissionProfileSchema = z.object({
   extensions: extensionRulesSchema.optional(),
 });
 
+/**
+ * Unified agent runtime mode. This replaces the separate permission profile
+ * plus mode split: one mode owns the workflow preset and the security boundary.
+ * The built-in ask/auto/read_only modes remain available and non-editable.
+ */
+export const agentModeSchema = z.object({
+  description: z.string().default(""),
+  approval: z.enum(["ask", "auto", "read_only"]),
+  systemPrompt: z.string().default(""),
+  model: z.string().optional(),
+  allowedTools: z.array(z.string()).default([]),
+  excludedTools: z.array(z.string()).default([]),
+  commandRules: permissionProfileCommandRulesSchema.optional(),
+  interactivePrograms: interactiveProgramRulesSchema.optional(),
+  skills: z.boolean().default(true),
+  mcpServers: z.array(z.string()).default([]),
+});
+
 export const flowModuleTypeSchema = z.enum([
   "read_search",
   "terminal",

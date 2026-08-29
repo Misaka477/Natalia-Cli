@@ -36,6 +36,7 @@ export type ModelOverrideRequestDefaults = z.infer<
 export type PermissionProfile = z.infer<
   typeof workflow.permissionProfileSchema
 >;
+export type AgentMode = z.infer<typeof workflow.agentModeSchema>;
 export type IssueTargetConfig = z.infer<
   typeof governance.issueTargetConfigSchema
 >;
