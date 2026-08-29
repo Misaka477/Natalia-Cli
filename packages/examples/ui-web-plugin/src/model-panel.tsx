@@ -184,7 +184,7 @@ export function ModelPanel(props: {
         image: model.image,
       }));
     const targetID = providerName().trim() || editingProvider() || "";
-    props.onAddProvider?.({
+    const providerInput = {
       name: targetID,
       type: providerApi(),
       label: providerLabel().trim() || undefined,
@@ -196,7 +196,9 @@ export function ModelPanel(props: {
       apiKey: apiKey(),
       headers: Object.keys(headerRecord).length ? headerRecord : undefined,
       models: modelRows.length ? modelRows : undefined,
-    });
+    };
+    console.log("[provider-form] submit", JSON.stringify(providerInput, null, 2));
+    props.onAddProvider?.(providerInput);
     setEditingProvider(undefined);
     backToTree();
   }

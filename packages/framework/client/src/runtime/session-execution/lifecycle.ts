@@ -87,6 +87,7 @@ export function createLifecycleSurface(
     },
     async updateConfig(input) {
       await ctx.ports.getReady();
+      console.log("[updateConfig] begin", input.scope, JSON.stringify(input.patch, null, 2).slice(0, 4000));
       // The TUI settings menu path, now a public surface: merge the patch onto
       // disk, then apply. The file is written either way; whether it takes
       // effect under a running turn is an ordinary answer, not an exception.
@@ -98,9 +99,12 @@ export function createLifecycleSurface(
         input.scope ?? "project",
         { globalPath: options.globalConfigPath },
       );
+      console.log("[updateConfig] file written");
       // Applying is the same operation as a reload, with the same value-type
       // refusal; share it so the two paths cannot drift.
-      return await ctx.ports.applyConfigFromDisk();
+      const outcome = await ctx.ports.applyConfigFromDisk();
+      console.log("[updateConfig] applied", outcome.applied, outcome.reason);
+      return outcome;
     },
   };
 }

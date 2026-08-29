@@ -937,6 +937,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         config={config()}
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
         onAddProvider={async (input) => {
+          console.log("[provider-save] input", JSON.stringify(input, null, 2));
           const providerPatch: Record<string, unknown> = {
             [input.name]: {
               name: input.label || input.name,
@@ -969,27 +970,35 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 ]),
               )
             : undefined;
-          await props.ctx.runtime.updateConfig?.({
-            patch: {
-              providers: providerPatch,
-              ...(modelsPatch
-                ? {
-                    catalog: {
-                      providers: {
-                        [input.name]: { models: modelsPatch },
-                        ...(input.previousName ? { [input.previousName]: undefined } : {}),
-                      },
+          const patch = {
+            providers: providerPatch,
+            ...(modelsPatch
+              ? {
+                  catalog: {
+                    providers: {
+                      [input.name]: { models: modelsPatch },
+                      ...(input.previousName ? { [input.previousName]: undefined } : {}),
                     },
-                  }
-                : {}),
-            } as never,
-            scope: "global",
-          });
+                  },
+                }
+              : {}),
+          } as never;
+          console.log("[provider-save] patch", JSON.stringify(patch, null, 2));
+          try {
+            await props.ctx.runtime.updateConfig?.({ patch, scope: "global" });
+            console.log("[provider-save] updateConfig ok");
+          } catch (error) {
+            console.error("[provider-save] updateConfig failed", error);
+            throw error;
+          }
           const [nextConfig, nextCatalog] = await Promise.all([
             props.ctx.runtime.configGet?.(),
             props.ctx.runtime.modelCatalog?.(),
           ]);
-          if (nextConfig) setConfig(nextConfig);
+          if (nextConfig) {
+            console.log("[provider-save] config providers", Object.keys(nextConfig.providers));
+            setConfig(nextConfig);
+          }
           if (nextCatalog) setModelCatalog(nextCatalog);
         }}
       />
