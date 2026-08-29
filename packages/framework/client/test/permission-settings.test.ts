@@ -3,16 +3,11 @@ import { derivePermissionSettings } from "../src/permission-settings";
 
 function config(overrides: any = {}) {
   return {
-    defaultPermission: "default",
-    defaultMode: "default",
-    permissionProfiles: {
-      default: { approval: "ask" },
-      strict: { approval: "auto" },
-      read_only: { approval: "read_only" },
-    },
-    modes: {
-      default: {},
-      strictMode: { permission: "strict" },
+    defaultAgentMode: "default",
+    agentModes: {
+      default: { approval: "ask", description: "", systemPrompt: "", allowedTools: [], excludedTools: [], mcpServers: [], skills: true },
+      strict: { approval: "auto", description: "", systemPrompt: "", allowedTools: [], excludedTools: [], mcpServers: [], skills: true },
+      read_only: { approval: "read_only", description: "", systemPrompt: "", allowedTools: [], excludedTools: [], mcpServers: [], skills: true },
     },
     ...overrides,
   } as any;
@@ -20,7 +15,7 @@ function config(overrides: any = {}) {
 
 test("an explicitly requested profile wins and sets the mode", () => {
   const derived = derivePermissionSettings({
-    config: config({ defaultMode: "strictMode" }),
+    config: config({ defaultAgentMode: "strict" }),
     requestedProfile: "read_only",
     optionMode: undefined,
     permissionMode: "ask",
@@ -43,20 +38,20 @@ test("a missing requested profile returns found:false", () => {
 
 test("without a requested profile the mode default or profile approval applies", () => {
   const derived = derivePermissionSettings({
-    config: config({ defaultMode: "strictMode" }),
+    config: config({ defaultAgentMode: "strict" }),
     requestedProfile: undefined,
     optionMode: undefined,
     permissionMode: "ask",
   });
   if (!derived.found) throw new Error("expected found");
-  // strictMode pins permission -> "strict" profile -> approval "auto".
+  // strict mode has approval auto.
   expect(derived.selectedProfile.approval).toBe("auto");
   expect(derived.mode).toBe("auto");
 });
 
 test("an explicit option mode is preserved", () => {
   const derived = derivePermissionSettings({
-    config: config({ defaultMode: "strictMode" }),
+    config: config({ defaultAgentMode: "strict" }),
     requestedProfile: undefined,
     optionMode: "read_only",
     permissionMode: "read_only",

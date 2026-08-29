@@ -109,10 +109,9 @@ test("a rejected configuration file reports why, not just that it failed", async
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: {
-          approval: "auto",
-          permissions: { files: { writePaths: ["docs/**"] } },
+          approval: "not-a-mode",
         },
       },
     }),
@@ -128,6 +127,6 @@ test("a rejected configuration file reports why, not just that it failed", async
   // The operator has to be able to find the offending field: an ignored file
   // silently drops the profiles and command rules they thought were in effect.
   expect(project.diagnostic).toContain("invalid_config:");
-  expect(project.diagnostic).toContain("writePaths");
+  expect(project.diagnostic).toContain("approval");
   expect(resolved.config.agentModes.unattended).toBeUndefined();
 });
