@@ -128,6 +128,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     internal = false,
   ) {
     const startedAt = Date.now();
+    console.log("[trace] runProviderTurn start", id, "provider", input.provider()?.provider ?? input.provider()?.model ?? "none");
     if (!input.provider()) {
       const reloaded = await input.reloadConfig();
       if (!reloaded.providerReconfigured) {
@@ -294,6 +295,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           activeProvider,
           activeContextConfig,
         );
+        console.log("[trace] runProviderStep", id, "step", step + 1);
         const result = await runProviderStepWithRecovery(
           id,
           finalOnlyStep
@@ -412,6 +414,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       });
       input.publish(await input.runtimeStatusSnapshot());
     } catch (error) {
+      console.log("[trace] runProviderTurn catch", id, controller.signal.aborted ? "cancelled" : "error", error instanceof Error ? error.message : String(error));
       input.publish({
         type: "diagnostic",
         level: controller.signal.aborted ? "warning" : "error",

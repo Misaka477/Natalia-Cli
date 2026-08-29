@@ -114,6 +114,7 @@ export function createSessionExecution(
   async function ensureExecution(
     sessionID: SessionID,
   ): Promise<SessionExecutionState> {
+    console.log("[trace] ensureExecution", sessionID);
     const {
       getProviderSource,
       getProvider,
@@ -176,6 +177,7 @@ export function createSessionExecution(
       pendingChatUserMessages: [],
     };
     executionBySession.set(sessionID, exec);
+    console.log("[trace] ensureExecution done", sessionID, "provider", exec.provider?.provider ?? exec.provider?.model ?? "none");
     applyAgentProvider(exec);
     await refreshExecutionContextConfig(exec);
     return exec;

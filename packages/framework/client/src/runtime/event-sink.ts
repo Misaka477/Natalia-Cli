@@ -39,6 +39,7 @@ export function createEventSink(
     exec: SessionExecutionState | undefined,
     event: RuntimeEvent,
   ) {
+    console.log("[trace] event-sink publish", event.type, (event as {id?:string}).id ?? "");
     const {
       getSink,
       getSessionPersistence,

@@ -36,6 +36,7 @@ export function createTurnController(
     assertActive();
     const session = input.sessionFor(sessionID);
     if (!session) return;
+    console.log("[trace] turn drain start", sessionID);
     const abort = () => input.activeAbortFor(sessionID)?.abort(signal.reason);
     signal.addEventListener("abort", abort, { once: true });
     try {
@@ -113,6 +114,7 @@ export function createTurnController(
       await input.flush();
       return;
     }
+    console.log("[trace] turn admit runTurn", sessionID, id, text);
     await input.runTurn({
       id,
       text,
