@@ -938,6 +938,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
         onAddProvider={async (input) => {
           console.log("[provider-save] input", JSON.stringify(input, null, 2));
+          const currentProviders = config()?.providers ?? {};
+          const inferredPreviousName =
+            input.previousName ||
+            Object.keys(currentProviders).find(
+              (key) =>
+                key !== input.name &&
+                currentProviders[key]?.name === input.label,
+            ) ||
+            Object.keys(currentProviders).find(
+              (key) =>
+                key !== input.name &&
+                currentProviders[key]?.connection?.baseURL === input.baseURL &&
+                currentProviders[key]?.connection?.apiKey === input.apiKey,
+            );
+          console.log("[provider-save] inferredPreviousName", inferredPreviousName);
           const providerPatch: Record<string, unknown> = {
             [input.name]: {
               name: input.label || input.name,
@@ -951,7 +966,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 headers: input.headers ?? {},
               },
             },
-            ...(input.previousName ? { [input.previousName]: undefined } : {}),
+            ...(inferredPreviousName ? { [inferredPreviousName]: undefined } : {}),
           };
           const modelsPatch = input.models?.length
             ? Object.fromEntries(
@@ -977,7 +992,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   catalog: {
                     providers: {
                       [input.name]: { models: modelsPatch },
-                      ...(input.previousName ? { [input.previousName]: undefined } : {}),
+                      ...(inferredPreviousName ? { [inferredPreviousName]: undefined } : {}),
                     },
                   },
                 }
