@@ -65,7 +65,7 @@ export function QuestionPanel(props: {
     <Show when={props.open && props.request}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
         <div
-          class="neu-settings-window"
+          class="neu-permission-window"
           onClick={(event) => event.stopPropagation()}
         >
           <div class="neu-settings-header">
@@ -88,20 +88,25 @@ export function QuestionPanel(props: {
               </svg>
             </button>
           </div>
-          <div class="neu-settings-body">
+          <div class="neu-permission-body">
             <For each={props.request?.questions ?? []}>
               {(question, index) => (
                 <div class="neu-question-item">
                   <div class="neu-question-header">
                     {question.header}
                   </div>
-                  <div class="neu-question-text">{question.question}</div>
+                  <div class="neu-permission-command">
+                    <div class="neu-permission-label">问题</div>
+                    <div class="neu-permission-command-text">
+                      {question.question}
+                    </div>
+                  </div>
                   <div class="neu-question-options">
                     <For each={question.options}>
                       {(option) => (
                         <button
                           type="button"
-                          class="neu-question-option"
+                          class="neu-permission-btn"
                           classList={{
                             "neu-question-option-active": (
                               answers()[index()] ?? []
@@ -139,7 +144,7 @@ export function QuestionPanel(props: {
               )}
             </For>
           </div>
-          <div class="neu-settings-footer">
+          <div class="neu-permission-actions">
             <button
               type="button"
               class="neu-permission-btn neu-permission-deny"
