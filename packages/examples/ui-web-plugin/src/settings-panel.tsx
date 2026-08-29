@@ -213,7 +213,7 @@ export function SettingsPanel(props: {
     switch (label) {
       case "Providers & Models": return `${Object.keys(config.providers ?? {}).length} 个 provider`;
       case "Default Model": return config.defaultModel ?? props.state?.modelSelection?.modelID ?? "未设置";
-      case "Agent Mode": return props.state?.agentSelection?.name ?? config.defaultAgent || "默认";
+      case "Agent Mode": return (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认";
       case "子 Agent 并发数": return String(config.team?.maxConcurrent ?? 4);
       case "Permission Profile": return config.defaultPermission ?? "ask";
       case "Approval Mode": return config.permissionProfiles?.[config.defaultPermission ?? "ask"]?.approval ?? "ask";
