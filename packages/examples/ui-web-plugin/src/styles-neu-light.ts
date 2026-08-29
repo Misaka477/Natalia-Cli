@@ -2716,7 +2716,7 @@ button.neu-settings-item.neu-settings-item-button:active {
 .neu-tool-check {
   width: 100%;
   min-height: 40px;
-  margin-bottom: 22px;
+  margin-bottom: 15px;
   padding: 8px 12px;
   font-size: 13px;
   gap: 10px;
