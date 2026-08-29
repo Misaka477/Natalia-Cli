@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   createRealRuntimeClient,
   createUiAdapterHost,
@@ -19,7 +20,9 @@ export async function handleRuntimeCommand(argv: string[]) {
     const port = parseServePort(argv);
     const manager = createWorkspaceManager({
       pluginStoreRoot: pluginStoreRoot(),
-      globalConfigPath: process.env.NATALIA_CONFIG,
+      globalConfigPath:
+        process.env.NATALIA_CONFIG ??
+        resolve(process.cwd(), ".natalia", "global-config.json"),
     });
     await manager.load();
     const client = createWorkspaceRuntimeClient(manager);
