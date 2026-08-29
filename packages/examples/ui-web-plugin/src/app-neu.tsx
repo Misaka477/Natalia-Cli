@@ -387,7 +387,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const permissionOptions = () =>
     Object.entries(config()?.permissionProfiles ?? {}).map(([name, profile]) => ({
       value: name,
-      label: `${name}${config()?.defaultPermission === name ? "（默认）" : ""} · ${profile.approval}`,
+      label: `${name}${config()?.defaultPermission === name ? "（默认）" : ""}`,
     }));
 
   async function changePermission(permission: string) {
@@ -678,35 +678,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 {state().activeTurn ? "running" : "idle"}
               </span>
             </div>
-            <div class="neu-main-toolbar">
-              <NeuSelect
-                value={state().modelSelection?.modelID ?? ""}
-                options={modelOptions()}
-                onChange={(modelID) => void props.ctx.runtime.selectModel?.(modelID)}
-                placeholder="选择模型"
-              />
-              <NeuSelect
-                value={reasoningEffort()}
-                options={[
-                  { value: "minimal", label: "minimal" },
-                  { value: "low", label: "low" },
-                  { value: "medium", label: "medium" },
-                  { value: "high", label: "high" },
-                  { value: "xhigh", label: "xhigh" },
-                ]}
-                onChange={(effort) => {
-                  setReasoningEffortSignal(effort);
-                  void props.ctx.runtime.setReasoningEffort?.(effort as "minimal" | "low" | "medium" | "high" | "xhigh");
-                }}
-                placeholder="推理强度"
-              />
-              <NeuSelect
-                value={config()?.defaultPermission ?? "ask"}
-                options={permissionOptions()}
-                onChange={(permission) => void changePermission(permission)}
-                placeholder="选择权限"
-              />
-            </div>
             <div class="neu-pane-content">
               <Transcript
                 messages={mainMessages()}
@@ -715,6 +686,35 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantName="Natalia"
                 assistantInitial="N"
               />
+              <div class="neu-main-toolbar">
+                <NeuSelect
+                  value={state().modelSelection?.modelID ?? ""}
+                  options={modelOptions()}
+                  onChange={(modelID) => void props.ctx.runtime.selectModel?.(modelID)}
+                  placeholder="选择模型"
+                />
+                <NeuSelect
+                  value={reasoningEffort()}
+                  options={[
+                    { value: "minimal", label: "minimal" },
+                    { value: "low", label: "low" },
+                    { value: "medium", label: "medium" },
+                    { value: "high", label: "high" },
+                    { value: "xhigh", label: "xhigh" },
+                  ]}
+                  onChange={(effort) => {
+                    setReasoningEffortSignal(effort);
+                    void props.ctx.runtime.setReasoningEffort?.(effort as "minimal" | "low" | "medium" | "high" | "xhigh");
+                  }}
+                  placeholder="推理强度"
+                />
+                <NeuSelect
+                  value={config()?.defaultPermission ?? "ask"}
+                  options={permissionOptions()}
+                  onChange={(permission) => void changePermission(permission)}
+                  placeholder="选择权限"
+                />
+              </div>
               <Composer
                 value={mainDraft()}
                 placeholder="输入消息，使用 @ 提及文件…"
