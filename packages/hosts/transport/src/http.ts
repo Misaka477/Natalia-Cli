@@ -542,7 +542,7 @@ export function createRuntimeHttpServer(
     // scope"): the gate answers only for callers who would otherwise get
     // through.
     const method = (body as { method?: unknown })?.method;
-    console.log("[web-server] rpc", String(method ?? "unknown"));
+    console.log("[web-server] rpc", String(method ?? "unknown"), (body as {params?: unknown})?.params);
     if (
       typeof method === "string" &&
       (method === "nativeTerminal.start" ||

@@ -740,6 +740,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onSubmit={() => {
                   const text = mainDraft();
                   if (text.trim()) {
+                    console.log("[web-plugin] send", text);
                     props.ctx.runtime.submit?.(text);
                     setMainDraft("");
                   }
