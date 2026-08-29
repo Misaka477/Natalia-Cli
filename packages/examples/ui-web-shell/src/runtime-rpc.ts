@@ -20,6 +20,7 @@ import { callRuntimeRPC } from "@natalia/transport";
 
 export const RPC_METHOD_ROUTES: Record<string, string> = {
   submit: "prompt",
+  submitAndWait: "submit.andWait",
   cancel: "cancel",
   snapshot: "snapshot",
   respondApproval: "approval.respond",
@@ -333,6 +334,14 @@ export function createWebRuntimeClient(
     },
     async submitInput(input) {
       return (await call("submit.input", { ...(input as Record<string, unknown>) })) as never;
+    },
+    async submitAndWait(input) {
+      return (await call(
+        "submit.andWait",
+        typeof input === "string"
+          ? { text: input }
+          : { ...(input as Record<string, unknown>) },
+      )) as never;
     },
     async chatSubmit(input) {
       return (await call("chat.submit", { ...(input as Record<string, unknown>) })) as { messageID: string };
