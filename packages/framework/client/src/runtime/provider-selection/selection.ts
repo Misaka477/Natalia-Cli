@@ -186,7 +186,11 @@ export function createSelectionSurface(
     },
     async providerAdd(input) {
       await ctx.ports.getReady();
-      const current = ctx.ports.getTsRuntimeConfig()?.providers?.[input.name];
+      const config = ctx.ports.getTsRuntimeConfig();
+      const sourceName = input.previousName && input.previousName !== input.name
+        ? input.previousName
+        : input.name;
+      const current = config?.providers?.[sourceName];
       const provider = {
         ...current,
         name: input.label || input.name,
@@ -221,22 +225,39 @@ export function createSelectionSurface(
             ]),
           )
         : undefined;
+      const providerPatch: Record<string, unknown> = {
+        [input.name]: provider,
+      };
+      if (sourceName !== input.name) providerPatch[sourceName] = undefined;
+
+      const catalogProviderPatch: Record<string, unknown> = {};
+      if (sourceName !== input.name) catalogProviderPatch[sourceName] = undefined;
+      if (models) {
+        catalogProviderPatch[input.name] = { models };
+      } else if (sourceName !== input.name && config?.catalog?.providers?.[sourceName]) {
+        catalogProviderPatch[input.name] = config.catalog.providers[sourceName];
+      }
+
+      const modelOverridesPatch =
+        sourceName !== input.name && config?.modelOverrides
+          ? Object.fromEntries(
+              Object.entries(config.modelOverrides).flatMap(([key, value]) => {
+                if (key.startsWith(`${sourceName}/`))
+                  return [[`${input.name}/${key.slice(sourceName.length + 1)}`, value]];
+                return [[key, value]];
+              }),
+            )
+          : undefined;
+
       await updateConfigAtScope(
         ctx.ports.getWorkspaceRoot(),
         {
-          providers: {
-            [input.name]: provider,
-          },
-          ...(models
-            ? {
-                catalog: {
-                  providers: {
-                    [input.name]: {
-                      models,
-                    },
-                  },
-                },
-              }
+          providers: providerPatch,
+          ...(Object.keys(catalogProviderPatch).length
+            ? { catalog: { providers: catalogProviderPatch } }
+            : {}),
+          ...(modelOverridesPatch
+            ? { modelOverrides: modelOverridesPatch }
             : {}),
         } as never,
         "global",

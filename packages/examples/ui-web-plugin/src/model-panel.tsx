@@ -37,6 +37,7 @@ export function ModelPanel(props: {
     baseURL?: string;
     apiKey: string;
     label?: string;
+    previousName?: string;
     headers?: Record<string, string>;
     models?: Array<{ id: string; name?: string; reasoning?: boolean; image?: boolean }>;
   }) => unknown;
@@ -121,12 +122,17 @@ export function ModelPanel(props: {
     if (!provider) return;
     const providerModels = (props.catalog ?? [])
       .filter((entry) => entry.provider === providerName)
-      .map((entry) => ({
-        id: entry.id,
-        name: entry.name || entry.id,
-        reasoning: false,
-        image: false,
-      }));
+      .map((entry) => {
+        const id = entry.id.startsWith(`${providerName}/`)
+          ? entry.id.slice(providerName.length + 1)
+          : entry.id;
+        return {
+          id,
+          name: entry.name || id,
+          reasoning: false,
+          image: false,
+        };
+      });
     const realHeaders = Object.entries(provider.requestDefaults?.headers ?? {}).map(
       ([name, value]) => ({ name, value: String(value) }),
     );
@@ -167,10 +173,15 @@ export function ModelPanel(props: {
         reasoning: model.reasoning,
         image: model.image,
       }));
+    const targetID = providerName().trim() || editingProvider() || "";
     props.onAddProvider?.({
-      name: providerName().trim() || editingProvider() || "",
+      name: targetID,
       type: providerApi(),
       label: providerLabel().trim() || undefined,
+      previousName:
+        editingProvider() && editingProvider() !== targetID
+          ? editingProvider()
+          : undefined,
       baseURL: baseUrl().trim() || undefined,
       apiKey: apiKey(),
       headers: Object.keys(headerRecord).length ? headerRecord : undefined,
@@ -352,7 +363,7 @@ export function ModelPanel(props: {
                 />
               </div>
 
-              <div class="neu-form-section-title">模型</div>
+              <div class="neu-form-section-title">模型（只需填写模型 ID，名称会自动使用 ID）</div>
               <For each={models()}>
                 {(model, index) => (
                   <div class="neu-model-edit-row">
@@ -361,12 +372,6 @@ export function ModelPanel(props: {
                       value={model.id}
                       placeholder="ID"
                       onInput={(event) => updateModel(index(), { id: event.currentTarget.value })}
-                    />
-                    <input
-                      class="neu-form-input"
-                      value={model.name}
-                      placeholder="名称"
-                      onInput={(event) => updateModel(index(), { name: event.currentTarget.value })}
                     />
                     <label class="neu-form-checkbox">
                       <input

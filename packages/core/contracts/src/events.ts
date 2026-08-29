@@ -2085,6 +2085,7 @@ export type RuntimeClient = {
     baseURL?: string;
     apiKey: string;
     label?: string;
+    previousName?: string;
     headers?: Record<string, string>;
     models?: Array<{
       id: string;

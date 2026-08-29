@@ -2648,6 +2648,7 @@ export async function handleRPCMessage(
       const headers = (params as { headers?: unknown }).headers;
       const models = (params as { models?: unknown }).models;
       const label = (params as { label?: unknown }).label;
+      const previousName = (params as { previousName?: unknown }).previousName;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2657,6 +2658,7 @@ export async function handleRPCMessage(
           apiKey,
           baseURL: typeof baseURL === "string" && baseURL ? baseURL : undefined,
           ...(typeof label === "string" && label ? { label } : {}),
+          ...(typeof previousName === "string" && previousName ? { previousName } : {}),
           ...(headers && typeof headers === "object" ? { headers: headers as Record<string, string> } : {}),
           ...(Array.isArray(models) ? { models: models as Array<{ id: string; name?: string; reasoning?: boolean; image?: boolean }> } : {}),
         }),
