@@ -24,7 +24,7 @@ const host = await createUiPluginHost({
   runtime,
   transport: createWebTransport(),
   logger: createConsoleLogger("ui-web-shell"),
-  extra: { uiPluginRegistry: UI_PLUGIN_REGISTRY },
+  extra: { uiPluginRegistry: UI_PLUGIN_REGISTRY, runtimeURL },
   preferences: createLocalPreferenceStore(),
 });
 

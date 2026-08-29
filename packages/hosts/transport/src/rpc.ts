@@ -1469,10 +1469,19 @@ export async function handleRPCMessage(
         typeof (params as { id?: unknown }).id === "string"
           ? (params as { id: string }).id
           : undefined;
+      const sessionID =
+        typeof (params as { sessionID?: unknown }).sessionID === "string"
+          ? (params as { sessionID: string }).sessionID
+          : undefined;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalStart?.({ command, cwd, id }),
+        result: await client.nativeTerminalStart?.({
+          command,
+          cwd,
+          id,
+          sessionID,
+        }),
       };
     }
     if (body.method === "nativeTerminal.write") {

@@ -66,6 +66,7 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
           session = await client.nativeTerminalStart?.({
             command: process.env.SHELL || "bash",
             id: terminalID,
+            sessionID,
           });
         }
         if (!session) {

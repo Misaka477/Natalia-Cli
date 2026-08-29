@@ -972,6 +972,9 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 
 /* ===== Terminal ===== */
 .terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
+.web-terminal { flex: 1; min-height: 0; padding: 8px; }
+.web-terminal .xterm { height: 100%; }
+.web-terminal .xterm-viewport { overflow-y: auto !important; }
 .terminal-output { flex: 1; overflow-y: auto; padding: 12px; font-family: var(--neu-font-mono); font-size: 12px; line-height: 1.6; color: var(--neu-text); }
 .terminal-line { color: var(--neu-muted); white-space: pre-wrap; word-break: break-all; }
 .terminal-line-terminal { color: var(--neu-text); }

@@ -1305,7 +1305,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <ReviewPane runtime={props.ctx.runtime} requestedTab={reviewRequestedTab()} />
               </Show>
               <Show when={rightTab() === "terminal"}>
-                <TerminalPane runtime={props.ctx.runtime} />
+                <TerminalPane
+                  runtime={props.ctx.runtime}
+                  sessionID={selectedSessionID()}
+                  runtimeURL={
+                    (props.ctx.extra as { runtimeURL?: string } | undefined)
+                      ?.runtimeURL
+                  }
+                  active={rightTab() === "terminal"}
+                />
               </Show>
               <Show when={rightTab() === "files" && filePanel()}>
                 <div

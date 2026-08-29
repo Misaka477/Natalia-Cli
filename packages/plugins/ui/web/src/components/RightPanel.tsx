@@ -3,11 +3,11 @@ import type {
   RuntimeCheckpoint,
   RuntimeClient,
   RuntimeGitRef,
-  RuntimeNativeTerminalSession,
   RuntimeSandbox,
   RuntimeTeamPR,
 } from "@natalia/contracts";
 import { NeuSelect } from "./NeuSelect";
+import { WebTerminal } from "./WebTerminal";
 
 export type RightPanelTab = "review" | "terminal" | "browser" | "file";
 
@@ -617,30 +617,32 @@ export function ReviewPane(props: {
   );
 }
 
-export function TerminalPane(props: { runtime?: RuntimeClient } = {}) {
-  const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
-  onMount(() => {
-    void props.runtime?.nativeTerminalList?.().then((value) => {
-      if (value) setSessions(value);
-    });
-  });
-
+export function TerminalPane(props: {
+  runtime?: RuntimeClient;
+  sessionID?: string;
+  runtimeURL?: string;
+  token?: string;
+  active?: boolean;
+} = {}) {
   return (
     <div class="terminal-pane">
-      <div class="terminal-output">
-        <For each={sessions()}>
-          {(session) => (
-            <div class="terminal-line terminal-line-output">
-              <span class="terminal-prompt">{session.command}</span>
-              <span class="terminal-line terminal-line-success">{session.status}</span>
-              {session.cwd ? <span class="terminal-line terminal-line-header"> · {session.cwd}</span> : null}
+      <Show
+        when={props.sessionID && props.runtimeURL}
+        fallback={
+          <div class="terminal-output">
+            <div class="terminal-line terminal-line-header">
+              选择一个会话以打开交互式终端
             </div>
-          )}
-        </For>
-        <Show when={!sessions().length}>
-          <div class="terminal-line terminal-line-header">暂无连接的原生终端会话</div>
-        </Show>
-      </div>
+          </div>
+        }
+      >
+        <WebTerminal
+          sessionID={props.sessionID!}
+          runtimeURL={props.runtimeURL!}
+          token={props.token}
+          active={props.active}
+        />
+      </Show>
     </div>
   );
 }

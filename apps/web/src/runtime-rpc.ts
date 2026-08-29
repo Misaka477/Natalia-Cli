@@ -210,7 +210,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   nativeTerminalEndSecureInput: ["id"],
   nativeTerminalWrite: ["id", "input", "idempotencyKey"],
   nativeTerminalResize: ["id", "rows", "cols"],
-  nativeTerminalStart: ["command", "cwd", "cols", "rows", "env", "idempotencyKey"],
+  nativeTerminalStart: ["command", "cwd", "id", "sessionID"],
   taskPermissionPreview: ["path"],
   taskPermissionPreviewDocument: ["path"],
   loadTaskDocument: ["path"],

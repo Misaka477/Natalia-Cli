@@ -1980,6 +1980,7 @@ export type RuntimeClient = {
     command: string;
     cwd?: string;
     id?: string;
+    sessionID?: string;
   }): Promise<RuntimeNativeTerminalSession>;
   /**
    * Writes input bytes (including control bytes such as Enter, Ctrl-C, Esc) to

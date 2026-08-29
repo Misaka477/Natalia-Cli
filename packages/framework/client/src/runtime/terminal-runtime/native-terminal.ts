@@ -115,7 +115,8 @@ export function createNativeTerminalSurface(
     async nativeTerminalStart(input) {
       await ctx.ports.getReady();
       const owner = ctx.ports.getActiveExec();
-      if (!owner) throw new RuntimeRefusal("session is not initialized");
+      const sessionID = input.sessionID ?? owner?.session.id;
+      if (!sessionID) throw new RuntimeRefusal("session is not initialized");
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -126,7 +127,7 @@ export function createNativeTerminalSurface(
           command: input.command,
           cwd: input.cwd ?? ctx.ports.getWorkspaceRoot(),
           id: input.id,
-          sessionID: owner.session.id,
+          sessionID,
         });
       } catch (error) {
         throw refusalFromRegistry(error);
