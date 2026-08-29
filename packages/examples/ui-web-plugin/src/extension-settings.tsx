@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { NeuSelect } from "./components/NeuSelect";
 import type { McpView } from "@natalia/view-store";
-import type { MCPServerConfig } from "@natalia/contracts";
+import type { MCPServerConfig, RuntimeSkillCatalogEntry } from "@natalia/contracts";
 
 type ExtensionKind = "mcp" | "skills";
 
@@ -21,6 +21,7 @@ type ExtensionSection = {
 
 function buildInitialSections(props: {
   mcp?: Record<string, McpView>;
+  skills?: RuntimeSkillCatalogEntry[];
 }): ExtensionSection[] {
   const mcpRows = Object.entries(props.mcp ?? {}).map(([id, server]) => ({
     id,
@@ -28,34 +29,31 @@ function buildInitialSections(props: {
     description: server.message ?? `${server.tools} tools`,
     enabled: server.status === "connected",
   }));
+  const skillRows = (props.skills ?? []).map((skill) => ({
+    id: skill.name,
+    name: skill.name,
+    description: skill.description || skill.source,
+    enabled: true,
+  }));
   return [
     {
       id: "mcp",
       title: "MCP",
       addLabel: "添加 MCP",
-      rows: mcpRows.length
-        ? mcpRows
-        : [
-            { id: "filesystem", name: "filesystem", description: "本地文件系统 MCP", enabled: true },
-            { id: "context7", name: "context7", description: "文档检索 MCP", enabled: true },
-            { id: "github", name: "github", description: "GitHub MCP", enabled: false },
-          ],
+      rows: mcpRows,
     },
     {
       id: "skills",
       title: "Skills",
       addLabel: "添加技能",
-      rows: [
-        { id: "code-review", name: "code-review", description: "代码审查技能", enabled: true },
-        { id: "plan-writer", name: "plan-writer", description: "计划撰写技能", enabled: true },
-        { id: "debugger", name: "debugger", description: "调试技能", enabled: false },
-      ],
+      rows: skillRows,
     },
   ];
 }
 
 export function ExtensionSettingsContent(props: {
   mcp?: Record<string, McpView>;
+  skills?: RuntimeSkillCatalogEntry[];
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
 }) {
@@ -180,6 +178,7 @@ export function ExtensionSettingsContent(props: {
         {(section) => (
           <div class="neu-extension-inline-section">
             <div class="neu-extension-inline-title">{section.title}</div>
+            <Show when={rows(section.id).length} fallback={<div class="neu-settings-item"><div class="neu-settings-item-main"><span class="neu-settings-item-label">暂无{section.title}</span><span class="neu-settings-item-description">{section.id === "mcp" ? "点击下方添加 MCP" : "当前没有可用技能"}</span></div></div>}>
             <For each={rows(section.id)}>
               {(row, index) => (
                 <div class="neu-extension-row">
@@ -206,6 +205,7 @@ export function ExtensionSettingsContent(props: {
                 </div>
               )}
             </For>
+            </Show>
 
             <Show when={addingTo() === "mcp" && section.id === "mcp"}>
               <div class="neu-extension-form">
@@ -264,9 +264,14 @@ export function ExtensionSettingsContent(props: {
             </Show>
 
             <div class="neu-extension-actions">
-              <button type="button" class="neu-extension-add" onClick={() => setAddingTo(section.id)}>
-                {section.addLabel}
-              </button>
+              <Show
+                when={section.id !== "skills"}
+                fallback={<span class="neu-extension-disabled">Web 端暂不支持添加技能</span>}
+              >
+                <button type="button" class="neu-extension-add" onClick={() => setAddingTo(section.id)}>
+                  {section.addLabel}
+                </button>
+              </Show>
             </div>
           </div>
         )}

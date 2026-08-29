@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { AppState } from "@natalia/view-store";
-import type { ConfigV3, MCPServerConfig } from "@natalia/contracts";
+import type { ConfigV3, MCPServerConfig, RuntimeSkillCatalogEntry } from "@natalia/contracts";
 import { ExtensionSettingsContent } from "./extension-settings";
 import { NeuSelect } from "./components/NeuSelect";
 
@@ -149,6 +149,7 @@ export function SettingsPanel(props: {
     set<T>(key: string, value: T): void;
   };
   registeredTools?: string[];
+  skills?: RuntimeSkillCatalogEntry[];
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
@@ -644,7 +645,7 @@ export function SettingsPanel(props: {
                   </>
                 }
               >
-                <ExtensionSettingsContent mcp={props.state?.mcp} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} />
+                <ExtensionSettingsContent mcp={props.state?.mcp} skills={props.skills} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} />
               </Show>
             </section>
           </div>
