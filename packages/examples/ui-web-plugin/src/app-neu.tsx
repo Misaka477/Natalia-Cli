@@ -419,6 +419,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     setChatProfile(next);
     await props.ctx.runtime.setChatModelProfile?.(next);
   }
+  function formatValue(value: unknown): string {
+    if (value === null) return "null";
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean")
+      return String(value);
+    if (Array.isArray(value))
+      return value
+        .map((item) =>
+          typeof item === "object" && item !== null
+            ? JSON.stringify(item)
+            : String(item),
+        )
+        .join(", ");
+    return "";
+  }
+
   function formatToolOutput(name: string, output: string): string {
     if (name === "ask_user") {
       try {
@@ -435,8 +451,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           if (text) return text;
         }
       } catch {
-        // fall through to raw output
+        // fall through
       }
+      return output;
+    }
+    try {
+      const parsed = JSON.parse(output) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => formatValue(item))
+          .filter(Boolean)
+          .join("\n");
+      }
+      if (parsed && typeof parsed === "object") {
+        return Object.entries(parsed as Record<string, unknown>)
+          .map(([key, value]) => {
+            const text = formatValue(value);
+            return text ? `${key}: ${text}` : key;
+          })
+          .join("\n");
+      }
+    } catch {
+      // not JSON: keep plain text
     }
     return output;
   }
