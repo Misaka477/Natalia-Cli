@@ -207,12 +207,19 @@ export function SettingsPanel(props: {
   const extensionAddLabel = (sectionId: string) =>
     sections().find((section) => section.id === sectionId)?.addLabel ?? "添加";
 
+  function modelLabel(config: ConfigV3): string {
+    const model = config.defaultModel;
+    if (!model) return "未设置";
+    if (typeof model === "string") return model;
+    return `${model.provider}/${model.model}`;
+  }
+
   function runtimeValue(label: string): string | undefined {
     const config = props.config;
     if (!config) return undefined;
     switch (label) {
       case "Providers & Models": return `${Object.keys(config.providers ?? {}).length} 个 provider`;
-      case "Default Model": return config.defaultModel ?? props.state?.modelSelection?.modelID ?? "未设置";
+      case "Default Model": return modelLabel(config);
       case "Agent Mode": return (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认";
       case "子 Agent 并发数": return String(config.team?.maxConcurrent ?? 4);
       case "Permission Profile": return config.defaultPermission ?? "ask";
