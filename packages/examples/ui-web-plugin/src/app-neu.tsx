@@ -775,18 +775,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   menuPosition="top"
                 />
                 <NeuSelect
-                  value={chatProfile().expert?.modelID ?? ""}
-                  options={modelOptions()}
-                  onChange={(modelID) =>
-                    void updateChatProfile({
-                      ...chatProfile(),
-                      expert: { ...chatProfile().expert, modelID },
-                    })
-                  }
-                  placeholder="专家模型"
-                  menuPosition="top"
-                />
-                <NeuSelect
                   value={chatProfile().normal?.reasoningEffort ?? "medium"}
                   options={[
                     { value: "minimal", label: "minimal" },
@@ -805,6 +793,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     })
                   }
                   placeholder="Chat 推理"
+                  menuPosition="top"
+                />
+                <NeuSelect
+                  value={chatProfile().expert?.modelID ?? ""}
+                  options={modelOptions()}
+                  onChange={(modelID) =>
+                    void updateChatProfile({
+                      ...chatProfile(),
+                      expert: { ...chatProfile().expert, modelID },
+                    })
+                  }
+                  placeholder="专家模型"
                   menuPosition="top"
                 />
                 <NeuSelect
