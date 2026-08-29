@@ -4,6 +4,8 @@ import type { ConfigV3, MCPServerConfig } from "@natalia/contracts";
 import { ExtensionSettingsContent } from "./extension-settings";
 import { NeuSelect } from "./components/NeuSelect";
 
+const BUILTIN_PERMISSION_PROFILES = ["ask", "auto", "read_only"];
+
 const TOOL_FAMILIES = [
   "flow_module_complete",
   "read_file",
@@ -676,7 +678,14 @@ export function SettingsPanel(props: {
               </button>
             </div>
             <div class="neu-settings-body neu-edit-body">
-              <For each={Object.entries(props.config?.permissionProfiles ?? {})}>
+              <Show
+                when={Object.entries(props.config?.permissionProfiles ?? {})
+                  .filter(([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name))
+                  .length}
+                fallback={<div class="neu-settings-item"><div class="neu-settings-item-main"><span class="neu-settings-item-label">暂无自定义权限配置</span><span class="neu-settings-item-description">点击下方“新增权限配置”创建</span></div></div>}
+              >
+              <For each={Object.entries(props.config?.permissionProfiles ?? {})
+                .filter(([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name))}>
                 {([name, profile]) => (
                   <div class="neu-permission-row">
                     <button
@@ -704,6 +713,7 @@ export function SettingsPanel(props: {
                   </div>
                 )}
               </For>
+              </Show>
               <div class="neu-extension-actions">
                 <button type="button" class="neu-extension-add" onClick={() => { setPermissionListOpen(false); openNewPermissionEditor(); }}>
                   新增权限配置
