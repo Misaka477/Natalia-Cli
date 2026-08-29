@@ -219,7 +219,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           el.scrollTop = el.scrollHeight;
         }
       }, 0);
-      if (projected.sessions.length) setSessionList(projected.sessions);
       const currentTurn = projected.activeTurn;
       if (currentTurn && activeTurnStartedAtValue() === undefined) {
         setActiveTurnStartedAt(Date.now());
@@ -434,6 +433,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
 
     const openUnresolvedInteractives = () => {
+      void refreshSessions();
       const approvals = state().pendingApprovals;
       if (approvals.length) {
         setCurrentApproval(approvals[0]);
@@ -943,7 +943,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onSelect={(id, name) => {
                   setSelectedSessionID(id);
                   setSelectedSession(name);
-                  void props.ctx.runtime.sessionAttach?.(id);
+                  void props.ctx.runtime
+                    .sessionAttach?.(id)
+                    .then(() => refreshSessions());
                 }}
                 onRemoveWorkspace={(workspaceID) => {
                   void removeWorkspace(workspaceID);
