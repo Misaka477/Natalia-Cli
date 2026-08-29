@@ -184,7 +184,10 @@ export async function wireFrameworkServices(
     scope: "workspace",
     grants: ["services", "commands"],
   });
-  const factory = createCheckpointFactory({ workspaceRoot });
+  const factory = createCheckpointFactory({
+    workspaceRoot,
+    checkpointDir: options.checkpointDir,
+  });
   checkpointOwner.contribute("services", CHECKPOINT_FACTORY_SERVICE, factory);
   for (const name of ["checkpoint", "checkpoints", "rollback"])
     checkpointOwner.contribute("commands", name, {

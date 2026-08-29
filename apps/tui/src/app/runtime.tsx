@@ -55,8 +55,6 @@ export async function runTuiShell(
     /** Re-points the workspace root before a fresh backend is created. */
     onWorkspaceRootChange?: (root: string) => void;
     workspaceRoot?: string;
-    globalConfigPath?: string;
-    sessionDir?: string;
     onSessionChange?: (sessionID?: string) => void;
     fixture?: boolean;
     closeAfterInitialTurn?: boolean;
@@ -77,8 +75,6 @@ export async function runTuiShell(
       backend = createRealRuntimeClient({
         workspaceRoot,
         pluginStoreRoot: await resolveTuiPluginStore(),
-        globalConfigPath: input.globalConfigPath,
-        sessionDir: input.sessionDir,
       });
     }
   }

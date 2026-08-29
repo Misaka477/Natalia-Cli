@@ -9,7 +9,7 @@ import type { RealRuntimeClientOptions } from "./runtime/options";
 
 export type WorkspaceManagerOptions = Pick<
   RealRuntimeClientOptions,
-  "pluginStoreRoot" | "globalConfigPath" | "useSqliteStore" | "sessionDir"
+  "pluginStoreRoot" | "globalConfigPath" | "useSqliteStore" | "sessionDir" | "checkpointDir"
 >;
 
 export type WorkspaceRuntime = {
@@ -115,6 +115,12 @@ function workspaceSessionDir(root: string, base?: string) {
   return join(base, safe);
 }
 
+function workspaceCheckpointDir(root: string, base?: string) {
+  if (!base) return undefined;
+  const safe = root.replace(/[^a-zA-Z0-9_-]+/gu, "_").slice(-80);
+  return join(base, safe);
+}
+
 export type WorkspaceManager = {
   list(): Promise<WorkspaceSummary[]>;
   add(input: { path: string; title?: string }): Promise<WorkspaceSummary>;
@@ -188,6 +194,7 @@ export function createWorkspaceManager(
       pluginStoreRoot: options.pluginStoreRoot,
       globalConfigPath: options.globalConfigPath,
       sessionDir: workspaceSessionDir(root, options.sessionDir),
+      checkpointDir: workspaceCheckpointDir(root, options.checkpointDir),
       useSqliteStore: options.useSqliteStore,
     });
     const settings = await readSettings(root);

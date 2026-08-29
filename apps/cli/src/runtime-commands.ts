@@ -25,6 +25,12 @@ export async function handleRuntimeCommand(argv: string[]) {
     const manager = createWorkspaceManager({
       pluginStoreRoot: pluginStoreRoot(),
       globalConfigPath,
+      sessionDir: resolve(process.cwd(), ".natalia", "workspace-sessions"),
+      checkpointDir: resolve(
+        process.cwd(),
+        ".natalia",
+        "workspace-checkpoints",
+      ),
     });
     await manager.load();
     const client = createWorkspaceRuntimeClient(manager);
@@ -61,6 +67,8 @@ export async function handleRuntimeCommand(argv: string[]) {
     const client = createRealRuntimeClient({
       ...newHeadlessExecution(),
       pluginStoreRoot: pluginStoreRoot(),
+      sessionDir: resolve(process.cwd(), ".natalia", "sessions"),
+      checkpointDir: resolve(process.cwd(), ".natalia", "checkpoints"),
     });
     let failed = false;
     try {
@@ -106,6 +114,8 @@ export async function handleRuntimeCommand(argv: string[]) {
       throw new Error(`ui requires a UI adapter kind, got flag ${argv[1]}`);
     const client = createRealRuntimeClient({
       pluginStoreRoot: pluginStoreRoot(),
+      sessionDir: resolve(process.cwd(), ".natalia", "sessions"),
+      checkpointDir: resolve(process.cwd(), ".natalia", "checkpoints"),
     });
     const host: UiAdapterHost = await createUiAdapterHost({
       workspaceRoot: process.cwd(),
@@ -172,6 +182,8 @@ async function runOnce(
     ...newHeadlessExecution(),
     pluginStoreRoot: pluginStoreRoot(),
     permissionProfile,
+    sessionDir: resolve(process.cwd(), ".natalia", "sessions"),
+    checkpointDir: resolve(process.cwd(), ".natalia", "checkpoints"),
   });
   let text = "";
   let failed = false;

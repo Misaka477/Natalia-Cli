@@ -10,8 +10,6 @@ const input = workerData as {
   workspaceRoot: string;
   pluginStoreRoot: string;
   sessionID: string;
-  globalConfigPath?: string;
-  sessionDir?: string;
 };
 
 const capabilityHost = new CapabilityHost({
@@ -21,8 +19,6 @@ let runtime = createRealRuntimeClient({
   workspaceRoot: input.workspaceRoot,
   pluginStoreRoot: input.pluginStoreRoot,
   sessionID: input.sessionID as never,
-  globalConfigPath: input.globalConfigPath,
-  sessionDir: input.sessionDir,
   useSqliteStore: true,
   capabilityHost,
 });
@@ -31,8 +27,6 @@ const createRuntime = () => {
     workspaceRoot: input.workspaceRoot,
     pluginStoreRoot: input.pluginStoreRoot,
     sessionID: input.sessionID as never,
-    globalConfigPath: input.globalConfigPath,
-    sessionDir: input.sessionDir,
     useSqliteStore: true,
     capabilityHost,
   });

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { SessionID } from "@natalia/contracts";
 import type {
   CheckpointController,
@@ -15,6 +16,7 @@ import { createCheckpointController } from "./checkpoint-controller";
  */
 export function createCheckpointFactory(input: {
   workspaceRoot: string;
+  checkpointDir?: string;
 }): CheckpointFactory & { close(): void } {
   const controllers = new Map<SessionID, CheckpointController>();
   return Object.assign(
@@ -24,6 +26,9 @@ export function createCheckpointFactory(input: {
       if (existing) return existing;
       const controller = createCheckpointController({
         workspaceRoot: input.workspaceRoot,
+        storeDir: input.checkpointDir
+          ? join(input.checkpointDir, sessionID)
+          : undefined,
         ...accessors,
       });
       controllers.set(sessionID, controller);

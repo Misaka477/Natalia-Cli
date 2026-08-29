@@ -18,6 +18,7 @@ import type {
 export function createCheckpointController(input: {
   sessionID(): SessionID;
   workspaceRoot: string;
+  storeDir?: string;
   checkpoint(): ConfigV3["checkpoint"] | undefined;
   workspace(): ConfigV3["workspace"] | undefined;
   publish(event: RuntimeEvent): void;
@@ -35,6 +36,7 @@ export function createCheckpointController(input: {
       store = await CheckpointStore.open({
         sessionID: input.sessionID(),
         workspaceRoot: input.workspaceRoot,
+        storeDir: input.storeDir,
         enabled: checkpoint?.enabled,
         maxFiles: checkpoint?.maxFiles,
         maxBytes: checkpoint?.maxBytes,

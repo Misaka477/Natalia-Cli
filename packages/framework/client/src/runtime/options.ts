@@ -19,6 +19,7 @@ export type RealRuntimeClientOptions = {
   /** Override the user-level config path, primarily for isolated hosts/tests. */
   globalConfigPath?: string;
   sessionDir?: string;
+  checkpointDir?: string;
   useSqliteStore?: boolean;
   provider?: StreamingProvider;
   tools?: ToolRegistry;
