@@ -435,7 +435,7 @@ export function SettingsPanel(props: {
       ...modeAllowedTools().split(",").map((item) => item.trim()).filter(Boolean),
       ...modeExcludedTools().split(",").map((item) => item.trim()).filter(Boolean),
     ]);
-    return [...new Set([...TOOL_FAMILIES, ...(props.registeredTools ?? []), ...current])].sort();
+    return [...new Set([...TOOL_FAMILIES, ...current])].sort();
   };
 
   const modeMcpOptions = () => Object.keys(props.config?.mcpServers ?? {});
