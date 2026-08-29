@@ -979,7 +979,7 @@ test("runtime status reflects the configured auto approval profile", async () =>
     JSON.stringify({
       version: 3,
       defaultAgentMode: "trusted",
-      permissionProfiles: {
+      agentModes: {
         trusted: { approval: "auto", description: "Trusted workspace" },
       },
     }),
@@ -1863,7 +1863,7 @@ lines.on("line", (line) => {
       version: 3,
       mcpServers,
       defaultAgentMode: "without-mcp",
-      permissionProfiles: {
+      agentModes: {
         "without-mcp": {
           approval: "ask",
           description: "MCP disabled",
@@ -2033,7 +2033,7 @@ test("skills plugin config reload reconciles its lifecycle", async () => {
     JSON.stringify({
       version: 3,
       defaultAgentMode: "without-skills",
-      permissionProfiles: {
+      agentModes: {
         "without-skills": {
           approval: "ask",
           description: "Skills disabled",
@@ -2579,7 +2579,7 @@ test("read-only profile rejects side-effecting tools without an approval request
     JSON.stringify({
       version: 3,
       defaultAgentMode: "safe",
-      permissionProfiles: {
+      agentModes: {
         safe: { approval: "read_only", description: "Read-only workspace" },
       },
     }),
@@ -2645,7 +2645,7 @@ test("selected permission profile denies tools outside its allow list before app
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended_read: {
           approval: "auto",
           description: "Read-only unattended inspection",
@@ -2741,7 +2741,7 @@ test("selected permission profile applies file rules to allowed tools", async ()
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended_read: {
           approval: "auto",
           description: "Read-only unattended inspection",
@@ -3502,7 +3502,7 @@ test("permission profile extension rules do not gate desired plugins", async () 
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: {
           approval: "auto",
           description: "No extensions",
@@ -3564,7 +3564,7 @@ test("permission profile denies injected MCP tools before execution", async () =
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: {
           approval: "auto",
           description: "No MCP",
@@ -10963,7 +10963,7 @@ test("module completion stays possible when a profile allow-list omits it", asyn
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: {
           approval: "auto",
           description: "Task profile",

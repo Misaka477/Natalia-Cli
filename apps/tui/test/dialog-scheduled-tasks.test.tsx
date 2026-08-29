@@ -143,7 +143,7 @@ async function mountScheduledTasks(
 function editorConfig(): ConfigV3 {
   return configV3Schema.parse({
     version: 3,
-    permissionProfiles: {
+    agentModes: {
       unattended: { approval: "auto", description: "Task profile" },
     },
     alertChannels: {

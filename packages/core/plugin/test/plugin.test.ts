@@ -2025,7 +2025,7 @@ test("a plugin reads the runtime's resolved config via api.runtimeConfig", async
   const registry = createPluginRegistry({
     tools,
     runtimeConfig: () => ({
-      defaultPermission: "ask",
+      defaultAgentMode: "ask",
       runtime: { maxSteps: 8 },
     }),
   });
@@ -2051,7 +2051,7 @@ test("a plugin reads the runtime's resolved config via api.runtimeConfig", async
   // The resolved config reached the plugin by name — the D2 service has a real
   // production consumer, not just tests.
   expect(seen).toEqual([
-    { defaultPermission: "ask", runtime: { maxSteps: 8 } },
+    { defaultAgentMode: "ask", runtime: { maxSteps: 8 } },
   ]);
   expect(registry.list()[0]?.id).toBe("cfg.reader");
 });

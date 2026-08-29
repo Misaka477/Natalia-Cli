@@ -17,11 +17,11 @@ import {
 function config(overrides: Record<string, unknown> = {}): ConfigV3 {
   return configV3Schema.parse({
     version: 3,
-    permissionProfiles: {
+    agentModes: {
       ask: { approval: "ask", description: "Ask first" },
       unattended_read: { approval: "auto", description: "Nightly read" },
     },
-    defaultPermission: "ask",
+    defaultAgentMode: "ask",
     ...overrides,
   });
 }
@@ -63,7 +63,7 @@ test("the default and the last profile are protected, an unused one is removable
   expect(
     permissionProfileRemovalProblem({
       config: config({
-        permissionProfiles: { ask: { approval: "ask", description: "" } },
+        agentModes: { ask: { approval: "ask", description: "" } },
       }),
       name: "ask",
     }),

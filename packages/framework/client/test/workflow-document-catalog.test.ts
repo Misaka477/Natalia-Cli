@@ -64,7 +64,7 @@ test("workflow catalog keeps every readable document and explains launch readine
         local: { models: { "worker-model": { name: "worker-model" } } },
       },
     },
-    permissionProfiles: { unattended: { approval: "auto" } },
+    agentModes: { unattended: { approval: "auto" } },
   });
   expect(await workflowDocumentCatalog(workspaceRoot, config)).toEqual([
     expect.objectContaining({
@@ -108,7 +108,7 @@ test("workflow catalog keeps every readable document and explains launch readine
             local: { models: { "worker-model": { name: "worker-model" } } },
           },
         },
-        permissionProfiles: { unattended: { approval: "ask" } },
+        agentModes: { unattended: { approval: "ask" } },
       }),
     ),
   ).toEqual([
@@ -157,7 +157,7 @@ test("manual flow task uses the flow profile and default execution model", () =>
         local: { models: { "worker-model": { name: "worker-model" } } },
       },
     },
-    permissionProfiles: { unattended: { approval: "auto" } },
+    agentModes: { unattended: { approval: "auto" } },
   });
   expect(manualFlowTask(flow, config)).toMatchObject({
     taskID: "manual_flow_flow_manual",

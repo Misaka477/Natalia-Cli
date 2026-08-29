@@ -312,7 +312,7 @@ test("a document preview includes task-scoped issue and data-source tools", asyn
   });
   const config = configV3Schema.parse({
     version: 3,
-    permissionProfiles: {
+    agentModes: {
       unattended: {
         approval: "auto",
         permissions: {

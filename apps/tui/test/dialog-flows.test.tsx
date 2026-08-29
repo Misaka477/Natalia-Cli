@@ -456,7 +456,7 @@ test("flow orchestration owns module order and activation", async () => {
           workspaceRoot="/tmp/natalia-flow-dialog"
           config={configV3Schema.parse({
             version: 3,
-            permissionProfiles: {
+            agentModes: {
               unattended: {
                 approval: "auto",
                 description: "Manual Flow runs",

@@ -695,13 +695,12 @@ test("mode permission profile overrides default runtime approval mode", async ()
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      defaultPermission: "ask",
-      permissionProfiles: {
+      agentModes: {
         ask: { approval: "ask", description: "Ask" },
         safe: { approval: "read_only", description: "Safe mode" },
+        review: { approval: "read_only", description: "Review mode" },
       },
-      modes: { review: { permission: "safe" } },
-      defaultMode: "review",
+      defaultAgentMode: "review",
     }),
   );
   const client = createRealRuntimeClient({
@@ -723,7 +722,7 @@ test("permission profile command rules deny before execution and audit the decis
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         guarded: {
           approval: "auto",
           description: "Guarded commands",

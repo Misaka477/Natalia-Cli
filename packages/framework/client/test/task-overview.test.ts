@@ -12,7 +12,7 @@ const READY_FLOW =
 function config(overrides: Record<string, unknown> = {}): ConfigV3 {
   return configV3Schema.parse({
     version: 3,
-    permissionProfiles: {
+    agentModes: {
       unattended: { approval: "auto", description: "Task profile" },
       interactive: { approval: "ask", description: "Interactive" },
     },
@@ -212,7 +212,7 @@ test("a stage the profile cannot run and a conditionless stage are reported", as
   const overview = await scheduledTaskOverview({
     workspaceRoot: root,
     config: config({
-      permissionProfiles: {
+      agentModes: {
         unattended: {
           approval: "auto",
           description: "Reads only",

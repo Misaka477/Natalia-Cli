@@ -379,8 +379,8 @@ test("config reload applies changed permission profiles to the same worker clien
       configPath,
       JSON.stringify({
         version: 3,
-        defaultPermission: "active",
-        permissionProfiles: { active: { approval } },
+        defaultAgentMode: "active",
+        agentModes: { active: { approval } },
         agents,
       }),
     );

@@ -180,7 +180,7 @@ test("CLI task validate resolves a workspace task and flow without running it", 
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
     }),
@@ -281,7 +281,7 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
       alertChannels: {
@@ -404,7 +404,7 @@ test("CLI task status reports history without creating an execution", async () =
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
     }),
@@ -505,7 +505,7 @@ test("CLI task run enqueues an overlap alert and never runs a second invocation"
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
     }),
@@ -723,7 +723,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
           },
         },
         defaultModel: { provider: "local", model: "execution-model" },
-        permissionProfiles: {
+        agentModes: {
           unattended: {
             approval: "auto",
             description: "Task profile",
@@ -988,7 +988,7 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
           },
         },
         defaultModel: { provider: "local", model: "execution-model" },
-        permissionProfiles: {
+        agentModes: {
           unattended: {
             approval: "auto",
             description: "Task profile",
@@ -1229,7 +1229,7 @@ test("CLI task run stops the module batch when an evaluator blocks the first mod
           },
         },
         defaultModel: { provider: "local", model: "execution-model" },
-        permissionProfiles: {
+        agentModes: {
           unattended: { approval: "auto", description: "Task profile" },
         },
       }),
@@ -1451,7 +1451,7 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
           },
         },
         defaultModel: { provider: "local", model: "execution-model" },
-        permissionProfiles: {
+        agentModes: {
           unattended: { approval: "auto", description: "Task profile" },
         },
       }),
@@ -1567,7 +1567,7 @@ test("CLI task run rejects non-auto profiles before creating execution state", a
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         attended: { approval: "ask", description: "Attended" },
       },
     }),
@@ -2146,7 +2146,7 @@ test("CLI task run files one issue for a finding and updates it the next night",
           },
         },
         defaultModel: { provider: "local", model: "execution-model" },
-        permissionProfiles: {
+        agentModes: {
           unattended: { approval: "auto", description: "Task profile" },
         },
         issueTargets: {
@@ -2400,7 +2400,7 @@ test("CLI task run consumes only new log content and never skips it after a fail
           },
         },
         defaultModel: { provider: "local", model: "execution-model" },
-        permissionProfiles: {
+        agentModes: {
           unattended: { approval: "auto", description: "Task profile" },
         },
         dataSources: {
@@ -2688,7 +2688,7 @@ test("CLI task run follows a timestamp watermark through a rotation and a failur
           },
         },
         defaultModel: { provider: "local", model: "execution-model" },
-        permissionProfiles: {
+        agentModes: {
           unattended: { approval: "auto", description: "Task profile" },
         },
         dataSources: {
@@ -2783,7 +2783,7 @@ test("CLI task validate rejects a timestamp source without a field name", async 
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
       dataSources: { app: { path: "app.jsonl", kind: "timestamp" } },
@@ -2999,7 +2999,7 @@ test("task validate fails closed on a dangling configuration reference", async (
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
         interactive: { approval: "ask", description: "Interactive" },
       },
@@ -3168,7 +3168,7 @@ test("CLI task timer generates reviewable system units and writes back the unit 
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
     }),
@@ -3246,7 +3246,7 @@ test("CLI task run delivers the terminal alert to a configured webhook", async (
       join(root, ".natalia", "config.json"),
       JSON.stringify({
         version: 3,
-        permissionProfiles: {
+        agentModes: {
           unattended: { approval: "auto", description: "Task profile" },
         },
         alertChannels: {
@@ -3353,7 +3353,7 @@ test("a task refuses to run under a configuration that was silently ignored", as
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: {
           approval: "auto",
           description: "Task profile",
@@ -3406,7 +3406,7 @@ test("a flow stage with no minimum completion condition is rejected", async () =
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
     }),
@@ -3447,7 +3447,7 @@ test("CLI task preview shows the effective permissions of each stage", async () 
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: {
           approval: "auto",
           description: "Task profile",
@@ -3550,7 +3550,7 @@ test("a flow stage that the profile cannot run is rejected before it is schedule
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         readonly_tasks: {
           approval: "auto",
           description: "Reads only",
@@ -3791,7 +3791,7 @@ test("CLI task list shows every task and fails when one is broken", async () => 
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
       alertChannels: { journal: { kind: "journal" } },
@@ -3858,7 +3858,7 @@ test("a bare alert channel stays silent on success and on a retried attempt", as
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      permissionProfiles: {
+      agentModes: {
         unattended: { approval: "auto", description: "Task profile" },
       },
       alertChannels: { journal: { kind: "journal" } },
