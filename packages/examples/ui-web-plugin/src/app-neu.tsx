@@ -185,7 +185,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   onCleanup(
     props.ctx.projection.subscribe((next) => {
-      console.debug("[web-plugin] projection update", {
+      console.log("[web-plugin] projection update", {
         messages: next.messages.length,
         sessions: next.sessions.length,
         workspaces: next.workspaces.length,

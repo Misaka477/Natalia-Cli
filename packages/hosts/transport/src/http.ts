@@ -441,6 +441,7 @@ export function createRuntimeHttpServer(
     if (url.pathname === "/events" && options.events === false)
       return Response.json({ error: "event stream disabled" }, { status: 404 });
     if (url.pathname === "/events" && request.method === "GET") {
+      console.log("[web-server] sse connected");
       const requestedSession = url.searchParams.get("session") ?? undefined;
       const allowedSessions = credentialSessions(authorization);
       // A credential with a session grant may only subscribe to sessions it
@@ -541,6 +542,7 @@ export function createRuntimeHttpServer(
     // scope"): the gate answers only for callers who would otherwise get
     // through.
     const method = (body as { method?: unknown })?.method;
+    console.log("[web-server] rpc", String(method ?? "unknown"));
     if (
       typeof method === "string" &&
       (method === "nativeTerminal.start" ||

@@ -69,7 +69,7 @@ export async function createUiPluginHost<TContext = unknown>(
   };
 
   const fanout = (event: RuntimeEvent) => {
-    console.debug("[ui-host] fanout event", event.type);
+    console.log("[ui-host] fanout event", event.type);
     viewStore.applyEvent(state, event);
     for (const listener of projectionListeners) listener(state);
     events.emit(event);
