@@ -80,7 +80,10 @@ async function writeSettings(
 }
 
 function workspaceRegistryPath() {
-  return join(homedir(), ".config", "natalia-cli", "workspaces.json");
+  return (
+    process.env.NATALIA_WORKSPACES_FILE ??
+    join(homedir(), ".config", "natalia-cli", "workspaces.json")
+  );
 }
 
 async function readWorkspaceRegistry(): Promise<Array<{ path: string; title?: string }>> {

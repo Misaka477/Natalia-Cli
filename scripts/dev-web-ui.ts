@@ -8,12 +8,21 @@ import { resolve } from "node:path";
 const root = resolve(import.meta.dir, "..");
 const runtimeConfigPath = resolve(root, ".natalia", "global-config.json");
 const defaultRuntimeConfigPath = resolve(homedir(), ".config", "natalia-cli", "config.json");
+const runtimeWorkspacesPath = resolve(root, ".natalia", "workspaces.json");
+const defaultRuntimeWorkspacesPath = resolve(homedir(), ".config", "natalia-cli", "workspaces.json");
 mkdirSync(resolve(root, ".natalia"), { recursive: true });
 if (!existsSync(runtimeConfigPath) && existsSync(defaultRuntimeConfigPath)) {
   try {
     copyFileSync(defaultRuntimeConfigPath, runtimeConfigPath);
   } catch {
     // A missing or unreadable default config should not block the dev server.
+  }
+}
+if (!existsSync(runtimeWorkspacesPath) && existsSync(defaultRuntimeWorkspacesPath)) {
+  try {
+    copyFileSync(defaultRuntimeWorkspacesPath, runtimeWorkspacesPath);
+  } catch {
+    // A missing or unreadable default registry should not block the dev server.
   }
 }
 let serve: ChildProcess | undefined;
@@ -58,6 +67,7 @@ serve = spawn("bun", ["apps/cli/src/main.ts", "serve", String(port)], {
   env: {
     ...process.env,
     NATALIA_CONFIG: runtimeConfigPath,
+    NATALIA_WORKSPACES_FILE: runtimeWorkspacesPath,
   },
 });
 serve.on("exit", (code) => {
