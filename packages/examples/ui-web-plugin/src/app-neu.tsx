@@ -692,6 +692,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   options={modelOptions()}
                   onChange={(modelID) => void props.ctx.runtime.selectModel?.(modelID)}
                   placeholder="选择模型"
+                  menuPosition="top"
                 />
                 <NeuSelect
                   value={reasoningEffort()}
@@ -707,12 +708,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     void props.ctx.runtime.setReasoningEffort?.(effort as "minimal" | "low" | "medium" | "high" | "xhigh");
                   }}
                   placeholder="推理强度"
+                  menuPosition="top"
                 />
                 <NeuSelect
                   value={config()?.defaultPermission ?? "ask"}
                   options={permissionOptions()}
                   onChange={(permission) => void changePermission(permission)}
                   placeholder="选择权限"
+                  menuPosition="top"
                 />
               </div>
               <Composer
