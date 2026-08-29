@@ -2704,18 +2704,19 @@ button.neu-settings-item.neu-settings-item-button:active {
 
 
 
+
 .neu-tool-select-grid {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-height: 320px;
+  gap: 20px;
+  max-height: 360px;
   overflow-y: auto;
   padding: 6px;
 }
 .neu-tool-check {
   width: 100%;
-  min-height: 46px;
-  padding: 10px 12px;
+  min-height: 40px;
+  padding: 8px 12px;
   font-size: 13px;
   gap: 10px;
   border-radius: 14px;
