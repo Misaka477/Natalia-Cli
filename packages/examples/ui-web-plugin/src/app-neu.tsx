@@ -934,8 +934,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         catalog={modelCatalog()}
         selection={state().modelSelection ?? undefined}
         providers={config()?.providers}
+        config={config()}
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
-        onAddProvider={(input) => props.ctx.runtime.providerAdd?.(input)}
+        onAddProvider={async (input) => {
+          await props.ctx.runtime.providerAdd?.(input);
+          const [nextConfig, nextCatalog] = await Promise.all([
+            props.ctx.runtime.configGet?.(),
+            props.ctx.runtime.modelCatalog?.(),
+          ]);
+          if (nextConfig) setConfig(nextConfig);
+          if (nextCatalog) setModelCatalog(nextCatalog);
+        }}
       />
       <StatusPanel open={statusOpen()} onClose={() => setStatusOpen(false)} state={state()} runtime={props.ctx.runtime} />
       <SettingsPanel

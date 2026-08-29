@@ -30,6 +30,7 @@ export function ModelPanel(props: {
   catalog?: RuntimeModelCatalogEntry[];
   selection?: RuntimeModelSelection;
   providers?: ConfigV3["providers"];
+  config?: ConfigV3;
   onSetDefault?: (modelID: string) => unknown;
   onAddProvider?: (input: {
     name: string;
@@ -120,19 +121,28 @@ export function ModelPanel(props: {
   function openEditProvider(providerName: string) {
     const provider = props.providers?.[providerName];
     if (!provider) return;
-    const providerModels = (props.catalog ?? [])
-      .filter((entry) => entry.provider === providerName)
-      .map((entry) => {
-        const id = entry.id.startsWith(`${providerName}/`)
-          ? entry.id.slice(providerName.length + 1)
-          : entry.id;
-        return {
-          id,
-          name: entry.name || id,
-          reasoning: false,
-          image: false,
-        };
-      });
+    const rawModels = props.config?.catalog?.providers?.[providerName]?.models ?? {};
+    const rawModelRows = Object.entries(rawModels).map(([id, model]) => ({
+      id,
+      name: model.name || id,
+      reasoning: Boolean(model.capabilities?.reasoning),
+      image: Boolean(model.capabilities?.imageInput),
+    }));
+    const providerModels = rawModelRows.length
+      ? rawModelRows
+      : (props.catalog ?? [])
+          .filter((entry) => entry.provider === providerName)
+          .map((entry) => {
+            const id = entry.id.startsWith(`${providerName}/`)
+              ? entry.id.slice(providerName.length + 1)
+              : entry.id;
+            return {
+              id,
+              name: entry.name || id,
+              reasoning: false,
+              image: false,
+            };
+          });
     const realHeaders = Object.entries(provider.requestDefaults?.headers ?? {}).map(
       ([name, value]) => ({ name, value: String(value) }),
     );
