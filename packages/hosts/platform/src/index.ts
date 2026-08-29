@@ -11,6 +11,7 @@ export {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
+  writeWorkspaceFile,
 } from "./workspace-files";
 
 /**

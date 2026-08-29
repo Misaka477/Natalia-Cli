@@ -70,6 +70,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
   "workspace.glob": "workspaceGlob",
+  "workspace.write": "workspaceWrite",
   "mcp.catalog": "mcpCatalog",
   "mcp.prompt": "getMcpPrompt",
   "mcp.resource": "readMcpResource",
@@ -166,6 +167,7 @@ type WorkerRequest = {
     | "workspace.list"
     | "workspace.read"
     | "workspace.glob"
+    | "workspace.write"
     | "mcp.catalog"
     | "mcp.prompt"
     | "mcp.resource"
@@ -460,6 +462,11 @@ export function createWorkerRuntimeClient(
     async workspaceGlob(input) {
       return (await request("workspace.glob", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["workspaceGlob"]>>
+      >;
+    },
+    async workspaceWrite(input) {
+      return (await request("workspace.write", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceWrite"]>>
       >;
     },
     async mcpCatalog() {
@@ -1024,6 +1031,8 @@ export async function handleWorkerRequest(
     return await client.workspaceRead?.(request.value as never);
   if (request.method === "workspace.glob")
     return await client.workspaceGlob?.(request.value as never);
+  if (request.method === "workspace.write")
+    return await client.workspaceWrite?.(request.value as never);
   if (request.method === "mcp.catalog") return await client.mcpCatalog?.();
   if (request.method === "mcp.prompt")
     return await client.getMcpPrompt?.(

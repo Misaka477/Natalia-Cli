@@ -161,6 +161,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "path policy and the size limit refuse",
   },
+  workspaceWrite: {
+    refusal: "value",
+    expressedBy: "written",
+    note: "a file write succeeds or reports a refusal; the value carries the outcome",
+  },
   workspaceGlob: {
     refusal: "error",
     note: "path and pattern policy refuse",

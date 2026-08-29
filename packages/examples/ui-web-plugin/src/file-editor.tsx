@@ -301,14 +301,29 @@ export function FileEditor(props: {
     setContents((prev) => ({ ...prev, [selectedPath()!]: value }));
   }
 
-  function saveCurrentFile() {
-    // No real workspace write RPC is wired yet; keep the editor read-only until
-    // workspaceWrite exists. Avoid silently writing to the fake in-memory
-    // transport.
-    props.runtime?.diagnostic?.(
-      "文件保存暂未接入，当前文件浏览器为只读。",
-      "warning",
-    );
+  async function saveCurrentFile() {
+    const path = selectedPath();
+    if (!path) return;
+    if (!props.runtime?.workspaceWrite) {
+      props.runtime?.diagnostic?.(
+        "当前 runtime 不支持文件保存",
+        "warning",
+      );
+      return;
+    }
+    try {
+      await props.runtime.workspaceWrite({
+        path,
+        content: contents()[path] ?? "",
+        encoding: "utf8",
+      });
+      props.runtime.diagnostic?.("已保存", "info");
+    } catch (error) {
+      props.runtime.diagnostic?.(
+        `保存失败：${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+    }
   }
 
   function renderTree(items: FileNode[], depth: number) {

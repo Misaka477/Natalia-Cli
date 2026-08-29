@@ -868,7 +868,7 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (20 groups · 147 optional members)
+### Capability groups (20 groups · 148 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -877,7 +877,7 @@ Deployment notes:
 | lifecycle      | `dispose` · `canReloadConfig` · `reloadConfig` · `updateConfig` · `configGet`                                                                                                                                                                                                                                                                                                                       |
 | settings       | `settingsGet` · `settingsSet`                                                                                                                                                                                                                                                                                                                                                                       |
 | selection      | `agents` · `selectAgent` · `modelCatalog` · `modelSelection` · `selectModel` · `reasoningEffort` · `setReasoningEffort` · `skills` · `agentCreate` · `agentUpdate` · `agentDelete` · `providerDiscover` · `providerAdd` · `providerRemove`                                                                                                                                                          |
-| workspace      | `workspaceFiles` · `workspaceSearch` · `workspaceList` · `workspaceRead` · `workspaceGlob` · `workspaceRoots` · `workspaceAdd` · `workspaceRemove` · `workspaceActivate` · `workspacePermissionGet` · `workspacePermissionSet` · `workspaceToolGet` · `workspaceToolSet`                                                                                                                            |
+| workspace      | `workspaceFiles` · `workspaceSearch` · `workspaceList` · `workspaceRead` · `workspaceWrite` · `workspaceGlob` · `workspaceRoots` · `workspaceAdd` · `workspaceRemove` · `workspaceActivate` · `workspacePermissionGet` · `workspacePermissionSet` · `workspaceToolGet` · `workspaceToolSet`                                                                                                         |
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize`                                                                               |
 | checkpoint     | `checkpointList` · `checkpointPreview` · `checkpointRollback`                                                                                                                                                                                                                                                                                                                                       |
 | sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxResourceStop`                                                                                                                                                                                                                                                             |
@@ -893,7 +893,7 @@ Deployment notes:
 | plans          | `planList` · `planCreate` · `planUpdate` · `planPropose` · `planAccept` · `planQueue` · `planActivate` · `planSupersede` · `planCompleted`                                                                                                                                                                                                                                                          |
 | chat           | `chatSubmit` · `chatAbort` · `chatMessages` · `chatRollback` · `chatModelProfile` · `setChatModelProfile`                                                                                                                                                                                                                                                                                           |
 
-### RPC route table (152 methods → members)
+### RPC route table (153 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -926,6 +926,7 @@ Deployment notes:
 | `workspace.search`                   | `workspaceSearch`                   | workspace        | read  |
 | `workspace.list`                     | `workspaceList`                     | workspace        | read  |
 | `workspace.read`                     | `workspaceRead`                     | workspace        | read  |
+| `workspace.write`                    | `workspaceWrite`                    | workspace        | read  |
 | `workspace.glob`                     | `workspaceGlob`                     | workspace        | read  |
 | `workspace.roots`                    | `workspaceRoots`                    | workspace        | read  |
 | `workspace.add`                      | `workspaceAdd`                      | workspace        | read  |
@@ -1182,6 +1183,7 @@ Deployment notes:
 | `sessionNew`              | `created`            | creating an existing id answers created:false with the existing summary                                                                                            |
 | `setChatModelProfile`     | `saved`              | saves the Chat model profile for this runtime                                                                                                                      |
 | `updateConfig`            | `applied`            | the file may be written while a running turn prevents application, and that is an ordinary answer                                                                  |
+| `workspaceWrite`          | `written`            | a file write succeeds or reports a refusal; the value carries the outcome                                                                                          |
 
 ### Events and projection (source scan)
 

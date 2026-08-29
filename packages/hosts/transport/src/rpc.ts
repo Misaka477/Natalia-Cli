@@ -138,6 +138,7 @@ export const RPC_ROUTE_MEMBERS = {
   "workspace.search": "workspaceSearch",
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
+  "workspace.write": "workspaceWrite",
   "workspace.glob": "workspaceGlob",
   "workspace.roots": "workspaceRoots",
   "workspace.add": "workspaceAdd",
@@ -816,6 +817,30 @@ export async function handleRPCMessage(
           path: stringParam(body.params, "path"),
           offset: typeof offset === "number" ? offset : undefined,
           limit: typeof limit === "number" ? limit : undefined,
+        }),
+      };
+    }
+    if (body.method === "workspace.write") {
+      optionsGuard(client, "workspaceWrite");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("workspace.write.params must be an object");
+      const path = (params as { path?: unknown }).path;
+      const content = (params as { content?: unknown }).content;
+      if (typeof path !== "string")
+        throw invalidParams("workspace.write.params.path must be a string");
+      if (typeof content !== "string")
+        throw invalidParams("workspace.write.params.content must be a string");
+      const encoding = (params as { encoding?: unknown }).encoding;
+      if (encoding !== undefined && encoding !== "utf8" && encoding !== "base64")
+        throw invalidParams("workspace.write.params.encoding must be utf8 or base64");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceWrite?.({
+          path,
+          content,
+          ...(encoding ? { encoding: encoding as "utf8" | "base64" } : {}),
         }),
       };
     }

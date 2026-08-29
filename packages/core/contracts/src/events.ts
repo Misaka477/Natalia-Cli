@@ -1850,6 +1850,12 @@ export type RuntimeClient = {
     offset?: number;
     limit?: number;
   }): Promise<RuntimeWorkspaceContent>;
+  /** Writes a file inside the active workspace. */
+  workspaceWrite?(input: {
+    path: string;
+    content: string;
+    encoding?: "utf8" | "base64";
+  }): Promise<{ written: boolean }>;
   /** Lists all workspace roots managed by this runtime host. */
   workspaceRoots?(): Promise<WorkspaceSummary[]>;
   /** Adds a workspace root to the runtime host. */

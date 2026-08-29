@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import fuzzysort from "fuzzysort";
@@ -472,6 +472,23 @@ async function watchDirectories(
 
 function contains(root: string, target: string) {
   return target === root || target.startsWith(`${root}${sep}`);
+}
+
+export async function writeWorkspaceFile(input: {
+  workspaceRoot: string;
+  path: string;
+  content: string;
+  encoding?: "utf8" | "base64";
+}): Promise<{ written: boolean }> {
+  const root = await realpath(input.workspaceRoot);
+  const path = await resolveWorkspacePath(root, input.path);
+  const bytes =
+    input.encoding === "base64"
+      ? Buffer.from(input.content, "base64")
+      : Buffer.from(input.content, "utf8");
+  await writeFile(path, bytes, { mode: 0o600 });
+  invalidateWorkspaceFiles(root);
+  return { written: true };
 }
 
 async function resolveWorkspacePath(root: string, input: string) {

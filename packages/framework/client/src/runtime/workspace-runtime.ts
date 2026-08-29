@@ -4,6 +4,7 @@ import {
   listWorkspaceFiles,
   readWorkspaceFile,
   searchWorkspaceFiles,
+  writeWorkspaceFile,
 } from "@natalia/platform";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
@@ -15,6 +16,7 @@ type WorkspaceRuntime = Pick<
   | "workspaceList"
   | "workspaceRead"
   | "workspaceGlob"
+  | "workspaceWrite"
 >;
 
 export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
@@ -50,6 +52,13 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
     async workspaceGlob(input) {
       await ctx.ports.getReady();
       return await globWorkspaceFiles({
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        ...input,
+      });
+    },
+    async workspaceWrite(input) {
+      await ctx.ports.getReady();
+      return await writeWorkspaceFile({
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });
