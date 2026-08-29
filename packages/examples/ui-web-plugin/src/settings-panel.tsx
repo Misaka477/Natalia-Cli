@@ -714,21 +714,23 @@ export function SettingsPanel(props: {
                 </div>
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">MCP Servers</label>
-                <div class="neu-checkbox-list">
-                  <For each={modeMcpOptions()}>
-                    {(server) => (
-                      <label class="neu-form-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={modeMcpServers().split(",").map((item) => item.trim()).includes(server)}
-                          onChange={() => toggleCsv(modeMcpServers(), server, setModeMcpServers)}
-                        />
-                        <span>{server}</span>
-                      </label>
-                    )}
-                  </For>
-                </div>
+                <label class="neu-form-label">MCP Servers（从已配置的 MCP 中选择此模式启用的服务，不影响全局配置）</label>
+                <Show when={modeMcpOptions().length} fallback={<div class="neu-settings-item"><div class="neu-settings-item-main"><span class="neu-settings-item-label">暂无已配置的 MCP Server</span><span class="neu-settings-item-description">请先在“MCP”里添加</span></div></div>}>
+                  <div class="neu-checkbox-list">
+                    <For each={modeMcpOptions()}>
+                      {(server) => (
+                        <label class="neu-form-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={modeMcpServers().split(",").map((item) => item.trim()).includes(server)}
+                            onChange={() => toggleCsv(modeMcpServers(), server, setModeMcpServers)}
+                          />
+                          <span>{server}</span>
+                        </label>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </div>
               <div class="neu-form-actions">
                 <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setModeEditorOpen(false)}>取消</button>
