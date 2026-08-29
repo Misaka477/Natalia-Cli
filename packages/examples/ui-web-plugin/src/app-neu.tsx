@@ -1,5 +1,5 @@
 import type { UiPluginContext } from "@natalia/ui-host";
-import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, RuntimeSkillCatalogEntry, ConfigV3, RuntimeClient, WorkspaceSummary } from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, RuntimeSkillCatalogEntry, ChatModelProfile, ConfigV3, RuntimeClient, WorkspaceSummary } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, createMemo, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
@@ -175,6 +175,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
   const [config, setConfig] = createSignal<ConfigV3 | undefined>(undefined);
   const [reasoningEffort, setReasoningEffortSignal] = createSignal<string>("medium");
+  const [chatProfile, setChatProfile] = createSignal<ChatModelProfile>({});
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [stashOpen, setStashOpen] = createSignal(false);
@@ -366,6 +367,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.runtime.reasoningEffort?.().then((effort) => {
       if (effort) setReasoningEffortSignal(effort);
     });
+    void props.ctx.runtime.chatModelProfile?.().then((profile) => {
+      if (profile) setChatProfile(profile);
+    });
     void props.ctx.runtime.registeredTools?.().then((tools) => {
       if (tools) setRegisteredTools(tools.map((tool) => tool.name));
     });
@@ -397,6 +401,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     } as never);
     const next = await props.ctx.runtime.configGet?.();
     if (next) setConfig(next);
+  }
+
+  async function updateChatProfile(next: ChatModelProfile) {
+    setChatProfile(next);
+    await props.ctx.runtime.setChatModelProfile?.(next);
   }
   const mainMessages = (): Message[] =>
     (state().messages ?? []).map((msg, idx) => ({
@@ -752,6 +761,74 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantName="Navi"
                 assistantInitial="V"
               />
+              <div class="neu-main-toolbar">
+                <NeuSelect
+                  value={chatProfile().normal?.modelID ?? ""}
+                  options={modelOptions()}
+                  onChange={(modelID) =>
+                    void updateChatProfile({
+                      ...chatProfile(),
+                      normal: { ...chatProfile().normal, modelID },
+                    })
+                  }
+                  placeholder="Chat 模型"
+                  menuPosition="top"
+                />
+                <NeuSelect
+                  value={chatProfile().expert?.modelID ?? ""}
+                  options={modelOptions()}
+                  onChange={(modelID) =>
+                    void updateChatProfile({
+                      ...chatProfile(),
+                      expert: { ...chatProfile().expert, modelID },
+                    })
+                  }
+                  placeholder="专家模型"
+                  menuPosition="top"
+                />
+                <NeuSelect
+                  value={chatProfile().normal?.reasoningEffort ?? "medium"}
+                  options={[
+                    { value: "minimal", label: "minimal" },
+                    { value: "low", label: "low" },
+                    { value: "medium", label: "medium" },
+                    { value: "high", label: "high" },
+                    { value: "xhigh", label: "xhigh" },
+                  ]}
+                  onChange={(effort) =>
+                    void updateChatProfile({
+                      ...chatProfile(),
+                      normal: {
+                        ...chatProfile().normal,
+                        reasoningEffort: effort as "minimal" | "low" | "medium" | "high" | "xhigh",
+                      },
+                    })
+                  }
+                  placeholder="Chat 推理"
+                  menuPosition="top"
+                />
+                <NeuSelect
+                  value={chatProfile().expert?.reasoningEffort ?? "medium"}
+                  options={[
+                    { value: "minimal", label: "minimal" },
+                    { value: "low", label: "low" },
+                    { value: "medium", label: "medium" },
+                    { value: "high", label: "high" },
+                    { value: "xhigh", label: "xhigh" },
+                  ]}
+                  onChange={(effort) =>
+                    void updateChatProfile({
+                      ...chatProfile(),
+                      expert: {
+                        ...chatProfile().expert,
+                        reasoningEffort: effort as "minimal" | "low" | "medium" | "high" | "xhigh",
+                      },
+                    })
+                  }
+                  placeholder="专家推理"
+                  menuPosition="top"
+                />
+              </div>
               <Composer
                 value={chatDraft()}
                 placeholder="向 Navi 提问…"
