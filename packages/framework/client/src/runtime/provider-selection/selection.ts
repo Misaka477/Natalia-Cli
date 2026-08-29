@@ -185,7 +185,9 @@ export function createSelectionSurface(
       return { models };
     },
     async providerAdd(input) {
-      await ctx.ports.getReady();
+      // Provider config is global-only and does not require a fully-initialized
+      // workspace runtime. In read-only workspaces getReady may fail on
+      // checkpoint storage, but provider settings must still be writable.
       const config = ctx.ports.getTsRuntimeConfig();
       const sourceName = input.previousName && input.previousName !== input.name
         ? input.previousName
@@ -263,7 +265,17 @@ export function createSelectionSurface(
         "global",
         { globalPath: options.globalConfigPath },
       );
-      await ctx.ports.applyConfigFromDisk();
+      try {
+        await ctx.ports.applyConfigFromDisk();
+      } catch (error) {
+        // The config file is already persisted. A reload failure in a
+        // read-only workspace must not make provider management look broken.
+        ctx.ports.publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `provider saved but config reload deferred: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
       return { saved: true };
     },
     async providerRemove(name) {
