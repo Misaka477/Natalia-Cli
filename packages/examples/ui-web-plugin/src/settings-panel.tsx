@@ -281,6 +281,8 @@ export function SettingsPanel(props: {
   const [permissionSkills, setPermissionSkills] = createSignal(true);
   const [permissionMcp, setPermissionMcp] = createSignal(true);
   const [permissionPlugins, setPermissionPlugins] = createSignal(true);
+  const [permissionInteractiveAny, setPermissionInteractiveAny] = createSignal(false);
+  const [permissionInteractiveAllow, setPermissionInteractiveAllow] = createSignal("");
 
   function openEdit(
     label: string,
@@ -306,6 +308,8 @@ export function SettingsPanel(props: {
     setPermissionSkills(profile?.extensions?.skills !== false);
     setPermissionMcp(profile?.extensions?.mcp !== false);
     setPermissionPlugins(profile?.extensions?.plugins !== false);
+    setPermissionInteractiveAny(Boolean(profile?.interactivePrograms?.allowAny));
+    setPermissionInteractiveAllow((profile?.interactivePrograms?.allow ?? []).map((entry) => entry.command).join(", "));
     setPermissionEditorOpen(true);
   }
 
@@ -320,6 +324,8 @@ export function SettingsPanel(props: {
     setPermissionSkills(true);
     setPermissionMcp(true);
     setPermissionPlugins(true);
+    setPermissionInteractiveAny(false);
+    setPermissionInteractiveAllow("");
     setPermissionEditorOpen(true);
   }
 
@@ -790,6 +796,16 @@ export function SettingsPanel(props: {
                 <input class="neu-form-input" value={permissionCommandRules()} onInput={(e) => setPermissionCommandRules(e.currentTarget.value)} />
               </div>
               <div class="neu-form-field">
+                <label class="neu-form-label">Interactive Programs（高风险启动命令）</label>
+                <div class="neu-checkbox-list">
+                  <label class="neu-form-checkbox">
+                    <input type="checkbox" checked={permissionInteractiveAny()} onChange={() => setPermissionInteractiveAny((v) => !v)} />
+                    <span>allowAny（任意启动命令）</span>
+                  </label>
+                </div>
+                <input class="neu-form-input" value={permissionInteractiveAllow()} placeholder="允许的交互程序，逗号分隔" onInput={(e) => setPermissionInteractiveAllow(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
                 <label class="neu-form-label">Extensions</label>
                 <div class="neu-checkbox-list">
                   <label class="neu-form-checkbox">
@@ -830,6 +846,10 @@ export function SettingsPanel(props: {
                           commandRules: {
                             mode: permissionCommandMode() as "none" | "blacklist" | "whitelist",
                             rules: split(permissionCommandRules()),
+                          },
+                          interactivePrograms: {
+                            allowAny: permissionInteractiveAny(),
+                            allow: split(permissionInteractiveAllow()).map((command) => ({ command })),
                           },
                           extensions: {
                             skills: permissionSkills(),
