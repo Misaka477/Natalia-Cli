@@ -64,7 +64,18 @@ function askUserTool(): RuntimeTool {
       const args = requireObject(input);
       if (!Array.isArray(args.options))
         throw new Error("options must be an array");
-      const options = args.options.map((item) => ({ label: String(item) }));
+      const options = args.options.map((item) => {
+        if (item && typeof item === "object") {
+          const record = item as Record<string, unknown>;
+          const label =
+            record.label ??
+            record.text ??
+            record.value ??
+            JSON.stringify(record);
+          return { label: String(label) };
+        }
+        return { label: String(item) };
+      });
       const answers = await context.askQuestion({
         title: optionalString(args.title) ?? "Question from Natalia",
         questions: [
