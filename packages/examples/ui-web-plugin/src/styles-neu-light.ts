@@ -2840,4 +2840,23 @@ button.neu-settings-item.neu-settings-item-button:active {
 .natalia-message-text ul, .natalia-message-text ol { padding-left: 20px; }
 .natalia-message-text blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--neu-accent); color: var(--neu-muted); }
 .natalia-message-text a { color: var(--neu-accent); }
+
+.review-file {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--neu-bg-light);
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.review-file[data-operation="added"] { border-left: 3px solid var(--neu-success); }
+.review-file[data-operation="modified"] { border-left: 3px solid #d8b04a; }
+.review-file[data-operation="deleted"] { border-left: 3px solid var(--neu-danger); }
+.review-file[data-operation="renamed"] { border-left: 3px solid var(--neu-accent); }
+.review-file-name { font-weight: 600; color: var(--neu-text); word-break: break-all; }
+.review-file-meta { display: flex; gap: 8px; font-size: 10px; color: var(--neu-muted); }
+.review-file-op { font-weight: 600; text-transform: uppercase; }
+.review-section-title { font-size: 12px; font-weight: 600; color: var(--neu-muted); margin: 10px 0 4px; }
 `;

@@ -1211,7 +1211,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             </div>
             <div class="neu-secondary-content">
               <Show when={rightTab() === "diff"}>
-                <ReviewPane />
+                <ReviewPane runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "terminal"}>
                 <TerminalPane runtime={props.ctx.runtime} />

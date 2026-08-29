@@ -64,7 +64,55 @@ export function RightPanel(props: RightPanelProps) {
     </aside>
   );
 }
-export function ReviewPane() {
+export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
+  const [changes, setChanges] = createSignal<Array<{
+    id: string;
+    path: string;
+    operation: "added" | "modified" | "deleted" | "renamed";
+    origin: string;
+    health: string;
+    at: string;
+  }>>([]);
+  const [drift, setDrift] = createSignal<Array<{
+    findingID: string;
+    severity: string;
+    status: string;
+    currentActivity: string;
+    evidence: string[];
+  }>>([]);
+  const [loaded, setLoaded] = createSignal(false);
+
+  onMount(() => {
+    void Promise.all([
+      props.runtime?.confirmedWorkspaceChanges?.() ?? Promise.resolve([]),
+      props.runtime?.driftFindings?.() ?? Promise.resolve([]),
+    ]).then(([confirmed, driftFindings]) => {
+      const mapped = (confirmed ?? []).map((change) => ({
+        id: change.id,
+        path: change.path,
+        operation: change.operation,
+        origin: change.origin,
+        health: change.health,
+        at: change.at,
+      }));
+      setChanges(mapped);
+      setDrift((driftFindings ?? []).map((item) => ({
+        findingID: item.findingID,
+        severity: item.severity,
+        status: item.status,
+        currentActivity: item.currentActivity,
+        evidence: item.evidence,
+      })));
+      setLoaded(true);
+    });
+  });
+
+  const totalFiles = () => changes().length;
+  const additions = () =>
+    changes().filter((item) => item.operation === "added").length;
+  const deletions = () =>
+    changes().filter((item) => item.operation === "deleted").length;
+
   return (
     <div class="review-pane">
       <div class="review-header">
@@ -80,27 +128,60 @@ export function ReviewPane() {
           <span>Changes</span>
         </div>
         <div class="review-meta">
-          <span class="review-count">0 files</span>
-          <span class="review-additions">+0</span>
-          <span class="review-deletions">-0</span>
+          <span class="review-count">{totalFiles()} files</span>
+          <span class="review-additions">+{additions()}</span>
+          <span class="review-deletions">-{deletions()}</span>
         </div>
       </div>
       <div class="review-body">
-        <div class="review-empty">
-          <div class="review-empty-icon">
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <rect x="3" y="4" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
-              <rect x="3" y="12" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
-              <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
-              <circle cx="6" cy="14.5" r="1.2" fill="currentColor" />
-              <path d="M22 6.5h3M22 14.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            </svg>
+        <Show when={!loaded()}>
+          <div class="review-empty">
+            <div class="review-empty-title">正在读取变更... </div>
           </div>
-          <div class="review-empty-title">暂无变更</div>
-          <div class="review-empty-desc">
-            当前工作区没有待审阅的 diff。运行时提供 diff/checkpoint 能力后，这里会显示真实的变更列表。
+        </Show>
+        <Show when={loaded() && !changes().length && !drift().length}>
+          <div class="review-empty">
+            <div class="review-empty-icon">
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                <rect x="3" y="4" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+                <rect x="3" y="12" width="22" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+                <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
+                <circle cx="6" cy="14.5" r="1.2" fill="currentColor" />
+                <path d="M22 6.5h3M22 14.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div class="review-empty-title">暂无变更</div>
+            <div class="review-empty-desc">
+              当前工作区没有待审阅的变更。
+            </div>
           </div>
-        </div>
+        </Show>
+        <For each={changes()}>
+          {(change) => (
+            <div class="review-file" data-operation={change.operation}>
+              <div class="review-file-name">{change.path}</div>
+              <div class="review-file-meta">
+                <span class="review-file-op">{change.operation}</span>
+                <span>{change.origin}</span>
+                <span>{change.health}</span>
+              </div>
+            </div>
+          )}
+        </For>
+        <Show when={drift().length}>
+          <div class="review-section-title">Drift findings</div>
+          <For each={drift()}>
+            {(item) => (
+              <div class="review-file" data-severity={item.severity}>
+                <div class="review-file-name">{item.currentActivity}</div>
+                <div class="review-file-meta">
+                  <span>{item.severity}</span>
+                  <span>{item.status}</span>
+                </div>
+              </div>
+            )}
+          </For>
+        </Show>
       </div>
     </div>
   );
