@@ -826,10 +826,6 @@ export function SettingsPanel(props: {
                     <input type="checkbox" checked={permissionMcp()} onChange={() => setPermissionMcp((v) => !v)} />
                     <span>mcp</span>
                   </label>
-                  <label class="neu-form-checkbox">
-                    <input type="checkbox" checked={permissionPlugins()} onChange={() => setPermissionPlugins((v) => !v)} />
-                    <span>plugins</span>
-                  </label>
                 </div>
               </div>
               <div class="neu-form-actions">
@@ -864,7 +860,6 @@ export function SettingsPanel(props: {
                           extensions: {
                             skills: permissionSkills(),
                             mcp: permissionMcp(),
-                            plugins: permissionPlugins(),
                           },
                         },
                       },
