@@ -391,7 +391,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const permissionOptions = () =>
     Object.entries(config()?.agentModes ?? {}).map(([name, mode]) => ({
       value: name,
-      label: `${name}${config()?.defaultAgentMode === name ? "（默认）" : ""} · ${mode.approval}`,
+      label: `${name}${config()?.defaultAgentMode === name ? "（默认）" : ""}`,
     }));
 
   async function changePermission(permission: string) {
