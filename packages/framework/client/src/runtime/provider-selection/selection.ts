@@ -186,20 +186,58 @@ export function createSelectionSurface(
     },
     async providerAdd(input) {
       await ctx.ports.getReady();
+      const current = ctx.ports.getTsRuntimeConfig()?.providers?.[input.name];
+      const provider = {
+        ...current,
+        name: input.name,
+        driver: input.type,
+        enabled: true,
+        connection: {
+          ...(current?.connection ?? {}),
+          baseURL: input.baseURL || current?.connection?.baseURL,
+          apiKey: input.apiKey || current?.connection?.apiKey,
+        },
+        requestDefaults: {
+          ...(current?.requestDefaults ?? {}),
+          ...(input.headers
+            ? { headers: input.headers }
+            : {}),
+        },
+      };
+      const models = input.models?.length
+        ? Object.fromEntries(
+            input.models.map((model) => [
+              model.id,
+              {
+                name: model.name || model.id,
+                capabilities: {
+                  reasoning: model.reasoning ?? false,
+                  imageInput: model.image ?? false,
+                },
+                limits: {},
+                status: "manual",
+                source: "manual",
+              },
+            ]),
+          )
+        : undefined;
       await updateConfigAtScope(
         ctx.ports.getWorkspaceRoot(),
         {
           providers: {
-            [input.name]: {
-              name: input.name,
-              driver: input.type,
-              enabled: true,
-              connection: {
-                baseURL: input.baseURL || undefined,
-                apiKey: input.apiKey,
-              },
-            },
+            [input.name]: provider,
           },
+          ...(models
+            ? {
+                catalog: {
+                  providers: {
+                    [input.name]: {
+                      models,
+                    },
+                  },
+                },
+              }
+            : {}),
         } as never,
         "global",
         { globalPath: options.globalConfigPath },

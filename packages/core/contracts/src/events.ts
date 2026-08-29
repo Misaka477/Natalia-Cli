@@ -2084,6 +2084,13 @@ export type RuntimeClient = {
     type: string;
     baseURL?: string;
     apiKey: string;
+    headers?: Record<string, string>;
+    models?: Array<{
+      id: string;
+      name?: string;
+      reasoning?: boolean;
+      image?: boolean;
+    }>;
   }): Promise<{ saved: boolean }>;
   /**
    * Removes a provider. A write; idempotent; a provider referenced by a model

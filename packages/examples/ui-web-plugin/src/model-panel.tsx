@@ -35,6 +35,8 @@ export function ModelPanel(props: {
     type: string;
     baseURL?: string;
     apiKey: string;
+    headers?: Record<string, string>;
+    models?: Array<{ id: string; name?: string; reasoning?: boolean; image?: boolean }>;
   }) => unknown;
 }) {
   const [editingProvider, setEditingProvider] = createSignal<string | undefined>();
@@ -142,11 +144,26 @@ export function ModelPanel(props: {
   }
 
   function submitProvider() {
+    const headerRecord: Record<string, string> = {};
+    for (const header of headers()) {
+      const name = header.name.trim();
+      if (name) headerRecord[name] = header.value;
+    }
+    const modelRows = models()
+      .filter((model) => model.id.trim())
+      .map((model) => ({
+        id: model.id.trim(),
+        name: model.name.trim() || model.id.trim(),
+        reasoning: model.reasoning,
+        image: model.image,
+      }));
     props.onAddProvider?.({
       name: providerName().trim() || editingProvider() || "",
       type: providerApi(),
       baseURL: baseUrl().trim() || undefined,
       apiKey: apiKey(),
+      headers: Object.keys(headerRecord).length ? headerRecord : undefined,
+      models: modelRows.length ? modelRows : undefined,
     });
     setEditingProvider(undefined);
     backToTree();
@@ -312,7 +329,7 @@ export function ModelPanel(props: {
                 />
               </div>
 
-              <div class="neu-form-section-title">模型（当前 providerAdd 仅保存基础字段，以下为界面草稿）</div>
+              <div class="neu-form-section-title">模型</div>
               <For each={models()}>
                 {(model, index) => (
                   <div class="neu-model-edit-row">
@@ -354,7 +371,7 @@ export function ModelPanel(props: {
                 + 添加模型
               </button>
 
-              <div class="neu-form-section-title">请求头（界面草稿，暂不写入 runtime）</div>
+              <div class="neu-form-section-title">请求头</div>
               <For each={headers()}>
                 {(header, index) => (
                   <div class="neu-model-edit-row">

@@ -2645,6 +2645,8 @@ export async function handleRPCMessage(
         throw invalidParams(
           "provider.add.params.apiKey must be a non-empty string",
         );
+      const headers = (params as { headers?: unknown }).headers;
+      const models = (params as { models?: unknown }).models;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2653,6 +2655,8 @@ export async function handleRPCMessage(
           type,
           apiKey,
           baseURL: typeof baseURL === "string" && baseURL ? baseURL : undefined,
+          ...(headers && typeof headers === "object" ? { headers: headers as Record<string, string> } : {}),
+          ...(Array.isArray(models) ? { models: models as Array<{ id: string; name?: string; reasoning?: boolean; image?: boolean }> } : {}),
         }),
       };
     }
