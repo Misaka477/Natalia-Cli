@@ -342,6 +342,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // whenever the multi-workspace runtime publishes a routing event.
     onCleanup(
       props.ctx.events.subscribe((event) => {
+        const replaying = (globalThis as unknown as {
+          __nataliaReplayingHistory?: boolean;
+        }).__nataliaReplayingHistory;
+        if (replaying) return;
         if (event.type === "approval.request") {
           setCurrentApproval(event);
           setPermissionOpen(true);
@@ -360,6 +364,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }
       }),
     );
+
+    // After history replay completes, surface only still-unresolved
+    // approvals/questions from the restored session.
+    setTimeout(() => {
+      const approvals = state().pendingApprovals;
+      if (approvals.length) {
+        setCurrentApproval(approvals[0]);
+        setPermissionOpen(true);
+      }
+      const questions = state().pendingQuestions;
+      if (questions.length) {
+        setCurrentQuestion(questions[0]);
+        setQuestionOpen(true);
+      }
+    }, 0);
 
     // Apply theme/mode by overlaying the other stylesheet.
     const themeStyle = document.createElement("style");

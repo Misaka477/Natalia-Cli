@@ -307,6 +307,10 @@ export function createWebRuntimeClient(
     // Replay the full durable session so a reloaded page sees previous
     // messages. Page through history until hasMore is false; there is no
     // artificial cap that would hide older conversations.
+    const replayGlobal = globalThis as unknown as {
+      __nataliaReplayingHistory?: boolean;
+    };
+    replayGlobal.__nataliaReplayingHistory = true;
     try {
       let after = 0;
       while (true) {
@@ -321,6 +325,8 @@ export function createWebRuntimeClient(
       }
     } catch (error) {
       console.log("[web-runtime] history replay failed", error);
+    } finally {
+      replayGlobal.__nataliaReplayingHistory = false;
     }
 
     const decoder = new TextDecoder();
