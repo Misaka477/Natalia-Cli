@@ -180,6 +180,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [transcriptEl, setTranscriptEl] = transcriptRef;
   const [followBottom, setFollowBottom] = createSignal(true);
   const [showJumpToBottom, setShowJumpToBottom] = createSignal(false);
+  const chatTranscriptRef = createSignal<HTMLDivElement | undefined>(undefined);
+  const [chatTranscriptEl, setChatTranscriptEl] = chatTranscriptRef;
+  const [chatFollowBottom, setChatFollowBottom] = createSignal(true);
+  const [chatShowJumpToBottom, setChatShowJumpToBottom] = createSignal(false);
+  const [chatElapsedMs, setChatElapsedMs] = createSignal(0);
   const activeTurnStartedAt = createSignal<number | undefined>(undefined);
   const [activeTurnStartedAtValue, setActiveTurnStartedAt] = activeTurnStartedAt;
   const [modelOpen, setModelOpen] = createSignal(false);
@@ -206,6 +211,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       if (projected.workspaces.length) setWorkspaces(projected.workspaces);
       if (followBottom() && transcriptEl()) {
         const el = transcriptEl()!;
+        el.scrollTop = el.scrollHeight;
+      }
+      if (chatFollowBottom() && chatTranscriptEl()) {
+        const el = chatTranscriptEl()!;
         el.scrollTop = el.scrollHeight;
       }
       if (projected.sessions.length) setSessionList(projected.sessions);
@@ -402,6 +411,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const elapsedTimer = setInterval(() => {
       if (activeTurnStartedAtValue() !== undefined)
         setTurnElapsedMs(Date.now() - activeTurnStartedAtValue()!);
+      if (state().chatActivity?.startedAt)
+        setChatElapsedMs(Date.now() - state().chatActivity!.startedAt);
     }, 1000);
     onCleanup(() => clearInterval(elapsedTimer));
 
@@ -571,6 +582,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     setShowJumpToBottom(false);
   }
 
+  function handleChatTranscriptScroll() {
+    const el = chatTranscriptEl();
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    setChatFollowBottom(nearBottom);
+    setChatShowJumpToBottom(!nearBottom);
+  }
+
+  function jumpChatToBottom() {
+    const el = chatTranscriptEl();
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setChatFollowBottom(true);
+    setChatShowJumpToBottom(false);
+  }
+
   function formatDuration(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
     const totalSeconds = Math.floor(ms / 1000);
@@ -578,6 +605,23 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const seconds = totalSeconds % 60;
     if (minutes < 1) return `${seconds}s`;
     return `${minutes}m ${seconds}s`;
+  }
+
+  function chatActivityLabel(): string {
+    const activity = state().chatActivity;
+    if (!activity) return "idle";
+    switch (activity.phase) {
+      case "waiting":
+        return "Waiting";
+      case "thinking":
+        return "Thinking";
+      case "generating":
+        return "Generating";
+      case "using_tool":
+        return activity.toolName
+          ? `Using ${activity.toolName}`
+          : "Using a tool";
+    }
   }
 
   function activityLabel(): string {
@@ -1021,7 +1065,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 {state().chatActivity ? "running" : "idle"}
               </span>
             </div>
-            <div class="neu-pane-content">
+            <div
+              class="neu-pane-content"
+              ref={setChatTranscriptEl}
+              onScroll={handleChatTranscriptScroll}
+            >
               <Transcript
                 messages={chatMessages()}
                 emptyTitle="向 Navi 提问"
@@ -1029,6 +1077,24 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantName="Navi"
                 assistantInitial="V"
               />
+              <Show when={chatShowJumpToBottom()}>
+                <button
+                  type="button"
+                  class="neu-jump-bottom"
+                  onClick={jumpChatToBottom}
+                  title="跳到底部"
+                >
+                  ↓
+                </button>
+              </Show>
+              <div class="neu-activity-bar" data-running={Boolean(state().chatActivity)}>
+                <span class="neu-activity-pulse" />
+                <span class="neu-activity-label">
+                  {state().chatActivity
+                    ? `${chatActivityLabel()} · ${formatDuration(chatElapsedMs())}`
+                    : "idle"}
+                </span>
+              </div>
               <div class="neu-main-toolbar">
                 <NeuSelect
                   value={chatProfile().normal?.modelID ?? ""}
