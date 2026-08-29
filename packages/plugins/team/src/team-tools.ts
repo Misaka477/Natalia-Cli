@@ -86,7 +86,21 @@ export function createTeamFanoutTool(input: {
           status: pr.status,
           result: pr.result,
           buildEvidence: pr.buildEvidence,
-          diff: pr.diff.map((change) => change.path),
+          diff: pr.diff.map((change) => ({
+            path: change.path,
+            kind: change.kind,
+            ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+            ...(change.mode ? { mode: change.mode } : {}),
+            ...(change.patch ? { patch: change.patch } : {}),
+            ...(change.before ? { before: change.before } : {}),
+            ...(change.after ? { after: change.after } : {}),
+            ...(change.additions !== undefined
+              ? { additions: change.additions }
+              : {}),
+            ...(change.deletions !== undefined
+              ? { deletions: change.deletions }
+              : {}),
+          })),
         })),
         null,
         2,
@@ -155,15 +169,19 @@ export function createTeamReviewTool(input: {
       const decisions = new Map(
         args.decisions.map((decision) => [decision.id, decision]),
       );
-      const prs: FanOutPR[] = args.prs.map((pr) => ({
-        id: pr.id,
-        sandboxID: pr.sandboxID,
-        status: "completed",
-        diff: [],
-        ...(pr.buildCommand
-          ? { buildEvidence: { ok: true, exitCode: 0, output: "" } }
-          : {}),
-      }));
+      const prs: FanOutPR[] = [];
+      for (const pr of args.prs) {
+        const diff = await sandboxes.previewMerge(pr.sandboxID).catch(() => []);
+        prs.push({
+          id: pr.id,
+          sandboxID: pr.sandboxID,
+          status: "completed",
+          diff,
+          ...(pr.buildCommand
+            ? { buildEvidence: { ok: true, exitCode: 0, output: "" } }
+            : {}),
+        });
+      }
       const outcomes = await reviewPRs({
         prs,
         sandboxes,

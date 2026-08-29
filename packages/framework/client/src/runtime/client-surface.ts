@@ -10,6 +10,7 @@ import { createMcpRuntime } from "./mcp-runtime";
 import type { RealRuntimeClientOptions } from "./options";
 import { createSelectionSurface } from "./provider-selection/selection";
 import { createSandboxRuntime } from "./sandbox-runtime";
+import { createTeamRuntime } from "./team-runtime";
 import { createCoreSurface } from "./session-execution/core";
 import { createLifecycleSurface } from "./session-execution/lifecycle";
 import { createManagementSurface } from "./session-execution/management";
@@ -39,7 +40,9 @@ export function createClientSurface(
     checkpointList: checkpoint.checkpointList,
     checkpointPreview: checkpoint.checkpointPreview,
     checkpointRollback: checkpoint.checkpointRollback,
+    workspaceDiff: checkpoint.workspaceDiff,
     ...createSandboxRuntime(ctx, options.episodeID),
+    ...createTeamRuntime(ctx),
     ...createSessionsSurface(ctx, options),
     ...createMcpRuntime(ctx, options.globalConfigPath),
     ...createExtensionsRuntime(ctx),

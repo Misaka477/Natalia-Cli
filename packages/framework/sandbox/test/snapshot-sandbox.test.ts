@@ -69,7 +69,7 @@ test("SnapshotSandboxManager checks the base out into each candidate worktree", 
     "export const base = false;\n",
   );
   expect(await manager.previewMerge("agent.1")).toEqual([
-    { kind: "modify", path: "src/index.ts" },
+    expect.objectContaining({ kind: "modify", path: "src/index.ts" }),
   ]);
 });
 

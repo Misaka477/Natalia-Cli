@@ -79,6 +79,25 @@ async function gitRaw(cwd: string, args: string[]): Promise<string> {
   return stdout;
 }
 
+function extractPatchForPath(rawDiff: string, path: string): string | undefined {
+  const sections = rawDiff.split(/(?=^diff --git )/m);
+  for (const section of sections) {
+    if (section.includes(`b/${path}`) || section.includes(`a/${path}`))
+      return section.trimEnd() + "\n";
+  }
+  return undefined;
+}
+
+function patchCounts(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions++;
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+  }
+  return { additions, deletions };
+}
+
 export class WorktreeSandboxManager extends WorkspaceSandboxManager {
   private lastKnownGood: string | undefined;
   private readonly hostRoot: string;
@@ -141,25 +160,46 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
    */
   override async previewMerge(id: string): Promise<SandboxChange[]> {
     const base = await this.baseFor(id);
-    const names = await git(this.hostRoot, [
+    const root = resolve(this["baseRoot"], id);
+    const names = await git(root, [
       "diff",
       "--name-status",
-      `${base}..candidate/${id}`,
+      base,
     ]);
+    const rawDiff = await gitRaw(root, [
+      "diff",
+      "--unified=3",
+      "--no-color",
+      base,
+    ]).catch(() => "");
     const changes: SandboxChange[] = [];
     for (const line of names.split("\n").filter(Boolean)) {
       const [kind, path, oldPath] = line.split("\t");
+      const patch = extractPatchForPath(rawDiff, path);
       if (kind === "D") {
-        changes.push({ kind: "delete" as SandboxDiffKind, path });
+        changes.push({
+          kind: "delete" as SandboxDiffKind,
+          path,
+          ...(patch ? { patch } : {}),
+          ...patchCounts(patch ?? ""),
+        });
         continue;
       }
       if (kind === "R") {
-        changes.push({ kind: "rename" as SandboxDiffKind, path, oldPath });
+        changes.push({
+          kind: "rename" as SandboxDiffKind,
+          path,
+          oldPath,
+          ...(patch ? { patch } : {}),
+          ...patchCounts(patch ?? ""),
+        });
         continue;
       }
       changes.push({
         kind: (kind === "M" ? "modify" : "add") as SandboxDiffKind,
         path,
+        ...(patch ? { patch } : {}),
+        ...patchCounts(patch ?? ""),
       });
     }
     return changes;

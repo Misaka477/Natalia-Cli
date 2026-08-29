@@ -515,6 +515,26 @@ export type NataliaSDK = {
   confirmedWorkspaceChanges(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["confirmedWorkspaceChanges"]>>>
   >;
+  /** Returns the object-store backed global workspace diff. */
+  workspaceDiff(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["workspaceDiff"]>>>
+  >;
+  /** Returns the git backed workspace diff for optional ref/worktree ranges. */
+  workspaceGitDiff(input?: {
+    from?: string;
+    to?: string;
+    path?: string;
+  }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["workspaceGitDiff"]>>>
+  >;
+  /** Lists branches, tags and worktrees for Git diff selection. */
+  gitRefs(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["gitRefs"]>>>
+  >;
+  /** Lists the current session's sandboxed sub-agent PRs. */
+  teamPRList(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["teamPRList"]>>>
+  >;
   registeredTools(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
   >;
@@ -947,6 +967,11 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     confirmedWorkspaceChanges: async () =>
       await call("observation.confirmed", {}),
+    workspaceDiff: async () => await call("workspace.diff", {}),
+    workspaceGitDiff: async (input) =>
+      await call("workspace.git.diff", input ?? {}),
+    gitRefs: async () => await call("git.refs", {}),
+    teamPRList: async () => await call("team.pr.list", {}),
     registeredTools: async () => await call("tools.registered", {}),
     projectionContributions: async () => await call("projections.list", {}),
     requestOverride: async (input) =>

@@ -1,5 +1,13 @@
 import { createSignal, For, Show, onMount } from "solid-js";
-import type { RuntimeClient, RuntimeNativeTerminalSession } from "@natalia/contracts";
+import type {
+  RuntimeCheckpoint,
+  RuntimeClient,
+  RuntimeGitRef,
+  RuntimeNativeTerminalSession,
+  RuntimeSandbox,
+  RuntimeTeamPR,
+} from "@natalia/contracts";
+import { NeuSelect } from "./NeuSelect";
 
 export type RightPanelTab = "review" | "terminal" | "browser" | "file";
 
@@ -64,47 +72,246 @@ export function RightPanel(props: RightPanelProps) {
     </aside>
   );
 }
+type ReviewSubTab = "git" | "sandbox" | "checkpoint";
+
+type DiffItem = {
+  id: string;
+  path: string;
+  operation: "added" | "modified" | "deleted" | "renamed";
+  additions?: number;
+  deletions?: number;
+  patch?: string;
+  before?: string;
+  after?: string;
+  oldPath?: string;
+};
+
+function toDiffItem(change: {
+  path: string;
+  operation?: "added" | "modified" | "deleted" | "renamed";
+  kind?: string;
+  oldPath?: string;
+  additions?: number;
+  deletions?: number;
+  patch?: string;
+  before?: string;
+  after?: string;
+}): DiffItem {
+  const operation =
+    change.operation ??
+    (change.kind === "add"
+      ? "added"
+      : change.kind === "delete"
+        ? "deleted"
+        : change.kind === "rename"
+          ? "renamed"
+          : "modified");
+  return {
+    id: change.path,
+    path: change.path,
+    operation,
+    ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+    ...(change.additions !== undefined ? { additions: change.additions } : {}),
+    ...(change.deletions !== undefined ? { deletions: change.deletions } : {}),
+    ...(change.patch ? { patch: change.patch } : {}),
+    ...(change.before ? { before: change.before } : {}),
+    ...(change.after ? { after: change.after } : {}),
+  };
+}
+
+function diffLines(patch?: string) {
+  if (!patch) return [];
+  const lines: Array<{
+    type: string;
+    sign: string;
+    text: string;
+    oldNo?: number;
+    newNo?: number;
+  }> = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let inHunk = false;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("diff --git")) {
+      inHunk = false;
+      oldLine = 0;
+      newLine = 0;
+      lines.push({ type: "is-header", sign: "", text: line });
+      continue;
+    }
+    if (line.startsWith("@@")) {
+      const match = line.match(
+        /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u,
+      );
+      if (match) {
+        oldLine = Number(match[1]);
+        newLine = Number(match[2]);
+      }
+      inHunk = true;
+      lines.push({ type: "is-header", sign: "", text: line });
+      continue;
+    }
+    if (line.startsWith("+++") || line.startsWith("---")) {
+      lines.push({ type: "is-header", sign: "", text: line });
+      continue;
+    }
+    if (!inHunk) {
+      lines.push({ type: "", sign: "", text: line });
+      continue;
+    }
+    if (line.startsWith("+")) {
+      lines.push({
+        type: "is-added",
+        sign: "+",
+        text: line.slice(1),
+        newNo: newLine++,
+      });
+      continue;
+    }
+    if (line.startsWith("-")) {
+      lines.push({
+        type: "is-removed",
+        sign: "-",
+        text: line.slice(1),
+        oldNo: oldLine++,
+      });
+      continue;
+    }
+    if (line.startsWith(" ")) {
+      lines.push({
+        type: "",
+        sign: " ",
+        text: line.slice(1),
+        oldNo: oldLine++,
+        newNo: newLine++,
+      });
+      continue;
+    }
+    lines.push({ type: "", sign: "", text: line });
+  }
+  return lines;
+}
+
+function statusFor(operation: string) {
+  if (operation === "added") return "A";
+  if (operation === "modified") return "M";
+  if (operation === "deleted") return "D";
+  if (operation === "renamed") return "R";
+  return "?";
+}
+
 export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
-  const [changes, setChanges] = createSignal<Array<{
-    id: string;
-    path: string;
-    operation: "added" | "modified" | "deleted" | "renamed";
-    origin: string;
-    health: string;
-    at: string;
-  }>>([]);
-  const [selectedPath, setSelectedPath] = createSignal<string | null>(null);
-  const [fileWidth, setFileWidth] = createSignal(180);
+  const [tab, setTab] = createSignal<ReviewSubTab>("git");
   const [loaded, setLoaded] = createSignal(false);
+  const [gitChanges, setGitChanges] = createSignal<DiffItem[]>([]);
+  const [gitSelected, setGitSelected] = createSignal<string | null>(null);
+  const [gitRefs, setGitRefs] = createSignal<RuntimeGitRef[]>([]);
+  const [gitFrom, setGitFrom] = createSignal("HEAD");
+  const [gitTo, setGitTo] = createSignal("WORKTREE");
+  const [sandboxes, setSandboxes] = createSignal<RuntimeSandbox[]>([]);
+  const [teamPRs, setTeamPRs] = createSignal<RuntimeTeamPR[]>([]);
+  const [selectedSandbox, setSelectedSandbox] = createSignal<string | null>(null);
+  const [sandboxChanges, setSandboxChanges] = createSignal<DiffItem[]>([]);
+  const [sandboxSelected, setSandboxSelected] = createSignal<string | null>(null);
+  const [checkpoints, setCheckpoints] = createSignal<RuntimeCheckpoint[]>([]);
+  const [selectedCheckpoint, setSelectedCheckpoint] = createSignal<string | null>(null);
+  const [checkpointChanges, setCheckpointChanges] = createSignal<DiffItem[]>([]);
+  const [checkpointSelected, setCheckpointSelected] = createSignal<string | null>(null);
+  const [fileWidth, setFileWidth] = createSignal(180);
 
   onMount(() => {
-    void (props.runtime?.confirmedWorkspaceChanges?.() ?? Promise.resolve([])).then(
-      (confirmed) => {
-        const mapped = (confirmed ?? []).map((change) => ({
-          id: change.id,
-          path: change.path,
-          operation: change.operation,
-          origin: change.origin,
-          health: change.health,
-          at: change.at,
-        }));
-        setChanges(mapped);
-        if (mapped.length) setSelectedPath(mapped[0]!.path);
-        setLoaded(true);
-      },
-    );
+    void (async () => {
+      const refs = (await props.runtime?.gitRefs?.()) ?? [];
+      setGitRefs(refs);
+      const currentBranch = refs.find(
+        (ref) => ref.kind === "branch" && ref.current,
+      )?.name;
+      if (currentBranch) setGitFrom(currentBranch);
+      await loadGit();
+      const sandboxList = (await props.runtime?.sandboxList?.()) ?? [];
+      const prList = (await props.runtime?.teamPRList?.()) ?? [];
+      setSandboxes(sandboxList);
+      setTeamPRs(prList);
+      const firstSandboxID =
+        prList[0]?.sandboxID ?? sandboxList[0]?.id ?? null;
+      if (firstSandboxID) {
+        setSelectedSandbox(firstSandboxID);
+        await loadSandboxDiff(firstSandboxID);
+      }
+      const checkpointList = (await props.runtime?.checkpointList?.()) ?? [];
+      setCheckpoints(checkpointList);
+      if (checkpointList.length) {
+        setSelectedCheckpoint(checkpointList[checkpointList.length - 1]!.id);
+        await loadCheckpointPreview(checkpointList[checkpointList.length - 1]!.id);
+      }
+      setLoaded(true);
+    })();
   });
 
-  const selectedFile = () =>
-    changes().find((change) => change.path === selectedPath());
-
-  function statusFor(operation: string) {
-    if (operation === "added") return "A";
-    if (operation === "modified") return "M";
-    if (operation === "deleted") return "D";
-    if (operation === "renamed") return "R";
-    return "?";
+  async function loadGit() {
+    try {
+      const git = await props.runtime?.workspaceGitDiff?.({
+        from: gitFrom(),
+        to: gitTo(),
+      });
+      if (git) {
+        const mapped = git.map(toDiffItem);
+        setGitChanges(mapped);
+        if (mapped.length) setGitSelected(mapped[0]!.path);
+        return;
+      }
+    } catch {
+      // Fall through to the object-store global diff.
+    }
+    const workspace = (await props.runtime?.workspaceDiff?.()) ?? [];
+    const mapped = workspace.map(toDiffItem);
+    setGitChanges(mapped);
+    if (mapped.length) setGitSelected(mapped[0]!.path);
   }
+
+  async function loadSandboxDiff(id: string) {
+    const changes = (await props.runtime?.sandboxDiff?.(id)) ?? [];
+    const mapped = changes.map(toDiffItem);
+    setSandboxChanges(mapped);
+    if (mapped.length) setSandboxSelected(mapped[0]!.path);
+  }
+
+  async function selectSandbox(id: string) {
+    setSelectedSandbox(id);
+    await loadSandboxDiff(id);
+  }
+
+  async function loadCheckpointPreview(id: string) {
+    const preview = await props.runtime?.checkpointPreview?.(id);
+    if (!preview) return;
+    const mapped = preview.changes.map(toDiffItem);
+    setCheckpointChanges(mapped);
+    if (mapped.length) setCheckpointSelected(mapped[0]!.path);
+  }
+
+  async function selectCheckpoint(id: string) {
+    setSelectedCheckpoint(id);
+    await loadCheckpointPreview(id);
+  }
+
+  const totalAdditions = () =>
+    changesForTab().reduce((sum, change) => sum + (change.additions ?? 0), 0);
+  const totalDeletions = () =>
+    changesForTab().reduce((sum, change) => sum + (change.deletions ?? 0), 0);
+  const changesForTab = () =>
+    tab() === "git"
+      ? gitChanges()
+      : tab() === "sandbox"
+        ? sandboxChanges()
+        : checkpointChanges();
+  const selectedForTab = () =>
+    tab() === "git"
+      ? gitSelected()
+      : tab() === "sandbox"
+        ? sandboxSelected()
+        : checkpointSelected();
+  const selectedFile = () =>
+    changesForTab().find((change) => change.path === selectedForTab());
 
   function startFileResize(event: PointerEvent) {
     event.preventDefault();
@@ -127,8 +334,122 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
     target.addEventListener("pointercancel", finish);
   }
 
+  function selectTab(next: ReviewSubTab) {
+    setTab(next);
+  }
+
   return (
     <div class="review-pane">
+      <div class="review-subtabs">
+        <button
+          type="button"
+          class="review-subtab"
+          data-active={tab() === "git"}
+          onClick={() => selectTab("git")}
+        >
+          Git
+        </button>
+        <button
+          type="button"
+          class="review-subtab"
+          data-active={tab() === "sandbox"}
+          onClick={() => selectTab("sandbox")}
+        >
+          Sandbox / Team
+        </button>
+        <button
+          type="button"
+          class="review-subtab"
+          data-active={tab() === "checkpoint"}
+          onClick={() => selectTab("checkpoint")}
+        >
+          Checkpoint
+        </button>
+      </div>
+      <Show when={tab() === "git"}>
+        <div class="review-git-ranges">
+          <NeuSelect
+            value={gitFrom()}
+            options={[
+              { value: "HEAD", label: "HEAD" },
+              ...gitRefs().map((ref) => ({
+                value: ref.name,
+                label: ref.kind === "worktree"
+                  ? `${ref.name} (worktree)`
+                  : `${ref.name} (${ref.kind})`,
+              })),
+            ]}
+            onChange={(value) => {
+              setGitFrom(value);
+              void loadGit();
+            }}
+          />
+          <span class="review-git-arrow">→</span>
+          <NeuSelect
+            value={gitTo()}
+            options={[
+              { value: "WORKTREE", label: "Working Tree" },
+              ...gitRefs().map((ref) => ({
+                value: ref.name,
+                label: ref.kind === "worktree"
+                  ? `${ref.name} (worktree)`
+                  : `${ref.name} (${ref.kind})`,
+              })),
+            ]}
+            onChange={(value) => {
+              setGitTo(value);
+              void loadGit();
+            }}
+          />
+        </div>
+      </Show>
+      <Show when={tab() === "sandbox" && teamPRs().length}>
+        <div class="review-section-label">Team PRs</div>
+        <div class="review-entity-list">
+          <For each={teamPRs()}>
+            {(pr) => (
+              <button
+                type="button"
+                class="review-entity-button"
+                data-active={selectedSandbox() === pr.sandboxID}
+                onClick={() => void selectSandbox(pr.sandboxID)}
+              >
+                {pr.id}
+                <span class="review-entity-count">{pr.status}</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={tab() === "sandbox" && sandboxes().length}>
+        <div class="review-entity-list">
+          <For each={sandboxes()}>
+            {(sandbox) => (
+              <button
+                type="button"
+                class="review-entity-button"
+                data-active={selectedSandbox() === sandbox.id}
+                onClick={() => void selectSandbox(sandbox.id)}
+              >
+                {sandbox.id}
+                <span class="review-entity-count">{sandbox.changedFiles}</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={tab() === "checkpoint" && checkpoints().length}>
+        <div class="review-entity-control">
+          <NeuSelect
+            value={selectedCheckpoint() ?? ""}
+            options={checkpoints().map((checkpoint) => ({
+              value: checkpoint.id,
+              label: `${checkpoint.id} · ${checkpoint.changes} changes · step ${checkpoint.step}`,
+            }))}
+            onChange={(value) => void selectCheckpoint(value)}
+          />
+        </div>
+      </Show>
       <div class="review-header">
         <div class="review-title">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -139,12 +460,12 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
             />
             <path d="M2 7H12" stroke="currentColor" stroke-width="1.2" />
           </svg>
-          <span>Changes</span>
+          <span>{tab() === "git" ? "Git Changes" : tab() === "sandbox" ? "Sandbox Changes" : "Checkpoint Changes"}</span>
         </div>
         <div class="review-meta">
-          <span class="review-count">{changes().length} files</span>
-          <span class="review-additions">+0</span>
-          <span class="review-deletions">-0</span>
+          <span class="review-count">{changesForTab().length} files</span>
+          <span class="review-additions">+{totalAdditions()}</span>
+          <span class="review-deletions">-{totalDeletions()}</span>
         </div>
       </div>
       <div class="review-body">
@@ -152,7 +473,7 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
           when={!loaded()}
           fallback={
             <Show
-              when={changes().length}
+              when={changesForTab().length}
               fallback={
                 <div class="review-empty">
                   <div class="review-empty-icon">
@@ -173,13 +494,19 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
             >
               <div class="review-files" data-narrow={fileWidth() < 170} style={{ width: `${fileWidth()}px` }}>
                 <div class="review-files-heading">Files changed</div>
-                <For each={changes()}>
+                <For each={changesForTab()}>
                   {(change) => (
                     <button
                       type="button"
                       class="review-file-row"
-                      data-active={selectedPath() === change.path}
-                      onClick={() => setSelectedPath(change.path)}
+                      data-active={selectedForTab() === change.path}
+                      onClick={() =>
+                        tab() === "git"
+                          ? setGitSelected(change.path)
+                          : tab() === "sandbox"
+                            ? setSandboxSelected(change.path)
+                            : setCheckpointSelected(change.path)
+                      }
                     >
                       <span
                         class={`review-file-status ${change.operation === "added" ? "is-added" : change.operation === "deleted" ? "is-deleted" : "is-modified"}`}
@@ -202,12 +529,42 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
                   <span class="review-diff-path">{selectedFile()?.path ?? ""}</span>
                 </div>
                 <div class="review-diff-content">
-                  <div class="review-empty">
-                    <div class="review-empty-title">暂无 diff 内容</div>
-                    <div class="review-empty-desc">
-                      当前变更还没有可展示的行级差异，后续可接 sandboxDiff / checkpointPreview。
-                    </div>
-                  </div>
+                  <Show
+                    when={selectedFile()?.patch || selectedFile()?.before || selectedFile()?.after}
+                    fallback={
+                      <div class="review-empty">
+                        <div class="review-empty-title">暂无内容级 diff</div>
+                        <div class="review-empty-desc">
+                          当前变更只有文件级信息，没有可展示的行级差异。
+                        </div>
+                      </div>
+                    }
+                  >
+                    <Show when={selectedFile()?.patch}>
+                      <For each={diffLines(selectedFile()!.patch)}>
+                        {(line) => (
+                          <div class={`review-diff-line ${line.type}`}>
+                            <span class="review-diff-pos">{line.oldNo ?? ""}</span>
+                            <span class="review-diff-pos">{line.newNo ?? ""}</span>
+                            <span class="review-diff-sign">{line.sign}</span>
+                            <span class="review-diff-text">{line.text}</span>
+                          </div>
+                        )}
+                      </For>
+                    </Show>
+                    <Show when={!selectedFile()?.patch && selectedFile()?.before}>
+                      <div class="review-diff-raw">
+                        <div class="review-diff-raw-title">Before</div>
+                        <pre>{selectedFile()!.before}</pre>
+                      </div>
+                    </Show>
+                    <Show when={!selectedFile()?.patch && selectedFile()?.after}>
+                      <div class="review-diff-raw">
+                        <div class="review-diff-raw-title">After</div>
+                        <pre>{selectedFile()!.after}</pre>
+                      </div>
+                    </Show>
+                  </Show>
                 </div>
               </div>
             </Show>

@@ -163,6 +163,11 @@ export type CheckpointPreview = {
     path: string;
     oldPath?: string;
     mode?: string;
+    patch?: string;
+    before?: string;
+    after?: string;
+    additions?: number;
+    deletions?: number;
   }>;
   context: {
     truncateMessages: number;
@@ -219,6 +224,39 @@ export type RuntimeSandboxChange = {
   path: string;
   oldPath?: string;
   mode?: string;
+  patch?: string;
+  before?: string;
+  after?: string;
+  additions?: number;
+  deletions?: number;
+};
+
+export type RuntimeWorkspaceDiffChange = {
+  path: string;
+  operation: "added" | "modified" | "deleted" | "renamed";
+  oldPath?: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+  before?: string;
+  after?: string;
+  mode?: string;
+};
+
+export type RuntimeTeamPR = {
+  id: string;
+  sandboxID: string;
+  status: string;
+  task: string;
+  result?: string;
+  diff: RuntimeWorkspaceDiffChange[];
+};
+
+export type RuntimeGitRef = {
+  name: string;
+  kind: "branch" | "tag" | "worktree";
+  path?: string;
+  current?: boolean;
 };
 export type RuntimeSandboxResource = {
   id: string;
@@ -1758,6 +1796,33 @@ export type RuntimeClient = {
       at: string;
     }>
   >;
+  /**
+   * Returns the workspace's current changes against the earliest complete
+   * checkpoint (the object-store based global diff). Unlike
+   * `confirmedWorkspaceChanges`, this covers changes from every source,
+   * including manual edits and edits made before the runtime noticed them.
+   */
+  workspaceDiff?(): Promise<RuntimeWorkspaceDiffChange[]>;
+  /**
+   * Returns the git-backed workspace diff (`git status` + `git diff`). This is
+   * the real VCS view and is only available inside a git repository; non-git
+   * workspaces should use `workspaceDiff`.
+   */
+  workspaceGitDiff?(input?: {
+    from?: string;
+    to?: string;
+    path?: string;
+  }): Promise<RuntimeWorkspaceDiffChange[]>;
+  /**
+   * Lists git refs (branches, tags and worktrees) for the Git diff tab.
+   */
+  gitRefs?(): Promise<RuntimeGitRef[]>;
+  /**
+   * Lists the current session's sandboxed sub-agent PRs for read-only display.
+   * Merging/approval remains model-driven through `team_review`; this surface
+   * only lets a UI observe the PR queue.
+   */
+  teamPRList?(): Promise<RuntimeTeamPR[]>;
   dispose?(): Promise<void>;
   /**
    * Whether config could be applied right now. Advisory only: a turn can start

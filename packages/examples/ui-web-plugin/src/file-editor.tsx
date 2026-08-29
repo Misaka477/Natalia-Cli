@@ -1,6 +1,28 @@
 import { createSignal, For, Show, onMount } from "solid-js";
 import type { UiTransport } from "@natalia/ui-host";
 import type { RuntimeClient } from "@natalia/contracts";
+import { Compartment } from "@codemirror/state";
+import { EditorView, lineNumbers, highlightActiveLine } from "@codemirror/view";
+import { basicSetup } from "codemirror";
+import { StreamLanguage, syntaxHighlighting, HighlightStyle, foldGutter } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+import { javascript } from "@codemirror/lang-javascript";
+import { json } from "@codemirror/lang-json";
+import { html } from "@codemirror/lang-html";
+import { css } from "@codemirror/lang-css";
+import { markdown } from "@codemirror/lang-markdown";
+import { python } from "@codemirror/lang-python";
+import { cpp } from "@codemirror/lang-cpp";
+import { rust } from "@codemirror/lang-rust";
+import { go } from "@codemirror/lang-go";
+import { sql } from "@codemirror/lang-sql";
+import { yaml } from "@codemirror/lang-yaml";
+import { autocompletion } from "@codemirror/autocomplete";
+import { search, highlightSelectionMatches } from "@codemirror/search";
+import { lintGutter } from "@codemirror/lint";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { cmake } from "@codemirror/legacy-modes/mode/cmake";
+import type { Extension } from "@codemirror/state";
 
 type FileNode = {
   name: string;
@@ -10,162 +32,9 @@ type FileNode = {
   children?: FileNode[];
 };
 
-const initialTree: FileNode[] = [
-  {
-    name: "natalia-cli",
-    path: ".",
-    type: "dir",
-    children: [
-      {
-        name: "apps",
-        path: "apps",
-        type: "dir",
-        children: [
-          {
-            name: "tui",
-            path: "apps/tui",
-            type: "dir",
-            children: [
-              {
-                name: "src",
-                path: "apps/tui/src",
-                type: "dir",
-                children: [
-                  { name: "app.tsx", path: "apps/tui/src/app.tsx", type: "file", status: "M" },
-                  { name: "runtime.tsx", path: "apps/tui/src/runtime.tsx", type: "file", status: "M" },
-                  { name: "main.tsx", path: "apps/tui/src/main.tsx", type: "file" },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-      {
-        name: "packages",
-        path: "packages",
-        type: "dir",
-        children: [
-          {
-            name: "examples",
-            path: "packages/examples",
-            type: "dir",
-            children: [
-              {
-                name: "ui-web-plugin",
-                path: "packages/examples/ui-web-plugin",
-                type: "dir",
-                children: [
-                  { name: "src", path: "packages/examples/ui-web-plugin/src", type: "dir", children: [] },
-                  { name: "package.json", path: "packages/examples/ui-web-plugin/package.json", type: "file" },
-                ],
-              },
-            ],
-          },
-          {
-            name: "core",
-            path: "packages/core",
-            type: "dir",
-            children: [],
-          },
-        ],
-      },
-      { name: "README.md", path: "README.md", type: "file" },
-      { name: "tsconfig.json", path: "tsconfig.json", type: "file" },
-      { name: "package.json", path: "package.json", type: "file" },
-    ],
-  },
-];
+const initialTree: FileNode[] = [];
 
-const initialContents: Record<string, string> = {
-  "apps/tui/src/app.tsx": `import { createSignal, Show } from "solid-js";
-import { Composer } from "./components/Composer";
-import { Transcript } from "./components/Transcript";
-
-export function App() {
-  const [messages, setMessages] = createSignal<string[]>([]);
-  const [draft, setDraft] = createSignal("");
-
-  function send() {
-    const text = draft().trim();
-    if (!text) return;
-    setMessages((prev) => [...prev, text]);
-    setDraft("");
-  }
-
-  return (
-    <div class="app-shell">
-      <Transcript messages={messages()} />
-      <Composer value={draft()} onInput={setDraft} onSubmit={send} />
-    </div>
-  );
-}
-`,
-  "apps/tui/src/runtime.tsx": `import { createWorkerRuntimeClient } from "@natalia/client";
-
-export type Runtime = ReturnType<typeof createWorkerRuntimeClient>;
-
-export function createRuntime(): Runtime {
-  return createWorkerRuntimeClient({
-    worker: () => new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }),
-  });
-}
-`,
-  "apps/tui/src/main.tsx": `import { createRoot } from "solid-js";
-import { App } from "./app";
-import "./styles.css";
-
-createRoot(() => <App />);
-`,
-  "packages/examples/ui-web-plugin/package.json": `{
-  "name": "@natalia/example-ui-web-plugin",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@natalia/ui-host": "workspace:*",
-    "@natalia/view-store": "workspace:*",
-    "solid-js": "1.9.12"
-  }
-}
-`,
-  "README.md": `# Natalia
-
-A local-first agent runtime.
-
-## Features
-
-- Multi-agent collaboration
-- Interactive terminal
-- Self-modification
-- Checkpoints and rollback
-
-## Development
-
-\`\`\`bash
-bun install
-bun run dev
-\`\`\`
-`,
-  "tsconfig.json": `{
-  "compilerOptions": {
-    "strict": true,
-    "target": "ES2022",
-    "module": "ESNext"
-  }
-}
-`,
-  "package.json": `{
-  "name": "natalia-workspace",
-  "version": "0.0.0-m13",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
-}
-`,
-};
-
+const initialContents: Record<string, string> = {};
 
 function buildTree(entries: Array<{ path: string; type: "file" | "directory" }>): FileNode[] {
   const root: FileNode = { name: ".", path: ".", type: "dir", children: [] };
@@ -188,6 +57,69 @@ function buildTree(entries: Array<{ path: string; type: "file" | "directory" }>)
   return root.children ?? [];
 }
 
+const neuLightTheme = EditorView.theme(
+  {
+    "&": {
+      backgroundColor: "transparent",
+      color: "var(--neu-text)",
+    },
+    ".cm-content": {
+      caretColor: "var(--neu-text)",
+      fontFamily: "var(--neu-font-mono)",
+    },
+    ".cm-gutters": {
+      backgroundColor: "transparent",
+      color: "var(--neu-muted)",
+      border: "none",
+    },
+    ".cm-activeLine": {
+      backgroundColor: "rgba(143,183,176,0.08)",
+    },
+    ".cm-activeLineGutter": {
+      backgroundColor: "rgba(143,183,176,0.08)",
+    },
+    ".cm-selectionBackground": {
+      backgroundColor: "rgba(143,183,176,0.22) !important",
+    },
+    ".cm-cursor": {
+      borderLeftColor: "var(--neu-accent)",
+    },
+  },
+  { dark: false },
+);
+
+const neuLightHighlight = HighlightStyle.define([
+  { tag: tags.comment, color: "var(--neu-muted)", fontStyle: "italic" },
+  { tag: [tags.keyword, tags.operatorKeyword], color: "#b85e9c", fontWeight: "600" },
+  { tag: [tags.string, tags.special(tags.string)], color: "#2e8b57" },
+  { tag: [tags.number, tags.bool, tags.null], color: "#b06e2c" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#2a7ab0" },
+  { tag: [tags.className, tags.typeName], color: "#7a4bb5" },
+  { tag: [tags.propertyName, tags.attributeName], color: "#2a7ab0" },
+  { tag: [tags.definition(tags.variableName), tags.variableName], color: "var(--neu-text)" },
+]);
+
+function languageForPath(path: string): Extension {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (["ts", "tsx", "js", "jsx", "mjs", "cjs"].includes(ext))
+    return javascript({ typescript: ext.includes("ts") });
+  if (["json", "jsonc"].includes(ext)) return json();
+  if (["html", "htm", "vue", "svelte"].includes(ext)) return html();
+  if (["css", "scss", "less"].includes(ext)) return css();
+  if (["c", "h", "cpp", "cc", "cxx", "hpp", "hh"].includes(ext)) return cpp();
+  if (["rs"].includes(ext)) return rust();
+  if (["go"].includes(ext)) return go();
+  if (["sql"].includes(ext)) return sql();
+  if (["yml", "yaml"].includes(ext)) return yaml();
+  if (["md", "markdown"].includes(ext)) return markdown();
+  if (["py"].includes(ext)) return python();
+  if (["sh", "bash", "zsh"].includes(ext))
+    return StreamLanguage.define(shell);
+  if (["cmake", "txt"].includes(ext) && path.toLowerCase().includes("cmake"))
+    return StreamLanguage.define(cmake);
+  return [];
+}
+
 export function FileEditor(props: {
   transport?: UiTransport;
   runtime?: RuntimeClient;
@@ -198,9 +130,44 @@ export function FileEditor(props: {
   const [preview, setPreview] = createSignal(false);
   const [fileWidth, setFileWidth] = createSignal(140);
   const [tree, setTree] = createSignal<FileNode[]>(initialTree);
+  const [entries, setEntries] = createSignal<Array<{ path: string; type: "file" | "directory" }>>([]);
+  const [loadedDirs, setLoadedDirs] = createSignal<Set<string>>(new Set());
+  let cmContainer: HTMLDivElement | undefined;
+  let cmView: EditorView | undefined;
+  const languageCompartment = new Compartment();
   onMount(() => {
+    cmView = new EditorView({
+      doc: selectedContent(),
+      extensions: [
+        basicSetup,
+        lineNumbers(),
+        highlightActiveLine(),
+        autocompletion(),
+        search({ top: true }),
+        highlightSelectionMatches(),
+        lintGutter(),
+        foldGutter(),
+        neuLightTheme,
+        syntaxHighlighting(neuLightHighlight),
+        languageCompartment.of(languageForPath(selectedPath())),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            const text = update.state.doc.toString();
+            const path = selectedPath();
+            if (path) setContents((prev) => ({ ...prev, [path]: text }));
+          }
+        }),
+        EditorView.domEventHandlers({
+          blur: () => {
+            void saveCurrentFile();
+          },
+        }),
+      ],
+      parent: cmContainer!,
+    });
     void props.runtime?.workspaceList?.().then((page) => {
       if (page?.entries?.length) {
+        setEntries(page.entries);
         setTree(buildTree(page.entries));
         if (!selectedPath()) {
           const firstFile = page.entries.find(
@@ -212,13 +179,33 @@ export function FileEditor(props: {
     });
   });
 
-  function toggle(path: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
+  async function toggle(path: string) {
+    const next = new Set(expanded());
+    if (next.has(path)) {
+      next.delete(path);
+      setExpanded(next);
+      return;
+    }
+    next.add(path);
+    setExpanded(next);
+    if (!loadedDirs().has(path)) {
+      const loaded = new Set(loadedDirs());
+      loaded.add(path);
+      setLoadedDirs(loaded);
+      try {
+        const page = await props.runtime?.workspaceList?.({ path });
+        if (page?.entries?.length) {
+          const merged = new Map(entries().map((entry) => [entry.path, entry]));
+          for (const entry of page.entries) merged.set(entry.path, entry);
+          const nextEntries = [...merged.values()];
+          setEntries(nextEntries);
+          setTree(buildTree(nextEntries));
+        }
+      } catch {
+        // Keep the directory expanded even when listing fails; the tree will
+        // simply show no children instead of pretending content exists.
+      }
+    }
   }
 
   function startFileResize(event: PointerEvent) {
@@ -254,6 +241,7 @@ export function FileEditor(props: {
         (bytes) => {
           const text = new TextDecoder().decode(bytes);
           setContents((prev) => ({ ...prev, [path]: text }));
+          updateEditor(path, text);
         },
         () => undefined,
       );
@@ -265,6 +253,7 @@ export function FileEditor(props: {
           ? new TextDecoder().decode(Uint8Array.from(atob(result.content), (ch) => ch.charCodeAt(0)))
           : result.content;
         setContents((prev) => ({ ...prev, [path]: text }));
+        updateEditor(path, text);
       },
       () => undefined,
     );
@@ -292,14 +281,21 @@ export function FileEditor(props: {
     return html;
   }
 
-  function lineCount() {
-    return selectedContent().split("\n").length;
+  function updateEditor(path: string, text: string) {
+    if (!cmView) return;
+    cmView.dispatch({
+      effects: languageCompartment.reconfigure(languageForPath(path)),
+    });
+    cmView.dispatch({
+      changes: {
+        from: 0,
+        to: cmView.state.doc.length,
+        insert: text,
+      },
+    });
   }
 
-  function setContent(value: string) {
-    if (!selectedPath()) return;
-    setContents((prev) => ({ ...prev, [selectedPath()!]: value }));
-  }
+
 
   async function saveCurrentFile() {
     const path = selectedPath();
@@ -337,7 +333,7 @@ export function FileEditor(props: {
                   type="button"
                   class="file-tree-item"
                   style={{ "padding-left": `${depth * 16 + 8}px` }}
-                  onClick={() => toggle(item.path)}
+                  onClick={() => void toggle(item.path)}
                 >
                   <svg
                     class="file-tree-chevron"
@@ -486,7 +482,14 @@ export function FileEditor(props: {
             <For each={breadcrumbs()}>
               {(part, index) => (
                 <>
-                  <span class="neu-file-breadcrumb">{part.split("/").pop()}</span>
+                  <button
+                    type="button"
+                    class="neu-file-breadcrumb"
+                    disabled={index() === breadcrumbs().length - 1}
+                    onClick={() => void toggle(part)}
+                  >
+                    {part.split("/").pop()}
+                  </button>
                   <Show when={index() < breadcrumbs().length - 1}>
                     <span class="neu-file-breadcrumb-separator">›</span>
                   </Show>
@@ -498,18 +501,12 @@ export function FileEditor(props: {
             {preview() && (selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")) ? (
               <div class="neu-markdown-preview" innerHTML={renderMarkdown(selectedContent())} />
             ) : (
-              <>
-                <div class="neu-line-numbers">
-                  {Array.from({ length: lineCount() }, (_, index) => index + 1).join("\n")}
-                </div>
-                <textarea
-                  class="neu-file-textarea"
-                  value={selectedContent()}
-                  spellcheck={false}
-                  onInput={(event) => setContent(event.currentTarget.value)}
-                  onBlur={saveCurrentFile}
-                />
-              </>
+              <div
+                class="neu-file-codemirror"
+                ref={(element) => {
+                  cmContainer = element;
+                }}
+              />
             )}
           </div>
         </div>

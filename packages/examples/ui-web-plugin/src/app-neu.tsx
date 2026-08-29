@@ -38,6 +38,11 @@ const MAX_SIDEBAR_WIDTH = 360;
 const MIN_RIGHT_WIDTH = 440;
 const MAX_RIGHT_WIDTH = 560;
 
+function rightPanelMaxWidth(): number {
+  if (typeof window === "undefined") return MAX_RIGHT_WIDTH;
+  return Math.max(MIN_RIGHT_WIDTH, Math.floor(window.innerWidth / 3));
+}
+
 function StatusDot(props: { status: string }) {
   return <span class="neu-status-dot" data-status={props.status} title={props.status} />;
 }
@@ -149,7 +154,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   );
   const [rightTab, setRightTab] = createSignal<RightTab>("diff");
   const [leftWidth, setLeftWidth] = createSignal(240);
-  const [rightWidth, setRightWidth] = createSignal(440);
+  const [rightWidth, setRightWidth] = createSignal(
+    typeof window === "undefined"
+      ? 440
+      : Math.max(MIN_RIGHT_WIDTH, Math.floor(window.innerWidth / 3)),
+  );
   const [leftVisible, setLeftVisible] = createSignal(true);
   const [rightVisible, setRightVisible] = createSignal(true);
   const [mainDraft, setMainDraft] = createSignal("");
@@ -761,7 +770,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const startWidth = rightWidth();
     const move = (next: PointerEvent) =>
       setRightWidth(
-        Math.max(MIN_RIGHT_WIDTH, Math.min(MAX_RIGHT_WIDTH, startWidth - (next.clientX - startX))),
+        Math.max(
+          MIN_RIGHT_WIDTH,
+          Math.min(rightPanelMaxWidth(), startWidth - (next.clientX - startX)),
+        ),
       );
     const finish = (next: PointerEvent) => {
       target.releasePointerCapture?.(next.pointerId);

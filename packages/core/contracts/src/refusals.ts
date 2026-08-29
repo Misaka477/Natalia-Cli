@@ -533,6 +533,22 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "reconciles watcher hints and returns the confirmed changes; not written to the Work Graph (Phase 4)",
   },
+  workspaceDiff: {
+    refusal: "none",
+    note: "pure read of the object-store backed workspace diff; may include file content from the shared object library",
+  },
+  workspaceGitDiff: {
+    refusal: "none",
+    note: "pure read of git status and git diff; may include file content from the working tree",
+  },
+  gitRefs: {
+    refusal: "none",
+    note: "pure read of git branches, tags and worktrees",
+  },
+  teamPRList: {
+    refusal: "none",
+    note: "pure read of sandboxed sub-agent PR list; merging remains model-driven team_review",
+  },
   registeredTools: { refusal: "none", note: "pure read" },
   requestOverride: {
     refusal: "value",

@@ -85,6 +85,10 @@ export const WORKER_ROUTE_MEMBERS = {
   "checkpoint.list": "checkpointList",
   "checkpoint.preview": "checkpointPreview",
   "checkpoint.rollback": "checkpointRollback",
+  "workspace.diff": "workspaceDiff",
+  "workspace.git.diff": "workspaceGitDiff",
+  "team.pr.list": "teamPRList",
+  "git.refs": "gitRefs",
   "session.list": "sessionList",
   "session.touch": "sessionTouch",
   "session.rename": "sessionRename",
@@ -182,6 +186,10 @@ type WorkerRequest = {
     | "checkpoint.list"
     | "checkpoint.preview"
     | "checkpoint.rollback"
+    | "workspace.diff"
+    | "workspace.git.diff"
+    | "team.pr.list"
+    | "git.refs"
     | "session.list"
     | "session.touch"
     | "session.rename"
@@ -648,6 +656,26 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["checkpointList"]>>
       >;
     },
+    async workspaceDiff() {
+      return (await request("workspace.diff")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceDiff"]>>
+      >;
+    },
+    async workspaceGitDiff(input) {
+      return (await request("workspace.git.diff", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceGitDiff"]>>
+      >;
+    },
+    async gitRefs() {
+      return (await request("git.refs")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["gitRefs"]>>
+      >;
+    },
+    async teamPRList() {
+      return (await request("team.pr.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["teamPRList"]>>
+      >;
+    },
     async checkpointPreview(id) {
       return (await request("checkpoint.preview", id)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["checkpointPreview"]>>
@@ -1071,6 +1099,16 @@ export async function handleWorkerRequest(
     return await client.nativeTerminalEndSecureInput?.(request.value as string);
   if (request.method === "checkpoint.list")
     return await client.checkpointList?.();
+  if (request.method === "workspace.diff")
+    return await client.workspaceDiff?.();
+  if (request.method === "workspace.git.diff")
+    return await client.workspaceGitDiff?.(
+      request.value as { from?: string; to?: string; path?: string } | undefined,
+    );
+  if (request.method === "git.refs")
+    return await client.gitRefs?.();
+  if (request.method === "team.pr.list")
+    return await client.teamPRList?.();
   if (request.method === "checkpoint.preview")
     return await client.checkpointPreview?.(request.value as string);
   if (request.method === "checkpoint.rollback")

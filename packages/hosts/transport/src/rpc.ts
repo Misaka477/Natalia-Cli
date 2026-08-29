@@ -221,6 +221,10 @@ export const RPC_ROUTE_MEMBERS = {
   "drift.evaluate": "evaluateDrift",
   "drift.acknowledge": "acknowledgeDriftFinding",
   "observation.confirmed": "confirmedWorkspaceChanges",
+  "workspace.diff": "workspaceDiff",
+  "workspace.git.diff": "workspaceGitDiff",
+  "git.refs": "gitRefs",
+  "team.pr.list": "teamPRList",
   "tools.registered": "registeredTools",
   "constitution.override.request": "requestOverride",
   "constitution.override.approve": "approveOverride",
@@ -1752,6 +1756,39 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.confirmedWorkspaceChanges?.(),
+      };
+    }
+    if (body.method === "workspace.diff") {
+      optionsGuard(client, "workspaceDiff");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceDiff?.(),
+      };
+    }
+    if (body.method === "workspace.git.diff") {
+      optionsGuard(client, "workspaceGitDiff");
+      const input = body.params as { from?: string; to?: string; path?: string } | undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceGitDiff?.(input),
+      };
+    }
+    if (body.method === "git.refs") {
+      optionsGuard(client, "gitRefs");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.gitRefs?.(),
+      };
+    }
+    if (body.method === "team.pr.list") {
+      optionsGuard(client, "teamPRList");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.teamPRList?.(),
       };
     }
     if (body.method === "tools.registered") {

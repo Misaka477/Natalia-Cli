@@ -26,6 +26,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     checkpointList,
     checkpointPreview,
     checkpointRollback,
+    workspaceDiff,
   };
 
   async function requireInitializedController() {
@@ -62,6 +63,13 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
   async function checkpointPreview(id: string) {
     const { controller } = await requireInitializedController();
     return await controller.preview(id);
+  }
+
+  async function workspaceDiff(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeServiceClient["workspaceDiff"]>>>
+  > {
+    const { controller } = await requireInitializedController();
+    return await controller.get().workspaceDiff();
   }
 
   async function checkpointRollback(input: { id: string; dryRun?: boolean }) {

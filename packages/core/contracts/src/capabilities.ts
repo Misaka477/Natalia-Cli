@@ -129,6 +129,9 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "workspaceRead",
     "workspaceWrite",
     "workspaceGlob",
+    "workspaceDiff",
+    "workspaceGitDiff",
+    "gitRefs",
     "workspaceRoots",
     "workspaceAdd",
     "workspaceRemove",
@@ -163,6 +166,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sandboxMerge",
     "sandboxDelete",
     "sandboxResourceStop",
+    "teamPRList",
   ],
   /** Managing sessions as durable records. */
   sessions: [

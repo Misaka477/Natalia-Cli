@@ -34,6 +34,7 @@ import type {
   CheckpointPreview,
   CheckpointResourcePolicy,
   RuntimeEvent,
+  RuntimeWorkspaceDiffChange,
   SessionID,
 } from "@natalia/contracts";
 import type { ContextLedger, DurableContextCheckpoint } from "./context";
@@ -358,12 +359,16 @@ export class CheckpointStore {
     this.assertAvailable();
     const target = await this.get(id);
     if (!target) throw new Error(`checkpoint not found: ${id}`);
-    const current = await this.captureManifest({ writeObjects: false });
+    const current = await this.captureManifest();
     const contextStatus = context.journalStatus();
     const preview: CheckpointPreview = {
       checkpointID: target.id,
       dryRun,
-      changes: diffManifests(current, target.manifest),
+      changes: await this.previewChangesWithDiff(
+        current,
+        target.manifest,
+        diffManifests(current, target.manifest),
+      ),
       context: {
         truncateMessages: Math.max(
           0,
@@ -386,6 +391,113 @@ export class CheckpointStore {
     };
     this.emit({ type: "rollback.previewed", preview });
     return preview;
+  }
+
+  /**
+   * Returns a global object-store diff from the earliest complete checkpoint to
+   * the current workspace. This is the "own diff" source used by the review
+   * UI before git integration: it sees every change since the checkpoint,
+   * regardless of who made it.
+   */
+  async workspaceDiff(): Promise<RuntimeWorkspaceDiffChange[]> {
+    this.assertAvailable();
+    const records = await this.list();
+    const baseline = records.find((record) => record.complete);
+    if (!baseline) return [];
+    const current = await this.captureManifest();
+    const changes = diffManifests(baseline.manifest, current);
+    const result: RuntimeWorkspaceDiffChange[] = [];
+    for (const change of changes) {
+      const oldEntry =
+        baseline.manifest.entries[change.oldPath ?? change.path] ??
+        (change.oldPath
+          ? baseline.manifest.entries[change.oldPath]
+          : undefined);
+      const newEntry = current.entries[change.path];
+      const oldContent = oldEntry?.objectHash
+        ? await this.objects
+            .get(oldEntry.objectHash)
+            .then((buffer) => buffer.toString("utf8"))
+            .catch(() => undefined)
+        : undefined;
+      const newContent = newEntry?.objectHash
+        ? await this.objects
+            .get(newEntry.objectHash)
+            .then((buffer) => buffer.toString("utf8"))
+            .catch(() => undefined)
+        : undefined;
+      const operation =
+        change.kind === "add"
+          ? "added"
+          : change.kind === "delete"
+            ? "deleted"
+            : change.kind === "rename"
+              ? "renamed"
+              : "modified";
+      const text = diffText(change.path, oldContent, newContent);
+      if (oldContent === undefined && newContent === undefined) {
+        result.push({
+          path: change.path,
+          operation,
+          ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+          additions: 0,
+          deletions: 0,
+          ...(change.mode ? { mode: change.mode } : {}),
+        });
+        continue;
+      }
+      result.push({
+        path: change.path,
+        operation,
+        ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+        additions: text.additions,
+        deletions: text.deletions,
+        ...(text.patch ? { patch: text.patch } : {}),
+        ...(oldContent !== undefined ? { before: oldContent } : {}),
+        ...(newContent !== undefined ? { after: newContent } : {}),
+        ...(change.mode ? { mode: change.mode } : {}),
+      });
+    }
+    return result;
+  }
+
+  private async previewChangesWithDiff(
+    current: WorkspaceManifest,
+    target: WorkspaceManifest,
+    changes: CheckpointChange[],
+  ): Promise<CheckpointPreview["changes"]> {
+    const result: CheckpointPreview["changes"] = [];
+    for (const change of changes) {
+      const fromEntry =
+        current.entries[change.oldPath ?? change.path] ??
+        (change.oldPath ? current.entries[change.oldPath] : undefined);
+      const toEntry = target.entries[change.path];
+      const beforeContent = fromEntry?.objectHash
+        ? await this.objects
+            .get(fromEntry.objectHash)
+            .then((buffer) => buffer.toString("utf8"))
+            .catch(() => undefined)
+        : undefined;
+      const afterContent = toEntry?.objectHash
+        ? await this.objects
+            .get(toEntry.objectHash)
+            .then((buffer) => buffer.toString("utf8"))
+            .catch(() => undefined)
+        : undefined;
+      const text = diffText(change.path, beforeContent, afterContent);
+      result.push({
+        kind: change.kind,
+        path: change.path,
+        ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+        ...(change.mode ? { mode: change.mode } : {}),
+        additions: text.additions,
+        deletions: text.deletions,
+        ...(text.patch ? { patch: text.patch } : {}),
+        ...(beforeContent !== undefined ? { before: beforeContent } : {}),
+        ...(afterContent !== undefined ? { after: afterContent } : {}),
+      });
+    }
+    return result;
   }
 
   async rollbackTo(
@@ -781,6 +893,132 @@ export async function runCheckpointCommand(
     return { ok: true, output: formatRollbackPreview(preview) };
   }
   return { ok: false, output: `unknown checkpoint command: ${name}` };
+}
+
+type DiffLineOp =
+  | { type: "equal"; text: string }
+  | { type: "delete"; text: string }
+  | { type: "insert"; text: string };
+
+function diffText(
+  path: string,
+  oldText: string | undefined,
+  newText: string | undefined,
+): { additions: number; deletions: number; patch?: string } {
+  const before = oldText ?? "";
+  const after = newText ?? "";
+  const a = before.endsWith("\n")
+    ? before.slice(0, -1).split("\n")
+    : before
+      ? before.split("\n")
+      : [];
+  const b = after.endsWith("\n")
+    ? after.slice(0, -1).split("\n")
+    : after
+      ? after.split("\n")
+      : [];
+  if (a.length === 0 && b.length === 0) return { additions: 0, deletions: 0 };
+  const ops = diffLineOps(a, b);
+  let additions = 0;
+  let deletions = 0;
+  for (const op of ops) {
+    if (op.type === "insert") additions++;
+    if (op.type === "delete") deletions++;
+  }
+  if (additions === 0 && deletions === 0) return { additions: 0, deletions: 0 };
+  return {
+    additions,
+    deletions,
+    patch: renderUnifiedPatch(path, ops),
+  };
+}
+
+function renderUnifiedPatch(path: string, ops: DiffLineOp[]): string {
+  const entries: Array<{
+    op: DiffLineOp;
+    oldLine: number;
+    newLine: number;
+  }> = [];
+  let oldLine = 1;
+  let newLine = 1;
+  for (const op of ops) {
+    entries.push({ op, oldLine, newLine });
+    if (op.type !== "insert") oldLine++;
+    if (op.type !== "delete") newLine++;
+  }
+  const changeIndexes = entries.flatMap((entry, index) =>
+    entry.op.type === "equal" ? [] : [index],
+  );
+  if (!changeIndexes.length) return "";
+  const context = 3;
+  const ranges: Array<[number, number]> = [];
+  for (const index of changeIndexes) {
+    const start = Math.max(0, index - context);
+    const end = Math.min(entries.length - 1, index + context);
+    const last = ranges.at(-1);
+    if (last && start <= last[1] + 1) last[1] = Math.max(last[1], end);
+    else ranges.push([start, end]);
+  }
+  const lines: string[] = [`--- a/${path}`, `+++ b/${path}`];
+  for (const [start, end] of ranges) {
+    const first = entries[start]!;
+    const slice = entries.slice(start, end + 1);
+    const oldCount = slice.filter((entry) => entry.op.type !== "insert").length;
+    const newCount = slice.filter((entry) => entry.op.type !== "delete").length;
+    lines.push(
+      `@@ -${first.oldLine},${oldCount} +${first.newLine},${newCount} @@`,
+    );
+    for (const entry of slice) {
+      if (entry.op.type === "insert") lines.push(`+${entry.op.text}`);
+      else if (entry.op.type === "delete") lines.push(`-${entry.op.text}`);
+      else lines.push(` ${entry.op.text}`);
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+function diffLineOps(a: string[], b: string[]): DiffLineOp[] {
+  // A practical LCS line diff. Files larger than the guard fall back to a
+  // whole-file block diff; the object store and UI still get usable output.
+  const maxLines = 2000;
+  if (a.length > maxLines || b.length > maxLines) {
+    const ops: DiffLineOp[] = [];
+    for (const line of a) ops.push({ type: "delete", text: line });
+    for (const line of b) ops.push({ type: "insert", text: line });
+    return ops;
+  }
+  const n = a.length;
+  const m = b.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array<number>(m + 1).fill(0),
+  );
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i]![j] =
+        a[i] === b[j]
+          ? dp[i + 1]![j + 1]! + 1
+          : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const ops: DiffLineOp[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      ops.push({ type: "equal", text: a[i]! });
+      i++;
+      j++;
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) {
+      ops.push({ type: "delete", text: a[i]! });
+      i++;
+    } else {
+      ops.push({ type: "insert", text: b[j]! });
+      j++;
+    }
+  }
+  while (i < n) ops.push({ type: "delete", text: a[i++]! });
+  while (j < m) ops.push({ type: "insert", text: b[j++]! });
+  return ops;
 }
 
 function diffManifests(

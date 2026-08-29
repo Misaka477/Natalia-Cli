@@ -23,6 +23,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
 import { ObjectStore } from "@natalia/object-store";
+import { diffText } from "./diff";
 
 export type IndexedFile = {
   objectID: string;
@@ -127,17 +128,56 @@ export class SnapshotStore {
     for (const [path, candidateEntry] of candidateIndex) {
       const baseEntry = base.get(path);
       if (!baseEntry) {
-        changes.push({ kind: "add" as SandboxDiffKind, path });
+        const content = await this.objectText(candidateEntry.objectID);
+        const text = diffText(path, undefined, content);
+        changes.push({
+          kind: "add" as SandboxDiffKind,
+          path,
+          ...(content !== undefined ? { after: content } : {}),
+          ...(text.patch ? { patch: text.patch } : {}),
+          additions: text.additions,
+          deletions: text.deletions,
+        });
         continue;
       }
-      if (candidateEntry.objectID !== baseEntry.objectID)
-        changes.push({ kind: "modify" as SandboxDiffKind, path });
+      if (candidateEntry.objectID !== baseEntry.objectID) {
+        const before = await this.objectText(baseEntry.objectID);
+        const after = await this.objectText(candidateEntry.objectID);
+        const text = diffText(path, before, after);
+        changes.push({
+          kind: "modify" as SandboxDiffKind,
+          path,
+          ...(before !== undefined ? { before } : {}),
+          ...(after !== undefined ? { after } : {}),
+          ...(text.patch ? { patch: text.patch } : {}),
+          additions: text.additions,
+          deletions: text.deletions,
+        });
+      }
     }
     for (const path of base.keys()) {
-      if (!candidateIndex.has(path))
-        changes.push({ kind: "delete" as SandboxDiffKind, path });
+      if (!candidateIndex.has(path)) {
+        const before = await this.objectText(base.get(path)!.objectID);
+        const text = diffText(path, before, undefined);
+        changes.push({
+          kind: "delete" as SandboxDiffKind,
+          path,
+          ...(before !== undefined ? { before } : {}),
+          ...(text.patch ? { patch: text.patch } : {}),
+          additions: text.additions,
+          deletions: text.deletions,
+        });
+      }
     }
     return changes;
+  }
+
+  private async objectText(objectID: string): Promise<string | undefined> {
+    try {
+      return (await this.objects.get(objectID)).toString("utf8");
+    } catch {
+      return undefined;
+    }
   }
 
   async saveIndex(id: string, index: SnapshotIndex): Promise<void> {

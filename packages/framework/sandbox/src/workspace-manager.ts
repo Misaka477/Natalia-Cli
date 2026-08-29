@@ -50,6 +50,11 @@ export type SandboxChange = {
   oldPath?: string;
   mode?: string;
   content?: string;
+  patch?: string;
+  before?: string;
+  after?: string;
+  additions?: number;
+  deletions?: number;
 };
 
 export type SandboxManager = {
