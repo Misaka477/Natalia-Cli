@@ -72,6 +72,8 @@ export type UiTransport = {
 export type UiProjection = {
   getState(): AppState;
   subscribe(listener: (state: AppState) => void): () => void;
+  /** Resets the projected state for a session/workspace switch. */
+  reset?(): void;
 };
 
 export type UiPluginContext<TContext = unknown> = {

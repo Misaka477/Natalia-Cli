@@ -438,6 +438,35 @@ export function createWebRuntimeClient(
     async sessionNew(input) {
       return (await call("session.new", { ...(input as Record<string, unknown>) })) as never;
     },
+    async sessionAttach(id) {
+      const result = await call<RuntimeSessionSummary>("session.attach", { id });
+      const replayGlobal = globalThis as unknown as {
+        __nataliaReplayingHistory?: boolean;
+      };
+      replayGlobal.__nataliaReplayingHistory = true;
+      if (typeof window !== "undefined")
+        window.dispatchEvent(new Event("natalia:session-switch-reset"));
+      try {
+        let after = 0;
+        while (true) {
+          const page = await call<RuntimeHistory>("session.history", {
+            after,
+            limit: 500,
+          });
+          for (const entry of page.events)
+            for (const listener of starts) listener(entry.event);
+          if (!page.hasMore || !page.events.length) break;
+          after = page.events[page.events.length - 1]!.seq;
+        }
+      } catch (error) {
+        console.log("[web-runtime] session switch replay failed", error);
+      } finally {
+        replayGlobal.__nataliaReplayingHistory = false;
+        if (typeof window !== "undefined")
+          window.dispatchEvent(new Event("natalia:history-replay-complete"));
+      }
+      return result as never;
+    },
     async sessionDuplicate(id, title) {
       return (await call("session.duplicate", { id, title })) as never;
     },

@@ -52,7 +52,7 @@ export async function createUiPluginHost<TContext = unknown>(
   const transport = options.transport ?? createMemoryTransport();
   const t = options.t ?? ((text: string) => text);
   const events = createUiEventBus();
-  const state = viewStore.initialState();
+  let state = viewStore.initialState();
   const projectionListeners = new Set<(next: viewStore.AppState) => void>();
   const mounted = new Map<string, MountedPlugin>();
   let started = false;
@@ -65,6 +65,10 @@ export async function createUiPluginHost<TContext = unknown>(
       return () => {
         projectionListeners.delete(listener);
       };
+    },
+    reset() {
+      state = viewStore.initialState();
+      for (const listener of projectionListeners) listener(state);
     },
   };
 
