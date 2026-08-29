@@ -81,6 +81,22 @@ function createRealRuntimeClient(
       writeFileSync(globalConfigPath, JSON.stringify(modelConfig));
     }
   }
+  // Keep each test workspace's governance ledger isolated. The default
+  // governance root is derived from the plugin store and would otherwise be
+  // shared across every tmp workspace, allowing records/overrides from one
+  // test to leak into the next.
+  // Normal tests get a per-workspace governance ledger so records from one
+  // tmp workspace cannot leak into the next. Tests that deliberately exercise
+  // a shared/custom governance store pass pluginStoreRoot and manage the env
+  // themselves.
+  if (!options.pluginStoreRoot) {
+    const suffix = workspaceRoot.split("/").pop() ?? "workspace";
+    process.env.NATALIA_TEST_GOVERNANCE_ROOT = join(
+      workspaceRoot,
+      "..",
+      `.natalia-test-governance-${suffix}`,
+    );
+  }
   return createOfficialRuntimeClient({
     ...options,
     globalConfigPath,
@@ -1809,6 +1825,18 @@ lines.on("line", (line) => {
     mcpServers,
     plugins: { enabled: { [MCP_PLUGIN_ID]: false } },
   };
+  const enabledConfig = {
+    version: 3,
+    mcpServers,
+    defaultAgentMode: "mcp",
+    agentModes: {
+      mcp: {
+        approval: "ask",
+        description: "MCP enabled",
+        mcpServers: ["reload"],
+      },
+    },
+  };
   await writeFile(configPath, JSON.stringify(disabledConfig));
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
@@ -1822,7 +1850,7 @@ lines.on("line", (line) => {
   expect(kernel.has(MCP_PLUGIN_ID)).toBe(false);
   expect(await client.mcpCatalog?.()).toEqual({ prompts: [], resources: [] });
 
-  await writeFile(configPath, JSON.stringify({ version: 3, mcpServers }));
+  await writeFile(configPath, JSON.stringify(enabledConfig));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(MCP_PLUGIN_ID)).toBe(true);
   await waitForAsync(
@@ -1859,7 +1887,7 @@ lines.on("line", (line) => {
   ).toBe(false);
   expect(await client.mcpCatalog?.()).toEqual({ prompts: [], resources: [] });
 
-  await writeFile(configPath, JSON.stringify({ version: 3, mcpServers }));
+  await writeFile(configPath, JSON.stringify(enabledConfig));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(MCP_PLUGIN_ID)).toBe(true);
   await waitForAsync(
@@ -6825,6 +6853,21 @@ test("durable history retains full assistant settlement without live fragments",
   });
   client.start(() => undefined);
   await client.submitAndWait!("greet");
+  await waitForAsync(async () => {
+    try {
+      const persisted = JSON.parse(
+        await readFile(
+          join(root, ".natalia", "sessions", "ses_ts7_durable_content.json"),
+          "utf8",
+        ),
+      ) as { events: RuntimeEvent[] };
+      return persisted.events.some(
+        (event) => event.type === "content.done" && event.text === "hello world",
+      );
+    } catch {
+      return false;
+    }
+  });
   const stored = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_durable_content.json"),
@@ -6858,6 +6901,21 @@ test("restart restores the latest durable context checkpoint before later events
   });
   first.start(() => undefined);
   await first.submitAndWait!("first question");
+  await waitForAsync(async () => {
+    try {
+      const persisted = JSON.parse(
+        await readFile(
+          join(root, ".natalia", "sessions", "ses_ts7_context_epoch.json"),
+          "utf8",
+        ),
+      ) as { events: RuntimeEvent[] };
+      return persisted.events.some(
+        (event) => event.type === "context.checkpoint",
+      );
+    } catch {
+      return false;
+    }
+  });
   const persisted = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_context_epoch.json"),
@@ -6925,6 +6983,21 @@ test("context-limit compaction persists a durable context epoch", async () => {
   });
   client.start(() => undefined);
   await client.submitAndWait!("compact then retry");
+  await waitForAsync(async () => {
+    try {
+      const persisted = JSON.parse(
+        await readFile(
+          join(root, ".natalia", "sessions", "ses_ts7_context_compaction.json"),
+          "utf8",
+        ),
+      ) as { events: RuntimeEvent[] };
+      return persisted.events.some(
+        (event) => event.type === "context.checkpoint",
+      );
+    } catch {
+      return false;
+    }
+  });
   const stored = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_context_compaction.json"),
@@ -12814,10 +12887,22 @@ test("/skill-script aborts its child process when the command is cancelled", asy
   try {
     await waitFor(() => events.some((event) => event.type === "session.ready"));
     await client.submitAndWait!("/skill cancel-me");
+    const before = events.length;
     // The long script starts; cancelling the command must abort its child.
     setTimeout(() => client.cancel("cancel the skill script"), 150);
-    await client.submitAndWait!("/skill-script long");
+    void client.submit("/skill-script long");
+    await waitFor(
+      () =>
+        events.slice(before).some(
+          (event) =>
+            event.type === "content.delta" &&
+            String(event.text).includes('"exitCode"'),
+        ),
+      5000,
+      "the cancelled skill script to report its child exit code",
+    );
     const output = events
+      .slice(before)
       .filter((event) => event.type === "content.delta")
       .map((event) => event.text)
       .join("\n");

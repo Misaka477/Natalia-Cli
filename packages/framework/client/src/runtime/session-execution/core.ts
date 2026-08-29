@@ -161,12 +161,18 @@ export function createCoreSurface(
           continue;
         }
       }
-      const exactSettled = events.some(
-        (event) =>
-          (event.type === "turn.finished" || event.type === "turn.cancelled") &&
-          event.id === id,
+      const exactFinished = events.some(
+        (event) => event.type === "turn.finished" && event.id === id,
       );
-      if (exactSettled) return;
+      if (exactFinished) return;
+      const exactCancelled = events.some(
+        (event) => event.type === "turn.cancelled" && event.id === id,
+      );
+      // A cancellation event can be published before the provider/tool actually
+      // settles. Only treat it as complete when the turn is no longer active.
+      if (exactCancelled && !exec?.activeTurnID) return;
+      if (exactCancelled && exec?.activeTurnID && exec.activeTurnID !== id)
+        return;
 
       if (activeAtSubmit) {
         // A turn was already running when the blocking submit was made. Do not
@@ -183,13 +189,17 @@ export function createCoreSurface(
         // settle the session without a terminal event carrying the caller's
         // submitted turn id. For an idle submission the first settlement after
         // this submission is the work it woke.
-        if (
-          events.slice(submittedIndex + 1).some(
-            (event) =>
-              event.type === "turn.finished" || event.type === "turn.cancelled",
-          )
-        )
+        if (events.slice(submittedIndex + 1).some((event) => event.type === "turn.finished"))
           return;
+        // A cancellation can be published before the provider/tool actually
+        // settles. Wait for the in-flight turn to leave the active slot before
+        // treating `turn.cancelled` as complete; a turn cancelled before it
+        // started has no active id and settles immediately.
+        const cancelled = events.slice(submittedIndex + 1).some(
+          (event) => event.type === "turn.cancelled",
+        );
+        if (cancelled && !exec?.activeTurnID) return;
+        if (cancelled && exec?.activeTurnID && exec.activeTurnID !== id) return;
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
