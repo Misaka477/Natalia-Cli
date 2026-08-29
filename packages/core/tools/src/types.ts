@@ -145,7 +145,7 @@ export type SubagentToolService = {
 
 export type TerminalSessionView = {
   id: string;
-  host: "wezterm";
+  host: "wezterm" | "pty";
   paneID: number;
   windowID: number;
   muxWindowID: number;

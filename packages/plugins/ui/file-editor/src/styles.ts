@@ -20,7 +20,7 @@ export const fileEditorStyles = `
   min-width: 120px;
 }
 .file-pane-resizer { width: 6px; flex: 0 0 6px; cursor: col-resize; background: transparent; touch-action: none; }
-.file-pane-resizer:hover { background: rgba(143,183,176,0.15); border-radius: 4px; }
+.file-pane-resizer:hover { background: var(--neu-resizer-hover); border-radius: 4px; }
 .file-tree-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; width: max-content; min-width: 100%; background: transparent; border: none; border-radius: 10px; color: var(--neu-text); font-family: var(--neu-font-mono); font-size: 12px; text-align: left; cursor: pointer; transition: all 100ms ease; }
 .file-tree-item:hover { background: var(--neu-bg-light); }
 .file-tree-item[data-active="true"] { background: var(--neu-bg-light); box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light); }
@@ -30,7 +30,7 @@ export const fileEditorStyles = `
 .file-tree-file-icon { color: var(--neu-accent); }
 .file-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-tree-status { font-size: 9px; font-weight: 700; width: 12px; text-align: center; flex-shrink: 0; }
-.status-modified { color: #d8b04a; }
+.status-modified { color: var(--neu-warning); }
 .status-added { color: var(--neu-success); }
 .status-deleted { color: var(--neu-error); }
 

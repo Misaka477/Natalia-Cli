@@ -2,7 +2,7 @@ import { render } from "solid-js/web";
 import { defineUiPlugin, type UiPlugin } from "@natalia/ui-host";
 import { AppNeu } from "./app-neu";
 import { EXAMPLE_WEB_UI_PANELS, EXAMPLE_WEB_UI_PLUGIN_ID } from "./identity";
-import { nataliaNeuStyles } from "./styles-neu";
+import { applyNeuTheme, nataliaNeuStyles } from "./styles";
 
 export function createNataliaNeuPlugin(): UiPlugin {
   let unmount: (() => void) | undefined;
@@ -15,6 +15,7 @@ export function createNataliaNeuPlugin(): UiPlugin {
     panels: EXAMPLE_WEB_UI_PANELS,
     mount(ctx) {
       ctx.root.replaceChildren();
+      applyNeuTheme(ctx.preferences.get<string>("themeMode"), ctx.root);
       const style = document.createElement("style");
       style.textContent = nataliaNeuStyles;
       ctx.root.append(style);

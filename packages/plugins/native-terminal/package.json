@@ -12,6 +12,7 @@
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime-services": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/tools": "workspace:*",
+    "node-pty": "1.0.0"
   }
 }

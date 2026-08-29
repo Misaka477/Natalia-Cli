@@ -12,9 +12,7 @@ import {
 } from "./components/RightPanel";
 import { SettingsPanel } from "./settings-panel";
 import { PluginManagerPanel } from "./plugin-manager-panel";
-import { nataliaNeuStyles } from "./styles-neu";
-import { nataliaNeuLightStyles } from "./styles-neu-light";
-import { nataliaNeuLimeStyles } from "./styles-neu-lime";
+import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
@@ -530,21 +528,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ),
     );
 
-    // Apply theme/mode by overlaying the other stylesheet.
-    const themeStyle = document.createElement("style");
-    themeStyle.id = "neu-theme-override";
-    props.ctx.root.appendChild(themeStyle);
     const applyTheme = () => {
-      themeStyle.textContent =
-        themeMode() === "dark"
-          ? nataliaNeuStyles
-          : themeMode() === "lime"
-            ? nataliaNeuLimeStyles
-            : nataliaNeuLightStyles;
+      applyNeuTheme(themeMode(), props.ctx.root);
     };
     applyTheme();
     createEffect(applyTheme);
-    onCleanup(() => themeStyle.remove());
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
     void props.ctx.runtime.reasoningEffort?.().then((effort) => {
@@ -859,7 +847,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function cycleThemeMode() {
-    const modes = ["light", "dark", "lime"] as const;
+    const modes = NEU_THEME_MODES;
     const current = themeMode() as (typeof modes)[number];
     const next = modes[(modes.indexOf(current) + 1) % modes.length];
     setThemeMode(next);

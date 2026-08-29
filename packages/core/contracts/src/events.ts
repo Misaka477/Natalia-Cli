@@ -1594,7 +1594,7 @@ export type RuntimeTerminalSession = {
 
 export type RuntimeNativeTerminalSession = {
   id: string;
-  host: "wezterm";
+  host: "wezterm" | "pty";
   paneID: number;
   windowID: number;
   muxWindowID: number;

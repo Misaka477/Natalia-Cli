@@ -30,6 +30,13 @@ export {
   createTerminalController,
   type TerminalControllerInput,
 } from "./terminal-controller";
+export {
+  createPtyTerminalController,
+  type PtyFactory,
+  type PtyProcess,
+  type PtySpawnOptions,
+  type PtyTerminalControllerInput,
+} from "./pty-terminal-controller";
 export { terminalToolFamily, terminalTools } from "./terminal-tools";
 export {
   createTerminalPlugin,
