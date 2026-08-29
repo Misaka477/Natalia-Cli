@@ -270,6 +270,17 @@ export function SettingsPanel(props: {
   const [modeAllowedTools, setModeAllowedTools] = createSignal("");
   const [modeExcludedTools, setModeExcludedTools] = createSignal("");
   const [modeMcpServers, setModeMcpServers] = createSignal("");
+  const [permissionEditorOpen, setPermissionEditorOpen] = createSignal(false);
+  const [permissionName, setPermissionName] = createSignal("ask");
+  const [permissionDescription, setPermissionDescription] = createSignal("");
+  const [permissionApproval, setPermissionApproval] = createSignal("ask");
+  const [permissionAllowedTools, setPermissionAllowedTools] = createSignal("");
+  const [permissionExcludedTools, setPermissionExcludedTools] = createSignal("");
+  const [permissionCommandMode, setPermissionCommandMode] = createSignal("none");
+  const [permissionCommandRules, setPermissionCommandRules] = createSignal("");
+  const [permissionSkills, setPermissionSkills] = createSignal(true);
+  const [permissionMcp, setPermissionMcp] = createSignal(true);
+  const [permissionPlugins, setPermissionPlugins] = createSignal(true);
 
   function openEdit(
     label: string,
@@ -311,10 +322,20 @@ export function SettingsPanel(props: {
       });
     },
     "Permission Profile": () => {
-      const current = props.config?.defaultPermission ?? "ask";
-      openEdit("Permission Profile（defaultPermission）", current, (next) => {
-        if (next) props.onUpdateConfig?.({ defaultPermission: next });
-      });
+      const config = props.config;
+      const name = config?.defaultPermission ?? "ask";
+      const profile = config?.permissionProfiles?.[name];
+      setPermissionName(name);
+      setPermissionDescription(profile?.description ?? "");
+      setPermissionApproval(profile?.approval ?? "ask");
+      setPermissionAllowedTools((profile?.permissions?.tools?.allow ?? []).join(", "));
+      setPermissionExcludedTools((profile?.permissions?.tools?.exclude ?? []).join(", "));
+      setPermissionCommandMode(profile?.commandRules?.mode ?? "none");
+      setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
+      setPermissionSkills(profile?.extensions?.skills !== false);
+      setPermissionMcp(profile?.extensions?.mcp !== false);
+      setPermissionPlugins(profile?.extensions?.plugins !== false);
+      setPermissionEditorOpen(true);
     },
     "Approval Mode": () => {
       const config = props.config;
@@ -633,6 +654,149 @@ export function SettingsPanel(props: {
           </div>
         </div>
       </div>
+      <Show when={permissionEditorOpen()}>
+        <div class="neu-settings-backdrop" onClick={() => setPermissionEditorOpen(false)}>
+          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+            <div class="neu-settings-header">
+              <span class="neu-settings-title">权限配置（Permission Profile）</span>
+              <button type="button" class="neu-settings-close" onClick={() => setPermissionEditorOpen(false)} aria-label="关闭">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div class="neu-settings-body neu-edit-body">
+              <div class="neu-form-field">
+                <label class="neu-form-label">Profile 名称</label>
+                <input class="neu-form-input" value={permissionName()} onInput={(e) => setPermissionName(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">描述</label>
+                <input class="neu-form-input" value={permissionDescription()} onInput={(e) => setPermissionDescription(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Approval Mode</label>
+                <NeuSelect
+                  value={permissionApproval()}
+                  options={[
+                    { value: "ask", label: "ask" },
+                    { value: "auto", label: "auto" },
+                    { value: "read_only", label: "read_only" },
+                  ]}
+                  onChange={(value) => setPermissionApproval(value)}
+                />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Allowed Tools（允许列表，留空不限制）</label>
+                <div class="neu-tool-select-grid">
+                  <For each={modeToolOptions()}>
+                    {(tool) => (
+                      <label class="neu-form-checkbox neu-tool-check">
+                        <input
+                          type="checkbox"
+                          checked={permissionAllowedTools().split(",").map((item) => item.trim()).includes(tool)}
+                          onChange={() => toggleCsv(permissionAllowedTools(), tool, setPermissionAllowedTools)}
+                        />
+                        <span>{tool}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Excluded Tools（黑名单）</label>
+                <div class="neu-tool-select-grid">
+                  <For each={modeToolOptions()}>
+                    {(tool) => (
+                      <label class="neu-form-checkbox neu-tool-check">
+                        <input
+                          type="checkbox"
+                          checked={permissionExcludedTools().split(",").map((item) => item.trim()).includes(tool)}
+                          onChange={() => toggleCsv(permissionExcludedTools(), tool, setPermissionExcludedTools)}
+                        />
+                        <span>{tool}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Command Rules Mode</label>
+                <NeuSelect
+                  value={permissionCommandMode()}
+                  options={[
+                    { value: "none", label: "none" },
+                    { value: "blacklist", label: "blacklist" },
+                    { value: "whitelist", label: "whitelist" },
+                  ]}
+                  onChange={(value) => setPermissionCommandMode(value)}
+                />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Command Rules（逗号分隔）</label>
+                <input class="neu-form-input" value={permissionCommandRules()} onInput={(e) => setPermissionCommandRules(e.currentTarget.value)} />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label">Extensions</label>
+                <div class="neu-checkbox-list">
+                  <label class="neu-form-checkbox">
+                    <input type="checkbox" checked={permissionSkills()} onChange={() => setPermissionSkills((v) => !v)} />
+                    <span>skills</span>
+                  </label>
+                  <label class="neu-form-checkbox">
+                    <input type="checkbox" checked={permissionMcp()} onChange={() => setPermissionMcp((v) => !v)} />
+                    <span>mcp</span>
+                  </label>
+                  <label class="neu-form-checkbox">
+                    <input type="checkbox" checked={permissionPlugins()} onChange={() => setPermissionPlugins((v) => !v)} />
+                    <span>plugins</span>
+                  </label>
+                </div>
+              </div>
+              <div class="neu-form-actions">
+                <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setPermissionEditorOpen(false)}>取消</button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-primary"
+                  onClick={() => {
+                    const name = permissionName().trim();
+                    if (!name) return;
+                    const split = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+                    props.onUpdateConfig?.({
+                      permissionProfiles: {
+                        ...props.config?.permissionProfiles,
+                        [name]: {
+                          description: permissionDescription(),
+                          approval: permissionApproval(),
+                          permissions: {
+                            tools: {
+                              allow: split(permissionAllowedTools()),
+                              exclude: split(permissionExcludedTools()),
+                            },
+                          },
+                          commandRules: {
+                            mode: permissionCommandMode() as "none" | "blacklist" | "whitelist",
+                            rules: split(permissionCommandRules()),
+                          },
+                          extensions: {
+                            skills: permissionSkills(),
+                            mcp: permissionMcp(),
+                            plugins: permissionPlugins(),
+                          },
+                        },
+                      },
+                      defaultPermission: name,
+                    });
+                    setPermissionEditorOpen(false);
+                  }}
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
       <Show when={modeEditorOpen()}>
         <div class="neu-settings-backdrop" onClick={() => setModeEditorOpen(false)}>
           <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
