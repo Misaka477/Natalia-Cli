@@ -13,8 +13,7 @@ import type {
 } from "@natalia/runtime-services";
 import type { RuntimeContextStatusConfig } from "./status-config";
 
-type PermissionProfile =
-  import("@natalia/contracts").ConfigV3["permissionProfiles"][string];
+type PermissionProfile = import("@natalia/contracts").PermissionProfile;
 
 export type SessionExecutionState = {
   session: SessionRecord;

@@ -44,11 +44,11 @@ export function permissionProfileRemovalProblem(input: {
   name: string;
   usage?: PermissionProfileUsage;
 }): string | undefined {
-  if (!input.config.permissionProfiles[input.name])
+  if (!input.config.agentModes[input.name])
     return `permission profile not found: ${input.name}`;
-  if (Object.keys(input.config.permissionProfiles).length <= 1)
+  if (Object.keys(input.config.agentModes).length <= 1)
     return "the last permission profile cannot be deleted";
-  if (input.config.defaultPermission === input.name)
+  if (input.config.defaultAgentMode === input.name)
     return "this is the default profile; select another profile first";
   const tasks = input.usage?.[input.name] ?? [];
   if (tasks.length)
@@ -63,9 +63,9 @@ export function configWithoutPermissionProfile(input: {
 }): ConfigV3 {
   const problem = permissionProfileRemovalProblem(input);
   if (problem) throw new Error(problem);
-  const profiles = { ...input.config.permissionProfiles };
+  const profiles = { ...input.config.agentModes };
   delete profiles[input.name];
-  return { ...input.config, permissionProfiles: profiles };
+  return { ...input.config, agentModes: profiles };
 }
 
 export type ToolAllowListEdit = {

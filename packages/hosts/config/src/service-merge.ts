@@ -5,11 +5,7 @@ export function configPatch(base: ConfigV3, next: ConfigV3): ConfigPatch {
   const patch = diffValue(base, next) as ConfigPatch;
   const records = {
     providers: recordPatch(base.providers, next.providers),
-    permissionProfiles: recordPatch(
-      base.permissionProfiles,
-      next.permissionProfiles,
-    ),
-    modes: recordPatch(base.modes, next.modes),
+    agentModes: recordPatch(base.agentModes, next.agentModes),
     agents: recordPatch(base.agents, next.agents),
     mcpServers: recordPatch(base.mcpServers, next.mcpServers),
     issueTargets: recordPatch(base.issueTargets, next.issueTargets),
@@ -95,13 +91,8 @@ export function mergeConfig(base: ConfigV3, overlay: ConfigPatch): ConfigV3 {
       overlay.defaultModel === undefined
         ? base.defaultModel
         : deepMergeObject(base.defaultModel, overlay.defaultModel),
-    permissionProfiles: mergeRecord(
-      base.permissionProfiles,
-      overlay.permissionProfiles as never,
-    ),
-    defaultPermission: overlay.defaultPermission ?? base.defaultPermission,
-    modes: mergeRecord(base.modes, overlay.modes as never),
-    defaultMode: overlay.defaultMode ?? base.defaultMode,
+    agentModes: mergeRecord(base.agentModes, overlay.agentModes as never),
+    defaultAgentMode: overlay.defaultAgentMode ?? base.defaultAgentMode,
     agents: mergeRecord(base.agents, overlay.agents as never),
     defaultAgent: overlay.defaultAgent ?? base.defaultAgent,
     mcpServers: mergeRecord(base.mcpServers, overlay.mcpServers as never),

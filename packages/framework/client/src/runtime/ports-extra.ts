@@ -58,7 +58,7 @@ export type RuntimePortsExtra = {
   getUserSkillRoot: () => string | undefined;
   extensionEnabled: (
     extension: "skills" | "mcp",
-    profile?: ConfigV3["permissionProfiles"][string],
+    profile?: import("@natalia/contracts").PermissionProfile,
   ) => boolean;
   hotReloadToolFamily: (familyID: string) => Promise<{ reloaded: boolean }>;
   setProviderSource: (

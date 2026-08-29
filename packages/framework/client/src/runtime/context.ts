@@ -91,7 +91,7 @@ import type { RuntimePerformanceTrace } from "../performance-trace";
 import type { SessionExecutionState } from "./session-execution-state";
 export type { SessionExecutionState } from "./session-execution-state";
 
-type PermissionProfile = ConfigV3["permissionProfiles"][string];
+type PermissionProfile = import("@natalia/contracts").PermissionProfile;
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;
 };

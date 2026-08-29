@@ -70,7 +70,7 @@ export type InitializeDependencies = {
     agent?: AgentDefinition,
   ) => import("@natalia/runtime-services").ToolPolicyHookLayer;
   permissionProfileLayer: (
-    profile?: ConfigV3["permissionProfiles"][string],
+    profile?: import("@natalia/contracts").PermissionProfile,
   ) => import("@natalia/runtime-services").ToolPolicyHookLayer;
   terminalCommandBuffer: TerminalCommandBuffer;
   evaluatePermissionProfileCommandRules: (

@@ -758,16 +758,16 @@ export async function runCommand(command: string, ctx: CommandContext) {
               const workspaceRoot = ctx.workspaceRoot ?? process.cwd();
               const [profilesRevision, setProfilesRevision] = createSignal(0);
               const openPermissionProfileEditor = (name: string) => {
-                if (!resolved.permissionProfiles[name]) return;
+                if (!resolved.agentModes[name]) return;
                 ctx.dialog.push(() => {
                   const [profile, setProfile] = createSignal(
-                    structuredClone(resolved.permissionProfiles[name]!),
+                    structuredClone(resolved.agentModes[name]!),
                   );
                   const saveProfile = async (next: ConfigV3) => {
-                    const target = next.permissionProfiles[name];
+                    const target = next.agentModes[name];
                     if (!target || !(await saveConfig(next))) return false;
                     const saved = structuredClone(target);
-                    resolved.permissionProfiles[name] = saved;
+                    resolved.agentModes[name] = saved;
                     setProfile(structuredClone(saved));
                     setProfilesRevision((revision) => revision + 1);
                     return true;
@@ -796,17 +796,15 @@ export async function runCommand(command: string, ctx: CommandContext) {
                         {
                           title: "Allowed Tools",
                           value: "tools",
-                          description: profile().permissions?.tools?.allow
-                            ?.length
-                            ? profile().permissions!.tools!.allow!.join(", ")
+                          description: profile().allowedTools?.length
+                            ? profile().allowedTools!.join(", ")
                             : "every tool the runtime offers (no allow-list)",
                         },
                         {
                           title: "Excluded Tools",
                           value: "excludedTools",
-                          description: profile().permissions?.tools?.exclude
-                            ?.length
-                            ? profile().permissions!.tools!.exclude!.join(", ")
+                          description: profile().excludedTools?.length
+                            ? profile().excludedTools!.join(", ")
                             : "none",
                         },
                         {
@@ -823,23 +821,12 @@ export async function runCommand(command: string, ctx: CommandContext) {
                         {
                           title: "Extensions",
                           value: "extensions",
-                          description: ["skills", "mcp"]
-                            .map(
-                              (extension) =>
-                                `${extension}=${
-                                  profile().extensions?.[
-                                    extension as "skills" | "mcp"
-                                  ] === false
-                                    ? "off"
-                                    : "on"
-                                }`,
-                            )
-                            .join(", "),
+                          description: `skills=${profile().skills === false ? "off" : "on"}, mcp=on`,
                         },
                       ]}
                       onSelect={(field) => {
                         const next = structuredClone(resolved);
-                        const target = next.permissionProfiles[name];
+                        const target = next.agentModes[name];
                         if (!target) return;
                         if (field.value === "approval") {
                           ctx.dialog.push(() => (
@@ -862,19 +849,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
                           return;
                         }
                         if (field.value === "tools") {
-                          const allowed =
-                            target.permissions?.tools?.allow ??
-                            ([] as string[]);
+                          const allowed = target.allowedTools ?? [];
                           const writeTools = (tools: string[]) => {
-                            target.permissions = {
-                              ...target.permissions,
-                              tools: {
-                                allow: tools,
-                                exclude:
-                                  target.permissions?.tools?.exclude ??
-                                  ([] as string[]),
-                              },
-                            };
+                            target.allowedTools = [...new Set(tools)];
                             void saveProfile(next);
                           };
                           void (async () => {
@@ -913,19 +890,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
                           return;
                         }
                         if (field.value === "excludedTools") {
-                          const excluded =
-                            target.permissions?.tools?.exclude ??
-                            ([] as string[]);
+                          const excluded = target.excludedTools ?? [];
                           const writeExcludedTools = (tools: string[]) => {
-                            target.permissions = {
-                              ...target.permissions,
-                              tools: {
-                                allow:
-                                  target.permissions?.tools?.allow ??
-                                  ([] as string[]),
-                                exclude: tools,
-                              },
-                            };
+                            target.excludedTools = [...new Set(tools)];
                             void saveProfile(next);
                           };
                           void (async () => {
@@ -1129,7 +1096,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                                 title: extension,
                                 value: extension,
                                 description:
-                                  target.extensions?.[extension] === false
+                                  extension === "skills" && target.skills === false
                                     ? "disabled"
                                     : "enabled",
                               }))}
@@ -1137,11 +1104,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
                                 const extension = choice.value as
                                   | "skills"
                                   | "mcp";
-                                target.extensions = {
-                                  ...target.extensions,
-                                  [extension]:
-                                    target.extensions?.[extension] === false,
-                                };
+                                if (extension === "skills") {
+                                  target.skills = target.skills === false;
+                                }
                                 void saveProfile(next);
                               }}
                             />
@@ -1356,12 +1321,12 @@ export async function runCommand(command: string, ctx: CommandContext) {
               ctx.dialog.push(() => (
                 <DialogSelect
                   title="Permission Profiles"
-                  current={resolved.defaultPermission}
+                  current={resolved.defaultAgentMode}
                   options={[
                     ...Object.entries(
                       (() => {
                         profilesRevision();
-                        return resolved.permissionProfiles ?? {};
+                        return resolved.agentModes ?? {};
                       })(),
                     ).map(([name, p]) => ({
                       title: name,
@@ -1369,7 +1334,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       description:
                         (p as any).description ?? (p as any).approval ?? "-",
                       footer:
-                        name === resolved.defaultPermission
+                        name === resolved.defaultAgentMode
                           ? `default · ${(p as any).approval}`
                           : (p as any).approval,
                     })),
@@ -1412,13 +1377,18 @@ export async function runCommand(command: string, ctx: CommandContext) {
                           },
                         ).then((value) => {
                           const name = value?.trim();
-                          if (!name || resolved.permissionProfiles[name])
+                          if (!name || resolved.agentModes[name])
                             return;
-                          resolved.permissionProfiles[name] = {
+                          resolved.agentModes[name] = {
                             description: "",
                             approval: "ask",
+                            systemPrompt: "",
+                            allowedTools: [],
+                            excludedTools: [],
+                            mcpServers: [],
+                            skills: true,
                           };
-                          resolved.defaultPermission = name;
+                          resolved.defaultAgentMode = name;
                           void saveConfig(resolved);
                           // A fresh profile only asks for approval; the boundary
                           // that makes it useful is edited next.
@@ -1427,7 +1397,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       }, 0);
                       return;
                     }
-                    resolved.defaultPermission = opt.value;
+                    resolved.defaultAgentMode = opt.value;
                     void saveConfig(resolved);
                     ctx.dialog.pop();
                   }}
@@ -1440,7 +1410,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                 <DialogSelect
                   title="Agent Modes"
                   options={[
-                    ...Object.entries(resolved.modes ?? {}).map(
+                    ...Object.entries(resolved.agentModes ?? {}).map(
                       ([name, m]) => ({
                         title: name,
                         value: name,
@@ -1467,27 +1437,29 @@ export async function runCommand(command: string, ctx: CommandContext) {
                           placeholder: "review",
                         }).then((value) => {
                           const name = value?.trim();
-                          if (!name || resolved.modes[name]) return;
-                          resolved.modes[name] = {
+                          if (!name || resolved.agentModes[name]) return;
+                          resolved.agentModes[name] = {
                             description: "",
+                            approval: "ask",
                             systemPrompt: "",
                             allowedTools: [],
                             excludedTools: [],
                             mcpServers: [],
+                            skills: true,
                           };
-                          resolved.defaultMode = name;
+                          resolved.defaultAgentMode = name;
                           void saveConfig(resolved);
                         });
                       }, 0);
                       return;
                     }
-                    resolved.defaultMode = opt.value;
+                    resolved.defaultAgentMode = opt.value;
                     void saveConfig(resolved);
                     ctx.dialog.pop();
                   }}
                   onExtraKey={(key, opt) => {
                     if (key === "e" && opt.value !== "$new") {
-                      const mode = resolved.modes[opt.value];
+                      const mode = resolved.agentModes[opt.value];
                       if (!mode) return;
                       ctx.dialog.push(() => (
                         <DialogSelect
@@ -1502,11 +1474,6 @@ export async function runCommand(command: string, ctx: CommandContext) {
                               title: "Model",
                               value: "model",
                               description: mode.model || "(default)",
-                            },
-                            {
-                              title: "Permission Profile",
-                              value: "permission",
-                              description: mode.permission || "(default)",
                             },
                             {
                               title: "Allowed Tools",
@@ -1526,31 +1493,8 @@ export async function runCommand(command: string, ctx: CommandContext) {
                           ]}
                           onSelect={(field) => {
                             const next = structuredClone(resolved);
-                            const target = next.modes[opt.value];
+                            const target = next.agentModes[opt.value];
                             if (!target) return;
-                            if (field.value === "permission") {
-                              ctx.dialog.push(() => (
-                                <DialogSelect
-                                  title="Mode Permission Profile"
-                                  options={[
-                                    { title: "Default", value: "" },
-                                    ...Object.keys(next.permissionProfiles).map(
-                                      (value) => ({
-                                        title: value,
-                                        value,
-                                      }),
-                                    ),
-                                  ]}
-                                  current={target.permission ?? ""}
-                                  onSelect={(choice) => {
-                                    target.permission =
-                                      choice.value || undefined;
-                                    void saveConfig(next);
-                                  }}
-                                />
-                              ));
-                              return;
-                            }
                             const listField =
                               field.value === "allow"
                                 ? "allowedTools"
@@ -1595,7 +1539,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       return;
                     }
                     if (key === "d" && opt.value !== "$new") {
-                      delete (resolved.modes as Record<string, unknown>)[
+                      delete (resolved.agentModes as Record<string, unknown>)[
                         opt.value
                       ];
                       void saveConfig(resolved);

@@ -181,7 +181,7 @@ export type RuntimePorts = {
   isToolAllowed: (toolName: string, exec?: SessionExecutionState) => boolean;
   extensionToolPermission: (
     toolName: string,
-    profile?: ConfigV3["permissionProfiles"][string],
+    profile?: import("@natalia/contracts").PermissionProfile,
   ) => { allowed: boolean; diagnostics: string[] };
   getWorkspaceRoot: () => string;
   nextMailboxSequence: () => number;
@@ -253,18 +253,18 @@ export type RuntimePorts = {
   getPermissionMode: () => "ask" | "auto" | "read_only";
   setPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getSelectedPermissionProfile: () =>
-    | ConfigV3["permissionProfiles"][string]
+    | import("@natalia/contracts").PermissionProfile
     | undefined;
   setSelectedPermissionProfile: (
-    profile: ConfigV3["permissionProfiles"][string] | undefined,
+    profile: import("@natalia/contracts").PermissionProfile | undefined,
   ) => void;
   getDefaultPermissionMode: () => "ask" | "auto" | "read_only";
   setDefaultPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getDefaultPermissionProfile: () =>
-    | ConfigV3["permissionProfiles"][string]
+    | import("@natalia/contracts").PermissionProfile
     | undefined;
   setDefaultPermissionProfile: (
-    profile: ConfigV3["permissionProfiles"][string] | undefined,
+    profile: import("@natalia/contracts").PermissionProfile | undefined,
   ) => void;
   setActiveAbort: (controller: AbortController | undefined) => void;
   setActiveTurnID: (id: string | undefined) => void;

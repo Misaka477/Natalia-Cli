@@ -9,7 +9,7 @@
 import type { ConfigV3, PermissionProfile } from "@natalia/contracts";
 import type { AgentDefinition } from "@natalia/agent";
 
-type RuntimeMode = ConfigV3["modes"][string];
+type RuntimeMode = ConfigV3["agentModes"][string];
 
 export function deriveAgentToolPolicy(input: {
   agent: AgentDefinition | undefined;
@@ -29,11 +29,13 @@ export function deriveAgentToolPolicy(input: {
 }
 
 export function deriveProfileToolPolicy(input: {
-  profile: PermissionProfile | undefined;
+  profile: PermissionProfile | RuntimeMode | undefined;
 }): { allow: string[] | undefined; exclude: string[] | undefined } {
   const { profile } = input;
+  const mode = profile && "allowedTools" in profile ? profile : undefined;
+  const legacy = profile && "permissions" in profile ? profile : undefined;
   return {
-    allow: profile?.permissions?.tools?.allow,
-    exclude: profile?.permissions?.tools?.exclude,
+    allow: mode?.allowedTools ?? legacy?.permissions?.tools?.allow,
+    exclude: mode?.excludedTools ?? legacy?.permissions?.tools?.exclude,
   };
 }

@@ -489,29 +489,30 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
         root: "worktree",
         additionalDirs: ["shared"],
       },
-      permissionProfiles: {
-        ...base.permissionProfiles,
+      agentModes: {
+        ...base.agentModes,
         guarded: {
           approval: "read_only",
           description: "Safe inspection",
-          permissions: { tools: { allow: ["read_file"] } },
+          systemPrompt: "",
+          allowedTools: ["read_file"],
+          excludedTools: [],
           commandRules: {
             mode: "whitelist",
             rules: [{ command: "git diff", reason: "inspect changes" }],
           },
-          extensions: { skills: false, mcp: false },
+          skills: false,
+          mcpServers: [],
         },
-      },
-      modes: {
-        ...base.modes,
         review: {
+          approval: "ask",
           description: "Review only",
           systemPrompt: "Inspect changes and report findings.",
           model: "review-model",
-          permission: "guarded",
           allowedTools: ["read_file", "grep"],
           excludedTools: ["run_shell"],
           mcpServers: ["docs"],
+          skills: true,
         },
       },
     });
@@ -563,20 +564,22 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
     });
     expect(resolved.checkpoint.additionalDirs).toEqual(["generated"]);
     expect(resolved.workspace.additionalDirs).toEqual(["shared"]);
-    expect(resolved.permissionProfiles.guarded).toEqual({
+    expect(resolved.agentModes.guarded).toEqual({
       approval: "read_only",
       description: "Safe inspection",
-      permissions: { tools: { allow: ["read_file"], exclude: [] } },
+      systemPrompt: "",
+      allowedTools: ["read_file"],
+      excludedTools: [],
       commandRules: {
         mode: "whitelist",
         rules: [{ command: "git diff", reason: "inspect changes" }],
       },
-      extensions: { skills: false, mcp: false },
+      skills: false,
+      mcpServers: [],
     });
-    expect(resolved.modes.review).toMatchObject({
+    expect(resolved.agentModes.review).toMatchObject({
       systemPrompt: "Inspect changes and report findings.",
       model: "review-model",
-      permission: "guarded",
       allowedTools: ["read_file", "grep"],
       excludedTools: ["run_shell"],
       mcpServers: ["docs"],

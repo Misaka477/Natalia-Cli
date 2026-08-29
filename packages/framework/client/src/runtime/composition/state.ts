@@ -76,4 +76,4 @@ export function createCompositionContext(
 }
 
 export type CompositionState = RuntimeState;
-export type PermissionProfile = ConfigV3["permissionProfiles"][string];
+export type PermissionProfile = import("@natalia/contracts").PermissionProfile;

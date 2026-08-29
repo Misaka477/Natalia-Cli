@@ -23,7 +23,7 @@ import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 
-type PermissionProfile = ConfigV3["permissionProfiles"][string];
+type PermissionProfile = import("@natalia/contracts").PermissionProfile;
 
 export function createPermissions(
   ctx: RuntimeContext,
@@ -47,7 +47,7 @@ export function createPermissions(
     const tsRuntimeConfig = getTsRuntimeConfig();
     const mode =
       tsRuntimeConfig?.agentModes?.[tsRuntimeConfig.defaultAgentMode] ??
-      tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
+      tsRuntimeConfig?.agentModes[tsRuntimeConfig.defaultAgentMode];
     return resolveService<ToolPolicyService>(
       TOOL_POLICY_SERVICE,
     )!.createHookLayer(deriveAgentToolPolicy({ agent, mode }));

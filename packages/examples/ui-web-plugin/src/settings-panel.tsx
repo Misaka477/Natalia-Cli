@@ -286,18 +286,16 @@ export function SettingsPanel(props: {
 
   function openPermissionEditorFor(name: string) {
     const config = props.config;
-    const profile = config?.agentModes?.[name] ?? config?.permissionProfiles?.[name];
-    const modeLike = profile && "allowedTools" in profile ? profile : undefined;
-    const profileLike = profile && "permissions" in profile ? profile : undefined;
+    const profile = config?.agentModes?.[name];
     setPermissionName(name);
     setPermissionDescription(profile?.description ?? "");
     setPermissionApproval(profile?.approval ?? "ask");
-    setPermissionAllowedTools((modeLike?.allowedTools ?? profileLike?.permissions?.tools?.allow ?? []).join(", "));
-    setPermissionExcludedTools((modeLike?.excludedTools ?? profileLike?.permissions?.tools?.exclude ?? []).join(", "));
+    setPermissionAllowedTools((profile?.allowedTools ?? []).join(", "));
+    setPermissionExcludedTools((profile?.excludedTools ?? []).join(", "));
     setPermissionCommandMode(profile?.commandRules?.mode ?? "none");
     setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
-    setPermissionSkills(modeLike ? modeLike.skills !== false : profileLike?.extensions?.skills !== false);
-    setPermissionMcp(modeLike ? true : profileLike?.extensions?.mcp !== false);
+    setPermissionSkills(profile?.skills !== false);
+    setPermissionMcp(true);
     setPermissionInteractiveAny(Boolean(profile?.interactivePrograms?.allowAny));
     setPermissionInteractiveAllow((profile?.interactivePrograms?.allow ?? []).map((entry) => entry.command).join(", "));
     setPermissionEditorOpen(true);
@@ -327,13 +325,13 @@ export function SettingsPanel(props: {
     },
     "自定义 Agent Mode": () => {
       const config = props.config;
-      const name = config?.defaultMode ?? "code";
-      const mode = config?.modes?.[name];
+      const name = config?.defaultAgentMode ?? "code";
+      const mode = config?.agentModes?.[name];
       setModeName(name);
       setModeDescription(mode?.description ?? "");
       setModeSystemPrompt(mode?.systemPrompt ?? "");
       setModeModel(mode?.model ?? "");
-      setModePermission(mode?.permission ?? "");
+      setModePermission(mode?.approval ?? "ask");
       setModeAllowedTools((mode?.allowedTools ?? []).join(", "));
       setModeExcludedTools((mode?.excludedTools ?? []).join(", "));
       setModeMcpServers((mode?.mcpServers ?? []).join(", "));
@@ -446,7 +444,7 @@ export function SettingsPanel(props: {
 
   const modePermissionOptions = () => [
     { value: "", label: "默认" },
-    ...Object.keys(props.config?.permissionProfiles ?? {}).map((name) => ({ value: name, label: name })),
+    ...Object.keys(props.config?.agentModes ?? {}).map((name) => ({ value: name, label: name })),
   ];
 
   const modeToolOptions = () => {
@@ -478,9 +476,9 @@ export function SettingsPanel(props: {
       case "Providers & Models": return `${Object.keys(config.providers ?? {}).length} 个 provider`;
       case "Default Model": return modelLabel(config);
       case "默认 Agent": return (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认";
-      case "自定义 Agent Mode": return config.defaultMode || "code";
+      case "自定义 Agent Mode": return config.defaultAgentMode || "code";
       case "子 Agent 并发数": return String(config.team?.maxConcurrent ?? 4);
-      case "Permission Profile": return config.defaultPermission ?? "ask";
+      case "Permission Profile": return config.defaultAgentMode ?? "ask";
       case "Web & Network": return config.webSearch?.endpoint ? "已配置" : "默认";
       case "Max Steps": return String(config.runtime?.maxStepsPerTurn ?? "unlimited");
       case "Max Retry": return String(config.runtime?.maxAttemptsPerStep ?? 3);
@@ -826,7 +824,7 @@ export function SettingsPanel(props: {
                     const split = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
                     props.onUpdateConfig?.({
                       permissionProfiles: {
-                        ...props.config?.permissionProfiles,
+                        ...props.config?.agentModes,
                         [name]: {
                           description: permissionDescription(),
                           approval: permissionApproval(),
@@ -922,7 +920,7 @@ export function SettingsPanel(props: {
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Permission Profile（可选）</label>
+                <label class="neu-form-label">Approval Mode</label>
                 <NeuSelect
                   value={modePermission()}
                   options={modePermissionOptions()}
@@ -992,19 +990,20 @@ export function SettingsPanel(props: {
                     if (!name) return;
                     const split = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
                     props.onUpdateConfig?.({
-                      modes: {
-                        ...props.config?.modes,
+                      agentModes: {
+                        ...props.config?.agentModes,
                         [name]: {
                           description: modeDescription(),
                           systemPrompt: modeSystemPrompt(),
                           model: modeModel().trim() || undefined,
-                          permission: modePermission().trim() || undefined,
+                          approval: modePermission().trim() || "ask",
                           allowedTools: split(modeAllowedTools()),
                           excludedTools: split(modeExcludedTools()),
                           mcpServers: split(modeMcpServers()),
+                          skills: true,
                         },
                       },
-                      defaultMode: name,
+                      defaultAgentMode: name,
                     });
                     setModeEditorOpen(false);
                   }}

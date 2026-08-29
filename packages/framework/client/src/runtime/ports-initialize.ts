@@ -32,7 +32,7 @@ export type RuntimeInitializePorts = {
   >;
   getTurnAgent: () => Map<string, string>;
   getSelectedPermissionProfile: () =>
-    | ConfigV3["permissionProfiles"][string]
+    | import("@natalia/contracts").PermissionProfile
     | undefined;
   getAgentRegistry: () => AgentRegistry | undefined;
   getRuntimeContext: () => RuntimeContextLedger;

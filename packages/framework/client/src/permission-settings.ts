@@ -10,7 +10,14 @@
  */
 import type { ConfigV3 } from "@natalia/contracts";
 
-type PermissionProfile = ConfigV3["permissionProfiles"][string];
+type PermissionProfile = {
+  approval: ConfigV3["agentModes"][string]["approval"];
+  description: string;
+  permissions?: { tools?: { allow: string[]; exclude: string[] } };
+  commandRules?: ConfigV3["agentModes"][string]["commandRules"];
+  interactivePrograms?: ConfigV3["agentModes"][string]["interactivePrograms"];
+  extensions?: { skills?: boolean; mcp?: boolean };
+};
 export type PermissionMode = PermissionProfile["approval"];
 
 export type DerivedPermissionSettings =
@@ -56,7 +63,7 @@ export function derivePermissionSettings(input: {
 
   if (requestedProfile) {
     const found =
-      config.agentModes[requestedProfile] ?? config.permissionProfiles[requestedProfile];
+      config.agentModes[requestedProfile] ?? config.agentModes[requestedProfile];
     if (!found) return { found: false };
     const foundProfile: PermissionProfile = {
       approval: found.approval,

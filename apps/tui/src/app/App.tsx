@@ -857,7 +857,7 @@ function Shell(props: {
             }))}
             onSelect={(option) => {
               dialog.pop();
-              void persistConfigOutcome({ defaultPermission: option.value })
+              void persistConfigOutcome({ defaultAgentMode: option.value })
                 .then((applied) => {
                   if (applied) setQuickProfile(option.value);
                 })

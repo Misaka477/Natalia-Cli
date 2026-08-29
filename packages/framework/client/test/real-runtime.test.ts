@@ -978,7 +978,7 @@ test("runtime status reflects the configured auto approval profile", async () =>
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      defaultPermission: "trusted",
+      defaultAgentMode: "trusted",
       permissionProfiles: {
         trusted: { approval: "auto", description: "Trusted workspace" },
       },
@@ -1284,7 +1284,7 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 3, defaultPermission: "ask" }),
+    JSON.stringify({ version: 3, defaultAgentMode: "ask" }),
   );
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
@@ -1301,10 +1301,10 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   );
 
   // By-name resolution: any capability can read the resolved config.
-  const first = kernel.service<{ defaultPermission?: string }>(
+  const first = kernel.service<{ defaultAgentMode?: string }>(
     "runtime.config",
   );
-  expect(first?.defaultPermission).toBe("ask");
+  expect(first?.defaultAgentMode).toBe("ask");
   expect(kernel.ownerOf("services", "runtime.config")).toBe(
     "natalia-runtime-config",
   );
@@ -1319,19 +1319,19 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   const unsubscribe = kernel.onServiceUpdate((update) => updates.push(update));
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 3, defaultPermission: "auto" }),
+    JSON.stringify({ version: 3, defaultAgentMode: "auto" }),
   );
   // Reload applies on demand through plugin dispose/setup.
   await client.reloadConfig?.();
   await waitFor(() => {
-    const current = kernel.service<{ defaultPermission?: string }>(
+    const current = kernel.service<{ defaultAgentMode?: string }>(
       "runtime.config",
     );
-    return current?.defaultPermission === "auto";
+    return current?.defaultAgentMode === "auto";
   });
   expect(
-    kernel.service<{ defaultPermission?: string }>("runtime.config")
-      ?.defaultPermission,
+    kernel.service<{ defaultAgentMode?: string }>("runtime.config")
+      ?.defaultAgentMode,
   ).toBe("auto");
   expect(updates.filter((update) => update.name === "runtime.config")).toEqual(
     expect.arrayContaining([
@@ -1374,7 +1374,7 @@ test("failed config reload restores runtime config and plugin settings", async (
     configPath,
     JSON.stringify({
       version: 3,
-      defaultPermission: "ask",
+      defaultAgentMode: "ask",
       plugins: {
         paths: [".natalia/plugins"],
         settings: { "rollback.plugin": { value: "old" } },
@@ -1396,7 +1396,7 @@ test("failed config reload restores runtime config and plugin settings", async (
     configPath,
     JSON.stringify({
       version: 3,
-      defaultPermission: "auto",
+      defaultAgentMode: "auto",
       plugins: {
         paths: [".natalia/plugins"],
         settings: { "rollback.plugin": { value: "new", fail: true } },
@@ -1407,8 +1407,8 @@ test("failed config reload restores runtime config and plugin settings", async (
   expect(result?.applied).toBe(false);
   expect(result?.reason).toContain("configured plugin failure");
   expect(
-    kernel.service<{ defaultPermission?: string }>("runtime.config")
-      ?.defaultPermission,
+    kernel.service<{ defaultAgentMode?: string }>("runtime.config")
+      ?.defaultAgentMode,
   ).toBe("ask");
   expect(kernel.service<string>("rollback.value")).toBe("old");
   expect(
@@ -1862,7 +1862,7 @@ lines.on("line", (line) => {
     JSON.stringify({
       version: 3,
       mcpServers,
-      defaultPermission: "without-mcp",
+      defaultAgentMode: "without-mcp",
       permissionProfiles: {
         "without-mcp": {
           approval: "ask",
@@ -2032,7 +2032,7 @@ test("skills plugin config reload reconciles its lifecycle", async () => {
     configPath,
     JSON.stringify({
       version: 3,
-      defaultPermission: "without-skills",
+      defaultAgentMode: "without-skills",
       permissionProfiles: {
         "without-skills": {
           approval: "ask",
@@ -2578,7 +2578,7 @@ test("read-only profile rejects side-effecting tools without an approval request
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       version: 3,
-      defaultPermission: "safe",
+      defaultAgentMode: "safe",
       permissionProfiles: {
         safe: { approval: "read_only", description: "Read-only workspace" },
       },

@@ -8,7 +8,7 @@ test("runtime config service is exposed by its kernel name", () => {
 test("the config value contract is the resolved ConfigV3", () => {
   const config = {
     version: 3,
-    defaultPermission: "ask",
+    defaultAgentMode: "ask",
   } as RuntimeConfigService;
   expect(config.version).toBe(3);
 });

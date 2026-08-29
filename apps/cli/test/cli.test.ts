@@ -2971,15 +2971,15 @@ test("the shipped example profiles only name tools a capability bundle can grant
   const config = JSON.parse(
     await readFile(join(repoRoot, "deploy", "examples", "config.json"), "utf8"),
   ) as {
-    permissionProfiles: Record<
+    agentModes: Record<
       string,
-      { permissions?: { tools?: { allow?: string[] } } }
+      { allowedTools?: string[] }
     >;
   };
   const { isKnownModuleTool } = await import("@natalia/workflow");
-  const named = Object.entries(config.permissionProfiles).flatMap(
+  const named = Object.entries(config.agentModes).flatMap(
     ([profile, entry]) =>
-      (entry.permissions?.tools?.allow ?? []).map((tool) => ({
+      (entry.allowedTools ?? []).map((tool) => ({
         profile,
         tool,
       })),
