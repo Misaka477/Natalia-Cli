@@ -157,6 +157,7 @@ export function createSessionStoreController(input: {
       createdAt: record.createdAt,
       lastAccessedAt: record.metadata.lastAccessedAt as string | undefined,
       pinned: record.pinned,
+      archived: Boolean(record.metadata.archived),
       events: store.eventCount(record.id),
       pendingInputs: 0,
       cancelled: record.cancelled,
