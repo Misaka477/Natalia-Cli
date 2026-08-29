@@ -155,6 +155,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [selectedSessionID, setSelectedSessionID] = createSignal("");
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
   const [workspaces, setWorkspaces] = createSignal<WorkspaceSummary[]>([]);
+  const [registeredTools, setRegisteredTools] = createSignal<string[]>([]);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [themeMode, setThemeMode] = createSignal(
     props.ctx.preferences.get<string>("themeMode") ?? "light",
@@ -359,6 +360,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => themeStyle.remove());
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
+    void props.ctx.runtime.registeredTools?.().then((tools) => {
+      if (tools) setRegisteredTools(tools.map((tool) => tool.name));
+    });
     void refreshSessions();
     void refreshWorkspaces();
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
@@ -1030,6 +1034,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         state={state()}
         config={config()}
         preferences={props.ctx.preferences}
+        registeredTools={registeredTools()}
         onUpdateConfig={async (patch) => {
           await props.ctx.runtime.updateConfig?.({
             patch,

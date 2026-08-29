@@ -136,6 +136,7 @@ export function SettingsPanel(props: {
     get<T>(key: string): T | undefined;
     set<T>(key: string, value: T): void;
   };
+  registeredTools?: string[];
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
@@ -387,6 +388,46 @@ export function SettingsPanel(props: {
     },
   };
 
+
+  const modeModelOptions = () => {
+    const config = props.config;
+    if (!config) return [];
+    const options: Array<{ value: string; label: string }> = [];
+    for (const [providerID, provider] of Object.entries(config.catalog?.providers ?? {})) {
+      for (const modelID of Object.keys(provider?.models ?? {})) {
+        options.push({ value: `${providerID}/${modelID}`, label: `${providerID}/${modelID}` });
+      }
+    }
+    return options;
+  };
+
+  const modePermissionOptions = () => [
+    { value: "", label: "默认" },
+    ...Object.keys(props.config?.permissionProfiles ?? {}).map((name) => ({ value: name, label: name })),
+  ];
+
+  const modeToolOptions = () => {
+    const current = new Set([
+      ...modeAllowedTools().split(",").map((item) => item.trim()).filter(Boolean),
+      ...modeExcludedTools().split(",").map((item) => item.trim()).filter(Boolean),
+    ]);
+    return [...new Set([...(props.registeredTools ?? []), ...current])].sort();
+  };
+
+  const modeMcpOptions = () => Object.keys(props.config?.mcpServers ?? {});
+
+  function toggleCsv(
+    current: string,
+    value: string,
+    setter: (next: string) => void,
+  ) {
+    const items = current.split(",").map((item) => item.trim()).filter(Boolean);
+    const next = items.includes(value)
+      ? items.filter((item) => item !== value)
+      : [...items, value];
+    setter(next.join(", "));
+  }
+
   function runtimeValue(label: string): string | undefined {
     const config = props.config;
     if (!config) return undefined;
@@ -601,23 +642,70 @@ export function SettingsPanel(props: {
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Model（可选）</label>
-                <input class="neu-form-input" value={modeModel()} onInput={(e) => setModeModel(e.currentTarget.value)} />
+                <NeuSelect
+                  value={modeModel()}
+                  options={modeModelOptions()}
+                  onChange={setModeModel}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Permission Profile（可选）</label>
-                <input class="neu-form-input" value={modePermission()} onInput={(e) => setModePermission(e.currentTarget.value)} />
+                <NeuSelect
+                  value={modePermission()}
+                  options={modePermissionOptions()}
+                  onChange={setModePermission}
+                />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Allowed Tools（逗号分隔）</label>
-                <input class="neu-form-input" value={modeAllowedTools()} onInput={(e) => setModeAllowedTools(e.currentTarget.value)} />
+                <label class="neu-form-label">Allowed Tools</label>
+                <div class="neu-checkbox-list">
+                  <For each={modeToolOptions()}>
+                    {(tool) => (
+                      <label class="neu-form-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={modeAllowedTools().split(",").map((item) => item.trim()).includes(tool)}
+                          onChange={() => toggleCsv(modeAllowedTools(), tool, setModeAllowedTools)}
+                        />
+                        <span>{tool}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Excluded Tools（逗号分隔）</label>
-                <input class="neu-form-input" value={modeExcludedTools()} onInput={(e) => setModeExcludedTools(e.currentTarget.value)} />
+                <label class="neu-form-label">Excluded Tools</label>
+                <div class="neu-checkbox-list">
+                  <For each={modeToolOptions()}>
+                    {(tool) => (
+                      <label class="neu-form-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={modeExcludedTools().split(",").map((item) => item.trim()).includes(tool)}
+                          onChange={() => toggleCsv(modeExcludedTools(), tool, setModeExcludedTools)}
+                        />
+                        <span>{tool}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">MCP Servers（逗号分隔）</label>
-                <input class="neu-form-input" value={modeMcpServers()} onInput={(e) => setModeMcpServers(e.currentTarget.value)} />
+                <label class="neu-form-label">MCP Servers</label>
+                <div class="neu-checkbox-list">
+                  <For each={modeMcpOptions()}>
+                    {(server) => (
+                      <label class="neu-form-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={modeMcpServers().split(",").map((item) => item.trim()).includes(server)}
+                          onChange={() => toggleCsv(modeMcpServers(), server, setModeMcpServers)}
+                        />
+                        <span>{server}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
               </div>
               <div class="neu-form-actions">
                 <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setModeEditorOpen(false)}>取消</button>
