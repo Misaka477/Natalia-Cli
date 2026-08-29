@@ -333,7 +333,7 @@ export function createWebRuntimeClient(
     start,
     async submit(text) {
       console.log("[web-runtime] submit", text);
-      return (await call("submit", { text })) as never;
+      return (await call("prompt", { text })) as never;
     },
     async submitInput(input) {
       return (await call("submit.input", { ...(input as Record<string, unknown>) })) as never;
