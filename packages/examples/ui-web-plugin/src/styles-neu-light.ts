@@ -2703,21 +2703,22 @@ button.neu-settings-item.neu-settings-item-button:active {
 }}
 
 
+
 .neu-tool-select-grid {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 260px;
+  gap: 14px;
+  max-height: 320px;
   overflow-y: auto;
-  padding: 4px;
+  padding: 6px;
 }
 .neu-tool-check {
   width: 100%;
-  min-height: 38px;
-  padding: 8px 10px;
-  font-size: 12px;
-  gap: 8px;
-  border-radius: 12px;
+  min-height: 46px;
+  padding: 10px 12px;
+  font-size: 13px;
+  gap: 10px;
+  border-radius: 14px;
 }
 .neu-tool-check {
   min-height: 38px;
