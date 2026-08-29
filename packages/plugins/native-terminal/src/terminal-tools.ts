@@ -35,7 +35,7 @@ import type {
 function requireNativeTerminal(context: ToolExecutionContext) {
   if (!context.terminal)
     throw new Error(
-      "Native Terminal Host is unavailable. Install the Natalia WezTerm distribution to start an interactive terminal.",
+      "Native Terminal Host is unavailable. Enable the PTY backend or install the Natalia WezTerm distribution to start an interactive terminal.",
     );
   return context.terminal;
 }

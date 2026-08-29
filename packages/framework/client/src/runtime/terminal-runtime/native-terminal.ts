@@ -24,6 +24,7 @@ type Surface = Pick<
   | "nativeTerminalStart"
   | "nativeTerminalWrite"
   | "nativeTerminalResize"
+  | "subscribeTerminalOutput"
 >;
 
 function refusalFromRegistry(error: unknown): RuntimeRefusal {
@@ -159,6 +160,14 @@ export function createNativeTerminalSurface(
       } catch (error) {
         throw refusalFromRegistry(error);
       }
+    },
+    subscribeTerminalOutput(id, listener) {
+      const terminal = ctx.ports.resolveService<TerminalController>(
+        TERMINAL_CONTROLLER_SERVICE,
+      );
+      if (!terminal?.subscribeOutput)
+        throw new RuntimeRefusal("Native Terminal Host is unavailable");
+      return terminal.subscribeOutput(id, listener);
     },
   };
 }

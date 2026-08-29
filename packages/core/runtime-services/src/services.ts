@@ -623,6 +623,7 @@ export interface TerminalController {
   ): Promise<RuntimeNativeTerminalSession>;
   ttyName(id: string): Promise<string | undefined>;
   setActiveSession(sessionID: string | undefined): void;
+  subscribeOutput?(id: string, listener: (chunk: string) => void): () => void;
   close(): Promise<void>;
 }
 export type TerminalControllerInput = {
@@ -634,6 +635,8 @@ export type TerminalControllerInput = {
   windowMode(): "auto" | "windowless" | "window";
   /** Provider-private native registry, interpreted only by the terminal subsystem. */
   external?: unknown;
+  /** Web interactive terminal uses an in-process PTY instead of WezTerm. */
+  backend?: "wezterm" | "pty";
 };
 export interface SandboxService extends SandboxToolService {
   init(): Promise<void>;
@@ -760,6 +763,10 @@ export interface TaskWorkflowService extends TaskWorkflowController {
 }
 export interface RuntimeServiceClient extends RuntimeClient {
   service<T>(name: string): Promise<T | undefined>;
+  subscribeTerminalOutput?(
+    id: string,
+    listener: (chunk: string) => void,
+  ): () => void;
 }
 export type RuntimeContextLedger = ContextLedger;
 export interface ContextLedgerFactory {

@@ -63,6 +63,7 @@ export type PtyTerminalControllerInput = {
   runtimeID(): string;
   userRuntimeHome(): string | undefined;
   windowMode(): "auto" | "windowless" | "window";
+  backend?: "wezterm" | "pty";
   spawn?: PtyFactory;
 };
 
@@ -132,6 +133,7 @@ export function createPtyTerminalController(
   const idempotency = new Map<string, Map<string, string>>();
   const writes = new Map<string, Promise<void>>();
   const revisionWaiters = new Map<string, Set<() => void>>();
+  const outputListeners = new Map<string, Set<(chunk: string) => void>>();
   let activeSession: string | undefined;
   let closed = false;
   let initialized = false;
@@ -237,6 +239,8 @@ export function createPtyTerminalController(
     session.revision += 1;
     session.lastOutputAt = Date.now();
     notifyRevision(session.id);
+    for (const listener of outputListeners.get(session.id) ?? [])
+      listener(chunk);
   }
 
   function markExited(
@@ -603,6 +607,19 @@ export function createPtyTerminalController(
     return pid ? `/proc/${pid}/fd/0` : undefined;
   }
 
+  function subscribeOutput(id: string, listener: (chunk: string) => void) {
+    const session = get(id);
+    const listeners =
+      outputListeners.get(session.id) ?? new Set<(chunk: string) => void>();
+    listeners.add(listener);
+    outputListeners.set(session.id, listeners);
+    if (session.output) listener(session.output);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) outputListeners.delete(session.id);
+    };
+  }
+
   function setActiveSession(sessionID: string | undefined) {
     if (sessionID !== undefined)
       for (const session of sessions.values())
@@ -631,6 +648,7 @@ export function createPtyTerminalController(
     idempotency.clear();
     writes.clear();
     revisionWaiters.clear();
+    outputListeners.clear();
   }
 
   return {
@@ -653,6 +671,7 @@ export function createPtyTerminalController(
     requestHuman,
     ttyName,
     setActiveSession,
+    subscribeOutput,
     close,
   };
 }

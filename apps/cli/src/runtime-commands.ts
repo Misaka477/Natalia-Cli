@@ -38,6 +38,7 @@ export async function handleRuntimeCommand(argv: string[]) {
       client,
       port,
       token: process.env.NATALIA_TRANSPORT_TOKEN,
+      terminalWrite: true,
     });
     console.log(
       JSON.stringify({

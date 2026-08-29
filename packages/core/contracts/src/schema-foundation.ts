@@ -24,6 +24,7 @@ export const timeoutSchema = z.object({
  */
 export const terminalWindowConfigSchema = z.object({
   windowMode: z.enum(["auto", "windowless", "window"]).default("auto"),
+  backend: z.enum(["wezterm", "pty"]).default("pty"),
 });
 
 export const teamConfigSchema = z.object({

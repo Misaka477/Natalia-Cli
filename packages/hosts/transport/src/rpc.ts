@@ -387,6 +387,15 @@ export type RuntimeAuthorizationContext = {
 };
 
 /**
+ * The sessions a credential may see events for. Undefined means unrestricted.
+ */
+export function credentialSessions(
+  context: RuntimeAuthorizationContext | undefined,
+): ReadonlySet<string> | undefined {
+  return context?.sessions;
+}
+
+/**
  * Whether a route is inside the caller's grant. Checked before the route
  * table, so a credential that cannot call a method gets `-32001 refused`
  * whether or not the method exists — an authorization error must not double

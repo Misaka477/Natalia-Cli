@@ -22,6 +22,12 @@ export {
 } from "./ws";
 export { handleRPCMessage, stringParam, arrayParam } from "./rpc";
 export {
+  matchTerminalPath,
+  authorizeTerminalSession,
+  type TerminalWsMessage,
+  type TerminalWsServerMessage,
+} from "./terminal-ws";
+export {
   createRuntimeDaemonStore,
   daemonToken,
   registerRuntimeDaemon,

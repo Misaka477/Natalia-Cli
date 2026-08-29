@@ -3,7 +3,8 @@ import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import type { ServerWebSocket } from "bun";
 import { handleRPCMessage } from "./rpc";
 import type { RuntimeAuthorizationContext } from "./rpc";
-import { resolveAuthorization, credentialSessions } from "./http";
+import { resolveAuthorization } from "./http";
+import { credentialSessions } from "./rpc";
 import type { RuntimeAuthorizationPolicy } from "./http";
 import type { RPCRequest } from "./rpc-client";
 

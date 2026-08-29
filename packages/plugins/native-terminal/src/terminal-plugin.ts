@@ -5,6 +5,7 @@ import {
   type TerminalControllerInput,
 } from "@natalia/runtime-services";
 import { createTerminalController } from "./terminal-controller";
+import { createPtyTerminalController } from "./pty-terminal-controller";
 import { terminalTools, terminalToolFamily } from "./terminal-tools";
 import type { NativeTerminalRegistry } from "./native-terminal";
 
@@ -41,10 +42,13 @@ export function createTerminalPlugin(input: TerminalControllerInput): Plugin {
     setup(api) {
       // The controller input crosses the runtime-services boundary with the
       // host registry typed as `unknown`; the plugin owns the concrete type.
-      controller = createTerminalController({
-        ...input,
-        external: input.external as NativeTerminalRegistry | undefined,
-      });
+      controller =
+        input.backend === "pty"
+          ? createPtyTerminalController(input)
+          : createTerminalController({
+              ...input,
+              external: input.external as NativeTerminalRegistry | undefined,
+            });
       api.services.provide(TERMINAL_CONTROLLER_SERVICE, controller);
       for (const tool of terminalTools()) api.tools.register(tool);
       for (const [alias, target] of Object.entries(

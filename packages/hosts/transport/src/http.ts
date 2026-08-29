@@ -1,8 +1,14 @@
 import { API_VERSION } from "@natalia/contracts";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
-import { handleRPCMessage, RPC_WRITE_METHODS } from "./rpc";
+import { credentialSessions, handleRPCMessage, RPC_WRITE_METHODS } from "./rpc";
 import type { RuntimeAuthorizationContext } from "./rpc";
 import type { RuntimeCapabilityGroup } from "@natalia/contracts";
+import {
+  matchTerminalPath,
+  terminalWebsocketHandlers,
+  upgradeTerminalSocket,
+  type TerminalSocketData,
+} from "./terminal-ws";
 
 export type TaskDeliveryRequest = {
   taskPath?: string;
@@ -56,7 +62,12 @@ export type RuntimeAuthorizationPolicy = {
 };
 
 export type RuntimeHttpServerOptions = {
-  client: RuntimeClient;
+  client: RuntimeClient & {
+    subscribeTerminalOutput?(
+      id: string,
+      listener: (chunk: string) => void,
+    ): () => void;
+  };
   hostname?: string;
   port?: number;
   /**
@@ -135,14 +146,7 @@ export function resolveAuthorization(
   return "denied";
 }
 
-/**
- * The sessions a credential may see events for. Undefined means unrestricted.
- */
-export function credentialSessions(
-  context: RuntimeAuthorizationContext | undefined,
-): ReadonlySet<string> | undefined {
-  return (context as { sessions?: ReadonlySet<string> } | undefined)?.sessions;
-}
+export { credentialSessions } from "./rpc";
 
 function replayEvents(
   events: Array<{ id: number; event: RuntimeEvent }>,
@@ -212,7 +216,12 @@ export function createRuntimeHttpServer(
   let nextEventID = 1;
   if (options.events !== false)
     options.client.start((event) => {
-      console.log("[web-server] event", event.type, "subscribers", subscribers.size);
+      console.log(
+        "[web-server] event",
+        event.type,
+        "subscribers",
+        subscribers.size,
+      );
       const id = nextEventID++;
       eventBuffer.push({ id, event });
       if (eventBuffer.length > 500) eventBuffer.shift();
@@ -224,7 +233,15 @@ export function createRuntimeHttpServer(
         subscriber.controller.enqueue(encodeSSE(encoder, id, event));
       }
     });
-  const handleRequest = async (request: Request) => {
+  const handleRequest = async (
+    request: Request,
+    bunServer?: {
+      upgrade(
+        request: Request,
+        options: { data: TerminalSocketData },
+      ): boolean;
+    },
+  ) => {
     const url = new URL(request.url);
     if (url.pathname === "/healthz")
       return Response.json({ ok: true, apiVersion: API_VERSION });
@@ -235,6 +252,18 @@ export function createRuntimeHttpServer(
     );
     if (authorization === "denied")
       return Response.json({ error: "unauthorized" }, { status: 401 });
+    if (matchTerminalPath(url.pathname)) {
+      if (!options.terminalWrite)
+        return Response.json(
+          { error: "terminal write is not enabled by this host" },
+          { status: 403 },
+        );
+      if (!bunServer)
+        return Response.json({ error: "upgrade failed" }, { status: 400 });
+      const upgraded = upgradeTerminalSocket(request, bunServer, authorization);
+      if (upgraded === null) return undefined;
+      if (upgraded) return upgraded;
+    }
     const executionMatch = url.pathname.match(
       /^\/tasks\/executions\/([^/]+)(?:\/(events|cancel))?$/u,
     );
@@ -543,7 +572,11 @@ export function createRuntimeHttpServer(
     // scope"): the gate answers only for callers who would otherwise get
     // through.
     const method = (body as { method?: unknown })?.method;
-    console.log("[web-server] rpc", String(method ?? "unknown"), (body as {params?: unknown})?.params);
+    console.log(
+      "[web-server] rpc",
+      String(method ?? "unknown"),
+      (body as { params?: unknown })?.params,
+    );
     if (
       typeof method === "string" &&
       (method === "nativeTerminal.start" ||
@@ -574,7 +607,11 @@ export function createRuntimeHttpServer(
       request.signal,
       authorization,
     );
-    console.log("[web-server] rpc result", String(method ?? "unknown"), result?.error ?? "ok");
+    console.log(
+      "[web-server] rpc result",
+      String(method ?? "unknown"),
+      result?.error ?? "ok",
+    );
     if (result.error) return Response.json(result, { status: 400 });
     return Response.json(result);
   };
@@ -584,20 +621,31 @@ export function createRuntimeHttpServer(
     const base = {
       "access-control-allow-origin": origin ?? "*",
       "access-control-allow-methods": "GET,POST,OPTIONS",
-      "access-control-allow-headers": "content-type,authorization,last-event-id",
+      "access-control-allow-headers":
+        "content-type,authorization,last-event-id",
       "access-control-expose-headers": "last-event-id",
     };
     return base;
   }
 
-  const fetchHandler = async (request: Request) => {
+  const terminalWs = terminalWebsocketHandlers(options.client);
+  const fetchHandler = async (
+    request: Request,
+    bunServer?: {
+      upgrade(
+        request: Request,
+        options: { data: TerminalSocketData },
+      ): boolean;
+    },
+  ) => {
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: corsHeaders(request),
       });
     }
-    const response = await handleRequest(request);
+    const response = await handleRequest(request, bunServer);
+    if (!response) return undefined;
     const headers = new Headers(response.headers);
     for (const [key, value] of Object.entries(corsHeaders(request)))
       headers.set(key, value);
@@ -617,22 +665,38 @@ export function createRuntimeHttpServer(
   // published bun-types; the cast carries it without losing the rest.
   const serveOptions = (base: Parameters<typeof Bun.serve>[0]) =>
     ({ ...base, idleTimeout: 255 }) as Parameters<typeof Bun.serve>[0];
+  const websocket = {
+    open: terminalWs.open,
+    message: terminalWs.message,
+    close: terminalWs.close,
+  };
   const server = options.unix
-    ? Bun.serve(serveOptions({ unix: options.unix, fetch: fetchHandler }))
+    ? Bun.serve(
+        serveOptions({
+          unix: options.unix,
+          fetch: (request, bunServer) =>
+            fetchHandler(request, bunServer as never),
+          websocket,
+        }),
+      )
     : options.tls
       ? Bun.serve(
           serveOptions({
             hostname: options.hostname ?? "127.0.0.1",
             port: options.port ?? 0,
             tls: options.tls,
-            fetch: fetchHandler,
+            fetch: (request, bunServer) =>
+              fetchHandler(request, bunServer as never),
+            websocket,
           }),
         )
       : Bun.serve(
           serveOptions({
             hostname: options.hostname ?? "127.0.0.1",
             port: options.port ?? 0,
-            fetch: fetchHandler,
+            fetch: (request, bunServer) =>
+              fetchHandler(request, bunServer as never),
+            websocket,
           }),
         );
   return {

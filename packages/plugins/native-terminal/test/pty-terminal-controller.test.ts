@@ -214,3 +214,24 @@ test("pty controller isolates sessions via setActiveSession", async () => {
   ]);
   await controller.close();
 });
+
+test("pty controller subscribeOutput replays buffer then live chunks", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-subscribe-"));
+  const { factory, processes } = fakePty();
+  const controller = createPtyTerminalController(
+    controllerInput(root, factory),
+  );
+  const started = await controller.start({ command: "cat", cwd: root });
+  await controller.write(started.id, "hello\n");
+  const chunks: string[] = [];
+  const unsubscribe = controller.subscribeOutput!(started.id, (chunk) => {
+    chunks.push(chunk);
+  });
+  expect(chunks).toEqual(["hello\n"]);
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("world\n");
+  expect(chunks).toEqual(["hello\n", "world\n"]);
+  unsubscribe();
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("ignored\n");
+  expect(chunks).toEqual(["hello\n", "world\n"]);
+  await controller.close();
+});
