@@ -2763,4 +2763,9 @@ button.neu-settings-item.neu-settings-item-button:active {
   flex: 1;
   min-width: 0;
 }
+
+.neu-select-menu-top {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
 `;

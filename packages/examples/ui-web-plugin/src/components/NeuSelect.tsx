@@ -12,6 +12,7 @@ export function NeuSelect(props: {
   disabled?: boolean;
   placeholder?: string;
   class?: string;
+  menuPosition?: "top" | "bottom";
 }) {
   const [open, setOpen] = createSignal(false);
   let rootEl: HTMLDivElement | undefined;
@@ -51,7 +52,7 @@ export function NeuSelect(props: {
         </svg>
       </button>
       <Show when={open()}>
-        <div class="neu-select-menu">
+        <div class={`neu-select-menu${props.menuPosition === "top" ? " neu-select-menu-top" : ""}`}>
           <For each={props.options}>
             {(option) => (
               <button
