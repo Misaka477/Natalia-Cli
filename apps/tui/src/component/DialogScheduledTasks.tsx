@@ -397,7 +397,7 @@ export function buildTaskPermissionPreviewOptions(
           ]
         : []),
       {
-        title: `Extensions: skills=${module.extensions.skills ? "on" : "off"}, mcp=${module.extensions.mcp ? "on" : "off"}, plugins=${module.extensions.plugins ? "on" : "off"}`,
+        title: `Extensions: skills=${module.extensions.skills ? "on" : "off"}, mcp=${module.extensions.mcp ? "on" : "off"}`,
         value: `extensions:${module.moduleID}`,
         category: "Restrictions",
       },

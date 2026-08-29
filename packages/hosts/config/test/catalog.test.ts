@@ -499,7 +499,7 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
             mode: "whitelist",
             rules: [{ command: "git diff", reason: "inspect changes" }],
           },
-          extensions: { skills: false, mcp: false, plugins: false },
+          extensions: { skills: false, mcp: false },
         },
       },
       modes: {
@@ -571,7 +571,7 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
         mode: "whitelist",
         rules: [{ command: "git diff", reason: "inspect changes" }],
       },
-      extensions: { skills: false, mcp: false, plugins: false },
+      extensions: { skills: false, mcp: false },
     });
     expect(resolved.modes.review).toMatchObject({
       systemPrompt: "Inspect changes and report findings.",

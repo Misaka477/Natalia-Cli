@@ -882,7 +882,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               displayName: flow.displayName,
               modules: flow.modules.map((mod) => ({
                 id: mod.id,
-                type: mod.type as "read_search" | "terminal" | "shell_command" | "workspace_changes" | "web_fetch" | "skills" | "mcp" | "plugins" | "subagents" | "report_output",
+                type: mod.type as "read_search" | "terminal" | "shell_command" | "workspace_changes" | "web_fetch" | "skills" | "mcp" | "subagents" | "report_output",
                 displayName: mod.displayName,
                 enabled: mod.enabled,
                 instructions: mod.instructions,

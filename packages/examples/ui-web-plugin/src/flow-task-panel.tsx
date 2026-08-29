@@ -42,7 +42,6 @@ const moduleTypes = [
   "web_fetch",
   "skills",
   "mcp",
-  "plugins",
   "subagents",
   "report_output",
 ];

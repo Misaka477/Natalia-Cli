@@ -94,7 +94,6 @@ export const interactiveProgramRulesSchema = z.object({
 export const extensionRulesSchema = z.object({
   skills: z.boolean().optional(),
   mcp: z.boolean().optional(),
-  plugins: z.boolean().optional(),
 });
 
 export const permissionProfileSchema = z.object({
@@ -114,7 +113,6 @@ export const flowModuleTypeSchema = z.enum([
   "web_fetch",
   "skills",
   "mcp",
-  "plugins",
   "subagents",
   "report_output",
 ]);

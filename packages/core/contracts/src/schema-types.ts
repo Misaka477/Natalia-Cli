@@ -83,7 +83,7 @@ export type EffectiveModulePermissions = {
     module?: { mode: string; commands: string[] };
   };
   interactivePrograms: string[] | "any";
-  extensions: { skills: boolean; mcp: boolean; plugins: boolean };
+  extensions: { skills: boolean; mcp: boolean };
   pathRules?: { read: string[]; write: string[] };
   profilePathRules?: { read: string[]; write: string[] };
   blocked?: string;

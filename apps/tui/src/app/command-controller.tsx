@@ -823,12 +823,12 @@ export async function runCommand(command: string, ctx: CommandContext) {
                         {
                           title: "Extensions",
                           value: "extensions",
-                          description: ["skills", "mcp", "plugins"]
+                          description: ["skills", "mcp"]
                             .map(
                               (extension) =>
                                 `${extension}=${
                                   profile().extensions?.[
-                                    extension as "skills" | "mcp" | "plugins"
+                                    extension as "skills" | "mcp"
                                   ] === false
                                     ? "off"
                                     : "on"
@@ -1124,7 +1124,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                             <DialogSelect
                               title="Profile Extensions"
                               options={(
-                                ["skills", "mcp", "plugins"] as const
+                                ["skills", "mcp"] as const
                               ).map((extension) => ({
                                 title: extension,
                                 value: extension,
@@ -1136,8 +1136,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                               onSelect={(choice) => {
                                 const extension = choice.value as
                                   | "skills"
-                                  | "mcp"
-                                  | "plugins";
+                                  | "mcp";
                                 target.extensions = {
                                   ...target.extensions,
                                   [extension]:

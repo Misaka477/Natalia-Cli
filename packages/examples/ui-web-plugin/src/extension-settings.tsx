@@ -1,9 +1,9 @@
 import { createSignal, For, Show } from "solid-js";
 import { NeuSelect } from "./components/NeuSelect";
-import type { PluginView, McpView } from "@natalia/view-store";
+import type { McpView } from "@natalia/view-store";
 import type { MCPServerConfig } from "@natalia/contracts";
 
-type ExtensionKind = "mcp" | "plugins" | "skills";
+type ExtensionKind = "mcp" | "skills";
 
 type ExtensionRow = {
   id: string;
@@ -20,7 +20,6 @@ type ExtensionSection = {
 };
 
 function buildInitialSections(props: {
-  plugins?: Record<string, PluginView>;
   mcp?: Record<string, McpView>;
 }): ExtensionSection[] {
   const mcpRows = Object.entries(props.mcp ?? {}).map(([id, server]) => ({
@@ -28,12 +27,6 @@ function buildInitialSections(props: {
     name: id,
     description: server.message ?? `${server.tools} tools`,
     enabled: server.status === "connected",
-  }));
-  const pluginRows = Object.entries(props.plugins ?? {}).map(([id, plugin]) => ({
-    id,
-    name: id,
-    description: plugin.detail ?? plugin.status,
-    enabled: plugin.status === "loaded",
   }));
   return [
     {
@@ -46,17 +39,6 @@ function buildInitialSections(props: {
             { id: "filesystem", name: "filesystem", description: "本地文件系统 MCP", enabled: true },
             { id: "context7", name: "context7", description: "文档检索 MCP", enabled: true },
             { id: "github", name: "github", description: "GitHub MCP", enabled: false },
-          ],
-    },
-    {
-      id: "plugins",
-      title: "Plugins",
-      addLabel: "安装插件",
-      rows: pluginRows.length
-        ? pluginRows
-        : [
-            { id: "team", name: "team", description: "团队协作插件", enabled: true },
-            { id: "task-workflow", name: "task-workflow", description: "任务工作流插件", enabled: true },
           ],
     },
     {
@@ -73,12 +55,9 @@ function buildInitialSections(props: {
 }
 
 export function ExtensionSettingsContent(props: {
-  plugins?: Record<string, PluginView>;
   mcp?: Record<string, McpView>;
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
-  onAddPlugin?: (spec: string) => unknown;
-  onRemovePlugin?: (name: string) => unknown;
 }) {
   const [sections, setSections] = createSignal<ExtensionSection[]>(
     buildInitialSections(props).map((section) => ({
@@ -91,7 +70,6 @@ export function ExtensionSettingsContent(props: {
   const [mcpCommand, setMcpCommand] = createSignal("");
   const [mcpArgs, setMcpArgs] = createSignal("");
   const [mcpUrl, setMcpUrl] = createSignal("");
-  const [packageSpec, setPackageSpec] = createSignal("");
   const [skillSource, setSkillSource] = createSignal("");
 
   const rows = (kind: ExtensionKind) =>
@@ -115,7 +93,6 @@ export function ExtensionSettingsContent(props: {
   function removeRow(kind: ExtensionKind, index: number) {
     const row = rows(kind)[index];
     if (kind === "mcp" && row) props.onRemoveMcp?.(row.name);
-    if (kind === "plugins" && row) props.onRemovePlugin?.(row.name);
     setSections((prev) =>
       prev.map((section) =>
         section.id === kind
@@ -130,7 +107,6 @@ export function ExtensionSettingsContent(props: {
     setMcpCommand("");
     setMcpArgs("");
     setMcpUrl("");
-    setPackageSpec("");
     setSkillSource("");
   }
 
@@ -174,27 +150,6 @@ export function ExtensionSettingsContent(props: {
         readOnly: false,
       } as MCPServerConfig,
     });
-    closeAdd();
-  }
-
-  function addPlugin() {
-    const spec = packageSpec().trim();
-    if (!spec) return;
-    const name = spec.split("/").pop() ?? spec;
-    setSections((prev) =>
-      prev.map((section) =>
-        section.id === "plugins"
-          ? {
-              ...section,
-              rows: [
-                ...section.rows,
-                { id: spec, name, description: `npm package · ${spec}`, enabled: true },
-              ],
-            }
-          : section,
-      ),
-    );
-    props.onAddPlugin?.(spec);
     closeAdd();
   }
 
@@ -243,7 +198,7 @@ export function ExtensionSettingsContent(props: {
                   <button
                     type="button"
                     class="neu-extension-btn neu-extension-remove"
-                    disabled={section.id === "plugins" && !props.onRemovePlugin}
+                    disabled={section.id === "skills"}
                     onClick={() => removeRow(section.id, index())}
                   >
                     删除
@@ -293,21 +248,6 @@ export function ExtensionSettingsContent(props: {
               </div>
             </Show>
 
-            <Show when={addingTo() === "plugins" && section.id === "plugins"}>
-              <div class="neu-extension-form">
-                <input
-                  class="neu-form-input"
-                  value={packageSpec()}
-                  placeholder="npm package spec，例如 @natalia/plugin-team"
-                  onInput={(event) => setPackageSpec(event.currentTarget.value)}
-                />
-                <div class="neu-extension-form-actions">
-                  <button type="button" class="neu-extension-btn" onClick={closeAdd}>取消</button>
-                  <button type="button" class="neu-extension-btn neu-extension-primary-btn" onClick={addPlugin}>安装</button>
-                </div>
-              </div>
-            </Show>
-
             <Show when={addingTo() === "skills" && section.id === "skills"}>
               <div class="neu-extension-form">
                 <input
@@ -324,14 +264,9 @@ export function ExtensionSettingsContent(props: {
             </Show>
 
             <div class="neu-extension-actions">
-              <Show
-                when={section.id !== "plugins" || props.onAddPlugin}
-                fallback={<span class="neu-extension-disabled">Web 端暂不支持安装插件</span>}
-              >
-                <button type="button" class="neu-extension-add" onClick={() => setAddingTo(section.id)}>
-                  {section.addLabel}
-                </button>
-              </Show>
+              <button type="button" class="neu-extension-add" onClick={() => setAddingTo(section.id)}>
+                {section.addLabel}
+              </button>
             </div>
           </div>
         )}

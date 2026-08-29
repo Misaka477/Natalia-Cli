@@ -57,7 +57,7 @@ export type RuntimePortsExtra = {
   getUserRuntimeHome: () => string | undefined;
   getUserSkillRoot: () => string | undefined;
   extensionEnabled: (
-    extension: "skills" | "mcp" | "plugins",
+    extension: "skills" | "mcp",
     profile?: ConfigV3["permissionProfiles"][string],
   ) => boolean;
   hotReloadToolFamily: (familyID: string) => Promise<{ reloaded: boolean }>;

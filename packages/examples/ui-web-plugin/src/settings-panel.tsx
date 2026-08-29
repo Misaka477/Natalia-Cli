@@ -48,7 +48,7 @@ type ExtensionRow = {
 };
 
 type ExtensionSection = {
-  id: "mcp" | "plugins" | "skills";
+  id: "mcp" | "skills";
   title: string;
   addLabel: string;
   rows: ExtensionRow[];
@@ -125,17 +125,6 @@ const initialExtensionSections: ExtensionSection[] = [
     ],
   },
   {
-    id: "plugins",
-    title: "Plugins",
-    addLabel: "安装插件",
-    rows: [
-      { name: "team", description: "团队协作插件", enabled: true },
-      { name: "task-workflow", description: "任务工作流插件", enabled: true },
-      { name: "local-tools", description: "本地工具集合", enabled: true },
-      { name: "skills", description: "技能扩展包", enabled: false },
-    ],
-  },
-  {
     id: "skills",
     title: "Skills",
     addLabel: "添加技能",
@@ -163,8 +152,6 @@ export function SettingsPanel(props: {
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
-  onAddPlugin?: (spec: string) => unknown;
-  onRemovePlugin?: (name: string) => unknown;
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
   const [sections, setSections] = createSignal<ExtensionSection[]>(
@@ -282,7 +269,6 @@ export function SettingsPanel(props: {
   const [permissionCommandRules, setPermissionCommandRules] = createSignal("");
   const [permissionSkills, setPermissionSkills] = createSignal(true);
   const [permissionMcp, setPermissionMcp] = createSignal(true);
-  const [permissionPlugins, setPermissionPlugins] = createSignal(true);
   const [permissionInteractiveAny, setPermissionInteractiveAny] = createSignal(false);
   const [permissionInteractiveAllow, setPermissionInteractiveAllow] = createSignal("");
 
@@ -309,7 +295,6 @@ export function SettingsPanel(props: {
     setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
     setPermissionSkills(profile?.extensions?.skills !== false);
     setPermissionMcp(profile?.extensions?.mcp !== false);
-    setPermissionPlugins(profile?.extensions?.plugins !== false);
     setPermissionInteractiveAny(Boolean(profile?.interactivePrograms?.allowAny));
     setPermissionInteractiveAllow((profile?.interactivePrograms?.allow ?? []).map((entry) => entry.command).join(", "));
     setPermissionEditorOpen(true);
@@ -325,7 +310,6 @@ export function SettingsPanel(props: {
     setPermissionCommandRules("");
     setPermissionSkills(true);
     setPermissionMcp(true);
-    setPermissionPlugins(true);
     setPermissionInteractiveAny(false);
     setPermissionInteractiveAllow("");
     setPermissionEditorOpen(true);
@@ -660,7 +644,7 @@ export function SettingsPanel(props: {
                   </>
                 }
               >
-                <ExtensionSettingsContent plugins={props.state?.plugins} mcp={props.state?.mcp} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} onAddPlugin={props.onAddPlugin} onRemovePlugin={props.onRemovePlugin} />
+                <ExtensionSettingsContent mcp={props.state?.mcp} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} />
               </Show>
             </section>
           </div>

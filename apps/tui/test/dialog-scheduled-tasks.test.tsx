@@ -225,7 +225,7 @@ function permissionPreview(): ScheduledTaskPermissionPreview {
           module: { mode: "whitelist", commands: ["git status --short"] },
         },
         interactivePrograms: ["vim"],
-        extensions: { skills: false, mcp: false, plugins: false },
+        extensions: { skills: false, mcp: false },
         profilePathRules: {
           read: ["allow **"],
           write: ["deny secrets/**"],

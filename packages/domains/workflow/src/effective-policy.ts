@@ -22,7 +22,7 @@ export type EffectiveModulePermissions = {
     module?: { mode: string; commands: string[] };
   };
   interactivePrograms: string[] | "any";
-  extensions: { skills: boolean; mcp: boolean; plugins: boolean };
+  extensions: { skills: boolean; mcp: boolean };
   /** Workspace path scopes the module itself configured, when any. */
   pathRules?: { read: string[]; write: string[] };
   /** Workspace path scopes inherited from the selected permission profile. */
@@ -97,9 +97,6 @@ export function effectiveModulePermissions(input: {
       profile?.extensions?.skills !== false &&
       module.extensions?.skills !== false,
     mcp: profile?.extensions?.mcp !== false && module.extensions?.mcp !== false,
-    plugins:
-      profile?.extensions?.plugins !== false &&
-      module.extensions?.plugins !== false,
   };
   const permitted = (name: string) =>
     // The completion tool is system control: the runtime keeps it available even
@@ -183,7 +180,7 @@ function blockedReason(input: {
   moduleType: NataliaFlowModuleType;
   denied: string[];
   bundle: string[];
-  moduleExtensions?: { skills?: boolean; mcp?: boolean; plugins?: boolean };
+  moduleExtensions?: { skills?: boolean; mcp?: boolean };
 }) {
   const moduleDisabled = input.denied.filter((tool) => {
     const extension = extensionForTool(tool);
@@ -198,7 +195,7 @@ function blockedReason(input: {
 
 function extensionAllowed(
   name: string,
-  extensions: { skills: boolean; mcp: boolean; plugins: boolean },
+  extensions: { skills: boolean; mcp: boolean },
 ) {
   const extension = extensionForTool(name);
   if (extension) return extensions[extension];

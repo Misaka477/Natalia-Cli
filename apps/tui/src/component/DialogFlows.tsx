@@ -33,7 +33,6 @@ const MODULE_TYPES = [
   "web_fetch",
   "skills",
   "mcp",
-  "plugins",
   "subagents",
   "report_output",
 ] as const;
@@ -992,7 +991,7 @@ function FlowEditor(props: {
                 ]
               : []),
             {
-              title: `Extensions: skills=${module.extensions.skills ? "on" : "off"}, mcp=${module.extensions.mcp ? "on" : "off"}, plugins=${module.extensions.plugins ? "on" : "off"}`,
+              title: `Extensions: skills=${module.extensions.skills ? "on" : "off"}, mcp=${module.extensions.mcp ? "on" : "off"}`,
               value: `extensions:${module.moduleID}`,
               category: "Effective permissions",
               readonly: true,
@@ -2031,7 +2030,7 @@ function ModuleCommandDelete(props: ModuleEditorProps) {
 
 function ModuleExtensions(props: ModuleEditorProps) {
   const extensions = props.module.extensions;
-  const updateExtension = (extension: "skills" | "mcp" | "plugins") => {
+  const updateExtension = (extension: "skills" | "mcp") => {
     const disabled = extensions?.[extension] === false;
     const next = { ...extensions, [extension]: disabled ? undefined : false };
     const compact = Object.fromEntries(
@@ -2050,7 +2049,7 @@ function ModuleExtensions(props: ModuleEditorProps) {
       title="Module Extensions"
       options={[
         { title: "Back to module", value: "$back", category: "Action" },
-        ...(["skills", "mcp", "plugins"] as const).map((extension) => ({
+        ...(["skills", "mcp"] as const).map((extension) => ({
           title: extension,
           value: extension,
           category: "Extensions",
@@ -2062,7 +2061,7 @@ function ModuleExtensions(props: ModuleEditorProps) {
       ]}
       onSelect={(option) => {
         if (option.value === "$back") props.returnToModule(props.draft);
-        else updateExtension(option.value as "skills" | "mcp" | "plugins");
+        else updateExtension(option.value as "skills" | "mcp");
       }}
     />
   );
@@ -2534,7 +2533,7 @@ function interactiveProgramSummary(module: FlowModule) {
 }
 
 function moduleExtensionSummary(module: FlowModule) {
-  return (["skills", "mcp", "plugins"] as const)
+  return (["skills", "mcp"] as const)
     .map(
       (extension) =>
         `${extension}=${
@@ -2560,7 +2559,6 @@ function moduleTypeDescription(type: FlowModuleType | string) {
     web_fetch: "Fetch and inspect remote web content",
     skills: "Load configured skills",
     mcp: "Use configured MCP capabilities",
-    plugins: "Use configured plugin capabilities",
     subagents: "Delegate work to subagents",
     report_output: "Publish findings and final output",
   };

@@ -3,7 +3,7 @@
  *
  * Owns the derivation of the agent and profile tool policy layers, the
  * permission-mode/profile reload on config change, and the extension gates
- * (skills/mcp/plugins). Reads host state and writes the shared permission
+ * (skills/mcp). Reads host state and writes the shared permission
  * state through `RuntimeContext` ports at call time.
  */
 import {
@@ -227,7 +227,7 @@ export function createPermissions(
   }
 
   function extensionEnabled(
-    extension: "skills" | "mcp" | "plugins",
+    extension: "skills" | "mcp",
     profile:
       | PermissionProfile
       | undefined = ctx.ports.getSelectedPermissionProfile(),
