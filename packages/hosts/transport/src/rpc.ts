@@ -110,6 +110,7 @@ function optionsGuard<K extends OptionalRuntimeMember>(
  */
 export const RPC_ROUTE_MEMBERS = {
   prompt: "submit",
+  "submit.andWait": "submitAndWait",
   cancel: "cancel",
   snapshot: "snapshot",
   "approval.respond": "respondApproval",
@@ -245,6 +246,8 @@ export const RPC_ROUTE_MEMBERS = {
   "submit.input": "submitInput",
   // P8 C2: the always-available Live Work Chat conversation (read + rollback).
   "chat.messages": "chatMessages",
+  "chat.model.profile": "chatModelProfile",
+  "chat.model.profile.set": "setChatModelProfile",
   "chat.submit": "chatSubmit",
   "chat.abort": "chatAbort",
   "chat.rollback": "chatRollback",
@@ -304,6 +307,7 @@ export const RPC_ROUTED_MEMBERS: ReadonlySet<string> = new Set(
  */
 export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "prompt",
+  "submit.andWait",
   "cancel",
   "submit.input",
   "approval.respond",
@@ -556,6 +560,17 @@ export async function handleRPCMessage(
                 | undefined,
             })
           : await client.submit(text),
+      };
+    }
+    if (request.method === "submit.andWait") {
+      const text = request.params?.text;
+      if (typeof text !== "string")
+        throw invalidParams("submit.andWait.params.text must be a string");
+      optionsGuard(client, "submitAndWait");
+      return {
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: await client.submitAndWait(text),
       };
     }
     if (request.method === "cancel") {
@@ -2064,6 +2079,30 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionSnapshot(),
+      };
+    }
+    if (body.method === "chat.model.profile") {
+      optionsGuard(client, "chatModelProfile");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.chatModelProfile?.(),
+      };
+    }
+    if (body.method === "chat.model.profile.set") {
+      optionsGuard(client, "setChatModelProfile");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("chat.model.profile.set.params must be an object");
+      const profile = (params as { profile?: unknown }).profile;
+      if (!profile || typeof profile !== "object")
+        throw invalidParams("chat.model.profile.set.params.profile must be an object");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.setChatModelProfile?.(
+          profile as import("@natalia/contracts").ChatModelProfile,
+        ),
       };
     }
     if (body.method === "chat.messages") {
