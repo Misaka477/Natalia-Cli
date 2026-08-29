@@ -304,13 +304,21 @@ export function createWebRuntimeClient(
     );
     if (!response.ok || !response.body) return;
 
-    // Replay the durable session so a reloaded page sees previous messages.
+    // Replay the full durable session so a reloaded page sees previous
+    // messages. Page through history until hasMore is false; there is no
+    // artificial cap that would hide older conversations.
     try {
-      const history = await call<RuntimeHistory>("session.history", {
-        limit: 500,
-      });
-      for (const entry of history.events)
-        for (const listener of starts) listener(entry.event);
+      let after = 0;
+      while (true) {
+        const page = await call<RuntimeHistory>("session.history", {
+          after,
+          limit: 500,
+        });
+        for (const entry of page.events)
+          for (const listener of starts) listener(entry.event);
+        if (!page.hasMore || !page.events.length) break;
+        after = page.events[page.events.length - 1]!.seq;
+      }
     } catch (error) {
       console.log("[web-runtime] history replay failed", error);
     }
