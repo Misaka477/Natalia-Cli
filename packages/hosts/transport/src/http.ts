@@ -212,6 +212,7 @@ export function createRuntimeHttpServer(
   let nextEventID = 1;
   if (options.events !== false)
     options.client.start((event) => {
+      console.log("[web-server] event", event.type, "subscribers", subscribers.size);
       const id = nextEventID++;
       eventBuffer.push({ id, event });
       if (eventBuffer.length > 500) eventBuffer.shift();
@@ -573,6 +574,7 @@ export function createRuntimeHttpServer(
       request.signal,
       authorization,
     );
+    console.log("[web-server] rpc result", String(method ?? "unknown"), result?.error ?? "ok");
     if (result.error) return Response.json(result, { status: 400 });
     return Response.json(result);
   };
