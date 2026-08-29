@@ -44,6 +44,7 @@ export function ModelPanel(props: {
   }) => unknown;
 }) {
   const [editingProvider, setEditingProvider] = createSignal<string | undefined>();
+  const [originalProviderName, setOriginalProviderName] = createSignal<string | undefined>();
   const [view, setView] = createSignal<ModelView>("tree");
   const providers = () => {
     const groups = new Map<string, RuntimeModelCatalogEntry[]>();
@@ -147,6 +148,7 @@ export function ModelPanel(props: {
       ([name, value]) => ({ name, value: String(value) }),
     );
     setEditingProvider(providerName);
+    setOriginalProviderName(providerName);
     setProviderName(providerName);
     setProviderLabel(provider.name ?? providerName);
     setProviderApi(provider.driver);
@@ -159,6 +161,7 @@ export function ModelPanel(props: {
 
   function openAddProvider() {
     setEditingProvider(undefined);
+    setOriginalProviderName(undefined);
     setProviderName("");
     setProviderLabel("");
     setProviderApi("openai-compatible");
@@ -189,14 +192,15 @@ export function ModelPanel(props: {
       type: providerApi(),
       label: providerLabel().trim() || undefined,
       previousName:
-        editingProvider() && editingProvider() !== targetID
-          ? editingProvider()
+        originalProviderName() && originalProviderName() !== targetID
+          ? originalProviderName()
           : undefined,
       baseURL: baseUrl().trim() || undefined,
       apiKey: apiKey(),
       headers: Object.keys(headerRecord).length ? headerRecord : undefined,
       models: modelRows.length ? modelRows : undefined,
     };
+    console.log("[provider-form] editingProvider", editingProvider(), "originalProviderName", originalProviderName(), "target", targetID);
     console.log("[provider-form] submit", JSON.stringify(providerInput, null, 2));
     props.onAddProvider?.(providerInput);
     setEditingProvider(undefined);
@@ -207,6 +211,7 @@ export function ModelPanel(props: {
     if (props.open) {
       setView("tree");
       setEditingProvider(undefined);
+      setOriginalProviderName(undefined);
       setExpanded(new Set<string>());
     }
   });
