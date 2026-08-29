@@ -685,7 +685,7 @@ export function SettingsPanel(props: {
                 <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
-                      <label class="neu-tool-chip">
+                      <label class="neu-form-checkbox neu-tool-check">
                         <input
                           type="checkbox"
                           checked={modeAllowedTools().split(",").map((item) => item.trim()).includes(tool)}
@@ -702,7 +702,7 @@ export function SettingsPanel(props: {
                 <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
-                      <label class="neu-tool-chip">
+                      <label class="neu-form-checkbox neu-tool-check">
                         <input
                           type="checkbox"
                           checked={modeExcludedTools().split(",").map((item) => item.trim()).includes(tool)}

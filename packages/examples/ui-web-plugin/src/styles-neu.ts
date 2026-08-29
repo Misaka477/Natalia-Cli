@@ -2709,23 +2709,22 @@ button.neu-settings-item.neu-settings-item-button:active {
   max-height: 220px;
   overflow-y: auto;
   padding: 2px;
+}.neu-tool-chip input[type="checkbox"] {
+  accent-color: var(--neu-accent);
 }
-.neu-tool-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+
+.neu-tool-check {
+  width: 100%;
+  min-height: 30px;
   padding: 5px 8px;
-  border-radius: 8px;
-  background: var(--neu-bg);
-  color: var(--neu-text);
   font-size: 11px;
-  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
-  cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.neu-tool-chip input[type="checkbox"] {
-  accent-color: var(--neu-accent);
+.neu-tool-check span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 `;
