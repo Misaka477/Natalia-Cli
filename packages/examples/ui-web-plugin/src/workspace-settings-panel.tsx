@@ -1,5 +1,6 @@
 import { Show, createSignal, onCleanup, onMount } from "solid-js";
 import type { RuntimeClient, WorkspacePermissionSettings, WorkspaceToolSettings } from "@natalia/contracts";
+import { NeuSelect } from "./components/NeuSelect";
 
 export function WorkspaceSettingsPanel(props: {
   open: boolean;
@@ -67,11 +68,15 @@ export function WorkspaceSettingsPanel(props: {
             </div>
             <div class="neu-form-field">
               <label class="neu-form-label">Approval Mode</label>
-              <select class="neu-form-input neu-form-select" value={permission().approval} onChange={(event) => setPermission({ ...permission(), approval: event.currentTarget.value as "ask" | "auto" | "read_only" })}>
-                <option value="ask">ask</option>
-                <option value="auto">auto</option>
-                <option value="read_only">read_only</option>
-              </select>
+              <NeuSelect
+                value={permission().approval}
+                options={[
+                  { value: "ask", label: "ask" },
+                  { value: "auto", label: "auto" },
+                  { value: "read_only", label: "read_only" },
+                ]}
+                onChange={(value) => setPermission({ ...permission(), approval: value as "ask" | "auto" | "read_only" })}
+              />
             </div>
             <div class="neu-form-field">
               <label class="neu-form-label">启用工具（每行一个）</label>

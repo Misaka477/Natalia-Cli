@@ -1,5 +1,6 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
+import { NeuSelect } from "./components/NeuSelect";
 
 type FlowModule = {
   id: string;
@@ -407,9 +408,11 @@ export function FlowTaskPanel(props: {
               <button type="button" class="neu-flow-back" onClick={() => setEditingModule(null)}>← 返回模块</button>
               <div class="neu-form-field">
                 <label class="neu-form-label">Module 类型</label>
-                <select class="neu-form-input neu-form-select" value={moduleType()} onChange={(event) => setModuleType(event.currentTarget.value)}>
-                  <For each={moduleTypes}>{(type) => <option value={type}>{type}</option>}</For>
-                </select>
+                <NeuSelect
+                  value={moduleType()}
+                  options={moduleTypes.map((type) => ({ value: type, label: type }))}
+                  onChange={setModuleType}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">显示名称</label>
@@ -429,11 +432,15 @@ export function FlowTaskPanel(props: {
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Command Rules Mode</label>
-                <select class="neu-form-input neu-form-select" value={commandMode()} onChange={(event) => setCommandMode(event.currentTarget.value as "none" | "blacklist" | "whitelist")}>
-                  <option value="none">none</option>
-                  <option value="blacklist">blacklist</option>
-                  <option value="whitelist">whitelist</option>
-                </select>
+                <NeuSelect
+                  value={commandMode()}
+                  options={[
+                    { value: "none", label: "none" },
+                    { value: "blacklist", label: "blacklist" },
+                    { value: "whitelist", label: "whitelist" },
+                  ]}
+                  onChange={(value) => setCommandMode(value as "none" | "blacklist" | "whitelist")}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Command Rules（每行一个命令）</label>
@@ -483,12 +490,16 @@ export function FlowTaskPanel(props: {
                   </div>
                   <div class="neu-form-field">
                     <label class="neu-form-label">Retry</label>
-                    <select class="neu-form-input neu-form-select" value={newTaskRetry()} onChange={(event) => setNewTaskRetry(event.currentTarget.value)}>
-                      <option value="none">none</option>
-                      <option value="once">once</option>
-                      <option value="twice">twice</option>
-                      <option value="three_times">three_times</option>
-                    </select>
+                    <NeuSelect
+                      value={newTaskRetry()}
+                      options={[
+                        { value: "none", label: "none" },
+                        { value: "once", label: "once" },
+                        { value: "twice", label: "twice" },
+                        { value: "three_times", label: "three_times" },
+                      ]}
+                      onChange={setNewTaskRetry}
+                    />
                   </div>
                   <div class="neu-form-actions">
                     <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setShowTaskForm(false)}>取消</button>

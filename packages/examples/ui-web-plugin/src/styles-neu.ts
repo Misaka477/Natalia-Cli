@@ -1737,6 +1737,79 @@ button.neu-settings-item.neu-settings-item-button:active {
   background: var(--neu-bg-light);
   color: var(--neu-text);
 }
+
+
+.neu-select {
+  position: relative;
+  width: 100%;
+}
+.neu-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.neu-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.neu-select-chevron {
+  flex-shrink: 0;
+  color: var(--neu-muted);
+  transition: transform 0.2s ease;
+}
+.neu-select-chevron[data-open="true"] {
+  transform: rotate(180deg);
+}
+.neu-select-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--neu-bg-light);
+  box-shadow: 4px 4px 10px var(--neu-shadow-dark), -4px -4px 10px var(--neu-shadow-light);
+}
+.neu-select-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.neu-select-option:hover,
+.neu-select-option[data-active="true"] {
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+}
 .neu-form-checkboxes {
   display: flex;
   flex-wrap: wrap;

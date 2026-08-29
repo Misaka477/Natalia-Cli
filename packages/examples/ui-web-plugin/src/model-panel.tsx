@@ -1,5 +1,6 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { ConfigV3, RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
+import { NeuSelect } from "./components/NeuSelect";
 
 type ModelView = "tree" | "edit-provider";
 
@@ -62,6 +63,12 @@ export function ModelPanel(props: {
   );
   const [providerName, setProviderName] = createSignal("");
   const [providerApi, setProviderApi] = createSignal("openai-compatible");
+  const providerOptions = () => [
+    ...(providerApis.some((api) => api.value === providerApi())
+      ? []
+      : [{ value: providerApi(), label: providerApi() }]),
+    ...providerApis.map((api) => ({ value: api.value, label: api.title })),
+  ];
   const [baseUrl, setBaseUrl] = createSignal("");
   const [apiKey, setApiKey] = createSignal("");
   const [models, setModels] = createSignal<ModelRow[]>([
@@ -295,17 +302,11 @@ export function ModelPanel(props: {
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label" for="provider-api">Provider API</label>
-                <select
-                  id="provider-api"
-                  class="neu-form-input neu-form-select"
+                <NeuSelect
                   value={providerApi()}
-                  onChange={(event) => setProviderApi(event.currentTarget.value)}
-                >
-                  <Show when={!providerApis.some((api) => api.value === providerApi())}>
-                    <option value={providerApi()}>{providerApi()}</option>
-                  </Show>
-                  <For each={providerApis}>{(api) => <option value={api.value}>{api.title}</option>}</For>
-                </select>
+                  options={providerOptions()}
+                  onChange={setProviderApi}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label" for="provider-url">基础 URL</label>

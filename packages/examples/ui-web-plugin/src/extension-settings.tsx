@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
+import { NeuSelect } from "./components/NeuSelect";
 import type { PluginView, McpView } from "@natalia/view-store";
 import type { MCPServerConfig } from "@natalia/contracts";
 
@@ -253,14 +254,14 @@ export function ExtensionSettingsContent(props: {
 
             <Show when={addingTo() === "mcp" && section.id === "mcp"}>
               <div class="neu-extension-form">
-                <select
-                  class="neu-form-input neu-form-select"
+                <NeuSelect
                   value={mcpType()}
-                  onChange={(event) => setMcpType(event.currentTarget.value as "stdio" | "http")}
-                >
-                  <option value="stdio">stdio</option>
-                  <option value="http">http</option>
-                </select>
+                  options={[
+                    { value: "stdio", label: "stdio" },
+                    { value: "http", label: "http" },
+                  ]}
+                  onChange={(value) => setMcpType(value as "stdio" | "http")}
+                />
                 <Show
                   when={mcpType() === "stdio"}
                   fallback={
