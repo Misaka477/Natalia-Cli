@@ -2752,4 +2752,15 @@ button.neu-settings-item.neu-settings-item-button:active {
 .neu-permission-edit:hover {
   box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
 }
+
+.neu-main-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(143, 183, 176, 0.15);
+}
+.neu-main-toolbar .neu-select {
+  flex: 1;
+  min-width: 0;
+}
 `;

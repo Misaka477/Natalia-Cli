@@ -16,6 +16,7 @@ import { nataliaNeuLightStyles } from "./styles-neu-light";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
+import { NeuSelect } from "./components/NeuSelect";
 import { CheckpointPanel } from "./checkpoint-panel";
 import { PermissionPanel } from "./permission-panel";
 import { StatusPanel } from "./status-panel";
@@ -173,6 +174,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [modelOpen, setModelOpen] = createSignal(false);
   const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
   const [config, setConfig] = createSignal<ConfigV3 | undefined>(undefined);
+  const [reasoningEffort, setReasoningEffortSignal] = createSignal<string>("medium");
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [stashOpen, setStashOpen] = createSignal(false);
@@ -361,6 +363,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => themeStyle.remove());
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
+    void props.ctx.runtime.reasoningEffort?.().then((effort) => {
+      if (effort) setReasoningEffortSignal(effort);
+    });
     void props.ctx.runtime.registeredTools?.().then((tools) => {
       if (tools) setRegisteredTools(tools.map((tool) => tool.name));
     });
@@ -372,6 +377,27 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
   });
 
+
+  const modelOptions = () =>
+    (modelCatalog() ?? []).map((entry) => ({
+      value: entry.id,
+      label: entry.id,
+    }));
+
+  const permissionOptions = () =>
+    Object.entries(config()?.permissionProfiles ?? {}).map(([name, profile]) => ({
+      value: name,
+      label: `${name}${config()?.defaultPermission === name ? "（默认）" : ""} · ${profile.approval}`,
+    }));
+
+  async function changePermission(permission: string) {
+    await props.ctx.runtime.updateConfig?.({
+      patch: { defaultPermission: permission },
+      scope: "global",
+    } as never);
+    const next = await props.ctx.runtime.configGet?.();
+    if (next) setConfig(next);
+  }
   const mainMessages = (): Message[] =>
     (state().messages ?? []).map((msg, idx) => ({
       id: `msg-${idx}`,
@@ -651,6 +677,35 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <span class="neu-pane-status" data-running={state().activeTurn}>
                 {state().activeTurn ? "running" : "idle"}
               </span>
+            </div>
+            <div class="neu-main-toolbar">
+              <NeuSelect
+                value={state().modelSelection?.modelID ?? ""}
+                options={modelOptions()}
+                onChange={(modelID) => void props.ctx.runtime.selectModel?.(modelID)}
+                placeholder="选择模型"
+              />
+              <NeuSelect
+                value={reasoningEffort()}
+                options={[
+                  { value: "minimal", label: "minimal" },
+                  { value: "low", label: "low" },
+                  { value: "medium", label: "medium" },
+                  { value: "high", label: "high" },
+                  { value: "xhigh", label: "xhigh" },
+                ]}
+                onChange={(effort) => {
+                  setReasoningEffortSignal(effort);
+                  void props.ctx.runtime.setReasoningEffort?.(effort as "minimal" | "low" | "medium" | "high" | "xhigh");
+                }}
+                placeholder="推理强度"
+              />
+              <NeuSelect
+                value={config()?.defaultPermission ?? "ask"}
+                options={permissionOptions()}
+                onChange={(permission) => void changePermission(permission)}
+                placeholder="选择权限"
+              />
             </div>
             <div class="neu-pane-content">
               <Transcript
