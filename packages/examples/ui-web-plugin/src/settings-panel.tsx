@@ -2,6 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { AppState } from "@natalia/view-store";
 import type { ConfigV3, MCPServerConfig } from "@natalia/contracts";
 import { ExtensionSettingsContent } from "./extension-settings";
+import { NeuSelect } from "./components/NeuSelect";
 
 type CategoryId = "model" | "security" | "runtime" | "extensions" | "interface" | "storage";
 
