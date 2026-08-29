@@ -68,6 +68,8 @@ serve = spawn("bun", ["apps/cli/src/main.ts", "serve", String(port)], {
     ...process.env,
     NATALIA_CONFIG: runtimeConfigPath,
     NATALIA_WORKSPACES_FILE: runtimeWorkspacesPath,
+    npm_config_cache: "/tmp/natalia-npm-cache",
+    NPM_CONFIG_CACHE: "/tmp/natalia-npm-cache",
   },
 });
 serve.on("exit", (code) => {
@@ -78,7 +80,7 @@ await waitForServer(port);
 
 const vite = spawn(
   "npm",
-  ["--workspace", "@natalia/example-ui-web-shell", "run", "dev"],
+  ["--workspace", "@natalia/web-shell", "run", "dev"],
   {
     cwd: root,
     stdio: "inherit",

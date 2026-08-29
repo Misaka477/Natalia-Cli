@@ -4,7 +4,10 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": ["src", "test"],
+  "include": [
+    "src",
+    "test"
+  ],
   "references": [
     {
       "path": "../../core/contracts"
@@ -26,6 +29,9 @@
     },
     {
       "path": "../../hosts/object-store"
+    },
+    {
+      "path": "../../../packages/tooling/diff-wasm"
     }
   ]
 }

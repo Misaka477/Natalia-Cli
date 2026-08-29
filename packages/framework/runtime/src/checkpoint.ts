@@ -434,7 +434,7 @@ export class CheckpointStore {
             : change.kind === "rename"
               ? "renamed"
               : "modified";
-      const text = diffText(change.path, oldContent, newContent);
+      const text = await diffTextAsync(change.path, oldContent, newContent);
       if (oldContent === undefined && newContent === undefined) {
         result.push({
           path: change.path,
@@ -484,7 +484,7 @@ export class CheckpointStore {
             .then((buffer) => buffer.toString("utf8"))
             .catch(() => undefined)
         : undefined;
-      const text = diffText(change.path, beforeContent, afterContent);
+      const text = await diffTextAsync(change.path, beforeContent, afterContent);
       result.push({
         kind: change.kind,
         path: change.path,
@@ -1019,6 +1019,32 @@ function diffLineOps(a: string[], b: string[]): DiffLineOp[] {
   while (i < n) ops.push({ type: "delete", text: a[i++]! });
   while (j < m) ops.push({ type: "insert", text: b[j++]! });
   return ops;
+}
+
+/**
+ * Pure in-process text diff. Unlike the Git tab, checkpoint and sandbox diffs
+ * deliberately do not require git to be installed.
+ */
+async function diffTextAsync(
+  path: string,
+  oldText: string | undefined,
+  newText: string | undefined,
+): Promise<{ additions: number; deletions: number; patch?: string }> {
+  try {
+    const { diffWasm } = await import("@natalia/diff-wasm");
+    const wasm = await diffWasm(oldText ?? "", newText ?? "");
+    if (wasm.patch) {
+      const patch = `--- a/${path}\n+++ b/${path}\n${wasm.patch}`;
+      return {
+        additions: wasm.additions,
+        deletions: wasm.deletions,
+        patch,
+      };
+    }
+  } catch {
+    // Fall back to the pure JS engine when WASM is unavailable.
+  }
+  return diffText(path, oldText, newText);
 }
 
 function diffManifests(

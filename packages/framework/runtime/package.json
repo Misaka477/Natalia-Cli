@@ -14,7 +14,8 @@
     "@natalia/object-store": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/session": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/tools": "workspace:*",
+    "@natalia/diff-wasm": "workspace:*"
   },
   "devDependencies": {
     "@natalia/testing": "workspace:*"

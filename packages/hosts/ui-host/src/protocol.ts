@@ -10,6 +10,16 @@ export type UiPanelDefinition = {
   id: string;
   title: string;
   region?: "main" | "side" | "bottom";
+  /**
+   * Optional dynamic panel renderer. When present, the host can mount this
+   * panel into a container supplied by another (host) UI plugin.
+   */
+  mount?(
+    ctx: UiPluginContext,
+    container: HTMLElement,
+  ): UiPluginLifecycle | void | (() => void);
+  /** Optional capabilities that must exist for this panel to be shown. */
+  requiresCapabilities?: string[];
 };
 
 export type UiCommandDefinition = {
@@ -79,6 +89,21 @@ export type UiProjection = {
 export type UiPluginContext<TContext = unknown> = {
   root: HTMLElement;
   runtime: RuntimeClient;
+  host?: {
+    listPanels(): Array<{
+      pluginId: string;
+      panel: UiPanelDefinition;
+    }>;
+    mountPanel(
+      pluginId: string,
+      panelId: string,
+      container: HTMLElement,
+    ): Promise<void>;
+    subscribePanels(listener: () => void): () => void;
+    loaded(): Array<{ pluginId: string; name: string; version: string }>;
+    unload(pluginId: string): Promise<void>;
+    load(plugin: UiPlugin): Promise<void>;
+  };
   viewStore: typeof ViewStore;
   projection: UiProjection;
   events: UiEventBus;

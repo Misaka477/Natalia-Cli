@@ -389,6 +389,22 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
 
   // --- extensions ---
   plugins: { refusal: "none", note: "pure read" },
+  pluginInstall: {
+    refusal: "value",
+    expressedBy: "installed",
+    note: "installs a local package spec into the plugin store; may write packages to disk",
+  },
+  pluginUninstall: {
+    refusal: "value",
+    expressedBy: "uninstalled",
+    note: "removes a plugin from the plugin store",
+  },
+  pluginSetEnabled: {
+    refusal: "value",
+    expressedBy: "enabled",
+    note: "enables or disables an installed plugin for the workspace",
+  },
+  pluginCatalog: { refusal: "none", note: "pure read of the installed plugin catalog" },
   commandCatalog: { refusal: "none", note: "pure read" },
   commandExecute: {
     refusal: "error",

@@ -249,6 +249,11 @@ export type RuntimeTeamPR = {
   status: string;
   task: string;
   result?: string;
+  buildEvidence?: {
+    ok: boolean;
+    exitCode: number;
+    output: string;
+  };
   diff: RuntimeWorkspaceDiffChange[];
 };
 
@@ -2204,6 +2209,27 @@ export type RuntimeClient = {
   ): Promise<unknown>;
   readMcpResource?(server: string, uri: string): Promise<unknown>;
   plugins?(): Promise<PluginStatus[]>;
+  pluginInstall?(input: { spec: string }): Promise<{
+    installed: boolean;
+    pluginID: string;
+    packageName?: string;
+  }>;
+  pluginUninstall?(input: { pluginID: string }): Promise<{
+    uninstalled: boolean;
+    pluginID: string;
+  }>;
+  pluginSetEnabled?(input: {
+    pluginID: string;
+    enabled: boolean;
+  }): Promise<{ pluginID: string; enabled: boolean }>;
+  pluginCatalog?(): Promise<Array<{
+    id: string;
+    name: string | null;
+    version: string;
+    enabled: boolean;
+    installed: boolean;
+    packageName: string | null;
+  }>>;
   /**
    * Unattended work, read-only.
    *

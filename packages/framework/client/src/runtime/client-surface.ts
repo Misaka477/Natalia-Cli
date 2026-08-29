@@ -22,6 +22,7 @@ import { createTurnControlSurface } from "./session-execution/turn-control";
 import { createNativeTerminalSurface } from "./terminal-runtime/native-terminal";
 import { createWorkGraphRuntime } from "./work-graph";
 import { createWorkspaceRuntime } from "./workspace-runtime";
+import { createPluginRuntime } from "./plugin-runtime";
 
 export function createClientSurface(
   ctx: RuntimeContext,
@@ -36,6 +37,7 @@ export function createClientSurface(
     ...createSettingsSurface(ctx, options),
     ...createSelectionSurface(ctx, options),
     ...createWorkspaceRuntime(ctx),
+    ...createPluginRuntime(ctx),
     ...createNativeTerminalSurface(ctx, options),
     checkpointList: checkpoint.checkpointList,
     checkpointPreview: checkpoint.checkpointPreview,

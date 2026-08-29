@@ -186,6 +186,10 @@ export const RPC_ROUTE_MEMBERS = {
   "provider.remove": "providerRemove",
   "plugin.unload": "pluginUnload",
   "plugin.reload": "pluginReload",
+  "plugin.install": "pluginInstall",
+  "plugin.uninstall": "pluginUninstall",
+  "plugin.set-enabled": "pluginSetEnabled",
+  "plugin.catalog": "pluginCatalog",
   "tools.reload": "toolFamilyReload",
   "plugin.list": "plugins",
   "command.catalog": "commandCatalog",
@@ -2787,6 +2791,56 @@ export async function handleRPCMessage(
           body.method === "plugin.unload"
             ? await client.pluginUnload?.(id)
             : await client.pluginReload?.(id),
+      };
+    }
+    if (body.method === "plugin.install") {
+      optionsGuard(client, "pluginInstall");
+      const params = body.params as { spec?: unknown };
+      if (!params || typeof params.spec !== "string")
+        throw invalidParams("plugin.install.params.spec must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.pluginInstall?.({ spec: params.spec }),
+      };
+    }
+    if (body.method === "plugin.uninstall") {
+      optionsGuard(client, "pluginUninstall");
+      const params = body.params as { pluginID?: unknown };
+      if (!params || typeof params.pluginID !== "string")
+        throw invalidParams("plugin.uninstall.params.pluginID must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.pluginUninstall?.({ pluginID: params.pluginID }),
+      };
+    }
+    if (body.method === "plugin.catalog") {
+      optionsGuard(client, "pluginCatalog");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.pluginCatalog?.(),
+      };
+    }
+    if (body.method === "plugin.set-enabled") {
+      optionsGuard(client, "pluginSetEnabled");
+      const params = body.params as { pluginID?: unknown; enabled?: unknown };
+      if (
+        !params ||
+        typeof params.pluginID !== "string" ||
+        typeof params.enabled !== "boolean"
+      )
+        throw invalidParams(
+          "plugin.set-enabled.params.pluginID/enabled is required",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.pluginSetEnabled?.({
+          pluginID: params.pluginID,
+          enabled: params.enabled,
+        }),
       };
     }
     if (body.method === "tools.reload") {

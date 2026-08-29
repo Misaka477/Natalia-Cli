@@ -34,6 +34,16 @@ export type UiPluginHost = {
   load(plugin: UiPlugin): Promise<LoadedUiPlugin>;
   unload(id: string): Promise<void>;
   loaded(): LoadedUiPlugin[];
+  listPanels(): Array<{
+    pluginId: string;
+    panel: import("./protocol").UiPanelDefinition;
+  }>;
+  mountPanel(
+    pluginId: string,
+    panelId: string,
+    container: HTMLElement,
+  ): Promise<void>;
+  subscribePanels(listener: () => void): () => void;
   projection: UiProjection;
   executeCommand(name: string, args?: unknown): Promise<unknown>;
   close(): Promise<void>;
@@ -42,6 +52,11 @@ export type UiPluginHost = {
 type MountedPlugin = {
   record: LoadedUiPlugin;
   lifecycle?: UiPluginLifecycle;
+};
+
+type MountedPanel = {
+  lifecycle?: UiPluginLifecycle;
+  dispose?: () => void;
 };
 
 export async function createUiPluginHost<TContext = unknown>(
@@ -55,6 +70,8 @@ export async function createUiPluginHost<TContext = unknown>(
   let state = viewStore.initialState();
   const projectionListeners = new Set<(next: viewStore.AppState) => void>();
   const mounted = new Map<string, MountedPlugin>();
+  const mountedPanels = new Map<string, MountedPanel>();
+  const panelListeners = new Set<() => void>();
   let started = false;
   let closed = false;
 
@@ -79,54 +96,144 @@ export async function createUiPluginHost<TContext = unknown>(
     events.emit(event);
   };
 
+  function ctxFor(plugin: UiPlugin): UiPluginContext<TContext> {
+    return {
+      root: options.root,
+      runtime: options.runtime,
+      viewStore,
+      projection,
+      events: {
+        emit: events.emit,
+        subscribe(listener, filter) {
+          return events.subscribe(listener, filter ?? plugin.events);
+        },
+      },
+      preferences,
+      transport,
+      logger,
+      t,
+      extra: options.extra,
+      host: {
+        listPanels: () =>
+          [...mounted.values()].flatMap((entry) =>
+            entry.record.panels.map((panel) => ({
+              pluginId: entry.record.plugin.id,
+              panel,
+            })),
+          ),
+        mountPanel: async (pluginId, panelId, container) => {
+          const entry = mounted.get(pluginId);
+          if (!entry) throw new Error(`ui plugin not loaded: ${pluginId}`);
+          const panel = entry.record.panels.find((item) => item.id === panelId);
+          if (!panel) throw new Error(`ui panel not found: ${pluginId}:${panelId}`);
+          if (!panel.mount) throw new Error(`ui panel has no mount: ${pluginId}:${panelId}`);
+          const key = `${pluginId}:${panelId}`;
+          const existing = mountedPanels.get(key);
+          existing?.dispose?.();
+          existing?.lifecycle?.dispose?.();
+          const dispose = (await panel.mount(ctxFor(entry.record.plugin), container)) as
+            | (() => void)
+            | undefined;
+          mountedPanels.set(key, {
+            ...(dispose ? { dispose } : {}),
+          });
+        },
+        subscribePanels(listener) {
+          panelListeners.add(listener);
+          return () => {
+            panelListeners.delete(listener);
+          };
+        },
+        loaded() {
+          return [...mounted.values()].map((entry) => ({
+            pluginId: entry.record.plugin.id,
+            name: entry.record.plugin.name,
+            version: entry.record.plugin.version,
+          }));
+        },
+        unload: async (pluginId) => {
+          await unloadPlugin(pluginId);
+        },
+        load: async (plugin) => {
+          await loadPlugin(plugin);
+        },
+      },
+    };
+  }
+
   const startRuntime = () => {
     if (started) return;
     started = true;
     options.runtime.start(fanout);
   };
 
+  async function loadPlugin(plugin: UiPlugin) {
+    if (closed) throw new Error("ui plugin host is closed");
+    if (mounted.has(plugin.id))
+      throw new Error(`ui plugin already loaded: ${plugin.id}`);
+    const ctx = ctxFor(plugin);
+    const lifecycle = await plugin.mount(ctx);
+    const record: LoadedUiPlugin = {
+      plugin,
+      panels: plugin.panels ?? [],
+      commands: plugin.commands ?? [],
+    };
+    mounted.set(plugin.id, {
+      record,
+      ...(lifecycle ? { lifecycle } : {}),
+    });
+    for (const listener of panelListeners) listener();
+    startRuntime();
+    logger.info(`loaded ${plugin.id}@${plugin.version}`);
+    return record;
+  }
+
   return {
     projection,
     async load(plugin) {
-      if (closed) throw new Error("ui plugin host is closed");
-      if (mounted.has(plugin.id))
-        throw new Error(`ui plugin already loaded: ${plugin.id}`);
-      const ctx: UiPluginContext<TContext> = {
-        root: options.root,
-        runtime: options.runtime,
-        viewStore,
-        projection,
-        events: {
-          emit: events.emit,
-          subscribe(listener, filter) {
-            return events.subscribe(listener, filter ?? plugin.events);
-          },
-        },
-        preferences,
-        transport,
-        logger,
-        t,
-        extra: options.extra,
-      };
-      const lifecycle = await plugin.mount(ctx);
-      const record: LoadedUiPlugin = {
-        plugin,
-        panels: plugin.panels ?? [],
-        commands: plugin.commands ?? [],
-      };
-      mounted.set(plugin.id, {
-        record,
-        ...(lifecycle ? { lifecycle } : {}),
-      });
-      startRuntime();
-      logger.info(`loaded ${plugin.id}@${plugin.version}`);
-      return record;
+      return await loadPlugin(plugin);
     },
     async unload(id) {
       await unloadPlugin(id);
     },
     loaded() {
       return [...mounted.values()].map((entry) => entry.record);
+    },
+    listPanels() {
+      return [...mounted.values()].flatMap((entry) =>
+        entry.record.panels.map((panel) => ({
+          pluginId: entry.record.plugin.id,
+          panel,
+        })),
+      );
+    },
+    async mountPanel(
+      pluginId: string,
+      panelId: string,
+      container: HTMLElement,
+    ): Promise<void> {
+      const entry = mounted.get(pluginId);
+      if (!entry) throw new Error(`ui plugin not loaded: ${pluginId}`);
+      const panel = entry.record.panels.find((item) => item.id === panelId);
+      if (!panel) throw new Error(`ui panel not found: ${pluginId}:${panelId}`);
+      if (!panel.mount) throw new Error(`ui panel has no mount: ${pluginId}:${panelId}`);
+      const key = `${pluginId}:${panelId}`;
+      const existing = mountedPanels.get(key);
+      existing?.dispose?.();
+      existing?.lifecycle?.dispose?.();
+      const dispose = (await panel.mount(ctxFor(entry.record.plugin), container)) as
+        | (() => void)
+        | undefined;
+      mountedPanels.set(key, {
+        ...(dispose ? { dispose } : {}),
+      });
+      return;
+    },
+    subscribePanels(listener: () => void) {
+      panelListeners.add(listener);
+      return () => {
+        panelListeners.delete(listener);
+      };
     },
     async executeCommand(name, args) {
       for (const entry of mounted.values()) {
@@ -156,6 +263,7 @@ export async function createUiPluginHost<TContext = unknown>(
     const entry = mounted.get(id);
     if (!entry) return;
     mounted.delete(id);
+    for (const listener of panelListeners) listener();
     try {
       await entry.lifecycle?.dispose();
     } finally {

@@ -31,8 +31,14 @@
       "@natalia/example-ui-plugin": [
         "packages/examples/ui-plugin/src/index.ts"
       ],
-      "@natalia/example-ui-web-plugin": [
-        "packages/examples/ui-web-plugin/src/index.ts"
+      "@natalia/plugin-web-ui": [
+        "packages/plugins/ui/web/src/index.ts"
+      ],
+      "@natalia/plugin-file-editor": [
+        "packages/plugins/ui/file-editor/src/index.ts"
+      ],
+      "@natalia/diff-wasm": [
+        "packages/tooling/diff-wasm/src/index.ts"
       ],
       "@natalia/ui-host": ["packages/hosts/ui-host/src/index.ts"],
       "@natalia/view-store": ["packages/hosts/view-store/src/index.ts"],

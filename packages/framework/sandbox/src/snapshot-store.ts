@@ -23,7 +23,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
 import { ObjectStore } from "@natalia/object-store";
-import { diffText } from "./diff";
+import { diffText, diffTextAsync } from "./diff";
 
 export type IndexedFile = {
   objectID: string;
@@ -129,7 +129,7 @@ export class SnapshotStore {
       const baseEntry = base.get(path);
       if (!baseEntry) {
         const content = await this.objectText(candidateEntry.objectID);
-        const text = diffText(path, undefined, content);
+        const text = await diffTextAsync(path, undefined, content);
         changes.push({
           kind: "add" as SandboxDiffKind,
           path,
@@ -143,7 +143,7 @@ export class SnapshotStore {
       if (candidateEntry.objectID !== baseEntry.objectID) {
         const before = await this.objectText(baseEntry.objectID);
         const after = await this.objectText(candidateEntry.objectID);
-        const text = diffText(path, before, after);
+        const text = await diffTextAsync(path, before, after);
         changes.push({
           kind: "modify" as SandboxDiffKind,
           path,
@@ -158,7 +158,7 @@ export class SnapshotStore {
     for (const path of base.keys()) {
       if (!candidateIndex.has(path)) {
         const before = await this.objectText(base.get(path)!.objectID);
-        const text = diffText(path, before, undefined);
+        const text = await diffTextAsync(path, before, undefined);
         changes.push({
           kind: "delete" as SandboxDiffKind,
           path,

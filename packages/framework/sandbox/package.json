@@ -12,6 +12,7 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/object-store": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/tools": "workspace:*",
+    "@natalia/diff-wasm": "workspace:*"
   }
 }

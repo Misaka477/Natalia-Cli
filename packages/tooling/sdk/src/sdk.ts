@@ -247,6 +247,18 @@ export type NataliaSDK = {
   ): Promise<unknown>;
   mcpResource(server: string, uri: string): Promise<unknown>;
   plugins(): Promise<import("@natalia/contracts").PluginStatus[]>;
+  pluginInstall(input: { spec: string }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["pluginInstall"]>>>
+  >;
+  pluginUninstall(input: { pluginID: string }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["pluginUninstall"]>>>
+  >;
+  pluginSetEnabled(input: { pluginID: string; enabled: boolean }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["pluginSetEnabled"]>>>
+  >;
+  pluginCatalog(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["pluginCatalog"]>>>
+  >;
   /**
    * Unattended work, read-only. Each entry reports its own problems rather than
    * failing the whole list, so a broken document does not blank the view.
@@ -841,6 +853,10 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     mcpResource: async (server, uri) =>
       await call("mcp.resource", { server, uri }),
     plugins: async () => await call("plugin.list", {}),
+    pluginInstall: async (input) => await call("plugin.install", input),
+    pluginUninstall: async (input) => await call("plugin.uninstall", input),
+    pluginSetEnabled: async (input) => await call("plugin.set-enabled", input),
+    pluginCatalog: async () => await call("plugin.catalog", {}),
     commandCatalog: async () => await call("command.catalog", {}),
     commandExecute: async (input) => {
       await call("command.execute", input);

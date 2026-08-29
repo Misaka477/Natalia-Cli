@@ -133,3 +133,32 @@ function diffLineOps(a: string[], b: string[]): DiffLineOp[] {
   while (j < m) ops.push({ type: "insert", text: b[j++]! });
   return ops;
 }
+
+
+/**
+ * High-quality text diff backed by `git diff --no-index`.
+ *
+ * The object store provides old/new contents; git is used only as the diff
+ * engine, not as the workspace data source.
+ */
+export async function diffTextAsync(
+  path: string,
+  oldText: string | undefined,
+  newText: string | undefined,
+): Promise<TextDiffResult> {
+  try {
+    const { diffWasm } = await import("@natalia/diff-wasm");
+    const wasm = await diffWasm(oldText ?? "", newText ?? "");
+    if (wasm.patch) {
+      const patch = `--- a/${path}\n+++ b/${path}\n${wasm.patch}`;
+      return {
+        additions: wasm.additions,
+        deletions: wasm.deletions,
+        patch,
+      };
+    }
+  } catch {
+    // Fall back to the pure JS engine when WASM is unavailable.
+  }
+  return diffText(path, oldText, newText);
+}

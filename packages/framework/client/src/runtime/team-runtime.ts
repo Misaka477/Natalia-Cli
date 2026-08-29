@@ -31,6 +31,13 @@ export function createTeamRuntime(ctx: RuntimeContext) {
         continue;
       const diff =
         (await sandboxes?.previewMerge(record.id).catch(() => [])) ?? [];
+      const buildCommand =
+        ctx.ports.getTsRuntimeConfig()?.sandbox.promoteCommand;
+      const buildEvidence = buildCommand
+        ? await sandboxes
+            ?.validate(record.id, buildCommand)
+            .catch(() => ({ ok: false, exitCode: -1, output: "validate failed" }))
+        : undefined;
       prs.push({
         id: record.id,
         sandboxID: record.id,
@@ -44,6 +51,7 @@ export function createTeamRuntime(ctx: RuntimeContext) {
                 .join("\n"),
             }
           : {}),
+        ...(buildEvidence ? { buildEvidence } : {}),
         diff: diff.map((change) => toDiffChange(change)),
       });
     }
