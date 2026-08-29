@@ -2727,4 +2727,29 @@ button.neu-settings-item.neu-settings-item-button:active {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.neu-permission-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.neu-permission-row .neu-settings-item {
+  flex: 1;
+  min-width: 0;
+}
+.neu-permission-edit {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+}
+.neu-permission-edit:hover {
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
 `;

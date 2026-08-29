@@ -672,10 +672,10 @@ export function SettingsPanel(props: {
             <div class="neu-settings-body neu-edit-body">
               <For each={Object.entries(props.config?.permissionProfiles ?? {})}>
                 {([name, profile]) => (
-                  <div class="neu-settings-item">
+                  <div class="neu-permission-row">
                     <button
                       type="button"
-                      class="neu-settings-item-main neu-settings-item-button"
+                      class="neu-settings-item neu-settings-item-button"
                       onClick={() => {
                         props.onUpdateConfig?.({ defaultPermission: name });
                       }}
@@ -690,7 +690,7 @@ export function SettingsPanel(props: {
                     </button>
                     <button
                       type="button"
-                      class="neu-settings-item-value neu-settings-item-button"
+                      class="neu-permission-edit"
                       onClick={() => { setPermissionListOpen(false); openPermissionEditorFor(name); }}
                     >
                       编辑
