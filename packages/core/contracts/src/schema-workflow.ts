@@ -117,8 +117,10 @@ export const agentModeSchema = z.object({
   model: z.string().optional(),
   allowedTools: z.array(z.string()).default([]),
   excludedTools: z.array(z.string()).default([]),
+  permissions: agentPermissionRulesSchema.optional(),
   commandRules: permissionProfileCommandRulesSchema.optional(),
   interactivePrograms: interactiveProgramRulesSchema.optional(),
+  extensions: extensionRulesSchema.optional(),
   skills: z.boolean().default(true),
   mcpServers: z.array(z.string()).default([]),
 });

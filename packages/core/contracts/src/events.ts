@@ -1711,6 +1711,13 @@ export type RuntimeClient = {
     options?: { replay?: "all" | "none" },
   ): void;
   submit(text: string): Promise<SubmittedTurn>;
+  /**
+   * Submit a turn and wait until the turn reaches a durable terminal state
+   * (`turn.finished` or `turn.cancelled`). The normal `submit` method remains
+   * non-blocking; this is the explicit blocking variant for callers/tests that
+   * need to observe the completed turn before continuing.
+   */
+  submitAndWait?(input: string | SubmitInput): Promise<SubmittedTurn>;
   submitInput?(input: SubmitInput): Promise<SubmittedTurn>;
   history?(options?: {
     after?: number;

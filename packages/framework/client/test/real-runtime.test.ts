@@ -101,7 +101,7 @@ test("real runtime client streams provider output and persists replayable sessio
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
 
-  await client.submit("Say hello");
+  await client.submitAndWait!("Say hello");
 
   expect(events.map((event) => event.type)).toEqual(
     expect.arrayContaining([
@@ -175,7 +175,7 @@ test("provider-model subsystem ignores plugins.enabled and always provides the c
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("run");
+  await client.submitAndWait!("run");
   await waitFor(() => streams === 1);
   // Framework subsystem: present even when plugins.enabled says otherwise.
   expect(kernel.has("natalia-provider-model")).toBe(true);
@@ -338,7 +338,7 @@ test("flow_module_complete is only advertised to an active task module runtime",
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("complete module");
+  await client.submitAndWait!("complete module");
   expect(seenTools[0]).toContain("flow_module_complete");
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -396,7 +396,7 @@ test("task runtime injects only its active module instructions", async () => {
     },
   });
   taskClient.start(() => undefined);
-  await taskClient.submit("begin");
+  await taskClient.submitAndWait!("begin");
   expect(taskSystemPrompt).toContain("<active_flow_module_instructions>");
   expect(taskSystemPrompt).toContain("Read only the authentication files.");
   expect(taskSystemPrompt).toContain("<active_flow_module_continuation>");
@@ -417,7 +417,7 @@ test("task runtime injects only its active module instructions", async () => {
     },
   });
   ordinaryClient.start(() => undefined);
-  await ordinaryClient.submit("begin");
+  await ordinaryClient.submitAndWait!("begin");
   expect(ordinarySystemPrompt).not.toContain("active_flow_module_instructions");
   expect(ordinarySystemPrompt).not.toContain(
     "Read only the authentication files.",
@@ -443,7 +443,7 @@ test("ordinary runtime never advertises flow_module_complete", async () => {
     },
   });
   client.start(() => undefined);
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   expect(seenTools[0]).not.toContain("flow_module_complete");
   await client.dispose?.();
 });
@@ -496,7 +496,7 @@ test("task module policy denies tools outside the active capability bundle", asy
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("run shell");
+  await client.submitAndWait!("run shell");
   expect(events).toContainEqual(
     expect.objectContaining({
       type: "policy.decision",
@@ -568,7 +568,7 @@ test("task module command rules further restrict shell tools", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("inspect status");
+  await client.submitAndWait!("inspect status");
   expect(events).toContainEqual(
     expect.objectContaining({
       type: "policy.decision",
@@ -645,7 +645,7 @@ test("task module extensions deny extension tools before execution", async () =>
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("use MCP");
+  await client.submitAndWait!("use MCP");
 
   expect(executed).toBe(false);
   expect(events).toContainEqual(
@@ -715,7 +715,7 @@ test("task module path scope denies writes outside the allowed workspace scope",
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("write outside scope");
+  await client.submitAndWait!("write outside scope");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -784,7 +784,7 @@ test("task module records successful tool calls as attempt-scoped evidence", asy
     },
   });
   client.start(() => undefined);
-  await client.submit("read note");
+  await client.submitAndWait!("read note");
   store.claimModule({
     invocationID: "inv_1",
     attempt: 1,
@@ -813,7 +813,7 @@ test("runtime can suppress startup event replay for paged UI hydration", async (
     provider: scriptedProvider("paged response"),
   });
   initial.start(() => undefined);
-  await initial.submit("persist history");
+  await initial.submitAndWait!("persist history");
   await initial.dispose?.();
 
   const replay: RuntimeEvent[] = [];
@@ -847,7 +847,7 @@ test("SQLite runtime message pages use the durable turn cursor", async () => {
     useSqliteStore: true,
   });
   client.start(() => undefined);
-  for (const prompt of ["one", "two", "three"]) await client.submit(prompt);
+  for (const prompt of ["one", "two", "three"]) await client.submitAndWait!(prompt);
 
   const latest = await client.messages?.({ limit: 2 });
   expect(latest?.data.map((message) => message.submitted.text)).toEqual([
@@ -869,7 +869,7 @@ test("SQLite runtime persists durable events without growing the JSON mirror", a
     useSqliteStore: true,
   });
   initial.start(() => undefined);
-  await initial.submit("persist only in SQLite");
+  await initial.submitAndWait!("persist only in SQLite");
   await initial.dispose?.();
 
   await expect(
@@ -907,7 +907,7 @@ test("runtime correlates durable events with an episode without changing session
     useSqliteStore: true,
   });
   client.start(() => undefined);
-  await client.submit("record an episode");
+  await client.submitAndWait!("record an episode");
   await client.dispose?.();
 
   const replay: RuntimeEvent[] = [];
@@ -1208,7 +1208,7 @@ test("finalizeContent is applied exactly once before the result freezes", async 
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("run the finalizing tool");
+  await client.submitAndWait!("run the finalizing tool");
   const update = events.find(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
       event.type === "tool.update" && event.status === "succeeded",
@@ -1252,7 +1252,7 @@ test("a tool with an output definition projects its result into the event", asyn
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("read the note");
+  await client.submitAndWait!("read the note");
   const update = events.find(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
       event.type === "tool.update" && event.status === "succeeded",
@@ -1731,7 +1731,7 @@ test("checkpoint config reload reconciles its lifecycle", async () => {
   client.start((event) => events.push(event));
   await client.runtimeStatus?.();
   expect(kernel.service(CHECKPOINT_FACTORY_SERVICE)).toBeDefined();
-  await client.submit("without checkpoint");
+  await client.submitAndWait!("without checkpoint");
   expect(events.some((event) => event.type === "checkpoint.created")).toBe(
     false,
   );
@@ -1739,7 +1739,7 @@ test("checkpoint config reload reconciles its lifecycle", async () => {
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  await client.submit("with checkpoint");
+  await client.submitAndWait!("with checkpoint");
   expect(events.some((event) => event.type === "checkpoint.created")).toBe(
     true,
   );
@@ -1749,14 +1749,14 @@ test("checkpoint config reload reconciles its lifecycle", async () => {
   const checkpointCount = events.filter(
     (event) => event.type === "checkpoint.created",
   ).length;
-  await client.submit("disabled again");
+  await client.submitAndWait!("disabled again");
   expect(
     events.filter((event) => event.type === "checkpoint.created"),
   ).toHaveLength(checkpointCount);
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  await client.submit("enabled again");
+  await client.submitAndWait!("enabled again");
   expect(
     events.filter((event) => event.type === "checkpoint.created").length,
   ).toBeGreaterThan(checkpointCount);
@@ -1825,6 +1825,18 @@ lines.on("line", (line) => {
   await writeFile(configPath, JSON.stringify({ version: 3, mcpServers }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(MCP_PLUGIN_ID)).toBe(true);
+  await waitForAsync(
+    async () =>
+      (await client.registeredTools?.())?.some(
+        (tool) => tool.name === "mcp_reload_echo",
+      ) === true,
+  );
+  await waitForAsync(
+    async () =>
+      (await client.mcpCatalog?.())?.prompts?.some(
+        (prompt) => prompt.name === "reload_prompt",
+      ) === true,
+  );
   expect(
     (await client.registeredTools?.())?.filter(
       (tool) => tool.name === "mcp_reload_echo",
@@ -1850,6 +1862,15 @@ lines.on("line", (line) => {
   await writeFile(configPath, JSON.stringify({ version: 3, mcpServers }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(MCP_PLUGIN_ID)).toBe(true);
+  await waitForAsync(
+    async () =>
+      (await client.registeredTools?.())?.some(
+        (tool) => tool.name === "mcp_reload_echo",
+      ) === true,
+  );
+  await waitForAsync(
+    async () => (await client.mcpCatalog?.())?.prompts?.length === 1,
+  );
   expect(
     (await client.registeredTools?.())?.filter(
       (tool) => tool.name === "mcp_reload_echo",
@@ -1998,14 +2019,14 @@ test("skills plugin config reload reconciles its lifecycle", async () => {
       (tool) => tool.name === "skill_load",
     ),
   ).toHaveLength(1);
-  await client.submit("/skill reloadable");
+  await client.submitAndWait!("/skill reloadable");
 
   await writeFile(configPath, JSON.stringify(disabledConfig));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(SKILLS_PLUGIN_ID)).toBe(false);
   expect(await client.skills?.()).toEqual([]);
   const eventCount = events.length;
-  await client.submit("/skill-resource note.txt");
+  await client.submitAndWait!("/skill-resource note.txt");
   expect(
     events
       .slice(eventCount)
@@ -2023,7 +2044,7 @@ test("skills plugin config reload reconciles its lifecycle", async () => {
       (tool) => tool.name === "skill_load",
     ),
   ).toHaveLength(1);
-  await client.submit("/skill reloadable");
+  await client.submitAndWait!("/skill reloadable");
   await expect(
     client.submit("/skill-resource note.txt"),
   ).resolves.toBeDefined();
@@ -2613,7 +2634,7 @@ test("read-only profile rejects side-effecting tools without an approval request
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("write a file");
+  await client.submitAndWait!("write a file");
 
   expect(await client.runtimeStatus?.()).toMatchObject({
     type: "status.snapshot",
@@ -2697,7 +2718,7 @@ test("selected permission profile denies tools outside its allow list before app
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("inspect only");
+  await client.submitAndWait!("inspect only");
 
   expect(requests[0]?.tools?.map((tool) => tool.name).sort()).toEqual(
     ["read_file", "web_fetch"].sort(),
@@ -2782,7 +2803,7 @@ test("selected permission profile applies file rules to allowed tools", async ()
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("inspect protected file");
+  await client.submitAndWait!("inspect protected file");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -2993,7 +3014,7 @@ test("durable diagnostics restore on runtime reopen and render through the comma
       at: expect.any(String),
     },
   ]);
-  await reopened.submit("/diagnostics 1");
+  await reopened.submitAndWait!("/diagnostics 1");
   expect(
     events
       .filter((event) => event.type === "content.delta")
@@ -3051,7 +3072,7 @@ test("TS config applies retry/context/checkpoint policy to an explicit provider"
     provider: scriptedProvider("effective config"),
   });
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   expect(events.some((event) => event.type === "checkpoint.created")).toBe(
     false,
   );
@@ -3114,7 +3135,7 @@ test("context budget follows the executing model instead of a mismatched configu
   });
   client.start((event) => events.push(event));
   try {
-    await client.submit("hello");
+    await client.submitAndWait!("hello");
     expect(
       events.some(
         (event) =>
@@ -3162,7 +3183,7 @@ test("runtime does not cap steps when no maximum is configured", async () => {
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("keep going");
+  await client.submitAndWait!("keep going");
   expect(calls).toBeGreaterThan(10);
   expect(
     events.some(
@@ -3204,7 +3225,7 @@ test("configured agent selection supplies the provider system prompt and tool po
     },
   });
   client.start(() => undefined);
-  await client.submit("review this");
+  await client.submitAndWait!("review this");
   const request = requests[0];
   expect(request).toBeDefined();
   expect(request!.messages[0]?.role).toBe("system");
@@ -3233,7 +3254,7 @@ test("runtime sends a baseline system prompt without configured agent instructio
     },
   });
   client.start(() => undefined);
-  await client.submit("who are you?");
+  await client.submitAndWait!("who are you?");
   expect(requests[0]?.messages[0]).toMatchObject({ role: "system" });
   expect(String(requests[0]?.messages[0]?.content)).toContain(
     "You are Natalia, a local software engineering agent",
@@ -3296,7 +3317,7 @@ test("runtime discovers configured remote skills through the local cache", async
       provider: scriptedProvider("done"),
     });
     client.start((event) => events.push(event));
-    await client.submit("/skills");
+    await client.submitAndWait!("/skills");
     expect(
       events
         .filter((event) => event.type === "content.delta")
@@ -3418,7 +3439,7 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
     if (event.type === "approval.request")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("run plugin");
+  await client.submitAndWait!("run plugin");
   expect(events).toContainEqual({
     type: "plugin.update",
     id: "demo.plugin",
@@ -3605,7 +3626,7 @@ test("permission profile denies injected MCP tools before execution", async () =
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("use MCP");
+  await client.submitAndWait!("use MCP");
 
   expect(executed).toBe(false);
   expect(events).toContainEqual(
@@ -3655,7 +3676,7 @@ test("read-only runtime preserves a plugin tool approval declaration", async () 
     },
   });
   client.start(() => undefined);
-  await client.submit("inspect plugins");
+  await client.submitAndWait!("inspect plugins");
 
   expect(requests[0]?.tools?.map((tool) => tool.name)).toContain("mutate");
 });
@@ -3703,7 +3724,7 @@ test("workspace plugin trust does not alter an approval declaration", async () =
     },
   });
   client.start(() => undefined);
-  await client.submit("inspect trusted plugins");
+  await client.submitAndWait!("inspect trusted plugins");
 
   expect(requests[0]?.tools?.map((tool) => tool.name)).toContain("observe");
 });
@@ -3743,7 +3764,7 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("load plugins");
+  await client.submitAndWait!("load plugins");
 
   // The authoritative surface, which an external UI reads over RPC.
   const catalog = await client.commandCatalog?.();
@@ -3808,7 +3829,7 @@ test("sandbox merge retains manifest path authorization", async () => {
     provider: singleToolProvider("sandbox_merge", { id: "box" }),
   });
   client.start((event) => events.push(event));
-  await client.submit("merge the sandbox");
+  await client.submitAndWait!("merge the sandbox");
 
   const failure = events.find(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
@@ -3870,7 +3891,7 @@ test("grep retains workspace read path authorization", async () => {
     }),
   });
   client.start((event) => events.push(event));
-  await client.submit("grep for the needle");
+  await client.submitAndWait!("grep for the needle");
 
   const failure = events.find(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
@@ -3932,9 +3953,9 @@ test("runtime executes canonical interactive Terminal tools on one native pane",
     nativeTerminal: nativeTerminalFixture(),
   });
   client.start((event) => events.push(event));
-  await client.submit("start terminal");
-  await client.submit("write terminal");
-  await client.submit("stop terminal");
+  await client.submitAndWait!("start terminal");
+  await client.submitAndWait!("write terminal");
+  await client.submitAndWait!("stop terminal");
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "tty_runtime", status: "exited" },
   ]);
@@ -3954,7 +3975,7 @@ test("runtime exposes native Terminal pane management through RuntimeClient", as
     nativeTerminal: nativeTerminalFixture(),
   });
   client.start((event) => events.push(event));
-  await client.submit("start terminal");
+  await client.submitAndWait!("start terminal");
 
   expect(await client.nativeTerminalList!()).toMatchObject([
     { id: "tty_management", status: "running", paneID: 71 },
@@ -4038,7 +4059,7 @@ test("runtime reports malformed provider tool calls without rendering an empty t
     provider,
   });
   client.start((event) => events.push(event));
-  await client.submit("test malformed tool call");
+  await client.submitAndWait!("test malformed tool call");
   expect(events).toContainEqual(
     expect.objectContaining({
       type: "tool.update",
@@ -4087,8 +4108,8 @@ test("session approval grants the approved tool for this runtime instance only",
     approvalCount++;
     client.respondApproval({ requestID: event.id, decision: "session" });
   });
-  await client.submit("run pwd once");
-  await client.submit("run pwd again");
+  await client.submitAndWait!("run pwd once");
+  await client.submitAndWait!("run pwd again");
   expect(approvalCount).toBe(1);
   await client.dispose?.();
 
@@ -4103,7 +4124,7 @@ test("session approval grants the approved tool for this runtime instance only",
     if (event.type === "approval.request")
       reopened.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await reopened.submit("run pwd after restart");
+  await reopened.submitAndWait!("run pwd after restart");
   expect(reopenedApprovals).toContainEqual(
     expect.objectContaining({ type: "approval.request" }),
   );
@@ -4167,7 +4188,7 @@ test("agent permissions block configured file and command execution at tool boun
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("try protected actions");
+  await client.submitAndWait!("try protected actions");
   const failures = events.filter(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
       event.type === "tool.update" && event.status === "failed",
@@ -4230,7 +4251,7 @@ test("terminal input cannot bypass the command policy after opening a shell", as
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("open a shell and clean up");
+  await client.submitAndWait!("open a shell and clean up");
   const sneak = events.filter(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
       event.type === "tool.update" &&
@@ -4281,7 +4302,7 @@ test("self-protection patterns block terminal input, not only run_shell", async 
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submit("stop the terminal host");
+  const submitted = await client.submitAndWait!("stop the terminal host");
   const blocked = events.filter(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
       event.type === "tool.update" &&
@@ -4336,7 +4357,7 @@ test("deny journal rule without override blocks git commit", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("commit the work");
+  await client.submitAndWait!("commit the work");
   expect(events).toContainEqual(
     expect.objectContaining({
       type: "constitution.check",
@@ -4384,7 +4405,7 @@ test("scoped path override allows only that path", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   const granted = await client.requestOverride?.({
     ruleID: "C-REL-001",
@@ -4393,7 +4414,7 @@ test("scoped path override allows only that path", async () => {
   });
   expect(granted).toMatchObject({ requested: true });
   const before = events.length;
-  await client.submit("commit now");
+  await client.submitAndWait!("commit now");
   expect(events.slice(before)).toContainEqual(
     expect.objectContaining({
       type: "constitution.check",
@@ -4432,7 +4453,7 @@ test("expired override does not lift a deny rule", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   await client.requestOverride?.({
     ruleID: "C-REL-001",
@@ -4440,7 +4461,7 @@ test("expired override does not lift a deny rule", async () => {
     expiresAt: "2000-01-01T00:00:00.000Z",
   });
   const before = events.length;
-  await client.submit("commit now");
+  await client.submitAndWait!("commit now");
   expect(events.slice(before)).toContainEqual(
     expect.objectContaining({
       type: "constitution.check",
@@ -4460,7 +4481,7 @@ test("forbidden override policy refuses requestOverride", async () => {
     provider: scriptedProvider("ready"),
   });
   client.start(() => undefined);
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   await expect(
     client.requestOverride?.({
@@ -4485,7 +4506,7 @@ test("instance governance decisions survive a new workspace session", async () =
       provider: scriptedProvider("ready"),
     });
     first.start(() => undefined);
-    await first.submit("hello");
+    await first.submitAndWait!("hello");
     await pollHistoryForFinished(first);
     await first.recordDecision?.({
       decision: "instance-scoped release rule",
@@ -4501,7 +4522,7 @@ test("instance governance decisions survive a new workspace session", async () =
       provider: scriptedProvider("ready"),
     });
     second.start(() => undefined);
-    await second.submit("hello again");
+    await second.submitAndWait!("hello again");
     await pollHistoryForFinished(second);
     const records = await second.decisionRecords!();
     expect(records).toContainEqual(
@@ -4530,7 +4551,7 @@ test("truncated instance governance degrades without dropping C-TERM enforcement
       provider: scriptedProvider("ready"),
     });
     client.start((event) => events.push(event));
-    await client.submit("hello");
+    await client.submitAndWait!("hello");
     await pollHistoryForFinished(client);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -4590,7 +4611,7 @@ test("security.redactToolOutput drives redaction when no agent overrides it", as
       },
     });
     client.start((event) => events.push(event));
-    await client.submit("read the credentials file");
+    await client.submitAndWait!("read the credentials file");
     await client.dispose?.();
     return JSON.stringify(events);
   }
@@ -4664,7 +4685,7 @@ test("agent permissions apply network, environment, and output redaction boundar
   });
   try {
     client.start((event) => events.push(event));
-    await client.submit("check boundaries");
+    await client.submitAndWait!("check boundaries");
     const results = events.filter(
       (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
         event.type === "tool.update" && Boolean(event.result),
@@ -4724,7 +4745,7 @@ test("runtime agent selection applies only at the next provider turn boundary", 
   });
   release();
   await first;
-  await client.submit("second");
+  await client.submitAndWait!("second");
   expect(String(requests[0]?.messages[0]?.content)).toContain("first system");
   expect(String(requests[1]?.messages[0]?.content)).toContain("second system");
   expect(events).toContainEqual({
@@ -4756,7 +4777,7 @@ test("committed agent selection restores when a session runtime is reopened", as
     provider: scriptedProvider("first"),
   });
   first.start(() => undefined);
-  await first.submit("initialize runtime");
+  await first.submitAndWait!("initialize runtime");
   first.selectAgent?.("second");
   await first.dispose?.();
 
@@ -4774,7 +4795,7 @@ test("committed agent selection restores when a session runtime is reopened", as
     },
   });
   reopened.start(() => undefined, { replay: "none" });
-  await reopened.submit("after reopen");
+  await reopened.submitAndWait!("after reopen");
   expect(String(requests[0]?.messages[0]?.content)).toContain("second system");
 });
 
@@ -4831,9 +4852,9 @@ test("agent model overrides apply when the next provider turn starts", async () 
       sessionID: "ses_agent_model_override",
     });
     client.start(() => undefined);
-    await client.submit("first");
+    await client.submitAndWait!("first");
     client.selectAgent?.("second");
-    await client.submit("second");
+    await client.submitAndWait!("second");
     expect(requests.map((request) => request.model)).toEqual(["alpha", "beta"]);
   } finally {
     server.stop(true);
@@ -4921,7 +4942,7 @@ test("runtime model selections persist across reopen and expose safe catalogs", 
     );
     await client.setReasoningEffort?.("high");
     expect(await client.reasoningEffort?.()).toBe("high");
-    await client.submit("selected model");
+    await client.submitAndWait!("selected model");
     expect(requests[0]).toMatchObject({
       model: "beta",
       temperature: 0.2,
@@ -4938,7 +4959,7 @@ test("runtime model selections persist across reopen and expose safe catalogs", 
     });
     reopened.start(() => undefined);
     expect(await reopened.reasoningEffort?.()).toBeUndefined();
-    await reopened.submit("restored model");
+    await reopened.submitAndWait!("restored model");
     expect(requests[1]).toMatchObject({
       model: "beta",
       temperature: 0.2,
@@ -5027,7 +5048,7 @@ test("runtime session management uses durable metadata and protects the active s
     provider: scriptedProvider("unused"),
   });
   client.start(() => undefined);
-  await client.submit("active session");
+  await client.submitAndWait!("active session");
   const duplicated = await client.sessionDuplicate?.(activeID, "Copy");
   expect(duplicated).toMatchObject({ title: "Copy", pinned: false });
   await client.sessionPin?.(duplicated!.id, true);
@@ -5062,7 +5083,7 @@ test("runtime session management keeps SQLite projection synchronized", async ()
     useSqliteStore: true,
   });
   client.start(() => undefined);
-  await client.submit("active session");
+  await client.submitAndWait!("active session");
   await Bun.sleep(20);
   const duplicated = await client.sessionDuplicate?.(activeID, "Copy");
   await client.sessionPin?.(duplicated!.id, true);
@@ -5117,7 +5138,7 @@ test("runtime replaces a generated provider ID with a local SQLite title", async
     useSqliteStore: true,
   });
   client.start(() => undefined);
-  await client.submit("修复会话标题");
+  await client.submitAndWait!("修复会话标题");
   await waitForAsync(async () => {
     const current = (await client.sessionList?.())?.find(
       (item) => item.id === sessionID,
@@ -5180,8 +5201,8 @@ test("runtime filesystem slash commands use the protected catalog", async () => 
     provider: scriptedProvider("unused"),
   });
   client.start((event) => events.push(event));
-  await client.submit("/files main");
-  await client.submit("/search needle");
+  await client.submitAndWait!("/files main");
+  await client.submitAndWait!("/search needle");
   expect(
     events
       .filter((event) => event.type === "content.delta")
@@ -5201,8 +5222,8 @@ test("sessions slash command reports durable event counts", async () => {
     useSqliteStore: true,
   });
   client.start((event) => events.push(event));
-  await client.submit("first event");
-  await client.submit("/sessions");
+  await client.submitAndWait!("first event");
+  await client.submitAndWait!("/sessions");
   const output = events
     .filter((event) => event.type === "content.delta")
     .at(-1);
@@ -5244,13 +5265,13 @@ test("model slash commands share catalog and durable selection behavior", async 
     sessionID: "ses_runtime_model_command",
   });
   client.start((event) => events.push(event));
-  await client.submit("/models");
+  await client.submitAndWait!("/models");
   expect(
     events.filter((event) => event.type === "content.delta").at(-1),
   ).toMatchObject({
     text: expect.stringContaining("local/beta: beta @ local"),
   });
-  await client.submit("/model local/beta");
+  await client.submitAndWait!("/model local/beta");
   expect(events).toContainEqual({
     type: "model.selection",
     modelID: "local/beta",
@@ -5290,7 +5311,7 @@ test("configured provider policy denies a selected model without starting a prov
     sessionID: "ses_provider_policy",
   });
   client.start((event) => events.push(event));
-  await client.submit("policy blocked");
+  await client.submitAndWait!("policy blocked");
   expect(events).toContainEqual(
     expect.objectContaining({
       type: "diagnostic",
@@ -5349,7 +5370,7 @@ test("model capability disables provider-visible tools", async () => {
       sessionID: "ses_model_capabilities",
     });
     client.start(() => undefined);
-    await client.submit("no tools");
+    await client.submitAndWait!("no tools");
     expect(requests[0]?.tools).toBeUndefined();
   } finally {
     server.stop(true);
@@ -5402,7 +5423,7 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
       sessionID: "ses_image_attachment",
     });
     client.start(() => undefined);
-    await client.submitInput?.({ text: "inspect", attachments: ["image.png"] });
+    await client.submitAndWait!({ text: "inspect", attachments: ["image.png"] });
     const history = await client.history?.({ limit: 500 });
     expect(
       history?.events.find((item) => item.event.type === "turn.submitted")
@@ -5432,7 +5453,7 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
       sessionID: "ses_image_attachment",
     });
     reopened.start(() => undefined);
-    await reopened.submit("follow up");
+    await reopened.submitAndWait!("follow up");
     const followUpMessages = requests[1]?.messages as Array<{
       role: string;
       content: unknown;
@@ -5517,7 +5538,7 @@ test("video attachments are refused by a model or adapter without video input", 
       }
       return false;
     };
-    await client.submitInput?.({ text: "watch", attachments: ["clip.mp4"] });
+    await client.submitAndWait!({ text: "watch", attachments: ["clip.mp4"] });
     expect(await finishedWithError()).toBe(true);
     const firstHistory = await client.history?.({ limit: 500 });
     expect(
@@ -5527,7 +5548,7 @@ test("video attachments are refused by a model or adapter without video input", 
     await client.updateConfig?.({
       patch: { defaultModel: { provider: "local", model: "vision" } },
     });
-    await client.submitInput?.({ text: "watch", attachments: ["clip.mp4"] });
+    await client.submitAndWait!({ text: "watch", attachments: ["clip.mp4"] });
     expect(await finishedWithError()).toBe(true);
     const diagnostics = await client.diagnostics?.(50);
     expect(
@@ -5578,7 +5599,7 @@ test("runtime injects a UTF-8 text attachment into the active provider turn", as
       sessionID: "ses_text_attachment",
     });
     client.start(() => undefined);
-    await client.submitInput?.({ text: "review", attachments: ["notes.md"] });
+    await client.submitAndWait!({ text: "review", attachments: ["notes.md"] });
     const messages = requests[0]?.messages as Array<{
       role: string;
       content: string;
@@ -5634,7 +5655,7 @@ test("runtime lowers a PDF attachment through the Anthropic adapter", async () =
       sessionID: "ses_pdf_attachment",
     });
     client.start(() => undefined);
-    await client.submitInput?.({ text: "read", attachments: ["report.pdf"] });
+    await client.submitAndWait!({ text: "read", attachments: ["report.pdf"] });
     const messages = requests[0]?.messages as Array<{
       content: Array<{ type?: string; source?: { media_type?: string } }>;
     }>;
@@ -5684,7 +5705,7 @@ test("agent MCP server scope limits provider-visible MCP tools", async () => {
     },
   });
   client.start(() => undefined);
-  await client.submit("scope MCP tools");
+  await client.submitAndWait!("scope MCP tools");
   expect(requests[0]?.tools?.map((tool) => tool.name)).toContain(
     "mcp_one_echo",
   );
@@ -5738,7 +5759,7 @@ test("agent MCP scope includes only its server prompt and resource tools", async
     },
   });
   client.start(() => undefined);
-  await client.submit("scope MCP catalog tools");
+  await client.submitAndWait!("scope MCP catalog tools");
   const names = requests[0]?.tools?.map((tool) => tool.name) ?? [];
   expect(names).toEqual(
     expect.arrayContaining(["mcp_one_prompt_get", "mcp_one_resource_read"]),
@@ -5795,9 +5816,9 @@ test("real runtime client routes checkpoint slash commands to real store", async
   });
   client.start((event) => events.push(event));
   await waitFor(() => events.some((event) => event.type === "session.ready"));
-  await client.submit("/checkpoint");
+  await client.submitAndWait!("/checkpoint");
   await writeFile(join(root, "created_after.py"), "print('new')\n");
-  await client.submit("/rollback checkpoint_1 --dry-run");
+  await client.submitAndWait!("/rollback checkpoint_1 --dry-run");
 
   expect(
     events.some(
@@ -5830,7 +5851,7 @@ test("real runtime client executes model tool calls with approval policy", async
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("Read input.txt");
+  await client.submitAndWait!("Read input.txt");
 
   expect(
     events.some(
@@ -5889,7 +5910,7 @@ test("run_shell constitution checks allow ordinary cat commands", async () => {
   });
   client.start((event) => events.push(event));
 
-  await client.submit("cat input.txt");
+  await client.submitAndWait!("cat input.txt");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -5943,7 +5964,7 @@ test("real runtime reserves the configured final step for a text response", asyn
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("run every tool step");
+  await client.submitAndWait!("run every tool step");
 
   expect(requests).toHaveLength(10);
   expect(requests.slice(0, -1).every((request) => request.tools?.length)).toBe(
@@ -6008,7 +6029,7 @@ test("tool turns require a non-empty final assistant response", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("check the file");
+  await client.submitAndWait!("check the file");
 
   expect(requests).toBe(2);
   expect(
@@ -6056,7 +6077,7 @@ test("tool turns emit fallback text when the model omits its final response", as
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("check the file");
+  await client.submitAndWait!("check the file");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -6120,7 +6141,7 @@ test("ordinary tools settle as failed when their execution timeout expires", asy
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("wait forever");
+  await client.submitAndWait!("wait forever");
 
   expect(
     events.find(
@@ -6182,7 +6203,7 @@ test("runtime status counts managed background processes", async () => {
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("start");
+  await client.submitAndWait!("start");
   expect(await client.runtimeStatus?.()).toMatchObject({
     background: "1 running",
   });
@@ -6192,7 +6213,7 @@ test("runtime status counts managed background processes", async () => {
         event.type === "status.snapshot" && event.background === "1 running",
     ),
   );
-  await client.submit("stop");
+  await client.submitAndWait!("stop");
   expect(await client.runtimeStatus?.()).toMatchObject({
     background: "0 running",
   });
@@ -6217,7 +6238,7 @@ test("write approval uses a compact preview and preserves raw request detail", a
     if (event.type === "approval.request")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("write a note");
+  await client.submitAndWait!("write a note");
   const approval = events.find(
     (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
       event.type === "approval.request",
@@ -6244,7 +6265,7 @@ test("cancelling a pending approval settles the active turn without polling", as
     }
   });
 
-  await client.submit("write then cancel");
+  await client.submitAndWait!("write then cancel");
   expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
   expect(
     events.some(
@@ -6327,7 +6348,7 @@ test("provider admission is persisted before the provider turn begins", async ()
     },
   });
   client.start(() => undefined);
-  const submitted = await client.submit("persist me first");
+  const submitted = await client.submitAndWait!("persist me first");
   await waitFor(() => started, 3000, "the admitted turn to start streaming");
   expect(started).toBe(true);
   const stored = JSON.parse(
@@ -6508,7 +6529,7 @@ test("cancelling after admission but before execution does not start the turn", 
     events.push(event);
     if (event.type === "turn.submitted") client.cancel("cancel admission");
   });
-  await client.submit("do not start");
+  await client.submitAndWait!("do not start");
   await Bun.sleep(20);
 
   expect(providerCalls).toBe(0);
@@ -6537,12 +6558,12 @@ test("exact input retry does not duplicate a completed provider turn", async () 
     },
   });
   client.start(() => undefined);
-  await client.submitInput!({
+  await client.submitAndWait!({
     id: "turn_retry",
     text: "same",
     delivery: "steer",
   });
-  await client.submitInput!({
+  await client.submitAndWait!({
     id: "turn_retry",
     text: "same",
     delivery: "steer",
@@ -6762,8 +6783,8 @@ test("runtime history supplies a stable local cursor without SQLite", async () =
     },
   });
   client.start(() => undefined);
-  await client.submit("one");
-  await client.submit("two");
+  await client.submitAndWait!("one");
+  await client.submitAndWait!("two");
   const first = await client.history!({ limit: 1 });
   expect(first.events).toHaveLength(1);
   expect(first.hasMore).toBe(true);
@@ -6790,7 +6811,7 @@ test("durable history retains full assistant settlement without live fragments",
     },
   });
   client.start(() => undefined);
-  await client.submit("greet");
+  await client.submitAndWait!("greet");
   const stored = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_durable_content.json"),
@@ -6823,7 +6844,7 @@ test("restart restores the latest durable context checkpoint before later events
     },
   });
   first.start(() => undefined);
-  await first.submit("first question");
+  await first.submitAndWait!("first question");
   const persisted = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_context_epoch.json"),
@@ -6858,7 +6879,7 @@ test("restart restores the latest durable context checkpoint before later events
     (event) => event.type === "diagnostic" && event.level === "error",
   );
   expect(initializationFailure).toBeUndefined();
-  await reopened.submit("second question");
+  await reopened.submitAndWait!("second question");
   expect(requests[0]?.messages).toEqual(
     expect.arrayContaining([
       { role: "user", content: "first question" },
@@ -6890,7 +6911,7 @@ test("context-limit compaction persists a durable context epoch", async () => {
     },
   });
   client.start(() => undefined);
-  await client.submit("compact then retry");
+  await client.submitAndWait!("compact then retry");
   const stored = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_context_compaction.json"),
@@ -6920,7 +6941,7 @@ test("SQLite restart restores context from epoch baseline without duplicate hist
     },
   });
   first.start(() => undefined);
-  await first.submit("first question");
+  await first.submitAndWait!("first question");
 
   const requests: Array<{
     messages: Array<{ role: string; content: string }>;
@@ -6944,7 +6965,7 @@ test("SQLite restart restores context from epoch baseline without duplicate hist
     },
   });
   reopened.start(() => undefined, { replay: "none" });
-  await reopened.submit("second question");
+  await reopened.submitAndWait!("second question");
   const restored = requests[0]!.messages;
   expect(
     restored.filter((message) => message.content === "first question"),
@@ -7257,7 +7278,7 @@ test("provider can load a discovered skill through the canonical tool path", asy
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("load review skill");
+  await client.submitAndWait!("load review skill");
   expect(
     events.some(
       (event) =>
@@ -7331,8 +7352,8 @@ test("real runtime client discovers and activates native Skills", async () => {
   });
   client.start((event) => events.push(event));
   await waitFor(() => events.some((event) => event.type === "session.ready"));
-  await client.submit("/skills");
-  await client.submit("/skill read-only");
+  await client.submitAndWait!("/skills");
+  await client.submitAndWait!("/skill read-only");
   expect(
     events.some(
       (event) =>
@@ -7358,8 +7379,8 @@ test("real runtime client provides provider-independent doctor and help commands
   });
   client.start((event) => events.push(event));
   await waitFor(() => events.some((event) => event.type === "session.ready"));
-  await client.submit("/doctor");
-  await client.submit("/help");
+  await client.submitAndWait!("/doctor");
+  await client.submitAndWait!("/help");
 
   const output = events
     .filter((event) => event.type === "content.delta")
@@ -7384,7 +7405,7 @@ test("real runtime client records provider usage checkpoints", async () => {
     provider: usageProvider(),
   });
   client.start((event) => events.push(event));
-  await client.submit("Track usage");
+  await client.submitAndWait!("Track usage");
 
   expect(
     events.some(
@@ -7404,8 +7425,8 @@ test("real runtime forks a session at a submitted-turn boundary", async () => {
     provider: scriptedProvider("answer"),
   });
   client.start(() => undefined);
-  const first = await client.submit("first");
-  const second = await client.submit("second");
+  const first = await client.submitAndWait!("first");
+  const second = await client.submitAndWait!("second");
 
   const fork = await client.sessionFork!("ses_ts7_session_fork", second.id);
   const child = JSON.parse(
@@ -7435,8 +7456,8 @@ test("real runtime exposes projected message pages independently from event hist
     provider: scriptedProvider("answer"),
   });
   client.start(() => undefined);
-  await client.submit("first");
-  await client.submit("second");
+  await client.submitAndWait!("first");
+  await client.submitAndWait!("second");
 
   const page = await client.messages!({ order: "asc", limit: 1 });
   expect(page.data).toHaveLength(1);
@@ -7468,6 +7489,11 @@ test("real runtime client publishes provider chunks before stream completion", a
   );
   expect(events.some((event) => event.type === "turn.finished")).toBe(false);
   await submission;
+  await waitFor(
+    () => events.some((event) => event.type === "turn.finished"),
+    3000,
+    "the streamed turn to finish",
+  );
   expect(
     events
       .filter((event) => event.type === "content.delta")
@@ -7486,7 +7512,7 @@ test("real runtime client retries once when a new turn has no old context to com
     provider,
   });
   client.start((event) => events.push(event));
-  await client.submit("Recover context");
+  await client.submitAndWait!("Recover context");
 
   expect(provider.calls).toBe(2);
   expect(
@@ -7515,7 +7541,7 @@ test("real runtime client writes inside its selected workspace after approval", 
     if (event.type === "approval.request")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("create a workspace file");
+  await client.submitAndWait!("create a workspace file");
 
   expect(await readFile(join(root, "hello-ts7.txt"), "utf8")).toBe(
     "hello from TS7\n",
@@ -7540,7 +7566,7 @@ test("session intelligence writer publishes real snapshot facts for a working tu
     if (event.type === "approval.request")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("create a workspace file");
+  await client.submitAndWait!("create a workspace file");
 
   const snapshots = events.filter(
     (event): event is Extract<RuntimeEvent, { type: "session.snapshot" }> =>
@@ -7586,7 +7612,7 @@ test("session intelligence writer survives replay with the same facts", async ()
     if (event.type === "approval.request")
       initial.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await initial.submit("create a workspace file");
+  await initial.submitAndWait!("create a workspace file");
   await pollHistoryForFinished(initial);
 
   const replayed: RuntimeEvent[] = [];
@@ -7619,7 +7645,7 @@ test("session intelligence read model answers the latest published snapshot", as
     if (event.type === "approval.request")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("create a workspace file");
+  await client.submitAndWait!("create a workspace file");
   await pollHistoryForFinished(client);
 
   // Before the writer existed this answered `undefined` forever. Now the RPC
@@ -7647,7 +7673,7 @@ test("the self-protection rules are seeded as the first constitution facts", asy
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const rules = await client.constitutionRules!();
@@ -7689,7 +7715,7 @@ test("recordDecision writes a durable decision fact", async () => {
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const outcome = await client.recordDecision?.({
@@ -7699,8 +7725,11 @@ test("recordDecision writes a durable decision fact", async () => {
   });
   expect(outcome).toEqual({ recorded: true });
   const records = await client.decisionRecords!();
-  expect(records).toHaveLength(1);
-  expect(records[0]).toMatchObject({
+  const recorded = records.find(
+    (record) => record.decision === "workspace isolation is not container/VM security",
+  );
+  expect(recorded).toBeDefined();
+  expect(recorded).toMatchObject({
     decision: "workspace isolation is not container/VM security",
     rationale: ["the sandbox is a workspace boundary"],
     status: "accepted",
@@ -7730,7 +7759,7 @@ test("seeded constitution rules and decisions are Work Graph constraint/decision
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   // Each seeded self-protection rule is a constraint node in the graph.
@@ -7770,7 +7799,7 @@ test("constitution rules and decisions survive replay", async () => {
     },
   });
   initial.start(() => {});
-  await initial.submit("hello");
+  await initial.submitAndWait!("hello");
   await initial.recordDecision?.({
     decision: "default no commit/push",
   });
@@ -7789,7 +7818,7 @@ test("constitution rules and decisions survive replay", async () => {
     },
   });
   reopened.start((event) => replayed.push(event));
-  await reopened.submit("again");
+  await reopened.submitAndWait!("again");
   await pollHistoryForFinished(reopened);
 
   const rules = await reopened.constitutionRules!();
@@ -7837,7 +7866,7 @@ test("recordValidation runs a command and records durable evidence", async () =>
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const passed = await client.recordValidation?.({
@@ -7886,7 +7915,7 @@ test("recordValidation redacts secrets from the recorded summary", async () => {
     },
   });
   client.start(() => {});
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   await client.recordValidation?.({
@@ -7921,7 +7950,7 @@ test("promoting framework sources emits restart_required", async () => {
     provider: scriptedProvider("ready"),
   });
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   await sandboxes.create("box");
@@ -7956,7 +7985,7 @@ test("promote records evidence when validation passes", async () => {
     provider: scriptedProvider("ready"),
   });
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   await sandboxes.create("box");
@@ -8008,7 +8037,7 @@ test("failed validation records failed evidence and does not promote", async () 
     provider: scriptedProvider("ready"),
   });
   client.start(() => undefined);
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   await sandboxes.create("box");
@@ -8054,7 +8083,7 @@ test("evidence summary is secret-safe", async () => {
     provider: scriptedProvider("ready"),
   });
   client.start(() => undefined);
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   await sandboxes.create("box");
@@ -8082,7 +8111,7 @@ test("recordValidation rejects empty task id or command without recording", asyn
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const outcome = await client.recordValidation?.({
@@ -8111,7 +8140,7 @@ test("recordCompletion records a card, its projection and validated_by edges", a
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const outcome = await client.recordCompletion?.({
@@ -8169,7 +8198,7 @@ test("recordCompletion rejects an empty task id or change summary", async () => 
     },
   });
   client.start(() => {});
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   expect(
@@ -8203,7 +8232,7 @@ test("a completed plan drives its task's evidence to accepted (E3 status policy)
     )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   // Evidence recorded for the task.
@@ -8225,7 +8254,7 @@ test("a completed plan drives its task's evidence to accepted (E3 status policy)
   await client.planPropose?.(planID);
   await client.planAccept?.(planID);
   await client.planQueue?.(planID);
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await pollHistoryForFinished(client);
   // Active plan -> evidence effective status "implemented".
   let evidence = await client.evidenceRecords!();
@@ -8251,7 +8280,7 @@ test("planCompleted rejects a plan that is not active", async () => {
     },
   });
   client.start(() => {});
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const created = await client.planCreate?.({
@@ -8280,7 +8309,7 @@ test("mailbox send/list/deliver/acknowledge records a durable lifecycle", async 
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const sent = await client.mailboxSend?.({
@@ -8340,7 +8369,7 @@ test("mailbox defer and supersede move a queued message out of the way", async (
     },
   });
   client.start(() => {});
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const sent = await client.mailboxSend?.({
@@ -8382,7 +8411,7 @@ test("duplicate mailbox intents and planless handoffs are refused", async () => 
     provider: scriptedProvider("ready"),
   });
   client.start(() => undefined);
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   const first = await client.mailboxSend?.({
     intent: "request_report",
@@ -8436,7 +8465,7 @@ test("mailbox_cancel drops a queued duplicate before Natalia consumes it", async
     provider: scriptedProvider("ready"),
   });
   client.start(() => undefined);
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
   const sent = await client.mailboxSend?.({
     intent: "pause",
@@ -8463,7 +8492,7 @@ test("mailboxSend redacts secrets from the recorded safe summary", async () => {
     },
   });
   client.start(() => {});
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   await client.mailboxSend?.({
@@ -8490,7 +8519,7 @@ test("queued mailbox messages are delivered at the next turn safe boundary", asy
     },
   });
   client.start(() => {});
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   // No turn running: the intent wakes the idle main agent immediately (P8 §7)
@@ -8526,7 +8555,7 @@ test("deferred and superseded mailbox messages are not auto-delivered at a bound
     },
   });
   client.start(() => {});
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   const deferred = await client.mailboxSend?.({
@@ -8546,7 +8575,7 @@ test("deferred and superseded mailbox messages are not auto-delivered at a bound
     await client.mailboxSupersede?.(superseded!.messageID!, "newer"),
   ).toEqual({ superseded: true });
 
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await pollHistoryForFinished(client);
 
   const mailbox = await client.mailboxList!();
@@ -8569,7 +8598,7 @@ test("a manually delivered mailbox message is not re-delivered at a boundary", a
     },
   });
   client.start(() => {});
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   const sent = await client.mailboxSend?.({
@@ -8581,7 +8610,7 @@ test("a manually delivered mailbox message is not re-delivered at a boundary", a
     delivered: true,
   });
 
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await pollHistoryForFinished(client);
 
   // The manually delivered message was injected into turn 2's context, so the
@@ -8661,7 +8690,7 @@ test("delivered mailbox intents reach the main agent as ordinary tagged user mes
     },
   });
   client.start(() => {});
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   await client.mailboxSend?.({
@@ -8707,7 +8736,7 @@ test("plan drafts move through the full lifecycle with version bumps", async () 
     )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const created = await client.planCreate?.({
@@ -8787,7 +8816,7 @@ test("plan update bumps the version and supersede keeps the reason", async () =>
     )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const created = await client.planCreate?.({
@@ -8839,7 +8868,7 @@ test("plan acceptance requires an approval and a reject leaves the plan proposed
     )
       client.respondApproval({ requestID: event.id, decision: "reject" });
   });
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const created = await client.planCreate?.({
@@ -8933,7 +8962,7 @@ test("a queued-next plan activates automatically at the next turn boundary", asy
     )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   const created = await client.planCreate?.({
@@ -8950,7 +8979,7 @@ test("a queued-next plan activates automatically at the next turn boundary", asy
 
   // A finished turn is the safe completion point: the queued plan activates.
   // Submit no longer blocks on the turn, so poll for the activation itself.
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await waitForAsync(
     async () => (await client.planList!())[0]?.status === "active",
   );
@@ -8990,7 +9019,7 @@ test("an auto-activated plan reaches the next turn as a NextPlanHandoff", async 
     )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   const created = await client.planCreate?.({
@@ -9007,12 +9036,12 @@ test("an auto-activated plan reaches the next turn as a NextPlanHandoff", async 
 
   // Turn 2 activates the plan at its boundary; turn 2's own prompt (assembled
   // before the boundary) must not carry the handoff.
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await pollHistoryForFinished(client);
   expect(systemPrompts.at(-1)).not.toContain("<next_plan_handoff>");
 
   // Turn 3 runs after activation, so its prompt carries the structured handoff.
-  await client.submit("third");
+  await client.submitAndWait!("third");
   await pollHistoryForFinished(client);
   const prompt = systemPrompts.at(-1) ?? "";
   expect(prompt).toContain("<next_plan_handoff>");
@@ -9060,7 +9089,7 @@ test("mailbox_acknowledge marks delivered messages acknowledged and stops re-inj
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   // Seed a queued mailbox message while idle.
@@ -9071,14 +9100,14 @@ test("mailbox_acknowledge marks delivered messages acknowledged and stops re-inj
   });
   sentID = (await client.mailboxList!())[0]!.messageID;
 
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await pollHistoryForFinished(client);
   expect(ackAttempted).toBe(1);
   expect(events.some((event) => event.type === "mailbox.acknowledged")).toBe(
     true,
   );
 
-  await client.submit("third");
+  await client.submitAndWait!("third");
   await pollHistoryForFinished(client);
   expect(userTurns.at(-1)).not.toContain("never commit the lockfile");
 });
@@ -9105,7 +9134,7 @@ test("delivered mailbox intents are auto-acknowledged at the next turn finish (n
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   // Seed an intent while idle: the agent wakes and the wake turn sees it; its
@@ -9125,7 +9154,7 @@ test("delivered mailbox intents are auto-acknowledged at the next turn finish (n
     async () => (await client.mailboxList!())[0]?.status === "acknowledged",
   );
 
-  await client.submit("next");
+  await client.submitAndWait!("next");
   await pollHistoryForFinished(client);
   expect(userTurns.at(-1)).not.toContain("never merge a failing build");
 });
@@ -9159,7 +9188,7 @@ test("a turn that does not finish normally does not auto-acknowledge delivered i
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   // Send the intent mid-turn (the running turn keeps the coordinator active, so
@@ -9198,7 +9227,7 @@ test("evaluateDrift opens durable findings and driftFindings answers them", asyn
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   const opened = await client.evaluateDrift?.({
@@ -9251,7 +9280,7 @@ test("evaluateDrift opens a high finding for a forbidden constraint signal", asy
     },
   });
   client.start(() => {});
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   await client.evaluateDrift?.({
@@ -9284,7 +9313,7 @@ test("acknowledgeDriftFinding transitions an open finding with a rationale", asy
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   await client.evaluateDrift?.({
@@ -9335,7 +9364,7 @@ test("a write_file turn registers a mutation the auditor can attribute", async (
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("create a workspace file");
+  await client.submitAndWait!("create a workspace file");
   await pollHistoryForFinished(client);
 
   // The write tool settled and registered an expected mutation; the turn-end
@@ -9382,7 +9411,7 @@ test("an external workspace change becomes an isolated external graph node", asy
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   // An external edit the watcher sees but no tool claimed.
@@ -9440,7 +9469,7 @@ test("a confirmed change diverging from the active plan auto-opens a drift findi
     )
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
   // An active plan with a clear objective and a constraint.
@@ -9455,7 +9484,7 @@ test("a confirmed change diverging from the active plan auto-opens a drift findi
   await client.planPropose?.(planID);
   await client.planAccept?.(planID);
   await client.planQueue?.(planID);
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await pollHistoryForFinished(client);
   expect((await client.planList!())[0]?.status).toBe("active");
 
@@ -9489,7 +9518,7 @@ test("an external change during a turn is reconciled at turn finish without an e
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("first");
+  await client.submitAndWait!("first");
   await pollHistoryForFinished(client);
 
   // External edit while idle, then another turn finishes: the turn-end
@@ -9497,7 +9526,7 @@ test("an external change during a turn is reconciled at turn finish without an e
   // confirmedWorkspaceChanges call.
   await writeFile(join(root, "turnend-note.txt"), "external\n");
   await Bun.sleep(300);
-  await client.submit("second");
+  await client.submitAndWait!("second");
   await pollHistoryForFinished(client);
   await Bun.sleep(300);
 
@@ -9522,7 +9551,7 @@ test("durable session replay preserves tool-call pairs for the next provider tur
     permissionMode: "auto",
   });
   initial.start(() => {});
-  await initial.submit("read the input");
+  await initial.submitAndWait!("read the input");
 
   const requests: ProviderStreamRequest[] = [];
   const reopened = createRealRuntimeClient({
@@ -9540,7 +9569,7 @@ test("durable session replay preserves tool-call pairs for the next provider tur
     },
   });
   reopened.start(() => {});
-  await reopened.submit("continue");
+  await reopened.submitAndWait!("continue");
   const restoredTool = requests[0]?.messages.find(
     (message) => message.role === "tool",
   );
@@ -9563,7 +9592,7 @@ test("real runtime client routes ask_user tool calls through question response",
     if (event.type === "question.request")
       client.respondQuestion({ requestID: event.id, answers: [["yes"]] });
   });
-  await client.submit("ask a question");
+  await client.submitAndWait!("ask a question");
   expect(events.some((event) => event.type === "question.request")).toBe(true);
   expect(
     events.some(
@@ -9583,7 +9612,7 @@ test("real runtime client spawns and projects a TS/Bun subagent lifecycle", asyn
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("delegate a focused task");
+  await client.submitAndWait!("delegate a focused task");
   await waitFor(() =>
     events.some(
       (event) =>
@@ -9651,7 +9680,7 @@ test("subagent executes TS native workspace tools before reporting completion", 
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("delegate a file task");
+  await client.submitAndWait!("delegate a file task");
   await waitFor(() =>
     events.some(
       (event) =>
@@ -9693,7 +9722,7 @@ test("subagent corrects raw XML and executes a native tool call", async () => {
   });
   client.start((event) => events.push(event));
 
-  await client.submit("delegate a raw XML file task");
+  await client.submitAndWait!("delegate a raw XML file task");
   await waitFor(
     () =>
       events.some(
@@ -9747,7 +9776,7 @@ test("subagent approval stays in the child conversation and remains answerable",
       });
   });
 
-  await client.submit("delegate a file task");
+  await client.submitAndWait!("delegate a file task");
   await waitFor(
     () =>
       events.some(
@@ -9864,7 +9893,7 @@ test("subagent honors configured step limits above twenty", async () => {
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("delegate a long task");
+  await client.submitAndWait!("delegate a long task");
   await waitFor(
     () =>
       events.some(
@@ -10377,7 +10406,7 @@ test("the system prompt enumerates installed skills dynamically", async () => {
       provider,
     });
     client.start(() => undefined);
-    await client.submit("hi");
+    await client.submitAndWait!("hi");
     await client.dispose?.();
     return String(requests[0]?.messages[0]?.content ?? "");
   };
@@ -10448,7 +10477,7 @@ test("a rejected approval feeds the reason back and lets the turn continue", asy
       });
   });
 
-  await client.submit("clean the workspace");
+  await client.submitAndWait!("clean the workspace");
 
   // The refusal is reported as a decision about the call, not a broken turn.
   expect(
@@ -10520,7 +10549,7 @@ test("a rejection without feedback still audits the decision and continues", asy
       client.respondApproval({ requestID: event.id, decision: "reject" });
   });
 
-  await client.submit("run something");
+  await client.submitAndWait!("run something");
 
   // The audit trail must record the refusal even when no reason was given.
   expect(
@@ -10574,7 +10603,7 @@ test("the repeated call guard blocks loops but not waiting reads", async () => {
       },
     });
     client.start((event) => events.push(event));
-    await client.submit(`repeat ${name}`);
+    await client.submitAndWait!(`repeat ${name}`);
     await client.dispose?.();
     return events.filter(
       (event) =>
@@ -10664,7 +10693,7 @@ test("report_issue reaches the forge through the runtime, never through the mode
     },
   });
   client.start(() => undefined);
-  await client.submit("report the finding");
+  await client.submitAndWait!("report the finding");
   expect(seenTools[0]).toContain("report_issue");
   expect(reported).toEqual([
     {
@@ -10720,7 +10749,7 @@ test("report_issue stays out of runtimes that were not given a reporter", async 
     },
   });
   taskClient.start(() => undefined);
-  await taskClient.submit("begin");
+  await taskClient.submitAndWait!("begin");
   expect(seenTools[0]).not.toContain("report_issue");
   await taskClient.dispose?.();
 
@@ -10737,7 +10766,7 @@ test("report_issue stays out of runtimes that were not given a reporter", async 
     },
   });
   ordinaryClient.start(() => undefined);
-  await ordinaryClient.submit("begin");
+  await ordinaryClient.submitAndWait!("begin");
   expect(seenTools[1]).not.toContain("report_issue");
   await ordinaryClient.dispose?.();
   store.close();
@@ -10802,7 +10831,7 @@ test("report_issue is denied outside the report module bundle", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("report from a read module");
+  await client.submitAndWait!("report from a read module");
   expect(reporterCalls).toBe(0);
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -10884,7 +10913,7 @@ test("read_data_source is a task module capability the runtime owns", async () =
     },
   });
   client.start(() => undefined);
-  await client.submit("scan the log");
+  await client.submitAndWait!("scan the log");
   expect(seenTools[0]).toContain("read_data_source");
   // The model asks for new content, never for a byte offset.
   expect(requests).toEqual([{ maxBytes: 256 }]);
@@ -10931,7 +10960,7 @@ test("read_data_source stays out of runtimes without a configured source", async
     },
   });
   taskClient.start(() => undefined);
-  await taskClient.submit("begin");
+  await taskClient.submitAndWait!("begin");
   expect(seenTools[0]).not.toContain("read_data_source");
   await taskClient.dispose?.();
 
@@ -10948,7 +10977,7 @@ test("read_data_source stays out of runtimes without a configured source", async
     },
   });
   ordinaryClient.start(() => undefined);
-  await ordinaryClient.submit("begin");
+  await ordinaryClient.submitAndWait!("begin");
   expect(seenTools[1]).not.toContain("read_data_source");
   await ordinaryClient.dispose?.();
   store.close();
@@ -11030,7 +11059,7 @@ test("module completion stays possible when a profile allow-list omits it", asyn
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("claim the module");
+  await client.submitAndWait!("claim the module");
   expect(seenTools[0]).toContain("flow_module_complete");
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -11090,6 +11119,7 @@ test("config is not applied underneath a running turn, even if the precheck said
 
   letProviderFinish?.();
   await turn;
+  await pollHistoryForFinished(client);
 
   // Once the turn has settled it applies normally.
   expect((await client.reloadConfig?.())?.applied).toBe(true);
@@ -11151,7 +11181,7 @@ test("pause, resume and agent selection answer what the runtime did", async () =
     reason: "no turn has been submitted",
   });
 
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   expect(await client.pause?.("user pause")).toEqual({ paused: true });
   expect(await client.pause?.("user pause")).toEqual({
     paused: true,
@@ -11209,6 +11239,7 @@ test("selecting an agent during a turn reports the selection as deferred, not ap
 
   releaseProvider?.();
   await turn;
+  await pollHistoryForFinished(client);
   expect((await client.selectAgent?.())?.outcome).toBe("applied");
   await client.dispose?.();
 }, 30_000);
@@ -11326,7 +11357,7 @@ test("session attach switches the active journal while a background turn keeps r
       sessionID: "ses_attach_b",
     });
     // Session B runs its own turn while A's is still parked.
-    await client.submit("second");
+    await client.submitAndWait!("second");
     await pollHistoryForFinished(client);
     const second = await client.history?.({ limit: 100 });
     expect(
@@ -11353,7 +11384,7 @@ test("session attach switches the active journal while a background turn keeps r
       ),
     ).toBe(true);
 
-    await client.submit("after attach");
+    await client.submitAndWait!("after attach");
     await pollHistoryForFinished(client);
     const resumed = requests.find((request) =>
       request.messages.some(
@@ -11480,7 +11511,7 @@ test("parallel sessions retain their configured provider across tool steps", asy
 
       await client.sessionAttach?.("ses_provider_b");
       await client.selectModel?.("local/beta");
-      await client.submit("session B");
+      await client.submitAndWait!("session B");
       releaseFirstA?.();
       await turnA;
 
@@ -11512,7 +11543,7 @@ test("published events are stamped with the active session and re-stamped on att
   });
   client.start((event) => events.push(event));
   try {
-    await client.submit("hello");
+    await client.submitAndWait!("hello");
     const first = events.filter(
       (event) =>
         event.type === "turn.submitted" ||
@@ -11529,7 +11560,7 @@ test("published events are stamped with the active session and re-stamped on att
     await client.sessionNew?.({ id: "ses_stamp_b", title: "Second" });
     await client.sessionAttach?.("ses_stamp_b");
     events.splice(0);
-    await client.submit("again");
+    await client.submitAndWait!("again");
     const second = events.filter((event) => event.type === "turn.submitted");
     expect(second).toHaveLength(1);
     expect((second[0] as { sessionID?: string }).sessionID).toBe("ses_stamp_b");
@@ -11677,7 +11708,7 @@ test("terminal_request_human reaches the registry audit with the bounded reason"
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   try {
-    await client.submit("ask the human");
+    await client.submitAndWait!("ask the human");
     expect(requested).toBe(true);
     expect(audit.at(-1)).toMatchObject({
       id: "rh_runtime_1",
@@ -11769,7 +11800,7 @@ test("request_human endTurn settles as waiting_human and resumes automatically a
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   try {
-    await client.submit("ask the human");
+    await client.submitAndWait!("ask the human");
     const finished = events.filter((event) => event.type === "turn.finished");
     expect(finished.at(-1)).toMatchObject({
       stopReason: "waiting_human",
@@ -11780,6 +11811,15 @@ test("request_human endTurn settles as waiting_human and resumes automatically a
     });
 
     // The pending-human state is durable before the human acts.
+    await waitForAsync(async () => {
+      const persisted = JSON.parse(
+        await readFile(
+          join(root, ".natalia", "sessions", "ses_continue_turn.json"),
+          "utf8",
+        ),
+      ) as { metadata?: { pendingHumanTerminal?: unknown } };
+      return Boolean(persisted.metadata?.pendingHumanTerminal);
+    });
     const persisted = JSON.parse(
       await readFile(
         join(root, ".natalia", "sessions", "ses_continue_turn.json"),
@@ -11903,7 +11943,7 @@ test("releasing a pane that is not the pending one does not resume or clear stat
   });
   client.start((event) => events.push(event));
   try {
-    await client.submit("ask");
+    await client.submitAndWait!("ask");
     expect(
       events.filter((event) => event.type === "turn.finished").at(-1)
         ?.stopReason,
@@ -11961,18 +12001,18 @@ test("D5.3: a session approval stays with its session across attach", async () =
   });
   try {
     await client.sessionNew?.({ id: "ses_d53_b", title: "B" });
-    await client.submit("a1");
-    await client.submit("a2");
+    await client.submitAndWait!("a1");
+    await client.submitAndWait!("a2");
     expect(approvalCount).toBe(1);
 
     // Session B has no grants: its first call asks again.
     await client.sessionAttach?.("ses_d53_b");
-    await client.submit("b1");
+    await client.submitAndWait!("b1");
     expect(approvalCount).toBe(2);
 
     // Attaching back to A restores A's grant: it was A's, never B's.
     await client.sessionAttach?.("ses_d53_a");
-    await client.submit("a3");
+    await client.submitAndWait!("a3");
     expect(approvalCount).toBe(2);
   } finally {
     await client.dispose?.();
@@ -12622,7 +12662,7 @@ test("SQLite restart recovers the pending human terminal and resumes exactly onc
       cwd: root,
       command: "ssh host",
     });
-    await first.submit("ask the human");
+    await first.submitAndWait!("ask the human");
     expect(
       firstEvents.filter((event) => event.type === "turn.finished").at(-1),
     ).toMatchObject({ stopReason: "waiting_human" });
@@ -12730,10 +12770,10 @@ test("/skill-script aborts its child process when the command is cancelled", asy
   client.start((event) => events.push(event));
   try {
     await waitFor(() => events.some((event) => event.type === "session.ready"));
-    await client.submit("/skill cancel-me");
+    await client.submitAndWait!("/skill cancel-me");
     // The long script starts; cancelling the command must abort its child.
     setTimeout(() => client.cancel("cancel the skill script"), 150);
-    await client.submit("/skill-script long");
+    await client.submitAndWait!("/skill-script long");
     const output = events
       .filter((event) => event.type === "content.delta")
       .map((event) => event.text)
@@ -12900,7 +12940,7 @@ test("cancelling a turn aborts a tool currently executing", async () => {
       setTimeout(() => client.cancel("stop the tool"), 10);
   });
   try {
-    await client.submit("run the waiting tool");
+    await client.submitAndWait!("run the waiting tool");
     expect(toolRuns).toBe(1);
     // The in-flight tool observed the cancellation and settled.
     expect(toolAborted).toBe(true);
@@ -12979,7 +13019,7 @@ test("a cancellation during the durable in-flight write still aborts the tool", 
       client.cancel("stop the tool");
   });
   try {
-    await client.submit("run the waiting tool");
+    await client.submitAndWait!("run the waiting tool");
     expect(toolAborted).toBe(true);
   } finally {
     await client.dispose?.();
@@ -13419,7 +13459,7 @@ test("the chat context includes the main agent's recent activity", async () => {
     },
   });
   client.start(() => undefined);
-  await client.submit("replace the wrapper");
+  await client.submitAndWait!("replace the wrapper");
   await pollHistoryForFinished(client);
   await client.chatSubmit!({ text: "what did the main agent just say" });
   // The Chat shares the main agent's recent exchange — the user's prompt and
@@ -13892,7 +13932,7 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
   // No chatSubmit at all: the question wakes Navi and she answers on her own.
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await waitForAsync(async () =>
     events.some(
       (event) =>
@@ -13924,7 +13964,7 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
     ),
   ).toBe(true);
   // The answer reaches Natalia's own context on her next turn (the 轮巡).
-  await client.submit("continue");
+  await client.submitAndWait!("continue");
   await waitForAsync(async () => mainPrompts.length >= 2);
   expect(mainPrompts.at(-1)).toContain("<navi_responses>");
   expect(mainPrompts.at(-1)).toContain("yes, echo is safe");
@@ -14022,7 +14062,7 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
   try {
-    await client.submit("hello");
+    await client.submitAndWait!("hello");
     await waitForAsync(async () =>
       events.some(
         (event) =>
@@ -14035,7 +14075,7 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
           event.type === "turn.finished" && event.id.startsWith("turn_collab_"),
       ),
     );
-    await client.submit("check");
+    await client.submitAndWait!("check");
     await waitForAsync(async () =>
       inboxToolResults.some((result) => result.includes("yes, echo is safe")),
     );
@@ -14111,7 +14151,7 @@ test("collab_answer rejects a truncated question id", async () => {
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("hello");
+  await client.submitAndWait!("hello");
   await waitForAsync(async () =>
     events.some(
       (event) =>
@@ -14269,7 +14309,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
   });
   client.start((event) => events.push(event));
   try {
-    await client.submit("ask Navi to check it");
+    await client.submitAndWait!("ask Navi to check it");
     await waitForAsync(async () => {
       const chatCount = events.filter(
         (event) =>
@@ -14433,7 +14473,7 @@ test("collab_chat honors a configured one-round automatic limit", async () => {
   });
   client.start((event) => events.push(event));
   try {
-    await client.submit("start one round");
+    await client.submitAndWait!("start one round");
     await waitForAsync(
       async () =>
         events.filter(
@@ -14555,7 +14595,7 @@ test("a sandboxed subagent reads the checked-out base and writes only in its wor
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("delegate a sandboxed file task");
+  await client.submitAndWait!("delegate a sandboxed file task");
   await waitFor(() =>
     events.some(
       (event) =>
@@ -14666,7 +14706,7 @@ test("a sandboxed sub-agent sees a denied write and self-corrects inside its fil
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("delegate a domain task");
+  await client.submitAndWait!("delegate a domain task");
   await waitFor(() =>
     events.some(
       (event) =>
@@ -14751,7 +14791,7 @@ test("a subagent keeps retrying transient failures without respawn", async () =>
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("delegate transient work");
+  await client.submitAndWait!("delegate transient work");
   await waitFor(() =>
     events.some(
       (event) =>
@@ -14855,7 +14895,7 @@ test("a model with image input can attach its own screenshot and see it", async 
     provider: imageAttachProvider(),
   });
   client.start((event) => events.push(event));
-  await client.submit("look at my screenshot");
+  await client.submitAndWait!("look at my screenshot");
   await waitFor(() =>
     events.some(
       (event) => event.type === "turn.finished" && event.stopReason === "done",
@@ -14894,7 +14934,7 @@ test("/team forces the agent-team directive into the turn context", async () => 
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("/team build the game");
+  await client.submitAndWait!("/team build the game");
   await waitFor(() =>
     events.some(
       (event) => event.type === "turn.finished" && event.stopReason === "done",
@@ -14939,7 +14979,7 @@ test("/team has no product behavior when the team plugin is disabled", async () 
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.submit("/team build the game");
+  await client.submitAndWait!("/team build the game");
   await waitFor(() =>
     events.some(
       (event) => event.type === "turn.finished" && event.stopReason === "done",

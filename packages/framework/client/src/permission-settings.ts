@@ -8,16 +8,8 @@
  * applied). Keeping it separate makes the load/reload path testable without the
  * runtime state it writes.
  */
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3, PermissionProfile } from "@natalia/contracts";
 
-type PermissionProfile = {
-  approval: ConfigV3["agentModes"][string]["approval"];
-  description: string;
-  permissions?: { tools?: { allow: string[]; exclude: string[] } };
-  commandRules?: ConfigV3["agentModes"][string]["commandRules"];
-  interactivePrograms?: ConfigV3["agentModes"][string]["interactivePrograms"];
-  extensions?: { skills?: boolean; mcp?: boolean };
-};
 export type PermissionMode = PermissionProfile["approval"];
 
 export type DerivedPermissionSettings =
@@ -30,6 +22,33 @@ export type DerivedPermissionSettings =
       defaultProfile: PermissionProfile;
     };
 
+function permissionsFromMode(
+  mode: ConfigV3["agentModes"][string],
+): PermissionProfile["permissions"] {
+  const allow =
+    mode?.permissions?.tools?.allow ?? mode?.allowedTools ?? [];
+  const exclude =
+    mode?.permissions?.tools?.exclude ?? mode?.excludedTools ?? [];
+  const permissions = mode?.permissions
+    ? {
+        ...mode.permissions,
+        tools: { allow, exclude },
+      }
+    : allow.length || exclude.length
+      ? { tools: { allow, exclude } }
+      : undefined;
+  return permissions;
+}
+
+function extensionsFromMode(
+  mode: ConfigV3["agentModes"][string],
+): { skills: boolean; mcp: boolean } {
+  return {
+    skills: mode?.skills !== false && mode?.extensions?.skills !== false,
+    mcp: mode?.extensions?.mcp !== false,
+  };
+}
+
 export function derivePermissionSettings(input: {
   config: ConfigV3;
   requestedProfile: string | undefined;
@@ -37,59 +56,38 @@ export function derivePermissionSettings(input: {
   permissionMode: PermissionMode;
 }): DerivedPermissionSettings {
   const { config, requestedProfile, optionMode, permissionMode } = input;
-  const agentMode = config.agentModes[config.defaultAgentMode] ?? config.agentModes["ask"];
+  const agentMode =
+    config.agentModes[config.defaultAgentMode] ?? config.agentModes["ask"];
   const defaultProfile: PermissionProfile = {
     approval: agentMode?.approval ?? "ask",
     description: agentMode?.description ?? "",
-    ...(agentMode?.allowedTools.length || agentMode?.excludedTools.length
-      ? {
-          permissions: {
-            tools: {
-              allow: agentMode?.allowedTools ?? [],
-              exclude: agentMode?.excludedTools ?? [],
-            },
-          },
-        }
+    ...(permissionsFromMode(agentMode)
+      ? { permissions: permissionsFromMode(agentMode) }
       : {}),
     ...(agentMode?.commandRules ? { commandRules: agentMode.commandRules } : {}),
     ...(agentMode?.interactivePrograms
       ? { interactivePrograms: agentMode.interactivePrograms }
       : {}),
-    extensions: {
-      skills: agentMode?.skills !== false,
-      mcp: true,
-    },
+    extensions: extensionsFromMode(agentMode),
   };
 
   if (requestedProfile) {
-    const found =
-      config.agentModes[requestedProfile] ?? config.agentModes[requestedProfile];
+    const found = config.agentModes[requestedProfile];
     if (!found) return { found: false };
     const foundProfile: PermissionProfile = {
       approval: found.approval,
-      description: "description" in found ? found.description ?? "" : "",
-      ...("allowedTools" in found
-        ? {
-            permissions: {
-              tools: {
-                allow: found.allowedTools ?? [],
-                exclude: (found as { excludedTools?: string[] }).excludedTools ?? [],
-              },
-            },
-          }
+      description: found.description ?? "",
+      ...(permissionsFromMode(found)
+        ? { permissions: permissionsFromMode(found) }
         : {}),
-      ...("commandRules" in found && found.commandRules
-        ? { commandRules: found.commandRules }
-        : {}),
-      ...("interactivePrograms" in found && found.interactivePrograms
+      ...(found.commandRules ? { commandRules: found.commandRules } : {}),
+      ...(found.interactivePrograms
         ? { interactivePrograms: found.interactivePrograms }
         : {}),
-      extensions: {
-        skills: "skills" in found ? found.skills !== false : true,
-        mcp: true,
-      },
+      extensions: extensionsFromMode(found),
     };
-    const nextMode = !optionMode && found ? foundProfile.approval : permissionMode;
+    const nextMode =
+      !optionMode && found ? foundProfile.approval : permissionMode;
     return {
       found: true,
       selectedProfile: foundProfile,

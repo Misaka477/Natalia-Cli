@@ -57,6 +57,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "a turn either starts or does not; a rejected submission has no partial value to report",
   },
+  submitAndWait: {
+    refusal: "error",
+    note: "same refusal semantics as submit; the blocking variant waits for the terminal turn event",
+  },
   cancel: {
     refusal: "none",
     note: "idempotent; cancelling nothing is not a refusal",

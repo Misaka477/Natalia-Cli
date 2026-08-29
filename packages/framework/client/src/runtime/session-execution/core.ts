@@ -12,6 +12,7 @@ type Surface = Pick<
   | "service"
   | "start"
   | "submit"
+  | "submitAndWait"
   | "cancel"
   | "snapshot"
   | "diagnostic"
@@ -40,6 +41,14 @@ export function createCoreSurface(
     },
     async submit(text) {
       return await ctx.ports.submitInput({ text });
+    },
+    async submitAndWait(input) {
+      const submitted = await ctx.ports.submitInput(
+        typeof input === "string" ? { text: input } : input,
+      );
+      const exec = ctx.ports.getExecutionBySession().get(ctx.ports.getSessionID());
+      await waitForTurnSettled(submitted.id, Boolean(exec?.activeTurnID));
+      return submitted;
     },
     cancel(reason = "user cancel") {
       const cancelledSessionID = ctx.ports.getSessionID();
@@ -135,4 +144,54 @@ export function createCoreSurface(
       return ctx.ports.getInteractive().respondQuestion(response);
     },
   };
+
+  async function waitForTurnSettled(id: string, activeAtSubmit: boolean) {
+    const sessionID = ctx.ports.getSessionID();
+    let submittedIndex = -1;
+    let started = false;
+    while (!ctx.ports.isDisposed()) {
+      const exec = ctx.ports.getExecutionBySession().get(sessionID);
+      const events = exec?.session.events ?? [];
+      if (submittedIndex < 0) {
+        submittedIndex = events.findIndex(
+          (event) => event.type === "turn.submitted" && event.id === id,
+        );
+        if (submittedIndex < 0) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          continue;
+        }
+      }
+      const exactSettled = events.some(
+        (event) =>
+          (event.type === "turn.finished" || event.type === "turn.cancelled") &&
+          event.id === id,
+      );
+      if (exactSettled) return;
+
+      if (activeAtSubmit) {
+        // A turn was already running when the blocking submit was made. Do not
+        // be fooled by that older turn's terminal event: wait for the newly
+        // submitted turn to actually start and then leave the active slot.
+        if (
+          exec?.activeTurnID === id ||
+          events.some((event) => event.type === "turn.started" && event.id === id)
+        )
+          started = true;
+        if (started && exec?.activeTurnID !== id) return;
+      } else {
+        // Some collaborative/mailbox boundaries execute an internal turn and
+        // settle the session without a terminal event carrying the caller's
+        // submitted turn id. For an idle submission the first settlement after
+        // this submission is the work it woke.
+        if (
+          events.slice(submittedIndex + 1).some(
+            (event) =>
+              event.type === "turn.finished" || event.type === "turn.cancelled",
+          )
+        )
+          return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
 }

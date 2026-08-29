@@ -85,7 +85,13 @@ export const DEPRECATED_RUNTIME_MEMBERS: Readonly<
  */
 export const RUNTIME_CAPABILITY_GROUPS = {
   /** Reading and replaying a session's own history. */
-  transcript: ["history", "messages", "pendingInteractive", "submitInput"],
+  transcript: [
+    "history",
+    "messages",
+    "pendingInteractive",
+    "submitInput",
+    "submitAndWait",
+  ],
   /** Pausing and resuming a running turn. */
   turnControl: ["pause", "resume"],
   /** Lifecycle beyond a single session. */

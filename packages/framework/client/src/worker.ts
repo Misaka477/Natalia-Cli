@@ -18,6 +18,7 @@ import type {
  */
 export const WORKER_ROUTE_MEMBERS = {
   submit: "submit",
+  "submitAndWait": "submitAndWait",
   cancel: "cancel",
   pause: "pause",
   resume: "resume",
@@ -133,6 +134,7 @@ type WorkerRequest = {
   id: string;
   method:
     | "submit"
+    | "submitAndWait"
     | "cancel"
     | "pause"
     | "resume"
@@ -354,6 +356,12 @@ export function createWorkerRuntimeClient(
     },
     async submit(text) {
       return (await request("submit", { text })) as SubmittedTurn;
+    },
+    async submitAndWait(input) {
+      return (await request(
+        "submitAndWait",
+        typeof input === "string" ? { text: input } : input,
+      )) as SubmittedTurn;
     },
     async submitInput(input) {
       return (await request("submit", input)) as SubmittedTurn;
@@ -961,6 +969,19 @@ export async function handleWorkerRequest(
     return client.submitInput
       ? await client.submitInput(input)
       : await client.submit(input.text);
+  }
+  if (request.method === "submitAndWait") {
+    const input =
+      request.value && typeof request.value === "object"
+        ? (request.value as SubmitInput)
+        : { text: String(request.value ?? "") };
+    if (client.submitAndWait)
+      return await client.submitAndWait(
+        request.value && typeof request.value === "object"
+          ? (request.value as SubmitInput)
+          : input.text,
+      );
+    throw new Error("RuntimeClient does not support submitAndWait");
   }
   if (request.method === "interactive.pending") {
     if (!client.pendingInteractive)
