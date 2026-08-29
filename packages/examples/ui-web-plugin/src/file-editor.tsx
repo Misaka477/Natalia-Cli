@@ -192,29 +192,23 @@ export function FileEditor(props: {
   transport?: UiTransport;
   runtime?: RuntimeClient;
 }) {
-  const [contents, setContents] = createSignal<Record<string, string>>({
-    ...initialContents,
-  });
-  const [selectedPath, setSelectedPath] = createSignal<string>(
-    "apps/tui/src/app.tsx",
-  );
-  const [expanded, setExpanded] = createSignal<Set<string>>(
-    new Set([
-      ".",
-      "apps",
-      "apps/tui",
-      "apps/tui/src",
-      "packages",
-      "packages/examples",
-      "packages/examples/ui-web-plugin",
-    ]),
-  );
+  const [contents, setContents] = createSignal<Record<string, string>>({});
+  const [selectedPath, setSelectedPath] = createSignal<string>("");
+  const [expanded, setExpanded] = createSignal<Set<string>>(new Set(["."]));
   const [preview, setPreview] = createSignal(false);
   const [fileWidth, setFileWidth] = createSignal(140);
   const [tree, setTree] = createSignal<FileNode[]>(initialTree);
   onMount(() => {
     void props.runtime?.workspaceList?.().then((page) => {
-      if (page?.entries?.length) setTree(buildTree(page.entries));
+      if (page?.entries?.length) {
+        setTree(buildTree(page.entries));
+        if (!selectedPath()) {
+          const firstFile = page.entries.find(
+            (entry) => entry.type === "file" && !entry.path.endsWith("/"),
+          );
+          if (firstFile) selectFile(firstFile.path);
+        }
+      }
     });
   });
 
@@ -308,11 +302,12 @@ export function FileEditor(props: {
   }
 
   function saveCurrentFile() {
-    const path = selectedPath();
-    if (!path || !props.transport) return;
-    void props.transport.writeFile(
-      path,
-      new TextEncoder().encode(contents()[path] ?? ""),
+    // No real workspace write RPC is wired yet; keep the editor read-only until
+    // workspaceWrite exists. Avoid silently writing to the fake in-memory
+    // transport.
+    props.runtime?.diagnostic?.(
+      "文件保存暂未接入，当前文件浏览器为只读。",
+      "warning",
     );
   }
 
