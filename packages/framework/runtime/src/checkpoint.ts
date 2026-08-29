@@ -229,6 +229,10 @@ export class CheckpointStore {
   }
 
   async ensureBaseline(context: ContextLedger, step = 0) {
+    // Read-only workspaces or permission failures must not block the rest of
+    // the runtime. Checkpoint creation stays available for writable workspaces;
+    // if the store is unavailable, skip the baseline and continue degraded.
+    if (this.unavailableReason) return undefined;
     if ((await this.list()).length > 0) return undefined;
     return this.createCheckpoint({
       reason: "baseline",
