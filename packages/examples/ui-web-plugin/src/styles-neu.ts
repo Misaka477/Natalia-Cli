@@ -2776,4 +2776,20 @@ button.neu-settings-item.neu-settings-item-button:active {
 .neu-question-option-active { color: var(--neu-accent) !important; box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light) !important; }
 .neu-question-option-description { display: block; font-size: 12px; color: var(--neu-muted); }
 .neu-question-custom { width: 100%; box-sizing: border-box; padding: 10px 12px; border: none; border-radius: 12px; background: var(--neu-bg); color: var(--neu-text); font-family: inherit; font-size: 13px; box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light); outline: none; }
+
+/* Live status pulse */
+@keyframes neu-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.neu-pane-status[data-running="true"]::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--neu-accent);
+  animation: neu-pulse 1s infinite;
+}
 `;

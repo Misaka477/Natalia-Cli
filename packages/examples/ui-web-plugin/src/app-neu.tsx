@@ -1,4 +1,5 @@
 import type { UiPluginContext } from "@natalia/ui-host";
+import { selectPrimaryActivity } from "@natalia/view-store";
 import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, RuntimeSkillCatalogEntry, ChatModelProfile, ConfigV3, RuntimeClient, WorkspaceSummary } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, createMemo, onCleanup, onMount, For, Show } from "solid-js";
@@ -174,6 +175,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
   const [questionOpen, setQuestionOpen] = createSignal(false);
   const [statusOpen, setStatusOpen] = createSignal(false);
+  const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
+  const activeTurnStartedAt = createSignal<number | undefined>(undefined);
+  const [activeTurnStartedAtValue, setActiveTurnStartedAt] = activeTurnStartedAt;
   const [modelOpen, setModelOpen] = createSignal(false);
   const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
   const [config, setConfig] = createSignal<ConfigV3 | undefined>(undefined);
@@ -197,6 +201,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       setState(projected);
       if (projected.workspaces.length) setWorkspaces(projected.workspaces);
       if (projected.sessions.length) setSessionList(projected.sessions);
+      const currentTurn = projected.activeTurn;
+      if (currentTurn && activeTurnStartedAtValue() === undefined) {
+        setActiveTurnStartedAt(Date.now());
+      } else if (!currentTurn && activeTurnStartedAtValue() !== undefined) {
+        setActiveTurnStartedAt(undefined);
+        setTurnElapsedMs(0);
+      }
     }),
   );
 
@@ -380,6 +391,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const resetProjectionForSessionSwitch = () => {
       props.ctx.projection.reset?.();
     };
+    const elapsedTimer = setInterval(() => {
+      if (activeTurnStartedAtValue() !== undefined)
+        setTurnElapsedMs(Date.now() - activeTurnStartedAtValue()!);
+    }, 1000);
+    onCleanup(() => clearInterval(elapsedTimer));
+
     window.addEventListener(
       "natalia:session-switch-reset",
       resetProjectionForSessionSwitch,
@@ -528,6 +545,46 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // not JSON: keep plain text
     }
     return output;
+  }
+
+  function formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes < 1) return `${seconds}s`;
+    return `${minutes}m ${seconds}s`;
+  }
+
+  function activityLabel(): string {
+    const activity = selectPrimaryActivity(state());
+    if (activity) {
+      switch (activity.kind) {
+        case "planning":
+          return "Planning";
+        case "thinking":
+          return "Thinking";
+        case "generating":
+          return "Generating";
+        case "tool":
+          return activity.label ? `Using ${activity.label}` : "Using a tool";
+        case "command":
+          return "Running command";
+        case "workflow":
+          return "Running workflow";
+        case "subagent":
+          return "Working with subagent";
+        case "compacting":
+          return "Compacting context";
+        case "retrying":
+          return "Retrying";
+        case "waiting_for_user":
+          return "Waiting for input";
+        case "paused":
+          return "Paused";
+      }
+    }
+    return state().activeTurn ? "Working" : "Ready";
   }
 
   const mainMessages = (): Message[] =>
@@ -848,7 +905,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             <div class="neu-pane-header">
               <span class="neu-pane-title">Natalia</span>
               <span class="neu-pane-status" data-running={state().activeTurn}>
-                {state().activeTurn ? "running" : "idle"}
+                {state().activeTurn
+                  ? `${activityLabel()} · ${formatDuration(turnElapsedMs())}`
+                  : "idle"}
               </span>
             </div>
             <div class="neu-pane-content">
