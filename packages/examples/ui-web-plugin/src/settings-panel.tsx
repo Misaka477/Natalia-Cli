@@ -131,6 +131,10 @@ export function SettingsPanel(props: {
   onCycleThemeMode?: () => void;
   state?: AppState;
   config?: ConfigV3;
+  preferences?: {
+    get<T>(key: string): T | undefined;
+    set<T>(key: string, value: T): void;
+  };
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
   onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
   onRemoveMcp?: (name: string) => unknown;
@@ -147,6 +151,11 @@ export function SettingsPanel(props: {
   const [addingTo, setAddingTo] = createSignal<string | null>(null);
   const [newName, setNewName] = createSignal("");
   const [newDesc, setNewDesc] = createSignal("");
+  const [density, setDensity] = createSignal(props.preferences?.get<string>("density") ?? "comfortable");
+  const [diffStyle, setDiffStyle] = createSignal(props.preferences?.get<string>("diffStyle") ?? "auto");
+  const [toolDetails, setToolDetails] = createSignal(props.preferences?.get<string>("toolDetails") ?? "expanded");
+  const [uiWriteScope, setUiWriteScope] = createSignal(props.preferences?.get<string>("uiWriteScope") ?? "project");
+  const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(props.preferences?.get<string>("runtimeWriteScope") ?? "global");
   const current = () => categories.find((category) => category.id === activeCategory())!;
 
   function toggleRow(sectionId: string, index: number) {
@@ -214,6 +223,115 @@ export function SettingsPanel(props: {
     return `${model.provider}/${model.model}`;
   }
 
+  function cyclePreference(
+    key: string,
+    current: string,
+    values: string[],
+    setter: (value: string) => void,
+  ) {
+    const next = values[(values.indexOf(current) + 1) % values.length]!;
+    props.preferences?.set(key, next);
+    setter(next);
+  }
+
+  const editableActions: Record<string, () => void> = {
+    "Agent Mode": () => {
+      const current = props.config?.defaultAgent ?? "";
+      const next = window.prompt("Agent Mode（defaultAgent）", current);
+      if (next) props.onUpdateConfig?.({ defaultAgent: next });
+    },
+    "子 Agent 并发数": () => {
+      const raw = window.prompt("子 Agent 最大并发数", String(props.config?.team?.maxConcurrent ?? 4));
+      const value = Number(raw);
+      if (raw !== null && Number.isInteger(value) && value >= 1 && value <= 32)
+        props.onUpdateConfig?.({ team: { ...props.config?.team, maxConcurrent: value } });
+    },
+    "Permission Profile": () => {
+      const current = props.config?.defaultPermission ?? "ask";
+      const next = window.prompt("Permission Profile（defaultPermission）", current);
+      if (next) props.onUpdateConfig?.({ defaultPermission: next });
+    },
+    "Approval Mode": () => {
+      const config = props.config;
+      if (!config) return;
+      const profile = config.defaultPermission ?? "ask";
+      const current = config.permissionProfiles?.[profile]?.approval ?? "ask";
+      const next = current === "ask" ? "auto" : current === "auto" ? "read_only" : "ask";
+      props.onUpdateConfig?.({
+        permissionProfiles: {
+          ...config.permissionProfiles,
+          [profile]: {
+            approval: next,
+          },
+        },
+      });
+    },
+    "Web & Network": () => {
+      const current = props.config?.webSearch?.endpoint ?? "";
+      const next = window.prompt("Web Search Endpoint", current);
+      if (next !== null)
+        props.onUpdateConfig?.({
+          webSearch: { ...props.config?.webSearch, endpoint: next || null },
+        });
+    },
+    "Max Steps": () => {
+      const raw = window.prompt("单轮最大执行步数", props.config?.runtime?.maxStepsPerTurn ? String(props.config.runtime.maxStepsPerTurn) : "");
+      if (raw === null) return;
+      const value = raw.trim() ? Number(raw) : undefined;
+      props.onUpdateConfig?.({ runtime: { ...props.config?.runtime, maxStepsPerTurn: value } });
+    },
+    "Max Retry": () => {
+      const raw = window.prompt("单步最大重试次数", String(props.config?.runtime?.maxAttemptsPerStep ?? 3));
+      const value = Number(raw);
+      if (raw !== null && Number.isInteger(value) && value > 0)
+        props.onUpdateConfig?.({ runtime: { ...props.config?.runtime, maxAttemptsPerStep: value } });
+    },
+    "Request Timeout": () => {
+      const raw = window.prompt("请求超时（秒）", String(props.config?.runtime?.timeouts?.requestSec ?? 120));
+      const value = Number(raw);
+      if (raw !== null && Number.isInteger(value) && value > 0)
+        props.onUpdateConfig?.({
+          runtime: { ...props.config?.runtime, timeouts: { ...props.config?.runtime?.timeouts, requestSec: value } },
+        });
+    },
+    "Compaction Threshold": () => {
+      const raw = window.prompt("Compaction 阈值（%）", String(props.config?.context?.compactionThresholdPercent ?? 85));
+      const value = Number(raw);
+      if (raw !== null && Number.isInteger(value) && value > 0 && value <= 100)
+        props.onUpdateConfig?.({ context: { ...props.config?.context, compactionThresholdPercent: value } });
+    },
+    "Checkpoint 目录": () => {
+      const current = (props.config?.checkpoint?.additionalDirs ?? []).join(",");
+      const raw = window.prompt("额外 checkpoint 目录（逗号分隔）", current);
+      if (raw !== null)
+        props.onUpdateConfig?.({
+          checkpoint: {
+            ...props.config?.checkpoint,
+            additionalDirs: raw.split(",").map((entry) => entry.trim()).filter(Boolean),
+          },
+        });
+    },
+    "Density": () => {
+      cyclePreference("density", density(), ["comfortable", "compact"], setDensity);
+    },
+    "Diff Style": () => {
+      cyclePreference("diffStyle", diffStyle(), ["auto", "unified", "split"], setDiffStyle);
+    },
+    "Tool Details": () => {
+      cyclePreference("toolDetails", toolDetails(), ["expanded", "collapsed"], setToolDetails);
+    },
+    "Keybinds": () => {
+      cyclePreference("keybinds", "默认", ["默认", "自定义"], () => {});
+      window.alert("当前版本快捷键覆盖请通过 TUI 快捷键配置；这里先切换为“自定义”占位。");
+    },
+    "界面偏好保存范围": () => {
+      cyclePreference("uiWriteScope", uiWriteScope(), ["project", "global"], setUiWriteScope);
+    },
+    "运行时配置保存范围": () => {
+      cyclePreference("runtimeWriteScope", runtimeWriteScope(), ["project", "global"], setRuntimeWriteScope);
+    },
+  };
+
   function runtimeValue(label: string): string | undefined {
     const config = props.config;
     if (!config) return undefined;
@@ -232,6 +350,12 @@ export function SettingsPanel(props: {
       case "Compaction Threshold": return `${config.context?.compactionThresholdPercent ?? 85}%`;
       case "Checkpoint 目录": return `${(config.checkpoint?.additionalDirs ?? []).length} 个`;
       case "Terminal Window Mode": return String(config.runtime?.terminal?.windowMode ?? "auto");
+      case "Density": return density();
+      case "Diff Style": return diffStyle();
+      case "Tool Details": return toolDetails();
+      case "界面偏好保存范围": return uiWriteScope();
+      case "运行时配置保存范围": return runtimeWriteScope();
+      case "Keybinds": return "默认";
     }
     return undefined;
   }
@@ -346,6 +470,21 @@ export function SettingsPanel(props: {
                                   },
                                 });
                               }}
+                            >
+                              <div class="neu-settings-item-main">
+                                <span class="neu-settings-item-label">{item.label}</span>
+                                <span class="neu-settings-item-description">{item.description}</span>
+                              </div>
+                              <span class="neu-settings-item-value">{value}</span>
+                            </button>
+                          );
+                        }
+                        if (editableActions[item.label] && props.onUpdateConfig) {
+                          return (
+                            <button
+                              type="button"
+                              class="neu-settings-item neu-settings-item-button"
+                              onClick={editableActions[item.label]}
                             >
                               <div class="neu-settings-item-main">
                                 <span class="neu-settings-item-label">{item.label}</span>

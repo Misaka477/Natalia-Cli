@@ -1029,12 +1029,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onCycleThemeMode={cycleThemeMode}
         state={state()}
         config={config()}
-        onUpdateConfig={(patch) =>
-          props.ctx.runtime.updateConfig?.({
+        preferences={props.ctx.preferences}
+        onUpdateConfig={async (patch) => {
+          await props.ctx.runtime.updateConfig?.({
             patch,
-            scope: "project",
-          })
-        }
+            scope: "global",
+          });
+          const next = await props.ctx.runtime.configGet?.();
+          if (next) setConfig(next);
+        }}
         onAddMcp={(input) => props.ctx.runtime.mcpServerAdd?.(input)}
         onRemoveMcp={(name) => props.ctx.runtime.mcpServerRemove?.(name)}
       />
