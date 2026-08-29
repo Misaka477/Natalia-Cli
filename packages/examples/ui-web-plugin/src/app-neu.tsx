@@ -937,7 +937,54 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         config={config()}
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
         onAddProvider={async (input) => {
-          await props.ctx.runtime.providerAdd?.(input);
+          const providerPatch: Record<string, unknown> = {
+            [input.name]: {
+              name: input.label || input.name,
+              driver: input.type,
+              enabled: true,
+              connection: {
+                baseURL: input.baseURL || undefined,
+                apiKey: input.apiKey,
+              },
+              requestDefaults: {
+                headers: input.headers ?? {},
+              },
+            },
+            ...(input.previousName ? { [input.previousName]: undefined } : {}),
+          };
+          const modelsPatch = input.models?.length
+            ? Object.fromEntries(
+                input.models.map((model) => [
+                  model.id,
+                  {
+                    name: model.name || model.id,
+                    capabilities: {
+                      reasoning: model.reasoning ?? false,
+                      imageInput: model.image ?? false,
+                    },
+                    limits: {},
+                    status: "manual",
+                    source: "manual",
+                  },
+                ]),
+              )
+            : undefined;
+          await props.ctx.runtime.updateConfig?.({
+            patch: {
+              providers: providerPatch,
+              ...(modelsPatch
+                ? {
+                    catalog: {
+                      providers: {
+                        [input.name]: { models: modelsPatch },
+                        ...(input.previousName ? { [input.previousName]: undefined } : {}),
+                      },
+                    },
+                  }
+                : {}),
+            } as never,
+            scope: "global",
+          });
           const [nextConfig, nextCatalog] = await Promise.all([
             props.ctx.runtime.configGet?.(),
             props.ctx.runtime.modelCatalog?.(),
