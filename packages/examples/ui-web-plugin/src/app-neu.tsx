@@ -419,6 +419,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     setChatProfile(next);
     await props.ctx.runtime.setChatModelProfile?.(next);
   }
+  function formatToolOutput(name: string, output: string): string {
+    if (name === "ask_user") {
+      try {
+        const parsed = JSON.parse(output) as { answers?: unknown };
+        if (Array.isArray(parsed.answers)) {
+          const text = parsed.answers
+            .flatMap((answer) =>
+              Array.isArray(answer)
+                ? answer.map(String)
+                : [String(answer)],
+            )
+            .filter(Boolean)
+            .join("; ");
+          if (text) return text;
+        }
+      } catch {
+        // fall through to raw output
+      }
+    }
+    return output;
+  }
+
   const mainMessages = (): Message[] =>
     (state().messages ?? []).map((msg, idx) => {
       if (msg.tool) {
@@ -433,7 +455,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           toolCalls: [
             {
               name: msg.tool.name,
-              output: msg.tool.result ?? msg.tool.summary,
+              output: formatToolOutput(
+                msg.tool.name,
+                msg.tool.result ?? msg.tool.summary,
+              ),
             },
           ],
         };
@@ -469,7 +494,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           toolCalls: [
             {
               name: msg.tool.name,
-              output: msg.tool.result ?? msg.tool.summary,
+              output: formatToolOutput(
+                msg.tool.name,
+                msg.tool.result ?? msg.tool.summary,
+              ),
             },
           ],
         };
