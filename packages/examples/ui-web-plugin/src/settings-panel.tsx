@@ -37,7 +37,8 @@ const categories: Category[] = [
     items: [
       { label: "Providers & Models", description: "配置 provider 并导入模型", value: "3 个 provider" },
       { label: "Default Model", description: "默认使用的模型", value: "Opus 4" },
-      { label: "Agent Mode", description: "当前 agent 运行模式", value: "默认" },
+      { label: "默认 Agent", description: "当前 agent / 默认使用的 agent", value: "默认" },
+      { label: "运行模式", description: "当前运行模式（defaultMode）", value: "code" },
       { label: "子 Agent 并发数", description: "团队子 agent 最大并发数", value: "3" },
     ],
   },
@@ -249,10 +250,16 @@ export function SettingsPanel(props: {
   }
 
   const editableActions: Record<string, () => void> = {
-    "Agent Mode": () => {
+    "默认 Agent": () => {
       const current = props.config?.defaultAgent ?? "";
-      openEdit("Agent Mode（defaultAgent）", current, (next) => {
+      openEdit("默认 Agent（defaultAgent）", current, (next) => {
         if (next) props.onUpdateConfig?.({ defaultAgent: next });
+      });
+    },
+    "运行模式": () => {
+      const current = props.config?.defaultMode ?? "code";
+      openEdit("运行模式（defaultMode）", current, (next) => {
+        if (next) props.onUpdateConfig?.({ defaultMode: next });
       });
     },
     "子 Agent 并发数": () => {
@@ -369,7 +376,8 @@ export function SettingsPanel(props: {
     switch (label) {
       case "Providers & Models": return `${Object.keys(config.providers ?? {}).length} 个 provider`;
       case "Default Model": return modelLabel(config);
-      case "Agent Mode": return (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认";
+      case "默认 Agent": return (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认";
+      case "运行模式": return config.defaultMode || "code";
       case "子 Agent 并发数": return String(config.team?.maxConcurrent ?? 4);
       case "Permission Profile": return config.defaultPermission ?? "ask";
       case "Approval Mode": return config.permissionProfiles?.[config.defaultPermission ?? "ask"]?.approval ?? "ask";
