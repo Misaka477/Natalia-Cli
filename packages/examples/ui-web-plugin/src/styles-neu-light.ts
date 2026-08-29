@@ -2699,4 +2699,31 @@ button.neu-settings-item.neu-settings-item-button:active {
   gap: 12px;
   padding: 16px;
 }
+
+.neu-tool-select-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.neu-tool-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-size: 11px;
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.neu-tool-chip input[type="checkbox"] {
+  accent-color: var(--neu-accent);
+}
 `;

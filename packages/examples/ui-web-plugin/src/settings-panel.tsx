@@ -4,6 +4,29 @@ import type { ConfigV3, MCPServerConfig } from "@natalia/contracts";
 import { ExtensionSettingsContent } from "./extension-settings";
 import { NeuSelect } from "./components/NeuSelect";
 
+const TOOL_FAMILIES = [
+  "flow_module_complete",
+  "read_file",
+  "glob",
+  "grep",
+  "read_media_file",
+  "read_data_source",
+  "interactive_terminal_*",
+  "terminal_observe",
+  "run_shell",
+  "write_file",
+  "edit_file",
+  "web_fetch",
+  "web_search",
+  "browser_visit",
+  "browser_screenshot",
+  "skill_load",
+  "mcp_*",
+  "plugin_*",
+  "agent_*",
+  "report_issue",
+];
+
 type CategoryId = "model" | "security" | "runtime" | "extensions" | "interface" | "storage";
 
 type SettingItem = {
@@ -412,7 +435,7 @@ export function SettingsPanel(props: {
       ...modeAllowedTools().split(",").map((item) => item.trim()).filter(Boolean),
       ...modeExcludedTools().split(",").map((item) => item.trim()).filter(Boolean),
     ]);
-    return [...new Set([...(props.registeredTools ?? []), ...current])].sort();
+    return [...new Set([...TOOL_FAMILIES, ...(props.registeredTools ?? []), ...current])].sort();
   };
 
   const modeMcpOptions = () => Object.keys(props.config?.mcpServers ?? {});
@@ -659,10 +682,10 @@ export function SettingsPanel(props: {
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Allowed Tools</label>
-                <div class="neu-checkbox-list">
+                <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
-                      <label class="neu-form-checkbox">
+                      <label class="neu-tool-chip">
                         <input
                           type="checkbox"
                           checked={modeAllowedTools().split(",").map((item) => item.trim()).includes(tool)}
@@ -676,10 +699,10 @@ export function SettingsPanel(props: {
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Excluded Tools</label>
-                <div class="neu-checkbox-list">
+                <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
-                      <label class="neu-form-checkbox">
+                      <label class="neu-tool-chip">
                         <input
                           type="checkbox"
                           checked={modeExcludedTools().split(",").map((item) => item.trim()).includes(tool)}
