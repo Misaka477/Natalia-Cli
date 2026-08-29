@@ -249,9 +249,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     if (!targetID) return;
     try {
       if (selectedSessionIsActive()) {
-        const other = sessionList().find((session) => session.id !== targetID);
+        const other = sessionList().find(
+          (session) => session.id !== targetID && !session.archived,
+        );
         if (other) {
           await props.ctx.runtime.sessionAttach?.(other.id);
+          setSelectedSessionID(other.id);
+          setSelectedSession(other.title);
         } else {
           const created = await props.ctx.runtime.sessionNew?.();
           if (!created?.sessionID) {
@@ -262,11 +266,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             return;
           }
           await props.ctx.runtime.sessionAttach?.(created.sessionID);
+          setSelectedSessionID(created.sessionID);
+          setSelectedSession("新会话");
         }
       }
       await props.ctx.runtime.sessionArchive?.(targetID);
-      setSelectedSessionID("");
-      setSelectedSession("");
       await refreshSessions();
     } catch (error: unknown) {
       props.ctx.runtime.diagnostic?.(
@@ -296,9 +300,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }
     try {
       if (selectedSessionIsActive()) {
-        const other = sessionList().find((session) => session.id !== targetID);
+        const other = sessionList().find(
+          (session) => session.id !== targetID && !session.archived,
+        );
         if (other) {
           await props.ctx.runtime.sessionAttach?.(other.id);
+          setSelectedSessionID(other.id);
+          setSelectedSession(other.title);
         } else {
           const created = await props.ctx.runtime.sessionNew?.();
           if (!created?.sessionID) {
@@ -309,11 +317,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             return;
           }
           await props.ctx.runtime.sessionAttach?.(created.sessionID);
+          setSelectedSessionID(created.sessionID);
+          setSelectedSession("新会话");
         }
       }
       await props.ctx.runtime.sessionDelete?.(targetID);
-      setSelectedSessionID("");
-      setSelectedSession("");
       await refreshSessions();
     } catch (error: unknown) {
       props.ctx.runtime.diagnostic?.(
