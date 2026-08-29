@@ -121,7 +121,7 @@ function SessionTree(props: {
                   label={session.name}
                   selected={props.selected === session.id}
                   status={session.status}
-                  badge={session.archived ? "归档" : undefined}
+                  badge={session.archived ? "点击恢复" : undefined}
                   depth={1}
                   onClick={() => {
                     if (session.archived && props.onRestore) {
