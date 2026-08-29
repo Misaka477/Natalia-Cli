@@ -14,6 +14,7 @@ import { SettingsPanel } from "./settings-panel";
 import { PluginManagerPanel } from "./plugin-manager-panel";
 import { nataliaNeuStyles } from "./styles-neu";
 import { nataliaNeuLightStyles } from "./styles-neu-light";
+import { nataliaNeuLimeStyles } from "./styles-neu-lime";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
@@ -53,6 +54,11 @@ function TreeRow(props: {
   badge?: string;
   depth?: number;
   onClick?: () => void;
+  onEdit?: () => void;
+  editValue?: string;
+  onEditChange?: (value: string) => void;
+  onEditCommit?: () => void;
+  onEditCancel?: () => void;
 }) {
   return (
     <button
@@ -63,8 +69,45 @@ function TreeRow(props: {
       onClick={props.onClick}
     >
       {props.status ? <StatusDot status={props.status} /> : null}
-      <span class="neu-tree-label">{props.label}</span>
-      {props.badge ? <span class="neu-badge">{props.badge}</span> : null}
+      <Show
+        when={props.editValue !== undefined}
+        fallback={
+          <>
+            <span class="neu-tree-label">{props.label}</span>
+            {props.badge ? <span class="neu-badge">{props.badge}</span> : null}
+            <Show when={props.onEdit}>
+              <button
+                type="button"
+                class="neu-tree-edit"
+                title="重命名"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onEdit?.();
+                }}
+              >
+                ✎
+              </button>
+            </Show>
+          </>
+        }
+      >
+        <input
+          class="neu-tree-edit-input"
+          value={props.editValue}
+          onInput={(event) => props.onEditChange?.(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.stopPropagation();
+              props.onEditCommit?.();
+            } else if (event.key === "Escape") {
+              event.stopPropagation();
+              props.onEditCancel?.();
+            }
+          }}
+          onBlur={() => props.onEditCommit?.()}
+          onClick={(event) => event.stopPropagation()}
+        />
+      </Show>
     </button>
   );
 }
@@ -74,9 +117,12 @@ function SessionTree(props: {
   sessions: RuntimeSessionSummary[];
   workspaces: WorkspaceSummary[];
   onSelect: (id: string, name: string) => void;
+  onRename?: (id: string, title: string) => unknown;
   onRemoveWorkspace?: (workspaceID: string) => void;
   onRestore?: (sessionID: string) => void;
 }) {
+  const [editingID, setEditingID] = createSignal<string | null>(null);
+  const [draftName, setDraftName] = createSignal("");
   const groups = createMemo(() => {
     const byWorkspace = new Map<string, RuntimeSessionSummary[]>();
     const activeID = props.workspaces.find((workspace) => workspace.status === "active")?.workspaceID;
@@ -137,6 +183,20 @@ function SessionTree(props: {
                       props.onSelect(session.id, session.name);
                     }
                   }}
+                  onEdit={() => {
+                    setEditingID(session.id);
+                    setDraftName(session.name);
+                  }}
+                  editValue={editingID() === session.id ? draftName() : undefined}
+                  onEditChange={setDraftName}
+                  onEditCommit={() => {
+                    const title = draftName().trim();
+                    if (editingID() === session.id && title && title !== session.name) {
+                      void props.onRename?.(session.id, title);
+                    }
+                    setEditingID(null);
+                  }}
+                  onEditCancel={() => setEditingID(null)}
                 />
               )}
             </For>
@@ -478,7 +538,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       themeStyle.textContent =
         themeMode() === "dark"
           ? nataliaNeuStyles
-          : nataliaNeuLightStyles;
+          : themeMode() === "lime"
+            ? nataliaNeuLimeStyles
+            : nataliaNeuLightStyles;
     };
     applyTheme();
     createEffect(applyTheme);
@@ -702,9 +764,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         role:
           msg.role === "user"
             ? "user"
-            : msg.role === "thinking" || msg.role === "system"
+            : msg.role === "system"
               ? "system"
               : "assistant",
+        thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
         content: msg.text + (msg.pendingText || ""),
         status:
           state().activeTurn && idx === (state().messages?.length ?? 0) - 1
@@ -713,6 +776,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         streaming: Boolean(
           state().activeTurn &&
             idx === (state().messages?.length ?? 0) - 1 &&
+            msg.role !== "user" &&
             (msg.pendingText ?? "").length > 0,
         ),
       };
@@ -739,9 +803,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       return {
         id: `chat-${idx}`,
         role: msg.role === "user" ? "user" : "assistant",
+        thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
         content: msg.text + (msg.pendingText || ""),
         streaming: Boolean(
-          state().chatActivity && idx === state().chatMessages.length - 1,
+          state().chatActivity &&
+            idx === state().chatMessages.length - 1 &&
+            msg.role !== "user",
         ),
       };
     });
@@ -792,7 +859,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function cycleThemeMode() {
-    const modes = ["light", "dark", "system"] as const;
+    const modes = ["light", "dark", "lime"] as const;
     const current = themeMode() as (typeof modes)[number];
     const next = modes[(modes.indexOf(current) + 1) % modes.length];
     setThemeMode(next);
@@ -973,6 +1040,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 selected={selectedSessionID()}
                 sessions={visibleSessions()}
                 workspaces={workspaces()}
+                onRename={(id, title) => {
+                  void props.ctx.runtime.sessionRename?.(id, title).then(() => refreshSessions());
+                }}
                 onSelect={(id, name) => {
                   setSelectedSessionID(id);
                   setSelectedSession(name);

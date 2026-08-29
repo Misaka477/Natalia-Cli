@@ -115,28 +115,41 @@ export function MessageRow(props: MessageRowProps) {
 
       <div class="natalia-message-body">
         <Show
-          when={props.message.content || !props.message.toolCalls?.length}
+          when={props.message.thinking}
+          fallback={
+            <Show
+              when={props.message.content || !props.message.toolCalls?.length}
+            >
+              <Show
+                when={props.message.streaming}
+                fallback={
+                  <div
+                    class="natalia-message-text"
+                    innerHTML={formatContent(props.message.content)}
+                  />
+                }
+              >
+                <div
+                  class="natalia-message-text"
+                  innerHTML={formatContent(props.message.content)}
+                />
+                <div class="natalia-streaming-indicator">
+                  <div class="natalia-streaming-dot" />
+                  <div class="natalia-streaming-dot" />
+                  <div class="natalia-streaming-dot" />
+                  <span class="natalia-streaming-label">正在思考...</span>
+                </div>
+              </Show>
+            </Show>
+          }
         >
-          <Show
-            when={props.message.streaming}
-            fallback={
-              <div
-                class="natalia-message-text"
-                innerHTML={formatContent(props.message.content)}
-              />
-            }
-          >
+          <div class="natalia-thinking-block">
+            <span class="natalia-thinking-label">Thinking</span>
             <div
-              class="natalia-message-text"
+              class="natalia-thinking-text"
               innerHTML={formatContent(props.message.content)}
             />
-            <div class="natalia-streaming-indicator">
-              <div class="natalia-streaming-dot" />
-              <div class="natalia-streaming-dot" />
-              <div class="natalia-streaming-dot" />
-              <span class="natalia-streaming-label">正在思考...</span>
-            </div>
-          </Show>
+          </div>
         </Show>
       </div>
 

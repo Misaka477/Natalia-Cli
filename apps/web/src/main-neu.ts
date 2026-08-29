@@ -6,6 +6,7 @@ import {
   createWebTransport,
 } from "@natalia/ui-host";
 import { createWebRuntimeClient } from "./runtime-rpc";
+import { createLocalPreferenceStore } from "./local-preferences";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
@@ -24,6 +25,7 @@ const host = await createUiPluginHost({
   transport: createWebTransport(),
   logger: createConsoleLogger("ui-web-shell"),
   extra: { uiPluginRegistry: UI_PLUGIN_REGISTRY },
+  preferences: createLocalPreferenceStore(),
 });
 
 // Optional UI panel plugins are loaded first so the main UI can see them.

@@ -1,20 +1,20 @@
 export const nataliaNeuStyles = `
 :root {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
-  background: #30302e;
-  color: #e8e9e1;
+  background: #121418;
+  color: #e6e8eb;
   color-scheme: dark;
-  --neu-bg: #30302e;
-  --neu-bg-light: #3a3a37;
-  --neu-shadow-dark: rgba(0, 0, 0, 0.25);
-  --neu-shadow-light: rgba(232, 233, 225, 0.06);
-  --neu-accent: #8fb7b0;
-  --neu-accent-soft: #a9cec5;
-  --neu-text: #e8e9e1;
-  --neu-muted: #7d8885;
-  --neu-success: #a9cec5;
-  --neu-error: #e08a7c;
-  --neu-warning: #d4b96a;
+  --neu-bg: #121418;
+  --neu-bg-light: #1b1e24;
+  --neu-shadow-dark: rgba(0, 0, 0, 0.55);
+  --neu-shadow-light: rgba(255, 255, 255, 0.04);
+  --neu-accent: #5fd4b8;
+  --neu-accent-soft: #7de8d0;
+  --neu-text: #e6e8eb;
+  --neu-muted: #8992a0;
+  --neu-success: #67d98c;
+  --neu-error: #ff6b6b;
+  --neu-warning: #d8b04a;
   --neu-radius: 22px;
   --neu-radius-sm: 12px;
   --neu-font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
@@ -246,6 +246,31 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
   color: var(--neu-text);
 }
+.neu-tree-edit {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: var(--neu-muted);
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.neu-tree-row:hover .neu-tree-edit { opacity: 1; }
+.neu-tree-edit:hover { color: var(--neu-accent); }
+.neu-tree-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  font-size: 12px;
+  outline: none;
+  box-shadow: inset 1px 1px 2px var(--neu-shadow-dark), inset -1px -1px 2px var(--neu-shadow-light);
+}
 .neu-tree-label {
   flex: 1;
   min-width: 0;
@@ -428,9 +453,15 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 }
 .neu-pane .natalia-message[data-role="user"] {
   align-self: flex-end;
-  background: var(--neu-accent-soft);
+  background: #1f3934;
   box-shadow: none;
-  color: #16201d;
+  border: none;
+  color: var(--neu-text);
+}
+.neu-pane .natalia-message[data-role="user"] .natalia-message-author,
+.neu-pane .natalia-message[data-role="user"] .natalia-message-time,
+.neu-pane .natalia-message[data-role="user"] .natalia-message-body {
+  color: var(--neu-text);
 }
 .neu-pane .natalia-message[data-role="system"] {
   max-width: 90%;
@@ -474,6 +505,27 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane .natalia-message-time { font-size: 10px; color: var(--neu-muted); }
 .neu-pane .natalia-message-body { font-size: 13px; line-height: 1.65; color: var(--neu-text); }
 .neu-pane .natalia-message-text p { margin: 0 0 6px; }
+.neu-pane .natalia-thinking-block {
+  padding: 8px 10px;
+  margin: 4px 0;
+  border-radius: 10px;
+  background: var(--neu-bg-light);
+  color: var(--neu-muted);
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.neu-pane .natalia-thinking-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--neu-accent);
+  font-style: normal;
+}
+.neu-pane .natalia-thinking-text { color: var(--neu-muted); }
+
 .neu-pane .natalia-code-block {
   background: var(--neu-bg-light);
   border-radius: 10px;

@@ -1,20 +1,20 @@
-export const nataliaNeuLightStyles = `
+export const nataliaNeuLimeStyles = `
 :root {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
-  background: #e8e9e1;
-  color: #30302e;
-  color-scheme: light;
-  --neu-bg: #e8e9e1;
-  --neu-bg-light: #f2f3ed;
-  --neu-shadow-dark: rgba(48, 48, 46, 0.18);
-  --neu-shadow-light: rgba(255, 255, 255, 0.7);
-  --neu-accent: #8fb7b0;
-  --neu-accent-soft: #b9d5cf;
-  --neu-text: #30302e;
-  --neu-muted: #7d8885;
-  --neu-success: #6ba89f;
-  --neu-error: #c9776b;
-  --neu-warning: #b79549;
+  background: #222222;
+  color: #e8e8e8;
+  color-scheme: dark;
+  --neu-bg: #222222;
+  --neu-bg-light: #2a2a2a;
+  --neu-shadow-dark: rgba(0, 0, 0, 0.6);
+  --neu-shadow-light: rgba(255, 255, 255, 0.04);
+  --neu-accent: #bff000;
+  --neu-accent-soft: #4a5b0d;
+  --neu-text: #e8e8e8;
+  --neu-muted: #9a9a9a;
+  --neu-success: #bff000;
+  --neu-error: #ff6b6b;
+  --neu-warning: #ffd166;
   --neu-radius: 22px;
   --neu-radius-sm: 12px;
   --neu-font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
@@ -455,7 +455,13 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   align-self: flex-end;
   background: var(--neu-accent-soft);
   box-shadow: none;
-  color: #16201d;
+  border: none;
+  color: var(--neu-text);
+}
+.neu-pane .natalia-message[data-role="user"] .natalia-message-author,
+.neu-pane .natalia-message[data-role="user"] .natalia-message-time,
+.neu-pane .natalia-message[data-role="user"] .natalia-message-body {
+  color: var(--neu-text);
 }
 .neu-pane .natalia-message[data-role="system"] {
   max-width: 90%;

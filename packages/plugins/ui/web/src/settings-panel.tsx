@@ -96,7 +96,7 @@ const categories: Category[] = [
     id: "interface",
     label: "界面与服务",
     items: [
-      { label: "Theme Mode", description: "切换浅色 / 深色 / 跟随系统", value: "浅色" },
+      { label: "Theme Mode", description: "切换浅色 / 深色 / 青柠黑", value: "浅色" },
       { label: "Density", description: "界面信息密度", value: "comfortable" },
       { label: "Diff Style", description: "diff 展示风格", value: "auto" },
       { label: "Tool Details", description: "工具卡默认展开状态", value: "expanded" },
@@ -565,7 +565,7 @@ export function SettingsPanel(props: {
                                 <span class="neu-settings-item-description">{item.description}</span>
                               </div>
                               <span class="neu-settings-item-value">
-                                {props.themeMode === "dark" ? "深色" : props.themeMode === "system" ? "系统" : "浅色"}
+                                {props.themeMode === "dark" ? "深色" : props.themeMode === "lime" ? "青柠黑" : "浅色"}
                               </span>
                             </button>
                           );
