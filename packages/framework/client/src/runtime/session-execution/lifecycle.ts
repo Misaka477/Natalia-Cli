@@ -91,7 +91,7 @@ export function createLifecycleSurface(
         input.patch as never,
         ctx.ports.getTsRuntimeConfig(),
       ) as never;
-      console.log("[updateConfig] begin", input.scope, JSON.stringify(patch, null, 2).slice(0, 4000));
+      console.log("[updateConfig] begin", input.scope, "globalPath", options.globalConfigPath, JSON.stringify(patch, null, 2).slice(0, 4000));
       // The TUI settings menu path, now a public surface: merge the patch onto
       // disk, then apply. The file is written either way; whether it takes
       // effect under a running turn is an ordinary answer, not an exception.

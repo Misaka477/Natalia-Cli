@@ -18,11 +18,13 @@ export async function handleRuntimeCommand(argv: string[]) {
   const command = argv[0];
   if (command === "serve" || command === "--serve") {
     const port = parseServePort(argv);
+    const globalConfigPath =
+      process.env.NATALIA_CONFIG ??
+      resolve(process.cwd(), ".natalia", "global-config.json");
+    console.log("[serve] globalConfigPath", globalConfigPath);
     const manager = createWorkspaceManager({
       pluginStoreRoot: pluginStoreRoot(),
-      globalConfigPath:
-        process.env.NATALIA_CONFIG ??
-        resolve(process.cwd(), ".natalia", "global-config.json"),
+      globalConfigPath,
     });
     await manager.load();
     const client = createWorkspaceRuntimeClient(manager);
