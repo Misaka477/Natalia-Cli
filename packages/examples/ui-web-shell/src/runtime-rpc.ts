@@ -7,6 +7,7 @@ import type {
   RuntimeModelCatalogEntry,
   RuntimeModelSelection,
   RuntimeReasoningEffort,
+  RuntimeHistory,
   RuntimeSessionSummary,
   RuntimeWorkspaceMatch,
   RuntimeWorkspaceListPage,
@@ -302,6 +303,17 @@ export function createWebRuntimeClient(
       },
     );
     if (!response.ok || !response.body) return;
+
+    // Replay the durable session so a reloaded page sees previous messages.
+    try {
+      const history = await call<RuntimeHistory>("session.history", {
+        limit: 500,
+      });
+      for (const entry of history.events)
+        for (const listener of starts) listener(entry.event);
+    } catch (error) {
+      console.log("[web-runtime] history replay failed", error);
+    }
 
     const decoder = new TextDecoder();
     let buffer = "";
