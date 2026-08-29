@@ -2705,22 +2705,19 @@ button.neu-settings-item.neu-settings-item-button:active {
 .neu-tool-select-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 6px;
-  max-height: 220px;
+  gap: 10px;
+  max-height: 260px;
   overflow-y: auto;
-  padding: 2px;
-}.neu-tool-chip input[type="checkbox"] {
-  accent-color: var(--neu-accent);
+  padding: 4px;
+}
 }
 
 .neu-tool-check {
-  width: 100%;
-  min-height: 30px;
-  padding: 5px 8px;
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 12px;
+  gap: 8px;
+  border-radius: 12px;
 }
 .neu-tool-check span {
   min-width: 0;
