@@ -183,12 +183,32 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     await refreshSessions();
   }
 
+  function selectedSessionIsActive() {
+    return Boolean(
+      selectedSessionID() && selectedSessionID() === state().sessionID,
+    );
+  }
+
   async function deleteSelectedSession() {
     if (!selectedSessionID()) return;
-    await props.ctx.runtime.sessionDelete?.(selectedSessionID());
-    setSelectedSessionID("");
-    setSelectedSession("");
-    await refreshSessions();
+    if (selectedSessionIsActive()) {
+      props.ctx.runtime.diagnostic?.(
+        "不能删除当前 runtime 正在使用的会话，请先切换到其他会话",
+        "warning",
+      );
+      return;
+    }
+    try {
+      await props.ctx.runtime.sessionDelete?.(selectedSessionID());
+      setSelectedSessionID("");
+      setSelectedSession("");
+      await refreshSessions();
+    } catch (error: unknown) {
+      props.ctx.runtime.diagnostic?.(
+        `删除会话失败：${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    }
   }
 
   onMount(() => {
@@ -443,7 +463,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <button
                 type="button"
                 class="neu-session-toolbar-btn"
-                disabled={!selectedSessionID()}
+                disabled={!selectedSessionID() || selectedSessionIsActive()}
                 onClick={() => void deleteSelectedSession()}
               >
                 删除
@@ -724,13 +744,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             id: state().checkpoints[state().checkpoints.length - 1]?.id ?? "",
           })
         }
-        onDelete={async () => {
-          if (!selectedSessionID()) return;
-          await props.ctx.runtime.sessionDelete?.(selectedSessionID());
-          setSelectedSessionID("");
-          setSelectedSession("");
-          await refreshSessions();
-        }}
+        onDelete={() => deleteSelectedSession()}
       />
       <CheckpointPanel
         open={checkpointOpen()}
