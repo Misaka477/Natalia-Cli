@@ -97,13 +97,18 @@ export function createLifecycleSurface(
       // effect under a running turn is an ordinary answer, not an exception.
       // Idempotent by patch: the same patch merged twice produces the same
       // merged config.
-      await updateConfigAtScope(
-        ctx.ports.getWorkspaceRoot(),
-        patch,
-        input.scope ?? "project",
-        { globalPath: options.globalConfigPath },
-      );
-      console.log("[updateConfig] file written");
+      try {
+        await updateConfigAtScope(
+          ctx.ports.getWorkspaceRoot(),
+          patch,
+          input.scope ?? "project",
+          { globalPath: options.globalConfigPath },
+        );
+        console.log("[updateConfig] file written");
+      } catch (error) {
+        console.error("[updateConfig] write failed", error);
+        throw error;
+      }
       // Applying is the same operation as a reload, with the same value-type
       // refusal; share it so the two paths cannot drift.
       const outcome = await ctx.ports.applyConfigFromDisk();
