@@ -1,4 +1,4 @@
-import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import { createSignal, createEffect, Show, onCleanup, onMount, For } from "solid-js";
 import type { ConfigV3, RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
 
@@ -36,6 +36,7 @@ export function ModelPanel(props: {
     type: string;
     baseURL?: string;
     apiKey: string;
+    label?: string;
     headers?: Record<string, string>;
     models?: Array<{ id: string; name?: string; reasoning?: boolean; image?: boolean }>;
   }) => unknown;
@@ -51,6 +52,7 @@ export function ModelPanel(props: {
     }
     return [...groups.entries()].map(([providerName, models]) => ({
       name: providerName,
+      label: props.providers?.[providerName]?.name ?? providerName,
       status: "已连接",
       models: models.map((entry) => ({
         name: entry.id,
@@ -58,10 +60,9 @@ export function ModelPanel(props: {
       })),
     }));
   };
-  const [expanded, setExpanded] = createSignal<Set<string>>(
-    new Set(providers().map((provider) => provider.name)),
-  );
+  const [expanded, setExpanded] = createSignal<Set<string>>(new Set<string>());
   const [providerName, setProviderName] = createSignal("");
+  const [providerLabel, setProviderLabel] = createSignal("");
   const [providerApi, setProviderApi] = createSignal("openai-compatible");
   const providerOptions = () => [
     ...(providerApis.some((api) => api.value === providerApi())
@@ -131,6 +132,7 @@ export function ModelPanel(props: {
     );
     setEditingProvider(providerName);
     setProviderName(providerName);
+    setProviderLabel(provider.name ?? providerName);
     setProviderApi(provider.driver);
     setBaseUrl(provider.connection?.baseURL ?? "");
     setApiKey(provider.connection?.apiKey ?? "");
@@ -142,6 +144,7 @@ export function ModelPanel(props: {
   function openAddProvider() {
     setEditingProvider(undefined);
     setProviderName("");
+    setProviderLabel("");
     setProviderApi("openai-compatible");
     setBaseUrl("");
     setApiKey("");
@@ -167,6 +170,7 @@ export function ModelPanel(props: {
     props.onAddProvider?.({
       name: providerName().trim() || editingProvider() || "",
       type: providerApi(),
+      label: providerLabel().trim() || undefined,
       baseURL: baseUrl().trim() || undefined,
       apiKey: apiKey(),
       headers: Object.keys(headerRecord).length ? headerRecord : undefined,
@@ -175,6 +179,14 @@ export function ModelPanel(props: {
     setEditingProvider(undefined);
     backToTree();
   }
+
+  createEffect(() => {
+    if (props.open) {
+      setView("tree");
+      setEditingProvider(undefined);
+      setExpanded(new Set<string>());
+    }
+  });
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -240,7 +252,7 @@ export function ModelPanel(props: {
                           stroke-linejoin="round"
                         />
                       </svg>
-                      <span class="neu-model-provider-name">{provider.name}</span>
+                      <span class="neu-model-provider-name">{provider.label}</span>
                       <span class="neu-model-status" data-connected={provider.status === "已连接"}>
                         {provider.status}
                       </span>
@@ -298,6 +310,16 @@ export function ModelPanel(props: {
                   value={providerName()}
                   placeholder="小写字母、数字、连字符或下划线"
                   onInput={(event) => setProviderName(event.currentTarget.value)}
+                />
+              </div>
+              <div class="neu-form-field">
+                <label class="neu-form-label" for="provider-label">Provider Name（显示名）</label>
+                <input
+                  id="provider-label"
+                  class="neu-form-input"
+                  value={providerLabel()}
+                  placeholder="例如 GPT"
+                  onInput={(event) => setProviderLabel(event.currentTarget.value)}
                 />
               </div>
               <div class="neu-form-field">

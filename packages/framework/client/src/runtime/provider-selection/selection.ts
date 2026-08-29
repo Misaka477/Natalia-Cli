@@ -189,7 +189,7 @@ export function createSelectionSurface(
       const current = ctx.ports.getTsRuntimeConfig()?.providers?.[input.name];
       const provider = {
         ...current,
-        name: input.name,
+        name: input.label || input.name,
         driver: input.type,
         enabled: true,
         connection: {
