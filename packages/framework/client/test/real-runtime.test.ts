@@ -3767,6 +3767,12 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
   await client.submitAndWait!("load plugins");
 
   // The authoritative surface, which an external UI reads over RPC.
+  await waitForAsync(
+    async () =>
+      (await client.commandCatalog?.())?.some(
+        (command) => command.name === "sync",
+      ) === true,
+  );
   const catalog = await client.commandCatalog?.();
   expect(catalog?.map((command) => command.name)).toContain("sync");
   expect(catalog?.find((command) => command.name === "sync")).toMatchObject({
@@ -3779,6 +3785,13 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
     raw: "/sync alpha beta",
     args: ["alpha", "beta"],
   });
+  await waitFor(
+    () =>
+      events.filter((event) => event.type === "content.delta").at(-1)?.text ===
+      "synced alpha,beta",
+    3000,
+    "the plugin command output",
+  );
   expect(
     events.filter((event) => event.type === "content.delta").at(-1)?.text,
   ).toBe("synced alpha,beta");
@@ -7328,6 +7341,13 @@ test("two local clients serialize provider turns for one durable session", async
   expect(order).toEqual(["first:start"]);
   releaseFirst?.();
   await Promise.all([firstSubmit, secondSubmit]);
+  await waitFor(
+    () =>
+      order.includes("second:start") &&
+      order.includes("second:end"),
+    5000,
+    "the second local client's provider turn to run",
+  );
   expect(order).toEqual([
     "first:start",
     "first:end",
@@ -11523,6 +11543,11 @@ test("parallel sessions retain their configured provider across tool steps", asy
             ),
           )
           .map((request) => request.model);
+      await waitFor(
+        () => modelsFor("session A").length >= 2,
+        5000,
+        "session A's provider to complete both tool and final steps",
+      );
       expect(modelsFor("session A")).toEqual(["alpha", "alpha"]);
       expect(modelsFor("session B")).toEqual(["beta"]);
     } finally {
@@ -12282,15 +12307,6 @@ test("two sessions writing the workspace in parallel both land without corruptio
     if (event.type === "approval.request") {
       client.respondApproval({ requestID: event.id, decision: "once" });
     }
-    console.log(
-      "EVT",
-      event.type,
-      (event as any).text ??
-        (event as any).status ??
-        (event as any).message ??
-        (event as any).stopReason ??
-        "",
-    );
   });
   try {
     await client.sessionNew?.({ id: "ses_pw_b", title: "B" });
@@ -12299,6 +12315,11 @@ test("two sessions writing the workspace in parallel both land without corruptio
     const turnB = client.submit("write b");
     await turnA;
     await turnB;
+    await waitFor(
+      () => existsSync(join(root, "wa.txt")) && existsSync(join(root, "wb.txt")),
+      5000,
+      "both parallel workspace writes to land",
+    );
     expect(await readFile(join(root, "wa.txt"), "utf8")).toBe("content-wa.txt");
     expect(await readFile(join(root, "wb.txt"), "utf8")).toBe("content-wb.txt");
   } finally {
@@ -12394,6 +12415,12 @@ test("a background turn starting a terminal does not steal focus (I1)", async ()
     // The pane belongs to A; B's view cannot see it (I3), A's can.
     expect(await client.nativeTerminalList?.()).toEqual([]);
     await client.sessionAttach?.("ses_i1_a");
+    await waitForAsync(
+      async () =>
+        ((await client.nativeTerminalList?.()) ?? []).some(
+          (session) => session.id === "i1_bg_pane",
+        ),
+    );
     const visibleA = (await client.nativeTerminalList?.()) ?? [];
     expect(visibleA.map((session) => session.id)).toContain("i1_bg_pane");
   } finally {
@@ -12550,6 +12577,22 @@ test("cancelling the attached session does not abort a background session's pend
     // Answer A's approval: the background turn completes normally.
     client.respondApproval({ requestID: approval!.id, decision: "once" });
     await turnA;
+    await waitFor(
+      () => existsSync(join(root, "bg.txt")),
+      5000,
+      "the background A turn to write after approval",
+    );
+    await waitFor(
+      () =>
+        events.some(
+          (event) =>
+            event.type === "turn.finished" &&
+            event.sessionID === "ses_bg_abort_a" &&
+            event.stopReason === "done",
+        ),
+      5000,
+      "the background A turn to finish after approval",
+    );
     expect(await readFile(join(root, "bg.txt"), "utf8")).toBe("bg");
     expect(
       events.filter(
