@@ -168,6 +168,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sessionDelete",
     "sessionNew",
     "sessionArchive",
+    "sessionRestore",
     "sessionExport",
     "sessionAttach",
   ],

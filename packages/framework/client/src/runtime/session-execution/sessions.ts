@@ -17,6 +17,7 @@ type Surface = Pick<
   | "sessionDelete"
   | "sessionNew"
   | "sessionArchive"
+  | "sessionRestore"
   | "sessionExport"
   | "sessionAttach"
 >;
@@ -84,6 +85,10 @@ export function createSessionsSurface(
     async sessionArchive(id) {
       await ctx.ports.getReady();
       return await requireSessionStore().archive(id);
+    },
+    async sessionRestore(id) {
+      await ctx.ports.getReady();
+      return await requireSessionStore().restore(id);
     },
     async sessionExport(id) {
       await ctx.ports.getReady();

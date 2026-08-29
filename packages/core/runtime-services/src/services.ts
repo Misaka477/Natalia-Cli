@@ -195,6 +195,7 @@ export interface SessionStoreController {
     source: "generated" | "fallback",
   ): Promise<RuntimeSessionSummary>;
   archive(id: string): Promise<{ id: string; archived: boolean }>;
+  restore(id: string): Promise<{ id: string; archived: boolean }>;
   export(id: string): Promise<{
     sessionID: string;
     title: string;

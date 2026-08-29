@@ -327,6 +327,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "session.delete",
   "session.new",
   "session.archive",
+  "session.restore",
   "session.attach",
   "mcp.server.add",
   "mcp.server.remove",
@@ -1228,6 +1229,14 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionArchive(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "session.restore") {
+      optionsGuard(client, "sessionRestore");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionRestore(stringParam(body.params, "id")),
       };
     }
     if (body.method === "session.export") {

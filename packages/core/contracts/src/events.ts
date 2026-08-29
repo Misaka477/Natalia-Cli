@@ -1977,6 +1977,12 @@ export type RuntimeClient = {
    */
   sessionArchive?(id: string): Promise<{ id: string; archived: boolean }>;
   /**
+   * Restores an archived session so it becomes attachable and visible in the
+   * normal workspace session list again. Idempotent: restoring an active
+   * session answers `archived: false`.
+   */
+  sessionRestore?(id: string): Promise<{ id: string; archived: boolean }>;
+  /**
    * Exports a session's journal: the record header plus every event in
    * sequence. Read-only; an unknown session id is an argument error.
    */

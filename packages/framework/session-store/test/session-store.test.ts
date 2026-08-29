@@ -54,3 +54,30 @@ test("session store controller initializes sqlite mode and lists sessions", asyn
   await controller.close();
   expect(controller.status()).toEqual({ initialized: false, mode: "sqlite" });
 });
+
+test("session store controller archives and restores a session without deleting it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-session-archive-"));
+  const controller = createSessionStoreController({
+    workspaceRoot: root,
+    sessionID: () => "ses_host" as SessionID,
+    useSqliteStore: true,
+    attachments: createAttachmentService(root),
+  });
+
+  await controller.init();
+  await controller.create({ id: "ses_archive", title: "Archive me" });
+
+  const archived = await controller.archive("ses_archive");
+  expect(archived).toEqual({ id: "ses_archive", archived: true });
+
+  const listing = await controller.list();
+  expect(listing.find((session) => session.id === "ses_archive")?.archived).toBe(true);
+
+  const restored = await controller.restore("ses_archive");
+  expect(restored).toEqual({ id: "ses_archive", archived: false });
+
+  const after = await controller.list();
+  expect(after.find((session) => session.id === "ses_archive")?.archived).toBe(false);
+
+  await controller.close();
+});

@@ -292,6 +292,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "archived",
     note: "archiving an archived session answers archived:true; an unknown session is an argument error",
   },
+  sessionRestore: {
+    refusal: "error",
+    note: "an unknown session is an argument error; restoring an unarchived session answers archived:false",
+  },
   sessionExport: {
     refusal: "error",
     note: "pure read; an unknown session is an argument error",

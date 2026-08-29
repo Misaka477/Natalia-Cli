@@ -68,6 +68,7 @@ function SessionTree(props: {
   workspaces: WorkspaceSummary[];
   onSelect: (id: string, name: string) => void;
   onRemoveWorkspace?: (workspaceID: string) => void;
+  onRestore?: (sessionID: string) => void;
 }) {
   const groups = createMemo(() => {
     const byWorkspace = new Map<string, RuntimeSessionSummary[]>();
@@ -86,6 +87,7 @@ function SessionTree(props: {
         id: session.id,
         name: session.title,
         status: session.status ?? (session.cancelled ? "error" : session.resumable ? "idle" : "running"),
+        archived: Boolean(session.archived),
       })),
     }));
   });
@@ -119,8 +121,15 @@ function SessionTree(props: {
                   label={session.name}
                   selected={props.selected === session.id}
                   status={session.status}
+                  badge={session.archived ? "归档" : undefined}
                   depth={1}
-                  onClick={() => props.onSelect(session.id, session.name)}
+                  onClick={() => {
+                    if (session.archived && props.onRestore) {
+                      props.onRestore(session.id);
+                    } else {
+                      props.onSelect(session.id, session.name);
+                    }
+                  }}
                 />
               )}
             </For>
@@ -151,6 +160,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     props.ctx.preferences.get<string>("themeMode") ?? "light",
   );
   const [sessionMenuOpen, setSessionMenuOpen] = createSignal(false);
+  const [showArchived, setShowArchived] = createSignal(false);
   const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
@@ -193,6 +203,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }
   }
 
+  const visibleSessions = (): RuntimeSessionSummary[] =>
+    sessionList().filter((session) =>
+      showArchived() ? Boolean(session.archived) : !session.archived,
+    );
+
   async function createSession() {
     await props.ctx.runtime.sessionNew?.();
     await refreshSessions();
@@ -216,7 +231,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
   }
 
-  async function deleteSelectedSession() {
+  async function removeSelectedSession() {
     const targetID = selectedSessionID();
     if (!targetID) return;
     try {
@@ -228,7 +243,55 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           const created = await props.ctx.runtime.sessionNew?.();
           if (!created?.sessionID) {
             props.ctx.runtime.diagnostic?.(
-              "删除当前唯一会话前需要先创建并切换到新会话，但当前 runtime 不支持。",
+              "移除当前唯一会话前需要先创建并切换到新会话，但当前 runtime 不支持。",
+              "warning",
+            );
+            return;
+          }
+          await props.ctx.runtime.sessionAttach?.(created.sessionID);
+        }
+      }
+      await props.ctx.runtime.sessionArchive?.(targetID);
+      setSelectedSessionID("");
+      setSelectedSession("");
+      await refreshSessions();
+    } catch (error: unknown) {
+      props.ctx.runtime.diagnostic?.(
+        `移除会话失败：${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    }
+  }
+
+  async function restoreSession(sessionID: string) {
+    try {
+      await props.ctx.runtime.sessionRestore?.(sessionID);
+      await refreshSessions();
+      setShowArchived(false);
+    } catch (error: unknown) {
+      props.ctx.runtime.diagnostic?.(
+        `恢复会话失败：${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    }
+  }
+
+  async function physicallyDeleteSelectedSession() {
+    const targetID = selectedSessionID();
+    if (!targetID) return;
+    if (!window.confirm(`确定要彻底删除会话“${selectedSession()}”吗？这会删除会话记录和附件，无法恢复。`)) {
+      return;
+    }
+    try {
+      if (selectedSessionIsActive()) {
+        const other = sessionList().find((session) => session.id !== targetID);
+        if (other) {
+          await props.ctx.runtime.sessionAttach?.(other.id);
+        } else {
+          const created = await props.ctx.runtime.sessionNew?.();
+          if (!created?.sessionID) {
+            props.ctx.runtime.diagnostic?.(
+              "彻底删除当前唯一会话前需要先创建并切换到新会话。",
               "warning",
             );
             return;
@@ -242,7 +305,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       await refreshSessions();
     } catch (error: unknown) {
       props.ctx.runtime.diagnostic?.(
-        `删除会话失败：${error instanceof Error ? error.message : String(error)}`,
+        `彻底删除会话失败：${error instanceof Error ? error.message : String(error)}`,
         "warning",
       );
     }
@@ -501,9 +564,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 type="button"
                 class="neu-session-toolbar-btn"
                 disabled={!selectedSessionID()}
-                onClick={() => void deleteSelectedSession()}
+                onClick={() => void removeSelectedSession()}
               >
-                删除
+                移除
+              </button>
+              <button
+                type="button"
+                class="neu-session-toolbar-btn"
+                data-active={showArchived()}
+                onClick={() => setShowArchived((value) => !value)}
+              >
+                归档
               </button>
               <button
                 type="button"
@@ -530,7 +601,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             <div class="neu-sidebar-content">
               <SessionTree
                 selected={selectedSessionID()}
-                sessions={sessionList()}
+                sessions={visibleSessions()}
                 workspaces={workspaces()}
                 onSelect={(id, name) => {
                   setSelectedSessionID(id);
@@ -538,6 +609,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 }}
                 onRemoveWorkspace={(workspaceID) => {
                   void removeWorkspace(workspaceID);
+                }}
+                onRestore={(sessionID) => {
+                  void restoreSession(sessionID);
                 }}
               />
             </div>
@@ -774,7 +848,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             id: state().checkpoints[state().checkpoints.length - 1]?.id ?? "",
           })
         }
-        onDelete={() => deleteSelectedSession()}
+        onDelete={() => physicallyDeleteSelectedSession()}
       />
       <CheckpointPanel
         open={checkpointOpen()}

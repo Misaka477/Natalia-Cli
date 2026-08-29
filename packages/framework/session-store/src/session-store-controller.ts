@@ -440,6 +440,14 @@ export function createSessionStoreController(input: {
     return { id, archived: true };
   }
 
+  async function restore(id: string) {
+    const record = (await load(id as SessionID)).session;
+    if (!record.metadata?.archived) return { id, archived: false };
+    record.metadata = { ...record.metadata, archived: false };
+    await updateMetadata(record, { archived: false });
+    return { id, archived: false };
+  }
+
   async function export_(id: string): Promise<{
     sessionID: string;
     title: string;
@@ -490,6 +498,7 @@ export function createSessionStoreController(input: {
     create,
     setAutoTitle,
     archive,
+    restore,
     export: export_,
     close,
   };
