@@ -1,9 +1,21 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { once } from "node:events";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
+const runtimeConfigPath = resolve(root, ".natalia", "global-config.json");
+const defaultRuntimeConfigPath = resolve(homedir(), ".config", "natalia-cli", "config.json");
+mkdirSync(resolve(root, ".natalia"), { recursive: true });
+if (!existsSync(runtimeConfigPath) && existsSync(defaultRuntimeConfigPath)) {
+  try {
+    copyFileSync(defaultRuntimeConfigPath, runtimeConfigPath);
+  } catch {
+    // A missing or unreadable default config should not block the dev server.
+  }
+}
 let serve: ChildProcess | undefined;
 
 function portFree(port: number): Promise<boolean> {
@@ -43,6 +55,10 @@ console.log(`[dev-web-ui] starting runtime serve on ${port}`);
 serve = spawn("bun", ["apps/cli/src/main.ts", "serve", String(port)], {
   cwd: root,
   stdio: "inherit",
+  env: {
+    ...process.env,
+    NATALIA_CONFIG: runtimeConfigPath,
+  },
 });
 serve.on("exit", (code) => {
   if (code && code !== 0) console.error(`[dev-web-ui] serve exited ${code}`);

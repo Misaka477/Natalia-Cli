@@ -19,6 +19,7 @@ export async function handleRuntimeCommand(argv: string[]) {
     const port = parseServePort(argv);
     const manager = createWorkspaceManager({
       pluginStoreRoot: pluginStoreRoot(),
+      globalConfigPath: process.env.NATALIA_CONFIG,
     });
     await manager.load();
     const client = createWorkspaceRuntimeClient(manager);
