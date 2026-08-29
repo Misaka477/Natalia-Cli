@@ -556,6 +556,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <button
                 type="button"
                 class="neu-session-toolbar-btn"
+                disabled={showArchived()}
                 onClick={() => void createSession()}
               >
                 新建
@@ -563,7 +564,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <button
                 type="button"
                 class="neu-session-toolbar-btn"
-                disabled={!selectedSessionID()}
+                disabled={!selectedSessionID() || showArchived()}
                 onClick={() => void removeSelectedSession()}
               >
                 移除

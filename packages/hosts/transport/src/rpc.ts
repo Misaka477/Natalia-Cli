@@ -165,6 +165,7 @@ export const RPC_ROUTE_MEMBERS = {
   "session.delete": "sessionDelete",
   "session.new": "sessionNew",
   "session.archive": "sessionArchive",
+  "session.restore": "sessionRestore",
   "session.export": "sessionExport",
   "session.attach": "sessionAttach",
   "mcp.catalog": "mcpCatalog",
