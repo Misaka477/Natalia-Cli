@@ -172,12 +172,21 @@ export function ReviewPane(props: { runtime?: RuntimeClient } = {}) {
           <div class="review-section-title">Drift findings</div>
           <For each={drift()}>
             {(item) => (
-              <div class="review-file" data-severity={item.severity}>
-                <div class="review-file-name">{item.currentActivity}</div>
-                <div class="review-file-meta">
-                  <span>{item.severity}</span>
-                  <span>{item.status}</span>
+              <div class="review-drift-card" data-severity={item.severity}>
+                <div class="review-drift-header">
+                  <span class="review-severity">{item.severity}</span>
+                  <span class="review-drift-status">{item.status}</span>
                 </div>
+                <div class="review-drift-activity">
+                  {item.currentActivity}
+                </div>
+                <Show when={item.evidence.length}>
+                  <ul class="review-drift-evidence">
+                    <For each={item.evidence}>
+                      {(evidence) => <li>{evidence}</li>}
+                    </For>
+                  </ul>
+                </Show>
               </div>
             )}
           </For>
