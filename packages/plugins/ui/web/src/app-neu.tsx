@@ -574,12 +574,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           if (transcriptEl()) transcriptEl()!.scrollTop = transcriptEl()!.scrollHeight;
           if (chatTranscriptEl()) chatTranscriptEl()!.scrollTop = chatTranscriptEl()!.scrollHeight;
         }, 0);
-        const approvals = projected.pendingApprovals;
+        const interactive = await props.ctx.runtime.pendingInteractive?.();
+        const approvals = interactive?.approvals ?? [];
         if (approvals.length) {
           setCurrentApproval(approvals[0]);
           setPermissionOpen(true);
         }
-        const questions = projected.pendingQuestions;
+        const questions = interactive?.questions ?? [];
         if (questions.length) {
           setCurrentQuestion(questions[0]);
           setQuestionOpen(true);
