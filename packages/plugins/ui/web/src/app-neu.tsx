@@ -1006,6 +1006,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     (layoutMode() === "compact" && !leftVisible() && !rightVisible()) ||
     (layoutMode() === "tiny" && naviOpen() && !leftVisible() && !rightVisible());
 
+  createEffect(() => {
+    if (leftVisible()) {
+      void refreshSessions();
+      void refreshWorkspaces();
+    }
+  });
+
   return (
     <div
       class="neu-shell"
