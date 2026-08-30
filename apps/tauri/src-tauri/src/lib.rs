@@ -170,6 +170,26 @@ fn create_browser_webview(
         .map_err(|error| format!("failed to create browser webview: {error}"))
 }
 
+fn browser_screen_position(
+    app: &tauri::AppHandle,
+    x: f64,
+    y: f64,
+) -> Result<tauri::LogicalPosition<f64>, String> {
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let inner = window
+        .inner_position()
+        .map_err(|error| format!("failed to read main window position: {error}"))?;
+    let scale = window
+        .scale_factor()
+        .map_err(|error| format!("failed to read window scale: {error}"))?;
+    Ok(tauri::LogicalPosition::new(
+        inner.x as f64 / scale + x,
+        inner.y as f64 / scale + y,
+    ))
+}
+
 #[tauri::command]
 fn browser_show(
     app: tauri::AppHandle,
@@ -185,8 +205,9 @@ fn browser_show(
         "[natalia-desktop] browser_show rect=({},{},{},{})",
         rect.x, rect.y, rect.width, rect.height
     );
+    let screen_position = browser_screen_position(&app, rect.x, rect.y)?;
     webview
-        .set_position(tauri::LogicalPosition::new(rect.x, rect.y))
+        .set_position(screen_position)
         .map_err(|error| format!("browser position failed: {error}"))?;
     webview
         .set_size(tauri::LogicalSize::new(rect.width, rect.height))
@@ -207,8 +228,9 @@ fn browser_move(
         "[natalia-desktop] browser_move rect=({},{},{},{})",
         rect.x, rect.y, rect.width, rect.height
     );
+    let screen_position = browser_screen_position(&app, rect.x, rect.y)?;
     webview
-        .set_position(tauri::LogicalPosition::new(rect.x, rect.y))
+        .set_position(screen_position)
         .map_err(|error| format!("browser position failed: {error}"))?;
     webview
         .set_size(tauri::LogicalSize::new(rect.width, rect.height))
