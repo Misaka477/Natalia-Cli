@@ -16,6 +16,7 @@ export type TerminalWsMessage =
 
 export type TerminalWsServerMessage =
   | { type: "ready"; id: string; rows?: number; cols?: number }
+  | { type: "restore"; id: string; text: string }
   | { type: "output"; data: string }
   | { type: "exit"; id: string }
   | { type: "error"; message: string; fatal?: boolean };
@@ -75,6 +76,13 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
         }
         const listed = await client.nativeTerminalList?.();
         let session = listed?.find((item) => item.id === terminalID);
+        if (session?.sessionID && session.sessionID !== sessionID) {
+          failOpen(
+            ws,
+            `terminal ${terminalID} belongs to session ${session.sessionID}`,
+          );
+          return;
+        }
         if (!session) {
           session = await client.nativeTerminalStart({
             command: process.env.SHELL || "bash",
@@ -84,6 +92,13 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
         }
         if (!session) {
           failOpen(ws, "native terminal start returned no session");
+          return;
+        }
+        if (session.sessionID && session.sessionID !== sessionID) {
+          failOpen(
+            ws,
+            `terminal ${session.id} belongs to session ${session.sessionID}`,
+          );
           return;
         }
         if (typeof client.subscribeTerminalOutput === "function") {
@@ -104,6 +119,14 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
           rows: session.rows,
           cols: session.cols,
         });
+        if (typeof client.nativeTerminalRead === "function") {
+          try {
+            const restored = await client.nativeTerminalRead(session.id);
+            if (restored?.text) send(ws, { type: "restore", id: session.id, text: restored.text });
+          } catch {
+            // Buffer replay is best-effort; live output will still arrive.
+          }
+        }
       } catch (error) {
         failOpen(ws, error instanceof Error ? error.message : String(error));
       }

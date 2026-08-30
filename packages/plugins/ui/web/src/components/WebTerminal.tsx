@@ -14,6 +14,7 @@ export type WebTerminalProps = {
 
 type ServerMessage =
   | { type: "ready"; id: string; rows?: number; cols?: number }
+  | { type: "restore"; id: string; text: string }
   | { type: "output"; data: string }
   | { type: "exit"; id: string }
   | { type: "error"; message: string; fatal?: boolean };
@@ -89,6 +90,10 @@ export function WebTerminal(props: WebTerminalProps) {
         message = JSON.parse(String(event.data)) as ServerMessage;
       } catch {
         return;
+      }
+      if (message.type === "restore") {
+        term?.clear();
+        if (message.text) term?.write(message.text);
       }
       if (message.type === "output") term?.write(message.data);
       if (message.type === "error") {
