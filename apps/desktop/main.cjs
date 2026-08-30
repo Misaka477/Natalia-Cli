@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, WebContentsView } = require("electron");
+const { app, BrowserWindow, ipcMain, BrowserView } = require("electron");
 const path = require("path");
 const WebSocket = require("ws");
 const http = require("http");
@@ -9,6 +9,7 @@ const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
 
 let mainWindow;
 let browserView;
+let browserViewAttached = false;
 let browserUrl = "https://example.com";
 const terminalSubscriptions = new Map();
 
@@ -74,20 +75,21 @@ async function streamRuntimeEvents() {
 
 function ensureBrowserView() {
   if (browserView) return browserView;
-  browserView = new WebContentsView({
+  browserView = new BrowserView({
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
     },
   });
-  mainWindow.contentView.addChildView(browserView);
+  mainWindow.addBrowserView(browserView);
+  browserViewAttached = true;
   browserView.webContents.loadURL(browserUrl);
-  console.log("[desktop] browser WebContentsView created", {
-    children: mainWindow.contentView.children.length,
+  console.log("[desktop] browser BrowserView created", {
+    attached: browserViewAttached,
     url: browserUrl,
   });
   browserView.webContents.on("did-finish-load", () => {
-    console.log("[desktop] browser WebContentsView finished loading", browserUrl);
+    console.log("[desktop] browser BrowserView finished loading", browserUrl);
   });
   return browserView;
 }
@@ -103,8 +105,9 @@ function setBrowserBounds(rect) {
 }
 
 function hideBrowser() {
-  if (browserView && mainWindow) {
-    mainWindow.contentView.removeChildView(browserView);
+  if (browserView && mainWindow && browserViewAttached) {
+    mainWindow.removeBrowserView(browserView);
+    browserViewAttached = false;
   }
 }
 
@@ -112,8 +115,9 @@ function showBrowser(rect) {
   if (!browserView) {
     ensureBrowserView();
   }
-  if (!mainWindow.contentView.children.includes(browserView)) {
-    mainWindow.contentView.addChildView(browserView);
+  if (!browserViewAttached) {
+    mainWindow.addBrowserView(browserView);
+    browserViewAttached = true;
   }
   setBrowserBounds(rect);
   browserView.webContents.focus();
@@ -185,7 +189,7 @@ ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
 
 ipcMain.handle("browser_show", (_event, rect) => {
   console.log("[desktop] browser_show", rect, {
-    children: mainWindow?.contentView.children.length,
+    attached: browserViewAttached,
   });
   showBrowser(rect);
   return { ok: true };
@@ -194,7 +198,7 @@ ipcMain.handle("browser_show", (_event, rect) => {
 ipcMain.handle("browser_move", (_event, rect) => {
   console.log("[desktop] browser_move", rect, {
     hasView: Boolean(browserView),
-    children: mainWindow?.contentView.children.length,
+    attached: browserViewAttached,
   });
   if (!browserView) return { ok: false };
   setBrowserBounds(rect);
