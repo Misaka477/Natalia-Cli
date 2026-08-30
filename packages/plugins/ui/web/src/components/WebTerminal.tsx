@@ -220,12 +220,35 @@ export function WebTerminal(props: WebTerminalProps) {
         sessionId: props.sessionID,
         terminalId: props.terminalID,
       });
-      await desktop!.invoke("terminal_output_subscribe", {
-        sessionId: props.sessionID,
-        terminalId: props.terminalID,
-      });
-      console.log("[web-terminal] terminal_output_subscribe ok");
+      const subscribeResult =
+        (await desktop!.invoke<{ subscribed?: boolean; reused?: boolean }>(
+          "terminal_output_subscribe",
+          {
+            sessionId: props.sessionID,
+            terminalId: props.terminalID,
+          },
+        )) ?? {};
+      console.log("[web-terminal] terminal_output_subscribe ok", subscribeResult);
       if (closed) return;
+
+      // Reused subscriptions do not receive a fresh `restore` message, so pull
+      // the current screen once through nativeTerminal.read and write it back.
+      // Fresh subscriptions still get the raw restore from the bridge.
+      if (subscribeResult.reused) {
+        console.log("[web-terminal] reused subscription, reading current screen");
+        const read = await callRuntime<{ text: string } | undefined>(
+          desktop,
+          "nativeTerminal.read",
+          { id: props.terminalID },
+        );
+        if (closed) return;
+        try {
+          term?.clear();
+        } catch {
+          // xterm may not be ready yet
+        }
+        if (read?.text) term?.write(read.text);
+      }
 
       // The terminal WebSocket bridge will send a `restore` message with the
       // full raw PTY buffer. Avoid also writing nativeTerminal.read here: the
