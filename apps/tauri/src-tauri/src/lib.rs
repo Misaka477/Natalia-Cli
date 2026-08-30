@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
+use gtk::prelude::GtkWindowExt;
 use tauri::{Emitter, Manager, WebviewUrl};
 
 #[derive(Clone, serde::Deserialize)]
@@ -160,16 +161,28 @@ fn create_browser_window(
     let main = app
         .get_webview_window("main")
         .ok_or_else(|| "main webview window not found".to_string())?;
-    tauri::WebviewWindowBuilder::new(app, "browser-webview", WebviewUrl::External(parsed))
-        .title("Natalia Browser")
-        .decorations(false)
-        .visible(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .parent(&main)
-        .map_err(|error| format!("failed to parent browser webview: {error}"))?
-        .build()
-        .map_err(|error| format!("failed to create browser webview: {error}"))
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        "browser-webview",
+        WebviewUrl::External(parsed),
+    )
+    .title("Natalia Browser")
+    .decorations(false)
+    .visible(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .parent(&main)
+    .map_err(|error| format!("failed to parent browser webview: {error}"))?
+    .build()
+    .map_err(|error| format!("failed to create browser webview: {error}"))?;
+
+    // Ask the compositor (including tiling WMs such as niri) to treat this as
+    // a utility overlay window rather than a tiled application window.
+    if let Ok(gtk_window) = window.gtk_window() {
+        gtk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
+    }
+
+    Ok(window)
 }
 
 fn browser_screen_position(
