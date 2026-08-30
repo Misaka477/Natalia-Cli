@@ -570,6 +570,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+        setTimeout(() => {
+          if (transcriptEl()) transcriptEl()!.scrollTop = transcriptEl()!.scrollHeight;
+          if (chatTranscriptEl()) chatTranscriptEl()!.scrollTop = chatTranscriptEl()!.scrollHeight;
+        }, 0);
         const approvals = projected.pendingApprovals;
         if (approvals.length) {
           setCurrentApproval(approvals[0]);
