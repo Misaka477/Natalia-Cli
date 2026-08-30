@@ -1764,6 +1764,7 @@ export type RuntimeClient = {
   submitInput?(input: SubmitInput): Promise<SubmittedTurn>;
   history?(options?: {
     after?: number;
+    offset?: number;
     limit?: number;
   }): Promise<RuntimeHistory>;
   messages?(options?: {

@@ -1124,6 +1124,7 @@ export async function handleRPCMessage(
     if (body.method === "session.history") {
       optionsGuard(client, "history");
       const after = body.params?.after;
+      const offset = body.params?.offset;
       const limit = body.params?.limit;
       if (
         after !== undefined &&
@@ -1133,20 +1134,28 @@ export async function handleRPCMessage(
           "session.history.params.after must be a non-negative integer",
         );
       if (
+        offset !== undefined &&
+        (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0)
+      )
+        throw invalidParams(
+          "session.history.params.offset must be a non-negative integer",
+        );
+      if (
         limit !== undefined &&
         (typeof limit !== "number" ||
           !Number.isInteger(limit) ||
           limit < 1 ||
-          limit > 500)
+          limit > 2000)
       )
         throw invalidParams(
-          "session.history.params.limit must be an integer between 1 and 500",
+          "session.history.params.limit must be an integer between 1 and 2000",
         );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.history({
           after: typeof after === "number" ? after : undefined,
+          offset: typeof offset === "number" ? offset : undefined,
           limit: typeof limit === "number" ? limit : undefined,
         }),
       };

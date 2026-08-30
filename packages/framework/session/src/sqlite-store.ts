@@ -608,15 +608,22 @@ export class SqliteSessionStore {
 
   loadEventPage(
     sessionID: SessionID,
-    options: { after?: number; limit?: number } = {},
+    options: { after?: number; offset?: number; limit?: number } = {},
   ) {
     const after = Math.max(0, options.after ?? 0);
-    const limit = Math.min(500, Math.max(1, options.limit ?? 100));
-    const rows = this.db
-      .query(
-        `SELECT seq, event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
-      )
-      .all(sessionID, after, limit + 1) as Array<{
+    const offset = Math.max(0, options.offset ?? 0);
+    const limit = Math.min(2000, Math.max(1, options.limit ?? 100));
+    const rows = (options.offset === undefined
+      ? this.db
+          .query(
+            `SELECT seq, event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
+          )
+          .all(sessionID, after, limit + 1)
+      : this.db
+          .query(
+            `SELECT seq, event FROM events WHERE session_id = ? ORDER BY seq LIMIT ? OFFSET ?`,
+          )
+          .all(sessionID, limit + 1, offset)) as Array<{
       seq: number;
       event: string;
     }>;

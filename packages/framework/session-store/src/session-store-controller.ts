@@ -271,16 +271,18 @@ export function createSessionStoreController(input: {
   async function history(
     id: SessionID,
     fallback: RuntimeEvent[],
-    options: { after?: number; limit?: number } = {},
+    options: { after?: number; offset?: number; limit?: number } = {},
   ) {
     if (sqliteStore) return sqliteStore.loadEventPage(id, options);
     const after = Math.max(0, options.after ?? 0);
-    const limit = Math.min(500, Math.max(1, options.limit ?? 100));
-    const page = fallback.slice(after, after + limit + 1);
+    const offset = Math.max(0, options.offset ?? 0);
+    const start = options.offset === undefined ? after : offset;
+    const limit = Math.min(2000, Math.max(1, options.limit ?? 100));
+    const page = fallback.slice(start, start + limit + 1);
     return {
       events: page
         .slice(0, limit)
-        .map((event, index) => ({ seq: after + index + 1, event })),
+        .map((event, index) => ({ seq: start + index + 1, event })),
       hasMore: page.length > limit,
     };
   }

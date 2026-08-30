@@ -238,6 +238,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
   const [reviewRequestedTab, setReviewRequestedTab] = createSignal<"git" | "sandbox" | "checkpoint">("git");
   const [panelRevision, setPanelRevision] = createSignal(0);
+  let userSelectedSession = false;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
@@ -269,6 +270,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   onCleanup(
     props.ctx.projection.subscribe((next) => {
+      const replaying = (globalThis as unknown as {
+        __nataliaReplayingHistory?: boolean;
+      }).__nataliaReplayingHistory;
+      // During a full history replay the projection emits one event at a time.
+      // Cloning the whole AppState after every raw event is O(n^2) for long
+      // sessions, so skip the heavy clones until the replay completes and then
+      // take one final snapshot in openUnresolvedInteractives.
+      if (replaying) return;
       console.log("[web-plugin] projection update", {
         messages: next.messages.length,
         sessions: next.sessions.length,
@@ -306,9 +315,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const sessions = await props.ctx.runtime.sessionList?.();
     if (sessions) {
       setSessionList(sessions);
-      if (!selectedSessionID() && sessions.length) {
-        setSelectedSessionID(sessions[0].id);
-        setSelectedSession(sessions[0].title);
+      if (!userSelectedSession && sessions.length) {
+        const active = state().sessionID;
+        const target = active
+          ? sessions.find((session) => session.id === active && !session.archived)
+          : undefined;
+        if (target) {
+          setSelectedSessionID(target.id);
+          setSelectedSession(target.title);
+        } else if (!selectedSessionID()) {
+          setSelectedSessionID(sessions[0].id);
+          setSelectedSession(sessions[0].title);
+        }
       }
     }
   }
@@ -504,18 +522,50 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ),
     );
 
+    const onRecentSessionRestored = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionID?: string }>).detail;
+      if (!detail?.sessionID || userSelectedSession) return;
+      const restored = sessionList().find(
+        (session) => session.id === detail.sessionID && !session.archived,
+      );
+      if (restored) {
+        setSelectedSessionID(restored.id);
+        setSelectedSession(restored.title);
+      } else {
+        setSelectedSessionID(detail.sessionID);
+        setSelectedSession("");
+      }
+    };
+    window.addEventListener(
+      "natalia:recent-session-restored",
+      onRecentSessionRestored,
+    );
+    onCleanup(() =>
+      window.removeEventListener(
+        "natalia:recent-session-restored",
+        onRecentSessionRestored,
+      ),
+    );
+
     const openUnresolvedInteractives = () => {
-      void refreshSessions();
-      const approvals = state().pendingApprovals;
-      if (approvals.length) {
-        setCurrentApproval(approvals[0]);
-        setPermissionOpen(true);
-      }
-      const questions = state().pendingQuestions;
-      if (questions.length) {
-        setCurrentQuestion(questions[0]);
-        setQuestionOpen(true);
-      }
+      void (async () => {
+        await refreshSessions();
+        // History replay just finished; take one projection snapshot instead of
+        // cloning once per replayed event.
+        const projected = cloneState(props.ctx.projection.getState());
+        setState(projected);
+        if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+        const approvals = projected.pendingApprovals;
+        if (approvals.length) {
+          setCurrentApproval(approvals[0]);
+          setPermissionOpen(true);
+        }
+        const questions = projected.pendingQuestions;
+        if (questions.length) {
+          setCurrentQuestion(questions[0]);
+          setQuestionOpen(true);
+        }
+      })();
     };
     window.addEventListener(
       "natalia:history-replay-complete",
@@ -1032,6 +1082,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   void props.ctx.runtime.sessionRename?.(id, title).then(() => refreshSessions());
                 }}
                 onSelect={(id, name) => {
+                  userSelectedSession = true;
                   setSelectedSessionID(id);
                   setSelectedSession(name);
                   void props.ctx.runtime
@@ -1433,6 +1484,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }}
         onAttach={async () => {
           if (!selectedSessionID()) return;
+          userSelectedSession = true;
           await props.ctx.runtime.sessionAttach?.(selectedSessionID());
           await refreshSessions();
         }}

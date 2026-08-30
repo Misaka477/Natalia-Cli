@@ -163,7 +163,7 @@ export interface SessionStoreController {
   history(
     id: SessionID,
     fallback: RuntimeEvent[],
-    options?: { after?: number; limit?: number },
+    options?: { after?: number; offset?: number; limit?: number },
   ): Promise<{
     events: Array<{ seq: number; event: RuntimeEvent }>;
     hasMore: boolean;

@@ -456,6 +456,8 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   border-radius: 16px;
   background: var(--neu-bg);
   box-shadow: none;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
 }
 .neu-pane .natalia-message[data-role="user"] {
   align-self: flex-end;

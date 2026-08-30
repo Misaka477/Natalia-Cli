@@ -271,6 +271,9 @@ function buildParams(member: string, args: unknown[]) {
   return params;
 }
 
+const HISTORY_PAGE_SIZE = 2000;
+const HISTORY_PARALLELISM = 8;
+
 export type WebRuntimeOptions = {
   url: string;
   token?: string;
@@ -296,6 +299,59 @@ export function createWebRuntimeClient(
   const starts: Array<(event: RuntimeEvent) => void> = [];
   let started = false;
 
+  async function replayHistory(total?: number) {
+    const replayGlobal = globalThis as unknown as {
+      __nataliaReplayingHistory?: boolean;
+    };
+    replayGlobal.__nataliaReplayingHistory = true;
+    try {
+      if (total && total > 0) {
+        // If the session list told us the event count, fetch all pages in
+        // parallel instead of walking one after another. This turns N serial
+        // RPC round-trips into a single parallel batch.
+        const pages = Math.ceil(total / HISTORY_PAGE_SIZE);
+        const pageResults: RuntimeHistory[] = new Array(pages);
+        // Avoid opening hundreds of simultaneous RPCs on very long sessions;
+        // fetch in bounded parallel batches.
+        for (let start = 0; start < pages; start += HISTORY_PARALLELISM) {
+          const end = Math.min(start + HISTORY_PARALLELISM, pages);
+          const batch = await Promise.all(
+            Array.from({ length: end - start }, (_, index) =>
+              call<RuntimeHistory>("session.history", {
+                offset: (start + index) * HISTORY_PAGE_SIZE,
+                limit: HISTORY_PAGE_SIZE,
+              }),
+            ),
+          );
+          for (let index = 0; index < batch.length; index++)
+            pageResults[start + index] = batch[index]!;
+        }
+        for (const page of pageResults) {
+          for (const entry of page.events)
+            for (const listener of starts) listener(entry.event);
+        }
+      } else {
+        let after = 0;
+        while (true) {
+          const page = await call<RuntimeHistory>("session.history", {
+            after,
+            limit: HISTORY_PAGE_SIZE,
+          });
+          for (const entry of page.events)
+            for (const listener of starts) listener(entry.event);
+          if (!page.hasMore || !page.events.length) break;
+          after = page.events[page.events.length - 1]!.seq;
+        }
+      }
+    } catch (error) {
+      console.log("[web-runtime] history replay failed", error);
+    } finally {
+      replayGlobal.__nataliaReplayingHistory = false;
+      if (typeof window !== "undefined")
+        window.dispatchEvent(new Event("natalia:history-replay-complete"));
+    }
+  }
+
   async function start(onEvent: (event: RuntimeEvent) => void) {
     console.log("[web-runtime] start called", "listener added");
     starts.push(onEvent);
@@ -313,32 +369,32 @@ export function createWebRuntimeClient(
     );
     if (!response.ok || !response.body) return;
 
-    // Replay the full durable session so a reloaded page sees previous
-    // messages. Page through history until hasMore is false; there is no
-    // artificial cap that would hide older conversations.
-    const replayGlobal = globalThis as unknown as {
-      __nataliaReplayingHistory?: boolean;
-    };
-    replayGlobal.__nataliaReplayingHistory = true;
+    // On page load, prefer the most recent non-archived session over the
+    // runtime's deterministic default session. This makes a reload/reopen
+    // resume the last conversation (session.list is ordered by last activity,
+    // with pinned sessions first). If the list/attach is unavailable, keep the
+    // runtime's current session.
+    let newest: RuntimeSessionSummary | undefined;
     try {
-      let after = 0;
-      while (true) {
-        const page = await call<RuntimeHistory>("session.history", {
-          after,
-          limit: 500,
-        });
-        for (const entry of page.events)
-          for (const listener of starts) listener(entry.event);
-        if (!page.hasMore || !page.events.length) break;
-        after = page.events[page.events.length - 1]!.seq;
+      const sessions = await call<RuntimeSessionSummary[]>("session.list");
+      newest = sessions.find((session) => !session.archived);
+      if (newest) {
+        await call("session.attach", { id: newest.id });
+        if (typeof window !== "undefined")
+          window.dispatchEvent(
+            new CustomEvent("natalia:recent-session-restored", {
+              detail: { sessionID: newest.id },
+            }),
+          );
       }
     } catch (error) {
-      console.log("[web-runtime] history replay failed", error);
-    } finally {
-      replayGlobal.__nataliaReplayingHistory = false;
-      if (typeof window !== "undefined")
-        window.dispatchEvent(new Event("natalia:history-replay-complete"));
+      console.log("[web-runtime] recent session restore failed", error);
     }
+
+    // Replay the full durable session so a reloaded page sees previous
+    // messages. If the session list gave us the event count, fetch all pages in
+    // parallel; otherwise fall back to the sequential after-cursor walk.
+    await replayHistory(newest?.events);
 
     const decoder = new TextDecoder();
     let buffer = "";
@@ -449,31 +505,19 @@ export function createWebRuntimeClient(
     },
     async sessionAttach(id) {
       const result = await call<RuntimeSessionSummary>("session.attach", { id });
-      const replayGlobal = globalThis as unknown as {
-        __nataliaReplayingHistory?: boolean;
-      };
-      replayGlobal.__nataliaReplayingHistory = true;
       if (typeof window !== "undefined")
         window.dispatchEvent(new Event("natalia:session-switch-reset"));
+      // Resolve the target's event count so the switch replay can fetch pages
+      // in parallel too. If lookup fails, replayHistory falls back to the
+      // sequential cursor walk.
+      let total: number | undefined;
       try {
-        let after = 0;
-        while (true) {
-          const page = await call<RuntimeHistory>("session.history", {
-            after,
-            limit: 500,
-          });
-          for (const entry of page.events)
-            for (const listener of starts) listener(entry.event);
-          if (!page.hasMore || !page.events.length) break;
-          after = page.events[page.events.length - 1]!.seq;
-        }
-      } catch (error) {
-        console.log("[web-runtime] session switch replay failed", error);
-      } finally {
-        replayGlobal.__nataliaReplayingHistory = false;
-        if (typeof window !== "undefined")
-          window.dispatchEvent(new Event("natalia:history-replay-complete"));
+        const sessions = await call<RuntimeSessionSummary[]>("session.list");
+        total = sessions.find((session) => session.id === id)?.events;
+      } catch {
+        total = undefined;
       }
+      await replayHistory(total);
       return result as never;
     },
     async sessionDuplicate(id, title) {
