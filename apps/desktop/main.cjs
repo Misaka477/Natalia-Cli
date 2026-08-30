@@ -10,7 +10,7 @@ const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
 let mainWindow;
 let browserView;
 let browserViewAttached = false;
-let browserUrl = "https://example.com";
+let browserUrl = "https://www.bing.com";
 const terminalSubscriptions = new Map();
 
 function runtimeFetch(pathname, options = {}) {
