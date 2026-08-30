@@ -129,6 +129,15 @@ export {
  * working when the runtime adds an event.
  */
 export function applyEvent(state: AppState, event: RuntimeEvent): void {
+  if (event.agentID) {
+    // Events belonging to a subagent are projected into that subagent's own
+    // isolated state, so the main Natalia/Navi transcript and the subagent
+    // stream do not mix.
+    const agentID = event.agentID;
+    const child = (state.subagentStates[agentID] ??= initialState());
+    applyEvent(child, { ...event, agentID: undefined });
+    return;
+  }
   if (applyWorkspaceEvent(state, event)) return;
   if (applyConversationEvent(state, event)) {
     applyActivityEvent(state, event);

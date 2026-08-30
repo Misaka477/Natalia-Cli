@@ -57,6 +57,40 @@ export function AgentPanel(props: {
   const subagentMessages = createMemo<Message[]>(() => {
     const id = selectedID();
     if (!id) return [];
+    const child = props.state.subagentStates?.[id];
+    if (child?.messages?.length) {
+      return child.messages.map((msg, index) => {
+        if (msg.tool) {
+          return {
+            id: `sub-${id}-${index}`,
+            role: "assistant",
+            content: "",
+            status: (msg.tool.status as Message["status"]) ?? "completed",
+            toolCalls: [
+              {
+                name: msg.tool.name,
+                output: msg.tool.result ?? msg.tool.summary,
+              },
+            ],
+          } satisfies Message;
+        }
+        return {
+          id: `sub-${id}-${index}`,
+          role:
+            msg.role === "user"
+              ? "user"
+              : msg.role === "system"
+                ? "system"
+                : "assistant",
+          thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+          content: msg.text + (msg.pendingText || ""),
+          status: msg.status as Message["status"],
+          streaming: Boolean(
+            (msg.pendingText ?? "").length > 0 && msg.role !== "user",
+          ),
+        } satisfies Message;
+      });
+    }
     const history = props.state.subagentHistory?.[id] ?? [];
     return history.map((event, index) => {
       const text = event.text || event.activityDetail || event.task || event.event;

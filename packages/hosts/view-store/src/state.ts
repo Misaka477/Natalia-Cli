@@ -227,6 +227,8 @@ export type AppState = {
   sandboxDiffs: Record<string, SandboxDiffView>;
   subagents: Record<string, SubagentView>;
   subagentHistory: Record<string, SubagentView[]>;
+  /** Per-subagent projected state for isolated message/tool streams. */
+  subagentStates: Record<string, AppState>;
   mcp: Record<string, McpView>;
   plugins: Record<string, PluginView>;
   capabilities: Record<string, CapabilityView>;
@@ -338,6 +340,7 @@ export function initialState(): AppState {
     sandboxDiffs: {},
     subagents: {},
     subagentHistory: {},
+    subagentStates: {},
     mcp: {},
     plugins: {},
     capabilities: {},
@@ -392,6 +395,7 @@ export function cloneState(state: AppState): AppState {
     sandboxDiffs: { ...state.sandboxDiffs },
     subagents: { ...state.subagents },
     subagentHistory: mapRecord(state.subagentHistory, (value) => [...value]),
+    subagentStates: mapRecord(state.subagentStates, (value) => cloneState(value)),
     mcp: { ...state.mcp },
     plugins: { ...state.plugins },
     capabilities: { ...state.capabilities },
