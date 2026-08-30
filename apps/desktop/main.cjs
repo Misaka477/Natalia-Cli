@@ -110,6 +110,7 @@ function ensureBrowserView() {
 
 function setBrowserBounds(rect) {
   const view = ensureBrowserView();
+  if (!rect) return;
   console.log("[desktop] setBrowserBounds input", rect);
   lastBrowserRect = {
     x: Math.round(rect.x),
@@ -216,20 +217,22 @@ ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
   return { subscribed: true };
 });
 
-ipcMain.handle("browser_show", (_event, rect) => {
-  console.log("[desktop] browser_show", rect, {
+ipcMain.handle("browser_show", (_event, payload) => {
+  const rect = payload?.rect;
+  console.log("[desktop] browser_show", { rect }, {
     attached: browserViewAttached,
   });
   showBrowser(rect);
   return { ok: true };
 });
 
-ipcMain.handle("browser_move", (_event, rect) => {
-  console.log("[desktop] browser_move", rect, {
+ipcMain.handle("browser_move", (_event, payload) => {
+  const rect = payload?.rect;
+  console.log("[desktop] browser_move", { rect }, {
     hasView: Boolean(browserView),
     attached: browserViewAttached,
   });
-  if (!browserView) return { ok: false };
+  if (!browserView || !rect) return { ok: false };
   setBrowserBounds(rect);
   return { ok: true };
 });
