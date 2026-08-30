@@ -1924,6 +1924,18 @@ button.neu-settings-item.neu-settings-item-button:active {
   background: var(--neu-bg);
   box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
 }
+.neu-status-tool-row {
+  width: 100%;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+.neu-status-tool-arrow {
+  margin-left: auto;
+  color: var(--neu-muted);
+  font-size: 10px;
+  flex-shrink: 0;
+}
 .neu-status-tool-name,
 .neu-status-cap-name {
   width: 100px;
