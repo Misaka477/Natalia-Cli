@@ -10,6 +10,7 @@ const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
 let mainWindow;
 let browserView;
 let browserUrl = "https://example.com";
+const terminalSubscriptions = new Map();
 
 function runtimeFetch(pathname, options = {}) {
   const headers = { "content-type": "application/json", ...(options.headers || {}) };
@@ -142,9 +143,17 @@ ipcMain.handle("runtime_call", (_event, payload) => {
 ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
   const { sessionId, terminalId } = payload || {};
   if (!sessionId || !terminalId) throw new Error("missing sessionId/terminalId");
+
+  const existing = terminalSubscriptions.get(terminalId);
+  if (existing && existing.readyState === WebSocket.OPEN) {
+    console.log("[desktop] reuse existing terminal output bridge", terminalId);
+    return { subscribed: true, reused: true };
+  }
+
   const base = RUNTIME_URL.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
   const url = `${base}/terminal/${encodeURIComponent(sessionId)}/${encodeURIComponent(terminalId)}${TOKEN ? `?token=${TOKEN}` : ""}`;
   const ws = new WebSocket(url);
+  terminalSubscriptions.set(terminalId, ws);
   ws.on("message", (data) => {
     let message;
     try {
@@ -158,6 +167,11 @@ ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
     });
   });
   ws.on("open", () => console.log("[desktop] terminal output bridge connected", url));
+  ws.on("close", () => {
+    if (terminalSubscriptions.get(terminalId) === ws) {
+      terminalSubscriptions.delete(terminalId);
+    }
+  });
   ws.on("error", (error) => console.error("[desktop] terminal output bridge error", error));
   return { subscribed: true };
 });
