@@ -10,6 +10,11 @@ Tauri 宿主插件骨架，复用现有 Web UI（`packages/plugins/ui/web`），
   - Rust `runtime_call` 将前端 Tauri IPC 转发到本地 Natalia runtime RPC
   - Rust 保持 `/events` SSE 长连接，并把事件转发为 `natalia-runtime-event`
   - `apps/web/src/runtime-rpc.ts` 在检测到 `window.__TAURI__` 时自动走 IPC
+- Stage B 终端 IPC：
+  - WebTerminal 输入/resize 走 Tauri IPC
+  - Rust terminal output bridge 通过 `tokio-tungstenite` 转发终端输出
+- Linux IME 兼容：
+  - 启动时默认设置 `GDK_BACKEND=x11`，避免 WebKitGTK + Fcitx5/Kimpanel 在 Wayland 下候选框闪烁/皮肤回退
 
 ## 前置条件
 
