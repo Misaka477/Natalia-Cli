@@ -437,6 +437,9 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   scrollbar-width: thin;
   scrollbar-color: var(--neu-scrollbar) transparent;
 }
+.neu-pane .natalia-transcript > * {
+  flex-shrink: 0;
+}
 .neu-pane .natalia-load-older {
   display: block;
   width: fit-content;
