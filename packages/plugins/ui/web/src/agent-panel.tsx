@@ -186,6 +186,23 @@ export function AgentPanel(props: {
             <span class="review-count">{subagents().length} agents</span>
           </div>
         </div>
+        <Show
+          when={subagents().length}
+          fallback={
+            <div class="agent-empty-full">
+              <div class="review-empty-icon">
+                <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+                  <circle cx="18" cy="12" r="6" stroke="currentColor" stroke-width="1.6" />
+                  <path d="M8 30C8 23.373 12.477 19 18 19C23.523 19 28 23.373 28 30" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="review-empty-title">暂无子 Agent</div>
+              <div class="review-empty-desc">
+                子 Agent 运行后会出现在这里，并展示它的独立信息流。
+              </div>
+            </div>
+          }
+        >
         <div class="review-body">
           <div class="review-files" style="width: 220px">
             <div class="review-files-heading">Agents</div>
@@ -255,6 +272,7 @@ export function AgentPanel(props: {
             </div>
           </div>
         </div>
+        </Show>
       </Show>
 
       <Show when={subTab() === "team"}>

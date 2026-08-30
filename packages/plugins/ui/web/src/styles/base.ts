@@ -1004,6 +1004,19 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .agent-stream .natalia-transcript { flex: 1; }
 .agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
 .agent-tree-child { margin-left: 12px; }
+.agent-empty-full {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--neu-muted);
+  text-align: center;
+  padding: 24px;
+}
+.agent-tree-child { margin-left: 12px; }
 .agent-stream-header { padding: 8px 12px; border-bottom: 1px solid var(--neu-divider); }
 .agent-stream-title { font-size: 13px; font-weight: 600; }
 .agent-stream-meta { font-size: 11px; color: var(--neu-muted); margin-top: 2px; }
