@@ -292,7 +292,9 @@ function startBrowserBridge() {
 // Force X11/XWayland on Linux so IME works consistently under niri.
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("ozone-platform", "x11");
+  app.commandLine.appendSwitch("disable-gpu");
 }
+app.disableHardwareAcceleration();
 
 app.whenReady().then(() => {
   createMainWindow();
