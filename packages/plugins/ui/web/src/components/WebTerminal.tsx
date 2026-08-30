@@ -97,12 +97,14 @@ export function WebTerminal(props: WebTerminalProps) {
   const tauri = getTauriGlobal();
 
   function theme() {
-    const styles = getComputedStyle(document.documentElement);
+    // Keep a dark terminal palette regardless of the app/UI theme. Full-screen
+    // TUIs like htop/btop often rely on white/default colors; a light terminal
+    // background makes those invisible.
     return {
-      background: styles.getPropertyValue("--neu-bg-light").trim() || "#1b1e24",
-      foreground: styles.getPropertyValue("--neu-text").trim() || "#e6e8eb",
-      cursor: styles.getPropertyValue("--neu-accent").trim() || "#5fd4b8",
-      selectionBackground: styles.getPropertyValue("--neu-accent-soft").trim() || "#7de8d0",
+      background: "#1b1e24",
+      foreground: "#e6e8eb",
+      cursor: "#5fd4b8",
+      selectionBackground: "#7de8d0",
     };
   }
 
