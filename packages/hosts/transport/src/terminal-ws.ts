@@ -120,14 +120,6 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
           rows: session.rows,
           cols: session.cols,
         });
-        if (typeof client.nativeTerminalRead === "function") {
-          try {
-            const restored = await client.nativeTerminalRead(session.id);
-            if (restored?.text) send(ws, { type: "restore", id: session.id, text: restored.text });
-          } catch {
-            // Buffer replay is best-effort; live output will still arrive.
-          }
-        }
       } catch (error) {
         failOpen(ws, error instanceof Error ? error.message : String(error));
       }

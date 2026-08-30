@@ -133,6 +133,14 @@ export function WebTerminal(props: WebTerminalProps) {
     };
     ws.onopen = () => {
       lastError = undefined;
+      // The server replays the full PTY buffer through the output subscription
+      // immediately after opening; clear before that arrives so reconnect does
+      // not append a duplicate screen.
+      try {
+        term?.clear();
+      } catch {
+        // xterm may not be ready yet
+      }
     };
     ws.onclose = (event) => {
       if (socket !== ws || closed || fatal) return;
