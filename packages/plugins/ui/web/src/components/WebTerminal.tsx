@@ -83,6 +83,7 @@ export function WebTerminal(props: WebTerminalProps) {
   let socket: WebSocket | undefined;
   let ipcUnlisten: (() => void) | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let windowResizeHandler: (() => void) | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   let lastError: string | undefined;
@@ -248,6 +249,18 @@ export function WebTerminal(props: WebTerminalProps) {
           // xterm may not be ready yet
         }
         if (read?.text) term?.write(read.text);
+        if (term && fit) {
+          try {
+            fit.fit();
+            await callRuntime(desktop, "nativeTerminal.resize", {
+              id: props.terminalID,
+              rows: term.rows,
+              cols: term.cols,
+            });
+          } catch {
+            // fit can throw while restoring
+          }
+        }
       }
 
       // The terminal WebSocket bridge will send a `restore` message with the
@@ -256,12 +269,16 @@ export function WebTerminal(props: WebTerminalProps) {
       // terminal screen render incorrectly.
       console.log("[web-terminal] waiting for restore from terminal bridge");
       if (term && fit) {
-        fit.fit();
-        await callRuntime(desktop, "nativeTerminal.resize", {
-          id: props.terminalID,
-          rows: term.rows,
-          cols: term.cols,
-        });
+        try {
+          fit.fit();
+          await callRuntime(desktop, "nativeTerminal.resize", {
+            id: props.terminalID,
+            rows: term.rows,
+            cols: term.cols,
+          });
+        } catch {
+          // fit can throw while restoring
+        }
         console.log("[web-terminal] initial resize ok", {
           rows: term.rows,
           cols: term.cols,
@@ -474,6 +491,16 @@ export function WebTerminal(props: WebTerminalProps) {
       }
     });
     resizeObserver.observe(host);
+
+    windowResizeHandler = () => {
+      if (!props.active) return;
+      try {
+        fit?.fit();
+      } catch {
+        // xterm can throw if the pane is hidden
+      }
+    };
+    window.addEventListener("resize", windowResizeHandler);
     props.registerApi?.(api);
     connect();
   });
@@ -560,6 +587,7 @@ export function WebTerminal(props: WebTerminalProps) {
     if (reconnectTimer) clearTimeout(reconnectTimer);
     ipcUnlisten?.();
     resizeObserver?.disconnect();
+    if (windowResizeHandler) window.removeEventListener("resize", windowResizeHandler);
     socket?.close();
     try {
       term?.dispose();
