@@ -42,7 +42,12 @@ import { applyChatEvent, applyConversationEvent } from "./conversation";
 import { applyResourceEvent } from "./resources";
 import { applyStatusEvent } from "./status";
 import { applyWorkspaceEvent } from "./workspace";
-import { cloneState, initialState, type AppState } from "./state";
+import {
+  boundTranscript,
+  cloneState,
+  initialState,
+  type AppState,
+} from "./state";
 
 export {
   type ActivityKind,
