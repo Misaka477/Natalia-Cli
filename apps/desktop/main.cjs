@@ -288,6 +288,12 @@ function startBrowserBridge() {
   });
 }
 
+// Chromium's Wayland text-input path can misbehave with Fcitx5/Kimpanel.
+// Force X11/XWayland on Linux so IME works consistently under niri.
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("ozone-platform", "x11");
+}
+
 app.whenReady().then(() => {
   createMainWindow();
   streamRuntimeEvents();
