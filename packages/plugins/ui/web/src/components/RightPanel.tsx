@@ -835,16 +835,18 @@ export function TerminalPane(props: {
         }
       >
         <div class="terminal-toolbar">
-          <select
+          <NeuSelect
             class="terminal-profile-select"
             value={shellProfile()}
-            onChange={(event) => setShellProfile(event.currentTarget.value)}
-          >
-            <option value="bash">bash</option>
-            <option value="zsh">zsh</option>
-            <option value="sh">sh</option>
-            <option value="pwsh">pwsh</option>
-          </select>
+            options={[
+              { value: "bash", label: "bash" },
+              { value: "zsh", label: "zsh" },
+              { value: "sh", label: "sh" },
+              { value: "pwsh", label: "pwsh" },
+            ]}
+            onChange={setShellProfile}
+            menuPosition="bottom"
+          />
           <span class="terminal-owner-badge" data-owner={sessions().find((item) => item.id === activeID())?.inputOwner ?? "model"}>
             {sessions().find((item) => item.id === activeID())?.inputOwner === "human" ? "人工控制" : "模型控制"}
           </span>
