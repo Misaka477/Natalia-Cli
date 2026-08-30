@@ -130,6 +130,9 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
   });
+  mainWindow.webContents.once("did-finish-load", () => {
+    setTimeout(() => mainWindow?.show(), 300);
+  });
 
   const webDist = path.resolve(__dirname, "../../apps/web/dist/index.html");
   mainWindow.loadFile(webDist);
@@ -297,9 +300,7 @@ function startBrowserBridge() {
 // Force X11/XWayland on Linux so IME works consistently under niri.
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("ozone-platform", "x11");
-  app.commandLine.appendSwitch("disable-gpu");
 }
-app.disableHardwareAcceleration();
 
 app.whenReady().then(() => {
   createMainWindow();
