@@ -1,9 +1,7 @@
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
-use tauri::{
-    Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
-};
+use tauri::{Emitter, Manager, WebviewUrl};
 
 #[derive(Clone, serde::Deserialize)]
 struct BrowserRect {
