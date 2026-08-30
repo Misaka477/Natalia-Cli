@@ -13,6 +13,7 @@ function getTauriGlobal(): TauriGlobal | undefined {
 
 type ElectronGlobal = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  on<T>(channel: string, listener: (payload: T) => void): () => void;
 };
 
 function getElectronGlobal(): ElectronGlobal | undefined {
@@ -33,6 +34,7 @@ export function BrowserPanel(props: { state: AppState }) {
   const [historyIndex, setHistoryIndex] = createSignal(0);
   let host: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let urlUnlisten: (() => void) | undefined;
   const tauri = getTauriGlobal();
   const electron = getElectronGlobal();
   const desktop = tauri ?? electron;
@@ -64,6 +66,11 @@ export function BrowserPanel(props: { state: AppState }) {
 
   onMount(() => {
     if (!desktop || !host) return;
+    urlUnlisten = electron?.on<{ url: string }>("browser-url-changed", (payload) => {
+      console.log("[browser-panel] url changed", payload.url);
+      setUrl(payload.url);
+      setCurrent(payload.url);
+    });
     const rect = browserRect();
     electron?.log("[browser-panel] show rect", rect, {
       dpr: window.devicePixelRatio,
@@ -86,6 +93,7 @@ export function BrowserPanel(props: { state: AppState }) {
         .invoke("browser_hide")
         .catch((error) => electron?.log("[browser-panel] hide failed", error));
     }
+    urlUnlisten?.();
     resizeObserver?.disconnect();
     window.removeEventListener("resize", syncBrowserWindow);
   });

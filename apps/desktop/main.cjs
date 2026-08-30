@@ -89,8 +89,18 @@ function ensureBrowserView() {
     attached: browserViewAttached,
     url: browserUrl,
   });
+  const sendBrowserUrl = (url) => {
+    mainWindow?.webContents.send("browser-url-changed", { url });
+  };
   browserView.webContents.on("did-start-loading", () => {
     console.log("[desktop] browser did-start-loading", browserUrl);
+  });
+  browserView.webContents.on("did-navigate", (_event, url) => {
+    console.log("[desktop] browser did-navigate", url);
+    sendBrowserUrl(url);
+  });
+  browserView.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) sendBrowserUrl(url);
   });
   browserView.webContents.on("did-finish-load", () => {
     console.log("[desktop] browser BrowserView finished loading", browserUrl);
