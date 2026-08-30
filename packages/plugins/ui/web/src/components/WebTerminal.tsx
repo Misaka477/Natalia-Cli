@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 
 export type WebTerminalApi = {
   clear(): void;
+  reset(): void;
   copy(): Promise<void>;
   paste(): Promise<void>;
   zoomIn(): void;
@@ -269,6 +270,15 @@ export function WebTerminal(props: WebTerminalProps) {
 
   const api: WebTerminalApi = {
     clear: () => term?.clear(),
+    reset: () => {
+      try {
+        term?.reset();
+        term?.clear();
+      } catch {
+        // xterm may be in a weird state; reconnect below
+      }
+      connect();
+    },
     copy: copySelection,
     paste: pasteFromClipboard,
     zoomIn: () => changeFontSize(1),

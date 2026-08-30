@@ -876,6 +876,7 @@ export function TerminalPane(props: {
               {sessions().find((item) => item.id === activeID())?.secureInput ? "结束安全输入" : "安全输入"}
             </button>
           </Show>
+          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.reset()} title="刷新/重连当前终端">刷新</button>
           <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.clear()} title="清空">清空</button>
           <button type="button" class="terminal-toolbar-btn" onClick={() => void activeApi()?.copy()} title="复制">复制</button>
           <button type="button" class="terminal-toolbar-btn" onClick={() => void activeApi()?.paste()} title="粘贴">粘贴</button>
