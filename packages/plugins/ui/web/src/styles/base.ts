@@ -975,6 +975,47 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 
 /* ===== Terminal ===== */
 .terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
+.terminal-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 0;
+  flex-shrink: 0;
+}
+.terminal-toolbar-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 4px 10px;
+  background: var(--neu-bg);
+  color: var(--neu-muted);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+}
+.terminal-toolbar-btn:hover { color: var(--neu-text); }
+.terminal-toolbar-btn:active {
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.terminal-split-stack {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 4px;
+  padding: 4px;
+}
+.terminal-split-cell {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  display: flex;
+}
+.terminal-split-cell[data-active="true"] {
+  border-color: var(--neu-accent);
+}
 .terminal-tabs { display: flex; align-items: center; gap: 6px; padding: 8px 10px 0; flex-shrink: 0; overflow-x: auto; }
 .terminal-tab {
   display: inline-flex;

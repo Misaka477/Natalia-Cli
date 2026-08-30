@@ -260,7 +260,7 @@ export function ReviewPane(props: {
         from: gitFrom(),
         to: gitTo(),
       });
-      if (git) {
+      if (git && git.length) {
         const mapped = git.map(toDiffItem);
         setGitChanges(mapped);
         if (mapped.length) setGitSelected(mapped[0]!.path);
@@ -617,6 +617,23 @@ export function ReviewPane(props: {
   );
 }
 
+const MAX_TERMINALS_PER_SESSION = 8;
+
+type TerminalTab = {
+  id: string;
+  title: string;
+  cells: string[];
+  layout: "vertical" | "horizontal";
+};
+
+function newTerminalID() {
+  return `terminal_${crypto.randomUUID()}`;
+}
+
+function tabTitle(index: number) {
+  return `终端 ${index + 1}`;
+}
+
 export function TerminalPane(props: {
   runtime?: RuntimeClient;
   sessionID?: string;
@@ -624,6 +641,139 @@ export function TerminalPane(props: {
   token?: string;
   active?: boolean;
 } = {}) {
+  const [tabs, setTabs] = createSignal<TerminalTab[]>([]);
+  const [activeID, setActiveID] = createSignal<string>();
+  const [limitError, setLimitError] = createSignal<string>();
+  let loadToken = 0;
+
+  function retitle(next: TerminalTab[]) {
+    return next.map((tab, index) => ({ ...tab, title: tabTitle(index) }));
+  }
+
+  async function loadTabs(sessionID: string) {
+    const token = ++loadToken;
+    const listed = (await props.runtime?.nativeTerminalList?.()) ?? [];
+    if (token !== loadToken) return;
+    const running = listed.filter(
+      (item) =>
+        item.status === "running" &&
+        (!item.sessionID || item.sessionID === sessionID),
+    );
+    if (!running.length) {
+      const id = newTerminalID();
+      setTabs([{ id, title: tabTitle(0), cells: [id], layout: "horizontal" }]);
+      setActiveID(id);
+      setLimitError();
+      return;
+    }
+    const next = retitle(
+      running.map((item) => ({
+        id: item.id,
+        title: "",
+        cells: [item.id],
+        layout: "horizontal" as const,
+      })),
+    );
+    setTabs(next);
+    const current = activeID();
+    setActiveID(
+      current && next.some((tab) => tab.id === current)
+        ? current
+        : next[0]?.id,
+    );
+    setLimitError();
+  }
+
+  createEffect((previous?: string) => {
+    const sessionID = props.sessionID;
+    const runtimeURL = props.runtimeURL;
+    const key = `${sessionID ?? ""}\0${runtimeURL ?? ""}`;
+    if (!sessionID || !runtimeURL) {
+      setTabs([]);
+      setActiveID();
+      setLimitError();
+      return key;
+    }
+    if (previous === key) return key;
+    void loadTabs(sessionID);
+    return key;
+  });
+
+  async function addTab() {
+    if (!props.sessionID) return;
+    if (tabs().length >= MAX_TERMINALS_PER_SESSION) {
+      setLimitError(`每个会话最多 ${MAX_TERMINALS_PER_SESSION} 个终端`);
+      return;
+    }
+    const id = newTerminalID();
+    const next = retitle([
+      ...tabs(),
+      { id, title: "", cells: [id], layout: "horizontal" },
+    ]);
+    setTabs(next);
+    setActiveID(id);
+    setLimitError();
+  }
+
+  function splitActiveTab(direction: "vertical" | "horizontal") {
+    const tab = tabs().find((item) => item.id === activeID());
+    if (!tab) return;
+    const id = newTerminalID();
+    const next = tabs().map((item) =>
+      item.id === tab.id
+        ? {
+            ...item,
+            cells: [...item.cells, id],
+            layout: direction,
+          }
+        : item,
+    );
+    setTabs(next);
+    setActiveID(id);
+    setLimitError();
+  }
+
+  async function closeTab(id: string) {
+    let remaining = tabs().filter((tab) => tab.id !== id);
+    if (!remaining.length) {
+      const nextID = newTerminalID();
+      remaining = [
+        { id: nextID, title: tabTitle(0), cells: [nextID], layout: "horizontal" },
+      ];
+      setTabs(remaining);
+      setActiveID(nextID);
+    } else {
+      setTabs(retitle(remaining));
+      if (activeID() === id || !remaining.some((tab) => tab.cells.includes(activeID() ?? "")))
+        setActiveID(remaining[0]?.cells[0]);
+    }
+    setLimitError();
+    try {
+      await props.runtime?.nativeTerminalStop?.(id);
+    } catch {
+      // already exited
+    }
+  }
+
+  function closeCell(tab: TerminalTab, cellID: string) {
+    const remainingCells = tab.cells.filter((item) => item !== cellID);
+    const next = tabs().map((item) =>
+      item.id === tab.id
+        ? {
+            ...item,
+            cells: remainingCells.length ? remainingCells : [newTerminalID()],
+            layout: "horizontal" as const,
+          }
+        : item,
+    );
+    setTabs(next);
+    if (activeID() === cellID) {
+      const replaced = next.find((item) => item.id === tab.id)!;
+      setActiveID(replaced.cells[0]);
+    }
+    void props.runtime?.nativeTerminalStop?.(cellID).catch(() => undefined);
+  }
+
   return (
     <div class="terminal-pane">
       <Show
@@ -636,12 +786,99 @@ export function TerminalPane(props: {
           </div>
         }
       >
-        <WebTerminal
-          sessionID={props.sessionID!}
-          runtimeURL={props.runtimeURL!}
-          token={props.token}
-          active={props.active}
-        />
+        <div class="terminal-toolbar">
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => splitActiveTab("horizontal")}
+            title="纵向分屏"
+          >
+            分屏↕
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => splitActiveTab("vertical")}
+            title="横向分屏"
+          >
+            分屏↔
+          </button>
+        </div>
+        <div class="terminal-tabs">
+          <For each={tabs()}>
+            {(tab) => (
+              <button
+                type="button"
+                class="terminal-tab"
+                data-active={activeID() === tab.id || tab.cells.includes(activeID() ?? "")}
+                onClick={() => setActiveID(tab.cells[0])}
+              >
+                <span class="terminal-tab-label">{tab.title}</span>
+                <span
+                  class="terminal-tab-close"
+                  role="button"
+                  aria-label={`关闭 ${tab.title}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void closeTab(tab.id);
+                  }}
+                >
+                  ×
+                </span>
+              </button>
+            )}
+          </For>
+          <button
+            type="button"
+            class="terminal-tab-add"
+            title="新建终端"
+            disabled={tabs().length >= MAX_TERMINALS_PER_SESSION}
+            onClick={() => void addTab()}
+          >
+            +
+          </button>
+        </div>
+        <Show when={limitError()}>
+          <div class="terminal-limit-error">{limitError()}</div>
+        </Show>
+        <div class="terminal-xterm-stack">
+          <For each={tabs()}>
+            {(tab) => (
+              <div
+                class="terminal-xterm-host"
+                data-active={tab.cells.includes(activeID() ?? "")}
+                style={{
+                  display: tab.cells.includes(activeID() ?? "") ? "flex" : "none",
+                }}
+              >
+                <div
+                  class="terminal-split-stack"
+                  style={{
+                    flexDirection: tab.layout === "vertical" ? "row" : "column",
+                  }}
+                >
+                  <For each={tab.cells}>
+                    {(cellID) => (
+                      <div
+                        class="terminal-split-cell"
+                        data-active={activeID() === cellID}
+                        onClick={() => setActiveID(cellID)}
+                      >
+                        <WebTerminal
+                          sessionID={props.sessionID!}
+                          terminalID={cellID}
+                          runtimeURL={props.runtimeURL!}
+                          token={props.token}
+                          active={props.active && activeID() === cellID}
+                        />
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
       </Show>
     </div>
   );
