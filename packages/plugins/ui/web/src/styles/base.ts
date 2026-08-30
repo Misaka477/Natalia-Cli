@@ -1238,6 +1238,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   outline: none;
 }
 .browser-frame { flex: 1; min-height: 0; width: 100%; border: none; background: white; }
+.browser-webview-host { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--neu-bg-light); }
 .browser-load-btn {
   border: none;
   border-radius: 8px;

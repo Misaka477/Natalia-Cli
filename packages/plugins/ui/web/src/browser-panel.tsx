@@ -1,11 +1,72 @@
-import { createSignal, createEffect, Show } from "solid-js";
+import { createSignal, createEffect, Show, onMount, onCleanup } from "solid-js";
 import type { AppState } from "@natalia/view-store";
+
+type TauriGlobal = {
+  core: {
+    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  };
+};
+
+function getTauriGlobal(): TauriGlobal | undefined {
+  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
+}
+
+type BrowserRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 export function BrowserPanel(props: { state: AppState }) {
   const [url, setUrl] = createSignal("https://example.com");
   const [current, setCurrent] = createSignal("https://example.com");
   const [history, setHistory] = createSignal<string[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(0);
+  let host: HTMLDivElement | undefined;
+  let resizeObserver: ResizeObserver | undefined;
+  const tauri = getTauriGlobal();
+
+  function browserRect(): BrowserRect | undefined {
+    if (!host) return undefined;
+    const rect = host.getBoundingClientRect();
+    return {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  function syncBrowserWindow() {
+    if (!tauri) return;
+    const rect = browserRect();
+    if (!rect) return;
+    void tauri.core
+      .invoke("browser_move", { rect })
+      .catch((error) => console.error("[browser-panel] move failed", error));
+  }
+
+  onMount(() => {
+    if (!tauri || !host) return;
+    const rect = browserRect();
+    if (rect) {
+      void tauri.core
+        .invoke("browser_show", { rect })
+        .catch((error) => console.error("[browser-panel] show failed", error));
+    }
+    resizeObserver = new ResizeObserver(() => syncBrowserWindow());
+    resizeObserver.observe(host);
+  });
+
+  onCleanup(() => {
+    if (tauri) {
+      void tauri.core
+        .invoke("browser_hide")
+        .catch((error) => console.error("[browser-panel] hide failed", error));
+    }
+    resizeObserver?.disconnect();
+  });
 
   function load(next: string) {
     let normalized = next.trim();
@@ -18,6 +79,11 @@ export function BrowserPanel(props: { state: AppState }) {
     setHistoryIndex(before.length - 1);
     setUrl(normalized);
     setCurrent(normalized);
+    if (tauri) {
+      void tauri.core
+        .invoke("browser_navigate", { url: normalized })
+        .catch((error) => console.error("[browser-panel] navigate failed", error));
+    }
   }
 
   let lastHandledTool = "";
@@ -62,6 +128,11 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
+    if (tauri) {
+      void tauri.core
+        .invoke("browser_navigate", { url: target })
+        .catch((error) => console.error("[browser-panel] navigate failed", error));
+    }
   }
 
   function forward() {
@@ -71,6 +142,11 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
+    if (tauri) {
+      void tauri.core
+        .invoke("browser_navigate", { url: target })
+        .catch((error) => console.error("[browser-panel] navigate failed", error));
+    }
   }
 
   return (
@@ -91,13 +167,17 @@ export function BrowserPanel(props: { state: AppState }) {
           />
         </form>
       </div>
-      <iframe
-        class="browser-frame"
-        src={current()}
-        title="Natalia Browser"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-        loading="lazy"
-      />
+      <div class="browser-webview-host" ref={host}>
+        <Show when={!tauri}>
+          <iframe
+            class="browser-frame"
+            src={current()}
+            title="Natalia Browser"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            loading="lazy"
+          />
+        </Show>
+      </div>
     </div>
   );
 }

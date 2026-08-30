@@ -1,11 +1,23 @@
 use futures_util::StreamExt;
 use serde_json::Value;
-use tauri::{Emitter, Manager};
+use std::sync::{Arc, Mutex};
+use tauri::{
+    Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
+};
+
+#[derive(Clone, serde::Deserialize)]
+struct BrowserRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
 
 #[derive(Clone)]
 struct AppState {
     runtime_url: String,
     token: Option<String>,
+    browser_url: Arc<Mutex<String>>,
 }
 
 /// Forward one JSON-RPC call to the local Natalia runtime.
@@ -125,6 +137,111 @@ async fn terminal_output_subscribe(
     Ok(())
 }
 
+fn current_browser_url(state: &AppState) -> String {
+    state.browser_url.lock().unwrap().clone()
+}
+
+fn set_browser_url(state: &AppState, url: String) {
+    *state.browser_url.lock().unwrap() = url;
+}
+
+fn get_browser_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window("browser-webview")
+}
+
+fn create_browser_window(
+    app: &tauri::AppHandle,
+    url: String,
+) -> Result<tauri::WebviewWindow, String> {
+    let parsed = url
+        .parse::<tauri::Url>()
+        .map_err(|error| format!("invalid browser URL: {error}"))?;
+    eprintln!("[natalia-desktop] create browser webview {url}");
+    tauri::WebviewWindowBuilder::new(app, "browser-webview", WebviewUrl::External(parsed))
+        .title("Natalia Browser")
+        .decorations(false)
+        .visible(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .build()
+        .map_err(|error| format!("failed to create browser webview: {error}"))
+}
+
+#[tauri::command]
+fn browser_show(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    rect: BrowserRect,
+) -> Result<(), String> {
+    let url = current_browser_url(&state);
+    let window = match get_browser_window(&app) {
+        Some(window) => window,
+        None => create_browser_window(&app, url)?,
+    };
+    eprintln!(
+        "[natalia-desktop] browser_show rect=({},{},{},{})",
+        rect.x, rect.y, rect.width, rect.height
+    );
+    window
+        .set_position(tauri::LogicalPosition::new(rect.x, rect.y))
+        .map_err(|error| format!("browser position failed: {error}"))?;
+    window
+        .set_size(tauri::LogicalSize::new(rect.width, rect.height))
+        .map_err(|error| format!("browser size failed: {error}"))?;
+    window
+        .show()
+        .map_err(|error| format!("browser show failed: {error}"))
+}
+
+#[tauri::command]
+fn browser_move(
+    app: tauri::AppHandle,
+    rect: BrowserRect,
+) -> Result<(), String> {
+    let window = get_browser_window(&app)
+        .ok_or_else(|| "browser webview is not open".to_string())?;
+    eprintln!(
+        "[natalia-desktop] browser_move rect=({},{},{},{})",
+        rect.x, rect.y, rect.width, rect.height
+    );
+    window
+        .set_position(tauri::LogicalPosition::new(rect.x, rect.y))
+        .map_err(|error| format!("browser position failed: {error}"))?;
+    window
+        .set_size(tauri::LogicalSize::new(rect.width, rect.height))
+        .map_err(|error| format!("browser size failed: {error}"))
+}
+
+#[tauri::command]
+fn browser_hide(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = get_browser_window(&app) {
+        window
+            .hide()
+            .map_err(|error| format!("browser hide failed: {error}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn browser_navigate(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<(), String> {
+    set_browser_url(&state, url.clone());
+    let parsed = url
+        .parse::<tauri::Url>()
+        .map_err(|error| format!("invalid browser URL: {error}"))?;
+    if let Some(window) = get_browser_window(&app) {
+        window
+            .navigate(parsed)
+            .map_err(|error| format!("browser navigate failed: {error}"))
+    } else {
+        let _ = create_browser_window(&app, url)?;
+        Ok(())
+    }
+}
+
 /// Keep a long-lived /events SSE connection open and re-emit each runtime event
 /// as a Tauri event so the desktop UI never needs to know about HTTP/SSE.
 async fn stream_runtime_events(
@@ -195,8 +312,19 @@ pub fn run() {
     let token = std::env::var("NATALIA_TRANSPORT_TOKEN").ok();
 
     tauri::Builder::default()
-        .manage(AppState { runtime_url: runtime_url.clone(), token })
-        .invoke_handler(tauri::generate_handler![runtime_call, terminal_output_subscribe])
+        .manage(AppState {
+            runtime_url: runtime_url.clone(),
+            token,
+            browser_url: Arc::new(Mutex::new("https://example.com".to_string())),
+        })
+        .invoke_handler(tauri::generate_handler![
+            runtime_call,
+            terminal_output_subscribe,
+            browser_show,
+            browser_move,
+            browser_hide,
+            browser_navigate
+        ])
         .setup(move |app| {
             let handle = app.handle().clone();
             let state = app.state::<AppState>();
