@@ -4,6 +4,27 @@ import type { RuntimeClient, RuntimeDiagnostic, RuntimeStatusSnapshot } from "@n
 
 type Tab = "status" | "diagnostics" | "tools";
 
+function shortToolLabel(tool: ToolBlock): string {
+  const raw = tool.argumentsRaw || "";
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const candidate =
+      typeof parsed.path === "string"
+        ? parsed.path
+        : typeof parsed.text === "string"
+          ? parsed.text
+          : typeof parsed.command === "string"
+            ? parsed.command
+            : Array.isArray(parsed.items) || Array.isArray(parsed.todos)
+              ? `${(parsed.items ?? parsed.todos).length} items`
+              : JSON.stringify(parsed);
+    return candidate.length > 96 ? `${candidate.slice(0, 96)}…` : candidate;
+  } catch {
+    const fallback = raw || tool.summary || "";
+    return fallback.length > 96 ? `${fallback.slice(0, 96)}…` : fallback;
+  }
+}
+
 export function StatusPanel(props: {
   open: boolean;
   onClose: () => void;
@@ -13,6 +34,7 @@ export function StatusPanel(props: {
   const [tab, setTab] = createSignal<Tab>("status");
   const [statusData, setStatusData] = createSignal<RuntimeStatusSnapshot | undefined>();
   const [diagRows, setDiagRows] = createSignal<RuntimeDiagnostic[]>([]);
+  const [expandedTool, setExpandedTool] = createSignal<string | undefined>(undefined);
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -122,12 +144,30 @@ export function StatusPanel(props: {
             <Show when={tab() === "tools"}>
               <div class="neu-status-tools">
                 <div class="neu-status-section-title">工具</div>
-                <For each={Object.values(props.state.tools)}>
+                <For each={Object.values(props.state.tools).slice(-60)}>
                   {(tool: ToolBlock) => (
-                    <div class="neu-status-tool-row">
-                      <span class="neu-status-tool-name">{tool.name}</span>
-                      <span class="neu-status-tool-description">{tool.summary}</span>
-                      <span class="neu-status-tool-status">{tool.status}</span>
+                    <div>
+                      <button
+                        type="button"
+                        class="neu-status-tool-row"
+                        data-active={expandedTool() === tool.name + tool.callID}
+                        onClick={() =>
+                          setExpandedTool((value) =>
+                            value === tool.name + tool.callID
+                              ? undefined
+                              : tool.name + tool.callID,
+                          )
+                        }
+                      >
+                        <span class="neu-status-tool-name">{tool.name}</span>
+                        <span class="neu-status-tool-description">{shortToolLabel(tool)}</span>
+                        <span class="neu-status-tool-status">{tool.status}</span>
+                      </button>
+                      <Show when={expandedTool() === tool.name + tool.callID}>
+                        <pre class="neu-status-tool-detail">
+                          {tool.result ?? tool.summary ?? tool.argumentsRaw}
+                        </pre>
+                      </Show>
                     </div>
                   )}
                 </For>
