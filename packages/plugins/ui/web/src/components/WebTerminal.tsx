@@ -8,6 +8,33 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 
+type TauriGlobal = {
+  core: {
+    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  };
+  event: {
+    listen<T>(
+      event: string,
+      handler: (event: { payload: T }) => void,
+    ): Promise<() => void>;
+  };
+};
+
+function getTauriGlobal(): TauriGlobal | undefined {
+  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
+}
+
+async function callRuntime<T = unknown>(
+  tauri: TauriGlobal,
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<T> {
+  return await tauri.core.invoke<T>("runtime_call", {
+    method,
+    params: params ?? {},
+  });
+}
+
 export type WebTerminalApi = {
   clear(): void;
   findNext(query: string): boolean;
@@ -66,6 +93,7 @@ export function WebTerminal(props: WebTerminalProps) {
   let closed = false;
   let lastError: string | undefined;
   let fatal = false;
+  const tauri = getTauriGlobal();
 
   function theme() {
     const styles = getComputedStyle(document.documentElement);
@@ -224,10 +252,29 @@ export function WebTerminal(props: WebTerminalProps) {
     term.open(host);
     fit.fit();
     term.onData((data) => {
+      if (tauri) {
+        void callRuntime(tauri, "nativeTerminal.write", {
+          id: props.terminalID,
+          input: data,
+        }).catch((error) => {
+          console.error("[web-terminal] write failed", error);
+        });
+        return;
+      }
       if (socket?.readyState === WebSocket.OPEN)
         socket.send(JSON.stringify({ type: "input", data }));
     });
     term.onResize(({ cols, rows }) => {
+      if (tauri) {
+        void callRuntime(tauri, "nativeTerminal.resize", {
+          id: props.terminalID,
+          rows,
+          cols,
+        }).catch((error) => {
+          console.error("[web-terminal] resize failed", error);
+        });
+        return;
+      }
       if (socket?.readyState === WebSocket.OPEN)
         socket.send(JSON.stringify({ type: "resize", rows, cols }));
     });
