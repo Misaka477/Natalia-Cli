@@ -8,6 +8,7 @@ import type {
   RuntimeModelSelection,
   RuntimeReasoningEffort,
   RuntimeHistory,
+  RuntimeHistoryEvent,
   RuntimeSessionSummary,
   RuntimeWorkspaceMatch,
   RuntimeWorkspaceListPage,
@@ -299,13 +300,25 @@ export function createWebRuntimeClient(
   const starts: Array<(event: RuntimeEvent) => void> = [];
   let started = false;
 
-  async function replayHistory(total?: number) {
+  const historyCache = new Map<string, RuntimeHistoryEvent[]>();
+  const HISTORY_CACHE_LIMIT = 3;
+
+  async function replayHistory(sessionID?: string, total?: number) {
     const replayGlobal = globalThis as unknown as {
       __nataliaReplayingHistory?: boolean;
     };
     replayGlobal.__nataliaReplayingHistory = true;
     try {
       if (total && total > 0) {
+        // Fast path: we already fetched this session recently and the event
+        // count has not grown, so replay the cached events instead of issuing
+        // another batch of RPCs.
+        const cached = sessionID ? historyCache.get(sessionID) : undefined;
+        if (cached && cached.length >= total) {
+          for (const entry of cached)
+            for (const listener of starts) listener(entry.event);
+          return;
+        }
         // If the session list told us the event count, fetch all pages in
         // parallel instead of walking one after another. This turns N serial
         // RPC round-trips into a single parallel batch.
@@ -325,6 +338,14 @@ export function createWebRuntimeClient(
           );
           for (let index = 0; index < batch.length; index++)
             pageResults[start + index] = batch[index]!;
+        }
+        if (sessionID) {
+          const entries = pageResults.flatMap((page) => page.events);
+          if (historyCache.size >= HISTORY_CACHE_LIMIT) {
+            const oldest = historyCache.keys().next().value;
+            if (oldest !== undefined) historyCache.delete(oldest);
+          }
+          historyCache.set(sessionID, entries);
         }
         for (const page of pageResults) {
           for (const entry of page.events)
@@ -394,7 +415,7 @@ export function createWebRuntimeClient(
     // Replay the full durable session so a reloaded page sees previous
     // messages. If the session list gave us the event count, fetch all pages in
     // parallel; otherwise fall back to the sequential after-cursor walk.
-    await replayHistory(newest?.events);
+    await replayHistory(newest?.id, newest?.events);
 
     const decoder = new TextDecoder();
     let buffer = "";
@@ -517,7 +538,7 @@ export function createWebRuntimeClient(
       } catch {
         total = undefined;
       }
-      await replayHistory(total);
+      await replayHistory(id, total);
       return result as never;
     },
     async sessionDuplicate(id, title) {

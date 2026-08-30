@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { API_VERSION } from "@natalia/contracts";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { credentialSessions, handleRPCMessage, RPC_WRITE_METHODS } from "./rpc";
@@ -555,13 +556,13 @@ export function createRuntimeHttpServer(
     try {
       body = await request.json();
     } catch {
-      return Response.json(
+      return rpcJsonResponse(
         {
           jsonrpc: "2.0",
           id: null,
           error: { code: -32700, message: "Parse error" },
         },
-        { status: 400 },
+        400,
       );
     }
     // P0-H: the terminal write surface is gated here, at the deployment layer,
@@ -571,6 +572,25 @@ export function createRuntimeHttpServer(
     // without write scope is left to the authorization layer ("no write
     // scope"): the gate answers only for callers who would otherwise get
     // through.
+    const rpcJsonResponse = (payload: unknown, status = 200) => {
+      const acceptsGzip =
+        request.headers.get("accept-encoding")?.includes("gzip") ?? false;
+      const json = JSON.stringify(payload);
+      if (acceptsGzip)
+        return new Response(gzipSync(json), {
+          status,
+          headers: {
+            "content-type": "application/json",
+            "content-encoding": "gzip",
+            "vary": "accept-encoding",
+          },
+        });
+      return new Response(json, {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
     const method = (body as { method?: unknown })?.method;
     console.log(
       "[web-server] rpc",
@@ -585,7 +605,7 @@ export function createRuntimeHttpServer(
       !options.terminalWrite &&
       authorization?.write !== false
     ) {
-      return Response.json(
+      return rpcJsonResponse(
         {
           jsonrpc: "2.0",
           id: (body as { id?: unknown })?.id ?? null,
@@ -598,7 +618,7 @@ export function createRuntimeHttpServer(
             },
           },
         },
-        { status: 400 },
+        400,
       );
     }
     const result = await handleRPCMessage(
@@ -612,8 +632,8 @@ export function createRuntimeHttpServer(
       String(method ?? "unknown"),
       result?.error ?? "ok",
     );
-    if (result.error) return Response.json(result, { status: 400 });
-    return Response.json(result);
+    if (result.error) return rpcJsonResponse(result, 400);
+    return rpcJsonResponse(result);
   };
 
   function corsHeaders(request: Request) {
