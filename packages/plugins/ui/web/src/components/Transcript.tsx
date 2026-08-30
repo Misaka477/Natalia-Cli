@@ -20,12 +20,38 @@ export interface TranscriptProps {
   onLoadOlder?: () => void;
 }
 
+const ROW_ESTIMATE = 82;
+const OVERSCAN = 8;
+
 export function Transcript(props: TranscriptProps) {
+  const [scrollTop, setScrollTop] = createSignal(0);
+  const [viewportHeight, setViewportHeight] = createSignal(600);
+  let container: HTMLDivElement | undefined;
+
+  onMount(() => {
+    if (container) setViewportHeight(container.clientHeight || 600);
+  });
+
+  const startIndex = () =>
+    Math.max(0, Math.floor(scrollTop() / ROW_ESTIMATE) - OVERSCAN);
+  const endIndex = () =>
+    Math.min(
+      props.messages.length,
+      Math.ceil((scrollTop() + viewportHeight()) / ROW_ESTIMATE) + OVERSCAN,
+    );
+  const visible = () => props.messages.slice(startIndex(), endIndex());
+
   return (
     <div
       class="natalia-transcript"
-      ref={props.scrollRef}
-      onScroll={props.onScroll}
+      ref={(el) => {
+        container = el;
+        props.scrollRef?.(el);
+      }}
+      onScroll={(event) => {
+        props.onScroll?.(event);
+        setScrollTop(event.currentTarget.scrollTop);
+      }}
     >
       <Show when={props.loadOlderAvailable && props.onLoadOlder}>
         <button
@@ -43,7 +69,7 @@ export function Transcript(props: TranscriptProps) {
             <div class="natalia-transcript-empty-icon">
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
                 <path
-                  d="M20 5C14.4772 5 10 9.47715 10 15V22C10 24.2091 8.20914 26 6 26H5C3.89543 26 3 26.8954 3 28V30C3 31.1046 3.89543 32 5 32H35C36.1046 32 37 31.1046 37 30V28C37 26.8954 36.1046 26 35 26H34C31.7909 26 30 24.2091 30 22V15C30 9.47715 25.5228 5 20 5Z"
+                  d="M20 5C14.4772 5 10 9.47715 10 15V22C10 24.2091 8.20914 26 6 26H5C3.89543 26 3 26.8954 3 28V30C3 31.1046 3.89543 32 5 32H35C36.1046 32 37 31.1046 37 30V28C37 26.8954 36.1046 26 35 26H34C31.7909 26 30 24.2091 30 22V15C30 9.47715 25.5225 5 20 5Z"
                   stroke="currentColor"
                   stroke-width="1.5"
                   stroke-linecap="round"
@@ -59,7 +85,8 @@ export function Transcript(props: TranscriptProps) {
           </div>
         }
       >
-        <For each={props.messages}>
+        <div style={{ height: `${startIndex() * ROW_ESTIMATE}px` }} />
+        <For each={visible()}>
           {(message) => (
             <MessageRow
               message={message}
@@ -68,6 +95,11 @@ export function Transcript(props: TranscriptProps) {
             />
           )}
         </For>
+        <div
+          style={{
+            height: `${Math.max(0, (props.messages.length - endIndex()) * ROW_ESTIMATE)}px`,
+          }}
+        />
       </Show>
     </div>
   );
