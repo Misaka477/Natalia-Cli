@@ -10,6 +10,8 @@ function formatToolDetail(tool: ToolBlock): string {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const parts: string[] = [];
+      if (typeof parsed.id === "string") parts.push(`id: ${parsed.id}`);
+      if (typeof parsed.terminalID === "string") parts.push(`terminal: ${parsed.terminalID}`);
       if (typeof parsed.writtenBytes === "number")
         parts.push(`写入 ${parsed.writtenBytes} 字节`);
       if (typeof parsed.delivery === "string")
@@ -193,9 +195,14 @@ export function StatusPanel(props: {
                         <span class="neu-status-tool-status">{tool.status}</span>
                       </button>
                       <Show when={expandedTool() === tool.name + tool.callID}>
-                        <pre class="neu-status-tool-detail">
-                          {formatToolDetail(tool)}
-                        </pre>
+                        <div class="neu-status-tool-detail">
+                          <div class="neu-status-tool-detail-summary">
+                            {formatToolDetail(tool)}
+                          </div>
+                          <pre class="neu-status-tool-detail-raw">
+                            {tool.result ?? tool.summary ?? tool.argumentsRaw ?? ""}
+                          </pre>
+                        </div>
                       </Show>
                     </div>
                   )}

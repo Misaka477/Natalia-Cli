@@ -1936,6 +1936,31 @@ button.neu-settings-item.neu-settings-item-button:active {
   font-size: 10px;
   flex-shrink: 0;
 }
+.neu-status-tool-detail {
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--neu-bg-light);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-status-tool-detail-summary {
+  font-size: 12px;
+  color: var(--neu-text);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.neu-status-tool-detail-raw {
+  margin: 8px 0 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--neu-bg);
+  font-size: 11px;
+  color: var(--neu-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .neu-status-tool-name,
 .neu-status-cap-name {
   width: 100px;
