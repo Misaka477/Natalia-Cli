@@ -644,6 +644,9 @@ export function TerminalPane(props: {
 } = {}) {
   const [tabs, setTabs] = createSignal<TerminalTab[]>([]);
   const [activeID, setActiveID] = createSignal<string>();
+  const tauri =
+    typeof window !== "undefined" &&
+    Boolean((window as { __TAURI__?: unknown }).__TAURI__);
   const [limitError, setLimitError] = createSignal<string>();
   const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
   const [shellProfile, setShellProfile] = createSignal("bash");
@@ -695,7 +698,7 @@ export function TerminalPane(props: {
     const sessionID = props.sessionID;
     const runtimeURL = props.runtimeURL;
     const key = `${sessionID ?? ""}\0${runtimeURL ?? ""}`;
-    if (!sessionID || !runtimeURL) {
+    if (!sessionID || (!runtimeURL && !tauri)) {
       setTabs([]);
       setActiveID();
       setLimitError();
@@ -826,7 +829,7 @@ export function TerminalPane(props: {
   return (
     <div class="terminal-pane">
       <Show
-        when={props.sessionID && props.runtimeURL}
+        when={props.sessionID && (props.runtimeURL || tauri)}
         fallback={
           <div class="terminal-output">
             <div class="terminal-line terminal-line-header">
@@ -980,7 +983,7 @@ export function TerminalPane(props: {
                         <WebTerminal
                           sessionID={props.sessionID!}
                           terminalID={cellID}
-                          runtimeURL={props.runtimeURL!}
+                          runtimeURL={props.runtimeURL ?? ""}
                           token={props.token}
                           active={props.active && activeID() === cellID}
                           command={shellProfile()}

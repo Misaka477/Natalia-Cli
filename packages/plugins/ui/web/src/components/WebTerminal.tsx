@@ -230,7 +230,7 @@ export function WebTerminal(props: WebTerminalProps) {
       fatal ||
       !props.sessionID ||
       !props.terminalID ||
-      !props.runtimeURL
+      (!props.runtimeURL && !tauri)
     )
       return;
     if (tauri) {
