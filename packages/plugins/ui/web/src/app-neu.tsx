@@ -1419,7 +1419,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 />
               </Show>
               <Show when={rightTab() === "browser" && browserPanel()}>
-                <BrowserPanel />
+                <BrowserPanel state={state()} />
               </Show>
             </div>
           </aside>

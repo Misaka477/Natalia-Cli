@@ -1,6 +1,7 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, createEffect, Show } from "solid-js";
+import type { AppState } from "@natalia/view-store";
 
-export function BrowserPanel() {
+export function BrowserPanel(props: { state: AppState }) {
   const [url, setUrl] = createSignal("https://example.com");
   const [current, setCurrent] = createSignal("https://example.com");
   const [history, setHistory] = createSignal<string[]>([]);
@@ -18,6 +19,31 @@ export function BrowserPanel() {
     setUrl(normalized);
     setCurrent(normalized);
   }
+
+  // Watch model browser tools and reflect their targets in the UI panel.
+  createEffect(() => {
+    const tools = props.state.tools ?? {};
+    const entries = Object.values(tools);
+    const browserTool = [...entries]
+      .reverse()
+      .find((tool) =>
+        ["browser_visit", "browser_screenshot", "web_fetch"].includes(tool.name),
+      );
+    if (!browserTool || browserTool.status === "failed") return;
+    const raw = browserTool.argumentsRaw || "";
+    try {
+      const args = JSON.parse(raw) as Record<string, unknown>;
+      const target =
+        typeof args.url === "string"
+          ? args.url
+          : typeof args.src === "string"
+            ? args.src
+            : undefined;
+      if (target) navigate(target);
+    } catch {
+      // argument text may be partial; ignore
+    }
+  });
 
   function back() {
     const idx = historyIndex() - 1;
