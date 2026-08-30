@@ -997,6 +997,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => window.removeEventListener("resize", updateLayout));
   });
 
+  const nataliaVisible = () => layoutMode() !== "tiny" || !naviOpen();
   const naviVisible = () =>
     layoutMode() === "wide" ||
     (layoutMode() === "compact" && !leftVisible() && !rightVisible()) ||
@@ -1210,6 +1211,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       {/* Middle dual agent panes */}
       <section class="neu-main">
         <div class="neu-main-panes">
+          <Show when={nataliaVisible()}>
           <div class="neu-pane">
             <div class="neu-pane-header">
               <span class="neu-pane-title">Natalia</span>
@@ -1294,8 +1296,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               />
             </div>
           </div>
+          </Show>
 
+          <Show when={layoutMode() !== "tiny"}>
           <div class="neu-pane-divider" />
+          </Show>
 
           <Show when={naviVisible()}>
           <div class="neu-pane">
