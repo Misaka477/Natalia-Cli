@@ -35,6 +35,11 @@ function formatToolDetail(tool: ToolBlock): string {
   return raw.length > 2000 ? `${raw.slice(0, 2000)}\n…` : raw;
 }
 
+function needsRawDetail(tool: ToolBlock): boolean {
+  const raw = tool.result ?? tool.summary ?? tool.argumentsRaw ?? "";
+  return formatToolDetail(tool).trim() !== raw.trim();
+}
+
 function shortToolLabel(tool: ToolBlock): string {
   const raw = tool.argumentsRaw || "";
   try {
@@ -199,9 +204,11 @@ export function StatusPanel(props: {
                           <div class="neu-status-tool-detail-summary">
                             {formatToolDetail(tool)}
                           </div>
-                          <pre class="neu-status-tool-detail-raw">
-                            {tool.result ?? tool.summary ?? tool.argumentsRaw ?? ""}
-                          </pre>
+                          <Show when={needsRawDetail(tool)}>
+                            <pre class="neu-status-tool-detail-raw">
+                              {tool.result ?? tool.summary ?? tool.argumentsRaw ?? ""}
+                            </pre>
+                          </Show>
                         </div>
                       </Show>
                     </div>
