@@ -240,6 +240,61 @@ fn browser_navigate(
     }
 }
 
+fn eval_browser_js(window: &tauri::WebviewWindow, js: String) -> Result<String, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    window
+        .eval_with_callback(js, move |result| {
+            let _ = tx.send(result);
+        })
+        .map_err(|error| format!("browser eval failed: {error}"))?;
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .map_err(|_| "browser eval timed out".to_string())
+}
+
+#[tauri::command]
+fn browser_read_dom(app: tauri::AppHandle) -> Result<String, String> {
+    let window = get_browser_window(&app)
+        .ok_or_else(|| "browser webview is not open".to_string())?;
+    eprintln!("[natalia-desktop] browser_read_dom");
+    eval_browser_js(
+        &window,
+        "JSON.stringify(document.documentElement.outerHTML)".to_string(),
+    )
+}
+
+#[tauri::command]
+fn browser_click(app: tauri::AppHandle, x: f64, y: f64) -> Result<String, String> {
+    let window = get_browser_window(&app)
+        .ok_or_else(|| "browser webview is not open".to_string())?;
+    eprintln!("[natalia-desktop] browser_click ({x},{y})");
+    let js = format!(
+        "JSON.stringify((()=>{{const e=document.elementFromPoint({x},{y}); if(e){{e.click(); return 'ok';}} return 'no_element';}})())"
+    );
+    eval_browser_js(&window, js)
+}
+
+#[tauri::command]
+fn browser_input(app: tauri::AppHandle, text: String) -> Result<String, String> {
+    let window = get_browser_window(&app)
+        .ok_or_else(|| "browser webview is not open".to_string())?;
+    eprintln!("[natalia-desktop] browser_input text_len={}", text.len());
+    let payload = serde_json::to_string(&text).unwrap_or_else(|_| "\"\"".to_string());
+    let js = format!(
+        "JSON.stringify((()=>{{const el=document.activeElement; if(!el)return 'no_active'; if(el.value!==undefined)el.value={payload}; el.dispatchEvent(new Event('input',{{bubbles:true}})); return 'ok';}})())"
+    );
+    eval_browser_js(&window, js)
+}
+
+#[tauri::command]
+fn browser_screenshot(app: tauri::AppHandle) -> Result<String, String> {
+    let _window = get_browser_window(&app)
+        .ok_or_else(|| "browser webview is not open".to_string())?;
+    // The remote WebView cannot be read back through the Tauri webview API
+    // directly. This command is a placeholder for platform screenshot work.
+    eprintln!("[natalia-desktop] browser_screenshot requested");
+    Err("browser_screenshot is not implemented yet in the Tauri host".to_string())
+}
+
 /// Keep a long-lived /events SSE connection open and re-emit each runtime event
 /// as a Tauri event so the desktop UI never needs to know about HTTP/SSE.
 async fn stream_runtime_events(
@@ -321,7 +376,11 @@ pub fn run() {
             browser_show,
             browser_move,
             browser_hide,
-            browser_navigate
+            browser_navigate,
+            browser_read_dom,
+            browser_click,
+            browser_input,
+            browser_screenshot
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
