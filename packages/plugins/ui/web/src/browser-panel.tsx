@@ -20,7 +20,11 @@ export function BrowserPanel(props: { state: AppState }) {
     setCurrent(normalized);
   }
 
+  let lastHandledTool = "";
+
   // Watch model browser tools and reflect their targets in the UI panel.
+  // Only handle each tool call once, so unrelated state updates do not keep
+  // reloading the iframe in a loop.
   createEffect(() => {
     const tools = props.state.tools ?? {};
     const entries = Object.values(tools);
@@ -30,6 +34,9 @@ export function BrowserPanel(props: { state: AppState }) {
         ["browser_visit", "browser_screenshot", "web_fetch"].includes(tool.name),
       );
     if (!browserTool || browserTool.status === "failed") return;
+    const key = `${browserTool.name}:${browserTool.callID ?? ""}:${browserTool.status}`;
+    if (key === lastHandledTool) return;
+    lastHandledTool = key;
     const raw = browserTool.argumentsRaw || "";
     try {
       const args = JSON.parse(raw) as Record<string, unknown>;
