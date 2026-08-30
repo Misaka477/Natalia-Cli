@@ -1225,6 +1225,17 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   outline: none;
 }
 .browser-frame { flex: 1; min-height: 0; width: 100%; border: none; background: white; }
+.browser-load-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: var(--neu-accent);
+  color: var(--neu-on-accent);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+}
+.browser-frame { flex: 1; min-height: 0; width: 100%; border: none; background: white; }
 .browser-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .browser-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--neu-bg); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
 .browser-url-bar { flex: 1; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--neu-bg-light); border-radius: 10px; box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light); }

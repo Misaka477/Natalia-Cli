@@ -4,6 +4,7 @@ import type { AppState } from "@natalia/view-store";
 export function BrowserPanel(props: { state: AppState }) {
   const [url, setUrl] = createSignal("https://example.com");
   const [current, setCurrent] = createSignal("https://example.com");
+  const [pending, setPending] = createSignal<string | undefined>(undefined);
   const [history, setHistory] = createSignal<string[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(0);
 
@@ -18,13 +19,13 @@ export function BrowserPanel(props: { state: AppState }) {
     setHistoryIndex(before.length - 1);
     setUrl(normalized);
     setCurrent(normalized);
+    setPending(undefined);
   }
 
   let lastHandledTool = "";
 
-  // Watch model browser tools and reflect their targets in the UI panel.
-  // Only handle each tool call once, so unrelated state updates do not keep
-  // reloading the iframe in a loop.
+  // Model browser tools only prepare the URL; the iframe is not auto-loaded
+  // to avoid heavy pages freezing the main UI. The human can click load.
   createEffect(() => {
     const tools = props.state.tools ?? {};
     const entries = Object.values(tools);
@@ -46,7 +47,12 @@ export function BrowserPanel(props: { state: AppState }) {
           : typeof args.src === "string"
             ? args.src
             : undefined;
-      if (target) navigate(target);
+      if (target) {
+        let normalized = target.trim();
+        if (!/^https?:\/\//u.test(normalized)) normalized = `https://${normalized}`;
+        setUrl(normalized);
+        setPending(normalized);
+      }
     } catch {
       // argument text may be partial; ignore
     }
@@ -59,6 +65,7 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
+    setPending(undefined);
   }
 
   function forward() {
@@ -68,6 +75,7 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
+    setPending(undefined);
   }
 
   return (
@@ -87,12 +95,18 @@ export function BrowserPanel(props: { state: AppState }) {
             onInput={(event) => setUrl(event.currentTarget.value)}
           />
         </form>
+        <Show when={pending()}>
+          <button type="button" class="browser-load-btn" onClick={() => pending() && navigate(pending())}>
+            加载
+          </button>
+        </Show>
       </div>
       <iframe
         class="browser-frame"
         src={current()}
         title="Natalia Browser"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+        loading="lazy"
       />
     </div>
   );
