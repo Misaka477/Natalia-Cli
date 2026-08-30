@@ -348,6 +348,12 @@ function startBrowserBridge() {
   });
 }
 
+// Electron/Chromium works best on niri with explicit Wayland text-input-v3.
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("ozone-platform", "wayland");
+  app.commandLine.appendSwitch("enable-features", "WaylandTextInputV3");
+}
+
 app.whenReady().then(() => {
   createMainWindow();
   streamRuntimeEvents();
