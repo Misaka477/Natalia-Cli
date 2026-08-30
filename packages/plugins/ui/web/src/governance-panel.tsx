@@ -1,4 +1,5 @@
-import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import { createSignal, createEffect, Show, onCleanup, onMount, For } from "solid-js";
+import type { RuntimeClient } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
 
 type Tab = "constitution" | "decisions" | "evidence" | "drift" | "workgraph";
@@ -41,8 +42,28 @@ export function GovernancePanel(props: {
   open: boolean;
   onClose: () => void;
   state: AppState;
+  runtime?: RuntimeClient;
 }) {
   const [tab, setTab] = createSignal<Tab>("constitution");
+  const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
+  const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
+  const [liveEvidence, setLiveEvidence] = createSignal<any[]>([]);
+  const [liveDrift, setLiveDrift] = createSignal<any[]>([]);
+  const [liveNodes, setLiveNodes] = createSignal<any[]>([]);
+  const [liveEdges, setLiveEdges] = createSignal<any[]>([]);
+
+  const load = async () => {
+    try { setLiveConstitution((await props.runtime?.constitutionRules?.()) ?? []); } catch {}
+    try { setLiveDecisions((await props.runtime?.decisionRecords?.()) ?? []); } catch {}
+    try { setLiveEvidence((await props.runtime?.evidenceRecords?.()) ?? []); } catch {}
+    try { setLiveDrift((await props.runtime?.driftFindings?.()) ?? []); } catch {}
+    try { setLiveNodes((await props.runtime?.workGraphNodes?.()) ?? []); } catch {}
+    try { setLiveEdges((await props.runtime?.workGraphEdges?.()) ?? []); } catch {}
+  };
+
+  createEffect(() => {
+    if (props.open) void load();
+  });
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -83,7 +104,7 @@ export function GovernancePanel(props: {
           </div>
           <div class="neu-governance-content">
             <Show when={tab() === "constitution"}>
-              <For each={Object.values(props.state.constitutionRules)}>
+              <For each={liveConstitution().length ? liveConstitution() : Object.values(props.state.constitutionRules)}>
                 {(rule) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={rule.priority}>{rule.ruleID}</span>
@@ -94,7 +115,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "decisions"}>
-              <For each={props.state.decisions}>
+              <For each={liveDecisions().length ? liveDecisions() : props.state.decisions}>
                 {(record) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={record.status}>{record.status}</span>
@@ -105,7 +126,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "evidence"}>
-              <For each={props.state.evidence}>
+              <For each={liveEvidence().length ? liveEvidence() : props.state.evidence}>
                 {(record) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={record.status}>{record.status}</span>
@@ -116,7 +137,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "drift"}>
-              <For each={driftFindings}>
+              <For each={liveDrift().length ? liveDrift() : driftFindings}>
                 {(finding) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={finding.severity}>{finding.severity} · {Math.round(finding.confidence * 100)}%</span>
@@ -127,7 +148,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "workgraph"}>
-              <For each={Object.values(props.state.workGraphNodes)}>
+              <For each={liveNodes().length ? liveNodes() : Object.values(props.state.workGraphNodes)}>
                 {(node) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title">{node.kind}</span>
@@ -137,7 +158,7 @@ export function GovernancePanel(props: {
                 )}
               </For>
               <div class="neu-gov-section-title">Relations</div>
-              <For each={Object.values(props.state.workGraphEdges)}>
+              <For each={liveEdges().length ? liveEdges() : Object.values(props.state.workGraphEdges)}>
                 {(edge) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title">{edge.kind}</span>

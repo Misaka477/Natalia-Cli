@@ -1520,7 +1520,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }
         onDelete={() => physicallyDeleteSelectedSession()}
       />
-      <GovernancePanel open={governanceOpen()} onClose={() => setGovernanceOpen(false)} state={state()} />
+      <GovernancePanel open={governanceOpen()} onClose={() => setGovernanceOpen(false)} state={state()} runtime={props.ctx.runtime} />
       <SandboxPanel
         open={sandboxOpen()}
         onClose={() => setSandboxOpen(false)}
