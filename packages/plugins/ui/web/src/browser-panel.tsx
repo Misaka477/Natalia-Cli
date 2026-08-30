@@ -1,4 +1,4 @@
-import { createSignal, Show, onMount, onCleanup } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import type { AppState } from "@natalia/view-store";
 
 type ElectronGlobal = {
@@ -7,15 +7,33 @@ type ElectronGlobal = {
 };
 
 type BrowserOwner = "model" | "human" | "shared";
+type ApprovalMode = "ask" | "off";
 
-type BrowserStatus = {
-  url?: string;
+type BrowserTab = {
+  id: string;
+  url: string;
+  title: string;
   loading?: boolean;
   canGoBack?: boolean;
   canGoForward?: boolean;
-  error?: string | null;
   owner?: BrowserOwner;
+  approvalMode?: ApprovalMode;
   secureInput?: boolean;
+  error?: string | null;
+  active?: boolean;
+};
+
+type BrowserApproval = {
+  id: string;
+  tabId: string;
+  action: string;
+  summary: string;
+};
+
+type BrowserStatus = BrowserTab & {
+  tabs?: BrowserTab[];
+  pendingApproval?: BrowserApproval | null;
+  attached?: boolean;
 };
 
 function getElectronGlobal(): ElectronGlobal | undefined {
@@ -44,6 +62,10 @@ export function BrowserPanel(_props: { state: AppState }) {
   const [error, setError] = createSignal<string | null>(null);
   const [owner, setOwner] = createSignal<BrowserOwner>("shared");
   const [secureInput, setSecureInput] = createSignal(false);
+  const [approvalMode, setApprovalMode] = createSignal<ApprovalMode>("ask");
+  const [tabs, setTabs] = createSignal<BrowserTab[]>([]);
+  const [activeId, setActiveId] = createSignal("");
+  const [pending, setPending] = createSignal<BrowserApproval | null>(null);
   let host: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let urlUnlisten: (() => void) | undefined;
@@ -52,7 +74,7 @@ export function BrowserPanel(_props: { state: AppState }) {
   const desktop = electron;
 
   function applyStatus(payload: BrowserStatus) {
-    if (typeof payload.url === "string" && payload.url) {
+    if (typeof payload.url === "string") {
       setUrl(payload.url);
       setCurrent(payload.url);
     }
@@ -63,6 +85,10 @@ export function BrowserPanel(_props: { state: AppState }) {
     else if (typeof payload.error === "string") setError(payload.error);
     if (payload.owner) setOwner(payload.owner);
     if (typeof payload.secureInput === "boolean") setSecureInput(payload.secureInput);
+    if (payload.approvalMode) setApprovalMode(payload.approvalMode);
+    if (Array.isArray(payload.tabs)) setTabs(payload.tabs);
+    if (typeof payload.id === "string") setActiveId(payload.id);
+    setPending(payload.pendingApproval ?? null);
   }
 
   function browserRect(): BrowserRect | undefined {
@@ -98,8 +124,7 @@ export function BrowserPanel(_props: { state: AppState }) {
     if (rect) {
       void desktop
         .invoke("browser_show", { rect })
-        .then(() => desktop.invoke<BrowserStatus>("browser_status"))
-        .then((status) => applyStatus(status ?? {}))
+        .then((status) => applyStatus((status as BrowserStatus) ?? {}))
         .catch((err) => electron?.log("[browser-panel] show failed", err));
     }
     resizeObserver = new ResizeObserver(() => syncBrowserWindow());
@@ -129,7 +154,7 @@ export function BrowserPanel(_props: { state: AppState }) {
     setError(null);
     if (desktop) {
       void desktop
-        .invoke("browser_navigate", { url: normalized })
+        .invoke("browser_navigate", { url: normalized, tabId: activeId() || undefined })
         .catch((err) => {
           setLoading(false);
           setError(err instanceof Error ? err.message : String(err));
@@ -138,82 +163,113 @@ export function BrowserPanel(_props: { state: AppState }) {
     }
   }
 
-  function back() {
-    if (!desktop || !canGoBack()) return;
+  function invokeStatus(command: string, args?: Record<string, unknown>) {
+    if (!desktop) return;
     void desktop
-      .invoke("browser_go_back")
-      .catch((err) => electron?.log("[browser-panel] back failed", err));
+      .invoke<BrowserStatus>(command, { tabId: activeId() || undefined, ...args })
+      .then(applyStatus)
+      .catch((err) => electron?.log(`[browser-panel] ${command} failed`, err));
+  }
+
+  function back() {
+    if (!canGoBack()) return;
+    invokeStatus("browser_go_back");
   }
 
   function forward() {
-    if (!desktop || !canGoForward()) return;
-    void desktop
-      .invoke("browser_go_forward")
-      .catch((err) => electron?.log("[browser-panel] forward failed", err));
+    if (!canGoForward()) return;
+    invokeStatus("browser_go_forward");
   }
 
   function reload() {
     if (desktop) {
-      void desktop
-        .invoke("browser_reload")
-        .catch((err) => electron?.log("[browser-panel] reload failed", err));
+      invokeStatus("browser_reload");
       return;
     }
     if (current()) load(current());
   }
 
-  function claimHuman() {
-    if (!desktop) return;
-    void desktop
-      .invoke<BrowserStatus>("browser_claim_human")
-      .then(applyStatus)
-      .catch((err) => electron?.log("[browser-panel] claim failed", err));
+  function createTab() {
+    invokeStatus("browser_create_tab", { url: "about:blank" });
   }
 
-  function releaseModel() {
-    if (!desktop) return;
-    void desktop
-      .invoke<BrowserStatus>("browser_release_model")
-      .then(applyStatus)
-      .catch((err) => electron?.log("[browser-panel] release failed", err));
+  function activateTab(id: string) {
+    invokeStatus("browser_activate_tab", { tabId: id, rect: browserRect() });
   }
 
-  function shareControl() {
-    if (!desktop) return;
-    void desktop
-      .invoke<BrowserStatus>("browser_share")
-      .then(applyStatus)
-      .catch((err) => electron?.log("[browser-panel] share failed", err));
+  function closeTab(id: string) {
+    invokeStatus("browser_close_tab", { tabId: id });
   }
 
-  function toggleSecureInput() {
-    if (!desktop) return;
-    const command = secureInput() ? "browser_end_secure_input" : "browser_begin_secure_input";
-    void desktop
-      .invoke<BrowserStatus>(command)
-      .then(applyStatus)
-      .catch((err) => electron?.log("[browser-panel] secure input failed", err));
+  function respondApproval(decision: "once" | "session" | "reject") {
+    const currentPending = pending();
+    if (!currentPending) return;
+    invokeStatus("browser_respond_approval", {
+      id: currentPending.id,
+      tabId: currentPending.tabId,
+      decision,
+    });
   }
 
   return (
     <div class="browser-pane">
+      <div class="browser-tabs">
+        <For each={tabs()}>
+          {(tab) => (
+            <button
+              type="button"
+              class="terminal-tab"
+              data-active={tab.id === activeId()}
+              onClick={() => activateTab(tab.id)}
+            >
+              <span class="terminal-tab-label">{tab.title || "新标签"}</span>
+              <span
+                class="terminal-tab-close"
+                role="button"
+                aria-label={`关闭 ${tab.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeTab(tab.id);
+                }}
+              >
+                ×
+              </span>
+            </button>
+          )}
+        </For>
+        <button type="button" class="terminal-tab-add" title="新建标签" onClick={createTab}>+</button>
+      </div>
       <div class="browser-toolbar">
         <button type="button" class="browser-nav-btn" onClick={back} disabled={!canGoBack()} title="后退">←</button>
         <button type="button" class="browser-nav-btn" onClick={forward} disabled={!canGoForward()} title="前进">→</button>
         <button type="button" class="browser-nav-btn" onClick={reload} title="刷新">⟳</button>
         <span class="terminal-owner-badge" data-owner={owner()}>{ownerLabel(owner())}</span>
         <Show when={owner() !== "human"}>
-          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={claimHuman} title="接管浏览器">接管</button>
+          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => invokeStatus("browser_claim_human")} title="接管浏览器">接管</button>
         </Show>
         <Show when={owner() === "human"}>
-          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={releaseModel} title="交还模型控制">交还模型</button>
-          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={toggleSecureInput} title={secureInput() ? "结束安全输入" : "开始安全输入"}>
+          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => invokeStatus("browser_release_model")} title="交还模型控制">交还模型</button>
+          <button
+            type="button"
+            class="browser-nav-btn browser-owner-btn"
+            onClick={() => invokeStatus(secureInput() ? "browser_end_secure_input" : "browser_begin_secure_input")}
+            title={secureInput() ? "结束安全输入" : "开始安全输入"}
+          >
             {secureInput() ? "结束安全输入" : "安全输入"}
           </button>
         </Show>
         <Show when={owner() !== "shared"}>
-          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={shareControl} title="共享控制">共享</button>
+          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => invokeStatus("browser_share")} title="共享控制">共享</button>
         </Show>
+        <button
+          type="button"
+          class="browser-nav-btn browser-owner-btn"
+          data-active={approvalMode() === "ask"}
+          onClick={() => invokeStatus("browser_set_approval_mode", { mode: approvalMode() === "ask" ? "off" : "ask" })}
+          title={approvalMode() === "ask" ? "模型写入需审批" : "模型写入免审批"}
+        >
+          {approvalMode() === "ask" ? "需审批" : "免审批"}
+        </button>
         <form class="browser-url-form" onSubmit={(event) => {
           event.preventDefault();
           load(url());
@@ -242,6 +298,17 @@ export function BrowserPanel(_props: { state: AppState }) {
       <Show when={owner() === "human" || secureInput()}>
         <div class="browser-pause-hint">
           {secureInput() ? "安全输入中，模型读写已暂停" : "人工控制中，模型写入已暂停"}
+        </div>
+      </Show>
+      <Show when={pending()}>
+        <div class="browser-approval">
+          <div class="browser-approval-title">模型想操作浏览器</div>
+          <div class="browser-approval-summary">{pending()?.summary}</div>
+          <div class="browser-approval-actions">
+            <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => respondApproval("once")}>允许一次</button>
+            <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => respondApproval("session")}>本次会话允许</button>
+            <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => respondApproval("reject")}>拒绝</button>
+          </div>
         </div>
       </Show>
       <div class="browser-webview-host" ref={host}>
