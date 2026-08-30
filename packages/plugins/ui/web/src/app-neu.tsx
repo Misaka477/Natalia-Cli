@@ -15,6 +15,7 @@ import { PluginManagerPanel } from "./plugin-manager-panel";
 import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { AgentPanel } from "./agent-panel";
+import { BrowserPanel } from "./browser-panel";
 import { TodoPanel } from "./todo-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
@@ -929,6 +930,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       .find((item) => item.panel.id === "terminal");
   };
 
+  const browserPanel = () => {
+    panelRevision();
+    return props.ctx.host
+      ?.listPanels()
+      .find((item) => item.panel.id === "browser");
+  };
+
   const rightTabs = () => {
     panelRevision();
     const tabs: { id: RightTab; label: string }[] = [
@@ -937,7 +945,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       { id: "agent", label: "协同" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
-      { id: "browser", label: "浏览器" },
+      ...(browserPanel() ? [{ id: "browser" as RightTab, label: "浏览器" }] : []),
     ];
     return tabs;
   };
@@ -1404,8 +1412,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   }}
                 />
               </Show>
-              <Show when={rightTab() === "browser"}>
-                <BrowserPane />
+              <Show when={rightTab() === "browser" && browserPanel()}>
+                <BrowserPanel />
               </Show>
             </div>
           </aside>

@@ -5,3 +5,5 @@ export { AppNeu } from "./app-neu";
 export { createNataliaNeuLightPlugin } from "./plugin-neu-light";
 
 export { createTerminalPlugin, TERMINAL_PLUGIN_ID } from "./terminal-plugin";
+
+export { createBrowserPlugin, BROWSER_PLUGIN_ID } from "./browser-plugin";
