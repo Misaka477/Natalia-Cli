@@ -19,10 +19,6 @@ export function AgentPanel(props: {
   const [teamPRs, setTeamPRs] = createSignal<RuntimeTeamPR[]>([]);
   const [teamConcurrency, setTeamConcurrency] = createSignal<number | undefined>(undefined);
   const [terminals, setTerminals] = createSignal<RuntimeNativeTerminalSession[]>([]);
-  const runningSubagents = createMemo(() =>
-    subagents().filter((agent) => agent.status === "running"),
-  );
-
   const teamStatusTally = createMemo(() => {
     const tally: Record<string, number> = { completed: 0, failed: 0, stopped: 0 };
     for (const pr of teamPRs()) {
@@ -77,6 +73,10 @@ export function AgentPanel(props: {
       const bt = b.lastActivityAt ?? 0;
       return bt - at;
     }),
+  );
+
+  const runningSubagents = createMemo(() =>
+    subagents().filter((agent) => agent.status === "running"),
   );
 
   const subagentTree = createMemo(() => {
