@@ -27,20 +27,26 @@ export function AgentPanel(props: {
 
   onMount(() => {
     void (async () => {
-      try {
-        const plugins = (await props.runtime?.plugins?.()) ?? [];
-        setTeamAvailable(
-          plugins.some((plugin) => plugin.id?.includes("team") || plugin.name?.includes("Team")),
-        );
-      } catch {
-        setTeamAvailable(false);
-      }
+      let teamSeen = false;
       try {
         const prs = (await props.runtime?.teamPRList?.()) ?? [];
         setTeamPRs(prs);
+        teamSeen = true;
       } catch {
         setTeamPRs([]);
       }
+      try {
+        const plugins = (await props.runtime?.plugins?.()) ?? [];
+        if (
+          plugins.some(
+            (plugin) => plugin.id?.includes("team") || plugin.name?.includes("Team"),
+          )
+        )
+          teamSeen = true;
+      } catch {
+        // plugin list may be unavailable; teamPRList already tried
+      }
+      setTeamAvailable(teamSeen);
       try {
         const config = await props.runtime?.configGet?.();
         setTeamConcurrency(config?.team?.maxConcurrent);
