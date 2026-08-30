@@ -4,6 +4,35 @@ import type { RuntimeClient, RuntimeDiagnostic, RuntimeStatusSnapshot } from "@n
 
 type Tab = "status" | "diagnostics" | "tools";
 
+function formatToolDetail(tool: ToolBlock): string {
+  const raw = tool.result ?? tool.summary ?? tool.argumentsRaw ?? "";
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const parts: string[] = [];
+      if (typeof parsed.writtenBytes === "number")
+        parts.push(`写入 ${parsed.writtenBytes} 字节`);
+      if (typeof parsed.delivery === "string")
+        parts.push(`delivery: ${parsed.delivery}`);
+      if ("submitted" in parsed) parts.push(`submitted: ${String(parsed.submitted)}`);
+      if (typeof parsed.terminalKey === "string")
+        parts.push(`按键: ${parsed.terminalKey}`);
+      if (typeof parsed.path === "string") parts.push(`路径: ${parsed.path}`);
+      if (typeof parsed.text === "string" && parsed.text) parts.push(parsed.text);
+      if (typeof parsed.command === "string" && parsed.command) parts.push(parsed.command);
+      if (Array.isArray(parsed.items) || Array.isArray(parsed.todos))
+        parts.push(`todo 数量: ${(parsed.items ?? parsed.todos).length}`);
+      if (parts.length) return parts.join("\n");
+      return Object.entries(parsed)
+        .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`)
+        .join("\n");
+    }
+  } catch {
+    // not JSON; show raw below
+  }
+  return raw.length > 2000 ? `${raw.slice(0, 2000)}\n…` : raw;
+}
+
 function shortToolLabel(tool: ToolBlock): string {
   const raw = tool.argumentsRaw || "";
   try {
@@ -165,7 +194,7 @@ export function StatusPanel(props: {
                       </button>
                       <Show when={expandedTool() === tool.name + tool.callID}>
                         <pre class="neu-status-tool-detail">
-                          {tool.result ?? tool.summary ?? tool.argumentsRaw}
+                          {formatToolDetail(tool)}
                         </pre>
                       </Show>
                     </div>
