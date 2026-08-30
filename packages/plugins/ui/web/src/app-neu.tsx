@@ -982,6 +982,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() => window.removeEventListener("resize", updateLayout));
   });
 
+  const naviVisible = () =>
+    layoutMode() === "wide" ||
+    (layoutMode() === "compact" && !leftVisible() && !rightVisible()) ||
+    (layoutMode() === "tiny" && naviOpen() && !leftVisible() && !rightVisible());
+
   return (
     <div
       class="neu-shell"
@@ -1277,7 +1282,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
           <div class="neu-pane-divider" />
 
-          <Show when={layoutMode() !== "tiny" || naviOpen()}>
+          <Show when={naviVisible()}>
           <div class="neu-pane">
             <div class="neu-pane-header">
               <span class="neu-pane-title">Navi</span>
