@@ -275,14 +275,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   onCleanup(
     props.ctx.projection.subscribe((next) => {
-      const replaying = (globalThis as unknown as {
-        __nataliaReplayingHistory?: boolean;
-      }).__nataliaReplayingHistory;
-      // During a full history replay the projection emits one event at a time.
-      // Cloning the whole AppState after every raw event is O(n^2) for long
-      // sessions, so skip the heavy clones until the replay completes and then
-      // take one final snapshot in openUnresolvedInteractives.
-      if (replaying) return;
       console.log("[web-plugin] projection update", {
         messages: next.messages.length,
         sessions: next.sessions.length,
