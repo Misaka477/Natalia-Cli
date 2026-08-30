@@ -366,6 +366,9 @@ export function WebTerminal(props: WebTerminalProps) {
       fontSize: 12,
       theme: theme(),
       convertEol: true,
+      // xterm addons (WebGL/Canvas) use proposed APIs such as
+      // registerCharacterJoiner; they require this flag to be enabled.
+      allowProposedApi: true,
     });
     // Keep browser-only shortcuts (notably Ctrl+W, which closes the tab)
     // from stealing keys that terminal programs like vim/tmux need.
