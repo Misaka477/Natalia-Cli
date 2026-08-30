@@ -1035,6 +1035,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .terminal-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px 10px 0;
   flex-shrink: 0;
