@@ -3185,7 +3185,7 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-secondary { max-width: 380px; }
   .neu-sidebar { max-width: 240px; }
 }
-@media (max-width: 1400px) {
+@media (max-width: 1700px) {
   .neu-shell[data-compact="true"] .neu-sidebar {
     width: min(320px, 32vw);
   }

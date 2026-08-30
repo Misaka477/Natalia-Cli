@@ -972,7 +972,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   onMount(() => {
     const updateLayout = () => {
       const width = window.innerWidth;
-      const mode = width <= 1000 ? "tiny" : width <= 1400 ? "compact" : "wide";
+      const mode = width <= 1000 ? "tiny" : width <= 1700 ? "compact" : "wide";
       setLayoutMode(mode);
       if (mode !== "wide") {
         setLeftVisible(false);
