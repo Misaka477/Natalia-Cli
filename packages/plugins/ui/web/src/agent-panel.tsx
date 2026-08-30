@@ -130,6 +130,15 @@ export function AgentPanel(props: {
           </div>
           <div class="agent-stream">
             <Show when={selectedSubagent()} fallback={<div class="agent-empty">选择一个子 Agent 查看信息流</div>}>
+              <div class="agent-stream-header">
+                <div class="agent-stream-title">{selectedSubagent()?.id}</div>
+                <div class="agent-stream-meta">
+                  {selectedSubagent()?.status} · {selectedSubagent()?.phase ?? "idle"} · {selectedSubagent()?.health ?? "active"}
+                </div>
+                <Show when={selectedSubagent()?.parentAgentID}>
+                  <div class="agent-stream-meta">父 Agent: {selectedSubagent()?.parentAgentID}</div>
+                </Show>
+              </div>
               <Transcript
                 messages={subagentMessages()}
                 emptyTitle="子 Agent 暂无消息"
@@ -156,8 +165,18 @@ export function AgentPanel(props: {
           <For each={teamPRs()}>
             {(pr) => (
               <div class="team-card">
-                <div class="team-card-title">{pr.title ?? pr.prID}</div>
-                <div class="team-card-detail">{pr.status ?? "pending"}</div>
+                <div class="team-card-title">{pr.task || pr.id}</div>
+                <div class="team-card-detail">
+                  <span>{pr.status}</span>
+                  {" · "}
+                  <span>sandbox: {pr.sandboxID}</span>
+                </div>
+                <Show when={pr.result}>
+                  <div class="team-card-result">{pr.result}</div>
+                </Show>
+                <Show when={pr.buildEvidence && !pr.buildEvidence.ok}>
+                  <div class="team-card-error">build exit {pr.buildEvidence?.exitCode}</div>
+                </Show>
               </div>
             )}
           </For>

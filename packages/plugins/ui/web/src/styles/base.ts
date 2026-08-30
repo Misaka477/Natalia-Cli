@@ -989,6 +989,13 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .agent-stream { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .agent-stream .natalia-transcript { flex: 1; }
 .agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
+.agent-stream { flex-direction: column; }
+.agent-stream-header { padding: 8px 12px; border-bottom: 1px solid var(--neu-divider); }
+.agent-stream-title { font-size: 13px; font-weight: 600; }
+.agent-stream-meta { font-size: 11px; color: var(--neu-muted); margin-top: 2px; }
+.team-card-result { font-size: 11px; color: var(--neu-success); margin-top: 4px; }
+.team-card-error { font-size: 11px; color: var(--neu-error); margin-top: 4px; }
+.agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
 .team-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; }
 .team-header { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .team-stat { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 10px; background: var(--neu-bg); margin-bottom: 8px; font-size: 12px; }
