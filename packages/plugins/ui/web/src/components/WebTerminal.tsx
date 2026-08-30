@@ -563,7 +563,12 @@ export function WebTerminal(props: WebTerminalProps) {
     ipcUnlisten?.();
     resizeObserver?.disconnect();
     socket?.close();
-    term?.dispose();
+    try {
+      term?.dispose();
+    } catch (error) {
+      console.error("[web-terminal] xterm dispose failed", error);
+    }
+    term = undefined;
   });
 
   return <div class="web-terminal" ref={host} />;
