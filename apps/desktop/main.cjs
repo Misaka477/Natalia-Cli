@@ -343,6 +343,13 @@ function startBrowserBridge() {
   const server = http.createServer((req, res) => {
     void handleBrowserBridge(req, res);
   });
+  server.on("error", (error) => {
+    if (error.code === "EADDRINUSE") {
+      console.warn("[desktop] browser bridge port 8788 already in use; skipping bridge (another instance may be running)");
+    } else {
+      console.error("[desktop] browser bridge error", error);
+    }
+  });
   server.listen(8788, "127.0.0.1", () => {
     console.log("[desktop] browser bridge listening on http://127.0.0.1:8788");
   });
