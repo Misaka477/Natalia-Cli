@@ -84,6 +84,11 @@ function ensureBrowserView() {
   });
   mainWindow.addBrowserView(browserView);
   browserViewAttached = true;
+  try {
+    browserView.setBorderRadius(12);
+  } catch {
+    // setBorderRadius is not available on all platforms; ignore.
+  }
   browserView.webContents.loadURL(browserUrl || "about:blank");
   console.log("[desktop] browser BrowserView created", {
     attached: browserViewAttached,
