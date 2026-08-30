@@ -1225,8 +1225,10 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .browser-nav-btn:active {
   box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
 }
-.browser-url-form { flex: 1; min-width: 0; }
+.browser-url-form { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
 .browser-url-input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   border: none;
   border-radius: 10px;
@@ -1240,9 +1242,15 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .browser-frame { flex: 1; min-height: 0; width: 100%; border: none; background: white; }
 .browser-webview-host { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--neu-bg-light); }
 .browser-load-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 8px;
-  padding: 5px 10px;
+  padding: 0;
   background: var(--neu-accent);
   color: var(--neu-on-accent);
   font-size: 11px;

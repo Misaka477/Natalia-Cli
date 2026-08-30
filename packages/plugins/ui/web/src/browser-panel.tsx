@@ -184,7 +184,12 @@ export function BrowserPanel(props: { state: AppState }) {
             placeholder="输入 URL，例如 https://example.com"
             onInput={(event) => setUrl(event.currentTarget.value)}
           />
-          <button type="submit" class="browser-load-btn">前往</button>
+          <button type="submit" class="browser-load-btn" title="前往">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12H19" />
+              <path d="M13 6L19 12L13 18" />
+            </svg>
+          </button>
         </form>
       </div>
       <div class="browser-webview-host" ref={host}>
