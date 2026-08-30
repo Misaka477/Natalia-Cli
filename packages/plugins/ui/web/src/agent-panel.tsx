@@ -15,6 +15,7 @@ export function AgentPanel(props: {
   const [selectedID, setSelectedID] = createSignal<string | undefined>(undefined);
   const [teamAvailable, setTeamAvailable] = createSignal(false);
   const [teamPRs, setTeamPRs] = createSignal<RuntimeTeamPR[]>([]);
+  const [teamConcurrency, setTeamConcurrency] = createSignal<number | undefined>(undefined);
 
   onMount(() => {
     void (async () => {
@@ -31,6 +32,12 @@ export function AgentPanel(props: {
         setTeamPRs(prs);
       } catch {
         setTeamPRs([]);
+      }
+      try {
+        const config = await props.runtime?.configGet?.();
+        setTeamConcurrency(config?.team?.maxConcurrent);
+      } catch {
+        setTeamConcurrency(undefined);
       }
     })();
   });
@@ -112,7 +119,7 @@ export function AgentPanel(props: {
                     {agent.status} · {agent.phase ?? "idle"}
                   </div>
                   <div class="agent-card-detail">
-                    {agent.text || agent.activityDetail || agent.task || ""}
+                    {agent.parentAgentID ? `父: ${agent.parentAgentID} · ` : ""}{agent.text || agent.activityDetail || agent.task || ""}
                   </div>
                 </button>
               )}
@@ -138,6 +145,10 @@ export function AgentPanel(props: {
       <Show when={subTab() === "team"}>
         <div class="team-panel">
           <div class="team-header">Team 概览</div>
+          <div class="team-stat">
+            <span>并发上限</span>
+            <span>{teamConcurrency() ?? "未设置"}</span>
+          </div>
           <div class="team-stat">
             <span>进行中/等待中的 PR</span>
             <span>{teamPRs().length}</span>
