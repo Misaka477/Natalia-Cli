@@ -92,6 +92,7 @@ test("HTTP terminal websocket is gated behind terminalWrite", async () => {
           cols: 80,
           startedAt: new Date().toISOString(),
           attached: true,
+          sessionID: input.sessionID,
         };
         sessions.push(session);
         return session;
@@ -189,6 +190,86 @@ test("HTTP terminal websocket reports missing start as a fatal error", async () 
       fatal: true,
       message:
         "no active workspace: open or activate a workspace before using the terminal",
+    },
+  ]);
+  ws.close();
+  server.stop(true);
+});
+
+test("HTTP terminal websocket refuses a terminal owned by another session", async () => {
+  const client: RuntimeClient = {
+    start() {},
+    async submit() {
+      return {
+        type: "turn.submitted",
+        id: "t",
+        text: "",
+        byteLength: 0,
+        lineCount: 1,
+        sha256: "0",
+      };
+    },
+    async cancel() {},
+    snapshot() {
+      return { type: "diagnostic", level: "info", message: "stub" };
+    },
+    diagnostic() {},
+    lastSubmission() {
+      return undefined;
+    },
+    async respondApproval() {
+      return { accepted: true };
+    },
+    async respondQuestion() {
+      return { accepted: true };
+    },
+    async nativeTerminalList() {
+      return [
+        {
+          id: "term_a",
+          host: "pty" as const,
+          paneID: 1,
+          windowID: 0,
+          muxWindowID: 0,
+          tabID: 0,
+          command: "bash",
+          cwd: "",
+          status: "running" as const,
+          inputOwner: "model" as const,
+          geometryOwner: "human" as const,
+          secureInput: false,
+          rows: 24,
+          cols: 80,
+          startedAt: new Date().toISOString(),
+          attached: true,
+          sessionID: "ses_a",
+        },
+      ];
+    },
+    async nativeTerminalStart() {
+      throw new Error("should not start a foreign terminal");
+    },
+  };
+  const server = createRuntimeHttpServer({ client, terminalWrite: true });
+  const ws = new WebSocket(
+    `${server.url.replace("http", "ws")}/terminal/ses_b/term_a`,
+  );
+  const messages: unknown[] = [];
+  await new Promise<void>((resolve, reject) => {
+    ws.onopen = () => resolve();
+    ws.onerror = () => reject(new Error("ws failed"));
+  });
+  await new Promise<void>((resolve) => {
+    ws.onmessage = (event) => {
+      messages.push(JSON.parse(String(event.data)));
+      resolve();
+    };
+  });
+  expect(messages).toEqual([
+    {
+      type: "error",
+      fatal: true,
+      message: "terminal term_a belongs to session ses_a",
     },
   ]);
   ws.close();

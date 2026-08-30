@@ -72,59 +72,7 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
       path?: string;
     }) {
       await ctx.ports.getReady();
-      const workspaceRoot = ctx.ports.getWorkspaceRoot();
-      const from = input?.from ?? "HEAD";
-      const to = input?.to ?? "WORKTREE";
-      if (to === "WORKTREE") {
-        const status = await gitCapture(workspaceRoot, [
-          "status",
-          "--porcelain=v1",
-        ]);
-        if (status.exitCode !== 0)
-          throw new Error(
-            `git status failed with exit ${status.exitCode}; workspace may not be a git repository`,
-          );
-        const changes: RuntimeWorkspaceDiffChange[] = [];
-        const lines = status.stdout.split("\n").filter(Boolean);
-        for (const line of lines) {
-          const parsed = parseStatusLine(line);
-          if (!parsed) continue;
-          const path = parsed.path;
-          const operation = parsed.operation;
-          const oldPath = parsed.oldPath;
-          let patch = "";
-          if (operation === "added" && parsed.untracked) {
-            patch = await gitDiffUntracked(workspaceRoot, path);
-          } else {
-            patch = await gitDiffTracked(
-              workspaceRoot,
-              from,
-              path,
-              oldPath,
-            );
-          }
-          const counts = countPatch(patch);
-          changes.push({
-            path,
-            operation,
-            ...(oldPath ? { oldPath } : {}),
-            additions: counts.additions,
-            deletions: counts.deletions,
-            ...(patch ? { patch } : {}),
-          });
-        }
-        return changes;
-      }
-      const rawDiff = await gitCapture(workspaceRoot, [
-        "diff",
-        "--unified=3",
-        "--no-color",
-        `${from}..${to}`,
-        ...(input?.path
-          ? ["--", input.path]
-          : []),
-      ]);
-      return diffToChanges(rawDiff.stdout);
+      return await collectWorkspaceGitDiff(ctx.ports.getWorkspaceRoot(), input);
     },
     async gitRefs() {
       await ctx.ports.getReady();
@@ -180,7 +128,71 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
   };
 }
 
-function parseStatusLine(line: string): {
+export async function collectWorkspaceGitDiff(
+  workspaceRoot: string,
+  input?: { from?: string; to?: string; path?: string },
+): Promise<RuntimeWorkspaceDiffChange[]> {
+  const from = input?.from ?? "HEAD";
+  const to = input?.to ?? "WORKTREE";
+  if (to === "WORKTREE") {
+    const status = await gitCapture(workspaceRoot, [
+      "status",
+      "--porcelain=v1",
+      "-uall",
+    ]);
+    if (status.exitCode !== 0) return [];
+    const changes: RuntimeWorkspaceDiffChange[] = [];
+    const lines = status.stdout.split("\n").filter(Boolean);
+    for (const line of lines) {
+      const parsed = parseStatusLine(line);
+      if (!parsed) continue;
+      if (input?.path && parsed.path !== input.path) continue;
+      const path = parsed.path;
+      const operation = parsed.operation;
+      const oldPath = parsed.oldPath;
+      let patch = "";
+      try {
+        patch =
+          operation === "added" && parsed.untracked
+            ? await gitDiffUntracked(workspaceRoot, path)
+            : await gitDiffTracked(workspaceRoot, from, path, oldPath);
+      } catch {
+        patch = "";
+      }
+      const counts = countPatch(patch);
+      changes.push({
+        path,
+        operation,
+        ...(oldPath ? { oldPath } : {}),
+        additions: counts.additions,
+        deletions: counts.deletions,
+        ...(patch ? { patch } : {}),
+      });
+    }
+    return changes;
+  }
+  const rawDiff = await gitCapture(workspaceRoot, [
+    "diff",
+    "--unified=3",
+    "--no-color",
+    `${from}..${to}`,
+    ...(input?.path ? ["--", input.path] : []),
+  ]);
+  if (rawDiff.exitCode !== 0 && !rawDiff.stdout.trim()) return [];
+  return diffToChanges(rawDiff.stdout);
+}
+
+function unquoteGitPath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('"') || !trimmed.endsWith('"')) return trimmed;
+  try {
+    return JSON.parse(trimmed) as string;
+  } catch {
+    return trimmed.slice(1, -1);
+  }
+}
+
+export function parseStatusLine(line: string): {
   path: string;
   operation: "added" | "modified" | "deleted" | "renamed";
   oldPath?: string;
@@ -188,7 +200,7 @@ function parseStatusLine(line: string): {
 } | undefined {
   if (line.startsWith("?? ")) {
     return {
-      path: line.slice(3),
+      path: unquoteGitPath(line.slice(3)),
       operation: "added",
       untracked: true,
     };
@@ -200,9 +212,9 @@ function parseStatusLine(line: string): {
   if (rename) {
     const [oldPath, path] = rest.split(" -> ");
     return {
-      path: path!,
+      path: unquoteGitPath(path!),
       operation: "renamed",
-      oldPath,
+      oldPath: unquoteGitPath(oldPath ?? ""),
       untracked: false,
     };
   }
@@ -211,23 +223,27 @@ function parseStatusLine(line: string): {
     : code.includes("A") || code.includes("?")
       ? "added"
       : "modified";
-  return { path: rest, operation, untracked: false };
+  return { path: unquoteGitPath(rest), operation, untracked: false };
 }
 
 async function gitCapture(
   cwd: string,
   args: string[],
 ): Promise<{ stdout: string; exitCode: number }> {
-  const process = Bun.spawn(["git", ...args], {
-    cwd,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdout = await new Response(process.stdout).text();
-  await new Response(process.stderr).text();
-  const exitCode = await process.exited;
-  return { stdout, exitCode };
+  try {
+    const process = Bun.spawn(["git", ...args], {
+      cwd,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(process.stdout).text();
+    await new Response(process.stderr).text();
+    const exitCode = await process.exited;
+    return { stdout, exitCode };
+  } catch {
+    return { stdout: "", exitCode: 127 };
+  }
 }
 
 async function gitDiffTracked(
@@ -256,7 +272,7 @@ async function gitDiffUntracked(
     "/dev/null",
     path,
   ]);
-  return result.exitCode === 1 ? result.stdout : "";
+  return result.exitCode === 0 || result.exitCode === 1 ? result.stdout : "";
 }
 
 function diffToChanges(rawDiff: string): RuntimeWorkspaceDiffChange[] {

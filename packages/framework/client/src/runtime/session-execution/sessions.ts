@@ -1,7 +1,9 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
+  TERMINAL_CONTROLLER_SERVICE,
   type SessionStoreController,
+  type TerminalController,
 } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
@@ -76,6 +78,10 @@ export function createSessionsSurface(
     async sessionDelete(id) {
       await ctx.ports.getReady();
       await ctx.ports.cancelTitleGeneration(id as SessionID);
+      const terminal = ctx.ports.resolveService<TerminalController>(
+        TERMINAL_CONTROLLER_SERVICE,
+      );
+      await terminal?.stopForSession?.(id);
       return await requireSessionStore().delete(id);
     },
     async sessionNew(input = {}) {
@@ -84,6 +90,10 @@ export function createSessionsSurface(
     },
     async sessionArchive(id) {
       await ctx.ports.getReady();
+      const terminal = ctx.ports.resolveService<TerminalController>(
+        TERMINAL_CONTROLLER_SERVICE,
+      );
+      await terminal?.stopForSession?.(id);
       return await requireSessionStore().archive(id);
     },
     async sessionRestore(id) {
