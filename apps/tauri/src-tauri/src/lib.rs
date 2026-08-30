@@ -65,6 +65,62 @@ async fn runtime_call(
     Ok(body.get("result").cloned().unwrap_or(Value::Null))
 }
 
+#[tauri::command]
+async fn terminal_output_subscribe(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    terminal_id: String,
+) -> Result<(), String> {
+    let base = state.runtime_url.trim_end_matches('/');
+    let ws_base = if base.starts_with("https://") {
+        base.replacen("https://", "wss://", 1)
+    } else if base.starts_with("http://") {
+        base.replacen("http://", "ws://", 1)
+    } else {
+        format!("ws://{base}")
+    };
+    let mut url = format!("{ws_base}/terminal/{session_id}/{terminal_id}");
+    if let Some(token) = &state.token {
+        url.push_str(&format!("?token={token}"));
+    }
+
+    let (mut socket, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .map_err(|error| format!("terminal WebSocket connect failed: {error}"))?;
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        use tokio_tungstenite::tungstenite::Message;
+
+        while let Some(message) = socket.next().await {
+            let message = match message {
+                Ok(message) => message,
+                Err(error) => {
+                    eprintln!("[natalia-desktop] terminal stream ended: {error}");
+                    break;
+                }
+            };
+            let text = match message {
+                Message::Text(text) => text,
+                Message::Binary(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+                _ => continue,
+            };
+            if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                let _ = app.emit(
+                    "natalia-terminal-output",
+                    serde_json::json!({
+                        "id": terminal_id,
+                        "message": value,
+                    }),
+                );
+            }
+        }
+    });
+
+    Ok(())
+}
+
 /// Keep a long-lived /events SSE connection open and re-emit each runtime event
 /// as a Tauri event so the desktop UI never needs to know about HTTP/SSE.
 async fn stream_runtime_events(
@@ -135,7 +191,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AppState { runtime_url: runtime_url.clone(), token })
-        .invoke_handler(tauri::generate_handler![runtime_call])
+        .invoke_handler(tauri::generate_handler![runtime_call, terminal_output_subscribe])
         .setup(move |app| {
             let handle = app.handle().clone();
             let state = app.state::<AppState>();

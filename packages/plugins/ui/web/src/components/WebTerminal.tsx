@@ -88,6 +88,7 @@ export function WebTerminal(props: WebTerminalProps) {
   let fit: FitAddon | undefined;
   let searchAddon: SearchAddon | undefined;
   let socket: WebSocket | undefined;
+  let ipcUnlisten: (() => void) | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
@@ -111,6 +112,118 @@ export function WebTerminal(props: WebTerminalProps) {
     reconnectTimer = setTimeout(connect, 1500);
   }
 
+  function handleServerMessage(message: ServerMessage) {
+    if (message.type === "restore") {
+      term?.clear();
+      if (message.text) term?.write(message.text);
+    }
+    if (message.type === "output") term?.write(message.data);
+    if (message.type === "error") {
+      if (message.message === lastError) return;
+      lastError = message.message;
+      term?.writeln(`\r\n[${message.message}]`);
+      if (message.fatal) fatal = true;
+    }
+    if (message.type === "exit") term?.writeln("\r\n[terminated]");
+    if (message.type === "ready") {
+      lastError = undefined;
+      if (term && fit) {
+        fit.fit();
+        void callRuntime(tauri!, "nativeTerminal.resize", {
+          id: props.terminalID,
+          rows: term.rows,
+          cols: term.cols,
+        }).catch((error) => {
+          console.error("[web-terminal] resize failed", error);
+        });
+      }
+    }
+  }
+
+  async function ipcConnect() {
+    if (
+      closed ||
+      fatal ||
+      !props.sessionID ||
+      !props.terminalID ||
+      !tauri
+    )
+      return;
+    const previous = ipcUnlisten;
+    ipcUnlisten = undefined;
+    previous?.();
+
+    try {
+      ipcUnlisten = await tauri.event.listen<{
+        id: string;
+        message: ServerMessage;
+      }>("natalia-terminal-output", (event) => {
+        if (event.payload.id !== props.terminalID) return;
+        handleServerMessage(event.payload.message);
+      });
+
+      const listed =
+        (await callRuntime<Array<{
+          id: string;
+          status: string;
+          sessionID?: string;
+        }>>(tauri, "nativeTerminal.list")) ?? [];
+      let session = listed.find((item) => item.id === props.terminalID);
+      if (!session || (session.sessionID && session.sessionID !== props.sessionID)) {
+        session =
+          (await callRuntime<{ id: string; status: string } | undefined>(
+            tauri,
+            "nativeTerminal.start",
+            {
+              command: props.command || "bash",
+              id: props.terminalID,
+              sessionID: props.sessionID,
+            },
+          )) ?? undefined;
+      }
+      if (!session) {
+        fatal = true;
+        if (!lastError) {
+          lastError = "native terminal start failed";
+          term?.writeln("\r\n[native terminal start failed]");
+        }
+        return;
+      }
+
+      await tauri.core.invoke("terminal_output_subscribe", {
+        sessionId: props.sessionID,
+        terminalId: props.terminalID,
+      });
+
+      const read = await callRuntime<{ text: string } | undefined>(
+        tauri,
+        "nativeTerminal.read",
+        { id: props.terminalID },
+      );
+      try {
+        term?.clear();
+      } catch {
+        // xterm may not be ready yet
+      }
+      if (read?.text) term?.write(read.text);
+      if (term && fit) {
+        fit.fit();
+        await callRuntime(tauri, "nativeTerminal.resize", {
+          id: props.terminalID,
+          rows: term.rows,
+          cols: term.cols,
+        });
+      }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      if (text !== lastError) {
+        lastError = text;
+        term?.writeln(`\r\n[${text}]`);
+      }
+      scheduleReconnect();
+    }
+  }
+
   function connect() {
     if (
       closed ||
@@ -120,6 +233,10 @@ export function WebTerminal(props: WebTerminalProps) {
       !props.runtimeURL
     )
       return;
+    if (tauri) {
+      void ipcConnect();
+      return;
+    }
     const previous = socket;
     socket = undefined;
     previous?.close();
@@ -367,6 +484,7 @@ export function WebTerminal(props: WebTerminalProps) {
     closed = true;
     props.registerApi?.(undefined);
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    ipcUnlisten?.();
     resizeObserver?.disconnect();
     socket?.close();
     term?.dispose();
