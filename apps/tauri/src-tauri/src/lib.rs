@@ -1,5 +1,7 @@
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, WebviewUrl};
 
@@ -295,6 +297,123 @@ fn browser_screenshot(app: tauri::AppHandle) -> Result<String, String> {
     Err("browser_screenshot is not implemented yet in the Tauri host".to_string())
 }
 
+fn handle_browser_bridge_route(
+    app: &tauri::AppHandle,
+    method: &str,
+    path: &str,
+    body: &str,
+) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    if method == "POST" && path == "/browser/navigate" {
+        let value: Value = serde_json::from_str(body)
+            .map_err(|error| format!("invalid navigate body: {error}"))?;
+        let url = value
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "navigate body must contain a string url".to_string())?;
+        browser_navigate(app.clone(), state, url.to_string())?;
+        return Ok(serde_json::json!({ "ok": true }).to_string());
+    }
+    if method == "POST" && path == "/browser/read" {
+        let text = browser_read_dom(app.clone())?;
+        return Ok(serde_json::json!({ "text": text }).to_string());
+    }
+    if method == "POST" && path == "/browser/click" {
+        let value: Value = serde_json::from_str(body)
+            .map_err(|error| format!("invalid click body: {error}"))?;
+        let x = value
+            .get("x")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| "click body must contain numeric x".to_string())?;
+        let y = value
+            .get("y")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| "click body must contain numeric y".to_string())?;
+        let result = browser_click(app.clone(), x, y)?;
+        return Ok(serde_json::json!({ "result": result }).to_string());
+    }
+    if method == "POST" && path == "/browser/input" {
+        let value: Value = serde_json::from_str(body)
+            .map_err(|error| format!("invalid input body: {error}"))?;
+        let text = value
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "input body must contain string text".to_string())?;
+        let result = browser_input(app.clone(), text.to_string())?;
+        return Ok(serde_json::json!({ "result": result }).to_string());
+    }
+    Err(format!("unknown browser bridge route: {method} {path}"))
+}
+
+fn handle_browser_bridge_connection(mut stream: std::net::TcpStream, app: tauri::AppHandle) {
+    let mut buffer = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let read = stream.read(&mut chunk).unwrap_or(0);
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        if buffer.windows(4).any(|window| window == b"\r\n\r\n")
+            || buffer.len() > 64 * 1024
+        {
+            break;
+        }
+    }
+
+    let request = String::from_utf8_lossy(&buffer).to_string();
+    let header_end = request.find("\r\n\r\n").unwrap_or(request.len());
+    let head = &request[..header_end];
+    let body = if header_end < request.len() {
+        request[header_end + 4..].to_string()
+    } else {
+        String::new()
+    };
+
+    let mut lines = head.lines();
+    let request_line = lines.next().unwrap_or("");
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("GET");
+    let path = parts.next().unwrap_or("/");
+
+    let (status, payload) = match handle_browser_bridge_route(&app, method, path, &body) {
+        Ok(value) => ("200 OK", value),
+        Err(error) => (
+            "500 Internal Server Error",
+            serde_json::json!({ "error": error }).to_string(),
+        ),
+    };
+
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        payload.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
+    let _ = stream.flush();
+}
+
+fn start_browser_bridge(app: tauri::AppHandle) {
+    let listener = match TcpListener::bind("127.0.0.1:8788") {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!("[natalia-desktop] browser bridge bind failed: {error}");
+            return;
+        }
+    };
+    eprintln!("[natalia-desktop] browser bridge listening on http://127.0.0.1:8788");
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    handle_browser_bridge_connection(stream, app);
+                });
+            }
+            Err(error) => eprintln!("[natalia-desktop] browser bridge accept error: {error}"),
+        }
+    }
+}
+
 /// Keep a long-lived /events SSE connection open and re-emit each runtime event
 /// as a Tauri event so the desktop UI never needs to know about HTTP/SSE.
 async fn stream_runtime_events(
@@ -390,6 +509,8 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 stream_runtime_events(handle, url, token).await;
             });
+            let bridge_app = app.handle().clone();
+            std::thread::spawn(move || start_browser_bridge(bridge_app));
             Ok(())
         })
         .run(tauri::generate_context!())

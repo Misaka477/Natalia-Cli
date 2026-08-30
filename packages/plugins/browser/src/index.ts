@@ -21,6 +21,48 @@ export const BROWSER_PLUGIN_MANIFEST: PluginManifest = {
   integrationPoints: ["tools", "services"],
 };
 
+const BROWSER_BRIDGE_URL = "http://127.0.0.1:8788";
+
+async function callBrowserBridge<T>(path: string, input?: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${BROWSER_BRIDGE_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input ?? {}),
+  });
+  const body = (await response.json()) as T & { error?: string };
+  if (!response.ok || body.error)
+    throw new Error(body.error ?? `browser bridge ${path} failed`);
+  return body;
+}
+
+export function createTauriBrowserSessionProvider(): BrowserSessionProvider {
+  return {
+    async open(url) {
+      await callBrowserBridge("/browser/navigate", { url });
+      return { sessionID: "default", url };
+    },
+    async navigate(sessionID, url) {
+      await callBrowserBridge("/browser/navigate", { url });
+      return { url };
+    },
+    async read(sessionID) {
+      const result = await callBrowserBridge<{ text: string }>("/browser/read");
+      return { text: result.text };
+    },
+    async click(sessionID, x, y) {
+      const result = await callBrowserBridge<{ result: string }>("/browser/click", { x, y });
+      return { ok: result.result === "ok" };
+    },
+    async input(sessionID, text) {
+      const result = await callBrowserBridge<{ result: string }>("/browser/input", { text });
+      return { ok: result.result === "ok" };
+    },
+    async screenshot(sessionID) {
+      throw new Error("browser_screenshot is not implemented in the Tauri host yet");
+    },
+  };
+}
+
 export type BrowserSessionProvider = {
   open(url: string): Promise<{ sessionID: string; url: string }>;
   navigate(sessionID: string, url: string): Promise<{ url: string }>;
@@ -98,4 +140,4 @@ export function createBrowserPlugin(
   };
 }
 
-export default createBrowserPlugin(() => undefined);
+export default createBrowserPlugin(createTauriBrowserSessionProvider);

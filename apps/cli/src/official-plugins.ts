@@ -53,6 +53,11 @@ const DEV_PLUGIN_PACKAGES: ReadonlyArray<{
   source: string;
 }> = [
   {
+    id: "natalia-browser",
+    directory: "natalia-browser",
+    source: "packages/plugins/browser",
+  },
+  {
     id: "natalia-tool-terminal",
     directory: "natalia-tool-terminal",
     source: "packages/plugins/native-terminal",

@@ -18,9 +18,9 @@ export const OFFICIAL_PLUGIN_PACKAGES = [
     directory: "natalia-local-tools",
   },
   {
-    id: "natalia-mcp",
-    packageName: "@natalia/plugin-mcp",
-    directory: "natalia-mcp",
+    id: "natalia-browser",
+    packageName: "@natalia/plugin-browser",
+    directory: "natalia-browser",
   },
   {
     id: "natalia-skills",
