@@ -646,6 +646,7 @@ export function TerminalPane(props: {
   const [activeID, setActiveID] = createSignal<string>();
   const [limitError, setLimitError] = createSignal<string>();
   const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
+  const [shellProfile, setShellProfile] = createSignal("bash");
   let loadToken = 0;
 
   function retitle(next: TerminalTab[]) {
@@ -832,6 +833,16 @@ export function TerminalPane(props: {
         }
       >
         <div class="terminal-toolbar">
+          <select
+            class="terminal-profile-select"
+            value={shellProfile()}
+            onChange={(event) => setShellProfile(event.currentTarget.value)}
+          >
+            <option value="bash">bash</option>
+            <option value="zsh">zsh</option>
+            <option value="sh">sh</option>
+            <option value="pwsh">pwsh</option>
+          </select>
           <span class="terminal-owner-badge" data-owner={sessions().find((item) => item.id === activeID())?.inputOwner ?? "model"}>
             {sessions().find((item) => item.id === activeID())?.inputOwner === "human" ? "人工控制" : "模型控制"}
           </span>
@@ -946,6 +957,7 @@ export function TerminalPane(props: {
                           runtimeURL={props.runtimeURL!}
                           token={props.token}
                           active={props.active && activeID() === cellID}
+                          command={shellProfile()}
                         />
                       </div>
                     )}

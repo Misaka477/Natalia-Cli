@@ -24,6 +24,7 @@ export type TerminalWsServerMessage =
 type TerminalSocketData = {
   sessionID: string;
   terminalID: string;
+  command?: string;
   authorization?: RuntimeAuthorizationContext;
   unsubscribe?: () => void;
 };
@@ -85,7 +86,7 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
         }
         if (!session) {
           session = await client.nativeTerminalStart({
-            command: process.env.SHELL || "bash",
+            command: ws.data.command || process.env.SHELL || "bash",
             id: terminalID,
             sessionID,
           });
@@ -205,10 +206,12 @@ export function upgradeTerminalSocket(
   if (!authorizeTerminalSession(match.sessionID, authorization)) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
+  const command = url.searchParams.get("command") || undefined;
   const upgraded = server.upgrade(request, {
     data: {
       sessionID: match.sessionID,
       terminalID: match.terminalID,
+      command,
       authorization,
     },
   });

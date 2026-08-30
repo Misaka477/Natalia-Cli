@@ -10,6 +10,7 @@ export type WebTerminalProps = {
   runtimeURL: string;
   token?: string;
   active?: boolean;
+  command?: string;
 };
 
 type ServerMessage =
@@ -26,6 +27,7 @@ function terminalSocketURL(
   sessionID: string,
   terminalID: string,
   token?: string,
+  command?: string,
 ) {
   const url = new URL(
     `/terminal/${encodeURIComponent(sessionID)}/${encodeURIComponent(terminalID)}`,
@@ -33,6 +35,7 @@ function terminalSocketURL(
   );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   if (token) url.searchParams.set("token", token);
+  if (command) url.searchParams.set("command", command);
   return url.toString();
 }
 
@@ -81,6 +84,7 @@ export function WebTerminal(props: WebTerminalProps) {
         props.sessionID,
         props.terminalID,
         props.token,
+        props.command,
       ),
     );
     socket = ws;
