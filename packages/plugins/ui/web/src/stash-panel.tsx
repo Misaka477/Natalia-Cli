@@ -2,11 +2,7 @@ import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 
 type StashItem = { id: string; title: string; content: string; time: string };
 
-const initialItems: StashItem[] = [
-  { id: "1", title: "整理 diff 给 Navi", content: "请帮我整理当前项目的 diff，并列出关键变更和风险。", time: "10:21" },
-  { id: "2", title: "检查 rollback", content: "检查当前 checkpoint 和 rollback 状态，确认是否可以安全回滚。", time: "10:35" },
-  { id: "3", title: "计划拆分", content: "把当前计划拆成 3 个可验证的小步骤。", time: "11:02" },
-];
+const initialItems: StashItem[] = [];
 
 export function StashPanel(props: { open: boolean; onClose: () => void }) {
   const [items, setItems] = createSignal<StashItem[]>(initialItems.map((item) => ({ ...item })));

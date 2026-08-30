@@ -4,40 +4,6 @@ import type { AppState } from "@natalia/view-store";
 
 type Tab = "constitution" | "decisions" | "evidence" | "drift" | "workgraph";
 
-const constitutionRules = [
-  { ruleID: "C-001", statement: "Main Agent 是唯一模型侧写入执行者。", priority: "critical", scope: "runtime", enforcement: "hard" },
-  { ruleID: "C-002", statement: "任何工具执行都受权限 profile 约束。", priority: "high", scope: "tools", enforcement: "hard" },
-  { ruleID: "C-003", statement: "用户确认前不得删除不可逆工作区数据。", priority: "critical", scope: "workspace", enforcement: "approval" },
-];
-
-const decisions = [
-  { decision: "采用 Neumorphism 作为 Web UI 主题", rationale: ["与当前工程气质统一", "用户偏好浅色系"], status: "accepted" },
-  { decision: "右侧栏保留 Diff / 终端 / 文件 / 浏览器", rationale: ["高频协作工具集中"], status: "accepted" },
-  { decision: "推迟治理类 UI 到后续阶段", rationale: ["先保证核心闭环"], status: "superseded" },
-];
-
-const evidence = [
-  { taskID: "check-rollback", objective: "验证 rollback 行为一致", status: "validated", knownGaps: [] },
-  { taskID: "write-ui", objective: "实现 Neumorphism 原型", status: "accepted", knownGaps: ["文件编辑器还缺真实读写"] },
-  { taskID: "release-check", objective: "完成发布检查", status: "failed", knownGaps: ["tsc 未通过"] },
-];
-
-const driftFindings = [
-  { findingID: "DRIFT-01", severity: "warning", confidence: 0.82, originalObjective: "完成第二套 UI 原型", currentActivity: "正在调整设置面板", evidence: ["settings-panel.tsx"], status: "open" },
-  { findingID: "DRIFT-02", severity: "high", confidence: 0.91, originalObjective: "保持 Sidebar 简洁", currentActivity: "新增了多个 Top Bar 按钮", evidence: ["app-neu.tsx"], status: "open" },
-];
-
-const workNodes = [
-  { nodeID: "n1", kind: "plan", summary: "实现 Web UI 工作台", actor: "Natalia" },
-  { nodeID: "n2", kind: "task", summary: "实现设置面板", actor: "Natalia" },
-  { nodeID: "n3", kind: "decision", summary: "采用 Neumorphism", actor: "Natalia" },
-];
-
-const workEdges = [
-  { sourceID: "n1", targetID: "n2", kind: "leads_to" },
-  { sourceID: "n1", targetID: "n3", kind: "informed_by" },
-];
-
 export function GovernancePanel(props: {
   open: boolean;
   onClose: () => void;
@@ -104,7 +70,7 @@ export function GovernancePanel(props: {
           </div>
           <div class="neu-governance-content">
             <Show when={tab() === "constitution"}>
-              <For each={liveConstitution().length ? liveConstitution() : Object.values(props.state.constitutionRules)}>
+              <For each={liveConstitution().length ? liveConstitution() : Object.values(props.state.constitutionRules ?? {})}>
                 {(rule) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={rule.priority}>{rule.ruleID}</span>
@@ -115,7 +81,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "decisions"}>
-              <For each={liveDecisions().length ? liveDecisions() : props.state.decisions}>
+              <For each={liveDecisions().length ? liveDecisions() : (props.state.decisions ?? [])}>
                 {(record) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={record.status}>{record.status}</span>
@@ -126,7 +92,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "evidence"}>
-              <For each={liveEvidence().length ? liveEvidence() : props.state.evidence}>
+              <For each={liveEvidence().length ? liveEvidence() : (props.state.evidence ?? [])}>
                 {(record) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={record.status}>{record.status}</span>
@@ -137,7 +103,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "drift"}>
-              <For each={liveDrift().length ? liveDrift() : driftFindings}>
+              <For each={liveDrift().length ? liveDrift() : []}>
                 {(finding) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title" data-priority={finding.severity}>{finding.severity} · {Math.round(finding.confidence * 100)}%</span>
@@ -148,7 +114,7 @@ export function GovernancePanel(props: {
               </For>
             </Show>
             <Show when={tab() === "workgraph"}>
-              <For each={liveNodes().length ? liveNodes() : Object.values(props.state.workGraphNodes)}>
+              <For each={liveNodes().length ? liveNodes() : Object.values(props.state.workGraphNodes ?? {})}>
                 {(node) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title">{node.kind}</span>
@@ -158,7 +124,7 @@ export function GovernancePanel(props: {
                 )}
               </For>
               <div class="neu-gov-section-title">Relations</div>
-              <For each={liveEdges().length ? liveEdges() : Object.values(props.state.workGraphEdges)}>
+              <For each={liveEdges().length ? liveEdges() : Object.values(props.state.workGraphEdges ?? {})}>
                 {(edge) => (
                   <div class="neu-gov-row">
                     <span class="neu-gov-title">{edge.kind}</span>

@@ -46,55 +46,6 @@ const moduleTypes = [
   "report_output",
 ];
 
-const initialFlows: Flow[] = [
-  {
-    flowID: "code-review-flow",
-    displayName: "代码审查",
-    permissionProfile: "default",
-    directRunProfile: "default",
-    usedBy: ["release-checklist"],
-    modules: [
-      { id: "m1", type: "read_search", displayName: "搜索上下文", enabled: true, instructions: "读取变更文件并理解上下文", minimumConditions: [], idealConditions: [], commandMode: "none", commandRules: [] },
-      { id: "m2", type: "terminal", displayName: "运行检查", enabled: true, instructions: "运行 tsc 和测试", minimumConditions: [], idealConditions: [], commandMode: "whitelist", commandRules: ["bun install", "bun test"] },
-      { id: "m3", type: "report_output", displayName: "生成报告", enabled: true, instructions: "输出审查结论", minimumConditions: [], idealConditions: [], commandMode: "none", commandRules: [] },
-    ],
-  },
-  {
-    flowID: "rollback-verify",
-    displayName: "回滚验证",
-    permissionProfile: "default",
-    directRunProfile: "read_only",
-    usedBy: [],
-    modules: [
-      { id: "r1", type: "workspace_changes", displayName: "检查变更", enabled: true, instructions: "检查 checkpoint 状态", minimumConditions: ["存在 checkpoint"], idealConditions: [], commandMode: "none", commandRules: [] },
-      { id: "r2", type: "shell_command", displayName: "验证回滚", enabled: true, instructions: "执行回滚验证命令", minimumConditions: [], idealConditions: [], commandMode: "blacklist", commandRules: ["rm -rf /", "git push --force"] },
-    ],
-  },
-];
-
-const initialTasks: Task[] = [
-  {
-    taskID: "release-checklist",
-    displayName: "发布检查",
-    schedule: "0 9 * * 1",
-    prompt: "执行发布前检查清单",
-    permissionProfile: "default",
-    flowID: "code-review-flow",
-    retry: "once",
-    alerts: ["blocked_by_policy", "ultimately_failed"],
-  },
-  {
-    taskID: "daily-triage",
-    displayName: "每日日志分诊",
-    schedule: "0 8 * * *",
-    prompt: "分析昨天的运行日志并汇总问题",
-    permissionProfile: "read_only",
-    flowID: "rollback-verify",
-    retry: "twice",
-    alerts: ["task_started", "succeeded"],
-  },
-];
-
 export function FlowTaskPanel(props: {
   open: boolean;
   onClose: () => void;
@@ -105,10 +56,8 @@ export function FlowTaskPanel(props: {
   onDeleteTask?: (taskID: string) => unknown;
 }) {
   const [tab, setTab] = createSignal<"flows" | "tasks">("flows");
-  const [flows, setFlows] = createSignal<Flow[]>(initialFlows.map((flow) => ({ ...flow, modules: flow.modules.map((mod) => ({ ...mod })) })));
-  const [taskRows, setTaskRows] = createSignal<Task[]>(
-    initialTasks.map((task) => ({ ...task })),
-  );
+  const [flows, setFlows] = createSignal<Flow[]>([]);
+  const [taskRows, setTaskRows] = createSignal<Task[]>([]);
   const [showTaskForm, setShowTaskForm] = createSignal(false);
   const [newTaskID, setNewTaskID] = createSignal("");
   const [newTaskName, setNewTaskName] = createSignal("");

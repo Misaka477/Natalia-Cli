@@ -118,21 +118,13 @@ const initialExtensionSections: ExtensionSection[] = [
     id: "mcp",
     title: "MCP",
     addLabel: "添加 MCP",
-    rows: [
-      { name: "filesystem", description: "本地文件系统 MCP", enabled: true },
-      { name: "context7", description: "文档检索 MCP", enabled: true },
-      { name: "github", description: "GitHub MCP", enabled: false },
-    ],
+    rows: [],
   },
   {
     id: "skills",
     title: "Skills",
     addLabel: "添加技能",
-    rows: [
-      { name: "code-review", description: "代码审查技能", enabled: true },
-      { name: "plan-writer", description: "计划撰写技能", enabled: true },
-      { name: "debugger", description: "调试技能", enabled: false },
-    ],
+    rows: [],
   },
 ];
 
