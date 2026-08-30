@@ -160,7 +160,7 @@ export function StatusPanel(props: {
                         }
                       >
                         <span class="neu-status-tool-name">{tool.name}</span>
-                        <span class="neu-status-tool-description">{shortToolLabel(tool)}</span>
+                        <span class="neu-status-tool-arrow">{expandedTool() === tool.name + tool.callID ? "▾" : "▸"}</span>
                         <span class="neu-status-tool-status">{tool.status}</span>
                       </button>
                       <Show when={expandedTool() === tool.name + tool.callID}>
