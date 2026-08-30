@@ -238,6 +238,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
   const [reviewRequestedTab, setReviewRequestedTab] = createSignal<"git" | "sandbox" | "checkpoint">("git");
   const [panelRevision, setPanelRevision] = createSignal(0);
+  const [olderAvailable, setOlderAvailable] = createSignal(false);
+  const [olderCursor, setOlderCursor] = createSignal<string | undefined>(undefined);
   let userSelectedSession = false;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
@@ -305,6 +307,38 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       }
     }),
   );
+
+  async function loadRecentMessages(sessionID: string) {
+    if (!props.ctx.projection.hydrateMessages) return;
+    const page = await props.ctx.runtime.messages?.({
+      limit: 100,
+      order: "desc",
+    });
+    if (!page) return;
+    // session.messages returns newest-first; hydrate expects chronological order.
+    const data = [...(page.data ?? [])].reverse();
+    props.ctx.projection.hydrateMessages(data, "older");
+    setOlderCursor(page.cursor.previous);
+    setOlderAvailable(Boolean(page.cursor.previous));
+    if (sessionID && !data.some((message) => message.turnID === sessionID)) {
+      // Keep the session id in the projected state even if the first page
+      // contains no session.created event (it is not durable).
+    }
+  }
+
+  async function loadOlderHistory() {
+    const cursor = olderCursor();
+    if (!cursor || !props.ctx.projection.hydrateMessages) return;
+    const page = await props.ctx.runtime.messages?.({
+      limit: 100,
+      cursor,
+    });
+    if (!page) return;
+    const data = [...(page.data ?? [])].reverse();
+    props.ctx.projection.hydrateMessages(data, "older");
+    setOlderCursor(page.cursor.previous);
+    setOlderAvailable(Boolean(page.cursor.previous));
+  }
 
   async function refreshWorkspaces() {
     const roots = await props.ctx.runtime.workspaceRoots?.();
@@ -535,6 +569,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setSelectedSessionID(detail.sessionID);
         setSelectedSession("");
       }
+      void loadRecentMessages(detail.sessionID);
     };
     window.addEventListener(
       "natalia:recent-session-restored",
@@ -1135,6 +1170,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantInitial="N"
                 scrollRef={setTranscriptEl}
                 onScroll={handleTranscriptScroll}
+                loadOlderAvailable={olderAvailable()}
+                onLoadOlder={() => void loadOlderHistory()}
               />
               <Show when={showJumpToBottom()}>
                 <button

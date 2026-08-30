@@ -373,7 +373,10 @@ export function createWebRuntimeClient(
     }
   }
 
-  async function start(onEvent: (event: RuntimeEvent) => void) {
+  async function start(
+    onEvent: (event: RuntimeEvent) => void,
+    startOptions?: { replay?: "all" | "none" },
+  ) {
     console.log("[web-runtime] start called", "listener added");
     starts.push(onEvent);
     if (started) return;
@@ -412,10 +415,15 @@ export function createWebRuntimeClient(
       console.log("[web-runtime] recent session restore failed", error);
     }
 
-    // Replay the full durable session so a reloaded page sees previous
-    // messages. If the session list gave us the event count, fetch all pages in
-    // parallel; otherwise fall back to the sequential after-cursor walk.
-    await replayHistory(newest?.id, newest?.events);
+    // When the UI opts into message-page loading, skip the raw event replay
+    // here. The UI hydrates recent projected messages itself and loads older
+    // history on demand.
+    if (startOptions?.replay !== "none") {
+      // Replay the full durable session so a reloaded page sees previous
+      // messages. If the session list gave us the event count, fetch all pages in
+      // parallel; otherwise fall back to the sequential after-cursor walk.
+      await replayHistory(newest?.id, newest?.events);
+    }
 
     const decoder = new TextDecoder();
     let buffer = "";

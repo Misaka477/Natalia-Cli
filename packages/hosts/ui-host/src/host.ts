@@ -22,6 +22,7 @@ export type UiPluginHostOptions<TContext = unknown> = {
   logger?: Logger;
   t?: (text: string) => string;
   extra?: TContext;
+  replay?: "all" | "none";
 };
 
 export type LoadedUiPlugin = {
@@ -82,6 +83,15 @@ export async function createUiPluginHost<TContext = unknown>(
       return () => {
         projectionListeners.delete(listener);
       };
+    },
+    hydrateMessages(messages, direction = "older") {
+      const evicted = viewStore.hydrateProjectedMessages(
+        state,
+        messages,
+        direction,
+      );
+      for (const listener of projectionListeners) listener(state);
+      return evicted;
     },
     reset() {
       state = viewStore.initialState();
@@ -164,7 +174,7 @@ export async function createUiPluginHost<TContext = unknown>(
   const startRuntime = () => {
     if (started) return;
     started = true;
-    options.runtime.start(fanout);
+    options.runtime.start(fanout, { replay: options.replay ?? "all" });
   };
 
   async function loadPlugin(plugin: UiPlugin) {

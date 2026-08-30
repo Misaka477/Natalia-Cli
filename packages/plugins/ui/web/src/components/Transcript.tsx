@@ -16,6 +16,8 @@ export interface TranscriptProps {
   assistantInitial?: string;
   scrollRef?: (el: HTMLDivElement) => void;
   onScroll?: (event: Event) => void;
+  loadOlderAvailable?: boolean;
+  onLoadOlder?: () => void;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -25,6 +27,15 @@ export function Transcript(props: TranscriptProps) {
       ref={props.scrollRef}
       onScroll={props.onScroll}
     >
+      <Show when={props.loadOlderAvailable && props.onLoadOlder}>
+        <button
+          type="button"
+          class="natalia-load-older"
+          onClick={() => props.onLoadOlder?.()}
+        >
+          加载更早消息
+        </button>
+      </Show>
       <Show
         when={props.messages.length > 0}
         fallback={

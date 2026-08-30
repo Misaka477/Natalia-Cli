@@ -26,6 +26,9 @@ const host = await createUiPluginHost({
   logger: createConsoleLogger("ui-web-shell"),
   extra: { uiPluginRegistry: UI_PLUGIN_REGISTRY, runtimeURL },
   preferences: createLocalPreferenceStore(),
+  // The web UI loads recent projected messages itself; the runtime client does
+  // not need to replay every raw session event on page load.
+  replay: "none",
 });
 
 // Optional UI panel plugins are loaded first so the main UI can see them.

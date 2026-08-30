@@ -33,7 +33,10 @@
  *     live list in `facts`; constitution/decision/evidence/plan/mailbox/workgraph
  *     now have production writers and project here for any host.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type {
+  RuntimeEvent,
+  RuntimeProjectedMessage,
+} from "@natalia/contracts";
 import { applyActivityEvent } from "./activity";
 import { applyChatEvent, applyConversationEvent } from "./conversation";
 import { applyResourceEvent } from "./resources";
@@ -181,6 +184,7 @@ export function reduceState(state: AppState, event: RuntimeEvent): AppState {
 }
 
 /** Folds a whole stream, which is how an external UI replays history. */
+export { hydrateProjectedMessages };
 export function projectEvents(
   events: Iterable<RuntimeEvent>,
   from: AppState = initialState(),
@@ -188,4 +192,51 @@ export function projectEvents(
   const state = cloneState(from);
   for (const event of events) applyEvent(state, event);
   return state;
+}
+
+/**
+ * Hydrates UI transcript rows from server-projected messages. Used by UIs that
+ * adopt message-page loading instead of replaying every raw session event.
+ * Merges by message id so a live projection can keep its own streaming rows.
+ */
+export function hydrateProjectedMessages(
+  state: AppState,
+  messages: RuntimeProjectedMessage[],
+  direction: "older" | "newer" = "older",
+): boolean {
+  const existingTurnIDs = new Set(
+    state.messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.id.replace(/:user$/u, "")),
+  );
+  const projected = initialState();
+  for (const message of messages) {
+    if (existingTurnIDs.has(message.turnID)) continue;
+    for (const row of message.rows) applyEvent(projected, row.event);
+  }
+  const incoming = projected.messages.map((message) => ({ ...message }));
+  if (!incoming.length) return false;
+  const incomingIDs = new Set(incoming.map((message) => message.id));
+  const retained = state.messages.filter(
+    (message) => !incomingIDs.has(message.id),
+  );
+  const merged =
+    direction === "older"
+      ? [...incoming, ...retained]
+      : [...retained, ...incoming];
+  const bounded = boundTranscript(merged, direction);
+  state.messages = bounded.messages;
+  // Keep stream/tool state for hydrated turns when the live project has not
+  // seen them yet.
+  for (const id of Object.keys(projected.streams))
+    if (!(id in state.streams)) state.streams[id] = projected.streams[id];
+  for (const id of Object.keys(projected.streamPhases))
+    if (!(id in state.streamPhases))
+      state.streamPhases[id] = projected.streamPhases[id];
+  for (const id of Object.keys(projected.tools))
+    if (!(id in state.tools)) state.tools[id] = projected.tools[id];
+  if (!state.sessionID && projected.sessionID)
+    state.sessionID = projected.sessionID;
+  if (!state.title && projected.title) state.title = projected.title;
+  return bounded.evicted;
 }

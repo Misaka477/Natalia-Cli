@@ -1,4 +1,8 @@
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type {
+  RuntimeClient,
+  RuntimeEvent,
+  RuntimeProjectedMessage,
+} from "@natalia/contracts";
 import type * as ViewStore from "@natalia/view-store";
 import type { AppState } from "@natalia/view-store";
 
@@ -82,6 +86,10 @@ export type UiTransport = {
 export type UiProjection = {
   getState(): AppState;
   subscribe(listener: (state: AppState) => void): () => void;
+  hydrateMessages?(
+    messages: RuntimeProjectedMessage[],
+    direction?: "older" | "newer",
+  ): boolean;
   /** Resets the projected state for a session/workspace switch. */
   reset?(): void;
 };
