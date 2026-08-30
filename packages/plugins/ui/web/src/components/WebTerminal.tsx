@@ -8,22 +8,6 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 
-type TauriGlobal = {
-  core: {
-    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-  };
-  event: {
-    listen<T>(
-      event: string,
-      handler: (event: { payload: T }) => void,
-    ): Promise<() => void>;
-  };
-};
-
-function getTauriGlobal(): TauriGlobal | undefined {
-  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
-}
-
 type ElectronGlobal = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   on<T>(channel: string, listener: (payload: T) => void): () => void;
@@ -103,9 +87,8 @@ export function WebTerminal(props: WebTerminalProps) {
   let closed = false;
   let lastError: string | undefined;
   let fatal = false;
-  const tauri = getTauriGlobal();
   const electron = getElectronGlobal();
-  const desktop = tauri ?? electron;
+  const desktop = electron;
 
   function theme() {
     // Keep a dark terminal palette regardless of the app/UI theme. Full-screen
@@ -184,21 +167,13 @@ export function WebTerminal(props: WebTerminalProps) {
     });
 
     try {
-      ipcUnlisten = electron
-        ? electron.on<{ id: string; message: ServerMessage }>(
-            "natalia-terminal-output",
-            (event) => {
-              if (event.id !== props.terminalID) return;
-              handleServerMessage(event.message);
-            },
-          )
-        : await tauri!.event.listen<{
-            id: string;
-            message: ServerMessage;
-          }>("natalia-terminal-output", (event) => {
-            if (event.payload.id !== props.terminalID) return;
-            handleServerMessage(event.payload.message);
-          });
+      ipcUnlisten = electron.on<{ id: string; message: ServerMessage }>(
+        "natalia-terminal-output",
+        (event) => {
+          if (event.id !== props.terminalID) return;
+          handleServerMessage(event.message);
+        },
+      );
       console.log("[web-terminal] ipc event listener ready");
       if (closed) return;
 

@@ -20,22 +20,6 @@ import type {
 } from "@natalia/contracts";
 import { callRuntimeRPC } from "@natalia/transport";
 
-type TauriGlobal = {
-  core: {
-    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-  };
-  event: {
-    listen<T>(
-      event: string,
-      handler: (event: { payload: T }) => void,
-    ): Promise<() => void>;
-  };
-};
-
-function getTauriGlobal(): TauriGlobal | undefined {
-  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
-}
-
 type ElectronGlobal = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   on<T>(channel: string, listener: (payload: T) => void): () => void;
@@ -322,7 +306,6 @@ export type WebRuntimeOptions = {
 export function createWebRuntimeClient(
   options: WebRuntimeOptions,
 ): RuntimeClient {
-  const tauri = getTauriGlobal();
   const electron = getElectronGlobal();
   const call = <T>(
     method: string,
@@ -330,12 +313,6 @@ export function createWebRuntimeClient(
   ): Promise<T> => {
     if (electron) {
       return electron.invoke<T>("runtime_call", {
-        method,
-        params: params ?? {},
-      });
-    }
-    if (tauri) {
-      return tauri.core.invoke<T>("runtime_call", {
         method,
         params: params ?? {},
       });
@@ -462,27 +439,6 @@ export function createWebRuntimeClient(
         console.log("[web-runtime] electron event", event.type);
         for (const listener of starts) listener(event);
       });
-      const newest = await restoreRecentSession();
-      await replayHistory(newest?.id, newest?.events);
-      return;
-    }
-
-    // Tauri: receive runtime events through the Rust host's IPC event bridge.
-    if (tauri) {
-      try {
-        await tauri.event.listen<RuntimeEvent>(
-          "natalia-runtime-event",
-          (event) => {
-            console.log("[web-runtime] ipc event", event.payload.type);
-            for (const listener of starts) listener(event.payload);
-          },
-        );
-      } catch (error) {
-        console.error(
-          "[web-runtime] failed to listen for Tauri runtime events",
-          error,
-        );
-      }
       const newest = await restoreRecentSession();
       await replayHistory(newest?.id, newest?.events);
       return;

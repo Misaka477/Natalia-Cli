@@ -1,16 +1,6 @@
 import { createSignal, createEffect, Show, onMount, onCleanup } from "solid-js";
 import type { AppState } from "@natalia/view-store";
 
-type TauriGlobal = {
-  core: {
-    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-  };
-};
-
-function getTauriGlobal(): TauriGlobal | undefined {
-  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
-}
-
 type ElectronGlobal = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   on<T>(channel: string, listener: (payload: T) => void): () => void;
@@ -35,9 +25,8 @@ export function BrowserPanel(props: { state: AppState }) {
   let host: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let urlUnlisten: (() => void) | undefined;
-  const tauri = getTauriGlobal();
   const electron = getElectronGlobal();
-  const desktop = tauri ?? electron;
+  const desktop = electron;
 
   function browserRect(): BrowserRect | undefined {
     if (!host) return undefined;
