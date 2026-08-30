@@ -19,6 +19,7 @@ async fn runtime_call(
     method: String,
     params: Value,
 ) -> Result<Value, String> {
+    eprintln!("[natalia-desktop] runtime_call method={method}");
     let base = state.runtime_url.trim_end_matches('/');
     let client = reqwest::Client::new();
     let request = client
@@ -85,9 +86,11 @@ async fn terminal_output_subscribe(
         url.push_str(&format!("?token={token}"));
     }
 
+    eprintln!("[natalia-desktop] terminal_output_subscribe connecting {url}");
     let (mut socket, _) = tokio_tungstenite::connect_async(&url)
         .await
         .map_err(|error| format!("terminal WebSocket connect failed: {error}"))?;
+    eprintln!("[natalia-desktop] terminal_output_subscribe connected");
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -106,6 +109,7 @@ async fn terminal_output_subscribe(
                 Message::Binary(bytes) => String::from_utf8_lossy(&bytes).to_string(),
                 _ => continue,
             };
+            eprintln!("[natalia-desktop] terminal ws message bytes={}", text.len());
             if let Ok(value) = serde_json::from_str::<Value>(&text) {
                 let _ = app.emit(
                     "natalia-terminal-output",
@@ -153,6 +157,7 @@ async fn stream_runtime_events(
         return;
     }
 
+    eprintln!("[natalia-desktop] runtime event stream connected");
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut current: Option<String> = None;

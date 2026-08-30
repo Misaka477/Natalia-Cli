@@ -108,11 +108,21 @@ export function WebTerminal(props: WebTerminalProps) {
 
   function scheduleReconnect() {
     if (closed || fatal) return;
+    console.log("[web-terminal] schedule reconnect", {
+      sessionID: props.sessionID,
+      terminalID: props.terminalID,
+    });
     if (reconnectTimer) clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connect, 1500);
   }
 
   function handleServerMessage(message: ServerMessage) {
+    console.log("[web-terminal] ipc message", {
+      type: message.type,
+      id: message.id,
+      bytes: message.type === "output" ? message.data.length : undefined,
+      textLength: message.type === "restore" ? message.text.length : undefined,
+    });
     if (message.type === "restore") {
       term?.clear();
       if (message.text) term?.write(message.text);
@@ -153,6 +163,12 @@ export function WebTerminal(props: WebTerminalProps) {
     ipcUnlisten = undefined;
     previous?.();
 
+    console.log("[web-terminal] ipcConnect start", {
+      sessionID: props.sessionID,
+      terminalID: props.terminalID,
+      command: props.command,
+    });
+
     try {
       ipcUnlisten = await tauri.event.listen<{
         id: string;
@@ -161,6 +177,7 @@ export function WebTerminal(props: WebTerminalProps) {
         if (event.payload.id !== props.terminalID) return;
         handleServerMessage(event.payload.message);
       });
+      console.log("[web-terminal] ipc event listener ready");
 
       const listed =
         (await callRuntime<Array<{
@@ -170,6 +187,11 @@ export function WebTerminal(props: WebTerminalProps) {
         }>>(tauri, "nativeTerminal.list")) ?? [];
       let session = listed.find((item) => item.id === props.terminalID);
       if (!session || (session.sessionID && session.sessionID !== props.sessionID)) {
+        console.log("[web-terminal] nativeTerminal.start", {
+          terminalID: props.terminalID,
+          sessionID: props.sessionID,
+          command: props.command || "bash",
+        });
         session =
           (await callRuntime<{ id: string; status: string } | undefined>(
             tauri,
@@ -180,6 +202,9 @@ export function WebTerminal(props: WebTerminalProps) {
               sessionID: props.sessionID,
             },
           )) ?? undefined;
+        console.log("[web-terminal] nativeTerminal.start result", session);
+      } else {
+        console.log("[web-terminal] reuse existing terminal", session);
       }
       if (!session) {
         fatal = true;
@@ -187,19 +212,28 @@ export function WebTerminal(props: WebTerminalProps) {
           lastError = "native terminal start failed";
           term?.writeln("\r\n[native terminal start failed]");
         }
+        console.error("[web-terminal] native terminal start returned no session");
         return;
       }
 
+      console.log("[web-terminal] call terminal_output_subscribe", {
+        sessionId: props.sessionID,
+        terminalId: props.terminalID,
+      });
       await tauri.core.invoke("terminal_output_subscribe", {
         sessionId: props.sessionID,
         terminalId: props.terminalID,
       });
+      console.log("[web-terminal] terminal_output_subscribe ok");
 
       const read = await callRuntime<{ text: string } | undefined>(
         tauri,
         "nativeTerminal.read",
         { id: props.terminalID },
       );
+      console.log("[web-terminal] nativeTerminal.read", {
+        textLength: read?.text.length ?? 0,
+      });
       try {
         term?.clear();
       } catch {
@@ -213,9 +247,14 @@ export function WebTerminal(props: WebTerminalProps) {
           rows: term.rows,
           cols: term.cols,
         });
+        console.log("[web-terminal] initial resize ok", {
+          rows: term.rows,
+          cols: term.cols,
+        });
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
+      console.error("[web-terminal] ipcConnect failed", error);
       if (text !== lastError) {
         lastError = text;
         term?.writeln(`\r\n[${text}]`);
@@ -234,9 +273,11 @@ export function WebTerminal(props: WebTerminalProps) {
     )
       return;
     if (tauri) {
+      console.log("[web-terminal] using Tauri IPC transport");
       void ipcConnect();
       return;
     }
+    console.log("[web-terminal] using WebSocket transport");
     const previous = socket;
     socket = undefined;
     previous?.close();
@@ -370,6 +411,10 @@ export function WebTerminal(props: WebTerminalProps) {
     fit.fit();
     term.onData((data) => {
       if (tauri) {
+        console.log("[web-terminal] write through IPC", {
+          terminalID: props.terminalID,
+          bytes: data.length,
+        });
         void callRuntime(tauri, "nativeTerminal.write", {
           id: props.terminalID,
           input: data,
@@ -383,6 +428,11 @@ export function WebTerminal(props: WebTerminalProps) {
     });
     term.onResize(({ cols, rows }) => {
       if (tauri) {
+        console.log("[web-terminal] resize through IPC", {
+          terminalID: props.terminalID,
+          rows,
+          cols,
+        });
         void callRuntime(tauri, "nativeTerminal.resize", {
           id: props.terminalID,
           rows,
@@ -481,6 +531,10 @@ export function WebTerminal(props: WebTerminalProps) {
   };
 
   onCleanup(() => {
+    console.log("[web-terminal] cleanup", {
+      sessionID: props.sessionID,
+      terminalID: props.terminalID,
+    });
     closed = true;
     props.registerApi?.(undefined);
     if (reconnectTimer) clearTimeout(reconnectTimer);
