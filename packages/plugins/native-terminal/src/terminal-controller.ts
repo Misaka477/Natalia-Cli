@@ -244,6 +244,7 @@ export function createTerminalController(input: {
       attached: session.attached,
       mayWaitForHuman: session.mayWaitForHuman,
       ...(session.sessionID ? { sessionID: session.sessionID } : {}),
+      ...(session.agentID ? { agentID: session.agentID } : {}),
     };
   }
 
@@ -289,6 +290,7 @@ export function createTerminalController(input: {
     cwd: string;
     id?: string;
     sessionID?: string;
+    agentID?: string;
   }) {
     return publicSession(await requireTerminal().start(input));
   }

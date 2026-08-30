@@ -1493,6 +1493,10 @@ export async function handleRPCMessage(
         typeof (params as { sessionID?: unknown }).sessionID === "string"
           ? (params as { sessionID: string }).sessionID
           : undefined;
+      const agentID =
+        typeof (params as { agentID?: unknown }).agentID === "string"
+          ? (params as { agentID: string }).agentID
+          : undefined;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -1501,6 +1505,7 @@ export async function handleRPCMessage(
           cwd,
           id,
           sessionID,
+          ...(agentID ? { agentID } : {}),
         }),
       };
     }

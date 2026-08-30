@@ -791,6 +791,8 @@ export type NativeTerminalSession = {
   id: string;
   /** The session that started this pane; absent for pre-I3 recovered panes. */
   sessionID?: string;
+  /** The subagent that started this pane, when a subagent created it. */
+  agentID?: string;
   host: "wezterm";
   paneID: number;
   windowID: number;
@@ -921,6 +923,7 @@ export class NativeTerminalRegistry {
     cwd: string;
     id?: string;
     sessionID?: string;
+    agentID?: string;
   }) {
     // Creating a pane is only ever requested by the model, and it lands in the
     // window the human is attached to.
@@ -965,6 +968,7 @@ export class NativeTerminalRegistry {
       // session; an explicit id wins once parallel sessions can start panes
       // for a background session.
       sessionID: input.sessionID ?? this.activeSession,
+      ...(input.agentID ? { agentID: input.agentID } : {}),
       host: "wezterm",
       paneID: pane.pane_id,
       windowID: pane.window_id,
@@ -1069,6 +1073,9 @@ export class NativeTerminalRegistry {
           sessionID: (raw as Record<string, unknown>).sessionID as
             | string
             | undefined,
+          ...((raw as Record<string, unknown>).agentID as string | undefined
+            ? { agentID: (raw as Record<string, unknown>).agentID as string }
+            : {}),
           host: "wezterm",
           paneID: typeof paneID === "number" ? paneID : 0,
           windowID: (raw as Record<string, unknown>).windowID as number,
@@ -1113,6 +1120,7 @@ export class NativeTerminalRegistry {
         sessions: Array.from(this.sessions.values()).map((s) => ({
           id: s.id,
           sessionID: s.sessionID,
+          ...(s.agentID ? { agentID: s.agentID } : {}),
           paneID: s.paneID,
           windowID: s.windowID,
           muxWindowID: s.muxWindowID,
@@ -1613,6 +1621,18 @@ export class NativeTerminalRegistry {
     this.audit(session, "exit", actor);
     await this.persistSessions();
     return session;
+  }
+
+  async stopForSession(sessionID: string) {
+    const owned = [...this.sessions.values()].filter(
+      (session) =>
+        session.sessionID === sessionID && session.status === "running",
+    );
+    await Promise.allSettled(
+      owned.map(async (session) => {
+        await this.stop(session.id, "system");
+      }),
+    );
   }
 
   /**

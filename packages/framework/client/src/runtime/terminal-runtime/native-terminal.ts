@@ -137,6 +137,7 @@ export function createNativeTerminalSurface(
           cwd: input.cwd ?? ctx.ports.getWorkspaceRoot(),
           id: input.id,
           sessionID,
+          ...(input.agentID ? { agentID: input.agentID } : {}),
         });
       } catch (error) {
         throw refusalFromRegistry(error);

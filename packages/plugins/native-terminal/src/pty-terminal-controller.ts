@@ -40,6 +40,7 @@ export type PtyFactory = (options: PtySpawnOptions) => PtyProcess;
 type PtySession = {
   id: string;
   sessionID?: string;
+  agentID?: string;
   command: string;
   cwd: string;
   startedAt: string;
@@ -477,6 +478,7 @@ export function createPtyTerminalController(
       startedAt: session.startedAt,
       attached: session.attached,
       ...(session.sessionID ? { sessionID: session.sessionID } : {}),
+      ...(session.agentID ? { agentID: session.agentID } : {}),
     };
   }
 
@@ -643,6 +645,7 @@ export function createPtyTerminalController(
     cwd: string;
     id?: string;
     sessionID?: string;
+    agentID?: string;
   }) {
     if (closed) throw new Error("terminal controller is closed");
     if (!initialized) await init();
@@ -680,6 +683,7 @@ export function createPtyTerminalController(
     const session: PtySession = {
       id,
       sessionID: owningSession,
+      ...(startInput.agentID ? { agentID: startInput.agentID } : {}),
       command: startInput.command,
       cwd: startInput.cwd,
       startedAt: new Date().toISOString(),

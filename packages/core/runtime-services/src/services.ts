@@ -594,6 +594,7 @@ export interface TerminalController {
     cwd: string;
     id?: string;
     sessionID?: string;
+    agentID?: string;
   }): Promise<RuntimeNativeTerminalSession>;
   write(
     id: string,

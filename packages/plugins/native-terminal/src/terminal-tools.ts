@@ -81,6 +81,7 @@ function interactiveStartTool(): RuntimeTool {
         // not the attached one, the registry opens no window and steals no
         // focus — the human's Open terminal brings it up later.
         sessionID: context.parentSessionID,
+        ...(context.parentAgentID ? { agentID: context.parentAgentID } : {}),
       });
       return JSON.stringify(modelNativeTerminalInfo(session), null, 2);
     },

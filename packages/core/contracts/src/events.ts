@@ -1611,6 +1611,8 @@ export type RuntimeNativeTerminalSession = {
   attached: boolean;
   /** Natalia session that owns this pane. Present for PTY and I3 WezTerm panes. */
   sessionID?: string;
+  /** Agent that started/owns this terminal, when the terminal was created by a subagent. */
+  agentID?: string;
   /**
    * TERM-M.3 route 3: a conservative "this pane may be waiting for a human"
    * weak fact. True only when the model wrote, the pane produced output after
@@ -1987,6 +1989,7 @@ export type RuntimeClient = {
     cwd?: string;
     id?: string;
     sessionID?: string;
+    agentID?: string;
   }): Promise<RuntimeNativeTerminalSession>;
   /**
    * Writes input bytes (including control bytes such as Enter, Ctrl-C, Esc) to
