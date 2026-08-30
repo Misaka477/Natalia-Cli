@@ -77,6 +77,7 @@ export function BrowserPanel(props: { state: AppState }) {
     }
     resizeObserver = new ResizeObserver(() => syncBrowserWindow());
     resizeObserver.observe(host);
+    window.addEventListener("resize", syncBrowserWindow);
   });
 
   onCleanup(() => {
@@ -86,6 +87,7 @@ export function BrowserPanel(props: { state: AppState }) {
         .catch((error) => console.error("[browser-panel] hide failed", error));
     }
     resizeObserver?.disconnect();
+    window.removeEventListener("resize", syncBrowserWindow);
   });
 
   function load(next: string) {
