@@ -57,6 +57,11 @@ const DEV_PLUGIN_PACKAGES: ReadonlyArray<{
     directory: "natalia-tool-terminal",
     source: "packages/plugins/native-terminal",
   },
+  {
+    id: "natalia-tool-web",
+    directory: "natalia-tool-web",
+    source: "packages/plugins/tools/web",
+  },
 ];
 
 async function pathExists(path: string) {
