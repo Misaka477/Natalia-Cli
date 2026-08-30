@@ -11,6 +11,7 @@ let mainWindow;
 let browserView;
 let browserViewAttached = false;
 let browserUrl = "https://www.bing.com";
+let lastBrowserRect = { x: 0, y: 0, width: 0, height: 0 };
 const terminalSubscriptions = new Map();
 
 function runtimeFetch(pathname, options = {}) {
@@ -90,18 +91,23 @@ function ensureBrowserView() {
   });
   browserView.webContents.on("did-finish-load", () => {
     console.log("[desktop] browser BrowserView finished loading", browserUrl);
+    if (lastBrowserRect.width && lastBrowserRect.height) {
+      browserView.setBounds(lastBrowserRect);
+      console.log("[desktop] re-applied browser bounds after load", lastBrowserRect);
+    }
   });
   return browserView;
 }
 
 function setBrowserBounds(rect) {
   const view = ensureBrowserView();
-  view.setBounds({
+  lastBrowserRect = {
     x: Math.round(rect.x),
     y: Math.round(rect.y),
     width: Math.round(rect.width),
     height: Math.round(rect.height),
-  });
+  };
+  view.setBounds(lastBrowserRect);
 }
 
 function hideBrowser() {
