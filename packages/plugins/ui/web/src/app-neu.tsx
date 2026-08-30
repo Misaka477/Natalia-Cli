@@ -911,11 +911,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       .find((item) => item.panel.id === "files");
   };
 
+  const terminalPanel = () => {
+    panelRevision();
+    return props.ctx.host
+      ?.listPanels()
+      .find((item) => item.panel.id === "terminal");
+  };
+
   const rightTabs = () => {
     panelRevision();
     const tabs: { id: RightTab; label: string }[] = [
       { id: "diff", label: "审阅 / Diff" },
-      { id: "terminal", label: "终端" },
+      ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
       { id: "browser", label: "浏览器" },
     ];
@@ -1355,7 +1362,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <Show when={rightTab() === "diff"}>
                 <ReviewPane runtime={props.ctx.runtime} requestedTab={reviewRequestedTab()} />
               </Show>
-              <Show when={rightTab() === "terminal"}>
+              <Show when={rightTab() === "terminal" && terminalPanel()}>
                 <TerminalPane
                   runtime={props.ctx.runtime}
                   sessionID={selectedSessionID()}
