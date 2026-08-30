@@ -3206,6 +3206,20 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-shell[data-tiny="true"] .neu-main-panes { flex-direction: column; }
   .neu-secondary-tabs { flex-wrap: nowrap; overflow-x: auto; }
   .neu-secondary-tab { white-space: nowrap; flex-shrink: 0; }
+
+  /* Tiny mode: right sidebar takes the whole content area when opened. */
+  .neu-shell[data-tiny="true"][data-right-open="true"] .neu-main {
+    display: none;
+  }
+  .neu-shell[data-tiny="true"][data-right-open="true"] .neu-secondary {
+    flex: 1;
+    width: auto !important;
+    max-width: none;
+    min-width: 0;
+  }
+  .neu-shell[data-tiny="true"][data-right-open="true"] .neu-right-resizer {
+    display: none;
+  }
 }
 
 .neu-edit-window {
