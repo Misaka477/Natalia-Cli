@@ -975,35 +975,46 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 
 /* ===== Terminal ===== */
 .terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
-.agent-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--neu-bg-light); border-radius: 12px; overflow: hidden; }
-.agent-subtabs { display: flex; gap: 6px; padding: 8px 10px; flex-shrink: 0; }
-.agent-subtab { border: none; border-radius: 10px; padding: 5px 12px; background: var(--neu-bg); color: var(--neu-muted); font-size: 12px; cursor: pointer; box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light); }
-.agent-subtab[data-active="true"] { color: var(--neu-accent); box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light); }
+.agent-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.agent-subtabs { display: flex; gap: 6px; padding: 0 12px 8px; flex-shrink: 0; }
+.agent-subtab {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  color: var(--neu-muted);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.agent-subtab[data-active="true"] {
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+}
 .agent-layout { display: flex; flex: 1; min-height: 0; }
 .agent-sidebar { width: 220px; flex-shrink: 0; overflow-y: auto; padding: 8px; border-right: 1px solid var(--neu-divider); }
-.agent-card { display: block; width: 100%; text-align: left; border: none; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; background: var(--neu-bg); color: var(--neu-text); cursor: pointer; }
+.agent-card { display: block; width: 100%; text-align: left; border: none; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; background: var(--neu-bg); color: var(--neu-text); cursor: pointer; box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light); }
 .agent-card[data-active="true"] { box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light); }
 .agent-card-title { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
 .agent-card-status { font-size: 10px; color: var(--neu-muted); margin-bottom: 2px; }
 .agent-card-detail { font-size: 11px; color: var(--neu-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent-stream { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.agent-stream { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .agent-stream .natalia-transcript { flex: 1; }
 .agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
 .agent-tree-child { margin-left: 12px; }
-.agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
-.agent-stream { flex-direction: column; }
 .agent-stream-header { padding: 8px 12px; border-bottom: 1px solid var(--neu-divider); }
 .agent-stream-title { font-size: 13px; font-weight: 600; }
 .agent-stream-meta { font-size: 11px; color: var(--neu-muted); margin-top: 2px; }
-.team-card-result { font-size: 11px; color: var(--neu-success); margin-top: 4px; }
-.team-card-error { font-size: 11px; color: var(--neu-error); margin-top: 4px; }
-.agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
 .team-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; }
 .team-header { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .team-stat { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 10px; background: var(--neu-bg); margin-bottom: 8px; font-size: 12px; }
-.team-card { padding: 8px 10px; border-radius: 10px; background: var(--neu-bg); margin-bottom: 6px; }
+.team-card { padding: 8px 10px; border-radius: 10px; background: var(--neu-bg); margin-bottom: 6px; box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light); }
 .team-card-title { font-size: 12px; font-weight: 600; }
 .team-card-detail { font-size: 11px; color: var(--neu-muted); }
+.team-card-result { font-size: 11px; color: var(--neu-success); margin-top: 4px; }
+.team-card-error { font-size: 11px; color: var(--neu-error); margin-top: 4px; }
 .terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
 .terminal-toolbar {
   display: flex;
