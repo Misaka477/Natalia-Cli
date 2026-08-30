@@ -972,7 +972,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   onMount(() => {
     const updateLayout = () => {
       const width = window.innerWidth;
-      const mode = width <= 1000 ? "tiny" : width <= 1700 ? "compact" : "wide";
+      const height = window.innerHeight;
+      const screenWidth = window.screen?.availWidth || window.screen?.width || width;
+      const screenHeight = window.screen?.availHeight || window.screen?.height || height;
+      const area = width * height;
+      const quarterArea = screenWidth * screenHeight * 0.25;
+      const tiny =
+        width <= 1000 ||
+        height <= screenHeight * 0.5 ||
+        area <= quarterArea;
+      const mode = tiny ? "tiny" : width <= 1700 ? "compact" : "wide";
       setLayoutMode(mode);
       if (mode !== "wide") {
         setLeftVisible(false);
