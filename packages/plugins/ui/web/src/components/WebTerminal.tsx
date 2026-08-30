@@ -2,10 +2,16 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { CanvasAddon } from "@xterm/addon-canvas";
+import { SearchAddon } from "@xterm/addon-search";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 
 export type WebTerminalApi = {
   clear(): void;
+  findNext(query: string): boolean;
+  findPrevious(query: string): boolean;
   reset(): void;
   copy(): Promise<void>;
   paste(): Promise<void>;
@@ -53,6 +59,7 @@ export function WebTerminal(props: WebTerminalProps) {
   let host: HTMLDivElement | undefined;
   let term: Terminal | undefined;
   let fit: FitAddon | undefined;
+  let searchAddon: SearchAddon | undefined;
   let socket: WebSocket | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -200,6 +207,20 @@ export function WebTerminal(props: WebTerminalProps) {
     });
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
+    const unicode11 = new Unicode11Addon();
+    term.loadAddon(unicode11);
+    term.unicode.activeVersion = "11";
+    try {
+      term.loadAddon(new WebglAddon());
+    } catch {
+      try {
+        term.loadAddon(new CanvasAddon());
+      } catch {
+        // Keep the DOM renderer as a final fallback.
+      }
+    }
+    searchAddon = new SearchAddon();
+    term.loadAddon(searchAddon);
     term.open(host);
     fit.fit();
     term.onData((data) => {
@@ -278,6 +299,8 @@ export function WebTerminal(props: WebTerminalProps) {
 
   const api: WebTerminalApi = {
     clear: () => term?.clear(),
+    findNext: (query) => Boolean(searchAddon?.findNext(query)),
+    findPrevious: (query) => Boolean(searchAddon?.findPrevious(query)),
     reset: () => {
       try {
         term?.reset();

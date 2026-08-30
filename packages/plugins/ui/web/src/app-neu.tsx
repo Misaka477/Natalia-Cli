@@ -1379,7 +1379,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <TodoPanel state={state()} />
               </Show>
               <Show when={rightTab() === "agent"}>
-                <AgentPanel state={state()} runtime={props.ctx.runtime} />
+                <AgentPanel
+                  state={state()}
+                  runtime={props.ctx.runtime}
+                  onOpenTerminal={() => setRightTab("terminal")}
+                />
               </Show>
               <Show when={rightTab() === "terminal" && terminalPanel()}>
                 <TerminalPane

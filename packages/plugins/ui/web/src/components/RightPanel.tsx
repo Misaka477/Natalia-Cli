@@ -647,6 +647,7 @@ export function TerminalPane(props: {
   const [limitError, setLimitError] = createSignal<string>();
   const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
   const [shellProfile, setShellProfile] = createSignal("bash");
+  const [searchQuery, setSearchQuery] = createSignal("");
   const terminalApis = new Map<string, WebTerminalApi>();
   const activeApi = () => terminalApis.get(activeID() ?? "");
   let loadToken = 0;
@@ -878,6 +879,21 @@ export function TerminalPane(props: {
               {sessions().find((item) => item.id === activeID())?.secureInput ? "结束安全输入" : "安全输入"}
             </button>
           </Show>
+          <input
+            class="terminal-search-input"
+            value={searchQuery()}
+            placeholder="搜索终端"
+            onInput={(event) => setSearchQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") activeApi()?.findNext(searchQuery());
+              if (event.key === "Escape") {
+                setSearchQuery("");
+                activeApi()?.findNext("");
+              }
+            }}
+          />
+          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.findNext(searchQuery())} title="下一个匹配">↓</button>
+          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.findPrevious(searchQuery())} title="上一个匹配">↑</button>
           <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.reset()} title="刷新/重连当前终端">刷新</button>
           <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.clear()} title="清空">清空</button>
           <button type="button" class="terminal-toolbar-btn" onClick={() => void activeApi()?.copy()} title="复制">复制</button>

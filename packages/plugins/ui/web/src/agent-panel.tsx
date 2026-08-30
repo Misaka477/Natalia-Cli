@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import type {
   RuntimeClient,
+  RuntimeNativeTerminalSession,
   RuntimeTeamPR,
 } from "@natalia/contracts";
 import type { AppState, SubagentView } from "@natalia/view-store";
@@ -10,12 +11,18 @@ import type { Message } from "./types";
 export function AgentPanel(props: {
   state: AppState;
   runtime?: RuntimeClient;
+  onOpenTerminal?: (terminalID: string) => void;
 }) {
   const [subTab, setSubTab] = createSignal<"subagent" | "team">("subagent");
   const [selectedID, setSelectedID] = createSignal<string | undefined>(undefined);
   const [teamAvailable, setTeamAvailable] = createSignal(false);
   const [teamPRs, setTeamPRs] = createSignal<RuntimeTeamPR[]>([]);
   const [teamConcurrency, setTeamConcurrency] = createSignal<number | undefined>(undefined);
+  const [terminals, setTerminals] = createSignal<RuntimeNativeTerminalSession[]>([]);
+  const runningSubagents = createMemo(() =>
+    subagents().filter((agent) => agent.status === "running"),
+  );
+
   const teamStatusTally = createMemo(() => {
     const tally: Record<string, number> = { completed: 0, failed: 0, stopped: 0 };
     for (const pr of teamPRs()) {
@@ -25,35 +32,43 @@ export function AgentPanel(props: {
     return tally;
   });
 
-  onMount(() => {
-    void (async () => {
-      let teamSeen = false;
-      try {
-        const prs = (await props.runtime?.teamPRList?.()) ?? [];
-        setTeamPRs(prs);
-        teamSeen = true;
-      } catch {
-        setTeamPRs([]);
-      }
-      try {
-        const plugins = (await props.runtime?.plugins?.()) ?? [];
-        if (
-          plugins.some(
-            (plugin) => plugin.id?.includes("team") || plugin.name?.includes("Team"),
-          )
+  async function refreshData() {
+    let teamSeen = false;
+    try {
+      const prs = (await props.runtime?.teamPRList?.()) ?? [];
+      setTeamPRs(prs);
+      teamSeen = true;
+    } catch {
+      setTeamPRs([]);
+    }
+    try {
+      const plugins = (await props.runtime?.plugins?.()) ?? [];
+      if (
+        plugins.some(
+          (plugin) => plugin.id?.includes("team") || plugin.name?.includes("Team"),
         )
-          teamSeen = true;
-      } catch {
-        // plugin list may be unavailable; teamPRList already tried
-      }
-      setTeamAvailable(teamSeen);
-      try {
-        const config = await props.runtime?.configGet?.();
-        setTeamConcurrency(config?.team?.maxConcurrent);
-      } catch {
-        setTeamConcurrency(undefined);
-      }
-    })();
+      )
+        teamSeen = true;
+    } catch {
+      // plugin list may be unavailable; teamPRList already tried
+    }
+    setTeamAvailable(teamSeen);
+    try {
+      const list = (await props.runtime?.nativeTerminalList?.()) ?? [];
+      setTerminals(list);
+    } catch {
+      setTerminals([]);
+    }
+    try {
+      const config = await props.runtime?.configGet?.();
+      setTeamConcurrency(config?.team?.maxConcurrent);
+    } catch {
+      setTeamConcurrency(undefined);
+    }
+  }
+
+  onMount(() => {
+    void refreshData();
   });
 
   const subagents = createMemo(() =>
@@ -82,6 +97,10 @@ export function AgentPanel(props: {
 
   const selectedSubagent = createMemo(() =>
     subagents().find((item) => item.id === selectedID()),
+  );
+
+  const selectedTerminals = createMemo(() =>
+    terminals().filter((terminal) => terminal.agentID === selectedID()),
   );
 
   const subagentMessages = createMemo<Message[]>(() => {
@@ -258,6 +277,17 @@ export function AgentPanel(props: {
                 <span class="review-meta">
                   {selectedSubagent()?.status} · {selectedSubagent()?.phase ?? "idle"}
                   {selectedSubagent()?.parentAgentID ? ` · 父 ${selectedSubagent()?.parentAgentID}` : ""}
+                  <Show when={selectedTerminals().length}>
+                    {" · "}
+                    终端: {selectedTerminals().map((terminal) => terminal.id).join(", ")}
+                    <button
+                      type="button"
+                      class="terminal-toolbar-btn"
+                      onClick={() => props.onOpenTerminal?.(selectedTerminals()[0]!.id)}
+                    >
+                      打开终端
+                    </button>
+                  </Show>
                 </span>
               </Show>
             </div>
@@ -281,6 +311,7 @@ export function AgentPanel(props: {
         <div class="review-header">
           <div class="review-title">
             <span>Team 概览</span>
+            <button type="button" class="terminal-toolbar-btn" onClick={() => void refreshData()}>刷新</button>
           </div>
           <div class="review-meta">
             <span class="review-count">{teamPRs().length} PR</span>
@@ -289,6 +320,10 @@ export function AgentPanel(props: {
         <div class="review-section-label">并发上限</div>
         <div class="review-entity-control">
           <div class="review-select">{teamConcurrency() ?? "未设置"}</div>
+        </div>
+        <div class="review-section-label">运行中的子 Agent</div>
+        <div class="review-entity-control">
+          <div class="review-select">{runningSubagents().length}</div>
         </div>
         <div class="review-section-label">状态统计</div>
         <div class="review-entity-control">

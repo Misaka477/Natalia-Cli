@@ -1,11 +1,37 @@
-import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
+import { createSignal, createEffect, Show, onCleanup, onMount, For } from "solid-js";
 
 type StashItem = { id: string; title: string; content: string; time: string };
 
-const initialItems: StashItem[] = [];
+const STASH_KEY = "natalia.web.stash";
+
+function loadStash(): StashItem[] {
+  try {
+    const raw = localStorage.getItem(STASH_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (item): item is StashItem =>
+            typeof item === "object" &&
+            item !== null &&
+            typeof (item as StashItem).id === "string",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 export function StashPanel(props: { open: boolean; onClose: () => void }) {
-  const [items, setItems] = createSignal<StashItem[]>(initialItems.map((item) => ({ ...item })));
+  const [items, setItems] = createSignal<StashItem[]>(loadStash());
+
+  createEffect(() => {
+    try {
+      localStorage.setItem(STASH_KEY, JSON.stringify(items()));
+    } catch {
+      // local storage unavailable; keep in-memory only
+    }
+  });
   const [adding, setAdding] = createSignal(false);
   const [title, setTitle] = createSignal("");
   const [content, setContent] = createSignal("");

@@ -1075,6 +1075,17 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   padding: 6px 10px 0;
   flex-shrink: 0;
 }
+.terminal-search-input {
+  border: none;
+  border-radius: 8px;
+  padding: 4px 8px;
+  width: 90px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-size: 11px;
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+  outline: none;
+}
 .terminal-toolbar-btn {
   border: none;
   border-radius: 10px;
