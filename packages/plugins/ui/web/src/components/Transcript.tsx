@@ -176,7 +176,12 @@ export function MessageRow(props: MessageRowProps) {
                     />
                   </svg>
                   <span class="natalia-tool-name">{toolCall.name}</span>
-                  <span class="natalia-badge natalia-badge-default">tool</span>
+                  <Show when={toolCall.summary}>
+                    <span class="natalia-tool-summary">{toolCall.summary}</span>
+                  </Show>
+                  <span class="natalia-badge natalia-badge-default">
+                    {toolCall.status ?? "tool"}
+                  </span>
                 </div>
                 <Show when={toolCall.output}>
                   <div class="natalia-tool-output">

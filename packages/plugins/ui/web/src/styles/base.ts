@@ -1059,6 +1059,12 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .team-card-title { font-size: 12px; font-weight: 600; }
 .team-card-detail { font-size: 11px; color: var(--neu-muted); }
 .team-card-result { font-size: 11px; color: var(--neu-success); margin-top: 4px; }
+.team-queue-card { padding: 10px 12px; border-radius: 12px; background: var(--neu-bg); margin-bottom: 8px; box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light); }
+.team-queue-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.team-queue-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--neu-muted); }
+.team-queue-result { margin-top: 6px; font-size: 11px; color: var(--neu-text); white-space: pre-wrap; }
+.natalia-tool-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--neu-muted); }
+.team-card-result { font-size: 11px; color: var(--neu-success); margin-top: 4px; }
 .team-card-error { font-size: 11px; color: var(--neu-error); margin-top: 4px; }
 .terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
 .terminal-toolbar {

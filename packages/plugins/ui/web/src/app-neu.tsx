@@ -802,6 +802,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 msg.tool.name,
                 msg.tool.result ?? msg.tool.summary,
               ),
+              status: msg.tool.status,
+              summary: msg.tool.summary,
             },
           ],
         };

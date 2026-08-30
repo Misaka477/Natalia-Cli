@@ -28,6 +28,8 @@ export interface Message {
 export interface ToolCall {
   name: string;
   output?: string;
+  status?: string;
+  summary?: string;
 }
 
 export interface MessageAction {

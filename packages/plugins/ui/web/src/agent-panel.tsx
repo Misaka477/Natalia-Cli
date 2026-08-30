@@ -100,6 +100,8 @@ export function AgentPanel(props: {
               {
                 name: msg.tool.name,
                 output: msg.tool.result ?? msg.tool.summary,
+                status: msg.tool.status,
+                summary: msg.tool.summary,
               },
             ],
           } satisfies Message;
@@ -295,13 +297,24 @@ export function AgentPanel(props: {
           </div>
         </div>
         <Show when={teamPRs().length}>
+          <div class="review-section-label">任务队列</div>
           <div class="review-entity-list">
             <For each={teamPRs()}>
               {(pr) => (
-                <button type="button" class="review-entity-button">
-                  {pr.task || pr.id}
-                  <span class="review-entity-count">{pr.status}</span>
-                </button>
+                <div class="team-queue-card">
+                  <div class="team-queue-title">{pr.task || pr.id}</div>
+                  <div class="team-queue-meta">
+                    <span>状态: {pr.status}</span>
+                    <span>子 Agent: {pr.sandboxID}</span>
+                    <span>phase: {subagents().find((item) => item.id === pr.sandboxID)?.phase ?? "未知"}</span>
+                  </div>
+                  <Show when={pr.result}>
+                    <div class="team-queue-result">{pr.result}</div>
+                  </Show>
+                  <Show when={pr.buildEvidence && !pr.buildEvidence.ok}>
+                    <div class="team-card-error">build exit {pr.buildEvidence?.exitCode}</div>
+                  </Show>
+                </div>
               )}
             </For>
           </div>
