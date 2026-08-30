@@ -411,7 +411,14 @@ export function createWebRuntimeClient(
     let newest: RuntimeSessionSummary | undefined;
     try {
       const sessions = await call<RuntimeSessionSummary[]>("session.list");
-      newest = sessions.find((session) => !session.archived);
+      const recent = sessions
+        .filter((session) => !session.archived)
+        .sort((a, b) => {
+          const at = new Date(b.lastAccessedAt ?? b.createdAt).getTime();
+          const bt = new Date(a.lastAccessedAt ?? a.createdAt).getTime();
+          return bt - at;
+        });
+      newest = recent[0];
       if (newest) {
         await call("session.attach", { id: newest.id });
         if (typeof window !== "undefined")

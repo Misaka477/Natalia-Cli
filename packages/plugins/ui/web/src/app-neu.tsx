@@ -334,8 +334,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setSelectedSessionID(target.id);
           setSelectedSession(target.title);
         } else if (!selectedSessionID()) {
-          setSelectedSessionID(sessions[0].id);
-          setSelectedSession(sessions[0].title);
+          const recent = sessions
+            .filter((session) => !session.archived)
+            .sort((a, b) => {
+              const at = new Date(b.lastAccessedAt ?? b.createdAt).getTime();
+              const bt = new Date(a.lastAccessedAt ?? a.createdAt).getTime();
+              return bt - at;
+            });
+          const fallback = recent[0] ?? sessions[0];
+          if (fallback) {
+            setSelectedSessionID(fallback.id);
+            setSelectedSession(fallback.title);
+          }
         }
       }
     }
