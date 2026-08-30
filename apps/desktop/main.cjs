@@ -10,7 +10,7 @@ const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
 let mainWindow;
 let browserView;
 let browserViewAttached = false;
-let browserUrl = "https://www.bing.com";
+let browserUrl = "";
 let lastBrowserRect = { x: 0, y: 0, width: 0, height: 0 };
 const terminalSubscriptions = new Map();
 
@@ -84,7 +84,7 @@ function ensureBrowserView() {
   });
   mainWindow.addBrowserView(browserView);
   browserViewAttached = true;
-  browserView.webContents.loadURL(browserUrl);
+  browserView.webContents.loadURL(browserUrl || "about:blank");
   console.log("[desktop] browser BrowserView created", {
     attached: browserViewAttached,
     url: browserUrl,

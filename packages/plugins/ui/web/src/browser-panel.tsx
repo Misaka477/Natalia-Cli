@@ -18,8 +18,8 @@ type BrowserRect = {
 };
 
 export function BrowserPanel(props: { state: AppState }) {
-  const [url, setUrl] = createSignal("https://example.com");
-  const [current, setCurrent] = createSignal("https://example.com");
+  const [url, setUrl] = createSignal("");
+  const [current, setCurrent] = createSignal("");
   const [history, setHistory] = createSignal<string[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(0);
   let host: HTMLDivElement | undefined;
