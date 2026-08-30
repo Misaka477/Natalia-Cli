@@ -3170,19 +3170,29 @@ button.neu-settings-item.neu-settings-item-button:active {
 }
 
 /* ===== Responsive ===== */
-@media (max-width: 900px) {
-  .neu-app { padding: 10px; gap: 10px; }
-  .neu-main-panes { gap: 10px; }
-  .neu-secondary { min-width: 280px; }
+@media (max-width: 1200px) {
+  .neu-shell { padding: 10px; gap: 10px; }
+  .neu-app { gap: 10px; }
+  .neu-pane { padding: 12px; }
+  .neu-secondary { max-width: 380px; }
+  .neu-sidebar { max-width: 240px; }
 }
-@media (max-width: 700px) {
-  .neu-app { flex-wrap: nowrap; }
+@media (max-width: 1000px) {
   .neu-sidebar { display: none; }
   .neu-resizer { display: none; }
-  .neu-pane { min-width: 0; }
+  .neu-main-panes { gap: 10px; }
+  .neu-secondary { min-width: 260px; max-width: 360px; }
+}
+@media (max-width: 760px) {
+  .neu-shell { padding: 6px; gap: 6px; }
+  .neu-app { gap: 6px; }
   .neu-main-panes { flex-direction: column; }
   .neu-pane-divider { height: 8px; width: auto; }
-  .neu-secondary { position: fixed; inset: 0 0 0 auto; width: 90vw; z-index: 10; }
+  .neu-pane { min-height: 220px; }
+  .neu-secondary { position: static; width: 100% !important; min-width: 0; max-width: 100%; flex: 1; z-index: auto; }
+  .neu-right-resizer { display: none; }
+  .neu-secondary-tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .neu-secondary-tab { white-space: nowrap; flex-shrink: 0; }
 }
 
 .neu-edit-window {
