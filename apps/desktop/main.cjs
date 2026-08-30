@@ -82,6 +82,13 @@ function ensureBrowserView() {
   });
   mainWindow.contentView.addChildView(browserView);
   browserView.webContents.loadURL(browserUrl);
+  console.log("[desktop] browser WebContentsView created", {
+    children: mainWindow.contentView.children.length,
+    url: browserUrl,
+  });
+  browserView.webContents.on("did-finish-load", () => {
+    console.log("[desktop] browser WebContentsView finished loading", browserUrl);
+  });
   return browserView;
 }
 
@@ -177,11 +184,18 @@ ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
 });
 
 ipcMain.handle("browser_show", (_event, rect) => {
+  console.log("[desktop] browser_show", rect, {
+    children: mainWindow?.contentView.children.length,
+  });
   showBrowser(rect);
   return { ok: true };
 });
 
 ipcMain.handle("browser_move", (_event, rect) => {
+  console.log("[desktop] browser_move", rect, {
+    hasView: Boolean(browserView),
+    children: mainWindow?.contentView.children.length,
+  });
   if (!browserView) return { ok: false };
   setBrowserBounds(rect);
   return { ok: true };
