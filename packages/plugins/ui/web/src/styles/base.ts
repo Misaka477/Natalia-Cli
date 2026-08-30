@@ -3195,6 +3195,16 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-shell[data-compact="true"] .neu-resizer {
     display: none;
   }
+  .neu-shell[data-compact="true"] .neu-main-panes {
+    flex-direction: column;
+  }
+  .neu-shell[data-compact="true"] .neu-pane-divider {
+    height: 8px;
+    width: auto;
+  }
+  .neu-shell[data-compact="true"] .neu-pane {
+    min-height: 220px;
+  }
   .neu-main-panes { gap: 10px; }
 }
 @media (max-width: 1000px) {
