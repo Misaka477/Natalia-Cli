@@ -184,6 +184,7 @@ export function BrowserPanel(props: { state: AppState }) {
             placeholder="输入 URL，例如 https://example.com"
             onInput={(event) => setUrl(event.currentTarget.value)}
           />
+          <button type="submit" class="browser-load-btn">前往</button>
         </form>
       </div>
       <div class="browser-webview-host" ref={host}>
