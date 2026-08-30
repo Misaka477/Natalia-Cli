@@ -459,8 +459,6 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   border-radius: 16px;
   background: var(--neu-bg);
   box-shadow: none;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
 }
 .neu-pane .natalia-message[data-role="user"] {
   align-self: flex-end;
@@ -977,6 +975,57 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 
 /* ===== Terminal ===== */
 .terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
+.terminal-tabs { display: flex; align-items: center; gap: 6px; padding: 8px 10px 0; flex-shrink: 0; overflow-x: auto; }
+.terminal-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  color: var(--neu-muted);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+}
+.terminal-tab[data-active="true"] {
+  background: var(--neu-bg-light);
+  color: var(--neu-accent);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.terminal-tab-label { white-space: nowrap; }
+.terminal-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  color: var(--neu-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+.terminal-tab-close:hover { color: var(--neu-error); }
+.terminal-tab-add {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  color: var(--neu-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+}
+.terminal-tab-add:disabled { opacity: 0.45; cursor: not-allowed; }
+.terminal-limit-error { padding: 4px 12px 0; font-size: 11px; color: var(--neu-error); }
+.terminal-xterm-stack { position: relative; flex: 1; min-height: 0; }
+.terminal-xterm-host { position: absolute; inset: 0; display: none; }
+.terminal-xterm-host[data-active="true"] { display: flex; }
 .web-terminal { flex: 1; min-height: 0; padding: 8px; }
 .web-terminal .xterm { height: 100%; }
 .web-terminal .xterm-viewport { overflow-y: auto !important; }
