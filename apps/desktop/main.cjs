@@ -119,19 +119,11 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 640,
     title: "Natalia Desktop",
-    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
-  });
-
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
-  });
-  mainWindow.webContents.once("did-finish-load", () => {
-    setTimeout(() => mainWindow?.show(), 300);
   });
 
   const webDist = path.resolve(__dirname, "../../apps/web/dist/index.html");
