@@ -1007,6 +1007,35 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .agent-stream .natalia-transcript { flex: 1; }
 .agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
 .agent-tree-child { margin-left: 12px; }
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--neu-text);
+}
+.todo-row:hover { background: var(--neu-bg-light); }
+.todo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--neu-muted);
+}
+.todo-dot[data-status="in_progress"] { background: var(--neu-accent); }
+.todo-dot[data-status="completed"] { background: var(--neu-success); }
+.todo-text { flex: 1; min-width: 0; }
+.todo-status { font-size: 10px; color: var(--neu-muted); }
+.todo-completed-header {
+  margin: 12px 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--neu-muted);
+  text-transform: uppercase;
+}
+.todo-completed-text { color: var(--neu-muted); text-decoration: line-through; }
 .agent-empty-full {
   flex: 1;
   min-height: 0;
