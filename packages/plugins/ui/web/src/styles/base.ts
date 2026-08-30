@@ -1063,7 +1063,9 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .terminal-owner-badge[data-owner="human"] {
   color: var(--neu-accent);
 }
-.terminal-profile-select { min-width: 96px; }
+.terminal-profile-select { width: 92px; flex-shrink: 0; }
+.terminal-profile-select .neu-select-trigger { padding: 5px 8px; font-size: 11px; }
+.terminal-profile-select .neu-select-option { font-size: 11px; }
 .terminal-split-stack {
   display: flex;
   flex: 1;
