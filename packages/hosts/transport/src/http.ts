@@ -552,6 +552,25 @@ export function createRuntimeHttpServer(
     }
     if (url.pathname !== "/rpc" || request.method !== "POST")
       return Response.json({ error: "not found" }, { status: 404 });
+    const rpcJsonResponse = (payload: unknown, status = 200) => {
+      const acceptsGzip =
+        request.headers.get("accept-encoding")?.includes("gzip") ?? false;
+      const json = JSON.stringify(payload);
+      if (acceptsGzip)
+        return new Response(gzipSync(json), {
+          status,
+          headers: {
+            "content-type": "application/json",
+            "content-encoding": "gzip",
+            "vary": "accept-encoding",
+          },
+        });
+      return new Response(json, {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
     let body: unknown;
     try {
       body = await request.json();
@@ -572,25 +591,6 @@ export function createRuntimeHttpServer(
     // without write scope is left to the authorization layer ("no write
     // scope"): the gate answers only for callers who would otherwise get
     // through.
-    const rpcJsonResponse = (payload: unknown, status = 200) => {
-      const acceptsGzip =
-        request.headers.get("accept-encoding")?.includes("gzip") ?? false;
-      const json = JSON.stringify(payload);
-      if (acceptsGzip)
-        return new Response(gzipSync(json), {
-          status,
-          headers: {
-            "content-type": "application/json",
-            "content-encoding": "gzip",
-            "vary": "accept-encoding",
-          },
-        });
-      return new Response(json, {
-        status,
-        headers: { "content-type": "application/json" },
-      });
-    };
-
     const method = (body as { method?: unknown })?.method;
     console.log(
       "[web-server] rpc",

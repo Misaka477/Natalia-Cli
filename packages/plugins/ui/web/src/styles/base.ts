@@ -440,23 +440,6 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane .natalia-transcript > * {
   flex-shrink: 0;
 }
-.neu-pane .natalia-load-older {
-  display: block;
-  width: fit-content;
-  margin: 0 auto 8px;
-  padding: 5px 12px;
-  border: none;
-  border-radius: 10px;
-  background: var(--neu-bg);
-  color: var(--neu-muted);
-  font-size: 12px;
-  cursor: pointer;
-  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
-}
-.neu-pane .natalia-load-older:hover { color: var(--neu-text); }
-.neu-pane .natalia-load-older:active {
-  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
-}
 .neu-pane .natalia-transcript-empty {
   margin: auto;
   display: flex;

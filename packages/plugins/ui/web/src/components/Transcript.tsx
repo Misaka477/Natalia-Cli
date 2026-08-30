@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onMount } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import { marked } from "marked";
 import type { Message } from "../types";
 
@@ -16,52 +16,15 @@ export interface TranscriptProps {
   assistantInitial?: string;
   scrollRef?: (el: HTMLDivElement) => void;
   onScroll?: (event: Event) => void;
-  loadOlderAvailable?: boolean;
-  onLoadOlder?: () => void;
 }
 
-const ROW_ESTIMATE = 82;
-const OVERSCAN = 8;
-
 export function Transcript(props: TranscriptProps) {
-  const [scrollTop, setScrollTop] = createSignal(0);
-  const [viewportHeight, setViewportHeight] = createSignal(600);
-  let container: HTMLDivElement | undefined;
-
-  onMount(() => {
-    if (container) setViewportHeight(container.clientHeight || 600);
-  });
-
-  const startIndex = () =>
-    Math.max(0, Math.floor(scrollTop() / ROW_ESTIMATE) - OVERSCAN);
-  const endIndex = () =>
-    Math.min(
-      props.messages.length,
-      Math.ceil((scrollTop() + viewportHeight()) / ROW_ESTIMATE) + OVERSCAN,
-    );
-  const visible = () => props.messages.slice(startIndex(), endIndex());
-
   return (
     <div
       class="natalia-transcript"
-      ref={(el) => {
-        container = el;
-        props.scrollRef?.(el);
-      }}
-      onScroll={(event) => {
-        props.onScroll?.(event);
-        setScrollTop(event.currentTarget.scrollTop);
-      }}
+      ref={props.scrollRef}
+      onScroll={props.onScroll}
     >
-      <Show when={props.loadOlderAvailable && props.onLoadOlder}>
-        <button
-          type="button"
-          class="natalia-load-older"
-          onClick={() => props.onLoadOlder?.()}
-        >
-          加载更早消息
-        </button>
-      </Show>
       <Show
         when={props.messages.length > 0}
         fallback={
@@ -85,8 +48,7 @@ export function Transcript(props: TranscriptProps) {
           </div>
         }
       >
-        <div style={{ height: `${startIndex() * ROW_ESTIMATE}px` }} />
-        <For each={visible()}>
+        <For each={props.messages}>
           {(message) => (
             <MessageRow
               message={message}
@@ -95,11 +57,6 @@ export function Transcript(props: TranscriptProps) {
             />
           )}
         </For>
-        <div
-          style={{
-            height: `${Math.max(0, (props.messages.length - endIndex()) * ROW_ESTIMATE)}px`,
-          }}
-        />
       </Show>
     </div>
   );
@@ -282,9 +239,6 @@ export function formatBashBlocks(
   const resultMatch = resultRegex.exec(text);
   if (resultMatch) {
     blocks.push({ type: "result", content: resultMatch[1].trim() });
-  }
-  if (blocks.length === 0 && text.trim()) {
-    blocks.push({ type: "text", content: text.trim() });
   }
   return blocks;
 }
