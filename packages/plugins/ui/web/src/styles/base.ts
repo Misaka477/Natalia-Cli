@@ -1258,6 +1258,19 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   color: var(--neu-error);
   font-size: 12px;
 }
+.browser-pause-hint {
+  margin: 0 10px 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--neu-bg-light);
+  color: var(--neu-accent);
+  font-size: 12px;
+}
+.browser-owner-btn {
+  width: auto;
+  padding: 0 8px;
+  font-size: 11px;
+}
 @keyframes neu-browser-loading {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }

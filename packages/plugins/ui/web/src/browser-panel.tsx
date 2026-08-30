@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, onMount, onCleanup } from "solid-js";
+import { createSignal, Show, onMount, onCleanup } from "solid-js";
 import type { AppState } from "@natalia/view-store";
 
 type ElectronGlobal = {
@@ -6,12 +6,16 @@ type ElectronGlobal = {
   on<T>(channel: string, listener: (payload: T) => void): () => void;
 };
 
+type BrowserOwner = "model" | "human" | "shared";
+
 type BrowserStatus = {
   url?: string;
   loading?: boolean;
   canGoBack?: boolean;
   canGoForward?: boolean;
   error?: string | null;
+  owner?: BrowserOwner;
+  secureInput?: boolean;
 };
 
 function getElectronGlobal(): ElectronGlobal | undefined {
@@ -25,13 +29,21 @@ type BrowserRect = {
   height: number;
 };
 
-export function BrowserPanel(props: { state: AppState }) {
+function ownerLabel(owner: BrowserOwner) {
+  if (owner === "human") return "人工控制";
+  if (owner === "model") return "模型控制";
+  return "共享";
+}
+
+export function BrowserPanel(_props: { state: AppState }) {
   const [url, setUrl] = createSignal("");
   const [current, setCurrent] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [canGoBack, setCanGoBack] = createSignal(false);
   const [canGoForward, setCanGoForward] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [owner, setOwner] = createSignal<BrowserOwner>("shared");
+  const [secureInput, setSecureInput] = createSignal(false);
   let host: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let urlUnlisten: (() => void) | undefined;
@@ -49,6 +61,8 @@ export function BrowserPanel(props: { state: AppState }) {
     if (typeof payload.canGoForward === "boolean") setCanGoForward(payload.canGoForward);
     if (payload.error === null) setError(null);
     else if (typeof payload.error === "string") setError(payload.error);
+    if (payload.owner) setOwner(payload.owner);
+    if (typeof payload.secureInput === "boolean") setSecureInput(payload.secureInput);
   }
 
   function browserRect(): BrowserRect | undefined {
@@ -66,12 +80,7 @@ export function BrowserPanel(props: { state: AppState }) {
     if (!desktop) return;
     const rect = browserRect();
     if (!rect) return;
-    electron?.log("[browser-panel] move rect", rect, {
-      dpr: window.devicePixelRatio,
-      innerWidth: window.innerWidth,
-      innerHeight: window.innerHeight,
-    });
-    void desktop!
+    void desktop
       .invoke("browser_move", { rect })
       .catch((err) => electron?.log("[browser-panel] move failed", err));
   }
@@ -79,7 +88,6 @@ export function BrowserPanel(props: { state: AppState }) {
   onMount(() => {
     if (!desktop || !host) return;
     urlUnlisten = electron?.on<{ url: string }>("browser-url-changed", (payload) => {
-      console.log("[browser-panel] url changed", payload.url);
       setUrl(payload.url);
       setCurrent(payload.url);
     });
@@ -87,14 +95,11 @@ export function BrowserPanel(props: { state: AppState }) {
       applyStatus(payload);
     });
     const rect = browserRect();
-    electron?.log("[browser-panel] show rect", rect, {
-      dpr: window.devicePixelRatio,
-      innerWidth: window.innerWidth,
-      innerHeight: window.innerHeight,
-    });
     if (rect) {
-      void desktop!
+      void desktop
         .invoke("browser_show", { rect })
+        .then(() => desktop.invoke<BrowserStatus>("browser_status"))
+        .then((status) => applyStatus(status ?? {}))
         .catch((err) => electron?.log("[browser-panel] show failed", err));
     }
     resizeObserver = new ResizeObserver(() => syncBrowserWindow());
@@ -104,7 +109,7 @@ export function BrowserPanel(props: { state: AppState }) {
 
   onCleanup(() => {
     if (desktop) {
-      void desktop!
+      void desktop
         .invoke("browser_hide")
         .catch((err) => electron?.log("[browser-panel] hide failed", err));
     }
@@ -123,7 +128,7 @@ export function BrowserPanel(props: { state: AppState }) {
     setLoading(true);
     setError(null);
     if (desktop) {
-      void desktop!
+      void desktop
         .invoke("browser_navigate", { url: normalized })
         .catch((err) => {
           setLoading(false);
@@ -132,45 +137,6 @@ export function BrowserPanel(props: { state: AppState }) {
         });
     }
   }
-
-  let lastHandledTool = "";
-
-  createEffect(() => {
-    const tools = props.state.tools ?? {};
-    const entries = Object.values(tools);
-    const browserTool = [...entries]
-      .reverse()
-      .find((tool) =>
-        [
-          "browser_visit",
-          "browser_screenshot",
-          "web_fetch",
-          "browser_session_open",
-          "browser_session_navigate",
-        ].includes(tool.name),
-      );
-    if (!browserTool || browserTool.status === "failed") return;
-    const key = `${browserTool.name}:${browserTool.callID ?? ""}:${browserTool.status}`;
-    if (key === lastHandledTool) return;
-    lastHandledTool = key;
-    const raw = browserTool.argumentsRaw || "";
-    try {
-      const args = JSON.parse(raw) as Record<string, unknown>;
-      const target =
-        typeof args.url === "string"
-          ? args.url
-          : typeof args.src === "string"
-            ? args.src
-            : undefined;
-      if (target) {
-        let normalized = target.trim();
-        if (!/^https?:\/\//u.test(normalized)) normalized = `https://${normalized}`;
-        load(normalized);
-      }
-    } catch {
-      // argument text may be partial; ignore
-    }
-  });
 
   function back() {
     if (!desktop || !canGoBack()) return;
@@ -196,12 +162,58 @@ export function BrowserPanel(props: { state: AppState }) {
     if (current()) load(current());
   }
 
+  function claimHuman() {
+    if (!desktop) return;
+    void desktop
+      .invoke<BrowserStatus>("browser_claim_human")
+      .then(applyStatus)
+      .catch((err) => electron?.log("[browser-panel] claim failed", err));
+  }
+
+  function releaseModel() {
+    if (!desktop) return;
+    void desktop
+      .invoke<BrowserStatus>("browser_release_model")
+      .then(applyStatus)
+      .catch((err) => electron?.log("[browser-panel] release failed", err));
+  }
+
+  function shareControl() {
+    if (!desktop) return;
+    void desktop
+      .invoke<BrowserStatus>("browser_share")
+      .then(applyStatus)
+      .catch((err) => electron?.log("[browser-panel] share failed", err));
+  }
+
+  function toggleSecureInput() {
+    if (!desktop) return;
+    const command = secureInput() ? "browser_end_secure_input" : "browser_begin_secure_input";
+    void desktop
+      .invoke<BrowserStatus>(command)
+      .then(applyStatus)
+      .catch((err) => electron?.log("[browser-panel] secure input failed", err));
+  }
+
   return (
     <div class="browser-pane">
       <div class="browser-toolbar">
         <button type="button" class="browser-nav-btn" onClick={back} disabled={!canGoBack()} title="后退">←</button>
         <button type="button" class="browser-nav-btn" onClick={forward} disabled={!canGoForward()} title="前进">→</button>
         <button type="button" class="browser-nav-btn" onClick={reload} title="刷新">⟳</button>
+        <span class="terminal-owner-badge" data-owner={owner()}>{ownerLabel(owner())}</span>
+        <Show when={owner() !== "human"}>
+          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={claimHuman} title="接管浏览器">接管</button>
+        </Show>
+        <Show when={owner() === "human"}>
+          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={releaseModel} title="交还模型控制">交还模型</button>
+          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={toggleSecureInput} title={secureInput() ? "结束安全输入" : "开始安全输入"}>
+            {secureInput() ? "结束安全输入" : "安全输入"}
+          </button>
+        </Show>
+        <Show when={owner() !== "shared"}>
+          <button type="button" class="browser-nav-btn browser-owner-btn" onClick={shareControl} title="共享控制">共享</button>
+        </Show>
         <form class="browser-url-form" onSubmit={(event) => {
           event.preventDefault();
           load(url());
@@ -226,6 +238,11 @@ export function BrowserPanel(props: { state: AppState }) {
       </Show>
       <Show when={error()}>
         <div class="browser-error">{error()}</div>
+      </Show>
+      <Show when={owner() === "human" || secureInput()}>
+        <div class="browser-pause-hint">
+          {secureInput() ? "安全输入中，模型读写已暂停" : "人工控制中，模型写入已暂停"}
+        </div>
       </Show>
       <div class="browser-webview-host" ref={host}>
         <Show when={!desktop}>

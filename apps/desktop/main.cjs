@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, BrowserView, session } = require("electron");
+const fs = require("fs");
 const path = require("path");
 const WebSocket = require("ws");
 const http = require("http");
@@ -12,7 +13,61 @@ let browserView;
 let browserViewAttached = false;
 let browserUrl = "";
 let lastBrowserRect = { x: 0, y: 0, width: 0, height: 0 };
+let browserOwner = "shared";
+let browserSecureInput = false;
+let browserSessionHandlersBound = false;
 const terminalSubscriptions = new Map();
+
+function browserHistory(contents) {
+  return contents.navigationHistory ?? contents;
+}
+
+function lastUrlPath() {
+  return path.join(app.getPath("userData"), "browser-last-url.txt");
+}
+
+function loadPersistedBrowserUrl() {
+  try {
+    const saved = fs.readFileSync(lastUrlPath(), "utf8").trim();
+    if (saved) browserUrl = saved;
+  } catch {
+    // first launch or unreadable file
+  }
+}
+
+function persistBrowserUrl(url) {
+  if (!url || url === "about:blank") return;
+  browserUrl = url;
+  try {
+    fs.writeFileSync(lastUrlPath(), url);
+  } catch (error) {
+    console.error("[desktop] failed to persist browser url", error);
+  }
+}
+
+function browserState(extra = {}) {
+  const contents = browserView?.webContents;
+  const history = contents ? browserHistory(contents) : null;
+  return {
+    url: contents?.getURL() || browserUrl || "",
+    loading: Boolean(contents?.isLoadingMainFrame()),
+    canGoBack: Boolean(history?.canGoBack()),
+    canGoForward: Boolean(history?.canGoForward()),
+    owner: browserOwner,
+    secureInput: browserSecureInput,
+    attached: browserViewAttached,
+    ...extra,
+  };
+}
+
+function assertModelMayMutate() {
+  if (browserSecureInput) {
+    throw new Error("browser is in secure input; model writes are paused");
+  }
+  if (browserOwner === "human") {
+    throw new Error("human controls the browser; model writes are paused");
+  }
+}
 
 function runtimeFetch(pathname, options = {}) {
   const headers = { "content-type": "application/json", ...(options.headers || {}) };
@@ -74,27 +129,23 @@ async function streamRuntimeEvents() {
   }
 }
 
-function browserHistory(contents) {
-  return contents.navigationHistory ?? contents;
-}
-
 function sendBrowserStatus(extra = {}) {
-  if (!mainWindow || !browserView) return;
-  const contents = browserView.webContents;
-  const history = browserHistory(contents);
-  const url = contents.getURL() || browserUrl || "";
-  mainWindow.webContents.send("browser-status", {
-    url,
-    loading: contents.isLoadingMainFrame(),
-    canGoBack: history.canGoBack(),
-    canGoForward: history.canGoForward(),
-    ...extra,
-  });
+  if (!mainWindow) return;
+  mainWindow.webContents.send("browser-status", browserState(extra));
 }
 
 function ensureBrowserView() {
   if (browserView) return browserView;
   const browserSession = session.fromPartition("persist:natalia-browser");
+  if (!browserSessionHandlersBound) {
+    browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(permission === "clipboard-sanitized-write" || permission === "fullscreen");
+    });
+    browserSession.on("will-download", (_event, item) => {
+      console.log("[desktop] browser download", item.getFilename(), item.getURL());
+    });
+    browserSessionHandlersBound = true;
+  }
   browserView = new BrowserView({
     webPreferences: {
       session: browserSession,
@@ -116,7 +167,7 @@ function ensureBrowserView() {
     partition: "persist:natalia-browser",
   });
   const sendBrowserUrl = (url) => {
-    browserUrl = url;
+    persistBrowserUrl(url);
     mainWindow?.webContents.send("browser-url-changed", { url });
     sendBrowserStatus({ url });
   };
@@ -182,6 +233,20 @@ function hideBrowser() {
   }
 }
 
+function destroyBrowser() {
+  hideBrowser();
+  if (browserView) {
+    try {
+      browserView.webContents.destroy();
+    } catch (error) {
+      console.error("[desktop] browser destroy failed", error);
+    }
+  }
+  browserView = undefined;
+  browserViewAttached = false;
+  sendBrowserStatus({ url: browserUrl, attached: false });
+}
+
 function showBrowser(rect) {
   if (!browserView) {
     ensureBrowserView();
@@ -220,8 +285,8 @@ function createMainWindow() {
   mainWindow.loadFile(webDist);
 
   mainWindow.on("closed", () => {
+    destroyBrowser();
     mainWindow = undefined;
-    browserView = undefined;
   });
 }
 
@@ -295,10 +360,50 @@ ipcMain.handle("browser_hide", () => {
   return { ok: true };
 });
 
+ipcMain.handle("browser_destroy", () => {
+  destroyBrowser();
+  return { ok: true };
+});
+
+ipcMain.handle("browser_status", () => browserState());
+
+ipcMain.handle("browser_claim_human", () => {
+  browserOwner = "human";
+  sendBrowserStatus();
+  return browserState();
+});
+
+ipcMain.handle("browser_release_model", () => {
+  browserOwner = "model";
+  browserSecureInput = false;
+  sendBrowserStatus();
+  return browserState();
+});
+
+ipcMain.handle("browser_share", () => {
+  browserOwner = "shared";
+  browserSecureInput = false;
+  sendBrowserStatus();
+  return browserState();
+});
+
+ipcMain.handle("browser_begin_secure_input", () => {
+  browserOwner = "human";
+  browserSecureInput = true;
+  sendBrowserStatus();
+  return browserState();
+});
+
+ipcMain.handle("browser_end_secure_input", () => {
+  browserSecureInput = false;
+  sendBrowserStatus();
+  return browserState();
+});
+
 async function browser_navigate(payload) {
   const url = payload?.url;
   if (!url) throw new Error("missing url");
-  browserUrl = url;
+  persistBrowserUrl(url);
   const view = ensureBrowserView();
   await view.webContents.loadURL(url);
   return { ok: true };
@@ -388,22 +493,27 @@ async function handleBrowserBridge(req, res) {
   try {
     const input = await readJsonBody(req);
     if (req.method === "POST" && req.url === "/browser/navigate") {
+      assertModelMayMutate();
       console.log("[desktop] bridge /browser/navigate", input.url);
       await browser_navigate({ url: String(input.url || "") });
       send(200, { ok: true });
     } else if (req.method === "POST" && req.url === "/browser/read") {
+      if (browserSecureInput) throw new Error("browser is in secure input; model reads are paused");
       console.log("[desktop] bridge /browser/read");
       const text = await browser_read_dom();
       send(200, { text });
     } else if (req.method === "POST" && req.url === "/browser/click") {
+      assertModelMayMutate();
       console.log("[desktop] bridge /browser/click", input.x, input.y);
       const result = await browser_click({ x: Number(input.x), y: Number(input.y) });
       send(200, { result });
     } else if (req.method === "POST" && req.url === "/browser/input") {
+      assertModelMayMutate();
       console.log("[desktop] bridge /browser/input");
       const result = await browser_input({ text: String(input.text || "") });
       send(200, { result });
     } else if (req.method === "POST" && req.url === "/browser/screenshot") {
+      if (browserSecureInput) throw new Error("browser is in secure input; model screenshots are paused");
       console.log("[desktop] bridge /browser/screenshot");
       const data = await browser_screenshot();
       send(200, { data });
@@ -440,6 +550,7 @@ if (process.platform === "linux") {
 app.whenReady().then(() => {
   app.userAgentFallback =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  loadPersistedBrowserUrl();
   createMainWindow();
   streamRuntimeEvents();
   startBrowserBridge();
