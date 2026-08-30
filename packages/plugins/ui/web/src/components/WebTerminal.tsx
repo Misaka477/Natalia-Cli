@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -151,7 +151,21 @@ export function WebTerminal(props: WebTerminalProps) {
     // from stealing keys that terminal programs like vim/tmux need.
     term.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown" && event.type !== "keyup") return true;
-      if (event.ctrlKey && event.key.toLowerCase() === "w") {
+      const key = event.key.toLowerCase();
+      if (event.ctrlKey && event.shiftKey && key === "c") {
+        event.preventDefault();
+        const selected = term?.getSelection();
+        if (selected) void navigator.clipboard.writeText(selected);
+        return false;
+      }
+      if (event.ctrlKey && event.shiftKey && key === "v") {
+        event.preventDefault();
+        void navigator.clipboard.readText().then((text) => {
+          if (text) term?.paste(text);
+        }).catch(() => undefined);
+        return false;
+      }
+      if (event.ctrlKey && !event.shiftKey && key === "w") {
         event.preventDefault();
         return false;
       }
@@ -202,6 +216,42 @@ export function WebTerminal(props: WebTerminalProps) {
     }
   });
 
+  const [fontSize, setFontSize] = createSignal(12);
+  const [copied, setCopied] = createSignal(false);
+
+  function changeFontSize(delta: number) {
+    const next = Math.max(8, Math.min(24, fontSize() + delta));
+    setFontSize(next);
+    term?.options.fontSize = next;
+    try {
+      fit?.fit();
+    } catch {
+      // ignore when hidden
+    }
+  }
+
+  async function copySelection() {
+    const selected = term?.getSelection();
+    if (selected) {
+      try {
+        await navigator.clipboard.writeText(selected);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 800);
+      } catch {
+        // clipboard may be unavailable; ignore
+      }
+    }
+  }
+
+  async function pasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) term?.paste(text);
+    } catch {
+      // clipboard may be unavailable; ignore
+    }
+  }
+
   onCleanup(() => {
     closed = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -210,5 +260,16 @@ export function WebTerminal(props: WebTerminalProps) {
     term?.dispose();
   });
 
-  return <div class="web-terminal" ref={host} />;
+  return (
+    <div class="web-terminal-shell">
+      <div class="web-terminal-toolbar">
+        <button type="button" class="web-terminal-btn" onClick={() => term?.clear()} title="清空">清空</button>
+        <button type="button" class="web-terminal-btn" onClick={() => void copySelection()} title="复制">{copied() ? "已复制" : "复制"}</button>
+        <button type="button" class="web-terminal-btn" onClick={() => void pasteFromClipboard()} title="粘贴">粘贴</button>
+        <button type="button" class="web-terminal-btn" onClick={() => changeFontSize(-1)} title="缩小字体">A-</button>
+        <button type="button" class="web-terminal-btn" onClick={() => changeFontSize(1)} title="放大字体">A+</button>
+      </div>
+      <div class="web-terminal" ref={host} />
+    </div>
+  );
 }
