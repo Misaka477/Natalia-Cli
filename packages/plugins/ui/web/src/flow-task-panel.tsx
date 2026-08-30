@@ -149,6 +149,8 @@ export function FlowTaskPanel(props: {
         usedBy: flow.usedBy,
         modules: [],
       })));
+    }).catch(() => {
+      // Task/workflow plugin may be disabled; the panel stays empty.
     });
     void props.runtime?.taskOverview?.().then((overview) => {
       if (!overview?.tasks?.length) return;
@@ -162,6 +164,8 @@ export function FlowTaskPanel(props: {
         retry: typeof task.retry === "string" ? task.retry : "none",
         alerts: task.alertEvents,
       })));
+    }).catch(() => {
+      // Task/workflow plugin may be disabled; the panel stays empty.
     });
   });
 
