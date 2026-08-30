@@ -644,9 +644,9 @@ export function TerminalPane(props: {
 } = {}) {
   const [tabs, setTabs] = createSignal<TerminalTab[]>([]);
   const [activeID, setActiveID] = createSignal<string>();
-  const tauri =
+  const desktop =
     typeof window !== "undefined" &&
-    Boolean((window as { __TAURI__?: unknown }).__TAURI__);
+    Boolean((window as { electron?: unknown }).electron);
   const [limitError, setLimitError] = createSignal<string>();
   const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
   const [shellProfile, setShellProfile] = createSignal("bash");
@@ -698,7 +698,7 @@ export function TerminalPane(props: {
     const sessionID = props.sessionID;
     const runtimeURL = props.runtimeURL;
     const key = `${sessionID ?? ""}\0${runtimeURL ?? ""}`;
-    if (!sessionID || (!runtimeURL && !tauri)) {
+    if (!sessionID || (!runtimeURL && !desktop)) {
       setTabs([]);
       setActiveID();
       setLimitError();
@@ -829,7 +829,7 @@ export function TerminalPane(props: {
   return (
     <div class="terminal-pane">
       <Show
-        when={props.sessionID && (props.runtimeURL || tauri)}
+        when={props.sessionID && (props.runtimeURL || desktop)}
         fallback={
           <div class="terminal-output">
             <div class="terminal-line terminal-line-header">

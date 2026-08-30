@@ -1,12 +1,16 @@
 const { app, BrowserWindow, ipcMain, BrowserView, session } = require("electron");
+const { spawn } = require("child_process");
 const fs = require("fs");
+const net = require("net");
 const path = require("path");
 const WebSocket = require("ws");
 const http = require("http");
 
-const RUNTIME_URL =
-  process.env.NATALIA_RUNTIME_URL || "http://127.0.0.1:8790";
 const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
+const WORKSPACE_ROOT = path.resolve(__dirname, "../..");
+let runtimeURL = process.env.NATALIA_RUNTIME_URL || "";
+let runtimeProcess;
+let runtimeOwned = false;
 
 let mainWindow;
 let browserView;
@@ -70,9 +74,91 @@ function assertModelMayMutate() {
 }
 
 function runtimeFetch(pathname, options = {}) {
+  if (!runtimeURL) throw new Error("runtime URL is not ready");
   const headers = { "content-type": "application/json", ...(options.headers || {}) };
   if (TOKEN) headers.authorization = `Bearer ${TOKEN}`;
-  return fetch(`${RUNTIME_URL}${pathname}`, { ...options, headers });
+  return fetch(`${runtimeURL}${pathname}`, { ...options, headers });
+}
+
+function portFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.listen(port, "127.0.0.1", () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+async function findFreePort(start = 8790) {
+  for (let port = start; port < start + 100; port += 1) {
+    if (await portFree(port)) return port;
+  }
+  throw new Error("no free runtime port found");
+}
+
+async function waitForRuntime(url, tries = 40) {
+  for (let i = 0; i < tries; i += 1) {
+    try {
+      const response = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(500) });
+      if (response.ok) return;
+    } catch {
+      // not up yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`runtime server did not start at ${url}`);
+}
+
+function runtimeCommand() {
+  const bun = process.env.NATALIA_BUN_BIN || "bun";
+  const entry = path.join(WORKSPACE_ROOT, "apps/cli/src/main.ts");
+  return { bun, entry };
+}
+
+async function ensureRuntime() {
+  if (runtimeURL) {
+    try {
+      await waitForRuntime(runtimeURL, 8);
+      console.log("[desktop] using existing runtime", runtimeURL);
+      return runtimeURL;
+    } catch {
+      if (process.env.NATALIA_RUNTIME_URL) {
+        throw new Error(`configured runtime ${runtimeURL} is not reachable`);
+      }
+    }
+  }
+  const port = await findFreePort();
+  runtimeURL = `http://127.0.0.1:${port}`;
+  const { bun, entry } = runtimeCommand();
+  const nataliaDir = path.join(WORKSPACE_ROOT, ".natalia");
+  fs.mkdirSync(nataliaDir, { recursive: true });
+  const env = {
+    ...process.env,
+    NATALIA_CONFIG: path.join(nataliaDir, "global-config.json"),
+    NATALIA_WORKSPACES_FILE: path.join(nataliaDir, "workspaces.json"),
+  };
+  console.log("[desktop] starting runtime", bun, entry, "serve", String(port));
+  runtimeProcess = spawn(bun, [entry, "serve", String(port)], {
+    cwd: WORKSPACE_ROOT,
+    env,
+    stdio: "inherit",
+  });
+  runtimeOwned = true;
+  runtimeProcess.on("exit", (code, signal) => {
+    console.log("[desktop] runtime exited", { code, signal });
+    if (runtimeOwned) runtimeProcess = undefined;
+  });
+  await waitForRuntime(runtimeURL);
+  console.log("[desktop] runtime ready", runtimeURL);
+  return runtimeURL;
+}
+
+function stopOwnedRuntime() {
+  if (!runtimeOwned || !runtimeProcess) return;
+  runtimeOwned = false;
+  runtimeProcess.kill("SIGTERM");
+  runtimeProcess = undefined;
 }
 
 async function runtimeCall(method, params) {
@@ -295,6 +381,11 @@ ipcMain.handle("runtime_call", (_event, payload) => {
   return runtimeCall(method, params);
 });
 
+ipcMain.handle("runtime_info", () => ({
+  url: runtimeURL,
+  token: TOKEN ?? "",
+}));
+
 ipcMain.on("renderer-log", (_event, data) => {
   console.log("[renderer]", data.message, ...(data.args || []));
 });
@@ -309,7 +400,7 @@ ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
     return { subscribed: true, reused: true };
   }
 
-  const base = RUNTIME_URL.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
+  const base = runtimeURL.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
   const url = `${base}/terminal/${encodeURIComponent(sessionId)}/${encodeURIComponent(terminalId)}${TOKEN ? `?token=${TOKEN}` : ""}`;
   const ws = new WebSocket(url);
   terminalSubscriptions.set(terminalId, ws);
@@ -547,18 +638,28 @@ if (process.platform === "linux") {
   app.commandLine.appendSwitch("enable-features", "WaylandTextInputV3");
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   app.userAgentFallback =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
   loadPersistedBrowserUrl();
+  try {
+    await ensureRuntime();
+  } catch (error) {
+    console.error("[desktop] failed to start runtime", error);
+  }
   createMainWindow();
-  streamRuntimeEvents();
+  void streamRuntimeEvents();
   startBrowserBridge();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
 });
 
+app.on("before-quit", () => {
+  stopOwnedRuntime();
+});
+
 app.on("window-all-closed", () => {
+  stopOwnedRuntime();
   if (process.platform !== "darwin") app.quit();
 });

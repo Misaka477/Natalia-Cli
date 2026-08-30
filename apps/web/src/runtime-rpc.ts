@@ -298,10 +298,10 @@ export type WebRuntimeOptions = {
  * Real browser runtime client.
  *
  * In the plain web shell it speaks the framework RPC protocol to a running
- * Natalia runtime/daemon and consumes the /events SSE stream. Inside the Tauri
- * desktop shell the same shape is backed by Tauri IPC: method calls go through
- * `runtime_call` and runtime events are forwarded from the Rust host as
- * `natalia-runtime-event` events.
+ * Natalia runtime/daemon and consumes the /events SSE stream. Inside the
+ * Electron desktop shell the same shape is backed by IPC: method calls go
+ * through `runtime_call` and runtime events are forwarded from the main process
+ * as `natalia-runtime-event` events.
  */
 export function createWebRuntimeClient(
   options: WebRuntimeOptions,

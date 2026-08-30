@@ -11,8 +11,13 @@ import { createLocalPreferenceStore } from "./local-preferences";
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
 
+const electron = (globalThis as {
+  electron?: { runtimeInfo?: () => Promise<{ url?: string; token?: string }> };
+}).electron;
+const injected = electron?.runtimeInfo ? await electron.runtimeInfo() : undefined;
 const runtimeURL =
-  (import.meta as { env?: Record<string, string> }).env?.VITE_NATALIA_RUNTIME_URL ??
+  injected?.url ||
+  (import.meta as { env?: Record<string, string> }).env?.VITE_NATALIA_RUNTIME_URL ||
   "http://127.0.0.1:8790";
 
 const runtime = createWebRuntimeClient({
