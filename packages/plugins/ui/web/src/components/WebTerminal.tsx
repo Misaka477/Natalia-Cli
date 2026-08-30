@@ -130,6 +130,7 @@ export function WebTerminal(props: WebTerminalProps) {
   }
 
   function handleServerMessage(message: ServerMessage) {
+    if (closed) return;
     console.log("[web-terminal] ipc message", {
       type: message.type,
       id: message.id,
@@ -199,6 +200,7 @@ export function WebTerminal(props: WebTerminalProps) {
             handleServerMessage(event.payload.message);
           });
       console.log("[web-terminal] ipc event listener ready");
+      if (closed) return;
 
       const listed =
         (await callRuntime<Array<{
@@ -206,6 +208,7 @@ export function WebTerminal(props: WebTerminalProps) {
           status: string;
           sessionID?: string;
         }>>(desktop, "nativeTerminal.list")) ?? [];
+      if (closed) return;
       let session = listed.find((item) => item.id === props.terminalID);
       if (!session || (session.sessionID && session.sessionID !== props.sessionID)) {
         console.log("[web-terminal] nativeTerminal.start", {
@@ -237,6 +240,7 @@ export function WebTerminal(props: WebTerminalProps) {
         return;
       }
 
+      if (closed) return;
       console.log("[web-terminal] call terminal_output_subscribe", {
         sessionId: props.sessionID,
         terminalId: props.terminalID,
@@ -246,6 +250,7 @@ export function WebTerminal(props: WebTerminalProps) {
         terminalId: props.terminalID,
       });
       console.log("[web-terminal] terminal_output_subscribe ok");
+      if (closed) return;
 
       // The terminal WebSocket bridge will send a `restore` message with the
       // full raw PTY buffer. Avoid also writing nativeTerminal.read here: the
@@ -425,6 +430,7 @@ export function WebTerminal(props: WebTerminalProps) {
     term.open(host);
     fit.fit();
     term.onData((data) => {
+      if (closed) return;
       if (desktop) {
         console.log("[web-terminal] write through IPC", {
           terminalID: props.terminalID,
@@ -442,6 +448,7 @@ export function WebTerminal(props: WebTerminalProps) {
         socket.send(JSON.stringify({ type: "input", data }));
     });
     term.onResize(({ cols, rows }) => {
+      if (closed) return;
       if (desktop) {
         console.log("[web-terminal] resize through IPC", {
           terminalID: props.terminalID,
