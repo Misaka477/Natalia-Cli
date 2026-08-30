@@ -3186,19 +3186,51 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-sidebar { max-width: 240px; }
 }
 @media (max-width: 1000px) {
-  .neu-sidebar { display: none; }
-  .neu-resizer { display: none; }
+  .neu-shell[data-compact="true"] .neu-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    height: 100%;
+    z-index: 40;
+    min-width: 0;
+    width: min(320px, 80vw);
+    box-shadow: 6px 0 20px rgba(0, 0, 0, 0.12);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+  .neu-shell[data-compact="true"][data-left-open="true"] .neu-sidebar {
+    transform: translateX(0);
+  }
+  .neu-shell[data-compact="true"] .neu-secondary {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    height: 100%;
+    z-index: 40;
+    min-width: 0;
+    width: min(420px, 82vw);
+    box-shadow: -6px 0 20px rgba(0, 0, 0, 0.12);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+  }
+  .neu-shell[data-compact="true"][data-right-open="true"] .neu-secondary {
+    transform: translateX(0);
+  }
+  .neu-shell[data-compact="true"] .neu-resizer,
+  .neu-shell[data-compact="true"] .neu-right-resizer {
+    display: none;
+  }
   .neu-main-panes { gap: 10px; }
-  .neu-secondary { min-width: 260px; max-width: 360px; }
 }
 @media (max-width: 760px) {
   .neu-shell { padding: 6px; gap: 6px; }
   .neu-app { gap: 6px; }
-  .neu-main-panes { flex-direction: column; }
+  .neu-main-panes { gap: 6px; }
   .neu-pane-divider { height: 8px; width: auto; }
   .neu-pane { min-height: 220px; }
-  .neu-secondary { position: static; width: 100% !important; min-width: 0; max-width: 100%; flex: 1; z-index: auto; }
-  .neu-right-resizer { display: none; }
+  .neu-shell[data-tiny="true"] .neu-main-panes { flex-direction: column; }
   .neu-secondary-tabs { flex-wrap: nowrap; overflow-x: auto; }
   .neu-secondary-tab { white-space: nowrap; flex-shrink: 0; }
 }

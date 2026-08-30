@@ -221,6 +221,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   );
   const [leftVisible, setLeftVisible] = createSignal(true);
   const [rightVisible, setRightVisible] = createSignal(true);
+  const [layoutMode, setLayoutMode] = createSignal<"wide" | "compact" | "tiny">("wide");
+  const [naviOpen, setNaviOpen] = createSignal(true);
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
   const [selectedSession, setSelectedSession] = createSignal("");
@@ -961,8 +963,33 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
   }
 
+  onMount(() => {
+    const updateLayout = () => {
+      const width = window.innerWidth;
+      const mode = width <= 700 ? "tiny" : width <= 1000 ? "compact" : "wide";
+      setLayoutMode(mode);
+      if (mode !== "wide") {
+        setLeftVisible(false);
+        setRightVisible(false);
+      } else {
+        setLeftVisible(true);
+        setRightVisible(true);
+      }
+      setNaviOpen(mode !== "tiny");
+    };
+    updateLayout();
+    window.addEventListener("resize", updateLayout);
+    onCleanup(() => window.removeEventListener("resize", updateLayout));
+  });
+
   return (
-    <div class="neu-shell">
+    <div
+      class="neu-shell"
+      data-compact={layoutMode() !== "wide"}
+      data-tiny={layoutMode() === "tiny"}
+      data-left-open={leftVisible()}
+      data-right-open={rightVisible()}
+    >
       <header class="neu-topbar">
         <div class="neu-topbar-left">
           <span class="neu-topbar-logo">N</span>
@@ -988,6 +1015,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           >
             右栏
           </button>
+          <Show when={layoutMode() === "tiny"}>
+            <button
+              type="button"
+              class="neu-topbar-btn"
+              data-active={naviOpen()}
+              onClick={() => setNaviOpen((value) => !value)}
+            >
+              Navi
+            </button>
+          </Show>
           <button
             type="button"
             class="neu-topbar-btn"
@@ -1240,6 +1277,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
           <div class="neu-pane-divider" />
 
+          <Show when={layoutMode() !== "tiny" || naviOpen()}>
           <div class="neu-pane">
             <div class="neu-pane-header">
               <span class="neu-pane-title">Navi</span>
@@ -1358,6 +1396,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               />
             </div>
           </div>
+          </Show>
         </div>
       </section>
 
