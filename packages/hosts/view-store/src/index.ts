@@ -184,7 +184,6 @@ export function reduceState(state: AppState, event: RuntimeEvent): AppState {
 }
 
 /** Folds a whole stream, which is how an external UI replays history. */
-export { hydrateProjectedMessages };
 export function projectEvents(
   events: Iterable<RuntimeEvent>,
   from: AppState = initialState(),
