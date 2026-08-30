@@ -231,7 +231,7 @@ export function WebTerminal(props: WebTerminalProps) {
   function changeFontSize(delta: number) {
     const next = Math.max(8, Math.min(24, fontSize() + delta));
     setFontSize(next);
-    term?.options.fontSize = next;
+    if (term) term.options.fontSize = next;
     try {
       fit?.fit();
     } catch {
