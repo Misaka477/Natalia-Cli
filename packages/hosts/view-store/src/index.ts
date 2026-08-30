@@ -235,6 +235,19 @@ export function hydrateProjectedMessages(
       state.streamPhases[id] = projected.streamPhases[id];
   for (const id of Object.keys(projected.tools))
     if (!(id in state.tools)) state.tools[id] = projected.tools[id];
+  // Preserve interactive requests projected from the hydrated turns so a
+  // message-first startup still surfaces pending approvals/questions.
+  const approvalIDs = new Set(
+    state.pendingApprovals.map((approval) => approval.id),
+  );
+  for (const approval of projected.pendingApprovals)
+    if (!approvalIDs.has(approval.id)) state.pendingApprovals.push(approval);
+  const questionIDs = new Set(
+    state.pendingQuestions.map((question) => question.id),
+  );
+  for (const question of projected.pendingQuestions)
+    if (!questionIDs.has(question.id)) state.pendingQuestions.push(question);
+
   if (!state.sessionID && projected.sessionID)
     state.sessionID = projected.sessionID;
   if (!state.title && projected.title) state.title = projected.title;
