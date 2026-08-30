@@ -16,6 +16,14 @@ export function AgentPanel(props: {
   const [teamAvailable, setTeamAvailable] = createSignal(false);
   const [teamPRs, setTeamPRs] = createSignal<RuntimeTeamPR[]>([]);
   const [teamConcurrency, setTeamConcurrency] = createSignal<number | undefined>(undefined);
+  const teamStatusTally = createMemo(() => {
+    const tally: Record<string, number> = { completed: 0, failed: 0, stopped: 0 };
+    for (const pr of teamPRs()) {
+      const status = pr.status || "pending";
+      tally[status] = (tally[status] ?? 0) + 1;
+    }
+    return tally;
+  });
 
   onMount(() => {
     void (async () => {
@@ -49,6 +57,22 @@ export function AgentPanel(props: {
       return bt - at;
     }),
   );
+
+  const subagentTree = createMemo(() => {
+    const roots: SubagentView[] = [];
+    const children = new Map<string, SubagentView[]>();
+    for (const agent of subagents()) {
+      const parent = agent.parentAgentID;
+      if (!parent || !subagents().some((item) => item.id === parent)) {
+        roots.push(agent);
+      } else {
+        const list = children.get(parent) ?? [];
+        list.push(agent);
+        children.set(parent, list);
+      }
+    }
+    return { roots, children };
+  });
 
   const selectedSubagent = createMemo(() =>
     subagents().find((item) => item.id === selectedID()),
@@ -140,22 +164,44 @@ export function AgentPanel(props: {
       <Show when={subTab() === "subagent"}>
         <div class="agent-layout">
           <div class="agent-sidebar">
-            <For each={subagents()}>
+            <For each={subagentTree().roots}>
               {(agent) => (
-                <button
-                  type="button"
-                  class="agent-card"
-                  data-active={selectedID() === agent.id}
-                  onClick={() => setSelectedID(agent.id)}
-                >
-                  <div class="agent-card-title">{agent.id}</div>
-                  <div class="agent-card-status" data-status={agent.status}>
-                    {agent.status} · {agent.phase ?? "idle"}
-                  </div>
-                  <div class="agent-card-detail">
-                    {agent.parentAgentID ? `父: ${agent.parentAgentID} · ` : ""}{agent.text || agent.activityDetail || agent.task || ""}
-                  </div>
-                </button>
+                <div>
+                  <button
+                    type="button"
+                    class="agent-card"
+                    data-active={selectedID() === agent.id}
+                    onClick={() => setSelectedID(agent.id)}
+                  >
+                    <div class="agent-card-title">{agent.id}</div>
+                    <div class="agent-card-status" data-status={agent.status}>
+                      {agent.status} · {agent.phase ?? "idle"}
+                    </div>
+                    <div class="agent-card-detail">
+                      {agent.text || agent.activityDetail || agent.task || ""}
+                    </div>
+                  </button>
+                  <For each={subagentTree().children.get(agent.id) ?? []}>
+                    {(child) => (
+                      <div class="agent-tree-child">
+                        <button
+                          type="button"
+                          class="agent-card"
+                          data-active={selectedID() === child.id}
+                          onClick={() => setSelectedID(child.id)}
+                        >
+                          <div class="agent-card-title">└ {child.id}</div>
+                          <div class="agent-card-status" data-status={child.status}>
+                            {child.status} · {child.phase ?? "idle"}
+                          </div>
+                          <div class="agent-card-detail">
+                            {child.text || child.activityDetail || child.task || ""}
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </For>
+                </div>
               )}
             </For>
             <Show when={!subagents().length}>
@@ -172,6 +218,7 @@ export function AgentPanel(props: {
                 <Show when={selectedSubagent()?.parentAgentID}>
                   <div class="agent-stream-meta">父 Agent: {selectedSubagent()?.parentAgentID}</div>
                 </Show>
+                <div class="agent-stream-meta">交互式终端: 当前子 Agent 未暴露终端会话</div>
               </div>
               <Transcript
                 messages={subagentMessages()}
@@ -196,6 +243,10 @@ export function AgentPanel(props: {
             <span>进行中/等待中的 PR</span>
             <span>{teamPRs().length}</span>
           </div>
+          <div class="team-stat">
+            <span>已完成 / 失败 / 停止</span>
+            <span>{teamStatusTally().completed ?? 0} / {teamStatusTally().failed ?? 0} / {teamStatusTally().stopped ?? 0}</span>
+          </div>
           <For each={teamPRs()}>
             {(pr) => (
               <div class="team-card">
@@ -203,7 +254,9 @@ export function AgentPanel(props: {
                 <div class="team-card-detail">
                   <span>{pr.status}</span>
                   {" · "}
-                  <span>sandbox: {pr.sandboxID}</span>
+                  <span>子 Agent: {pr.sandboxID}</span>
+                  {" · "}
+                  <span>关联 phase: {subagents().find((item) => item.id === pr.sandboxID)?.phase ?? "未知"}</span>
                 </div>
                 <Show when={pr.result}>
                   <div class="team-card-result">{pr.result}</div>

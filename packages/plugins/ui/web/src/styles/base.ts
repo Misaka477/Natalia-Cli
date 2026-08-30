@@ -989,6 +989,8 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .agent-stream { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .agent-stream .natalia-transcript { flex: 1; }
 .agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
+.agent-tree-child { margin-left: 12px; }
+.agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
 .agent-stream { flex-direction: column; }
 .agent-stream-header { padding: 8px 12px; border-bottom: 1px solid var(--neu-divider); }
 .agent-stream-title { font-size: 13px; font-weight: 600; }
