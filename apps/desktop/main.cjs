@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, BrowserView } = require("electron");
+const { app, BrowserWindow, ipcMain, BrowserView, session } = require("electron");
 const path = require("path");
 const WebSocket = require("ws");
 const http = require("http");
@@ -74,10 +74,30 @@ async function streamRuntimeEvents() {
   }
 }
 
+function browserHistory(contents) {
+  return contents.navigationHistory ?? contents;
+}
+
+function sendBrowserStatus(extra = {}) {
+  if (!mainWindow || !browserView) return;
+  const contents = browserView.webContents;
+  const history = browserHistory(contents);
+  const url = contents.getURL() || browserUrl || "";
+  mainWindow.webContents.send("browser-status", {
+    url,
+    loading: contents.isLoadingMainFrame(),
+    canGoBack: history.canGoBack(),
+    canGoForward: history.canGoForward(),
+    ...extra,
+  });
+}
+
 function ensureBrowserView() {
   if (browserView) return browserView;
+  const browserSession = session.fromPartition("persist:natalia-browser");
   browserView = new BrowserView({
     webPreferences: {
+      session: browserSession,
       contextIsolation: true,
       sandbox: true,
     },
@@ -87,18 +107,25 @@ function ensureBrowserView() {
   try {
     browserView.setBorderRadius(12);
   } catch {
-    // setBorderRadius is not available on all platforms; ignore.
+    // Linux does not apply BrowserView border radius; keep the rectangular view.
   }
   browserView.webContents.loadURL(browserUrl || "about:blank");
   console.log("[desktop] browser BrowserView created", {
     attached: browserViewAttached,
     url: browserUrl,
+    partition: "persist:natalia-browser",
   });
   const sendBrowserUrl = (url) => {
+    browserUrl = url;
     mainWindow?.webContents.send("browser-url-changed", { url });
+    sendBrowserStatus({ url });
   };
   browserView.webContents.on("did-start-loading", () => {
-    console.log("[desktop] browser did-start-loading", browserUrl);
+    console.log("[desktop] browser did-start-loading", browserView.webContents.getURL() || browserUrl);
+    sendBrowserStatus({ loading: true, error: null });
+  });
+  browserView.webContents.on("did-stop-loading", () => {
+    sendBrowserStatus({ loading: false });
   });
   browserView.webContents.on("did-navigate", (_event, url) => {
     console.log("[desktop] browser did-navigate", url);
@@ -108,7 +135,8 @@ function ensureBrowserView() {
     if (isMainFrame) sendBrowserUrl(url);
   });
   browserView.webContents.on("did-finish-load", () => {
-    console.log("[desktop] browser BrowserView finished loading", browserUrl);
+    console.log("[desktop] browser BrowserView finished loading", browserView.webContents.getURL() || browserUrl);
+    sendBrowserStatus({ loading: false, error: null });
     if (lastBrowserRect.width && lastBrowserRect.height) {
       browserView.setBounds(lastBrowserRect);
       console.log("[desktop] re-applied browser bounds after load", lastBrowserRect);
@@ -116,9 +144,19 @@ function ensureBrowserView() {
   });
   browserView.webContents.on("did-fail-load", (_event, code, desc, url, isMainFrame) => {
     console.error("[desktop] browser did-fail-load", { code, desc, url, isMainFrame });
+    if (!isMainFrame) return;
+    sendBrowserStatus({
+      loading: false,
+      error: desc || `load failed (${code})`,
+      url,
+    });
   });
   browserView.webContents.on("render-process-gone", (_event, details) => {
     console.error("[desktop] browser renderer gone", details);
+    sendBrowserStatus({
+      loading: false,
+      error: details?.reason || "renderer gone",
+    });
   });
   return browserView;
 }
@@ -295,11 +333,36 @@ async function browser_screenshot() {
   return image.toDataURL();
 }
 
+function browser_go_back() {
+  const view = browserView || ensureBrowserView();
+  const history = browserHistory(view.webContents);
+  if (!history.canGoBack()) return { ok: false };
+  history.goBack();
+  return { ok: true };
+}
+
+function browser_go_forward() {
+  const view = browserView || ensureBrowserView();
+  const history = browserHistory(view.webContents);
+  if (!history.canGoForward()) return { ok: false };
+  history.goForward();
+  return { ok: true };
+}
+
+function browser_reload() {
+  const view = browserView || ensureBrowserView();
+  view.webContents.reload();
+  return { ok: true };
+}
+
 ipcMain.handle("browser_navigate", (_event, payload) => browser_navigate(payload));
 ipcMain.handle("browser_read_dom", () => browser_read_dom());
 ipcMain.handle("browser_click", (_event, payload) => browser_click(payload));
 ipcMain.handle("browser_input", (_event, payload) => browser_input(payload));
 ipcMain.handle("browser_screenshot", () => browser_screenshot());
+ipcMain.handle("browser_go_back", () => browser_go_back());
+ipcMain.handle("browser_go_forward", () => browser_go_forward());
+ipcMain.handle("browser_reload", () => browser_reload());
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -325,17 +388,25 @@ async function handleBrowserBridge(req, res) {
   try {
     const input = await readJsonBody(req);
     if (req.method === "POST" && req.url === "/browser/navigate") {
+      console.log("[desktop] bridge /browser/navigate", input.url);
       await browser_navigate({ url: String(input.url || "") });
       send(200, { ok: true });
     } else if (req.method === "POST" && req.url === "/browser/read") {
+      console.log("[desktop] bridge /browser/read");
       const text = await browser_read_dom();
       send(200, { text });
     } else if (req.method === "POST" && req.url === "/browser/click") {
+      console.log("[desktop] bridge /browser/click", input.x, input.y);
       const result = await browser_click({ x: Number(input.x), y: Number(input.y) });
       send(200, { result });
     } else if (req.method === "POST" && req.url === "/browser/input") {
+      console.log("[desktop] bridge /browser/input");
       const result = await browser_input({ text: String(input.text || "") });
       send(200, { result });
+    } else if (req.method === "POST" && req.url === "/browser/screenshot") {
+      console.log("[desktop] bridge /browser/screenshot");
+      const data = await browser_screenshot();
+      send(200, { data });
     } else {
       send(404, { error: `unknown bridge route ${req.method} ${req.url}` });
     }
@@ -367,6 +438,8 @@ if (process.platform === "linux") {
 }
 
 app.whenReady().then(() => {
+  app.userAgentFallback =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
   createMainWindow();
   streamRuntimeEvents();
   startBrowserBridge();

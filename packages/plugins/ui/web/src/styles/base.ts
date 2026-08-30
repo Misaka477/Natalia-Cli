@@ -1239,6 +1239,29 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
   outline: none;
 }
+.browser-url-input-loading {
+  color: var(--neu-muted);
+}
+.browser-loading-bar {
+  height: 2px;
+  margin: 0 10px 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--neu-accent), transparent);
+  background-size: 200% 100%;
+  animation: neu-browser-loading 1.1s linear infinite;
+}
+.browser-error {
+  margin: 0 10px 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--neu-error-soft);
+  color: var(--neu-error);
+  font-size: 12px;
+}
+@keyframes neu-browser-loading {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
 .browser-frame { flex: 1; min-height: 0; width: 100%; border: none; background: white; }
 .browser-webview-host { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--neu-bg-light); }
 .browser-load-btn {

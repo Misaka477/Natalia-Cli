@@ -35,33 +35,36 @@ async function callBrowserBridge<T>(path: string, input?: Record<string, unknown
   return body;
 }
 
-export function createTauriBrowserSessionProvider(): BrowserSessionProvider {
+export function createDesktopBrowserSessionProvider(): BrowserSessionProvider {
   return {
     async open(url) {
       await callBrowserBridge("/browser/navigate", { url });
       return { sessionID: "default", url };
     },
-    async navigate(sessionID, url) {
+    async navigate(_sessionID, url) {
       await callBrowserBridge("/browser/navigate", { url });
       return { url };
     },
-    async read(sessionID) {
+    async read(_sessionID) {
       const result = await callBrowserBridge<{ text: string }>("/browser/read");
       return { text: result.text };
     },
-    async click(sessionID, x, y) {
+    async click(_sessionID, x, y) {
       const result = await callBrowserBridge<{ result: string }>("/browser/click", { x, y });
       return { ok: result.result === "ok" };
     },
-    async input(sessionID, text) {
+    async input(_sessionID, text) {
       const result = await callBrowserBridge<{ result: string }>("/browser/input", { text });
       return { ok: result.result === "ok" };
     },
-    async screenshot(sessionID) {
-      throw new Error("browser_screenshot is not implemented in the Tauri host yet");
+    async screenshot(_sessionID) {
+      const result = await callBrowserBridge<{ data: string }>("/browser/screenshot");
+      return { data: result.data };
     },
   };
 }
+
+export const createTauriBrowserSessionProvider = createDesktopBrowserSessionProvider;
 
 export type BrowserSessionProvider = {
   open(url: string): Promise<{ sessionID: string; url: string }>;
@@ -96,7 +99,7 @@ export function createBrowserPlugin(
         name: "browser_session_open",
         description: "Open a URL in the shared browser session.",
         parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
-        async execute(input, context) {
+        async execute(input) {
           const args = input as { url: string };
           return JSON.stringify(await resolve().open(args.url));
         },
@@ -136,8 +139,16 @@ export function createBrowserPlugin(
           return JSON.stringify(await resolve().input("default", args.text));
         },
       });
+      api.tools.register({
+        name: "browser_session_screenshot",
+        description: "Capture a screenshot of the shared browser session.",
+        parameters: { type: "object", properties: {}, required: [] },
+        async execute() {
+          return JSON.stringify(await resolve().screenshot("default"));
+        },
+      });
     },
   };
 }
 
-export default createBrowserPlugin(createTauriBrowserSessionProvider);
+export default createBrowserPlugin(createDesktopBrowserSessionProvider);

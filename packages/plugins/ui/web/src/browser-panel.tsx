@@ -6,6 +6,14 @@ type ElectronGlobal = {
   on<T>(channel: string, listener: (payload: T) => void): () => void;
 };
 
+type BrowserStatus = {
+  url?: string;
+  loading?: boolean;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
+  error?: string | null;
+};
+
 function getElectronGlobal(): ElectronGlobal | undefined {
   return (globalThis as { electron?: ElectronGlobal }).electron;
 }
@@ -20,13 +28,28 @@ type BrowserRect = {
 export function BrowserPanel(props: { state: AppState }) {
   const [url, setUrl] = createSignal("");
   const [current, setCurrent] = createSignal("");
-  const [history, setHistory] = createSignal<string[]>([]);
-  const [historyIndex, setHistoryIndex] = createSignal(0);
+  const [loading, setLoading] = createSignal(false);
+  const [canGoBack, setCanGoBack] = createSignal(false);
+  const [canGoForward, setCanGoForward] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
   let host: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let urlUnlisten: (() => void) | undefined;
+  let statusUnlisten: (() => void) | undefined;
   const electron = getElectronGlobal();
   const desktop = electron;
+
+  function applyStatus(payload: BrowserStatus) {
+    if (typeof payload.url === "string" && payload.url) {
+      setUrl(payload.url);
+      setCurrent(payload.url);
+    }
+    if (typeof payload.loading === "boolean") setLoading(payload.loading);
+    if (typeof payload.canGoBack === "boolean") setCanGoBack(payload.canGoBack);
+    if (typeof payload.canGoForward === "boolean") setCanGoForward(payload.canGoForward);
+    if (payload.error === null) setError(null);
+    else if (typeof payload.error === "string") setError(payload.error);
+  }
 
   function browserRect(): BrowserRect | undefined {
     if (!host) return undefined;
@@ -50,7 +73,7 @@ export function BrowserPanel(props: { state: AppState }) {
     });
     void desktop!
       .invoke("browser_move", { rect })
-      .catch((error) => electron?.log("[browser-panel] move failed", error));
+      .catch((err) => electron?.log("[browser-panel] move failed", err));
   }
 
   onMount(() => {
@@ -59,6 +82,9 @@ export function BrowserPanel(props: { state: AppState }) {
       console.log("[browser-panel] url changed", payload.url);
       setUrl(payload.url);
       setCurrent(payload.url);
+    });
+    statusUnlisten = electron?.on<BrowserStatus>("browser-status", (payload) => {
+      applyStatus(payload);
     });
     const rect = browserRect();
     electron?.log("[browser-panel] show rect", rect, {
@@ -69,7 +95,7 @@ export function BrowserPanel(props: { state: AppState }) {
     if (rect) {
       void desktop!
         .invoke("browser_show", { rect })
-        .catch((error) => electron?.log("[browser-panel] show failed", error));
+        .catch((err) => electron?.log("[browser-panel] show failed", err));
     }
     resizeObserver = new ResizeObserver(() => syncBrowserWindow());
     resizeObserver.observe(host);
@@ -80,9 +106,10 @@ export function BrowserPanel(props: { state: AppState }) {
     if (desktop) {
       void desktop!
         .invoke("browser_hide")
-        .catch((error) => electron?.log("[browser-panel] hide failed", error));
+        .catch((err) => electron?.log("[browser-panel] hide failed", err));
     }
     urlUnlisten?.();
+    statusUnlisten?.();
     resizeObserver?.disconnect();
     window.removeEventListener("resize", syncBrowserWindow);
   });
@@ -91,31 +118,36 @@ export function BrowserPanel(props: { state: AppState }) {
     let normalized = next.trim();
     if (!normalized) return;
     if (!/^https?:\/\//u.test(normalized)) normalized = `https://${normalized}`;
-    const h = history();
-    const before = h.slice(0, historyIndex() + 1);
-    before.push(normalized);
-    setHistory(before);
-    setHistoryIndex(before.length - 1);
     setUrl(normalized);
     setCurrent(normalized);
+    setLoading(true);
+    setError(null);
     if (desktop) {
       void desktop!
         .invoke("browser_navigate", { url: normalized })
-        .catch((error) => electron?.log("[browser-panel] navigate failed", error));
+        .catch((err) => {
+          setLoading(false);
+          setError(err instanceof Error ? err.message : String(err));
+          electron?.log("[browser-panel] navigate failed", err);
+        });
     }
   }
 
   let lastHandledTool = "";
 
-  // Model browser tools automatically load the target once per tool call.
-  // The dedup guard prevents repeated navigation on every state update.
   createEffect(() => {
     const tools = props.state.tools ?? {};
     const entries = Object.values(tools);
     const browserTool = [...entries]
       .reverse()
       .find((tool) =>
-        ["browser_visit", "browser_screenshot", "web_fetch"].includes(tool.name),
+        [
+          "browser_visit",
+          "browser_screenshot",
+          "web_fetch",
+          "browser_session_open",
+          "browser_session_navigate",
+        ].includes(tool.name),
       );
     if (!browserTool || browserTool.status === "failed") return;
     const key = `${browserTool.name}:${browserTool.callID ?? ""}:${browserTool.status}`;
@@ -141,45 +173,42 @@ export function BrowserPanel(props: { state: AppState }) {
   });
 
   function back() {
-    const idx = historyIndex() - 1;
-    if (idx < 0) return;
-    setHistoryIndex(idx);
-    const target = history()[idx]!;
-    setUrl(target);
-    setCurrent(target);
-    if (desktop) {
-      void desktop!
-        .invoke("browser_navigate", { url: target })
-        .catch((error) => electron?.log("[browser-panel] navigate failed", error));
-    }
+    if (!desktop || !canGoBack()) return;
+    void desktop
+      .invoke("browser_go_back")
+      .catch((err) => electron?.log("[browser-panel] back failed", err));
   }
 
   function forward() {
-    const idx = historyIndex() + 1;
-    if (idx >= history().length) return;
-    setHistoryIndex(idx);
-    const target = history()[idx]!;
-    setUrl(target);
-    setCurrent(target);
+    if (!desktop || !canGoForward()) return;
+    void desktop
+      .invoke("browser_go_forward")
+      .catch((err) => electron?.log("[browser-panel] forward failed", err));
+  }
+
+  function reload() {
     if (desktop) {
-      void desktop!
-        .invoke("browser_navigate", { url: target })
-        .catch((error) => electron?.log("[browser-panel] navigate failed", error));
+      void desktop
+        .invoke("browser_reload")
+        .catch((err) => electron?.log("[browser-panel] reload failed", err));
+      return;
     }
+    if (current()) load(current());
   }
 
   return (
     <div class="browser-pane">
       <div class="browser-toolbar">
-        <button type="button" class="browser-nav-btn" onClick={back} disabled={historyIndex() <= 0} title="后退">←</button>
-        <button type="button" class="browser-nav-btn" onClick={forward} disabled={historyIndex() >= history().length - 1} title="前进">→</button>
-        <button type="button" class="browser-nav-btn" onClick={() => current() && load(current())} title="刷新">⟳</button>
+        <button type="button" class="browser-nav-btn" onClick={back} disabled={!canGoBack()} title="后退">←</button>
+        <button type="button" class="browser-nav-btn" onClick={forward} disabled={!canGoForward()} title="前进">→</button>
+        <button type="button" class="browser-nav-btn" onClick={reload} title="刷新">⟳</button>
         <form class="browser-url-form" onSubmit={(event) => {
           event.preventDefault();
           load(url());
         }}>
           <input
             class="browser-url-input"
+            classList={{ "browser-url-input-loading": loading() }}
             value={url()}
             placeholder="输入 URL，例如 https://example.com"
             onInput={(event) => setUrl(event.currentTarget.value)}
@@ -192,6 +221,12 @@ export function BrowserPanel(props: { state: AppState }) {
           </button>
         </form>
       </div>
+      <Show when={loading()}>
+        <div class="browser-loading-bar" aria-hidden="true" />
+      </Show>
+      <Show when={error()}>
+        <div class="browser-error">{error()}</div>
+      </Show>
       <div class="browser-webview-host" ref={host}>
         <Show when={!desktop}>
           <iframe
