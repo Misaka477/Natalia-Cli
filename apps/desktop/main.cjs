@@ -89,12 +89,21 @@ function ensureBrowserView() {
     attached: browserViewAttached,
     url: browserUrl,
   });
+  browserView.webContents.on("did-start-loading", () => {
+    console.log("[desktop] browser did-start-loading", browserUrl);
+  });
   browserView.webContents.on("did-finish-load", () => {
     console.log("[desktop] browser BrowserView finished loading", browserUrl);
     if (lastBrowserRect.width && lastBrowserRect.height) {
       browserView.setBounds(lastBrowserRect);
       console.log("[desktop] re-applied browser bounds after load", lastBrowserRect);
     }
+  });
+  browserView.webContents.on("did-fail-load", (_event, code, desc, url, isMainFrame) => {
+    console.error("[desktop] browser did-fail-load", { code, desc, url, isMainFrame });
+  });
+  browserView.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[desktop] browser renderer gone", details);
   });
   return browserView;
 }
@@ -124,9 +133,17 @@ function showBrowser(rect) {
   if (!browserViewAttached) {
     mainWindow.addBrowserView(browserView);
     browserViewAttached = true;
+    console.log("[desktop] BrowserView attached", {
+      browserViews: mainWindow.getBrowserViews().length,
+    });
   }
   setBrowserBounds(rect);
   browserView.webContents.focus();
+  console.log("[desktop] BrowserView shown", {
+    attached: browserViewAttached,
+    bounds: lastBrowserRect,
+    windowVisible: mainWindow?.isVisible(),
+  });
 }
 
 function createMainWindow() {
@@ -155,6 +172,10 @@ function createMainWindow() {
 ipcMain.handle("runtime_call", (_event, payload) => {
   const { method, params } = payload || {};
   return runtimeCall(method, params);
+});
+
+ipcMain.on("renderer-log", (_event, data) => {
+  console.log("[renderer]", data.message, ...(data.args || []));
 });
 
 ipcMain.handle("terminal_output_subscribe", (_event, payload) => {

@@ -52,20 +52,20 @@ export function BrowserPanel(props: { state: AppState }) {
     if (!desktop) return;
     const rect = browserRect();
     if (!rect) return;
-    console.log("[browser-panel] move rect", rect, {
+    electron?.log("[browser-panel] move rect", rect, {
       dpr: window.devicePixelRatio,
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
     });
     void desktop!
       .invoke("browser_move", { rect })
-      .catch((error) => console.error("[browser-panel] move failed", error));
+      .catch((error) => electron?.log("[browser-panel] move failed", error));
   }
 
   onMount(() => {
     if (!desktop || !host) return;
     const rect = browserRect();
-    console.log("[browser-panel] show rect", rect, {
+    electron?.log("[browser-panel] show rect", rect, {
       dpr: window.devicePixelRatio,
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
@@ -73,7 +73,7 @@ export function BrowserPanel(props: { state: AppState }) {
     if (rect) {
       void desktop!
         .invoke("browser_show", { rect })
-        .catch((error) => console.error("[browser-panel] show failed", error));
+        .catch((error) => electron?.log("[browser-panel] show failed", error));
     }
     resizeObserver = new ResizeObserver(() => syncBrowserWindow());
     resizeObserver.observe(host);
@@ -84,7 +84,7 @@ export function BrowserPanel(props: { state: AppState }) {
     if (desktop) {
       void desktop!
         .invoke("browser_hide")
-        .catch((error) => console.error("[browser-panel] hide failed", error));
+        .catch((error) => electron?.log("[browser-panel] hide failed", error));
     }
     resizeObserver?.disconnect();
     window.removeEventListener("resize", syncBrowserWindow);
@@ -104,7 +104,7 @@ export function BrowserPanel(props: { state: AppState }) {
     if (desktop) {
       void desktop!
         .invoke("browser_navigate", { url: normalized })
-        .catch((error) => console.error("[browser-panel] navigate failed", error));
+        .catch((error) => electron?.log("[browser-panel] navigate failed", error));
     }
   }
 
@@ -153,7 +153,7 @@ export function BrowserPanel(props: { state: AppState }) {
     if (desktop) {
       void desktop!
         .invoke("browser_navigate", { url: target })
-        .catch((error) => console.error("[browser-panel] navigate failed", error));
+        .catch((error) => electron?.log("[browser-panel] navigate failed", error));
     }
   }
 
@@ -167,7 +167,7 @@ export function BrowserPanel(props: { state: AppState }) {
     if (desktop) {
       void desktop!
         .invoke("browser_navigate", { url: target })
-        .catch((error) => console.error("[browser-panel] navigate failed", error));
+        .catch((error) => electron?.log("[browser-panel] navigate failed", error));
     }
   }
 
