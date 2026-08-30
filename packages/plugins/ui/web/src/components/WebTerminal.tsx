@@ -226,20 +226,11 @@ export function WebTerminal(props: WebTerminalProps) {
       });
       console.log("[web-terminal] terminal_output_subscribe ok");
 
-      const read = await callRuntime<{ text: string } | undefined>(
-        tauri,
-        "nativeTerminal.read",
-        { id: props.terminalID },
-      );
-      console.log("[web-terminal] nativeTerminal.read", {
-        textLength: read?.text.length ?? 0,
-      });
-      try {
-        term?.clear();
-      } catch {
-        // xterm may not be ready yet
-      }
-      if (read?.text) term?.write(read.text);
+      // The terminal WebSocket bridge will send a `restore` message with the
+      // full raw PTY buffer. Avoid also writing nativeTerminal.read here: the
+      // plain text snapshot can overlap with live raw output and make the
+      // terminal screen render incorrectly.
+      console.log("[web-terminal] waiting for restore from terminal bridge");
       if (term && fit) {
         fit.fit();
         await callRuntime(tauri, "nativeTerminal.resize", {
