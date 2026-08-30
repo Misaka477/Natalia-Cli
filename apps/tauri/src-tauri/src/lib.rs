@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager, WebviewBuilder, WebviewUrl};
+use tauri::{Emitter, Manager, WebviewUrl};
 
 #[derive(Clone, serde::Deserialize)]
 struct BrowserRect {
@@ -145,28 +145,30 @@ fn set_browser_url(state: &AppState, url: String) {
     *state.browser_url.lock().unwrap() = url;
 }
 
-fn get_browser_webview(app: &tauri::AppHandle) -> Option<tauri::Webview> {
-    app.get_webview("browser-webview")
+fn get_browser_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window("browser-webview")
 }
 
-fn create_browser_webview(
+fn create_browser_window(
     app: &tauri::AppHandle,
     url: String,
-) -> Result<tauri::Webview, String> {
+) -> Result<tauri::WebviewWindow, String> {
     let parsed = url
         .parse::<tauri::Url>()
         .map_err(|error| format!("invalid browser URL: {error}"))?;
-    let window = app
-        .get_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    eprintln!("[natalia-desktop] create embedded browser webview {url}");
-    let builder = WebviewBuilder::new("browser-webview", WebviewUrl::External(parsed));
-    window
-        .add_child(
-            builder,
-            tauri::LogicalPosition::new(0.0, 0.0),
-            tauri::LogicalSize::new(1.0, 1.0),
-        )
+    eprintln!("[natalia-desktop] create browser webview {url}");
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main webview window not found".to_string())?;
+    tauri::WebviewWindowBuilder::new(app, "browser-webview", WebviewUrl::External(parsed))
+        .title("Natalia Browser")
+        .decorations(false)
+        .visible(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .parent(&main)
+        .map_err(|error| format!("failed to parent browser webview: {error}"))?
+        .build()
         .map_err(|error| format!("failed to create browser webview: {error}"))
 }
 
@@ -175,13 +177,13 @@ fn browser_screen_position(
     x: f64,
     y: f64,
 ) -> Result<tauri::LogicalPosition<f64>, String> {
-    let window = app
-        .get_window("main")
+    let main = app
+        .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
-    let inner = window
+    let inner = main
         .inner_position()
         .map_err(|error| format!("failed to read main window position: {error}"))?;
-    let scale = window
+    let scale = main
         .scale_factor()
         .map_err(|error| format!("failed to read window scale: {error}"))?;
     Ok(tauri::LogicalPosition::new(
@@ -197,28 +199,22 @@ fn browser_show(
     rect: BrowserRect,
 ) -> Result<(), String> {
     let url = current_browser_url(&state);
-    let webview = match get_browser_webview(&app) {
-        Some(webview) => webview,
-        None => create_browser_webview(&app, url)?,
+    let window = match get_browser_window(&app) {
+        Some(window) => window,
+        None => create_browser_window(&app, url)?,
     };
     eprintln!(
         "[natalia-desktop] browser_show rect=({},{},{},{})",
         rect.x, rect.y, rect.width, rect.height
     );
     let screen_position = browser_screen_position(&app, rect.x, rect.y)?;
-    webview
+    window
         .set_position(screen_position)
         .map_err(|error| format!("browser position failed: {error}"))?;
-    webview
+    window
         .set_size(tauri::LogicalSize::new(rect.width, rect.height))
         .map_err(|error| format!("browser size failed: {error}"))?;
-    if let Ok(bounds) = webview.bounds() {
-        eprintln!(
-            "[natalia-desktop] browser bounds after show: {:?}",
-            bounds
-        );
-    }
-    webview
+    window
         .show()
         .map_err(|error| format!("browser show failed: {error}"))
 }
@@ -228,32 +224,25 @@ fn browser_move(
     app: tauri::AppHandle,
     rect: BrowserRect,
 ) -> Result<(), String> {
-    let webview = get_browser_webview(&app)
+    let window = get_browser_window(&app)
         .ok_or_else(|| "browser webview is not open".to_string())?;
     eprintln!(
         "[natalia-desktop] browser_move rect=({},{},{},{})",
         rect.x, rect.y, rect.width, rect.height
     );
     let screen_position = browser_screen_position(&app, rect.x, rect.y)?;
-    webview
+    window
         .set_position(screen_position)
         .map_err(|error| format!("browser position failed: {error}"))?;
-    webview
+    window
         .set_size(tauri::LogicalSize::new(rect.width, rect.height))
-        .map_err(|error| format!("browser size failed: {error}"))?;
-    if let Ok(bounds) = webview.bounds() {
-        eprintln!(
-            "[natalia-desktop] browser bounds after move: {:?}",
-            bounds
-        );
-    }
-    Ok(())
+        .map_err(|error| format!("browser size failed: {error}"))
 }
 
 #[tauri::command]
 fn browser_hide(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(webview) = get_browser_webview(&app) {
-        webview
+    if let Some(window) = get_browser_window(&app) {
+        window
             .hide()
             .map_err(|error| format!("browser hide failed: {error}"))?;
     }
@@ -270,19 +259,19 @@ fn browser_navigate(
     let parsed = url
         .parse::<tauri::Url>()
         .map_err(|error| format!("invalid browser URL: {error}"))?;
-    if let Some(webview) = get_browser_webview(&app) {
-        webview
+    if let Some(window) = get_browser_window(&app) {
+        window
             .navigate(parsed)
             .map_err(|error| format!("browser navigate failed: {error}"))
     } else {
-        let _ = create_browser_webview(&app, url)?;
+        let _ = create_browser_window(&app, url)?;
         Ok(())
     }
 }
 
-fn eval_browser_js(webview: &tauri::Webview, js: String) -> Result<String, String> {
+fn eval_browser_js(window: &tauri::WebviewWindow, js: String) -> Result<String, String> {
     let (tx, rx) = std::sync::mpsc::channel::<String>();
-    webview
+    window
         .eval_with_callback(js, move |result| {
             let _ = tx.send(result);
         })
@@ -293,41 +282,41 @@ fn eval_browser_js(webview: &tauri::Webview, js: String) -> Result<String, Strin
 
 #[tauri::command]
 fn browser_read_dom(app: tauri::AppHandle) -> Result<String, String> {
-    let webview = get_browser_webview(&app)
+    let window = get_browser_window(&app)
         .ok_or_else(|| "browser webview is not open".to_string())?;
     eprintln!("[natalia-desktop] browser_read_dom");
     eval_browser_js(
-        &webview,
+        &window,
         "JSON.stringify(document.documentElement.outerHTML)".to_string(),
     )
 }
 
 #[tauri::command]
 fn browser_click(app: tauri::AppHandle, x: f64, y: f64) -> Result<String, String> {
-    let webview = get_browser_webview(&app)
+    let window = get_browser_window(&app)
         .ok_or_else(|| "browser webview is not open".to_string())?;
     eprintln!("[natalia-desktop] browser_click ({x},{y})");
     let js = format!(
         "JSON.stringify((()=>{{const e=document.elementFromPoint({x},{y}); if(e){{e.click(); return 'ok';}} return 'no_element';}})())"
     );
-    eval_browser_js(&webview, js)
+    eval_browser_js(&window, js)
 }
 
 #[tauri::command]
 fn browser_input(app: tauri::AppHandle, text: String) -> Result<String, String> {
-    let webview = get_browser_webview(&app)
+    let window = get_browser_window(&app)
         .ok_or_else(|| "browser webview is not open".to_string())?;
     eprintln!("[natalia-desktop] browser_input text_len={}", text.len());
     let payload = serde_json::to_string(&text).unwrap_or_else(|_| "\"\"".to_string());
     let js = format!(
         "JSON.stringify((()=>{{const el=document.activeElement; if(!el)return 'no_active'; if(el.value!==undefined)el.value={payload}; el.dispatchEvent(new Event('input',{{bubbles:true}})); return 'ok';}})())"
     );
-    eval_browser_js(&webview, js)
+    eval_browser_js(&window, js)
 }
 
 #[tauri::command]
 fn browser_screenshot(app: tauri::AppHandle) -> Result<String, String> {
-    let _webview = get_browser_webview(&app)
+    let _window = get_browser_window(&app)
         .ok_or_else(|| "browser webview is not open".to_string())?;
     // The remote WebView cannot be read back through the Tauri webview API
     // directly. This command is a placeholder for platform screenshot work.
