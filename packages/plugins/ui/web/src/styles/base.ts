@@ -3190,7 +3190,7 @@ button.neu-settings-item.neu-settings-item-button:active {
     width: min(320px, 32vw);
   }
   .neu-shell[data-compact="true"] .neu-secondary {
-    width: min(420px, 44vw);
+    width: min(720px, 66vw);
   }
   .neu-shell[data-compact="true"] .neu-resizer,
   .neu-shell[data-compact="true"] .neu-right-resizer {

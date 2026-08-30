@@ -41,7 +41,9 @@ const MAX_RIGHT_WIDTH = 560;
 
 function rightPanelMaxWidth(): number {
   if (typeof window === "undefined") return MAX_RIGHT_WIDTH;
-  return Math.max(MIN_RIGHT_WIDTH, Math.floor(window.innerWidth / 3));
+  // On small/compact layouts the right panel is the most space-hungry
+  // surface (terminal/browser/diff), so allow it to take up to 2/3 width.
+  return Math.max(MIN_RIGHT_WIDTH, Math.floor(window.innerWidth * 2 / 3));
 }
 
 function StatusDot(props: { status: string }) {
