@@ -4,6 +4,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
+export type WebTerminalApi = {
+  clear(): void;
+  copy(): Promise<void>;
+  paste(): Promise<void>;
+  zoomIn(): void;
+  zoomOut(): void;
+};
+
 export type WebTerminalProps = {
   sessionID: string;
   terminalID: string;
@@ -11,6 +19,7 @@ export type WebTerminalProps = {
   token?: string;
   active?: boolean;
   command?: string;
+  registerApi?: (api: WebTerminalApi | undefined) => void;
 };
 
 type ServerMessage =
@@ -201,6 +210,7 @@ export function WebTerminal(props: WebTerminalProps) {
       }
     });
     resizeObserver.observe(host);
+    props.registerApi?.(api);
     connect();
   });
 
@@ -225,13 +235,11 @@ export function WebTerminal(props: WebTerminalProps) {
     }
   });
 
-  const [fontSize, setFontSize] = createSignal(12);
-  const [copied, setCopied] = createSignal(false);
+  let fontSize = 12;
 
   function changeFontSize(delta: number) {
-    const next = Math.max(8, Math.min(24, fontSize() + delta));
-    setFontSize(next);
-    if (term) term.options.fontSize = next;
+    fontSize = Math.max(8, Math.min(24, fontSize + delta));
+    if (term) term.options.fontSize = fontSize;
     try {
       fit?.fit();
     } catch {
@@ -244,8 +252,6 @@ export function WebTerminal(props: WebTerminalProps) {
     if (selected) {
       try {
         await navigator.clipboard.writeText(selected);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 800);
       } catch {
         // clipboard may be unavailable; ignore
       }
@@ -261,24 +267,22 @@ export function WebTerminal(props: WebTerminalProps) {
     }
   }
 
+  const api: WebTerminalApi = {
+    clear: () => term?.clear(),
+    copy: copySelection,
+    paste: pasteFromClipboard,
+    zoomIn: () => changeFontSize(1),
+    zoomOut: () => changeFontSize(-1),
+  };
+
   onCleanup(() => {
     closed = true;
+    props.registerApi?.(undefined);
     if (reconnectTimer) clearTimeout(reconnectTimer);
     resizeObserver?.disconnect();
     socket?.close();
     term?.dispose();
   });
 
-  return (
-    <div class="web-terminal-shell">
-      <div class="web-terminal-toolbar">
-        <button type="button" class="web-terminal-btn" onClick={() => term?.clear()} title="清空">清空</button>
-        <button type="button" class="web-terminal-btn" onClick={() => void copySelection()} title="复制">{copied() ? "已复制" : "复制"}</button>
-        <button type="button" class="web-terminal-btn" onClick={() => void pasteFromClipboard()} title="粘贴">粘贴</button>
-        <button type="button" class="web-terminal-btn" onClick={() => changeFontSize(-1)} title="缩小字体">A-</button>
-        <button type="button" class="web-terminal-btn" onClick={() => changeFontSize(1)} title="放大字体">A+</button>
-      </div>
-      <div class="web-terminal" ref={host} />
-    </div>
-  );
+  return <div class="web-terminal" ref={host} />;
 }

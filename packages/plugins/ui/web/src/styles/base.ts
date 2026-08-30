@@ -1086,29 +1086,6 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .terminal-xterm-stack { position: relative; flex: 1; min-height: 0; }
 .terminal-xterm-host { position: absolute; inset: 0; display: none; }
 .terminal-xterm-host[data-active="true"] { display: flex; }
-.web-terminal-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.web-terminal-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--neu-divider);
-}
-.web-terminal-btn {
-  border: none;
-  border-radius: 8px;
-  padding: 3px 8px;
-  background: var(--neu-bg);
-  color: var(--neu-muted);
-  font-size: 11px;
-  cursor: pointer;
-  box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light);
-}
-.web-terminal-btn:hover { color: var(--neu-text); }
-.web-terminal-btn:active {
-  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
-}
 .web-terminal { flex: 1; min-height: 0; padding: 8px; }
 .web-terminal .xterm { height: 100%; }
 .web-terminal .xterm-viewport { overflow-y: auto !important; }

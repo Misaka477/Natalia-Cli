@@ -8,7 +8,7 @@ import type {
   RuntimeTeamPR,
 } from "@natalia/contracts";
 import { NeuSelect } from "./NeuSelect";
-import { WebTerminal } from "./WebTerminal";
+import { WebTerminal, type WebTerminalApi } from "./WebTerminal";
 
 export type RightPanelTab = "review" | "terminal" | "browser" | "file";
 
@@ -647,6 +647,8 @@ export function TerminalPane(props: {
   const [limitError, setLimitError] = createSignal<string>();
   const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
   const [shellProfile, setShellProfile] = createSignal("bash");
+  const terminalApis = new Map<string, WebTerminalApi>();
+  const activeApi = () => terminalApis.get(activeID() ?? "");
   let loadToken = 0;
 
   function retitle(next: TerminalTab[]) {
@@ -874,6 +876,11 @@ export function TerminalPane(props: {
               {sessions().find((item) => item.id === activeID())?.secureInput ? "结束安全输入" : "安全输入"}
             </button>
           </Show>
+          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.clear()} title="清空">清空</button>
+          <button type="button" class="terminal-toolbar-btn" onClick={() => void activeApi()?.copy()} title="复制">复制</button>
+          <button type="button" class="terminal-toolbar-btn" onClick={() => void activeApi()?.paste()} title="粘贴">粘贴</button>
+          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.zoomOut()} title="缩小字体">A-</button>
+          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.zoomIn()} title="放大字体">A+</button>
           <button
             type="button"
             class="terminal-toolbar-btn"
@@ -958,6 +965,10 @@ export function TerminalPane(props: {
                           token={props.token}
                           active={props.active && activeID() === cellID}
                           command={shellProfile()}
+                          registerApi={(api) => {
+                            if (api) terminalApis.set(cellID, api);
+                            else terminalApis.delete(cellID);
+                          }}
                         />
                       </div>
                     )}
