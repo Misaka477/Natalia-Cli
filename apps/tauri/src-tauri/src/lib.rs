@@ -212,6 +212,12 @@ fn browser_show(
     webview
         .set_size(tauri::LogicalSize::new(rect.width, rect.height))
         .map_err(|error| format!("browser size failed: {error}"))?;
+    if let Ok(bounds) = webview.bounds() {
+        eprintln!(
+            "[natalia-desktop] browser bounds after show: {:?}",
+            bounds
+        );
+    }
     webview
         .show()
         .map_err(|error| format!("browser show failed: {error}"))
@@ -234,7 +240,14 @@ fn browser_move(
         .map_err(|error| format!("browser position failed: {error}"))?;
     webview
         .set_size(tauri::LogicalSize::new(rect.width, rect.height))
-        .map_err(|error| format!("browser size failed: {error}"))
+        .map_err(|error| format!("browser size failed: {error}"))?;
+    if let Ok(bounds) = webview.bounds() {
+        eprintln!(
+            "[natalia-desktop] browser bounds after move: {:?}",
+            bounds
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
