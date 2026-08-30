@@ -3,12 +3,10 @@ import type { AppState } from "@natalia/view-store";
 
 export function BrowserPanel(props: { state: AppState }) {
   const [url, setUrl] = createSignal("https://example.com");
-  const [current, setCurrent] = createSignal("https://example.com");
-  const [pending, setPending] = createSignal<string | undefined>(undefined);
   const [history, setHistory] = createSignal<string[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(0);
 
-  function navigate(next: string) {
+  function open(next: string) {
     let normalized = next.trim();
     if (!normalized) return;
     if (!/^https?:\/\//u.test(normalized)) normalized = `https://${normalized}`;
@@ -18,14 +16,13 @@ export function BrowserPanel(props: { state: AppState }) {
     setHistory(before);
     setHistoryIndex(before.length - 1);
     setUrl(normalized);
-    setCurrent(normalized);
-    setPending(undefined);
+    window.open(normalized, "_blank", "noopener,noreferrer");
   }
 
   let lastHandledTool = "";
 
-  // Model browser tools only prepare the URL; the iframe is not auto-loaded
-  // to avoid heavy pages freezing the main UI. The human can click load.
+  // Model browser tools update the URL bar. We do not embed heavy pages in an
+  // iframe; opening in a separate tab keeps the Natalia UI from freezing.
   createEffect(() => {
     const tools = props.state.tools ?? {};
     const entries = Object.values(tools);
@@ -51,7 +48,6 @@ export function BrowserPanel(props: { state: AppState }) {
         let normalized = target.trim();
         if (!/^https?:\/\//u.test(normalized)) normalized = `https://${normalized}`;
         setUrl(normalized);
-        setPending(normalized);
       }
     } catch {
       // argument text may be partial; ignore
@@ -62,20 +58,14 @@ export function BrowserPanel(props: { state: AppState }) {
     const idx = historyIndex() - 1;
     if (idx < 0) return;
     setHistoryIndex(idx);
-    const target = history()[idx]!;
-    setUrl(target);
-    setCurrent(target);
-    setPending(undefined);
+    setUrl(history()[idx]!);
   }
 
   function forward() {
     const idx = historyIndex() + 1;
     if (idx >= history().length) return;
     setHistoryIndex(idx);
-    const target = history()[idx]!;
-    setUrl(target);
-    setCurrent(target);
-    setPending(undefined);
+    setUrl(history()[idx]!);
   }
 
   return (
@@ -83,10 +73,9 @@ export function BrowserPanel(props: { state: AppState }) {
       <div class="browser-toolbar">
         <button type="button" class="browser-nav-btn" onClick={back} disabled={historyIndex() <= 0} title="后退">←</button>
         <button type="button" class="browser-nav-btn" onClick={forward} disabled={historyIndex() >= history().length - 1} title="前进">→</button>
-        <button type="button" class="browser-nav-btn" onClick={() => navigate(current())} title="刷新">⟳</button>
         <form class="browser-url-form" onSubmit={(event) => {
           event.preventDefault();
-          navigate(url());
+          open(url());
         }}>
           <input
             class="browser-url-input"
@@ -95,19 +84,22 @@ export function BrowserPanel(props: { state: AppState }) {
             onInput={(event) => setUrl(event.currentTarget.value)}
           />
         </form>
-        <Show when={pending()}>
-          <button type="button" class="browser-load-btn" onClick={() => pending() && navigate(pending())}>
-            加载
-          </button>
-        </Show>
+        <button type="button" class="browser-open-btn" onClick={() => open(url())}>
+          打开
+        </button>
       </div>
-      <iframe
-        class="browser-frame"
-        src={current()}
-        title="Natalia Browser"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-        loading="lazy"
-      />
+      <div class="browser-empty">
+        <div class="browser-empty-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="1.5" />
+            <path d="M16 24C16 19.5817 19.5817 16 24 16C28.4183 16 32 19.5817 32 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <path d="M8 24H40" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div class="browser-empty-text">
+          浏览器页面在新标签页打开，避免 iframe 导致 Natalia UI 卡死。
+        </div>
+      </div>
     </div>
   );
 }
