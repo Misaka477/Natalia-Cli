@@ -36,6 +36,15 @@ function getTauriGlobal(): TauriGlobal | undefined {
   return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
 }
 
+type ElectronGlobal = {
+  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  on<T>(channel: string, listener: (payload: T) => void): () => void;
+};
+
+function getElectronGlobal(): ElectronGlobal | undefined {
+  return (globalThis as { electron?: ElectronGlobal }).electron;
+}
+
 export const RPC_METHOD_ROUTES: Record<string, string> = {
   submit: "prompt",
   submitAndWait: "submit.andWait",
@@ -314,10 +323,17 @@ export function createWebRuntimeClient(
   options: WebRuntimeOptions,
 ): RuntimeClient {
   const tauri = getTauriGlobal();
+  const electron = getElectronGlobal();
   const call = <T>(
     method: string,
     params?: Record<string, unknown>,
   ): Promise<T> => {
+    if (electron) {
+      return electron.invoke<T>("runtime_call", {
+        method,
+        params: params ?? {},
+      });
+    }
     if (tauri) {
       return tauri.core.invoke<T>("runtime_call", {
         method,
@@ -439,6 +455,17 @@ export function createWebRuntimeClient(
     starts.push(onEvent);
     if (started) return;
     started = true;
+
+    // Electron: receive runtime events through the main-process IPC bridge.
+    if (electron) {
+      electron.on<RuntimeEvent>("natalia-runtime-event", (event) => {
+        console.log("[web-runtime] electron event", event.type);
+        for (const listener of starts) listener(event);
+      });
+      const newest = await restoreRecentSession();
+      await replayHistory(newest?.id, newest?.events);
+      return;
+    }
 
     // Tauri: receive runtime events through the Rust host's IPC event bridge.
     if (tauri) {

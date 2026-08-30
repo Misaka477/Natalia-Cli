@@ -26,6 +26,7 @@ function solidJsxSource(): Plugin {
 }
 
 export default defineConfig({
+  base: "./",
   plugins: [
     solidJsxSource(),
     solid({

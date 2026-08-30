@@ -1,19 +1,20 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/desktop-tauri",
+  "name": "@natalia/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "main.cjs",
   "license": "Apache-2.0",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build",
-    "tauri": "tauri"
+    "dev": "electron .",
+    "build": "electron-builder"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
   }
 }

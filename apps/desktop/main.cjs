@@ -1,0 +1,288 @@
+const { app, BrowserWindow, ipcMain, WebContentsView } = require("electron");
+const path = require("path");
+const WebSocket = require("ws");
+const http = require("http");
+
+const RUNTIME_URL =
+  process.env.NATALIA_RUNTIME_URL || "http://127.0.0.1:8790";
+const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
+
+let mainWindow;
+let browserView;
+let browserUrl = "https://example.com";
+
+function runtimeFetch(pathname, options = {}) {
+  const headers = { "content-type": "application/json", ...(options.headers || {}) };
+  if (TOKEN) headers.authorization = `Bearer ${TOKEN}`;
+  return fetch(`${RUNTIME_URL}${pathname}`, { ...options, headers });
+}
+
+async function runtimeCall(method, params) {
+  const response = await runtimeFetch("/rpc", {
+    method: "POST",
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: params ?? {} }),
+  });
+  const body = await response.json();
+  if (!response.ok || body.error) {
+    const message = body.error?.message || body.error || `runtime RPC failed: ${response.status}`;
+    throw new Error(message);
+  }
+  return body.result;
+}
+
+function sendRuntimeEvent(event) {
+  mainWindow?.webContents.send("natalia-runtime-event", event);
+}
+
+async function streamRuntimeEvents() {
+  try {
+    const response = await runtimeFetch("/events", {
+      headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : undefined,
+    });
+    if (!response.ok || !response.body) {
+      console.error("[desktop] runtime event stream failed", response.status);
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let current = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            current = JSON.parse(line.slice(6));
+          } catch {
+            current = null;
+          }
+        } else if (line === "" && current) {
+          sendRuntimeEvent(current);
+          current = null;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[desktop] runtime event stream error", error);
+  }
+}
+
+function ensureBrowserView() {
+  if (browserView) return browserView;
+  browserView = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+  mainWindow.contentView.addChildView(browserView);
+  browserView.webContents.loadURL(browserUrl);
+  return browserView;
+}
+
+function setBrowserBounds(rect) {
+  const view = ensureBrowserView();
+  view.setBounds({
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  });
+}
+
+function hideBrowser() {
+  if (browserView && mainWindow) {
+    mainWindow.contentView.removeChildView(browserView);
+  }
+}
+
+function showBrowser(rect) {
+  if (!browserView) {
+    ensureBrowserView();
+  }
+  if (!mainWindow.contentView.children.includes(browserView)) {
+    mainWindow.contentView.addChildView(browserView);
+  }
+  setBrowserBounds(rect);
+  browserView.webContents.focus();
+}
+
+function createMainWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
+    title: "Natalia Desktop",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const webDist = path.resolve(__dirname, "../../apps/web/dist/index.html");
+  mainWindow.loadFile(webDist);
+
+  mainWindow.on("closed", () => {
+    mainWindow = undefined;
+    browserView = undefined;
+  });
+}
+
+ipcMain.handle("runtime_call", (_event, payload) => {
+  const { method, params } = payload || {};
+  return runtimeCall(method, params);
+});
+
+ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
+  const { sessionId, terminalId } = payload || {};
+  if (!sessionId || !terminalId) throw new Error("missing sessionId/terminalId");
+  const base = RUNTIME_URL.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
+  const url = `${base}/terminal/${encodeURIComponent(sessionId)}/${encodeURIComponent(terminalId)}${TOKEN ? `?token=${TOKEN}` : ""}`;
+  const ws = new WebSocket(url);
+  ws.on("message", (data) => {
+    let message;
+    try {
+      message = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    mainWindow?.webContents.send("natalia-terminal-output", {
+      id: terminalId,
+      message,
+    });
+  });
+  ws.on("open", () => console.log("[desktop] terminal output bridge connected", url));
+  ws.on("error", (error) => console.error("[desktop] terminal output bridge error", error));
+  return { subscribed: true };
+});
+
+ipcMain.handle("browser_show", (_event, rect) => {
+  showBrowser(rect);
+  return { ok: true };
+});
+
+ipcMain.handle("browser_move", (_event, rect) => {
+  if (!browserView) return { ok: false };
+  setBrowserBounds(rect);
+  return { ok: true };
+});
+
+ipcMain.handle("browser_hide", () => {
+  hideBrowser();
+  return { ok: true };
+});
+
+async function browser_navigate(payload) {
+  const url = payload?.url;
+  if (!url) throw new Error("missing url");
+  browserUrl = url;
+  const view = ensureBrowserView();
+  await view.webContents.loadURL(url);
+  return { ok: true };
+}
+
+async function browser_read_dom() {
+  const view = browserView || ensureBrowserView();
+  return await view.webContents.executeJavaScript("document.documentElement.outerHTML");
+}
+
+async function browser_click(payload) {
+  const view = browserView || ensureBrowserView();
+  const x = Number(payload?.x);
+  const y = Number(payload?.y);
+  return await view.webContents.executeJavaScript(
+    `JSON.stringify((()=>{const e=document.elementFromPoint(${x},${y}); if(e){e.click(); return 'ok';} return 'no_element';})())`
+  );
+}
+
+async function browser_input(payload) {
+  const view = browserView || ensureBrowserView();
+  const text = String(payload?.text ?? "");
+  const encoded = JSON.stringify(text);
+  return await view.webContents.executeJavaScript(
+    `JSON.stringify((()=>{const el=document.activeElement; if(!el)return 'no_active'; if(el.value!==undefined)el.value=${encoded}; el.dispatchEvent(new Event('input',{bubbles:true})); return 'ok';})())`
+  );
+}
+
+async function browser_screenshot() {
+  const view = browserView || ensureBrowserView();
+  const image = await view.webContents.capturePage();
+  return image.toDataURL();
+}
+
+ipcMain.handle("browser_navigate", (_event, payload) => browser_navigate(payload));
+ipcMain.handle("browser_read_dom", () => browser_read_dom());
+ipcMain.handle("browser_click", (_event, payload) => browser_click(payload));
+ipcMain.handle("browser_input", (_event, payload) => browser_input(payload));
+ipcMain.handle("browser_screenshot", () => browser_screenshot());
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+async function handleBrowserBridge(req, res) {
+  res.setHeader("Content-Type", "application/json");
+  const send = (status, payload) => {
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+  };
+  try {
+    const input = await readJsonBody(req);
+    if (req.method === "POST" && req.url === "/browser/navigate") {
+      await browser_navigate({ url: String(input.url || "") });
+      send(200, { ok: true });
+    } else if (req.method === "POST" && req.url === "/browser/read") {
+      const text = await browser_read_dom();
+      send(200, { text });
+    } else if (req.method === "POST" && req.url === "/browser/click") {
+      const result = await browser_click({ x: Number(input.x), y: Number(input.y) });
+      send(200, { result });
+    } else if (req.method === "POST" && req.url === "/browser/input") {
+      const result = await browser_input({ text: String(input.text || "") });
+      send(200, { result });
+    } else {
+      send(404, { error: `unknown bridge route ${req.method} ${req.url}` });
+    }
+  } catch (error) {
+    send(500, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+function startBrowserBridge() {
+  const server = http.createServer((req, res) => {
+    void handleBrowserBridge(req, res);
+  });
+  server.listen(8788, "127.0.0.1", () => {
+    console.log("[desktop] browser bridge listening on http://127.0.0.1:8788");
+  });
+}
+
+app.whenReady().then(() => {
+  createMainWindow();
+  streamRuntimeEvents();
+  startBrowserBridge();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});

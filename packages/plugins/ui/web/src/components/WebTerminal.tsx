@@ -24,12 +24,21 @@ function getTauriGlobal(): TauriGlobal | undefined {
   return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
 }
 
+type ElectronGlobal = {
+  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  on<T>(channel: string, listener: (payload: T) => void): () => void;
+};
+
+function getElectronGlobal(): ElectronGlobal | undefined {
+  return (globalThis as { electron?: ElectronGlobal }).electron;
+}
+
 async function callRuntime<T = unknown>(
-  tauri: TauriGlobal,
+  ipc: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> },
   method: string,
   params?: Record<string, unknown>,
 ): Promise<T> {
-  return await tauri.core.invoke<T>("runtime_call", {
+  return await ipc.invoke<T>("runtime_call", {
     method,
     params: params ?? {},
   });
@@ -95,6 +104,8 @@ export function WebTerminal(props: WebTerminalProps) {
   let lastError: string | undefined;
   let fatal = false;
   const tauri = getTauriGlobal();
+  const electron = getElectronGlobal();
+  const desktop = tauri ?? electron;
 
   function theme() {
     // Keep a dark terminal palette regardless of the app/UI theme. Full-screen
@@ -141,7 +152,7 @@ export function WebTerminal(props: WebTerminalProps) {
       lastError = undefined;
       if (term && fit) {
         fit.fit();
-        void callRuntime(tauri!, "nativeTerminal.resize", {
+        void callRuntime(desktop!, "nativeTerminal.resize", {
           id: props.terminalID,
           rows: term.rows,
           cols: term.cols,
@@ -158,7 +169,7 @@ export function WebTerminal(props: WebTerminalProps) {
       fatal ||
       !props.sessionID ||
       !props.terminalID ||
-      !tauri
+      !desktop
     )
       return;
     const previous = ipcUnlisten;
@@ -172,13 +183,21 @@ export function WebTerminal(props: WebTerminalProps) {
     });
 
     try {
-      ipcUnlisten = await tauri.event.listen<{
-        id: string;
-        message: ServerMessage;
-      }>("natalia-terminal-output", (event) => {
-        if (event.payload.id !== props.terminalID) return;
-        handleServerMessage(event.payload.message);
-      });
+      ipcUnlisten = electron
+        ? electron.on<{ id: string; message: ServerMessage }>(
+            "natalia-terminal-output",
+            (event) => {
+              if (event.id !== props.terminalID) return;
+              handleServerMessage(event.message);
+            },
+          )
+        : await tauri!.event.listen<{
+            id: string;
+            message: ServerMessage;
+          }>("natalia-terminal-output", (event) => {
+            if (event.payload.id !== props.terminalID) return;
+            handleServerMessage(event.payload.message);
+          });
       console.log("[web-terminal] ipc event listener ready");
 
       const listed =
@@ -186,7 +205,7 @@ export function WebTerminal(props: WebTerminalProps) {
           id: string;
           status: string;
           sessionID?: string;
-        }>>(tauri, "nativeTerminal.list")) ?? [];
+        }>>(desktop, "nativeTerminal.list")) ?? [];
       let session = listed.find((item) => item.id === props.terminalID);
       if (!session || (session.sessionID && session.sessionID !== props.sessionID)) {
         console.log("[web-terminal] nativeTerminal.start", {
@@ -196,7 +215,7 @@ export function WebTerminal(props: WebTerminalProps) {
         });
         session =
           (await callRuntime<{ id: string; status: string } | undefined>(
-            tauri,
+            desktop,
             "nativeTerminal.start",
             {
               command: props.command || "bash",
@@ -222,7 +241,7 @@ export function WebTerminal(props: WebTerminalProps) {
         sessionId: props.sessionID,
         terminalId: props.terminalID,
       });
-      await tauri.core.invoke("terminal_output_subscribe", {
+      await desktop!.invoke("terminal_output_subscribe", {
         sessionId: props.sessionID,
         terminalId: props.terminalID,
       });
@@ -235,7 +254,7 @@ export function WebTerminal(props: WebTerminalProps) {
       console.log("[web-terminal] waiting for restore from terminal bridge");
       if (term && fit) {
         fit.fit();
-        await callRuntime(tauri, "nativeTerminal.resize", {
+        await callRuntime(desktop, "nativeTerminal.resize", {
           id: props.terminalID,
           rows: term.rows,
           cols: term.cols,
@@ -262,11 +281,11 @@ export function WebTerminal(props: WebTerminalProps) {
       fatal ||
       !props.sessionID ||
       !props.terminalID ||
-      (!props.runtimeURL && !tauri)
+      (!props.runtimeURL && !desktop)
     )
       return;
-    if (tauri) {
-      console.log("[web-terminal] using Tauri IPC transport");
+    if (desktop) {
+      console.log("[web-terminal] using desktop IPC transport");
       void ipcConnect();
       return;
     }
@@ -406,12 +425,12 @@ export function WebTerminal(props: WebTerminalProps) {
     term.open(host);
     fit.fit();
     term.onData((data) => {
-      if (tauri) {
+      if (desktop) {
         console.log("[web-terminal] write through IPC", {
           terminalID: props.terminalID,
           bytes: data.length,
         });
-        void callRuntime(tauri, "nativeTerminal.write", {
+        void callRuntime(desktop, "nativeTerminal.write", {
           id: props.terminalID,
           input: data,
         }).catch((error) => {
@@ -423,13 +442,13 @@ export function WebTerminal(props: WebTerminalProps) {
         socket.send(JSON.stringify({ type: "input", data }));
     });
     term.onResize(({ cols, rows }) => {
-      if (tauri) {
+      if (desktop) {
         console.log("[web-terminal] resize through IPC", {
           terminalID: props.terminalID,
           rows,
           cols,
         });
-        void callRuntime(tauri, "nativeTerminal.resize", {
+        void callRuntime(desktop, "nativeTerminal.resize", {
           id: props.terminalID,
           rows,
           cols,

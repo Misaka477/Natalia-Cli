@@ -11,6 +11,14 @@ function getTauriGlobal(): TauriGlobal | undefined {
   return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
 }
 
+type ElectronGlobal = {
+  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+};
+
+function getElectronGlobal(): ElectronGlobal | undefined {
+  return (globalThis as { electron?: ElectronGlobal }).electron;
+}
+
 type BrowserRect = {
   x: number;
   y: number;
@@ -26,6 +34,8 @@ export function BrowserPanel(props: { state: AppState }) {
   let host: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
   const tauri = getTauriGlobal();
+  const electron = getElectronGlobal();
+  const desktop = tauri ?? electron;
 
   function browserRect(): BrowserRect | undefined {
     if (!host) return undefined;
@@ -39,7 +49,7 @@ export function BrowserPanel(props: { state: AppState }) {
   }
 
   function syncBrowserWindow() {
-    if (!tauri) return;
+    if (!desktop) return;
     const rect = browserRect();
     if (!rect) return;
     console.log("[browser-panel] move rect", rect, {
@@ -47,13 +57,13 @@ export function BrowserPanel(props: { state: AppState }) {
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
     });
-    void tauri.core
+    void desktop!
       .invoke("browser_move", { rect })
       .catch((error) => console.error("[browser-panel] move failed", error));
   }
 
   onMount(() => {
-    if (!tauri || !host) return;
+    if (!desktop || !host) return;
     const rect = browserRect();
     console.log("[browser-panel] show rect", rect, {
       dpr: window.devicePixelRatio,
@@ -61,7 +71,7 @@ export function BrowserPanel(props: { state: AppState }) {
       innerHeight: window.innerHeight,
     });
     if (rect) {
-      void tauri.core
+      void desktop!
         .invoke("browser_show", { rect })
         .catch((error) => console.error("[browser-panel] show failed", error));
     }
@@ -70,8 +80,8 @@ export function BrowserPanel(props: { state: AppState }) {
   });
 
   onCleanup(() => {
-    if (tauri) {
-      void tauri.core
+    if (desktop) {
+      void desktop!
         .invoke("browser_hide")
         .catch((error) => console.error("[browser-panel] hide failed", error));
     }
@@ -89,8 +99,8 @@ export function BrowserPanel(props: { state: AppState }) {
     setHistoryIndex(before.length - 1);
     setUrl(normalized);
     setCurrent(normalized);
-    if (tauri) {
-      void tauri.core
+    if (desktop) {
+      void desktop!
         .invoke("browser_navigate", { url: normalized })
         .catch((error) => console.error("[browser-panel] navigate failed", error));
     }
@@ -138,8 +148,8 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
-    if (tauri) {
-      void tauri.core
+    if (desktop) {
+      void desktop!
         .invoke("browser_navigate", { url: target })
         .catch((error) => console.error("[browser-panel] navigate failed", error));
     }
@@ -152,8 +162,8 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
-    if (tauri) {
-      void tauri.core
+    if (desktop) {
+      void desktop!
         .invoke("browser_navigate", { url: target })
         .catch((error) => console.error("[browser-panel] navigate failed", error));
     }
@@ -178,7 +188,7 @@ export function BrowserPanel(props: { state: AppState }) {
         </form>
       </div>
       <div class="browser-webview-host" ref={host}>
-        <Show when={!tauri}>
+        <Show when={!desktop}>
           <iframe
             class="browser-frame"
             src={current()}
