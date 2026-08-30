@@ -110,12 +110,14 @@ function ensureBrowserView() {
 
 function setBrowserBounds(rect) {
   const view = ensureBrowserView();
+  console.log("[desktop] setBrowserBounds input", rect);
   lastBrowserRect = {
     x: Math.round(rect.x),
     y: Math.round(rect.y),
     width: Math.round(rect.width),
     height: Math.round(rect.height),
   };
+  console.log("[desktop] setBrowserBounds result", lastBrowserRect);
   view.setBounds(lastBrowserRect);
 }
 
