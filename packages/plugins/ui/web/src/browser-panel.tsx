@@ -42,6 +42,11 @@ export function BrowserPanel(props: { state: AppState }) {
     if (!tauri) return;
     const rect = browserRect();
     if (!rect) return;
+    console.log("[browser-panel] move rect", rect, {
+      dpr: window.devicePixelRatio,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+    });
     void tauri.core
       .invoke("browser_move", { rect })
       .catch((error) => console.error("[browser-panel] move failed", error));
@@ -50,6 +55,11 @@ export function BrowserPanel(props: { state: AppState }) {
   onMount(() => {
     if (!tauri || !host) return;
     const rect = browserRect();
+    console.log("[browser-panel] show rect", rect, {
+      dpr: window.devicePixelRatio,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+    });
     if (rect) {
       void tauri.core
         .invoke("browser_show", { rect })
