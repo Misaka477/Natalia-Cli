@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 
 export type WebTerminalProps = {
   sessionID: string;
+  terminalID: string;
   runtimeURL: string;
   token?: string;
   active?: boolean;
@@ -19,9 +20,14 @@ type ServerMessage =
 
 const TRANSIENT_CLOSE_CODES = new Set([1001, 1006, 1012, 1013]);
 
-function terminalSocketURL(runtimeURL: string, sessionID: string, token?: string) {
+function terminalSocketURL(
+  runtimeURL: string,
+  sessionID: string,
+  terminalID: string,
+  token?: string,
+) {
   const url = new URL(
-    `/terminal/${encodeURIComponent(sessionID)}/${encodeURIComponent(sessionID)}`,
+    `/terminal/${encodeURIComponent(sessionID)}/${encodeURIComponent(terminalID)}`,
     runtimeURL,
   );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -57,12 +63,24 @@ export function WebTerminal(props: WebTerminalProps) {
   }
 
   function connect() {
-    if (closed || fatal || !props.sessionID || !props.runtimeURL) return;
+    if (
+      closed ||
+      fatal ||
+      !props.sessionID ||
+      !props.terminalID ||
+      !props.runtimeURL
+    )
+      return;
     const previous = socket;
     socket = undefined;
     previous?.close();
     const ws = new WebSocket(
-      terminalSocketURL(props.runtimeURL, props.sessionID, props.token),
+      terminalSocketURL(
+        props.runtimeURL,
+        props.sessionID,
+        props.terminalID,
+        props.token,
+      ),
     );
     socket = ws;
     ws.onmessage = (event) => {
@@ -129,6 +147,16 @@ export function WebTerminal(props: WebTerminalProps) {
       theme: theme(),
       convertEol: true,
     });
+    // Keep browser-only shortcuts (notably Ctrl+W, which closes the tab)
+    // from stealing keys that terminal programs like vim/tmux need.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown" && event.type !== "keyup") return true;
+      if (event.ctrlKey && event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        return false;
+      }
+      return true;
+    });
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
     term.open(host);
@@ -154,13 +182,24 @@ export function WebTerminal(props: WebTerminalProps) {
   });
 
   createEffect((previous?: string) => {
-    const key = `${props.sessionID}\0${props.runtimeURL}`;
+    const key = `${props.sessionID}\0${props.terminalID}\0${props.runtimeURL}`;
     if (previous && previous !== key && term) {
       fatal = false;
       lastError = undefined;
+      term.reset();
       connect();
     }
     return key;
+  });
+
+  createEffect(() => {
+    if (props.active) {
+      try {
+        fit?.fit();
+      } catch {
+        // xterm can throw if the pane is hidden
+      }
+    }
   });
 
   onCleanup(() => {
