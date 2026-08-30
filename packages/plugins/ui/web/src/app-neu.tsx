@@ -239,6 +239,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
   const [reviewRequestedTab, setReviewRequestedTab] = createSignal<"git" | "sandbox" | "checkpoint">("git");
   const [panelRevision, setPanelRevision] = createSignal(0);
+  const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
+    createSignal(false);
   let userSelectedSession = false;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
@@ -601,6 +603,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void refreshSessions();
     void refreshWorkspaces();
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
+    void props.ctx.runtime.plugins?.().then((plugins) => {
+      setInteractiveTerminalAvailable(
+        plugins.some((plugin) => plugin.id === "natalia-tool-terminal"),
+      );
+    }).catch(() => setInteractiveTerminalAvailable(false));
   });
 
 
@@ -914,7 +921,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   const terminalPanel = () => {
     panelRevision();
-    return props.ctx.host
+    return interactiveTerminalAvailable() && props.ctx.host
       ?.listPanels()
       .find((item) => item.panel.id === "terminal");
   };
