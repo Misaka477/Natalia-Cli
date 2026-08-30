@@ -3185,7 +3185,7 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-secondary { max-width: 380px; }
   .neu-sidebar { max-width: 240px; }
 }
-@media (max-width: 1000px) {
+@media (max-width: 1400px) {
   .neu-shell[data-compact="true"] .neu-sidebar {
     position: fixed;
     left: 0;
@@ -3224,7 +3224,7 @@ button.neu-settings-item.neu-settings-item-button:active {
   }
   .neu-main-panes { gap: 10px; }
 }
-@media (max-width: 760px) {
+@media (max-width: 1000px) {
   .neu-shell { padding: 6px; gap: 6px; }
   .neu-app { gap: 6px; }
   .neu-main-panes { gap: 6px; }
