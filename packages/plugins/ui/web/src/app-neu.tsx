@@ -14,6 +14,7 @@ import { SettingsPanel } from "./settings-panel";
 import { PluginManagerPanel } from "./plugin-manager-panel";
 import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
 import { SessionActionsPanel } from "./session-actions-panel";
+import { AgentPanel } from "./agent-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { NeuSelect } from "./components/NeuSelect";
@@ -29,7 +30,7 @@ import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
-type RightTab = "diff" | "terminal" | "files" | "browser";
+type RightTab = "diff" | "terminal" | "files" | "browser" | "agent";
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -922,6 +923,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     panelRevision();
     const tabs: { id: RightTab; label: string }[] = [
       { id: "diff", label: "审阅 / Diff" },
+      { id: "agent", label: "协同" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
       { id: "browser", label: "浏览器" },
@@ -1361,6 +1363,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             <div class="neu-secondary-content">
               <Show when={rightTab() === "diff"}>
                 <ReviewPane runtime={props.ctx.runtime} requestedTab={reviewRequestedTab()} />
+              </Show>
+              <Show when={rightTab() === "agent"}>
+                <AgentPanel state={state()} runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "terminal" && terminalPanel()}>
                 <TerminalPane
