@@ -247,6 +247,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [panelRevision, setPanelRevision] = createSignal(0);
   const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
     createSignal(false);
+  let historyReplayDone = false;
   let userSelectedSession = false;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
@@ -478,11 +479,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           __nataliaReplayingHistory?: boolean;
         }).__nataliaReplayingHistory;
         if (replaying) return;
-        if (event.type === "approval.request") {
+        if (event.type === "approval.request" && historyReplayDone) {
           setCurrentApproval(event);
           setPermissionOpen(true);
         }
-        if (event.type === "question.request") {
+        if (event.type === "question.request" && historyReplayDone) {
           setCurrentQuestion(event);
           setQuestionOpen(true);
         }
@@ -573,7 +574,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setTimeout(() => {
           if (transcriptEl()) transcriptEl()!.scrollTop = transcriptEl()!.scrollHeight;
           if (chatTranscriptEl()) chatTranscriptEl()!.scrollTop = chatTranscriptEl()!.scrollHeight;
-        }, 0);
+        }, 50);
         const interactive = await props.ctx.runtime.pendingInteractive?.();
         const approvals = interactive?.approvals ?? [];
         if (approvals.length) {
@@ -585,6 +586,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setCurrentQuestion(questions[0]);
           setQuestionOpen(true);
         }
+        historyReplayDone = true;
       })();
     };
     window.addEventListener(
