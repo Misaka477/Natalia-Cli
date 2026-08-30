@@ -571,10 +571,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
-        setTimeout(() => {
+        const scrollToBottom = () => {
           if (transcriptEl()) transcriptEl()!.scrollTop = transcriptEl()!.scrollHeight;
           if (chatTranscriptEl()) chatTranscriptEl()!.scrollTop = chatTranscriptEl()!.scrollHeight;
-        }, 50);
+        };
+        requestAnimationFrame(() => {
+          requestAnimationFrame(scrollToBottom);
+        });
+        setTimeout(scrollToBottom, 200);
         const interactive = await props.ctx.runtime.pendingInteractive?.();
         const approvals = interactive?.approvals ?? [];
         if (approvals.length) {
