@@ -1,0 +1,27 @@
+[package]
+name = "natalia-desktop"
+version = "0.1.0"
+description = "Natalia Desktop Tauri shell"
+authors = ["Natalia Contributors"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "natalia_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+futures-util = "0.3"
+
+[features]
+# by default Tauri runs in production mode
+# when `tauri dev` runs, the devUrl is used instead
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

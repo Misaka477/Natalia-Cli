@@ -20,6 +20,22 @@ import type {
 } from "@natalia/contracts";
 import { callRuntimeRPC } from "@natalia/transport";
 
+type TauriGlobal = {
+  core: {
+    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  };
+  event: {
+    listen<T>(
+      event: string,
+      handler: (event: { payload: T }) => void,
+    ): Promise<() => void>;
+  };
+};
+
+function getTauriGlobal(): TauriGlobal | undefined {
+  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
+}
+
 export const RPC_METHOD_ROUTES: Record<string, string> = {
   submit: "prompt",
   submitAndWait: "submit.andWait",
@@ -266,11 +282,13 @@ function buildParams(member: string, args: unknown[]) {
   if (!names) {
     if (args.length === 0) return undefined;
     const first = args[0];
-    if (typeof first === "object" && first !== null) return first as Record<string, unknown>;
+    if (typeof first === "object" && first !== null)
+      return first as Record<string, unknown>;
     return { value: first };
   }
   const params: Record<string, unknown> = {};
-  for (let index = 0; index < names.length; index++) params[names[index]] = args[index];
+  for (let index = 0; index < names.length; index++)
+    params[names[index]] = args[index];
   return params;
 }
 
@@ -284,20 +302,36 @@ export type WebRuntimeOptions = {
 };
 
 /**
- * Real browser runtime client. It speaks the framework RPC protocol to a
- * running Natalia runtime/daemon and consumes the /events SSE stream.
+ * Real browser runtime client.
+ *
+ * In the plain web shell it speaks the framework RPC protocol to a running
+ * Natalia runtime/daemon and consumes the /events SSE stream. Inside the Tauri
+ * desktop shell the same shape is backed by Tauri IPC: method calls go through
+ * `runtime_call` and runtime events are forwarded from the Rust host as
+ * `natalia-runtime-event` events.
  */
 export function createWebRuntimeClient(
   options: WebRuntimeOptions,
 ): RuntimeClient {
-  const call = <T>(method: string, params?: Record<string, unknown>) =>
-    callRuntimeRPC<T>({
+  const tauri = getTauriGlobal();
+  const call = <T>(
+    method: string,
+    params?: Record<string, unknown>,
+  ): Promise<T> => {
+    if (tauri) {
+      return tauri.core.invoke<T>("runtime_call", {
+        method,
+        params: params ?? {},
+      });
+    }
+    return callRuntimeRPC<T>({
       url: options.url,
       token: options.token,
       method,
       params,
       fetch: options.fetch,
     });
+  };
 
   const starts: Array<(event: RuntimeEvent) => void> = [];
   let started = false;
@@ -375,23 +409,7 @@ export function createWebRuntimeClient(
     }
   }
 
-  async function start(onEvent: (event: RuntimeEvent) => void) {
-    console.log("[web-runtime] start called", "listener added");
-    starts.push(onEvent);
-    if (started) return;
-    started = true;
-
-    const response = await (options.fetch ?? globalThis.fetch)(
-      new URL("/events", options.url),
-      {
-        headers: options.token
-          ? { authorization: `Bearer ${options.token}` }
-          : undefined,
-        signal: (globalThis as { __NATALIA_ABORT?: AbortController }).__NATALIA_ABORT?.signal,
-      },
-    );
-    if (!response.ok || !response.body) return;
-
+  async function restoreRecentSession() {
     // On page load, prefer the most recent non-archived session over the
     // runtime's deterministic default session. This makes a reload/reopen
     // resume the last conversation (session.list is ordered by last activity,
@@ -413,6 +431,51 @@ export function createWebRuntimeClient(
     } catch (error) {
       console.log("[web-runtime] recent session restore failed", error);
     }
+    return newest;
+  }
+
+  async function start(onEvent: (event: RuntimeEvent) => void) {
+    console.log("[web-runtime] start called", "listener added");
+    starts.push(onEvent);
+    if (started) return;
+    started = true;
+
+    // Tauri: receive runtime events through the Rust host's IPC event bridge.
+    if (tauri) {
+      try {
+        await tauri.event.listen<RuntimeEvent>(
+          "natalia-runtime-event",
+          (event) => {
+            console.log("[web-runtime] ipc event", event.payload.type);
+            for (const listener of starts) listener(event.payload);
+          },
+        );
+      } catch (error) {
+        console.error(
+          "[web-runtime] failed to listen for Tauri runtime events",
+          error,
+        );
+      }
+      const newest = await restoreRecentSession();
+      await replayHistory(newest?.id, newest?.events);
+      return;
+    }
+
+    const response = await (options.fetch ?? globalThis.fetch)(
+      new URL("/events", options.url),
+      {
+        headers: options.token
+          ? { authorization: `Bearer ${options.token}` }
+          : undefined,
+        signal: (globalThis as { __NATALIA_ABORT?: AbortController })
+          .__NATALIA_ABORT?.signal,
+      },
+    );
+    if (!response.ok || !response.body) return;
+
+    // On page load, prefer the most recent non-archived session over the
+    // runtime's deterministic default session.
+    const newest = await restoreRecentSession();
 
     // Replay the full durable session so a reloaded page sees previous
     // messages. If the session list gave us the event count, fetch all pages in
@@ -452,7 +515,9 @@ export function createWebRuntimeClient(
       return (await call("prompt", { text })) as never;
     },
     async submitInput(input) {
-      return (await call("submit.input", { ...(input as Record<string, unknown>) })) as never;
+      return (await call("submit.input", {
+        ...(input as Record<string, unknown>),
+      })) as never;
     },
     async submitAndWait(input) {
       return (await call(
@@ -463,7 +528,9 @@ export function createWebRuntimeClient(
       )) as never;
     },
     async chatSubmit(input) {
-      return (await call("chat.submit", { ...(input as Record<string, unknown>) })) as { messageID: string };
+      return (await call("chat.submit", {
+        ...(input as Record<string, unknown>),
+      })) as { messageID: string };
     },
     async chatAbort() {
       return (await call("chat.abort")) as { aborted: boolean };
@@ -496,7 +563,9 @@ export function createWebRuntimeClient(
       return (await call("checkpoint.list")) as never;
     },
     async checkpointRollback(input) {
-      return (await call("checkpoint.rollback", { ...(input as Record<string, unknown>) })) as never;
+      return (await call("checkpoint.rollback", {
+        ...(input as Record<string, unknown>),
+      })) as never;
     },
     snapshot() {
       void call("snapshot");
@@ -524,10 +593,14 @@ export function createWebRuntimeClient(
       return (await call<RuntimeSessionSummary[]>("session.list")) as never;
     },
     async sessionNew(input) {
-      return (await call("session.new", { ...(input as Record<string, unknown>) })) as never;
+      return (await call("session.new", {
+        ...(input as Record<string, unknown>),
+      })) as never;
     },
     async sessionAttach(id) {
-      const result = await call<RuntimeSessionSummary>("session.attach", { id });
+      const result = await call<RuntimeSessionSummary>("session.attach", {
+        id,
+      });
       if (typeof window !== "undefined")
         window.dispatchEvent(new Event("natalia:session-switch-reset"));
       // Resolve the target's event count so the switch replay can fetch pages
@@ -550,34 +623,57 @@ export function createWebRuntimeClient(
       return (await call<WorkspaceSummary[]>("workspace.roots")) as never;
     },
     async workspaceAdd(input) {
-      return (await call<WorkspaceSummary>("workspace.add", { ...input })) as never;
+      return (await call<WorkspaceSummary>("workspace.add", {
+        ...input,
+      })) as never;
     },
     async workspaceRemove(workspaceID) {
-      return (await call("workspace.remove", { workspaceID })) as { removed: boolean };
+      return (await call("workspace.remove", { workspaceID })) as {
+        removed: boolean;
+      };
     },
     async workspaceActivate(workspaceID) {
-      return (await call<WorkspaceSummary>("workspace.activate", { workspaceID })) as never;
+      return (await call<WorkspaceSummary>("workspace.activate", {
+        workspaceID,
+      })) as never;
     },
     async workspacePermissionGet(workspaceID) {
-      return (await call<WorkspacePermissionSettings>("workspace.permission.get", { workspaceID })) as never;
+      return (await call<WorkspacePermissionSettings>(
+        "workspace.permission.get",
+        { workspaceID },
+      )) as never;
     },
     async workspacePermissionSet(workspaceID, settings) {
-      return (await call<WorkspacePermissionSettings>("workspace.permission.set", { workspaceID, settings })) as never;
+      return (await call<WorkspacePermissionSettings>(
+        "workspace.permission.set",
+        { workspaceID, settings },
+      )) as never;
     },
     async workspaceToolGet(workspaceID) {
-      return (await call<WorkspaceToolSettings>("workspace.tool.get", { workspaceID })) as never;
+      return (await call<WorkspaceToolSettings>("workspace.tool.get", {
+        workspaceID,
+      })) as never;
     },
     async workspaceToolSet(workspaceID, settings) {
-      return (await call<WorkspaceToolSettings>("workspace.tool.set", { workspaceID, settings })) as never;
+      return (await call<WorkspaceToolSettings>("workspace.tool.set", {
+        workspaceID,
+        settings,
+      })) as never;
     },
     async workspaceSearch(input) {
-      return (await call<RuntimeWorkspaceMatch[]>("workspace.search", { ...input })) as never;
+      return (await call<RuntimeWorkspaceMatch[]>("workspace.search", {
+        ...input,
+      })) as never;
     },
     async workspaceList(input) {
-      return (await call<RuntimeWorkspaceListPage>("workspace.list", { ...input })) as never;
+      return (await call<RuntimeWorkspaceListPage>("workspace.list", {
+        ...input,
+      })) as never;
     },
     async workspaceRead(input) {
-      return (await call<RuntimeWorkspaceContent>("workspace.read", { ...input })) as never;
+      return (await call<RuntimeWorkspaceContent>("workspace.read", {
+        ...input,
+      })) as never;
     },
     async workspaceWrite(input) {
       return (await call("workspace.write", { ...input })) as never;
@@ -598,16 +694,24 @@ export function createWebRuntimeClient(
       return (await call("provider.add", { ...input })) as never;
     },
     async saveFlowDocument(input) {
-      return (await call("flow.save", { ...(input as Record<string, unknown>) })) as never;
+      return (await call("flow.save", {
+        ...(input as Record<string, unknown>),
+      })) as never;
     },
     async deleteFlowDocument(input) {
-      return (await call("flow.delete", { ...(input as Record<string, unknown>) })) as never;
+      return (await call("flow.delete", {
+        ...(input as Record<string, unknown>),
+      })) as never;
     },
     async saveTaskDocument(input) {
-      return (await call("task.save", { ...(input as Record<string, unknown>) })) as never;
+      return (await call("task.save", {
+        ...(input as Record<string, unknown>),
+      })) as never;
     },
     async deleteTaskDocument(input) {
-      return (await call("task.delete", { ...(input as Record<string, unknown>) })) as never;
+      return (await call("task.delete", {
+        ...(input as Record<string, unknown>),
+      })) as never;
     },
     async dispose() {},
   };
