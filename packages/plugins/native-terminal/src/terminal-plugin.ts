@@ -43,12 +43,12 @@ export function createTerminalPlugin(input: TerminalControllerInput): Plugin {
       // The controller input crosses the runtime-services boundary with the
       // host registry typed as `unknown`; the plugin owns the concrete type.
       controller =
-        input.backend === "pty"
-          ? createPtyTerminalController(input)
-          : createTerminalController({
+        input.backend === "wezterm" || input.external
+          ? createTerminalController({
               ...input,
               external: input.external as NativeTerminalRegistry | undefined,
-            });
+            })
+          : createPtyTerminalController(input);
       api.services.provide(TERMINAL_CONTROLLER_SERVICE, controller);
       for (const tool of terminalTools()) api.tools.register(tool);
       for (const [alias, target] of Object.entries(

@@ -635,7 +635,7 @@ export type TerminalControllerInput = {
   windowMode(): "auto" | "windowless" | "window";
   /** Provider-private native registry, interpreted only by the terminal subsystem. */
   external?: unknown;
-  /** Web interactive terminal uses an in-process PTY instead of WezTerm. */
+  /** Interactive terminal host. Omitted / unknown values use in-process PTY. */
   backend?: "wezterm" | "pty";
 };
 export interface SandboxService extends SandboxToolService {

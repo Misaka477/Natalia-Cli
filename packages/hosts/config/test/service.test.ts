@@ -26,6 +26,24 @@ test("global-scope settings survive across different workspaces", async () => {
   expect(a.config.team?.maxConcurrent).toBe(8);
 });
 
+test("partial terminal overlay keeps the default pty backend", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-backend-"));
+  const globalPath = join(root, "global.json");
+  expect(
+    (await resolveConfig({ workspaceRoot: root, globalPath })).config.runtime
+      .terminal.backend,
+  ).toBe("pty");
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 3, runtime: { terminal: { windowMode: "window" } } }),
+  );
+  expect(
+    (await resolveConfig({ workspaceRoot: root, globalPath })).config.runtime
+      .terminal,
+  ).toEqual({ windowMode: "window", backend: "pty" });
+});
+
 test("collaboration auto rounds default to three and accept project overrides", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-collaboration-config-"));
   const globalPath = join(root, "global.json");

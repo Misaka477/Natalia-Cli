@@ -10,6 +10,7 @@ import {
   terminalToolFamily,
   terminalTools,
 } from "../src";
+import { TERMINAL_CONTROLLER_SERVICE } from "@natalia/runtime-services";
 import {
   encodeTerminalKey,
   nativeTerminalReadPage,
@@ -49,6 +50,62 @@ test("the terminal plugin owns its tools and aliases and unloads cleanly", async
   await registry.unload(TERMINAL_PLUGIN_ID);
   for (const tool of terminalTools()) expect(tools.has(tool.name)).toBe(false);
 });
+
+test("omitted backend uses the in-process PTY controller", async () => {
+  const tools = new ToolRegistry();
+  const services = new Map<string, unknown>();
+  const plugin = createTerminalPlugin({
+    workspaceRoot: "/tmp",
+    publish: () => undefined,
+    onPerformance: () => undefined,
+    runtimeID: () => "runtime-test",
+    userRuntimeHome: () => undefined,
+    windowMode: () => "auto",
+  });
+  await plugin.setup({
+    config: {},
+    tools: {
+      register(tool) {
+        tools.set(tool.name, tool);
+        return () => tools.delete(tool.name);
+      },
+      registerAlias(alias, target) {
+        return tools.addAlias(alias, target);
+      },
+    },
+    services: {
+      provide(name, value) {
+        services.set(name, value);
+        return () => services.delete(name);
+      },
+      get: () => undefined,
+      on: () => () => undefined,
+    },
+    events: { on: () => () => undefined },
+    commands: { register: () => () => undefined },
+    resources: { register: () => () => undefined },
+    projections: { register: () => () => undefined },
+    workflows: { register: () => () => undefined },
+    settingsSchema: { register: () => () => undefined },
+    adapters: {
+      register: () => () => undefined,
+      registerUi: () => () => undefined,
+    },
+    scheduler: { add: () => () => undefined },
+    effects: {
+      signal: new AbortController().signal,
+      run: async (effect) => effect(new AbortController().signal),
+    },
+  });
+  const controller = services.get(TERMINAL_CONTROLLER_SERVICE) as {
+    subscribeOutput?: unknown;
+    close(): Promise<void>;
+  };
+  expect(typeof controller.subscribeOutput).toBe("function");
+  await controller.close();
+  await plugin.dispose?.();
+});
+
 test("interactive Terminal tools keep model I/O on one native host pane", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-interactive-"));
   const writes: string[] = [];

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import type {
   RuntimeEvent,
   RuntimeNativeTerminalSession,
@@ -67,35 +69,269 @@ export type PtyTerminalControllerInput = {
   spawn?: PtyFactory;
 };
 
-function defaultSpawn(): PtyFactory {
-  const require = createRequire(import.meta.url);
-  return (options) => {
-    const pty = require("node-pty") as typeof import("node-pty");
-    const child = pty.spawn(options.file, options.args, {
-      name: "xterm-256color",
+const PYTHON_PTY_BRIDGE = `
+import fcntl, json, os, pty, select, signal, struct, sys, termios
+
+stdin = sys.stdin.fileno()
+stdout = sys.stdout.fileno()
+pending = b""
+
+def read_line():
+    global pending
+    while True:
+        index = pending.find(b"\\n")
+        if index >= 0:
+            line = pending[:index]
+            pending = pending[index + 1:]
+            return line.decode("utf-8")
+        chunk = os.read(stdin, 4096)
+        if not chunk:
+            return None
+        pending += chunk
+
+spec = json.loads(read_line())
+pid, master = pty.fork()
+if pid == 0:
+    os.chdir(spec["cwd"])
+    env = os.environ.copy()
+    env.update(spec.get("env") or {})
+    os.execvpe(spec["file"], [spec["file"], *spec["args"]], env)
+fcntl.ioctl(
+    master,
+    termios.TIOCSWINSZ,
+    struct.pack("HHHH", spec["rows"], spec["cols"], 0, 0),
+)
+os.write(stdout, (json.dumps({"pid": pid}) + "\\n").encode("ascii"))
+
+def send(kind, payload=b""):
+    data = payload if isinstance(payload, bytes) else payload.encode("utf-8")
+    os.write(stdout, f"{kind} {len(data)}\\n".encode("ascii"))
+    if data:
+        os.write(stdout, data)
+
+def handle_line(line):
+    message = json.loads(line)
+    kind = message.get("type")
+    if kind == "input":
+        os.write(master, message.get("data", "").encode("utf-8"))
+        return True
+    if kind == "resize":
+        fcntl.ioctl(
+            master,
+            termios.TIOCSWINSZ,
+            struct.pack("HHHH", int(message["rows"]), int(message["cols"]), 0, 0),
+        )
+        return True
+    if kind == "kill":
+        os.kill(pid, signal.SIGTERM)
+        return False
+    return True
+
+alive = True
+while alive:
+    readable, _, _ = select.select([stdin, master], [], [])
+    if stdin in readable:
+        chunk = os.read(stdin, 4096)
+        if not chunk:
+            alive = False
+            break
+        pending += chunk
+        while True:
+            index = pending.find(b"\\n")
+            if index < 0:
+                break
+            line = pending[:index].decode("utf-8")
+            pending = pending[index + 1:]
+            if not handle_line(line):
+                alive = False
+                break
+    if not alive:
+        break
+    if master in readable:
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            chunk = b""
+        if not chunk:
+            alive = False
+            break
+        send("o", chunk)
+try:
+    waited, status = os.waitpid(pid, 0)
+    code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
+except ChildProcessError:
+    code = 0
+send("x", str(code))
+`;
+
+function loadNodePty(): typeof import("node-pty") {
+  const candidates = [
+    import.meta.url,
+    resolve(process.cwd(), "packages/plugins/native-terminal/package.json"),
+    resolve(process.cwd(), "package.json"),
+  ];
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      const pty = createRequire(candidate)("node-pty") as typeof import("node-pty");
+      if (typeof pty.spawn !== "function")
+        throw new Error("node-pty spawn is missing");
+      return pty;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("node-pty is not installed");
+}
+
+function spawnWithNodePty(options: PtySpawnOptions): PtyProcess {
+  const pty = loadNodePty();
+  const child = pty.spawn(options.file, options.args, {
+    name: "xterm-256color",
+    cols: options.cols,
+    rows: options.rows,
+    cwd: options.cwd,
+    env: options.env,
+  });
+  return {
+    pid: child.pid,
+    write(data) {
+      child.write(data);
+    },
+    resize(cols, rows) {
+      child.resize(cols, rows);
+    },
+    kill(signal) {
+      child.kill(signal);
+    },
+    onData(listener) {
+      return child.onData(listener);
+    },
+    onExit(listener) {
+      return child.onExit(listener);
+    },
+  };
+}
+
+function spawnWithPythonPty(options: PtySpawnOptions): PtyProcess {
+  const child = spawn("python3", ["-u", "-c", PYTHON_PTY_BRIDGE], {
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+  if (!child.stdin || !child.stdout || child.pid == null)
+    throw new Error("python pty bridge failed to start");
+  child.stdin.write(
+    `${JSON.stringify({
+      file: options.file,
+      args: options.args,
+      cwd: options.cwd,
       cols: options.cols,
       rows: options.rows,
-      cwd: options.cwd,
-      env: options.env,
-    });
-    return {
-      pid: child.pid,
-      write(data) {
-        child.write(data);
-      },
-      resize(cols, rows) {
-        child.resize(cols, rows);
-      },
-      kill(signal) {
-        child.kill(signal);
-      },
-      onData(listener) {
-        return child.onData(listener);
-      },
-      onExit(listener) {
-        return child.onExit(listener);
-      },
-    };
+      env: options.env ?? {},
+    })}\n`,
+  );
+  const dataListeners = new Set<(data: string) => void>();
+  const exitListeners = new Set<
+    (event: { exitCode: number; signal?: number }) => void
+  >();
+  let pid = child.pid;
+  let leftover = Buffer.alloc(0);
+  let header: { kind: string; size: number } | undefined;
+  let exited = false;
+
+  function emitExit(exitCode: number) {
+    if (exited) return;
+    exited = true;
+    for (const listener of exitListeners) listener({ exitCode });
+  }
+
+  function consume(chunk: Buffer) {
+    leftover = Buffer.concat([leftover, chunk]);
+    while (leftover.length) {
+      if (!header) {
+        const newline = leftover.indexOf(10);
+        if (newline < 0) return;
+        const line = leftover.subarray(0, newline).toString("utf8");
+        leftover = leftover.subarray(newline + 1);
+        if (line.startsWith("{")) {
+          try {
+            const parsed = JSON.parse(line) as { pid?: number };
+            if (typeof parsed.pid === "number") pid = parsed.pid;
+          } catch {
+            // ignore malformed handshake
+          }
+          continue;
+        }
+        const match = /^(o|x) (\d+)$/u.exec(line);
+        if (!match) continue;
+        header = { kind: match[1]!, size: Number(match[2]) };
+        continue;
+      }
+      if (leftover.length < header.size) return;
+      const payload = leftover.subarray(0, header.size);
+      leftover = leftover.subarray(header.size);
+      if (header.kind === "o") {
+        const text = payload.toString("utf8");
+        for (const listener of dataListeners) listener(text);
+      } else {
+        emitExit(Number(payload.toString("utf8") || "0"));
+      }
+      header = undefined;
+    }
+  }
+
+  child.stdout.on("data", (chunk: Buffer | string) => {
+    consume(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  });
+  child.on("exit", (code) => emitExit(code ?? 0));
+
+  function send(message: Record<string, unknown>) {
+    if (!child.stdin?.writable) return;
+    child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  return {
+    get pid() {
+      return pid;
+    },
+    write(data) {
+      send({ type: "input", data });
+    },
+    resize(cols, rows) {
+      send({ type: "resize", cols, rows });
+    },
+    kill() {
+      send({ type: "kill" });
+      child.kill();
+    },
+    onData(listener) {
+      dataListeners.add(listener);
+      return {
+        dispose() {
+          dataListeners.delete(listener);
+        },
+      };
+    },
+    onExit(listener) {
+      exitListeners.add(listener);
+      return {
+        dispose() {
+          exitListeners.delete(listener);
+        },
+      };
+    },
+  };
+}
+
+function defaultSpawn(): PtyFactory {
+  return (options) => {
+    if (typeof Bun !== "undefined") return spawnWithPythonPty(options);
+    try {
+      return spawnWithNodePty(options);
+    } catch {
+      return spawnWithPythonPty(options);
+    }
   };
 }
 
@@ -145,7 +381,7 @@ export function createPtyTerminalController(
 
   function get(id: string): PtySession {
     const session = sessions.get(id);
-    if (!session || !sessionVisible(session))
+    if (!session)
       throw new Error(`native terminal session not found: ${id}`);
     return session;
   }
@@ -374,12 +610,10 @@ export function createPtyTerminalController(
     const owningSession = startInput.sessionID ?? activeSession;
     if (startInput.id) {
       const existing = sessions.get(startInput.id);
-      if (existing?.status === "running" && sessionVisible(existing))
-        return publicSession(existing);
+      if (existing?.status === "running") return publicSession(existing);
     }
     const existingForSession = runningForSession(owningSession);
-    if (existingForSession && sessionVisible(existingForSession))
-      return publicSession(existingForSession);
+    if (existingForSession) return publicSession(existingForSession);
 
     const argv = nativeTerminalPaneCommand(startInput.command);
     const file = argv[0] ?? "/bin/sh";

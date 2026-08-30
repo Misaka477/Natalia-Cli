@@ -316,7 +316,9 @@ export async function wireFrameworkServices(
         ctx.ports.getTsRuntimeConfig()?.runtime.terminal.windowMode ?? "auto",
       backend: options.nativeTerminal
         ? "wezterm"
-        : (ctx.ports.getTsRuntimeConfig()?.runtime.terminal.backend ?? "pty"),
+        : ctx.ports.getTsRuntimeConfig()?.runtime.terminal.backend === "wezterm"
+          ? "wezterm"
+          : "pty",
       ...(options.nativeTerminal ? { external: options.nativeTerminal } : {}),
     };
     contribute(TERMINAL_INPUT_SERVICE, terminal);

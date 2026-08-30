@@ -76,7 +76,7 @@ function diffValue(base: unknown, next: unknown): unknown {
 export function mergeConfig(base: ConfigV3, overlay: ConfigPatch): ConfigV3 {
   return configV3Schema.parse({
     version: 3,
-    runtime: { ...base.runtime, ...overlay.runtime },
+    runtime: deepMergeObject(base.runtime, overlay.runtime),
     sandbox: { ...base.sandbox, ...overlay.sandbox },
     team: { ...base.team, ...overlay.team },
     context: { ...base.context, ...overlay.context },

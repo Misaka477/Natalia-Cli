@@ -18,7 +18,7 @@ export type TerminalWsServerMessage =
   | { type: "ready"; id: string; rows?: number; cols?: number }
   | { type: "output"; data: string }
   | { type: "exit"; id: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; fatal?: boolean };
 
 type TerminalSocketData = {
   sessionID: string;
@@ -55,27 +55,48 @@ function send(
   ws.send(JSON.stringify(message));
 }
 
+function failOpen(ws: ServerWebSocket<TerminalSocketData>, message: string) {
+  console.error("[terminal-ws]", message);
+  send(ws, { type: "error", message, fatal: true });
+  ws.close(1011, "terminal unavailable");
+}
+
 export function terminalWebsocketHandlers(client: TerminalHostClient) {
   return {
     async open(ws: ServerWebSocket<TerminalSocketData>) {
       const { sessionID, terminalID } = ws.data;
       try {
+        if (typeof client.nativeTerminalStart !== "function") {
+          failOpen(
+            ws,
+            "no active workspace: open or activate a workspace before using the terminal",
+          );
+          return;
+        }
         const listed = await client.nativeTerminalList?.();
         let session = listed?.find((item) => item.id === terminalID);
         if (!session) {
-          session = await client.nativeTerminalStart?.({
+          session = await client.nativeTerminalStart({
             command: process.env.SHELL || "bash",
             id: terminalID,
             sessionID,
           });
         }
         if (!session) {
-          send(ws, {
-            type: "error",
-            message: "Native Terminal Host is unavailable",
-          });
-          ws.close(1011, "terminal unavailable");
+          failOpen(ws, "native terminal start returned no session");
           return;
+        }
+        if (typeof client.subscribeTerminalOutput === "function") {
+          ws.data.unsubscribe = client.subscribeTerminalOutput(
+            session.id,
+            (chunk) => {
+              send(ws, { type: "output", data: chunk });
+            },
+          );
+        } else {
+          console.error(
+            "[terminal-ws] subscribeTerminalOutput is missing; live output will not stream",
+          );
         }
         send(ws, {
           type: "ready",
@@ -83,21 +104,8 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
           rows: session.rows,
           cols: session.cols,
         });
-        const snapshot = await client.nativeTerminalRead?.(session.id);
-        if (snapshot?.text) send(ws, { type: "output", data: snapshot.text });
-        if (!client.subscribeTerminalOutput) return;
-        ws.data.unsubscribe = client.subscribeTerminalOutput(
-          session.id,
-          (chunk) => {
-            send(ws, { type: "output", data: chunk });
-          },
-        );
       } catch (error) {
-        send(ws, {
-          type: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-        ws.close(1011, "terminal open failed");
+        failOpen(ws, error instanceof Error ? error.message : String(error));
       }
     },
     async message(

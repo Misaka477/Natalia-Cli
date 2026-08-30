@@ -437,7 +437,23 @@ export function createWorkspaceRuntimeClient(
           : value;
       }
       const active = manager.getActive();
-      if (!active) return undefined;
+      if (!active) {
+        if (
+          typeof prop === "string" &&
+          (prop.startsWith("nativeTerminal") ||
+            prop === "subscribeTerminalOutput")
+        ) {
+          const unavailable = () => {
+            throw new Error(
+              "no active workspace: open or activate a workspace before using the terminal",
+            );
+          };
+          return prop === "subscribeTerminalOutput"
+            ? unavailable
+            : async () => unavailable();
+        }
+        return undefined;
+      }
       const value = (active.client as unknown as Record<PropertyKey, unknown>)[prop];
       return typeof value === "function" ? value.bind(active.client) : value;
     },

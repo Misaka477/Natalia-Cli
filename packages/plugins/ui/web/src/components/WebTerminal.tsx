@@ -15,7 +15,9 @@ type ServerMessage =
   | { type: "ready"; id: string; rows?: number; cols?: number }
   | { type: "output"; data: string }
   | { type: "exit"; id: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; fatal?: boolean };
+
+const TRANSIENT_CLOSE_CODES = new Set([1001, 1006, 1012, 1013]);
 
 function terminalSocketURL(runtimeURL: string, sessionID: string, token?: string) {
   const url = new URL(
@@ -35,6 +37,8 @@ export function WebTerminal(props: WebTerminalProps) {
   let resizeObserver: ResizeObserver | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
+  let lastError: string | undefined;
+  let fatal = false;
 
   function theme() {
     const styles = getComputedStyle(document.documentElement);
@@ -46,9 +50,17 @@ export function WebTerminal(props: WebTerminalProps) {
     };
   }
 
+  function scheduleReconnect() {
+    if (closed || fatal) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 1500);
+  }
+
   function connect() {
-    if (closed || !props.sessionID || !props.runtimeURL) return;
-    socket?.close();
+    if (closed || fatal || !props.sessionID || !props.runtimeURL) return;
+    const previous = socket;
+    socket = undefined;
+    previous?.close();
     const ws = new WebSocket(
       terminalSocketURL(props.runtimeURL, props.sessionID, props.token),
     );
@@ -61,24 +73,49 @@ export function WebTerminal(props: WebTerminalProps) {
         return;
       }
       if (message.type === "output") term?.write(message.data);
-      if (message.type === "error") term?.writeln(`\r\n[${message.message}]`);
+      if (message.type === "error") {
+        if (message.message === lastError) return;
+        lastError = message.message;
+        term?.writeln(`\r\n[${message.message}]`);
+        if (message.fatal) fatal = true;
+      }
       if (message.type === "exit") term?.writeln("\r\n[terminated]");
-    };
-    ws.onopen = () => {
-      if (term && fit) {
-        fit.fit();
-        ws.send(
-          JSON.stringify({
-            type: "resize",
-            rows: term.rows,
-            cols: term.cols,
-          }),
-        );
+      if (message.type === "ready") {
+        lastError = undefined;
+        if (term && fit && ws.readyState === WebSocket.OPEN) {
+          fit.fit();
+          ws.send(
+            JSON.stringify({
+              type: "resize",
+              rows: term.rows,
+              cols: term.cols,
+            }),
+          );
+        }
       }
     };
-    ws.onclose = () => {
-      if (closed) return;
-      reconnectTimer = setTimeout(connect, 1500);
+    ws.onopen = () => {
+      lastError = undefined;
+    };
+    ws.onclose = (event) => {
+      if (socket !== ws || closed || fatal) return;
+      if (event.code === 1011) {
+        fatal = true;
+        if (!lastError) {
+          lastError = event.reason || "terminal unavailable";
+          term?.writeln(`\r\n[${lastError}]`);
+        }
+        return;
+      }
+      if (TRANSIENT_CLOSE_CODES.has(event.code) || event.code === 1006) {
+        scheduleReconnect();
+        return;
+      }
+      if (!lastError) {
+        lastError = event.reason || `disconnected (${event.code})`;
+        term?.writeln(`\r\n[${lastError}]`);
+      }
+      scheduleReconnect();
     };
   }
 
@@ -118,7 +155,11 @@ export function WebTerminal(props: WebTerminalProps) {
 
   createEffect((previous?: string) => {
     const key = `${props.sessionID}\0${props.runtimeURL}`;
-    if (previous && previous !== key && term) connect();
+    if (previous && previous !== key && term) {
+      fatal = false;
+      lastError = undefined;
+      connect();
+    }
     return key;
   });
 

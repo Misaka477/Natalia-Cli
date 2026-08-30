@@ -205,9 +205,10 @@ test("pty controller isolates sessions via setActiveSession", async () => {
   expect(await controller.list()).toEqual([
     expect.objectContaining({ id: b.id }),
   ]);
-  await expect(controller.read(a.id)).rejects.toThrow(
-    "native terminal session not found",
-  );
+  expect((await controller.read(a.id)).text).toBe("");
+  await expect(controller.write(a.id, "from-b\n")).resolves.toMatchObject({
+    delivery: "accepted",
+  });
   controller.setActiveSession("ses_a");
   expect((await controller.list()).map((session) => session.id)).toEqual([
     a.id,
@@ -233,5 +234,32 @@ test("pty controller subscribeOutput replays buffer then live chunks", async () 
   unsubscribe();
   (processes[0] as PtyProcess & { emit(data: string): void }).emit("ignored\n");
   expect(chunks).toEqual(["hello\n", "world\n"]);
+  await controller.close();
+});
+
+test("default python pty spawn runs an interactive shell", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-python-pty-"));
+  const controller = createPtyTerminalController({
+    workspaceRoot: root,
+    publish: () => undefined,
+    onPerformance: () => undefined,
+    runtimeID: () => "runtime-test",
+    userRuntimeHome: () => undefined,
+    windowMode: () => "windowless",
+  });
+  const started = await controller.start({
+    command: "bash",
+    cwd: root,
+    sessionID: "ses_python_pty",
+  });
+  expect(started.host).toBe("pty");
+  await controller.write(started.id, "printf '__PTY_READY__\\n'\n");
+  const deadline = Date.now() + 5_000;
+  let text = "";
+  while (!text.includes("__PTY_READY__") && Date.now() < deadline) {
+    text = (await controller.read(started.id)).text;
+    if (!text.includes("__PTY_READY__")) await Bun.sleep(50);
+  }
+  expect(text).toContain("__PTY_READY__");
   await controller.close();
 });

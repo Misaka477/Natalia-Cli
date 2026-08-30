@@ -125,17 +125,72 @@ test("HTTP terminal websocket is gated behind terminalWrite", async () => {
   await new Promise<void>((resolve) => {
     ws.onmessage = (event) => {
       messages.push(JSON.parse(String(event.data)));
-      if (messages.length >= 3) resolve();
+      if (messages.some((item) => (item as { type?: string }).type === "ready"))
+        resolve();
     };
   });
   expect(messages).toEqual([
-    expect.objectContaining({ type: "ready", id: "term_web" }),
-    { type: "output", data: "prompt$ " },
     { type: "output", data: "live\n" },
+    expect.objectContaining({ type: "ready", id: "term_web" }),
   ]);
   ws.send(JSON.stringify({ type: "input", data: "ls\n" }));
   await Bun.sleep(50);
   expect(writes).toEqual(["ls\n"]);
   ws.close();
   open.stop(true);
+});
+
+test("HTTP terminal websocket reports missing start as a fatal error", async () => {
+  const client: RuntimeClient = {
+    start() {},
+    async submit() {
+      return {
+        type: "turn.submitted",
+        id: "t",
+        text: "",
+        byteLength: 0,
+        lineCount: 1,
+        sha256: "0",
+      };
+    },
+    async cancel() {},
+    snapshot() {
+      return { type: "diagnostic", level: "info", message: "stub" };
+    },
+    diagnostic() {},
+    lastSubmission() {
+      return undefined;
+    },
+    async respondApproval() {
+      return { accepted: true };
+    },
+    async respondQuestion() {
+      return { accepted: true };
+    },
+  };
+  const server = createRuntimeHttpServer({ client, terminalWrite: true });
+  const ws = new WebSocket(
+    `${server.url.replace("http", "ws")}/terminal/ses_a/term_web`,
+  );
+  const messages: unknown[] = [];
+  await new Promise<void>((resolve, reject) => {
+    ws.onopen = () => resolve();
+    ws.onerror = () => reject(new Error("ws failed"));
+  });
+  await new Promise<void>((resolve) => {
+    ws.onmessage = (event) => {
+      messages.push(JSON.parse(String(event.data)));
+      resolve();
+    };
+  });
+  expect(messages).toEqual([
+    {
+      type: "error",
+      fatal: true,
+      message:
+        "no active workspace: open or activate a workspace before using the terminal",
+    },
+  ]);
+  ws.close();
+  server.stop(true);
 });
