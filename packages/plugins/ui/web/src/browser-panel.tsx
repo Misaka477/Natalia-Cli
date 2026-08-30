@@ -4,7 +4,6 @@ import type { AppState } from "@natalia/view-store";
 export function BrowserPanel(props: { state: AppState }) {
   const [url, setUrl] = createSignal("https://example.com");
   const [current, setCurrent] = createSignal("https://example.com");
-  const [pending, setPending] = createSignal<string | undefined>(undefined);
   const [history, setHistory] = createSignal<string[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(0);
 
@@ -19,14 +18,12 @@ export function BrowserPanel(props: { state: AppState }) {
     setHistoryIndex(before.length - 1);
     setUrl(normalized);
     setCurrent(normalized);
-    setPending(undefined);
   }
 
   let lastHandledTool = "";
 
-  // Model browser tools only fill the URL bar; they do not auto-load the
-  // iframe. The human explicitly loads a page, so heavy sites cannot reload
-  // on every state update and freeze Natalia's UI.
+  // Model browser tools automatically load the target once per tool call.
+  // The dedup guard prevents repeated navigation on every state update.
   createEffect(() => {
     const tools = props.state.tools ?? {};
     const entries = Object.values(tools);
@@ -51,8 +48,7 @@ export function BrowserPanel(props: { state: AppState }) {
       if (target) {
         let normalized = target.trim();
         if (!/^https?:\/\//u.test(normalized)) normalized = `https://${normalized}`;
-        setUrl(normalized);
-        setPending(normalized);
+        load(normalized);
       }
     } catch {
       // argument text may be partial; ignore
@@ -66,7 +62,6 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
-    setPending(undefined);
   }
 
   function forward() {
@@ -76,7 +71,6 @@ export function BrowserPanel(props: { state: AppState }) {
     const target = history()[idx]!;
     setUrl(target);
     setCurrent(target);
-    setPending(undefined);
   }
 
   return (
@@ -96,11 +90,6 @@ export function BrowserPanel(props: { state: AppState }) {
             onInput={(event) => setUrl(event.currentTarget.value)}
           />
         </form>
-        <Show when={pending()}>
-          <button type="button" class="browser-load-btn" onClick={() => pending() && load(pending())}>
-            加载
-          </button>
-        </Show>
       </div>
       <iframe
         class="browser-frame"
