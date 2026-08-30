@@ -687,7 +687,10 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   color: var(--neu-muted);
   font-size: 11px;
   cursor: pointer;
-  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+}
+.review-subtab:hover {
+  color: var(--neu-text);
 }
 .review-subtab[data-active="true"] {
   background: var(--neu-bg-light);
