@@ -3,6 +3,7 @@ import type {
   RuntimeCheckpoint,
   RuntimeClient,
   RuntimeGitRef,
+  RuntimeNativeTerminalSession,
   RuntimeSandbox,
   RuntimeTeamPR,
 } from "@natalia/contracts";
@@ -644,6 +645,7 @@ export function TerminalPane(props: {
   const [tabs, setTabs] = createSignal<TerminalTab[]>([]);
   const [activeID, setActiveID] = createSignal<string>();
   const [limitError, setLimitError] = createSignal<string>();
+  const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
   let loadToken = 0;
 
   function retitle(next: TerminalTab[]) {
@@ -654,6 +656,7 @@ export function TerminalPane(props: {
     const token = ++loadToken;
     const listed = (await props.runtime?.nativeTerminalList?.()) ?? [];
     if (token !== loadToken) return;
+    setSessions(listed);
     const running = listed.filter(
       (item) =>
         item.status === "running" &&
@@ -698,6 +701,48 @@ export function TerminalPane(props: {
     void loadTabs(sessionID);
     return key;
   });
+
+  async function refreshSessions() {
+    const listed = (await props.runtime?.nativeTerminalList?.()) ?? [];
+    setSessions(listed);
+  }
+
+  async function claimActiveTerminal() {
+    const id = activeID();
+    if (!id) return;
+    try {
+      await props.runtime?.nativeTerminalClaimHumanInput?.(id);
+      await refreshSessions();
+    } catch {
+      // optional method may not exist; leave current state
+    }
+  }
+
+  async function releaseActiveTerminal() {
+    const id = activeID();
+    if (!id) return;
+    try {
+      await props.runtime?.nativeTerminalReleaseHumanControl?.(id);
+      await refreshSessions();
+    } catch {
+      // optional method may not exist; leave current state
+    }
+  }
+
+  async function toggleSecureInput() {
+    const id = activeID();
+    if (!id) return;
+    try {
+      const session = sessions().find((item) => item.id === id);
+      if (session?.secureInput)
+        await props.runtime?.nativeTerminalEndSecureInput?.(id);
+      else
+        await props.runtime?.nativeTerminalBeginSecureInput?.(id);
+      await refreshSessions();
+    } catch {
+      // optional method may not exist; leave current state
+    }
+  }
 
   async function addTab() {
     if (!props.sessionID) return;
@@ -787,6 +832,37 @@ export function TerminalPane(props: {
         }
       >
         <div class="terminal-toolbar">
+          <span class="terminal-owner-badge" data-owner={sessions().find((item) => item.id === activeID())?.inputOwner ?? "model"}>
+            {sessions().find((item) => item.id === activeID())?.inputOwner === "human" ? "人工控制" : "模型控制"}
+          </span>
+          <Show when={sessions().find((item) => item.id === activeID())?.inputOwner === "model"}>
+            <button
+              type="button"
+              class="terminal-toolbar-btn"
+              onClick={() => void claimActiveTerminal()}
+              title="接管终端"
+            >
+              接管
+            </button>
+          </Show>
+          <Show when={sessions().find((item) => item.id === activeID())?.inputOwner === "human"}>
+            <button
+              type="button"
+              class="terminal-toolbar-btn"
+              onClick={() => void releaseActiveTerminal()}
+              title="交还模型控制"
+            >
+              交还模型
+            </button>
+            <button
+              type="button"
+              class="terminal-toolbar-btn"
+              onClick={() => void toggleSecureInput()}
+              title={sessions().find((item) => item.id === activeID())?.secureInput ? "结束安全输入" : "开始安全输入"}
+            >
+              {sessions().find((item) => item.id === activeID())?.secureInput ? "结束安全输入" : "安全输入"}
+            </button>
+          </Show>
           <button
             type="button"
             class="terminal-toolbar-btn"

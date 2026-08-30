@@ -996,6 +996,16 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .terminal-toolbar-btn:active {
   box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
 }
+.terminal-owner-badge {
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--neu-bg-light);
+  color: var(--neu-muted);
+}
+.terminal-owner-badge[data-owner="human"] {
+  color: var(--neu-accent);
+}
 .terminal-split-stack {
   display: flex;
   flex: 1;

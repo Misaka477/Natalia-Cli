@@ -207,6 +207,7 @@ export const RPC_ROUTE_MEMBERS = {
   "nativeTerminal.read": "nativeTerminalRead",
   "nativeTerminal.stop": "nativeTerminalStop",
   "nativeTerminal.openHub": "nativeTerminalOpenHub",
+  "nativeTerminal.claimHumanInput": "nativeTerminalClaimHumanInput",
   "nativeTerminal.revokeApprovalScope": "nativeTerminalRevokeApprovalScope",
   "nativeTerminal.releaseHumanControl": "nativeTerminalReleaseHumanControl",
   "nativeTerminal.beginSecureInput": "nativeTerminalBeginSecureInput",
@@ -1417,6 +1418,16 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.nativeTerminalOpenHub(),
+      };
+    }
+    if (body.method === "nativeTerminal.claimHumanInput") {
+      optionsGuard(client, "nativeTerminalClaimHumanInput");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalClaimHumanInput(
+          stringParam(body.params, "id"),
+        ),
       };
     }
     if (body.method === "nativeTerminal.revokeApprovalScope") {

@@ -70,6 +70,15 @@ export function createNativeTerminalSurface(
       if (!terminal) throw new Error("Native Terminal Host is unavailable");
       return ctx.ports.getInteractive().revokeTerminalApprovalScope(id);
     },
+    async nativeTerminalClaimHumanInput(id) {
+      await ctx.ports.getReady();
+      const terminal = ctx.ports.resolveService<TerminalController>(
+        TERMINAL_CONTROLLER_SERVICE,
+      );
+      if (!terminal?.claimHumanInput)
+        throw new Error("Native Terminal Host is unavailable");
+      return await terminal.claimHumanInput(id);
+    },
     async nativeTerminalReleaseHumanControl(id) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(

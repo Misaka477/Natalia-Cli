@@ -12,6 +12,8 @@ import { nativeTerminalPaneCommand } from "./native-terminal";
 const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
 const MAX_OUTPUT_BYTES = 256 * 1024;
+const DEFAULT_MAX_PER_SESSION = 8;
+const DEFAULT_IDLE_MS = 15 * 60 * 1000;
 
 export type PtyProcess = {
   pid: number;
@@ -54,6 +56,7 @@ type PtySession = {
   lastObservedRevision?: number;
   lastModelWriteAt?: number;
   lastOutputAt?: number;
+  lastActivityAt: number;
   pty?: PtyProcess;
   disposers: Array<{ dispose(): void }>;
 };
@@ -67,6 +70,8 @@ export type PtyTerminalControllerInput = {
   windowMode(): "auto" | "windowless" | "window";
   backend?: "wezterm" | "pty";
   spawn?: PtyFactory;
+  maxPerSession?: number;
+  idleMs?: number;
 };
 
 const PYTHON_PTY_BRIDGE = `
@@ -359,8 +364,8 @@ function lineWindow(text: string, maxLines?: number): string {
 
 /**
  * In-process PTY TerminalController for the Web interactive terminal.
- * One running PTY per Natalia session; start() is idempotent; close() kills
- * every remaining process.
+ * One Natalia session may own several PTYs (capped); start() is idempotent
+ * per terminalID; close() kills every remaining process.
  */
 export function createPtyTerminalController(
   input: PtyTerminalControllerInput,
@@ -374,6 +379,11 @@ export function createPtyTerminalController(
   let closed = false;
   let initialized = false;
   const spawnPty = input.spawn ?? defaultSpawn();
+  const maxPerSession = Math.max(
+    1,
+    input.maxPerSession ?? DEFAULT_MAX_PER_SESSION,
+  );
+  const idleMs = Math.max(1, input.idleMs ?? DEFAULT_IDLE_MS);
 
   function sessionVisible(session: PtySession): boolean {
     return activeSession === undefined || session.sessionID === activeSession;
@@ -466,7 +476,12 @@ export function createPtyTerminalController(
       cols: session.cols,
       startedAt: session.startedAt,
       attached: session.attached,
+      ...(session.sessionID ? { sessionID: session.sessionID } : {}),
     };
+  }
+
+  function touch(session: PtySession) {
+    session.lastActivityAt = Date.now();
   }
 
   function appendOutput(session: PtySession, chunk: string) {
@@ -474,6 +489,7 @@ export function createPtyTerminalController(
     session.output = trimOutput(session.output + chunk);
     session.revision += 1;
     session.lastOutputAt = Date.now();
+    touch(session);
     notifyRevision(session.id);
     for (const listener of outputListeners.get(session.id) ?? [])
       listener(chunk);
@@ -496,15 +512,25 @@ export function createPtyTerminalController(
     publishAudit(session, "exit", actor);
   }
 
-  function runningForSession(
-    sessionID: string | undefined,
-  ): PtySession | undefined {
+  function runningForSession(sessionID: string | undefined): PtySession[] {
     const key = sessionID ?? "__default__";
-    for (const session of sessions.values()) {
+    return [...sessions.values()].filter((session) => {
       const owner = session.sessionID ?? "__default__";
-      if (owner === key && session.status === "running") return session;
-    }
-    return undefined;
+      return owner === key && session.status === "running";
+    });
+  }
+
+  async function recycleOldestIdle(
+    sessionID: string | undefined,
+  ): Promise<boolean> {
+    const now = Date.now();
+    const idle = runningForSession(sessionID)
+      .filter((session) => now - session.lastActivityAt >= idleMs)
+      .sort((a, b) => a.lastActivityAt - b.lastActivityAt);
+    const victim = idle[0];
+    if (!victim) return false;
+    await stop(victim.id, "system");
+    return true;
   }
 
   function assertRunning(session: PtySession) {
@@ -586,6 +612,19 @@ export function createPtyTerminalController(
     return publicSession(session);
   }
 
+  function claimHumanInput(id: string) {
+    const session = get(id);
+    assertRunning(session);
+    if (session.secureInput && session.inputOwner !== "human")
+      throw new Error("secure input requires human terminal control");
+    if (session.inputOwner === "human") return publicSession(session);
+    session.inputOwner = "human";
+    session.revision += 1;
+    notifyRevision(session.id);
+    publishAudit(session, "write", "human");
+    return publicSession(session);
+  }
+
   async function stop(id: string, actor: "model" | "human" | "system") {
     const session = get(id);
     if (session.status === "running") {
@@ -610,15 +649,34 @@ export function createPtyTerminalController(
     const owningSession = startInput.sessionID ?? activeSession;
     if (startInput.id) {
       const existing = sessions.get(startInput.id);
-      if (existing?.status === "running") return publicSession(existing);
+      if (existing?.status === "running") {
+        if (
+          existing.sessionID &&
+          owningSession &&
+          existing.sessionID !== owningSession
+        )
+          throw new Error(
+            `terminal ${existing.id} belongs to session ${existing.sessionID}`,
+          );
+        touch(existing);
+        return publicSession(existing);
+      }
     }
-    const existingForSession = runningForSession(owningSession);
-    if (existingForSession) return publicSession(existingForSession);
+
+    const running = runningForSession(owningSession);
+    if (running.length >= maxPerSession) {
+      const recycled = await recycleOldestIdle(owningSession);
+      if (!recycled || runningForSession(owningSession).length >= maxPerSession)
+        throw new Error(
+          `session already has ${maxPerSession} running terminals`,
+        );
+    }
 
     const argv = nativeTerminalPaneCommand(startInput.command);
     const file = argv[0] ?? "/bin/sh";
     const args = argv.slice(1);
     const id = startInput.id ?? `terminal_${randomUUID()}`;
+    const now = Date.now();
     const session: PtySession = {
       id,
       sessionID: owningSession,
@@ -634,6 +692,7 @@ export function createPtyTerminalController(
       cols: DEFAULT_COLS,
       revision: 0,
       output: "",
+      lastActivityAt: now,
       disposers: [],
     };
     const started = performance.now();
@@ -713,6 +772,7 @@ export function createPtyTerminalController(
     }
     session.revision += 1;
     session.lastModelWriteAt = Date.now();
+    touch(session);
     notifyRevision(session.id);
     publishAudit(session, "write", "model");
     return { writtenBytes, delivery: "accepted" as const };
@@ -734,6 +794,7 @@ export function createPtyTerminalController(
     session.rows = rows;
     session.cols = cols;
     session.revision += 1;
+    touch(session);
     notifyRevision(session.id);
     publishAudit(session, "resize", actor);
     return publicSession(session);
@@ -862,6 +923,18 @@ export function createPtyTerminalController(
     activeSession = sessionID;
   }
 
+  async function stopForSession(sessionID: string) {
+    const owned = [...sessions.values()].filter(
+      (session) =>
+        session.sessionID === sessionID && session.status === "running",
+    );
+    await Promise.allSettled(
+      owned.map(async (session) => {
+        await stop(session.id, "system");
+      }),
+    );
+  }
+
   async function close() {
     if (closed) return;
     closed = true;
@@ -891,6 +964,7 @@ export function createPtyTerminalController(
     reconcile,
     read,
     openHub,
+    claimHumanInput,
     releaseHumanControl,
     beginSecureInput,
     endSecureInput,
@@ -906,6 +980,7 @@ export function createPtyTerminalController(
     ttyName,
     setActiveSession,
     subscribeOutput,
+    stopForSession,
     close,
   };
 }

@@ -1609,6 +1609,8 @@ export type RuntimeNativeTerminalSession = {
   cols?: number;
   startedAt: string;
   attached: boolean;
+  /** Natalia session that owns this pane. Present for PTY and I3 WezTerm panes. */
+  sessionID?: string;
   /**
    * TERM-M.3 route 3: a conservative "this pane may be waiting for a human"
    * weak fact. True only when the model wrote, the pane produced output after
@@ -1955,6 +1957,9 @@ export type RuntimeClient = {
   nativeTerminalList?(): Promise<RuntimeNativeTerminalSession[]>;
   nativeTerminalRead?(id: string): Promise<{ id: string; text: string }>;
   nativeTerminalOpenHub?(): Promise<{ muxWindowID: number }>;
+  nativeTerminalClaimHumanInput?(
+    id: string,
+  ): Promise<RuntimeNativeTerminalSession>;
   nativeTerminalRevokeApprovalScope?(id: string): Promise<{
     id: string;
     scope: string;

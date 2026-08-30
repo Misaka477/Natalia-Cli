@@ -243,6 +243,7 @@ export function createTerminalController(input: {
       startedAt: session.startedAt,
       attached: session.attached,
       mayWaitForHuman: session.mayWaitForHuman,
+      ...(session.sessionID ? { sessionID: session.sessionID } : {}),
     };
   }
 
@@ -265,6 +266,10 @@ export function createTerminalController(input: {
 
   function releaseHumanControl(id: string) {
     return publicSession(requireTerminal().releaseHumanControl(id));
+  }
+
+  function claimHumanInput(id: string) {
+    return publicSession(requireTerminal().claimHumanInput(id));
   }
 
   function beginSecureInput(id: string) {
@@ -342,6 +347,10 @@ export function createTerminalController(input: {
     nativeTerminal?.setActiveSession(sessionID);
   }
 
+  async function stopForSession(sessionID: string) {
+    await nativeTerminal?.stopForSession(sessionID);
+  }
+
   async function close() {
     if (closed) return;
     closed = true;
@@ -357,6 +366,7 @@ export function createTerminalController(input: {
     reconcile,
     read,
     openHub,
+    claimHumanInput,
     releaseHumanControl,
     beginSecureInput,
     endSecureInput,
@@ -371,6 +381,7 @@ export function createTerminalController(input: {
     requestHuman,
     ttyName,
     setActiveSession,
+    stopForSession,
     close,
   };
 }

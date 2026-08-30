@@ -621,9 +621,12 @@ export interface TerminalController {
     id: string,
     reason: string,
   ): Promise<RuntimeNativeTerminalSession>;
+  claimHumanInput?(id: string): Promise<RuntimeNativeTerminalSession>;
   ttyName(id: string): Promise<string | undefined>;
   setActiveSession(sessionID: string | undefined): void;
   subscribeOutput?(id: string, listener: (chunk: string) => void): () => void;
+  /** Stop every running pane owned by a Natalia session. */
+  stopForSession?(sessionID: string): Promise<void>;
   close(): Promise<void>;
 }
 export type TerminalControllerInput = {
@@ -637,6 +640,10 @@ export type TerminalControllerInput = {
   external?: unknown;
   /** Interactive terminal host. Omitted / unknown values use in-process PTY. */
   backend?: "wezterm" | "pty";
+  /** Cap on concurrent PTYs for one Natalia session. PTY backend only. */
+  maxPerSession?: number;
+  /** Recycle a session's idle PTY when the cap is hit. PTY backend only. */
+  idleMs?: number;
 };
 export interface SandboxService extends SandboxToolService {
   init(): Promise<void>;
