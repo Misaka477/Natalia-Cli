@@ -3192,8 +3192,7 @@ button.neu-settings-item.neu-settings-item-button:active {
   .neu-shell[data-compact="true"] .neu-secondary {
     width: min(720px, 66vw);
   }
-  .neu-shell[data-compact="true"] .neu-resizer,
-  .neu-shell[data-compact="true"] .neu-right-resizer {
+  .neu-shell[data-compact="true"] .neu-resizer {
     display: none;
   }
   .neu-main-panes { gap: 10px; }
