@@ -199,6 +199,14 @@ export async function recoverSession(
     scope.runtimeContext,
     recoveryRestoreEvents,
   );
+  console.warn("[context-restore] session-recovery", {
+    sessionID: scope.sessionID,
+    replayableEvents: projection.replayableEvents.length,
+    restoreEvents: recoveryRestoreEvents.length,
+    contextEntries: scope.runtimeContext.snapshot().entries.length,
+    hasEpoch: sqliteEpoch !== undefined,
+    checkpointHasSummary,
+  });
   for (const [turnID, attachments] of sqliteRecovery?.attachments ?? [])
     scope.attachmentReferences.set(`${turnID}:user`, attachments);
   const [queued] = projection.pendingInputs.filter(
