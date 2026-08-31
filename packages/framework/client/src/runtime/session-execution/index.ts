@@ -6,7 +6,7 @@
  * helpers that drive the turn controller for a session. Reads host state
  * through `RuntimeContext` at call time.
  */
-import { modelVisibleEvents, projectSession } from "@natalia/session";
+import { projectSession } from "@natalia/session";
 import {
   CONTEXT_LEDGER_FACTORY_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
@@ -143,13 +143,22 @@ export function createSessionExecution(
     const execContext = contextLedgerFactory.create();
     const projection = projectSession(loaded);
     const epoch = stored.contextEpoch;
+    const latestContextCheckpoint = [...projection.replayableEvents]
+      .reverse()
+      .find((event) => event.type === "context.checkpoint");
+    const checkpointIndex = latestContextCheckpoint
+      ? projection.replayableEvents.indexOf(latestContextCheckpoint)
+      : -1;
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
-    contextLedgerFactory.restore(
-      execContext,
+    else if (latestContextCheckpoint)
+      execContext.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
+    const restoreEvents =
       epoch
         ? sessionStore.contextEventsAfter(sessionID, epoch)!
-        : modelVisibleEvents(projection.replayableEvents),
-    );
+        : latestContextCheckpoint
+          ? projection.replayableEvents.slice(checkpointIndex + 1)
+          : projection.replayableEvents;
+    contextLedgerFactory.restore(execContext, restoreEvents);
     const exec: SessionExecutionState = {
       session: loaded,
       context: execContext,
