@@ -185,12 +185,21 @@ export async function recoverSession(
   );
   if (!contextLedgerFactory)
     throw new Error("context ledger unavailable (natalia-context-ledger)");
+  const recoveryRestoreEvents = sqliteEpoch
+    ? sessionStore.contextEventsAfter(scope.sessionID, sqliteEpoch)!
+    : scope.modelVisibleEvents(projection.replayableEvents);
   contextLedgerFactory.restore(
     scope.runtimeContext,
-    sqliteEpoch
-      ? sessionStore.contextEventsAfter(scope.sessionID, sqliteEpoch)!
-      : scope.modelVisibleEvents(projection.replayableEvents),
+    recoveryRestoreEvents,
   );
+  console.warn("[context-restore] session-recovery", {
+    sessionID: scope.sessionID,
+    replayableEvents: projection.replayableEvents.length,
+    restoreEvents: recoveryRestoreEvents.length,
+    contextEntries: scope.runtimeContext.snapshot().entries.length,
+    hasEpoch: sqliteEpoch !== undefined,
+    latestCheckpoint: latestContextCheckpoint !== undefined,
+  });
   for (const [turnID, attachments] of sqliteRecovery?.attachments ?? [])
     scope.attachmentReferences.set(`${turnID}:user`, attachments);
   const [queued] = projection.pendingInputs.filter(
