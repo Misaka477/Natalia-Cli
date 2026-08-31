@@ -782,10 +782,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             chatObservedTop = el.scrollTop;
           }
         };
-        requestAnimationFrame(() => {
-          requestAnimationFrame(scrollToBottom);
-        });
-        setTimeout(scrollToBottom, 200);
+        // Initial layout settles over a few frames (fonts, images, tool cards
+        // and chat/subagent hydration can change scrollHeight after paint).
+        const settleToBottom = (remaining = 5) => {
+          scrollToBottom();
+          if (remaining > 0) {
+            requestAnimationFrame(() => settleToBottom(remaining - 1));
+          }
+        };
+        settleToBottom();
+        setTimeout(scrollToBottom, 250);
         const interactive = await props.ctx.runtime.pendingInteractive?.();
         if (isStaleLoad()) return;
         const approvals = interactive?.approvals ?? [];
