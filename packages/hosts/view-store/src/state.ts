@@ -42,6 +42,7 @@ export type MessageBlock = {
   role: "user" | "assistant" | "thinking" | "system" | "tool";
   /** Text the runtime has confirmed. Safe to keep in a transcript. */
   text: string;
+  attachments?: import("@natalia/contracts").LocalAttachment[];
   /**
    * Text streamed but not yet confirmed. A UI renders `text + pendingText`; a
    * transcript keeps only `text`. Cancelling a turn drops the pending part,

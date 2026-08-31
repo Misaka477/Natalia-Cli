@@ -16,8 +16,27 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 
 export function createAttachmentRuntime(
   ctx: RuntimeContext,
-): Pick<RuntimeServiceClient, "uploadAttachment"> {
+): Pick<RuntimeServiceClient, "uploadAttachment" | "attachmentDataUrl"> {
   return {
+    async attachmentDataUrl(input: {
+      path: string;
+      mediaType: string;
+    }): Promise<string> {
+      await ctx.ports.getReady();
+      const attachments =
+        ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
+      if (!attachments)
+        throw new Error("attachment service unavailable (natalia-attachments)");
+      const filename = input.path.split(/[\\/]/u).pop() ?? "attachment";
+      return await attachments.dataURL({
+        id: "",
+        path: input.path,
+        filename,
+        mediaType: input.mediaType as LocalAttachment["mediaType"],
+        byteLength: 0,
+        sha256: "",
+      });
+    },
     async uploadAttachment(input: {
       name: string;
       mediaType: string;

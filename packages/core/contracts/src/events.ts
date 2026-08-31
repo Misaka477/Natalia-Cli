@@ -1792,6 +1792,10 @@ export type RuntimeClient = {
     mediaType: string;
     data: string;
   }): Promise<LocalAttachment>;
+  attachmentDataUrl?(input: {
+    path: string;
+    mediaType: string;
+  }): Promise<string>;
   pendingInteractive?(): Promise<PendingInteractiveRequests>;
   /**
    * Reconcile the workspace watcher hints against the current workspace and

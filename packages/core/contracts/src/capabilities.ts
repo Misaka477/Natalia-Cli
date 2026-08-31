@@ -276,7 +276,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "planCompleted",
   ],
   /** Durable attachment upload/storage for pasted or dropped files. */
-  attachments: ["uploadAttachment"],
+  attachments: ["uploadAttachment", "attachmentDataUrl"],
   /** The always-available Live Work Chat conversation (P8 Phase C2). */
   chat: [
     "chatSubmit",

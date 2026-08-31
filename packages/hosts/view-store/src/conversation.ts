@@ -178,6 +178,7 @@ export function applyConversationEvent(
         text: userText(event),
         pendingText: "",
         status: event.delivery === "queue" ? "queued" : undefined,
+        ...(event.attachments?.length ? { attachments: event.attachments } : {}),
       });
       return true;
     case "turn.started":

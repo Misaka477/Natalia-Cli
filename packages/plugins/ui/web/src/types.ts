@@ -23,6 +23,7 @@ export interface Message {
   streaming?: boolean;
   toolCalls?: ToolCall[];
   actions?: MessageAction[];
+  attachments?: Attachment[];
 }
 
 export interface ToolCall {
@@ -41,4 +42,5 @@ export interface MessageAction {
 export interface Attachment {
   path: string;
   name: string;
+  mediaType?: string;
 }

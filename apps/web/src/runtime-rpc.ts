@@ -172,6 +172,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   chatMessages: "chat.messages",
   subagents: "session.subagents",
   uploadAttachment: "attachment.upload",
+  attachmentDataUrl: "attachment.dataUrl",
   chatSubmit: "chat.submit",
   chatAbort: "chat.abort",
   chatRollback: "chat.rollback",

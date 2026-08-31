@@ -423,6 +423,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     timings[phase] = performance.now() - global.__nataliaStartupStart;
   }
 
+  async function loadAttachmentUrl(path: string, mediaType?: string) {
+    const result = await props.ctx.runtime.attachmentDataUrl?.({
+      path,
+      mediaType: mediaType ?? "image/png",
+    });
+    return result ?? "";
+  }
+
   function handlePasteAttachments(
     event: ClipboardEvent,
     current: ComposerAttachment[],
@@ -1281,6 +1289,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               ? "system"
               : "assistant",
         thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+        ...(msg.role === "user" && msg.attachments?.length
+          ? {
+              attachments: msg.attachments.map((attachment) => ({
+                path: attachment.path,
+                name: attachment.filename,
+                mediaType: attachment.mediaType,
+              })),
+            }
+          : {}),
         content: msg.text + (msg.pendingText || ""),
         status:
           state().activeTurn && idx === (state().messages?.length ?? 0) - 1
@@ -1690,6 +1707,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantInitial="N"
                 scrollRef={setTranscriptEl}
                 onScroll={handleTranscriptScroll}
+                loadAttachmentUrl={loadAttachmentUrl}
               />
               </Show>
               <Show when={showJumpToBottom()}>
@@ -1794,6 +1812,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 assistantInitial="V"
                 scrollRef={setChatTranscriptEl}
                 onScroll={handleChatTranscriptScroll}
+                loadAttachmentUrl={loadAttachmentUrl}
               />
               </Show>
               <Show when={chatShowJumpToBottom()}>

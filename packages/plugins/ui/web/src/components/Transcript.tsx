@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import { marked } from "marked";
-import type { Message } from "../types";
+import type { Attachment, Message } from "../types";
 
 declare global {
   interface Window {
@@ -16,6 +16,7 @@ export interface TranscriptProps {
   assistantInitial?: string;
   scrollRef?: (el: HTMLDivElement) => void;
   onScroll?: (event: Event) => void;
+  loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -55,6 +56,7 @@ export function Transcript(props: TranscriptProps) {
               message={message}
               assistantName={props.assistantName}
               assistantInitial={props.assistantInitial}
+              loadAttachmentUrl={props.loadAttachmentUrl}
             />
           )}
         </For>
@@ -68,6 +70,32 @@ export interface MessageRowProps {
   message: Message;
   assistantName?: string;
   assistantInitial?: string;
+  loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
+}
+
+function AttachmentImage(props: {
+  attachment: Attachment;
+  load?: (path: string, mediaType?: string) => Promise<string>;
+}) {
+  const [src, setSrc] = createSignal("");
+  onMount(() => {
+    const type = props.attachment.mediaType ?? "";
+    if (!type.startsWith("image/") || !props.load) return;
+    void props.load(props.attachment.path, props.attachment.mediaType).then(setSrc).catch(() => {});
+  });
+  return (
+    <Show when={src()}>
+      <img class="natalia-message-image" src={src()} alt={props.attachment.name} />
+    </Show>
+    <Show when={!src()}>
+      <div class="natalia-message-attachment-file">
+        <svg viewBox="0 0 16 16" fill="none" class="natalia-message-attachment-icon">
+          <path d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>{props.attachment.name}</span>
+      </div>
+    </Show>
+  );
 }
 
 export function MessageRow(props: MessageRowProps) {
@@ -158,6 +186,21 @@ export function MessageRow(props: MessageRowProps) {
           </div>
         </Show>
       </div>
+
+      <Show
+        when={props.message.attachments && props.message.attachments.length > 0}
+      >
+        <div class="natalia-message-attachments">
+          <For each={props.message.attachments ?? []}>
+            {(attachment) => (
+              <AttachmentImage
+                attachment={attachment}
+                load={props.loadAttachmentUrl}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
 
       <Show
         when={props.message.toolCalls && props.message.toolCalls.length > 0}
