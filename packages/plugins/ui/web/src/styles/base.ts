@@ -3412,8 +3412,8 @@ button.neu-settings-item.neu-settings-item-button:active {
 }
 
 /* Compact but short viewports: horizontal main panes are better than
-   stacking two panes vertically when height is at or below 900px. */
-@media (max-width: 1700px) and (min-width: 1001px) and (max-height: 900px) {
+   stacking two panes vertically when height is at or below 1000px. */
+@media (max-width: 1700px) and (min-width: 1001px) and (max-height: 1000px) {
   .neu-shell[data-compact="true"] .neu-main-panes {
     flex-direction: row;
   }
