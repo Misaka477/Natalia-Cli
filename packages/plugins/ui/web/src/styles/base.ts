@@ -3258,20 +3258,35 @@ button.neu-settings-item.neu-settings-item-button:active {
   flex-shrink: 0;
 }
 .neu-workspace-switch {
-  padding: 6px 12px;
-  background: var(--neu-bg-light);
+  padding: 6px 14px;
+  min-width: 58px;
+  background: var(--neu-bg);
   color: var(--neu-text);
+  border: 1px solid var(--neu-hairline);
   font-size: 12px;
+  font-weight: 600;
+  box-shadow: 2px 2px 5px var(--neu-shadow-dark), -2px -2px 5px var(--neu-shadow-light);
+}
+.neu-workspace-switch:hover:not(:disabled) {
+  color: var(--neu-accent);
+  border-color: var(--neu-accent);
 }
 .neu-workspace-switch:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 .neu-workspace-remove {
-  padding: 6px 12px;
-  background: var(--neu-bg-light);
+  padding: 6px 14px;
+  min-width: 58px;
+  background: color-mix(in srgb, var(--neu-error) 10%, var(--neu-bg));
   color: var(--neu-error);
+  border: 1px solid color-mix(in srgb, var(--neu-error) 35%, transparent);
   font-size: 12px;
+  font-weight: 600;
+  box-shadow: 2px 2px 5px var(--neu-shadow-dark), -2px -2px 5px var(--neu-shadow-light);
+}
+.neu-workspace-remove:hover {
+  background: color-mix(in srgb, var(--neu-error) 18%, var(--neu-bg));
 }
 
 /* ===== Workspace success ===== */
