@@ -94,7 +94,7 @@ export const contextConfigSchema = z.object({
   reservedOutputTokens: z
     .union([z.literal("auto"), z.number().int().positive()])
     .default("auto"),
-  preservedRecentMessages: z.number().int().min(0).default(2),
+  preservedRecentMessages: z.number().int().min(0).default(10),
 });
 
 export const checkpointConfigSchema = z
