@@ -520,7 +520,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               const recent = sessions
                 .filter((session) => !session.archived)
                 .sort((a, b) => sessionRecency(b) - sessionRecency(a));
-              const fallback = recent[0] ?? sessions[0];
+              const touched = recent.filter((session) => session.lastAccessedAt);
+              const nonEmpty = recent.filter((session) => session.events > 0);
+              const fallbackSource = touched.length
+                ? touched
+                : nonEmpty.length
+                  ? nonEmpty
+                  : recent;
+              const fallback = fallbackSource[0] ?? sessions[0];
               if (fallback) {
                 setSelectedSessionID(fallback.id);
                 setSelectedSession(fallback.title);

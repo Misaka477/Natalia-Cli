@@ -479,9 +479,18 @@ export function createWebRuntimeClient(
         .filter((session) => !session.archived)
         .sort((a, b) => sessionRecency(b) - sessionRecency(a));
       const persisted = readPersistedSessionID();
-      const target =
-        sessions.find((session) => session.id === persisted && !session.archived) ??
-        recent[0];
+      const persistedTarget =
+        persisted === undefined
+          ? undefined
+          : sessions.find((session) => session.id === persisted && !session.archived);
+      const touched = recent.filter((session) => session.lastAccessedAt);
+      const nonEmpty = recent.filter((session) => session.events > 0);
+      const fallbackSource = touched.length
+        ? touched
+        : nonEmpty.length
+          ? nonEmpty
+          : recent;
+      const target = persistedTarget ?? fallbackSource[0];
       newest = target;
       if (newest) {
         if (sessionLoadToken !== 0) return newest;
