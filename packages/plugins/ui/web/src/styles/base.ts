@@ -583,11 +583,12 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
+  gap: 4px;
+  width: auto;
+  height: 24px;
+  padding: 2px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--neu-bg);
   color: var(--neu-muted);
   cursor: pointer;
@@ -597,6 +598,10 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane .natalia-message-icon-btn:hover {
   background: var(--neu-bg);
   color: var(--neu-accent);
+}
+.neu-pane .natalia-message-icon-btn span {
+  font-size: 11px;
+  line-height: 1;
 }
 
 .neu-pane .natalia-composer {

@@ -265,6 +265,7 @@ export function MessageRow(props: MessageRowProps) {
               <rect x="5.5" y="5.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3" />
               <path d="M10.5 4.5H11.5A1.5 1.5 0 0 1 13 6V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
             </svg>
+            <span>复制</span>
           </button>
           <Show when={props.onFork && sessionTurnID(props.message.id)}>
             <button
@@ -279,6 +280,7 @@ export function MessageRow(props: MessageRowProps) {
                 <circle cx="11" cy="12" r="1.6" stroke="currentColor" stroke-width="1.2" />
                 <path d="M5 5.6V10.4M5 10.4H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
               </svg>
+              <span>Fork</span>
             </button>
           </Show>
         </div>
