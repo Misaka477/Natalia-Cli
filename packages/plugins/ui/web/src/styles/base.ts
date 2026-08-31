@@ -436,7 +436,6 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   color: var(--neu-text);
   scrollbar-width: thin;
   scrollbar-color: var(--neu-scrollbar) transparent;
-  overflow-anchor: auto;
 }
 .neu-pane .natalia-transcript > * {
   flex-shrink: 0;
