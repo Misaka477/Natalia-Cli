@@ -1,6 +1,6 @@
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { RuntimeSessionSummary, WorkspaceSummary, WorkspacePermissionSettings, WorkspaceToolSettings } from "@natalia/contracts";
@@ -146,6 +146,41 @@ export type WorkspaceManager = {
  * client and runtime state; all workspaces share the same global config path
  * and plugin store (no per-workspace global config/plugins).
  */
+async function migrateLegacyWorkspaceSessions(
+  root: string,
+  legacyBase?: string,
+): Promise<void> {
+  if (!legacyBase) return;
+  const legacyDir = workspaceSessionDir(root, legacyBase);
+  const targetDir = join(root, ".natalia", "sessions");
+  if (legacyDir === targetDir) return;
+  try {
+    const entries = await readdir(legacyDir, { withFileTypes: true }).catch(
+      () => [],
+    );
+    const files = entries.filter(
+      (entry) => entry.isFile() && entry.name.endsWith(".json"),
+    );
+    if (!files.length) return;
+    await mkdir(targetDir, { recursive: true, mode: 0o700 });
+    let migrated = 0;
+    for (const entry of files) {
+      const source = join(legacyDir, entry.name);
+      const target = join(targetDir, entry.name);
+      await copyFile(source, target).catch(() => undefined);
+      migrated++;
+    }
+    console.warn(
+      "[workspace-session] migrated",
+      migrated,
+      "session files to",
+      targetDir,
+    );
+  } catch (error) {
+    console.warn("[workspace-session] legacy migration failed", error);
+  }
+}
+
 export function createWorkspaceManager(
   options: WorkspaceManagerOptions = {},
 ): WorkspaceManager {
@@ -189,12 +224,11 @@ export function createWorkspaceManager(
     const existing = [...runtimes.values()].find((ws) => ws.root === root);
     if (existing) return await summary(existing);
 
+    await migrateLegacyWorkspaceSessions(root, options.sessionDir);
     const client = createRealRuntimeClient({
       workspaceRoot: root,
       pluginStoreRoot: options.pluginStoreRoot,
       globalConfigPath: options.globalConfigPath,
-      sessionDir: workspaceSessionDir(root, options.sessionDir),
-      checkpointDir: workspaceCheckpointDir(root, options.checkpointDir),
       useSqliteStore: options.useSqliteStore,
     });
     const settings = await readSettings(root);
