@@ -227,6 +227,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [naviOpen, setNaviOpen] = createSignal(true);
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
+  const [mainAttachments, setMainAttachments] = createSignal<string[]>([]);
+  const [chatAttachments, setChatAttachments] = createSignal<string[]>([]);
   const [selectedSession, setSelectedSession] = createSignal("");
   const [selectedSessionID, setSelectedSessionID] = createSignal("");
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
@@ -419,6 +421,41 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     global.__nataliaStartupStart ??= performance.now();
     const timings = (global.__nataliaStartupTimings ??= {});
     timings[phase] = performance.now() - global.__nataliaStartupStart;
+  }
+
+  function handlePasteAttachments(
+    event: ClipboardEvent,
+    current: string[],
+    setAttachments: (value: string[]) => void,
+  ) {
+    const items = Array.from(event.clipboardData?.items ?? []);
+    const files = items
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (!files.length) return;
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (!imageFiles.length) return;
+    event.preventDefault();
+    for (const file of imageFiles) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result ?? "");
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        const path = `.natalia-paste-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}.png`;
+        void props.ctx.runtime.workspaceWrite?.({
+          path,
+          content: base64,
+          encoding: "base64",
+        }).then(() => {
+          setAttachments([...current, path]);
+        });
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   function debouncedRefreshWorkspaces(delay = 150) {
@@ -678,6 +715,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       setChatShowJumpToBottom(false);
       setMainDraft("");
       setChatDraft("");
+      setMainAttachments([]);
+      setChatAttachments([]);
       setCurrentApproval(null);
       setPermissionOpen(false);
       setCurrentQuestion(null);
@@ -1704,12 +1743,23 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 placeholder="输入消息，使用 @ 提及文件…"
                 busy={Boolean(state().activeTurn)}
                 onInput={setMainDraft}
+                attachments={mainAttachments()}
+                onRemoveAttachment={(path) =>
+                  setMainAttachments(mainAttachments().filter((item) => item !== path))
+                }
+                onPaste={(event) => handlePasteAttachments(event, mainAttachments(), setMainAttachments)}
                 onSubmit={() => {
                   const text = mainDraft();
-                  if (text.trim()) {
+                  if (text.trim() || mainAttachments().length) {
                     console.log("[web-plugin] send", text);
-                    props.ctx.runtime.submit?.(text);
+                    props.ctx.runtime.submit?.({
+                      text,
+                      ...(mainAttachments().length
+                        ? { attachments: mainAttachments() }
+                        : {}),
+                    });
                     setMainDraft("");
+                    setMainAttachments([]);
                   }
                 }}
                 onStop={() => props.ctx.runtime.cancel?.()}
@@ -1833,11 +1883,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 placeholder="向 Navi 提问…"
                 busy={Boolean(state().chatActivity)}
                 onInput={setChatDraft}
+                attachments={chatAttachments()}
+                onRemoveAttachment={(path) =>
+                  setChatAttachments(chatAttachments().filter((item) => item !== path))
+                }
+                onPaste={(event) => handlePasteAttachments(event, chatAttachments(), setChatAttachments)}
                 onSubmit={() => {
                   const text = chatDraft();
-                  if (text.trim()) {
-                    props.ctx.runtime.chatSubmit?.({ text });
+                  if (text.trim() || chatAttachments().length) {
+                    props.ctx.runtime.chatSubmit?.({
+                      text,
+                      ...(chatAttachments().length
+                        ? { attachments: chatAttachments() }
+                        : {}),
+                    });
                     setChatDraft("");
+                    setChatAttachments([]);
                   }
                 }}
               />
