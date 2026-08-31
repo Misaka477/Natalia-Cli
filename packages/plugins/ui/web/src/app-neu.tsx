@@ -397,42 +397,49 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   async function refreshSessions() {
     if (sessionsRefreshInFlight) return sessionsRefreshInFlight;
     const token = ++sessionsRefreshToken;
-    sessionsRefreshInFlight = (async () => {
-      const sessions = await props.ctx.runtime.sessionList?.();
-      if (token !== sessionsRefreshToken) return;
-      if (sessions) {
-      setSessionList(sessions);
-      if (!userSelectedSession && sessions.length) {
-        const active = state().sessionID;
-        const target = active
-          ? sessions.find((session) => session.id === active && !session.archived)
-          : undefined;
-        if (target) {
-          setSelectedSessionID(target.id);
-          setSelectedSession(target.title);
-        } else if (!selectedSessionID()) {
-          // While the runtime is still attaching/restoring the startup session,
-          // do not race it with a local fallback. The final selection is
-          // determined by natalia:recent-session-restored / session.ready and
-          // then projected once by openUnresolvedInteractives.
-          const load = globalThis as unknown as {
-            __nataliaReplayingHistory?: boolean;
-          };
-          if (load.__nataliaReplayingHistory) return;
-          const recent = sessions
-            .filter((session) => !session.archived)
-            .sort((a, b) => sessionRecency(b) - sessionRecency(a));
-          const fallback = recent[0] ?? sessions[0];
-          if (fallback) {
-            setSelectedSessionID(fallback.id);
-            setSelectedSession(fallback.title);
+    let operation: Promise<void>;
+    operation = (async () => {
+      try {
+        const sessions = await props.ctx.runtime.sessionList?.();
+        if (token !== sessionsRefreshToken) return;
+        if (sessions) {
+          setSessionList(sessions);
+          if (!userSelectedSession && sessions.length) {
+            const active = state().sessionID;
+            const target = active
+              ? sessions.find((session) => session.id === active && !session.archived)
+              : undefined;
+            if (target) {
+              setSelectedSessionID(target.id);
+              setSelectedSession(target.title);
+            } else if (!selectedSessionID()) {
+              // While the runtime is still attaching/restoring the startup session,
+              // do not race it with a local fallback. The final selection is
+              // determined by natalia:recent-session-restored / session.ready and
+              // then projected once by openUnresolvedInteractives.
+              const load = globalThis as unknown as {
+                __nataliaReplayingHistory?: boolean;
+              };
+              if (load.__nataliaReplayingHistory) return;
+              const recent = sessions
+                .filter((session) => !session.archived)
+                .sort((a, b) => sessionRecency(b) - sessionRecency(a));
+              const fallback = recent[0] ?? sessions[0];
+              if (fallback) {
+                setSelectedSessionID(fallback.id);
+                setSelectedSession(fallback.title);
+              }
+            }
           }
         }
+      } finally {
+        if (sessionsRefreshInFlight === operation) {
+          sessionsRefreshInFlight = undefined;
+        }
       }
-    })().finally(() => {
-      sessionsRefreshInFlight = undefined;
-    });
-    return sessionsRefreshInFlight;
+    })();
+    sessionsRefreshInFlight = operation;
+    return operation;
   }
 
   const visibleSessions = (): RuntimeSessionSummary[] =>
