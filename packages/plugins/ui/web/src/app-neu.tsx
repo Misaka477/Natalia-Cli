@@ -261,6 +261,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   type ScrollAnchor = { id: string; top: number };
   let transcriptPagingAnchor: ScrollAnchor | undefined;
   let chatPagingAnchor: ScrollAnchor | undefined;
+  let mainScrollPending = false;
+  let chatScrollPending = false;
+  let scrollFrame: number | undefined;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
@@ -311,18 +314,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
-        setTimeout(() => {
-          if (followBottom() && transcriptEl()) {
-            const el = transcriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            transcriptObservedTop = el.scrollTop;
-          }
-          if (chatFollowBottom() && chatTranscriptEl()) {
-            const el = chatTranscriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            chatObservedTop = el.scrollTop;
-          }
-        }, 0);
         const currentTurn = projected.activeTurn;
         if (currentTurn && activeTurnStartedAtValue() === undefined) {
           setActiveTurnStartedAt(Date.now());
@@ -337,6 +328,29 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   async function refreshWorkspaces() {
     const roots = await props.ctx.runtime.workspaceRoots?.();
     if (roots) setWorkspaces(roots);
+  }
+
+  function schedulePaneScroll(pane: "main" | "chat") {
+    if (pane === "main") mainScrollPending = true;
+    else chatScrollPending = true;
+    if (scrollFrame !== undefined) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = undefined;
+      if (mainScrollPending && followBottom() && transcriptEl()) {
+        mainScrollPending = false;
+        const el = transcriptEl()!;
+        el.scrollTop = el.scrollHeight;
+        transcriptObservedTop = el.scrollTop;
+      }
+      if (chatScrollPending && chatFollowBottom() && chatTranscriptEl()) {
+        chatScrollPending = false;
+        const el = chatTranscriptEl()!;
+        el.scrollTop = el.scrollHeight;
+        chatObservedTop = el.scrollTop;
+      }
+      mainScrollPending = false;
+      chatScrollPending = false;
+    });
   }
 
   function debouncedRefreshWorkspaces(delay = 150) {
@@ -540,6 +554,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           event.sessionID !== currentSession
         )
           return;
+        if (
+          event.type.startsWith("chat.") ||
+          event.type.startsWith("collab.")
+        ) {
+          schedulePaneScroll("chat");
+        } else if (
+          event.type.startsWith("turn.") ||
+          event.type.startsWith("content.") ||
+          event.type.startsWith("thinking.") ||
+          event.type === "tool.update" ||
+          event.type.startsWith("approval.") ||
+          event.type.startsWith("question.") ||
+          event.type === "policy.decision"
+        ) {
+          schedulePaneScroll("main");
+        }
         if (event.type === "approval.request" && historyReplayDone) {
           setCurrentApproval(event);
           setPermissionOpen(true);
