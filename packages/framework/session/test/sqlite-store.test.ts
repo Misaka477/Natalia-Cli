@@ -437,6 +437,49 @@ test("SQLite delete removes message index state before session row", () => {
   }
 });
 
+test("SQLite truncateAfter removes events and message turn suffixes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-truncate-after-"));
+  const store = new SqliteSessionStore(join(root, "sessions.db"));
+  const sessionID = "ses_truncate" as const;
+  try {
+    store.create(sessionID, "Truncate");
+    store.appendEvents(sessionID, [
+      {
+        type: "turn.submitted",
+        id: "turn_one",
+        text: "one",
+        byteLength: 3,
+        lineCount: 1,
+        sha256: "test",
+      },
+      {
+        type: "turn.finished",
+        id: "turn_one",
+        stopReason: "done",
+      },
+      {
+        type: "turn.submitted",
+        id: "turn_two",
+        text: "two",
+        byteLength: 3,
+        lineCount: 1,
+        sha256: "test",
+      },
+    ]);
+    store.truncateAfter(sessionID, 2);
+    expect(store.loadEvents(sessionID).map((event) => event.type)).toEqual([
+      "turn.submitted",
+      "turn.finished",
+    ]);
+    expect(store.loadMessagePage(sessionID, {}).data.length).toBe(1);
+  } finally {
+    store.close();
+    rmSync(root, { force: true, recursive: true });
+    rmSync(`${root}-wal`, { force: true });
+    rmSync(`${root}-shm`, { force: true });
+  }
+});
+
 test("SQLite enforces session foreign keys", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-foreign-keys-"));
   const store = new SqliteSessionStore(join(root, "sessions.db"));

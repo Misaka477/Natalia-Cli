@@ -343,6 +343,32 @@ export class SqliteSessionStore {
     return fork;
   }
 
+  truncateAfter(sessionID: SessionID, afterSeq: number) {
+    this.db.transaction(() => {
+      this.run(`DELETE FROM events WHERE session_id = ? AND seq > ?`, [
+        sessionID,
+        afterSeq,
+      ]);
+      this.run(`DELETE FROM message_turns WHERE session_id = ? AND start_seq > ?`, [
+        sessionID,
+        afterSeq,
+      ]);
+      this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [
+        sessionID,
+      ]);
+      this.run(`DELETE FROM context_epochs WHERE session_id = ? AND baseline_seq > ?`, [
+        sessionID,
+        afterSeq,
+      ]);
+      this.run(`DELETE FROM recovery_turns WHERE session_id = ?`, [sessionID]);
+      this.run(
+        `INSERT INTO recovery_state(session_id, indexed_events) VALUES (?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET indexed_events = excluded.indexed_events`,
+        [sessionID, afterSeq],
+      );
+    })();
+  }
+
   delete(id: SessionID) {
     this.db.transaction(() => {
       this.deleteRecoveryProjection(id);
