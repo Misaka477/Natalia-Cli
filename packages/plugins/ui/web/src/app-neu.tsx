@@ -766,11 +766,25 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       )
     )
       return;
-    if (!(await switchAwayFromActiveIfNeeded(ids))) return;
-    for (const id of ids) await props.ctx.runtime.sessionDelete?.(id);
-    await refreshSessions();
-    setBulkSelected(new Set());
-    setBulkSelectMode(false);
+    try {
+      if (!(await switchAwayFromActiveIfNeeded(ids))) return;
+      if (!props.ctx.runtime.sessionDelete) {
+        props.ctx.runtime.diagnostic?.(
+          "当前 runtime 不支持彻底删除会话。",
+          "warning",
+        );
+        return;
+      }
+      for (const id of ids) await props.ctx.runtime.sessionDelete(id);
+      await refreshSessions();
+      setBulkSelected(new Set());
+      setBulkSelectMode(false);
+    } catch (error: unknown) {
+      props.ctx.runtime.diagnostic?.(
+        `批量删除失败：${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    }
   }
 
   async function physicallyDeleteSelectedSession() {
