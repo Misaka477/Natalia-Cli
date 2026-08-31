@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal, onMount } from "solid-js";
 import { marked } from "marked";
 import type { Message } from "../types";
 
@@ -18,12 +18,56 @@ export interface TranscriptProps {
   onScroll?: (event: Event) => void;
 }
 
+const ROW_HEIGHT = 120;
+const OVERSCAN = 8;
+
 export function Transcript(props: TranscriptProps) {
+  const [windowStart, setWindowStart] = createSignal(0);
+  const [windowEnd, setWindowEnd] = createSignal(0);
+  let scrollEl: HTMLDivElement | undefined;
+
+  function updateWindow(el: HTMLDivElement) {
+    const count = props.messages.length;
+    if (count === 0) {
+      setWindowStart(0);
+      setWindowEnd(0);
+      return;
+    }
+    const first = Math.max(0, Math.floor(el.scrollTop / ROW_HEIGHT) - OVERSCAN);
+    const last = Math.min(
+      count,
+      Math.ceil((el.scrollTop + el.clientHeight) / ROW_HEIGHT) + OVERSCAN,
+    );
+    setWindowStart(first);
+    setWindowEnd(Math.max(first + 1, last));
+  }
+
+  onMount(() => {
+    if (scrollEl) updateWindow(scrollEl);
+  });
+  createEffect(() => {
+    if (scrollEl) updateWindow(scrollEl);
+  });
+
+  const visible = () => {
+    const start = windowStart();
+    const end = windowEnd();
+    return start === 0 && end === 0
+      ? props.messages.slice(0, 0)
+      : props.messages.slice(start, end);
+  };
+
   return (
     <div
       class="natalia-transcript"
-      ref={props.scrollRef}
-      onScroll={props.onScroll}
+      ref={(el) => {
+        scrollEl = el;
+        props.scrollRef?.(el);
+      }}
+      onScroll={(event) => {
+        props.onScroll?.(event);
+        if (scrollEl) updateWindow(scrollEl);
+      }}
     >
       <Show
         when={props.messages.length > 0}
@@ -48,7 +92,13 @@ export function Transcript(props: TranscriptProps) {
           </div>
         }
       >
-        <For each={props.messages}>
+        <div
+          style={{
+            height: `${windowStart() * ROW_HEIGHT}px`,
+            "flex-shrink": "0",
+          }}
+        />
+        <For each={visible()}>
           {(message) => (
             <MessageRow
               message={message}
@@ -57,6 +107,12 @@ export function Transcript(props: TranscriptProps) {
             />
           )}
         </For>
+        <div
+          style={{
+            height: `${(props.messages.length - windowEnd()) * ROW_HEIGHT}px`,
+            "flex-shrink": "0",
+          }}
+        />
       </Show>
     </div>
   );
