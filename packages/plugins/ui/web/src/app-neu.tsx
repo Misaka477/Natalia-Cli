@@ -824,6 +824,27 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     applyTheme();
     createEffect(applyTheme);
 
+    // The keyed Transcript remounts when the resolved session id changes.
+    // Re-apply the pinned-to-bottom position after that remount commits.
+    createEffect(() => {
+      const sessionID = selectedSessionID() || state().sessionID;
+      if (!sessionID) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (followBottom() && transcriptEl()) {
+            const el = transcriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            transcriptObservedTop = el.scrollTop;
+          }
+          if (chatFollowBottom() && chatTranscriptEl()) {
+            const el = chatTranscriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            chatObservedTop = el.scrollTop;
+          }
+        });
+      });
+    });
+
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
     void props.ctx.runtime.reasoningEffort?.().then((effort) => {
       if (effort) setReasoningEffortSignal(effort);
