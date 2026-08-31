@@ -1754,14 +1754,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onPaste={(event) => handlePasteAttachments(event, mainAttachments(), setMainAttachments)}
                 onSubmit={() => {
                   const text = mainDraft();
-                  if (text.trim() || mainAttachments().length) {
+                  const paths = mainAttachments().map((item) => item.path);
+                  if (text.trim() || paths.length) {
                     console.log("[web-plugin] send", text);
-                    props.ctx.runtime.submit?.({
-                      text,
-                      ...(mainAttachments().length
-                        ? { attachments: mainAttachments().map((item) => item.path) }
-                        : {}),
-                    });
+                    if (paths.length && props.ctx.runtime.submitInput) {
+                      props.ctx.runtime.submitInput?.({ text, attachments: paths });
+                    } else {
+                      props.ctx.runtime.submit?.(text);
+                    }
                     setMainDraft("");
                     setMainAttachments([]);
                   }
