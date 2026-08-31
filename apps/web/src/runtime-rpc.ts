@@ -7,8 +7,6 @@ import type {
   RuntimeModelCatalogEntry,
   RuntimeModelSelection,
   RuntimeReasoningEffort,
-  RuntimeHistory,
-  RuntimeHistoryEvent,
   RuntimeSessionSummary,
   RuntimeWorkspaceMatch,
   RuntimeWorkspaceListPage,
@@ -285,8 +283,6 @@ function buildParams(member: string, args: unknown[]) {
   return params;
 }
 
-const HISTORY_PAGE_SIZE = 2000;
-const HISTORY_PARALLELISM = 8;
 
 export type WebRuntimeOptions = {
   url: string;
@@ -329,10 +325,9 @@ export function createWebRuntimeClient(
   const starts: Array<(event: RuntimeEvent) => void> = [];
   let started = false;
   let sessionLoadToken = 0;
+  let activeSessionID: string | undefined;
+  let liveBufferSessionID: string | undefined;
   const liveBuffer: RuntimeEvent[] = [];
-
-  const historyCache = new Map<string, RuntimeHistoryEvent[]>();
-  const HISTORY_CACHE_LIMIT = 3;
 
   type SessionLoadGlobal = {
     __nataliaReplayingHistory?: boolean;
@@ -347,8 +342,9 @@ export function createWebRuntimeClient(
     return token === sessionLoadToken;
   }
 
-  function beginSessionLoad() {
+  function beginSessionLoad(sessionID?: string) {
     const token = ++sessionLoadToken;
+    liveBufferSessionID = sessionID;
     liveBuffer.length = 0;
     const load = sessionLoadGlobal();
     load.__nataliaSessionLoadToken = token;
@@ -360,6 +356,15 @@ export function createWebRuntimeClient(
 
   function emitLive(event: RuntimeEvent) {
     if (sessionLoadGlobal().__nataliaReplayingHistory) {
+      // A stale attach may still publish its session.ready after a newer
+      // session load has begun; never let another session's buffered events
+      // bleed into the current load.
+      if (
+        liveBufferSessionID &&
+        event.sessionID &&
+        event.sessionID !== liveBufferSessionID
+      )
+        return;
       liveBuffer.push(event);
       return;
     }
@@ -375,6 +380,7 @@ export function createWebRuntimeClient(
   function finishSessionLoad(token: number, sessionID?: string) {
     if (!isCurrentSessionLoad(token)) return;
     sessionLoadGlobal().__nataliaReplayingHistory = false;
+    liveBufferSessionID = undefined;
     flushLiveBuffer(token);
     if (typeof window !== "undefined")
       window.dispatchEvent(
@@ -388,93 +394,11 @@ export function createWebRuntimeClient(
     return new Date(session.lastAccessedAt ?? session.createdAt).getTime();
   }
 
-  function applyHistoryEvents(
-    events: RuntimeHistoryEvent[],
-    token: number,
-  ): boolean {
-    for (const entry of events) {
-      if (!isCurrentSessionLoad(token)) return false;
-      for (const listener of starts) listener(entry.event);
-    }
-    return isCurrentSessionLoad(token);
-  }
-
-  async function replayHistory(
-    sessionID: string | undefined,
-    total: number | undefined,
-    token: number,
-  ) {
-    sessionLoadGlobal().__nataliaReplayingHistory = true;
-    try {
-      if (!isCurrentSessionLoad(token)) return;
-      if (total && total > 0) {
-        // Fast path: we already fetched this session recently and the event
-        // count has not grown, so replay the cached events instead of issuing
-        // another batch of RPCs.
-        const cached = sessionID ? historyCache.get(sessionID) : undefined;
-        if (cached && cached.length >= total) {
-          applyHistoryEvents(cached, token);
-          return;
-        }
-        // If the session list told us the event count, fetch all pages in
-        // parallel instead of walking one after another. This turns N serial
-        // RPC round-trips into a single parallel batch.
-        const pages = Math.ceil(total / HISTORY_PAGE_SIZE);
-        const pageResults: RuntimeHistory[] = new Array(pages);
-        // Avoid opening hundreds of simultaneous RPCs on very long sessions;
-        // fetch in bounded parallel batches.
-        for (let start = 0; start < pages; start += HISTORY_PARALLELISM) {
-          if (!isCurrentSessionLoad(token)) return;
-          const end = Math.min(start + HISTORY_PARALLELISM, pages);
-          const batch = await Promise.all(
-            Array.from({ length: end - start }, (_, index) =>
-              call<RuntimeHistory>("session.history", {
-                sessionID,
-                offset: (start + index) * HISTORY_PAGE_SIZE,
-                limit: HISTORY_PAGE_SIZE,
-              }),
-            ),
-          );
-          if (!isCurrentSessionLoad(token)) return;
-          for (let index = 0; index < batch.length; index++)
-            pageResults[start + index] = batch[index]!;
-        }
-        const entries = pageResults.flatMap((page) => page.events);
-        if (sessionID && isCurrentSessionLoad(token)) {
-          if (historyCache.size >= HISTORY_CACHE_LIMIT) {
-            const oldest = historyCache.keys().next().value;
-            if (oldest !== undefined) historyCache.delete(oldest);
-          }
-          historyCache.set(sessionID, entries);
-        }
-        applyHistoryEvents(entries, token);
-      } else {
-        const entries: RuntimeHistoryEvent[] = [];
-        let after = 0;
-        while (isCurrentSessionLoad(token)) {
-          const page = await call<RuntimeHistory>("session.history", {
-            sessionID,
-            after,
-            limit: HISTORY_PAGE_SIZE,
-          });
-          if (!isCurrentSessionLoad(token)) return;
-          entries.push(...page.events);
-          if (!page.hasMore || !page.events.length) break;
-          after = page.events[page.events.length - 1]!.seq;
-        }
-        applyHistoryEvents(entries, token);
-      }
-    } catch (error) {
-      console.log("[web-runtime] history replay failed", error);
-    } finally {
-      finishSessionLoad(token, sessionID);
-    }
-  }
 
   let attachChain = Promise.resolve();
 
-  async function attachAndReplay(id: string, total?: number) {
-    const token = beginSessionLoad();
+  async function attachAndReplay(id: string) {
+    const token = beginSessionLoad(id);
     const run = async () => {
       if (!isCurrentSessionLoad(token)) return undefined;
       try {
@@ -482,24 +406,18 @@ export function createWebRuntimeClient(
           id,
         });
         if (!isCurrentSessionLoad(token)) return undefined;
+        activeSessionID = result?.id ?? id;
         try {
           await call("session.touch", { id });
         } catch {
           // Touch is best-effort so the next boot can pick this session as recent.
         }
         if (!isCurrentSessionLoad(token)) return undefined;
-        let eventCount = total;
-        if (eventCount === undefined) {
-          try {
-            const sessions =
-              await call<RuntimeSessionSummary[]>("session.list");
-            if (!isCurrentSessionLoad(token)) return undefined;
-            eventCount = sessions.find((session) => session.id === id)?.events;
-          } catch {
-            eventCount = undefined;
-          }
-        }
-        await replayHistory(id, eventCount, token);
+        // Deliberately do not replay the full durable event log on attach.
+        // The UI hydrates the transcript from session.messages + the
+        // message-first view-store path; this keeps long-session startup
+        // proportional to the latest page rather than the whole log.
+        finishSessionLoad(token, id);
         return isCurrentSessionLoad(token) ? result : undefined;
       } catch (error) {
         if (isCurrentSessionLoad(token)) finishSessionLoad(token, id);
@@ -528,7 +446,7 @@ export function createWebRuntimeClient(
       newest = recent[0];
       if (newest) {
         if (sessionLoadToken !== 0) return newest;
-        const attached = await attachAndReplay(newest.id, newest.events);
+        const attached = await attachAndReplay(newest.id);
         if (attached && typeof window !== "undefined")
           window.dispatchEvent(
             new CustomEvent("natalia:recent-session-restored", {
@@ -536,11 +454,17 @@ export function createWebRuntimeClient(
             }),
           );
       } else if (sessionLoadToken === 0) {
+        // No session to restore. End the startup replay-guard so live events
+        // are delivered normally instead of buffering forever.
         const token = beginSessionLoad();
-        await replayHistory(undefined, undefined, token);
+        finishSessionLoad(token);
       }
     } catch (error) {
       console.log("[web-runtime] recent session restore failed", error);
+      if (sessionLoadToken === 0) {
+        const token = beginSessionLoad();
+        finishSessionLoad(token);
+      }
     }
     return newest;
   }
@@ -550,6 +474,14 @@ export function createWebRuntimeClient(
     starts.push(onEvent);
     if (started) return;
     started = true;
+
+    // The /events endpoint replays the server-side event ring buffer on
+    // connect. That replay may contain events from every recent session, so
+    // hold them in liveBuffer until restoreRecentSession has chosen the
+    // startup session; beginSessionLoad then discards pre-target events.
+    sessionLoadGlobal().__nataliaReplayingHistory = true;
+    liveBuffer.length = 0;
+    liveBufferSessionID = undefined;
 
     // Electron: receive runtime events through the main-process IPC bridge.
     if (electron) {
@@ -561,49 +493,94 @@ export function createWebRuntimeClient(
       return;
     }
 
-    const response = await (options.fetch ?? globalThis.fetch)(
-      new URL("/events", options.url),
-      {
-        headers: options.token
-          ? { authorization: `Bearer ${options.token}` }
-          : undefined,
-        signal: (globalThis as { __NATALIA_ABORT?: AbortController })
-          .__NATALIA_ABORT?.signal,
-      },
-    );
-    if (!response.ok || !response.body) return;
+    void runWebSSE();
+  }
 
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let current: RuntimeEvent | null = null;
-    const reader = response.body.getReader();
-    void (async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              current = JSON.parse(line.slice(6)) as RuntimeEvent;
-              console.log("[web-runtime] sse event", current.type);
-            } catch {
-              current = null;
+  async function runWebSSE() {
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    while (true) {
+      if ((globalThis as { __NATALIA_ABORT?: AbortController }).__NATALIA_ABORT?.signal.aborted)
+        return;
+      try {
+        // Before every /events connection, enter the startup/reconnect guard.
+        // The server may replay its event ring buffer on connect; those events
+        // are only live transport history, not session content. They must never
+        // be applied before the current session has been re-attached/resynced.
+        sessionLoadGlobal().__nataliaReplayingHistory = true;
+        liveBuffer.length = 0;
+        liveBufferSessionID = activeSessionID;
+
+        const response = await (options.fetch ?? globalThis.fetch)(
+          new URL("/events", options.url),
+          {
+            headers: options.token
+              ? { authorization: `Bearer ${options.token}` }
+              : undefined,
+            signal: (globalThis as { __NATALIA_ABORT?: AbortController })
+              .__NATALIA_ABORT?.signal,
+          },
+        );
+        if (!response.ok || !response.body)
+          throw new Error(`[web-runtime] sse connect failed: ${response.status}`);
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let current: RuntimeEvent | null = null;
+        const reader = response.body.getReader();
+        let resolveStreamEnd!: () => void;
+        const streamEnd = new Promise<void>((resolve) => {
+          resolveStreamEnd = resolve;
+        });
+        void (async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  try {
+                    current = JSON.parse(line.slice(6)) as RuntimeEvent;
+                    console.log("[web-runtime] sse event", current.type);
+                  } catch {
+                    current = null;
+                  }
+                } else if (line === "" && current) {
+                  emitLive(current);
+                  current = null;
+                }
+              }
             }
-          } else if (line === "" && current) {
-            emitLive(current);
-            current = null;
+          } finally {
+            resolveStreamEnd();
           }
-        }
-      }
-    })();
+        })();
 
-    // On page load, prefer the most recent non-archived session over the
-    // runtime's deterministic default session. Live SSE is already flowing
-    // through emitLive, so restore can drop pre-attach events via liveBuffer.
-    await restoreRecentSession();
+        // On the first connection this restores the most recent session. On a
+        // reconnect it re-attaches the already-active session and lets the UI
+        // re-hydrate the latest message page, closing any history gap.
+        if (activeSessionID) await attachAndReplay(activeSessionID);
+        else await restoreRecentSession();
+
+        await streamEnd;
+        if (
+          (globalThis as { __NATALIA_ABORT?: AbortController }).__NATALIA_ABORT
+            ?.signal.aborted
+        )
+          return;
+        console.log("[web-runtime] sse stream closed; reconnecting");
+      } catch (error) {
+        if (
+          (globalThis as { __NATALIA_ABORT?: AbortController }).__NATALIA_ABORT
+            ?.signal.aborted
+        )
+          return;
+        console.log("[web-runtime] sse error", error);
+      }
+      await sleep(1000);
+    }
   }
 
   const impl: RuntimeClient = {

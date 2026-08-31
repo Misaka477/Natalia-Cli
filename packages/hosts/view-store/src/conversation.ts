@@ -165,6 +165,8 @@ export function applyConversationEvent(
       state.status = "ready";
       return true;
     case "turn.submitted":
+      if (state.sessionID && event.sessionID && state.sessionID !== event.sessionID) return false;
+      if (!state.sessionID && event.sessionID) state.sessionID = event.sessionID;
       if (event.delivery !== "queue") state.activeTurn = event.id;
       if (!event.internal) state.lastSubmission = event;
       state.lastStopReason = undefined;

@@ -250,6 +250,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let historyReplayDone = false;
   let userSelectedSession = false;
   let sessionsRefreshToken = 0;
+  let historyCursor: string | undefined;
+  let newerHistoryCursor: string | undefined;
+  let loadingOlderHistory = false;
+  let loadingNewerHistory = false;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
@@ -341,6 +345,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setSelectedSessionID(target.id);
           setSelectedSession(target.title);
         } else if (!selectedSessionID()) {
+          // While the runtime is still attaching/restoring the startup session,
+          // do not race it with a local fallback. The final selection is
+          // determined by natalia:recent-session-restored / session.ready and
+          // then projected once by openUnresolvedInteractives.
+          const load = globalThis as unknown as {
+            __nataliaReplayingHistory?: boolean;
+          };
+          if (load.__nataliaReplayingHistory) return;
           const recent = sessions
             .filter((session) => !session.archived)
             .sort((a, b) => sessionRecency(b) - sessionRecency(a));
@@ -524,6 +536,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // from the view-store pending state during replay.
     const resetProjectionForSessionSwitch = () => {
       historyReplayDone = false;
+      historyCursor = undefined;
+      newerHistoryCursor = undefined;
+      loadingOlderHistory = false;
+      loadingNewerHistory = false;
       setFollowBottom(true);
       setShowJumpToBottom(false);
       setChatFollowBottom(true);
@@ -586,6 +602,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ),
     );
 
+    const hydrateRecentMessages = async () => {
+      // Message-first startup: the latest projected page replaces the old
+      // full-log replay. The page is newest-last on the wire; reverse it so the
+      // projection's older-merge keeps transcript order.
+      const page = await props.ctx.runtime.messages?.({ limit: 100 });
+      if (!page?.data.length) return;
+      props.ctx.projection.hydrateMessages?.(
+        [...page.data].reverse(),
+        "older",
+      );
+      historyCursor = page.cursor.next;
+      newerHistoryCursor = undefined;
+    };
+
     const openUnresolvedInteractives = (event: Event) => {
       const detail = (
         event as CustomEvent<{ token?: number; sessionID?: string }>
@@ -603,8 +633,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         if (isStaleLoad()) return;
         await refreshSessions();
         if (isStaleLoad()) return;
-        // History replay just finished; take one projection snapshot instead of
-        // cloning once per replayed event.
+        await hydrateRecentMessages();
+        if (isStaleLoad()) return;
+        // Session loading finished; take one projection snapshot instead of
+        // cloning once per raw event.
         const projected = cloneState(props.ctx.projection.getState());
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
@@ -755,12 +787,53 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return output;
   }
 
+  async function loadOlderHistory() {
+    if (!historyCursor || loadingOlderHistory || !historyReplayDone) return;
+    loadingOlderHistory = true;
+    try {
+      const page = await props.ctx.runtime.messages?.({
+        cursor: historyCursor,
+        limit: 100,
+      });
+      if (!page) return;
+      const evicted = props.ctx.projection.hydrateMessages?.(
+        [...page.data].reverse(),
+        "older",
+      );
+      if (evicted) newerHistoryCursor = page.cursor.previous;
+      historyCursor = page.cursor.next;
+    } finally {
+      loadingOlderHistory = false;
+    }
+  }
+
+  async function loadNewerHistory() {
+    if (!newerHistoryCursor || loadingNewerHistory || !historyReplayDone) return;
+    loadingNewerHistory = true;
+    try {
+      const page = await props.ctx.runtime.messages?.({
+        cursor: newerHistoryCursor,
+        limit: 100,
+      });
+      if (!page) return;
+      const evicted = props.ctx.projection.hydrateMessages?.(
+        [...page.data].reverse(),
+        "newer",
+      );
+      if (evicted) historyCursor = page.cursor.next;
+      newerHistoryCursor = page.cursor.previous;
+    } finally {
+      loadingNewerHistory = false;
+    }
+  }
+
   function handleTranscriptScroll() {
     const el = transcriptEl();
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     setFollowBottom(nearBottom);
     setShowJumpToBottom(!nearBottom);
+    if (el.scrollTop < 80) void loadOlderHistory();
   }
 
   function jumpToBottom() {
@@ -777,6 +850,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     setChatFollowBottom(nearBottom);
     setChatShowJumpToBottom(!nearBottom);
+    if (el.scrollTop < 80) void loadOlderHistory();
   }
 
   function jumpChatToBottom() {
