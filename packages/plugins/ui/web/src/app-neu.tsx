@@ -363,18 +363,41 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         });
   onCleanup(() => followObserver?.disconnect());
 
-  // Transcript mounts after the session id is resolved; observe it as soon as
-  // the element appears instead of only during the initial onMount.
+  // Transcripts mount after the session id resolves and again when layout
+  // mode hides/shows a pane. Observe and re-apply pinned-to-bottom whenever an
+  // element (re)appears.
   createEffect(() => {
     const el = transcriptEl();
     const content = el?.querySelector<HTMLElement>(".natalia-transcript-content");
     if (el) followObserver?.observe(el);
     if (content) followObserver?.observe(content);
+    if (el) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (followBottom() && transcriptEl()) {
+            const target = transcriptEl()!;
+            target.scrollTop = target.scrollHeight;
+            transcriptObservedTop = target.scrollTop;
+          }
+        });
+      });
+    }
     const chatEl = chatTranscriptEl();
     const chatContent =
       chatEl?.querySelector<HTMLElement>(".natalia-transcript-content");
     if (chatEl) followObserver?.observe(chatEl);
     if (chatContent) followObserver?.observe(chatContent);
+    if (chatEl) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (chatFollowBottom() && chatTranscriptEl()) {
+            const target = chatTranscriptEl()!;
+            target.scrollTop = target.scrollHeight;
+            chatObservedTop = target.scrollTop;
+          }
+        });
+      });
+    }
   });
 
   async function refreshWorkspaces() {
