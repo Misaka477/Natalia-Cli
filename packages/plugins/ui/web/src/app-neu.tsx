@@ -804,7 +804,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   function rollbackDraftFromMessage(message: Message) {
     const checkpointID = checkpointIDForMessage(message);
-    if (!checkpointID) return;
     const turnID = sessionTurnID(message.id);
     const userMessage = turnID
       ? mainMessages().find(
@@ -813,10 +812,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         )
       : undefined;
     if (userMessage) setMainDraft(userMessage.content);
-    setReviewRequestedTab("checkpoint");
-    setReviewRequestedCheckpointID(checkpointID);
-    setRightVisible(true);
-    setRightTab("diff");
+    if (checkpointID) {
+      setReviewRequestedTab("checkpoint");
+      setReviewRequestedCheckpointID(checkpointID);
+      setRightVisible(true);
+      setRightTab("diff");
+    }
   }
 
   async function physicallyDeleteSelectedSession() {

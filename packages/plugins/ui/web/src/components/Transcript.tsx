@@ -92,7 +92,7 @@ export function Transcript(props: TranscriptProps) {
                       <span>Fork</span>
                     </button>
                   </Show>
-                  <Show when={props.onRollback && props.checkpointIDForMessage?.(message)}>
+                  <Show when={props.onRollback}>
                     <button
                       type="button"
                       class="natalia-message-icon-btn"
