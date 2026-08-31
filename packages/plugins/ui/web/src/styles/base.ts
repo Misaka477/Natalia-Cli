@@ -1705,6 +1705,9 @@ button.neu-settings-item.neu-settings-item-button:active {
 }
 
 /* ===== Left sidebar compact header ===== */
+.neu-sidebar-header .neu-sidebar-title {
+  margin-bottom: 0;
+}
 .neu-sidebar-header {
   display: flex;
   align-items: center;
