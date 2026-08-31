@@ -1,6 +1,6 @@
 import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import fuzzysort from "fuzzysort";
 import { RuntimeInvalidParams, RuntimeRefusal } from "@natalia/contracts";
 import type {
@@ -501,12 +501,19 @@ async function resolveWorkspacePath(root: string, input: string) {
   const path = resolve(root, input);
   if (!contains(root, path))
     throw new RuntimeRefusal("workspace path must remain inside workspace");
-  const real = await realpath(path).catch(() => undefined);
-  if (!real || !contains(root, real))
+  let real = await realpath(path).catch(() => undefined);
+  if (!real) {
+    const parent = dirname(path);
+    const realParent = await realpath(parent).catch(() => undefined);
+    if (!realParent || !contains(root, realParent))
+      throw new RuntimeRefusal("workspace path must remain inside workspace");
+    real = join(realParent, basename(path));
+  }
+  if (!contains(root, real))
     throw new RuntimeRefusal("workspace path must remain inside workspace");
   const catalog = await workspaceCatalog(root);
-  const info = await stat(real);
-  if (isIgnored(relative(root, real), info.isDirectory(), catalog.ignoreRules))
+  const info = await stat(real).catch(() => undefined);
+  if (info && isIgnored(relative(root, real), info.isDirectory(), catalog.ignoreRules))
     throw new RuntimeRefusal("workspace path is ignored by filesystem policy");
   return real;
 }
