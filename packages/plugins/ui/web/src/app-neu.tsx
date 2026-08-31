@@ -644,15 +644,30 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       );
       historyCursor = page.cursor.next;
       newerHistoryCursor = undefined;
-      // The Chat is a separate durable projection. Load it lazily with the same
-      // session entry path so the Chat pane is not empty just because we no
-      // longer replay the raw event log.
-      const chat = await props.ctx.runtime.chatMessages?.();
-      if (chat) props.ctx.projection.hydrateChatMessages?.(chat);
-      // Subagents also live in their own durable registry; load them lazily
-      // through the same session-entry path instead of replaying raw events.
-      const subagents = await props.ctx.runtime.subagents?.();
-      if (subagents) props.ctx.projection.hydrateSubagents?.(subagents);
+      // Chat and subagents are secondary surfaces. Hydrate them in the
+      // background so the primary transcript paints first and does not wait
+      // for extra RPCs before the first visible frame.
+      const loadToken = (globalThis as unknown as {
+        __nataliaSessionLoadToken?: number;
+      }).__nataliaSessionLoadToken;
+      void (async () => {
+        const chat = await props.ctx.runtime.chatMessages?.();
+        if (
+          chat &&
+          loadToken ===
+            (globalThis as unknown as { __nataliaSessionLoadToken?: number })
+              .__nataliaSessionLoadToken
+        )
+          props.ctx.projection.hydrateChatMessages?.(chat);
+        const subagents = await props.ctx.runtime.subagents?.();
+        if (
+          subagents &&
+          loadToken ===
+            (globalThis as unknown as { __nataliaSessionLoadToken?: number })
+              .__nataliaSessionLoadToken
+        )
+          props.ctx.projection.hydrateSubagents?.(subagents);
+      })();
     };
 
     const openUnresolvedInteractives = (event: Event) => {
