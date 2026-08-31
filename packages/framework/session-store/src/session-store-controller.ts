@@ -105,6 +105,7 @@ export function createSessionStoreController(input: {
       if (!sqliteStore) sqliteStore = new SqliteSessionStore(databasePath);
       retainSqliteStore(databasePath, sqliteStore);
       sqliteStorePath = databasePath;
+      console.warn("[session-store] workspaceRoot:", input.workspaceRoot);
       console.warn("[session-store] sqlite db:", databasePath);
       const startup = sqliteStore.create(
         input.sessionID(),
@@ -240,6 +241,7 @@ export function createSessionStoreController(input: {
   }
 
   async function appendEvent(session: SessionRecord, event: RuntimeEvent) {
+    console.warn("[session-write] appendEvent", session.id, event.type);
     if (sqliteStore) await sqliteStore.appendEventAsync(session.id, event);
     else await sessionStore.save(session);
   }
