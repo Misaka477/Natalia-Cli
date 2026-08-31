@@ -89,6 +89,29 @@ test("sqlite init preserves existing active JSON session history", async () => {
   await controller.close();
 });
 
+test("sqlite mode deletes a legacy JSON session not yet imported", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-session-store-delete-legacy-"),
+  );
+  const json = new JsonSessionStore(join(root, ".natalia", "sessions"));
+  await json.save(
+    createSessionRecord("ses_legacy_delete" as SessionID, "Legacy Delete"),
+  );
+  const controller = createSessionStoreController({
+    workspaceRoot: root,
+    sessionID: () => "ses_host" as SessionID,
+    useSqliteStore: true,
+    attachments: createAttachmentService(root),
+  });
+
+  await controller.init();
+  await controller.delete("ses_legacy_delete" as SessionID);
+
+  const after = new JsonSessionStore(join(root, ".natalia", "sessions"));
+  expect(await after.load("ses_legacy_delete" as SessionID)).toBeUndefined();
+  await controller.close();
+});
+
 test("session store controller archives and restores a session without deleting it", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-archive-"));
   const controller = createSessionStoreController({

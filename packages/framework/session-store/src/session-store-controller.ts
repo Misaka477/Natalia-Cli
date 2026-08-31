@@ -393,11 +393,16 @@ export function createSessionStoreController(input: {
       throw new Error("cannot delete the active runtime session");
     const store = sqliteStore as SqliteSessionStore | undefined;
     if (store) {
-      if (!store.get(id as SessionID))
+      const durable = store.get(id as SessionID);
+      const legacy = await sessionStore.load(id as SessionID);
+      if (!durable && !legacy)
         throw new Error(`session not found: ${id}`);
-      store.delete(id as SessionID);
+      if (durable) store.delete(id as SessionID);
+      if (legacy) await sessionStore.delete(id as SessionID);
       const removedAttachments = await input.attachments.cleanup(
-        store.referencedAttachments(),
+        durable
+          ? store.referencedAttachments()
+          : input.attachments.referencedForSessions(await sessionStore.list()),
       );
       return { id, removedAttachments: removedAttachments.length };
     }
