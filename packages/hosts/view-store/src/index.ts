@@ -129,6 +129,17 @@ export {
  * working when the runtime adds an event.
  */
 export function applyEvent(state: AppState, event: RuntimeEvent): void {
+  const projectedSession = state.sessionID ?? state.activeSessionID;
+  if (
+    projectedSession &&
+    event.sessionID &&
+    event.sessionID !== projectedSession &&
+    event.type !== "session.created" &&
+    event.type !== "session.ready" &&
+    event.type !== "session.title.updated" &&
+    !event.type.startsWith("workspace.")
+  )
+    return;
   if (event.agentID) {
     // Events belonging to a subagent are projected into that subagent's own
     // isolated state, so the main Natalia/Navi transcript and the subagent

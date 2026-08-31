@@ -1216,3 +1216,23 @@ test("chat activity follows its own lifecycle without replacing main activity", 
   });
   expect(state.chatActivity).toBeUndefined();
 });
+
+test("events from another session do not mix into the current transcript", () => {
+  const state = initialState();
+  applyEvent(state, {
+    type: "session.created",
+    sessionID: "ses_a" as SessionID,
+    title: "A",
+  });
+  applyEvent(state, submitted("t_a", "from a"));
+  applyEvent(state, {
+    ...submitted("t_b", "from b"),
+    sessionID: "ses_b" as SessionID,
+  });
+  applyEvent(state, {
+    type: "session.ready",
+    sessionID: "ses_b" as SessionID,
+  });
+  expect(state.sessionID).toBe("ses_a");
+  expect(state.messages.map((block) => block.text)).toEqual(["from a"]);
+});

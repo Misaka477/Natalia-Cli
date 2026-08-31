@@ -1767,6 +1767,7 @@ export type RuntimeClient = {
   submitAndWait?(input: string | SubmitInput): Promise<SubmittedTurn>;
   submitInput?(input: SubmitInput): Promise<SubmittedTurn>;
   history?(options?: {
+    sessionID?: string;
     after?: number;
     offset?: number;
     limit?: number;

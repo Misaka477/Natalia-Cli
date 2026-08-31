@@ -95,9 +95,11 @@ export function applyWorkspaceEvent(
       } else {
         existing.workspaceID = event.workspaceID;
       }
-      state.activeWorkspaceID = event.workspaceID;
-      state.activeSessionID = event.sessionID;
-      state.sessionID = event.sessionID;
+      if (!state.sessionID || state.sessionID === event.sessionID) {
+        state.activeWorkspaceID = event.workspaceID;
+        state.activeSessionID = event.sessionID;
+        state.sessionID = event.sessionID;
+      }
       return true;
     }
   }

@@ -23,11 +23,11 @@ export function createTranscriptSurface(
       );
       if (!sessionStore)
         throw new Error("session store unavailable (natalia-session-store)");
-      return await sessionStore.history(
-        ctx.ports.getSessionID(),
-        ctx.ports.getSession()?.events ?? [],
-        options,
-      );
+      const requestedID = options.sessionID ?? ctx.ports.getSessionID();
+      const attached = ctx.ports.getSession();
+      const fallback =
+        attached && attached.id === requestedID ? (attached.events ?? []) : [];
+      return await sessionStore.history(requestedID, fallback, options);
     },
     async messages(options = {}) {
       await ctx.ports.getReady();

@@ -249,6 +249,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     createSignal(false);
   let historyReplayDone = false;
   let userSelectedSession = false;
+  let sessionsRefreshToken = 0;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
@@ -321,8 +322,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     if (roots) setWorkspaces(roots);
   }
 
+  function sessionRecency(session: RuntimeSessionSummary) {
+    return new Date(session.lastAccessedAt ?? session.createdAt).getTime();
+  }
+
   async function refreshSessions() {
+    const token = ++sessionsRefreshToken;
     const sessions = await props.ctx.runtime.sessionList?.();
+    if (token !== sessionsRefreshToken) return;
     if (sessions) {
       setSessionList(sessions);
       if (!userSelectedSession && sessions.length) {
@@ -336,11 +343,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         } else if (!selectedSessionID()) {
           const recent = sessions
             .filter((session) => !session.archived)
-            .sort((a, b) => {
-              const at = new Date(b.lastAccessedAt ?? b.createdAt).getTime();
-              const bt = new Date(a.lastAccessedAt ?? a.createdAt).getTime();
-              return bt - at;
-            });
+            .sort((a, b) => sessionRecency(b) - sessionRecency(a));
           const fallback = recent[0] ?? sessions[0];
           if (fallback) {
             setSelectedSessionID(fallback.id);
@@ -489,6 +492,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           __nataliaReplayingHistory?: boolean;
         }).__nataliaReplayingHistory;
         if (replaying) return;
+        const currentSession = selectedSessionID() || state().sessionID;
+        if (
+          currentSession &&
+          event.sessionID &&
+          event.sessionID !== currentSession
+        )
+          return;
         if (event.type === "approval.request" && historyReplayDone) {
           setCurrentApproval(event);
           setPermissionOpen(true);
@@ -513,11 +523,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // requests are not re-opened because their response events clear them
     // from the view-store pending state during replay.
     const resetProjectionForSessionSwitch = () => {
+      historyReplayDone = false;
       setFollowBottom(true);
       setShowJumpToBottom(false);
       setChatFollowBottom(true);
       setChatShowJumpToBottom(false);
+      setMainDraft("");
+      setChatDraft("");
+      setCurrentApproval(null);
+      setPermissionOpen(false);
+      setCurrentQuestion(null);
+      setQuestionOpen(false);
       props.ctx.projection.reset?.();
+      const projected = cloneState(props.ctx.projection.getState());
+      setState(projected);
     };
     const unsubscribePanels = props.ctx.host?.subscribePanels(() => {
       setPanelRevision((revision) => revision + 1);
@@ -567,15 +586,23 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ),
     );
 
-    const openUnresolvedInteractives = () => {
+    const openUnresolvedInteractives = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ token?: number; sessionID?: string }>
+      ).detail;
+      const replayGlobal = globalThis as unknown as {
+        __nataliaReplayingHistory?: boolean;
+        __nataliaSessionLoadToken?: number;
+      };
+      const isStaleLoad = () =>
+        detail?.token !== undefined &&
+        replayGlobal.__nataliaSessionLoadToken !== undefined &&
+        detail.token !== replayGlobal.__nataliaSessionLoadToken;
+      if (isStaleLoad()) return;
       void (async () => {
-        const replayGlobal = globalThis as unknown as {
-          __nataliaReplayingHistory?: boolean;
-        };
-        // Defensive: even if a replay path failed to clear the flag, live
-        // events after this point must be rendered normally.
-        replayGlobal.__nataliaReplayingHistory = false;
+        if (isStaleLoad()) return;
         await refreshSessions();
+        if (isStaleLoad()) return;
         // History replay just finished; take one projection snapshot instead of
         // cloning once per replayed event.
         const projected = cloneState(props.ctx.projection.getState());
@@ -590,6 +617,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         });
         setTimeout(scrollToBottom, 200);
         const interactive = await props.ctx.runtime.pendingInteractive?.();
+        if (isStaleLoad()) return;
         const approvals = interactive?.approvals ?? [];
         if (approvals.length) {
           setCurrentApproval(approvals[0]);
@@ -1020,11 +1048,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     (layoutMode() === "compact" && !leftVisible() && !rightVisible()) ||
     (layoutMode() === "tiny" && naviOpen() && !leftVisible() && !rightVisible());
 
+  let leftSidebarWasVisible = true;
   createEffect(() => {
-    if (leftVisible()) {
+    const visible = leftVisible();
+    if (visible && !leftSidebarWasVisible) {
       void refreshSessions();
       void refreshWorkspaces();
     }
+    leftSidebarWasVisible = visible;
   });
 
   return (
@@ -1244,6 +1275,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </span>
             </div>
             <div class="neu-pane-content">
+              <Show when={selectedSessionID() || state().sessionID || "none"} keyed>
               <Transcript
                 messages={mainMessages()}
                 emptyTitle="Natalia 已准备好"
@@ -1253,6 +1285,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 scrollRef={setTranscriptEl}
                 onScroll={handleTranscriptScroll}
               />
+              </Show>
               <Show when={showJumpToBottom()}>
                 <button
                   type="button"
@@ -1335,6 +1368,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </span>
             </div>
             <div class="neu-pane-content">
+              <Show when={selectedSessionID() || state().sessionID || "none"} keyed>
               <Transcript
                 messages={chatMessages()}
                 emptyTitle="向 Navi 提问"
@@ -1344,6 +1378,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 scrollRef={setChatTranscriptEl}
                 onScroll={handleChatTranscriptScroll}
               />
+              </Show>
               <Show when={chatShowJumpToBottom()}>
                 <button
                   type="button"

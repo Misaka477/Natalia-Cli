@@ -274,11 +274,13 @@ export function createSessionStoreController(input: {
     options: { after?: number; offset?: number; limit?: number } = {},
   ) {
     if (sqliteStore) return sqliteStore.loadEventPage(id, options);
+    const record = await sessionStore.load(id);
+    const source = record?.events ?? fallback;
     const after = Math.max(0, options.after ?? 0);
     const offset = Math.max(0, options.offset ?? 0);
     const start = options.offset === undefined ? after : offset;
     const limit = Math.min(2000, Math.max(1, options.limit ?? 100));
-    const page = fallback.slice(start, start + limit + 1);
+    const page = source.slice(start, start + limit + 1);
     return {
       events: page
         .slice(0, limit)

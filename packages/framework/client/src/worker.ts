@@ -1025,7 +1025,8 @@ export async function handleWorkerRequest(
   }
   if (request.method === "runtime.status")
     return await client.runtimeStatus?.();
-  if (request.method === "history") return await client.history?.();
+  if (request.method === "history")
+    return await client.history?.(request.value as never);
   if (request.method === "messages")
     return await client.messages?.(request.value as never);
   if (request.method === "agents") return await client.agents?.();

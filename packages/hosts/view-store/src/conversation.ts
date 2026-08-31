@@ -151,6 +151,7 @@ export function applyConversationEvent(
 ): boolean {
   switch (event.type) {
     case "session.created":
+      if (state.sessionID && state.sessionID !== event.sessionID) return false;
       state.sessionID = event.sessionID;
       state.title = event.title;
       return true;
@@ -159,6 +160,8 @@ export function applyConversationEvent(
       state.title = event.title;
       return true;
     case "session.ready":
+      if (state.sessionID && state.sessionID !== event.sessionID) return false;
+      if (!state.sessionID) state.sessionID = event.sessionID;
       state.status = "ready";
       return true;
     case "turn.submitted":

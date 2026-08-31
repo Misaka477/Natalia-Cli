@@ -1124,6 +1124,7 @@ export async function handleRPCMessage(
       };
     if (body.method === "session.history") {
       optionsGuard(client, "history");
+      const sessionID = optionalStringParam(body.params, "sessionID");
       const after = body.params?.after;
       const offset = body.params?.offset;
       const limit = body.params?.limit;
@@ -1155,6 +1156,7 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.history({
+          sessionID,
           after: typeof after === "number" ? after : undefined,
           offset: typeof offset === "number" ? offset : undefined,
           limit: typeof limit === "number" ? limit : undefined,
