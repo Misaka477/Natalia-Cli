@@ -263,8 +263,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   type ScrollAnchor = { id: string; top: number };
   let transcriptPagingAnchor: ScrollAnchor | undefined;
   let chatPagingAnchor: ScrollAnchor | undefined;
-  let mainScrollPending = false;
-  let chatScrollPending = false;
+  let mainForceScroll = false;
+  let chatForceScroll = false;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
@@ -315,19 +315,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
-        // Wait one more frame so Solid has committed the new row into the DOM
-        // before measuring scrollHeight. This prevents scrolling to the old
-        // bottom when a streaming delta just added content.
-        if (mainScrollPending || chatScrollPending) {
+        if (mainForceScroll) {
+          mainForceScroll = false;
           requestAnimationFrame(() => {
-            if (mainScrollPending && followBottom() && transcriptEl()) {
-              mainScrollPending = false;
+            if (transcriptEl()) {
               const el = transcriptEl()!;
               el.scrollTop = el.scrollHeight;
               transcriptObservedTop = el.scrollTop;
             }
-            if (chatScrollPending && chatFollowBottom() && chatTranscriptEl()) {
-              chatScrollPending = false;
+          });
+        }
+        if (chatForceScroll) {
+          chatForceScroll = false;
+          requestAnimationFrame(() => {
+            if (chatTranscriptEl()) {
               const el = chatTranscriptEl()!;
               el.scrollTop = el.scrollHeight;
               chatObservedTop = el.scrollTop;
@@ -354,14 +355,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       workspacesRefreshInFlight = undefined;
     });
     return workspacesRefreshInFlight;
-  }
-
-  function schedulePaneScroll(pane: "main" | "chat") {
-    // The projection subscriber owns the actual scroll write: events mark a
-    // pane dirty, and the subscriber scrolls after the next Solid commit so
-    // the new row is already part of scrollHeight.
-    if (pane === "main") mainScrollPending = true;
-    else chatScrollPending = true;
   }
 
   function markStartup(phase: string) {
@@ -587,22 +580,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           event.sessionID !== currentSession
         )
           return;
-        if (
-          event.type.startsWith("chat.") ||
-          event.type.startsWith("collab.")
-        ) {
-          schedulePaneScroll("chat");
-        } else if (
-          event.type.startsWith("turn.") ||
-          event.type.startsWith("content.") ||
-          event.type.startsWith("thinking.") ||
-          event.type === "tool.update" ||
-          event.type.startsWith("approval.") ||
-          event.type.startsWith("question.") ||
-          event.type === "policy.decision"
-        ) {
-          schedulePaneScroll("main");
-        }
         if (event.type === "approval.request" && historyReplayDone) {
           setCurrentApproval(event);
           setPermissionOpen(true);
@@ -610,6 +587,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         if (event.type === "question.request" && historyReplayDone) {
           setCurrentQuestion(event);
           setQuestionOpen(true);
+        }
+        if (event.type === "turn.submitted" && event.delivery !== "queue") {
+          mainForceScroll = true;
+          setFollowBottom(true);
+        }
+        if (event.type === "chat.message.added" && event.role === "user") {
+          chatForceScroll = true;
+          setChatFollowBottom(true);
         }
         if (
           event.type.startsWith("workspace.") ||
