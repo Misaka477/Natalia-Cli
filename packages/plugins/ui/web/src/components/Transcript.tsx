@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { marked } from "marked";
 import type { Message } from "../types";
 
@@ -18,12 +18,157 @@ export interface TranscriptProps {
   onScroll?: (event: Event) => void;
 }
 
+const DEFAULT_ROW_HEIGHT = 80;
+const OVERSCAN = 8;
+
 export function Transcript(props: TranscriptProps) {
+  const [heights, setHeights] = createSignal<Map<string, number>>(new Map());
+  const [windowStart, setWindowStart] = createSignal(0);
+  const [windowEnd, setWindowEnd] = createSignal(0);
+  let scrollEl: HTMLDivElement | undefined;
+  let firstAnchorId: string | undefined;
+  let firstAnchorOffset = 0;
+  let lastMessageCount = -1;
+  const rowRefs = new Map<string, HTMLDivElement>();
+  const observedElements = new Map<string, HTMLDivElement>();
+
+  const resizeObserver =
+    typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver((entries) => {
+          let dirty = false;
+          const next = new Map(heights());
+          for (const entry of entries) {
+            const el = entry.target as HTMLElement;
+            const id = el.dataset.messageId;
+            if (!id) continue;
+            const height = Math.ceil(entry.contentRect.height);
+            if (next.get(id) !== height) {
+              next.set(id, height);
+              dirty = true;
+            }
+          }
+          if (dirty) {
+            setHeights(next);
+          }
+        });
+
+  onCleanup(() => resizeObserver?.disconnect());
+
+  function heightOf(id: string) {
+    return heights().get(id) ?? DEFAULT_ROW_HEIGHT;
+  }
+
+  function prefix(list: Message[]) {
+    const result = [0];
+    let sum = 0;
+    for (const message of list) {
+      sum += heightOf(message.id);
+      result.push(sum);
+    }
+    return result;
+  }
+
+  function indexAt(prefixList: number[], y: number) {
+    let lo = 0;
+    let hi = prefixList.length - 1;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi + 1) / 2);
+      if (prefixList[mid] <= y) lo = mid;
+      else hi = mid - 1;
+    }
+    return Math.max(0, Math.min(lo, props.messages.length - 1));
+  }
+
+  function updateWindow(el: HTMLDivElement) {
+    const list = props.messages;
+    if (list.length === 0) {
+      setWindowStart(0);
+      setWindowEnd(0);
+      return;
+    }
+    const prefixList = prefix(list);
+    const first = indexAt(prefixList, el.scrollTop);
+    const last = indexAt(prefixList, el.scrollTop + el.clientHeight);
+    const start = Math.max(0, first - OVERSCAN);
+    const end = Math.min(list.length, last + OVERSCAN + 1);
+    setWindowStart(start);
+    setWindowEnd(end);
+
+    // Keep a stable visible anchor for prepend compensation.
+    const anchored = list[first];
+    if (anchored) {
+      firstAnchorId = anchored.id;
+      firstAnchorOffset = el.scrollTop - (prefixList[first] ?? 0);
+    }
+  }
+
+  function compensateForPrepend() {
+    if (!scrollEl || !firstAnchorId) return;
+    const anchorEl = rowRefs.get(firstAnchorId);
+    if (!anchorEl) return;
+    const containerTop = scrollEl.getBoundingClientRect().top;
+    const rowTop = anchorEl.getBoundingClientRect().top;
+    scrollEl.scrollTop =
+      scrollEl.scrollTop + rowTop - containerTop - firstAnchorOffset;
+    updateWindow(scrollEl);
+  }
+
+  createEffect(() => {
+    const count = props.messages.length;
+    if (lastMessageCount >= 0 && count > lastMessageCount && scrollEl) {
+      requestAnimationFrame(() => compensateForPrepend());
+    }
+    lastMessageCount = count;
+    if (scrollEl) updateWindow(scrollEl);
+  });
+
+  onMount(() => {
+    if (scrollEl) updateWindow(scrollEl);
+  });
+
+  function registerRow(id: string, el?: HTMLDivElement) {
+    if (!el) {
+      const previous = observedElements.get(id);
+      if (previous) {
+        resizeObserver?.unobserve(previous);
+        observedElements.delete(id);
+      }
+      rowRefs.delete(id);
+      return;
+    }
+    const previous = observedElements.get(id);
+    if (previous && previous !== el) resizeObserver?.unobserve(previous);
+    observedElements.set(id, el);
+    rowRefs.set(id, el);
+    el.dataset.messageId = id;
+    resizeObserver?.observe(el);
+    const height = Math.ceil(el.getBoundingClientRect().height);
+    if (height > 0 && heights().get(id) !== height) {
+      const next = new Map(heights());
+      next.set(id, height);
+      setHeights(next);
+    }
+  }
+
+  const visible = () => {
+    const start = windowStart();
+    const end = windowEnd();
+    if (start === 0 && end === 0) return props.messages.slice(0, 0);
+    return props.messages.slice(start, end);
+  };
+
   return (
     <div
       class="natalia-transcript"
-      ref={props.scrollRef}
-      onScroll={props.onScroll}
+      ref={(el) => {
+        scrollEl = el;
+        props.scrollRef?.(el);
+      }}
+      onScroll={(event) => {
+        props.onScroll?.(event);
+        if (scrollEl) updateWindow(scrollEl);
+      }}
     >
       <Show
         when={props.messages.length > 0}
@@ -48,15 +193,25 @@ export function Transcript(props: TranscriptProps) {
           </div>
         }
       >
-        <For each={props.messages}>
+        <div style={{ height: `${prefix(props.messages)[windowStart()] ?? 0}px` }} />
+        <For each={visible()}>
           {(message) => (
             <MessageRow
               message={message}
               assistantName={props.assistantName}
               assistantInitial={props.assistantInitial}
+              ref={(el) => registerRow(message.id, el)}
             />
           )}
         </For>
+        <div
+          style={{
+            height: `${
+              (prefix(props.messages)[props.messages.length] ?? 0) -
+              (prefix(props.messages)[windowEnd()] ?? 0)
+            }px`,
+          }}
+        />
       </Show>
     </div>
   );
@@ -66,6 +221,7 @@ export interface MessageRowProps {
   message: Message;
   assistantName?: string;
   assistantInitial?: string;
+  ref?: (el: HTMLDivElement) => void;
 }
 
 export function MessageRow(props: MessageRowProps) {
@@ -82,7 +238,11 @@ export function MessageRow(props: MessageRowProps) {
   const isSystem = () => props.message.role === "system";
 
   return (
-    <article class="natalia-message" data-role={props.message.role}>
+    <article
+      class="natalia-message"
+      data-role={props.message.role}
+      ref={props.ref}
+    >
       <div class="natalia-message-header">
         <div class="natalia-message-avatar" data-role={props.message.role}>
           {isUser() ? "U" : isSystem() ? "S" : (props.assistantInitial ?? "N")}
