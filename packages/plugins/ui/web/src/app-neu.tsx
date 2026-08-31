@@ -1290,13 +1290,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               : "assistant",
         thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
         ...(msg.role === "user" && msg.attachments?.length
-          ? {
-              attachments: msg.attachments.map((attachment) => ({
-                path: attachment.path,
-                name: attachment.filename,
-                mediaType: attachment.mediaType,
-              })),
-            }
+          ? (() => {
+              console.warn("[msg-attachments]", msg.id, msg.attachments.length);
+              return {
+                attachments: msg.attachments.map((attachment) => ({
+                  path: attachment.path,
+                  name: attachment.filename,
+                  mediaType: attachment.mediaType,
+                })),
+              };
+            })()
           : {}),
         content: msg.text + (msg.pendingText || ""),
         status:
