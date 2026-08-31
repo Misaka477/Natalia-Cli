@@ -931,7 +931,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return state().activeTurn ? "Working" : "Ready";
   }
 
-  const mainMessages = (): Message[] =>
+  const mainMessages = createMemo<Message[]>(() =>
     (state().messages ?? []).map((msg, idx) => {
       if (msg.tool) {
         return {
@@ -976,9 +976,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             (msg.pendingText ?? "").length > 0,
         ),
       };
-    });
+    }),
+  );
 
-  const chatMessages = (): Message[] =>
+  const chatMessages = createMemo<Message[]>(() =>
     (state().chatMessages ?? []).map((msg, idx) => {
       if (msg.tool) {
         return {
@@ -1007,7 +1008,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             msg.role !== "user",
         ),
       };
-    });
+    }),
+  );
 
   function startLeftResize(event: PointerEvent) {
     event.preventDefault();
