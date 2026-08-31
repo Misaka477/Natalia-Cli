@@ -61,6 +61,9 @@ function TreeRow(props: {
   onAction?: () => void;
   actionTitle?: string;
   actionIcon?: string;
+  bulkMode?: boolean;
+  bulkSelected?: boolean;
+  onBulkToggle?: () => void;
   editValue?: string;
   onEditChange?: (value: string) => void;
   onEditCommit?: () => void;
@@ -72,8 +75,14 @@ function TreeRow(props: {
       class="neu-tree-row"
       data-selected={props.selected}
       style={{ "padding-left": `${18 + (props.depth ?? 1) * 14}px` }}
-      onClick={props.onClick}
+      onClick={() => {
+        if (props.bulkMode) props.onBulkToggle?.();
+        else props.onClick?.();
+      }}
     >
+      <Show when={props.bulkMode}>
+        <span class="neu-bulk-check" data-checked={props.bulkSelected} />
+      </Show>
       {props.status ? <StatusDot status={props.status} /> : null}
       <Show
         when={props.editValue !== undefined}
@@ -81,7 +90,7 @@ function TreeRow(props: {
           <>
             <span class="neu-tree-label">{props.label}</span>
             {props.badge ? <span class="neu-badge">{props.badge}</span> : null}
-            <Show when={props.onAction}>
+            <Show when={!props.bulkMode && props.onAction}>
               <button
                 type="button"
                 class="neu-tree-edit"
@@ -94,7 +103,7 @@ function TreeRow(props: {
                 {props.actionIcon}
               </button>
             </Show>
-            <Show when={props.onEdit}>
+            <Show when={!props.bulkMode && props.onEdit}>
               <button
                 type="button"
                 class="neu-tree-edit"
@@ -140,6 +149,9 @@ function SessionTree(props: {
   onRemoveWorkspace?: (workspaceID: string) => void;
   onRestore?: (sessionID: string) => void;
   onArchive?: (sessionID: string) => void;
+  bulkMode?: boolean;
+  bulkSelected?: (id: string) => boolean;
+  onBulkToggle?: (id: string) => void;
 }) {
   const [editingID, setEditingID] = createSignal<string | null>(null);
   const [draftName, setDraftName] = createSignal("");
@@ -213,6 +225,9 @@ function SessionTree(props: {
                   }
                   actionTitle={session.archived ? "恢复会话" : "归档会话"}
                   actionIcon={session.archived ? "↩" : "↓"}
+                  bulkMode={props.bulkMode}
+                  bulkSelected={props.bulkSelected?.(session.id)}
+                  onBulkToggle={props.onBulkToggle ? () => props.onBulkToggle?.(session.id) : undefined}
                   onEdit={() => {
                     setEditingID(session.id);
                     setDraftName(session.name);
@@ -272,6 +287,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [sessionSearchOpen, setSessionSearchOpen] = createSignal(false);
   const [sessionQuery, setSessionQuery] = createSignal("");
   const [sidebarMenuOpen, setSidebarMenuOpen] = createSignal(false);
+  const [bulkSelectMode, setBulkSelectMode] = createSignal(false);
+  const [bulkSelected, setBulkSelected] = createSignal<Set<string>>(new Set());
   const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
@@ -674,6 +691,86 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         "warning",
       );
     }
+  }
+
+  function toggleBulkSelected(id: string) {
+    const next = new Set(bulkSelected());
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setBulkSelected(next);
+  }
+
+  function toggleSelectAllVisible() {
+    const ids = visibleSessions().map((session) => session.id);
+    if (!ids.length) return;
+    const next = new Set(bulkSelected());
+    const allSelected = ids.every((id) => next.has(id));
+    for (const id of ids) {
+      if (allSelected) next.delete(id);
+      else next.add(id);
+    }
+    setBulkSelected(next);
+  }
+
+  async function switchAwayFromActiveIfNeeded(ids: string[]) {
+    const active = state().sessionID;
+    if (!active || !ids.includes(active)) return true;
+    const other = sessionList().find(
+      (session) => !ids.includes(session.id) && !session.archived,
+    );
+    if (other) {
+      await props.ctx.runtime.sessionAttach?.(other.id);
+      setSelectedSessionID(other.id);
+      setSelectedSession(other.title);
+      return true;
+    }
+    const created = await props.ctx.runtime.sessionNew?.();
+    if (!created?.sessionID) {
+      props.ctx.runtime.diagnostic?.(
+        "批量操作当前唯一会话前需要先创建并切换到新会话。",
+        "warning",
+      );
+      return false;
+    }
+    await props.ctx.runtime.sessionAttach?.(created.sessionID);
+    setSelectedSessionID(created.sessionID);
+    setSelectedSession("新会话");
+    return true;
+  }
+
+  async function bulkArchiveSelected() {
+    const ids = [...bulkSelected()];
+    if (!ids.length) return;
+    if (!(await switchAwayFromActiveIfNeeded(ids))) return;
+    for (const id of ids) await props.ctx.runtime.sessionArchive?.(id);
+    await refreshSessions();
+    setBulkSelected(new Set());
+    setBulkSelectMode(false);
+  }
+
+  async function bulkRestoreSelected() {
+    const ids = [...bulkSelected()];
+    if (!ids.length) return;
+    for (const id of ids) await props.ctx.runtime.sessionRestore?.(id);
+    await refreshSessions();
+    setBulkSelected(new Set());
+    setBulkSelectMode(false);
+  }
+
+  async function bulkDeleteSelected() {
+    const ids = [...bulkSelected()];
+    if (!ids.length) return;
+    if (
+      !window.confirm(
+        `确定彻底删除选中的 ${ids.length} 个会话吗？这会删除会话记录和附件，无法恢复。`,
+      )
+    )
+      return;
+    if (!(await switchAwayFromActiveIfNeeded(ids))) return;
+    for (const id of ids) await props.ctx.runtime.sessionDelete?.(id);
+    await refreshSessions();
+    setBulkSelected(new Set());
+    setBulkSelectMode(false);
   }
 
   async function physicallyDeleteSelectedSession() {
@@ -1703,6 +1800,23 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <button
                   type="button"
                   class="neu-icon-btn"
+                  title="批量选择"
+                  data-active={bulkSelectMode()}
+                  onClick={() => {
+                    setSidebarMenuOpen(false);
+                    setSessionSearchOpen(false);
+                    setBulkSelectMode((value) => !value);
+                    setBulkSelected(new Set());
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.3" />
+                    <path d="M5.2 8.2L7 10L10.8 6.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="neu-icon-btn"
                   title="新建会话"
                   onClick={() => {
                     setSidebarMenuOpen(false);
@@ -1722,6 +1836,49 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 value={sessionQuery()}
                 onInput={(event) => setSessionQuery(event.currentTarget.value)}
               />
+            </Show>
+            <Show when={bulkSelectMode()}>
+              <div class="neu-bulk-bar">
+                <span class="neu-bulk-count">已选 {bulkSelected().size} 项</span>
+                <button
+                  type="button"
+                  class="neu-bulk-btn"
+                  onClick={() => toggleSelectAllVisible()}
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  class="neu-bulk-btn"
+                  onClick={() => void bulkArchiveSelected()}
+                >
+                  归档
+                </button>
+                <button
+                  type="button"
+                  class="neu-bulk-btn"
+                  onClick={() => void bulkRestoreSelected()}
+                >
+                  恢复
+                </button>
+                <button
+                  type="button"
+                  class="neu-bulk-btn neu-bulk-btn-danger"
+                  onClick={() => void bulkDeleteSelected()}
+                >
+                  删除
+                </button>
+                <button
+                  type="button"
+                  class="neu-bulk-btn"
+                  onClick={() => {
+                    setBulkSelectMode(false);
+                    setBulkSelected(new Set());
+                  }}
+                >
+                  取消
+                </button>
+              </div>
             </Show>
             <Show when={sidebarMenuOpen()}>
               <div class="neu-sidebar-menu">
@@ -1790,6 +1947,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onArchive={(sessionID) => {
                   void archiveSession(sessionID);
                 }}
+                bulkMode={bulkSelectMode()}
+                bulkSelected={(sessionID) => bulkSelected().has(sessionID)}
+                onBulkToggle={(sessionID) => toggleBulkSelected(sessionID)}
               />
             </div>
           </aside>

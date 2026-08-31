@@ -1772,6 +1772,53 @@ button.neu-settings-item.neu-settings-item-button:active {
   box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
 }
 
+/* ===== Bulk session select ===== */
+.neu-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-bulk-count {
+  font-size: 11px;
+  color: var(--neu-muted);
+  margin-right: 4px;
+}
+.neu-bulk-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.neu-bulk-btn:hover {
+  color: var(--neu-accent);
+}
+.neu-bulk-btn-danger {
+  color: var(--neu-error);
+}
+.neu-bulk-check {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--neu-muted);
+  background: transparent;
+}
+.neu-bulk-check[data-checked="true"] {
+  background: var(--neu-accent);
+  border-color: var(--neu-accent);
+  box-shadow: inset 0 0 0 2px var(--neu-bg-light);
+}
+
 /* ===== Left sidebar compact header ===== */
 .neu-sidebar-header .neu-sidebar-title {
   margin-bottom: 0;
