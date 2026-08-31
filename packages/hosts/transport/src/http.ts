@@ -149,19 +149,6 @@ export function resolveAuthorization(
 
 export { credentialSessions } from "./rpc";
 
-function replayEvents(
-  events: Array<{ id: number; event: RuntimeEvent }>,
-  request: Request,
-) {
-  const url = new URL(request.url);
-  const marker =
-    request.headers.get("last-event-id") ?? url.searchParams.get("since");
-  if (marker === null) return [];
-  const since = Number(marker);
-  if (!Number.isFinite(since) || since < 0) return [];
-  return events.filter((event) => event.id > since);
-}
-
 const SSE_PREAMBLE = ": natalia runtime events\n\n";
 const TASK_EXECUTION_RECORD_LIMIT = 100;
 const TASK_EXECUTION_EVENT_LIMIT = 500;
@@ -198,7 +185,6 @@ export function createRuntimeHttpServer(
 ): RuntimeHttpServer {
   const subscribers = new Set<EventSubscriber>();
   const encoder = new TextEncoder();
-  const eventBuffer: Array<{ id: number; event: RuntimeEvent }> = [];
   const taskExecutions = new Map<
     string,
     {
@@ -224,8 +210,6 @@ export function createRuntimeHttpServer(
         subscribers.size,
       );
       const id = nextEventID++;
-      eventBuffer.push({ id, event });
-      if (eventBuffer.length > 500) eventBuffer.shift();
       for (const subscriber of subscribers) {
         // Session filtering happens here, server-side: a subscriber that asked
         // for session A never sees an event carrying session B, not even its
@@ -536,7 +520,6 @@ export function createRuntimeHttpServer(
                 });
               return;
             }
-            replay(replayEvents(eventBuffer, request));
           },
           cancel() {
             subscribers.delete(subscriber);
