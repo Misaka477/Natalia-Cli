@@ -250,6 +250,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let historyReplayDone = false;
   let userSelectedSession = false;
   let sessionsRefreshToken = 0;
+  let sessionsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let historyCursor: string | undefined;
   let newerHistoryCursor: string | undefined;
   let loadingOlderHistory = false;
@@ -332,6 +333,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   function sessionRecency(session: RuntimeSessionSummary) {
     return new Date(session.lastAccessedAt ?? session.createdAt).getTime();
+  }
+
+  function debouncedRefreshSessions(delay = 150) {
+    if (sessionsRefreshTimer) clearTimeout(sessionsRefreshTimer);
+    sessionsRefreshTimer = setTimeout(() => {
+      sessionsRefreshTimer = undefined;
+      void refreshSessions();
+    }, delay);
   }
 
   async function refreshSessions() {
@@ -529,7 +538,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           event.type === "session.ready"
         ) {
           void refreshWorkspaces();
-          void refreshSessions();
+          debouncedRefreshSessions();
         }
       }),
     );
@@ -1141,7 +1150,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   createEffect(() => {
     const visible = leftVisible();
     if (visible && !leftSidebarWasVisible) {
-      void refreshSessions();
+      debouncedRefreshSessions();
       void refreshWorkspaces();
     }
     leftSidebarWasVisible = visible;
