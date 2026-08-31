@@ -394,6 +394,24 @@ export function createWebRuntimeClient(
     return new Date(session.lastAccessedAt ?? session.createdAt).getTime();
   }
 
+  const SESSION_SELECTION_KEY = "natalia:current-session";
+
+  function readPersistedSessionID(): string | undefined {
+    try {
+      return localStorage.getItem(SESSION_SELECTION_KEY) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function persistSessionID(sessionID: string) {
+    try {
+      localStorage.setItem(SESSION_SELECTION_KEY, sessionID);
+    } catch {
+      // Persistence is best-effort; session keep working without it.
+    }
+  }
+
 
   let attachChain = Promise.resolve();
 
@@ -407,6 +425,7 @@ export function createWebRuntimeClient(
         });
         if (!isCurrentSessionLoad(token)) return undefined;
         activeSessionID = result?.id ?? id;
+        persistSessionID(activeSessionID);
         try {
           await call("session.touch", { id });
         } catch {
@@ -443,7 +462,11 @@ export function createWebRuntimeClient(
       const recent = sessions
         .filter((session) => !session.archived)
         .sort((a, b) => sessionRecency(b) - sessionRecency(a));
-      newest = recent[0];
+      const persisted = readPersistedSessionID();
+      const target =
+        sessions.find((session) => session.id === persisted && !session.archived) ??
+        recent[0];
+      newest = target;
       if (newest) {
         if (sessionLoadToken !== 0) return newest;
         const attached = await attachAndReplay(newest.id);
