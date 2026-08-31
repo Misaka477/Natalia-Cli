@@ -256,6 +256,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let newerHistoryCursor: string | undefined;
   let loadingOlderHistory = false;
   let loadingNewerHistory = false;
+  let transcriptObservedTop = 0;
+  let chatObservedTop = 0;
+  type ScrollAnchor = { id: string; top: number };
+  let transcriptPagingAnchor: ScrollAnchor | undefined;
+  let chatPagingAnchor: ScrollAnchor | undefined;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
@@ -310,10 +315,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           if (followBottom() && transcriptEl()) {
             const el = transcriptEl()!;
             el.scrollTop = el.scrollHeight;
+            transcriptObservedTop = el.scrollTop;
           }
           if (chatFollowBottom() && chatTranscriptEl()) {
             const el = chatTranscriptEl()!;
             el.scrollTop = el.scrollHeight;
+            chatObservedTop = el.scrollTop;
           }
         }, 0);
         const currentTurn = projected.activeTurn;
@@ -673,8 +680,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
         const scrollToBottom = () => {
-          if (transcriptEl()) transcriptEl()!.scrollTop = transcriptEl()!.scrollHeight;
-          if (chatTranscriptEl()) chatTranscriptEl()!.scrollTop = chatTranscriptEl()!.scrollHeight;
+          if (transcriptEl()) {
+            const el = transcriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            transcriptObservedTop = el.scrollTop;
+          }
+          if (chatTranscriptEl()) {
+            const el = chatTranscriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            chatObservedTop = el.scrollTop;
+          }
         };
         requestAnimationFrame(() => {
           requestAnimationFrame(scrollToBottom);
@@ -833,9 +848,46 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return output;
   }
 
+  function captureScrollAnchor(
+    el: HTMLDivElement | undefined,
+  ): ScrollAnchor | undefined {
+    if (!el) return undefined;
+    const containerRect = el.getBoundingClientRect();
+    for (const row of el.querySelectorAll<HTMLElement>("[data-message-id]")) {
+      const rect = row.getBoundingClientRect();
+      if (
+        rect.bottom > containerRect.top &&
+        rect.top < containerRect.bottom
+      ) {
+        const id = row.dataset.messageId;
+        if (id) return { id, top: rect.top - containerRect.top };
+      }
+    }
+    return undefined;
+  }
+
+  function restoreScrollAnchor(
+    el: HTMLDivElement | undefined,
+    anchor: ScrollAnchor | undefined,
+    ledger: "transcript" | "chat",
+  ) {
+    if (!el || !anchor) return;
+    const row = [...el.querySelectorAll<HTMLElement>("[data-message-id]")].find(
+      (candidate) => candidate.dataset.messageId === anchor.id,
+    );
+    if (!row) return;
+    const containerRect = el.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    el.scrollTop = el.scrollTop + (rowRect.top - containerRect.top) - anchor.top;
+    if (ledger === "transcript") transcriptObservedTop = el.scrollTop;
+    else chatObservedTop = el.scrollTop;
+  }
+
   async function loadOlderHistory() {
     if (!historyCursor || loadingOlderHistory || !historyReplayDone) return;
     loadingOlderHistory = true;
+    const anchor = captureScrollAnchor(transcriptEl());
+    transcriptPagingAnchor = anchor;
     try {
       const page = await props.ctx.runtime.messages?.({
         cursor: historyCursor,
@@ -850,6 +902,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       historyCursor = page.cursor.next;
     } finally {
       loadingOlderHistory = false;
+      const pendingAnchor = transcriptPagingAnchor;
+      transcriptPagingAnchor = undefined;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() =>
+          restoreScrollAnchor(transcriptEl(), pendingAnchor, "transcript"),
+        );
+      });
     }
   }
 
@@ -876,9 +935,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   function handleTranscriptScroll() {
     const el = transcriptEl();
     if (!el) return;
+    const floor = Math.max(0, el.scrollHeight - el.clientHeight);
+    const ledger = Math.min(transcriptObservedTop, floor);
+    const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
+    if (!movedByReader) {
+      transcriptObservedTop = el.scrollTop;
+      return;
+    }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     setFollowBottom(nearBottom);
     setShowJumpToBottom(!nearBottom);
+    transcriptObservedTop = el.scrollTop;
     if (el.scrollTop < 80) void loadOlderHistory();
   }
 
@@ -886,6 +953,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const el = transcriptEl();
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+    transcriptObservedTop = el.scrollTop;
     setFollowBottom(true);
     setShowJumpToBottom(false);
   }
@@ -893,16 +961,24 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   function handleChatTranscriptScroll() {
     const el = chatTranscriptEl();
     if (!el) return;
+    const floor = Math.max(0, el.scrollHeight - el.clientHeight);
+    const ledger = Math.min(chatObservedTop, floor);
+    const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
+    if (!movedByReader) {
+      chatObservedTop = el.scrollTop;
+      return;
+    }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     setChatFollowBottom(nearBottom);
     setChatShowJumpToBottom(!nearBottom);
-    if (el.scrollTop < 80) void loadOlderHistory();
+    chatObservedTop = el.scrollTop;
   }
 
   function jumpChatToBottom() {
     const el = chatTranscriptEl();
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+    chatObservedTop = el.scrollTop;
     setChatFollowBottom(true);
     setChatShowJumpToBottom(false);
   }

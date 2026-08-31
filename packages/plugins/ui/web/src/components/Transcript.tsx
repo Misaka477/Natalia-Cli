@@ -82,7 +82,11 @@ export function MessageRow(props: MessageRowProps) {
   const isSystem = () => props.message.role === "system";
 
   return (
-    <article class="natalia-message" data-role={props.message.role}>
+    <article
+      class="natalia-message"
+      data-role={props.message.role}
+      data-message-id={props.message.id}
+    >
       <div class="natalia-message-header">
         <div class="natalia-message-avatar" data-role={props.message.role}>
           {isUser() ? "U" : isSystem() ? "S" : (props.assistantInitial ?? "N")}
