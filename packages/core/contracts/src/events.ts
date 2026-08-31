@@ -1783,6 +1783,15 @@ export type RuntimeClient = {
     order?: "asc" | "desc";
     cursor?: string;
   }): Promise<RuntimeMessagePage>;
+  /**
+   * Uploads a raw attachment (base64) into the runtime attachment store and
+   * returns a durable LocalAttachment path usable in submit attachments.
+   */
+  uploadAttachment?(input: {
+    name: string;
+    mediaType: string;
+    data: string;
+  }): Promise<LocalAttachment>;
   pendingInteractive?(): Promise<PendingInteractiveRequests>;
   /**
    * Reconcile the workspace watcher hints against the current workspace and

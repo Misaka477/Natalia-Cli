@@ -254,6 +254,7 @@ export const RPC_ROUTE_MEMBERS = {
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
+  "attachment.upload": "uploadAttachment",
   "submit.input": "submitInput",
   // P8 C2: the always-available Live Work Chat conversation (read + rollback).
   "chat.messages": "chatMessages",
@@ -2199,6 +2200,24 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.subagents?.(),
+      };
+    }
+    if (body.method === "attachment.upload") {
+      optionsGuard(client, "uploadAttachment");
+      const params = body.params ?? {};
+      const name = params.name;
+      const mediaType = params.mediaType;
+      const data = params.data;
+      if (typeof name !== "string" || !name)
+        throw invalidParams("attachment.upload.params.name must be a string");
+      if (typeof mediaType !== "string" || !mediaType)
+        throw invalidParams("attachment.upload.params.mediaType must be a string");
+      if (typeof data !== "string" || !data)
+        throw invalidParams("attachment.upload.params.data must be a base64 string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.uploadAttachment?.({ name, mediaType, data }),
       };
     }
     if (body.method === "chat.model.profile") {

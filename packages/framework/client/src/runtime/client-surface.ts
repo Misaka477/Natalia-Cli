@@ -6,6 +6,7 @@ import { createPlansRuntime } from "./collaboration/plans";
 import { createExtensionsRuntime } from "./commands/extensions-runtime";
 import type { RuntimeContext } from "./context";
 import { createIntelligenceSurface } from "./engineering-intelligence/intelligence";
+import { createAttachmentRuntime } from "./attachment-runtime";
 import { createSubagentRuntime } from "./subagent-runtime";
 import { createMcpRuntime } from "./mcp-runtime";
 import type { RealRuntimeClientOptions } from "./options";
@@ -47,6 +48,7 @@ export function createClientSurface(
     ...createSandboxRuntime(ctx, options.episodeID),
     ...createTeamRuntime(ctx),
     ...createSubagentRuntime(ctx),
+    ...createAttachmentRuntime(ctx),
     ...createSessionsSurface(ctx, options),
     ...createMcpRuntime(ctx, options.globalConfigPath),
     ...createExtensionsRuntime(ctx),

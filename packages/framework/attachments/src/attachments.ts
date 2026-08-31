@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
 import { modelVisibleEvents, type SessionRecord } from "@natalia/session";
@@ -35,6 +35,29 @@ export async function storeLocalAttachments(input: {
       } satisfies LocalAttachment;
     }),
   );
+}
+
+export async function storeLocalAttachmentBytes(input: {
+  workspaceRoot: string;
+  name: string;
+  mediaType: string;
+  data: Uint8Array;
+}): Promise<LocalAttachment> {
+  const root = resolve(input.workspaceRoot);
+  const store = join(root, ".natalia", "attachments");
+  await mkdir(store, { recursive: true, mode: 0o700 });
+  const id = `att_${randomUUID().replace(/-/gu, "")}`;
+  const filename = basename(input.name || "attachment");
+  const target = join(store, `${id}-${filename}`);
+  await writeFile(target, input.data, { mode: 0o600 });
+  return {
+    id,
+    path: relative(root, target),
+    filename,
+    mediaType: input.mediaType as LocalAttachment["mediaType"],
+    byteLength: input.data.byteLength,
+    sha256: createHash("sha256").update(input.data).digest("hex"),
+  } satisfies LocalAttachment;
 }
 
 export async function attachmentDataURL(

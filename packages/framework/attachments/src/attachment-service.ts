@@ -7,6 +7,7 @@ import {
   cleanupUnreferencedAttachments,
   isTextAttachment,
   referencedAttachmentsForSessions,
+  storeLocalAttachmentBytes,
   storeLocalAttachments,
 } from "./attachments";
 
@@ -15,6 +16,7 @@ export function createAttachmentService(
 ): AttachmentService {
   return {
     store: (paths: string[]) => storeLocalAttachments({ workspaceRoot, paths }),
+    storeBytes: (input) => storeLocalAttachmentBytes({ workspaceRoot, ...input }),
     dataURL: (attachment: LocalAttachment) =>
       attachmentDataURL(workspaceRoot, attachment),
     text: (attachment: LocalAttachment) =>

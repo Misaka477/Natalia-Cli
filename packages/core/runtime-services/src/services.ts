@@ -120,6 +120,11 @@ export type TerminalInput = TerminalControllerInput;
 
 export type AttachmentService = {
   store(paths: string[]): Promise<LocalAttachment[]>;
+  storeBytes(input: {
+    name: string;
+    mediaType: string;
+    data: Uint8Array;
+  }): Promise<LocalAttachment>;
   dataURL(attachment: LocalAttachment): Promise<string>;
   text(attachment: LocalAttachment): Promise<string>;
   isText(attachment: LocalAttachment): boolean;

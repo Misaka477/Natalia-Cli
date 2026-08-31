@@ -443,17 +443,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const dataUrl = String(reader.result ?? "");
         const base64 = dataUrl.split(",")[1];
         if (!base64) return;
-        const path = `.natalia-paste-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}.png`;
-        void props.ctx.runtime.workspaceWrite?.({
-          path,
-          content: base64,
-          encoding: "base64",
-        }).then(() => {
+        void props.ctx.runtime.uploadAttachment?.({
+          name: file.name || "clipboard.png",
+          mediaType: file.type || "image/png",
+          data: base64,
+        }).then((attachment) => {
           setAttachments([
             ...current,
-            { path, previewUrl: dataUrl, name: file.name || "clipboard.png" },
+            {
+              path: attachment.path,
+              previewUrl: dataUrl,
+              name: attachment.filename,
+            },
           ]);
         });
       };
