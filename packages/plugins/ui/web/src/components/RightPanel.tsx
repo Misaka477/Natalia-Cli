@@ -326,6 +326,11 @@ export function ReviewPane(props: {
   const selectedFile = () =>
     changesForTab().find((change) => change.path === selectedForTab());
 
+  const userCheckpoints = () =>
+    checkpoints().filter((checkpoint) => checkpoint.reason !== "rollback_safety");
+  const safetyCheckpoints = () =>
+    checkpoints().filter((checkpoint) => checkpoint.reason === "rollback_safety");
+
   const selectedTeamPR = () =>
     teamPRs().find((pr) => pr.sandboxID === selectedSandbox());
 
@@ -484,16 +489,40 @@ export function ReviewPane(props: {
         </div>
       </Show>
       <Show when={tab() === "checkpoint" && checkpoints().length}>
-        <div class="review-entity-control">
-          <NeuSelect
-            value={selectedCheckpoint() ?? ""}
-            options={checkpoints().map((checkpoint) => ({
-              value: checkpoint.id,
-              label: `${checkpoint.id} · ${checkpoint.changes} changes · step ${checkpoint.step}`,
-            }))}
-            onChange={(value) => void selectCheckpoint(value)}
-          />
-        </div>
+        <Show when={userCheckpoints().length}>
+          <div class="review-section-label">我的快照</div>
+          <div class="review-entity-control">
+            <NeuSelect
+              value={
+                userCheckpoints().some((c) => c.id === selectedCheckpoint())
+                  ? selectedCheckpoint() ?? ""
+                  : ""
+              }
+              options={userCheckpoints().map((checkpoint) => ({
+                value: checkpoint.id,
+                label: `${checkpoint.id} · ${checkpoint.changes} changes · step ${checkpoint.step}`,
+              }))}
+              onChange={(value) => void selectCheckpoint(value)}
+            />
+          </div>
+        </Show>
+        <Show when={safetyCheckpoints().length}>
+          <div class="review-section-label">安全点</div>
+          <div class="review-entity-control">
+            <NeuSelect
+              value={
+                safetyCheckpoints().some((c) => c.id === selectedCheckpoint())
+                  ? selectedCheckpoint() ?? ""
+                  : ""
+              }
+              options={safetyCheckpoints().map((checkpoint) => ({
+                value: checkpoint.id,
+                label: `${checkpoint.id} · ${checkpoint.changes} changes · step ${checkpoint.step}`,
+              }))}
+              onChange={(value) => void selectCheckpoint(value)}
+            />
+          </div>
+        </Show>
       </Show>
       <div class="review-header">
         <div class="review-title">
