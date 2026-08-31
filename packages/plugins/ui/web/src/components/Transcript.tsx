@@ -18,6 +18,8 @@ export interface TranscriptProps {
   onScroll?: (event: Event) => void;
   loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
   onFork?: (turnID: string) => void;
+  onRollback?: (message: Message) => void;
+  checkpointIDForMessage?: (message: Message) => string | undefined;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -88,6 +90,21 @@ export function Transcript(props: TranscriptProps) {
                         <path d="M5 5.6V10.4M5 10.4H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
                       </svg>
                       <span>Fork</span>
+                    </button>
+                  </Show>
+                  <Show when={props.onRollback && props.checkpointIDForMessage?.(message)}>
+                    <button
+                      type="button"
+                      class="natalia-message-icon-btn"
+                      title="回滚到此处"
+                      onClick={() => props.onRollback?.(message)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M6.5 3.5L3 7L6.5 10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M7 7H13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                        <path d="M11 4.5L13 7L11 9.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                      <span>回滚</span>
                     </button>
                   </Show>
                 </div>

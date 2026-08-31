@@ -204,10 +204,16 @@ function statusFor(operation: string) {
 export function ReviewPane(props: {
   runtime?: RuntimeClient;
   requestedTab?: ReviewSubTab;
+  requestedCheckpointID?: string;
 } = {}) {
   const [tab, setTab] = createSignal<ReviewSubTab>("git");
   createEffect(() => {
     if (props.requestedTab) setTab(props.requestedTab);
+    if (props.requestedCheckpointID) {
+      setTab("checkpoint");
+      setSelectedCheckpoint(props.requestedCheckpointID);
+      void loadCheckpointPreview(props.requestedCheckpointID);
+    }
   });
   const [loaded, setLoaded] = createSignal(false);
   const [gitChanges, setGitChanges] = createSignal<DiffItem[]>([]);

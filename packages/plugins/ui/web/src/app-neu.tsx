@@ -39,6 +39,11 @@ const MAX_SIDEBAR_WIDTH = 360;
 const MIN_RIGHT_WIDTH = 440;
 const MAX_RIGHT_WIDTH = 560;
 
+function sessionTurnID(messageID: string) {
+  if (!messageID.startsWith("turn_")) return undefined;
+  return messageID.replace(/:(?:user|assistant|thinking|system)$/u, "");
+}
+
 function rightPanelMaxWidth(): number {
   if (typeof window === "undefined") return MAX_RIGHT_WIDTH;
   // On small/compact layouts the right panel is the most space-hungry
@@ -293,6 +298,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
   const [reviewRequestedTab, setReviewRequestedTab] = createSignal<"git" | "sandbox" | "checkpoint">("git");
+  const [reviewRequestedCheckpointID, setReviewRequestedCheckpointID] = createSignal<string | undefined>();
   const [panelRevision, setPanelRevision] = createSignal(0);
   const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
     createSignal(false);
@@ -785,6 +791,32 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         "warning",
       );
     }
+  }
+
+  function checkpointIDForMessage(message: Message) {
+    const turnID = sessionTurnID(message.id);
+    if (!turnID) return undefined;
+    const checkpoint = state()
+      .checkpoints.filter((candidate) => candidate.turnID === turnID)
+      .sort((a, b) => b.sequence - a.sequence)[0];
+    return checkpoint?.id;
+  }
+
+  function rollbackDraftFromMessage(message: Message) {
+    const checkpointID = checkpointIDForMessage(message);
+    if (!checkpointID) return;
+    const turnID = sessionTurnID(message.id);
+    const userMessage = turnID
+      ? mainMessages().find(
+          (candidate) =>
+            sessionTurnID(candidate.id) === turnID && candidate.role === "user",
+        )
+      : undefined;
+    if (userMessage) setMainDraft(userMessage.content);
+    setReviewRequestedTab("checkpoint");
+    setReviewRequestedCheckpointID(checkpointID);
+    setRightVisible(true);
+    setRightTab("diff");
   }
 
   async function physicallyDeleteSelectedSession() {
@@ -2010,6 +2042,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onScroll={handleTranscriptScroll}
                 loadAttachmentUrl={loadAttachmentUrl}
                 onFork={forkSessionAtTurn}
+                onRollback={rollbackDraftFromMessage}
+                checkpointIDForMessage={checkpointIDForMessage}
               />
               </Show>
               <Show when={showJumpToBottom()}>
@@ -2259,7 +2293,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             </div>
             <div class="neu-secondary-content">
               <Show when={rightTab() === "diff"}>
-                <ReviewPane runtime={props.ctx.runtime} requestedTab={reviewRequestedTab()} />
+                <ReviewPane
+                  runtime={props.ctx.runtime}
+                  requestedTab={reviewRequestedTab()}
+                  requestedCheckpointID={reviewRequestedCheckpointID()}
+                />
               </Show>
               <Show when={rightTab() === "todo"}>
                 <TodoPanel state={state()} />
