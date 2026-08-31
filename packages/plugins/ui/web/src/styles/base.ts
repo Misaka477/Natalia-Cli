@@ -3257,7 +3257,7 @@ button.neu-settings-item.neu-settings-item-button:active {
   gap: 6px;
   flex-shrink: 0;
 }
-.neu-workspace-switch {
+.neu-workspace-item-actions .neu-workspace-switch {
   padding: 6px 14px;
   min-width: 58px;
   background: var(--neu-bg);
@@ -3267,15 +3267,15 @@ button.neu-settings-item.neu-settings-item-button:active {
   font-weight: 600;
   box-shadow: 2px 2px 5px var(--neu-shadow-dark), -2px -2px 5px var(--neu-shadow-light);
 }
-.neu-workspace-switch:hover:not(:disabled) {
+.neu-workspace-item-actions .neu-workspace-switch:hover:not(:disabled) {
   color: var(--neu-accent);
   border-color: var(--neu-accent);
 }
-.neu-workspace-switch:disabled {
+.neu-workspace-item-actions .neu-workspace-switch:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.neu-workspace-remove {
+.neu-workspace-item-actions .neu-workspace-remove {
   padding: 6px 14px;
   min-width: 58px;
   background: color-mix(in srgb, var(--neu-error) 10%, var(--neu-bg));
@@ -3285,7 +3285,7 @@ button.neu-settings-item.neu-settings-item-button:active {
   font-weight: 600;
   box-shadow: 2px 2px 5px var(--neu-shadow-dark), -2px -2px 5px var(--neu-shadow-light);
 }
-.neu-workspace-remove:hover {
+.neu-workspace-item-actions .neu-workspace-remove:hover {
   background: color-mix(in srgb, var(--neu-error) 18%, var(--neu-bg));
 }
 
