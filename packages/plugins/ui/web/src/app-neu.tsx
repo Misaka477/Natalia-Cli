@@ -968,7 +968,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     (state().messages ?? []).map((msg, idx) => {
       if (msg.tool) {
         return {
-          id: `msg-${idx}`,
+          id: msg.id,
           role: "assistant",
           content: "",
           status:
@@ -989,7 +989,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         };
       }
       return {
-        id: `msg-${idx}`,
+        id: msg.id,
         role:
           msg.role === "user"
             ? "user"
@@ -1016,7 +1016,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     (state().chatMessages ?? []).map((msg, idx) => {
       if (msg.tool) {
         return {
-          id: `chat-${idx}`,
+          id: msg.id,
           role: "assistant",
           content: "",
           toolCalls: [
@@ -1031,7 +1031,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         };
       }
       return {
-        id: `chat-${idx}`,
+        id: msg.id,
         role: msg.role === "user" ? "user" : "assistant",
         thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
         content: msg.text + (msg.pendingText || ""),
