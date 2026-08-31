@@ -253,6 +253,7 @@ export const RPC_ROUTE_MEMBERS = {
   "plan.complete": "planCompleted",
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
+  "session.subagents": "subagents",
   "submit.input": "submitInput",
   // P8 C2: the always-available Live Work Chat conversation (read + rollback).
   "chat.messages": "chatMessages",
@@ -2190,6 +2191,14 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionSnapshot(),
+      };
+    }
+    if (body.method === "session.subagents") {
+      optionsGuard(client, "subagents");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.subagents?.(),
       };
     }
     if (body.method === "chat.model.profile") {

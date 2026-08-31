@@ -619,6 +619,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // longer replay the raw event log.
       const chat = await props.ctx.runtime.chatMessages?.();
       if (chat) props.ctx.projection.hydrateChatMessages?.(chat);
+      // Subagents also live in their own durable registry; load them lazily
+      // through the same session-entry path instead of replaying raw events.
+      const subagents = await props.ctx.runtime.subagents?.();
+      if (subagents) props.ctx.projection.hydrateSubagents?.(subagents);
     };
 
     const openUnresolvedInteractives = (event: Event) => {

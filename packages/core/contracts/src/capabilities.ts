@@ -145,6 +145,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   nativeTerminal: [
     "nativeTerminalList",
     "nativeTerminalRead",
+    "nativeTerminalClaimHumanInput",
     "nativeTerminalOpenHub",
     "nativeTerminalRevokeApprovalScope",
     "nativeTerminalReleaseHumanControl",
@@ -182,6 +183,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sessionRestore",
     "sessionExport",
     "sessionAttach",
+    "subagents",
   ],
   /** Tools and prompts contributed by MCP servers. */
   mcp: [

@@ -3,6 +3,7 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   RuntimeProjectedMessage,
+  RuntimeSubagentView,
 } from "@natalia/contracts";
 import type * as ViewStore from "@natalia/view-store";
 import type { AppState } from "@natalia/view-store";
@@ -93,6 +94,9 @@ export type UiProjection = {
   ): boolean;
   hydrateChatMessages?(
     messages: ChatMessageRow[],
+  ): boolean;
+  hydrateSubagents?(
+    subagents: RuntimeSubagentView[],
   ): boolean;
   /** Resets the projected state for a session/workspace switch. */
   reset?(): void;

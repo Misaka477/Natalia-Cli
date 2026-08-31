@@ -98,6 +98,11 @@ export async function createUiPluginHost<TContext = unknown>(
       for (const listener of projectionListeners) listener(state);
       return evicted;
     },
+    hydrateSubagents(subagents) {
+      const changed = viewStore.hydrateSubagents(state, subagents);
+      for (const listener of projectionListeners) listener(state);
+      return changed;
+    },
     reset() {
       state = viewStore.initialState();
       for (const listener of projectionListeners) listener(state);

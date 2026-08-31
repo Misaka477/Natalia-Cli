@@ -106,6 +106,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "sandbox.delete": "sandboxDelete",
   "agent.select": "selectAgent",
   "session.snapshot": "sessionSnapshot",
+  "session.subagents": "subagents",
   "plan.list": "planList",
   "plan.accept": "planAccept",
   "mailbox.list": "mailboxList",
@@ -208,6 +209,7 @@ type WorkerRequest = {
     | "agent.select"
     | "runtime.availability"
     | "session.snapshot"
+    | "session.subagents"
     | "plan.list"
     | "plan.accept"
     | "mailbox.list"
@@ -839,6 +841,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
       >;
     },
+    async subagents() {
+      return (await request("session.subagents")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["subagents"]>>
+      >;
+    },
     async chatSubmit(input) {
       return (await request("chat.submit", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatSubmit"]>>
@@ -1207,6 +1214,8 @@ export async function handleWorkerRequest(
   if (request.method === "constitution.override.approve")
     return await client.approveOverride?.(request.value as never);
   if (request.method === "chat.messages") return await client.chatMessages?.();
+  if (request.method === "session.subagents")
+    return await client.subagents?.();
   if (request.method === "chat.submit")
     return await client.chatSubmit?.(request.value as { text: string });
   if (request.method === "chat.abort") return await client.chatAbort?.();

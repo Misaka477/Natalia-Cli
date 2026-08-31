@@ -170,6 +170,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   sessionSnapshot: "session.snapshot",
   submitInput: "submit.input",
   chatMessages: "chat.messages",
+  subagents: "session.subagents",
   chatSubmit: "chat.submit",
   chatAbort: "chat.abort",
   chatRollback: "chat.rollback",

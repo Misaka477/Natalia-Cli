@@ -37,6 +37,7 @@ import type {
   ChatMessageRow,
   RuntimeEvent,
   RuntimeProjectedMessage,
+  RuntimeSubagentView,
 } from "@natalia/contracts";
 import { applyActivityEvent } from "./activity";
 import { applyChatEvent, applyConversationEvent } from "./conversation";
@@ -303,5 +304,22 @@ export function hydrateChatMessages(
     (row) => !incomingIDs.has(row.id),
   );
   state.chatMessages = [...incoming, ...retained];
+  return true;
+}
+
+
+/**
+ * Hydrates the current subagent registry into the projected subagent tree.
+ * Existing live entries win over this lazy snapshot so a newer subagent.update
+ * that arrived after the RPC still takes precedence.
+ */
+export function hydrateSubagents(
+  state: AppState,
+  subagents: RuntimeSubagentView[],
+): boolean {
+  if (!subagents.length) return false;
+  const incoming: Record<string, RuntimeSubagentView> = {};
+  for (const subagent of subagents) incoming[subagent.id] = subagent;
+  state.subagents = { ...incoming, ...state.subagents };
   return true;
 }

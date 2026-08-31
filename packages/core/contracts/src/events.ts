@@ -1674,6 +1674,12 @@ export type RuntimeSessionSummary = {
     since: string;
   };
 };
+/** Projected subagent view as exposed to clients by the runtime read surface. */
+export type RuntimeSubagentView = Extract<
+  RuntimeEvent,
+  { type: "subagent.update" }
+>;
+
 /** Streaming fragments are transport-live; their completed settlements are durable. */
 export function runtimeEventDurability(
   event: RuntimeEvent,
@@ -2755,6 +2761,12 @@ export type RuntimeClient = {
    * at a message boundary, so the projection returns the effective history.
    */
   chatMessages?(): Promise<ChatMessageRow[]>;
+  /**
+   * Current subagent views for the active session. The runtime keeps subagent
+   * records in its own persistent registry, so this is a lazy read surface; it
+   * does not require replaying the full session event log.
+   */
+  subagents?(): Promise<RuntimeSubagentView[]>;
   /**
    * Rolls the Chat conversation back to a message boundary — the only rollback
    * the Chat may issue, and it never touches workspace/checkpoint state.
