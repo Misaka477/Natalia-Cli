@@ -323,6 +323,19 @@ export function createWebRuntimeClient(
     });
   };
 
+  function markStartup(phase: string) {
+    const global = globalThis as unknown as {
+      __nataliaStartupStart?: number;
+      __nataliaStartupTimings?: Record<string, number>;
+    };
+    global.__nataliaStartupStart ??= performance.now();
+    const timings = (global.__nataliaStartupTimings ??= {});
+    timings[phase] = performance.now() - global.__nataliaStartupStart;
+    console.info(
+      `[startup] ${phase} +${Math.round(timings[phase]!)}ms`,
+    );
+  }
+
   const starts: Array<(event: RuntimeEvent) => void> = [];
   let started = false;
   let sessionLoadToken = 0;
@@ -383,6 +396,7 @@ export function createWebRuntimeClient(
     sessionLoadGlobal().__nataliaReplayingHistory = false;
     liveBufferSessionID = undefined;
     flushLiveBuffer(token);
+    markStartup("session.loaded");
     if (typeof window !== "undefined")
       window.dispatchEvent(
         new CustomEvent("natalia:history-replay-complete", {
@@ -427,6 +441,7 @@ export function createWebRuntimeClient(
         if (!isCurrentSessionLoad(token)) return undefined;
         activeSessionID = result?.id ?? id;
         persistSessionID(activeSessionID);
+        markStartup("session.attach");
         try {
           await call("session.touch", { id });
         } catch {
@@ -460,6 +475,7 @@ export function createWebRuntimeClient(
     let newest: RuntimeSessionSummary | undefined;
     try {
       const sessions = await call<RuntimeSessionSummary[]>("session.list");
+      markStartup("session.list");
       const recent = sessions
         .filter((session) => !session.archived)
         .sort((a, b) => sessionRecency(b) - sessionRecency(a));
@@ -546,6 +562,7 @@ export function createWebRuntimeClient(
         );
         if (!response.ok || !response.body)
           throw new Error(`[web-runtime] sse connect failed: ${response.status}`);
+        markStartup("sse.connected");
 
         const decoder = new TextDecoder();
         let buffer = "";

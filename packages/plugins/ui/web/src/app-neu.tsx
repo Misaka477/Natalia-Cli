@@ -265,7 +265,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let chatPagingAnchor: ScrollAnchor | undefined;
   let mainScrollPending = false;
   let chatScrollPending = false;
-  let scrollFrame: number | undefined;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
   const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
   const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
@@ -316,6 +315,25 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+        // Wait one more frame so Solid has committed the new row into the DOM
+        // before measuring scrollHeight. This prevents scrolling to the old
+        // bottom when a streaming delta just added content.
+        if (mainScrollPending || chatScrollPending) {
+          requestAnimationFrame(() => {
+            if (mainScrollPending && followBottom() && transcriptEl()) {
+              mainScrollPending = false;
+              const el = transcriptEl()!;
+              el.scrollTop = el.scrollHeight;
+              transcriptObservedTop = el.scrollTop;
+            }
+            if (chatScrollPending && chatFollowBottom() && chatTranscriptEl()) {
+              chatScrollPending = false;
+              const el = chatTranscriptEl()!;
+              el.scrollTop = el.scrollHeight;
+              chatObservedTop = el.scrollTop;
+            }
+          });
+        }
         const currentTurn = projected.activeTurn;
         if (currentTurn && activeTurnStartedAtValue() === undefined) {
           setActiveTurnStartedAt(Date.now());
@@ -339,26 +357,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function schedulePaneScroll(pane: "main" | "chat") {
+    // The projection subscriber owns the actual scroll write: events mark a
+    // pane dirty, and the subscriber scrolls after the next Solid commit so
+    // the new row is already part of scrollHeight.
     if (pane === "main") mainScrollPending = true;
     else chatScrollPending = true;
-    if (scrollFrame !== undefined) return;
-    scrollFrame = requestAnimationFrame(() => {
-      scrollFrame = undefined;
-      if (mainScrollPending && followBottom() && transcriptEl()) {
-        mainScrollPending = false;
-        const el = transcriptEl()!;
-        el.scrollTop = el.scrollHeight;
-        transcriptObservedTop = el.scrollTop;
-      }
-      if (chatScrollPending && chatFollowBottom() && chatTranscriptEl()) {
-        chatScrollPending = false;
-        const el = chatTranscriptEl()!;
-        el.scrollTop = el.scrollHeight;
-        chatObservedTop = el.scrollTop;
-      }
-      mainScrollPending = false;
-      chatScrollPending = false;
-    });
   }
 
   function debouncedRefreshWorkspaces(delay = 150) {
@@ -687,6 +690,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       );
       historyCursor = page.cursor.next;
       newerHistoryCursor = undefined;
+      markStartup("main.messages");
       // Chat and subagents are secondary surfaces. Hydrate them in the
       // background so the primary transcript paints first and does not wait
       // for extra RPCs before the first visible frame.
@@ -710,6 +714,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               .__nataliaSessionLoadToken
         )
           props.ctx.projection.hydrateSubagents?.(subagents);
+        markStartup("secondary.loaded");
       })();
     };
 
