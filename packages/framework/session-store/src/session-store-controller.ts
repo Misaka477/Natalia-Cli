@@ -414,6 +414,27 @@ export function createSessionStoreController(input: {
     return { id, removedAttachments: removedAttachments.length };
   }
 
+  async function messageRollback(id: string, turnID: string) {
+    const store = sqliteStore as SqliteSessionStore | undefined;
+    if (store) {
+      const endSeq = store.seqForTurnEnd(id as SessionID, turnID);
+      store.truncateAfter(id as SessionID, endSeq);
+      return { id, rolledBackTo: turnID };
+    }
+    const record = await byID(id);
+    const start = record.events.findIndex(
+      (event) => event.type === "turn.submitted" && event.id === turnID,
+    );
+    if (start < 0) throw new Error(`turn not found: ${turnID}`);
+    const next = record.events.findIndex(
+      (event, index) => index > start && event.type === "turn.submitted",
+    );
+    const end = next === -1 ? record.events.length : next;
+    record.events = record.events.slice(0, end);
+    await sessionStore.save(record);
+    return { id, rolledBackTo: turnID };
+  }
+
   async function create(input_: { id?: string; title?: string }) {
     const id =
       input_.id ?? `ses_${randomUUID().replace(/-/gu, "").slice(0, 16)}`;
@@ -515,6 +536,7 @@ export function createSessionStoreController(input: {
     fork,
     delete: del,
     create,
+    messageRollback,
     setAutoTitle,
     archive,
     restore,

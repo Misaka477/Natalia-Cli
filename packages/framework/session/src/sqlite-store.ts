@@ -343,6 +343,32 @@ export class SqliteSessionStore {
     return fork;
   }
 
+  seqForTurnEnd(sessionID: SessionID, turnID: string): number {
+    const start = this.db
+      .query(
+        `SELECT seq FROM events
+         WHERE session_id = ? AND json_extract(event, '$.type') = 'turn.submitted'
+           AND json_extract(event, '$.id') = ?
+         ORDER BY seq LIMIT 1`,
+      )
+      .get(sessionID, turnID) as { seq: number } | undefined;
+    if (!start) throw new Error(`turn not found: ${turnID}`);
+    const next = this.db
+      .query(
+        `SELECT seq FROM events
+         WHERE session_id = ? AND seq > ? AND json_extract(event, '$.type') = 'turn.submitted'
+         ORDER BY seq LIMIT 1`,
+      )
+      .get(sessionID, start.seq) as { seq: number } | undefined;
+    if (next) return next.seq - 1;
+    const max = this.db
+      .query(
+        `SELECT COALESCE(MAX(seq), 0) AS max_seq FROM events WHERE session_id = ?`,
+      )
+      .get(sessionID) as { max_seq: number };
+    return max.max_seq;
+  }
+
   truncateAfter(sessionID: SessionID, afterSeq: number) {
     this.db.transaction(() => {
       this.run(`DELETE FROM events WHERE session_id = ? AND seq > ?`, [

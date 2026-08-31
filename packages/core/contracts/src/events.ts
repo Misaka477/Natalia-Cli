@@ -2069,6 +2069,10 @@ export type RuntimeClient = {
     turnID: string,
     title?: string,
   ): Promise<RuntimeSessionSummary>;
+  sessionRollbackMessages?(
+    id: string,
+    turnID: string,
+  ): Promise<{ id: string; rolledBackTo: string }>;
   sessionDelete?(
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;

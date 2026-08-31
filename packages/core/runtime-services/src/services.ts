@@ -189,6 +189,10 @@ export interface SessionStoreController {
     turnID: string,
     title?: string,
   ): Promise<RuntimeSessionSummary>;
+  messageRollback(
+    id: string,
+    turnID: string,
+  ): Promise<{ id: string; rolledBackTo: string }>;
   delete(id: string): Promise<{ id: string; removedAttachments: number }>;
   create(input: {
     id?: string;

@@ -16,6 +16,7 @@ type Surface = Pick<
   | "sessionPin"
   | "sessionDuplicate"
   | "sessionFork"
+  | "sessionRollbackMessages"
   | "sessionDelete"
   | "sessionNew"
   | "sessionArchive"
@@ -74,6 +75,10 @@ export function createSessionsSurface(
     async sessionFork(id, turnID, title) {
       await ctx.ports.getReady();
       return await requireSessionStore().fork(id, turnID, title);
+    },
+    async sessionRollbackMessages(id, turnID) {
+      await ctx.ports.getReady();
+      return await requireSessionStore().messageRollback(id, turnID);
     },
     async sessionDelete(id) {
       await ctx.ports.getReady();

@@ -304,6 +304,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     checkpointID?: string;
     label: string;
   } | undefined>();
+  const [rollbackNotice, setRollbackNotice] = createSignal<string | undefined>();
   const [panelRevision, setPanelRevision] = createSignal(0);
   const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
     createSignal(false);
@@ -2120,6 +2121,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   </button>
                 </div>
               </Show>
+              <Show when={!pendingRollback() && rollbackNotice()}>
+                <div class="neu-rollback-banner">
+                  <span>{rollbackNotice()}</span>
+                  <button
+                    type="button"
+                    class="neu-rollback-cancel"
+                    onClick={() => setRollbackNotice(undefined)}
+                  >
+                    知道了
+                  </button>
+                </div>
+              </Show>
               <Composer
                 value={mainDraft()}
                 placeholder="输入消息，使用 @ 提及文件…"
@@ -2141,6 +2154,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                           await props.ctx.runtime.checkpointRollback?.({
                             id: rollback.checkpointID,
                           });
+                        } else if (rollback) {
+                          const sessionID = selectedSessionID() || state().sessionID;
+                          if (sessionID) {
+                            const result =
+                              await props.ctx.runtime.sessionRollbackMessages?.(
+                                sessionID,
+                                rollback.turnID,
+                              );
+                            if (result) {
+                              setRollbackNotice(
+                                `已还原 1 条消息。没有可用的文件检查点，因此未恢复工作区更改。`,
+                              );
+                            }
+                          }
                         }
                         console.log("[web-plugin] send", text);
                         if (paths.length && props.ctx.runtime.submitInput) {

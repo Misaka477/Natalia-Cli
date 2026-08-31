@@ -97,6 +97,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "session.delete": "sessionDelete",
   "session.attach": "sessionAttach",
   "session.fork": "sessionFork",
+  "session.rollback.messages": "sessionRollbackMessages",
   "sandbox.list": "sandboxList",
   "sandbox.diff": "sandboxDiff",
   "sandbox.resources": "sandboxResources",
@@ -201,6 +202,7 @@ type WorkerRequest = {
     | "session.delete"
     | "session.attach"
     | "session.fork"
+    | "session.rollback.messages"
     | "sandbox.list"
     | "sandbox.diff"
     | "sandbox.resources"
@@ -730,6 +732,14 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["sessionFork"]>>
       >;
     },
+    async sessionRollbackMessages(id, turnID) {
+      return (await request("session.rollback.messages", {
+        id,
+        turnID,
+      })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionRollbackMessages"]>>
+      >;
+    },
     async sandboxList() {
       return (await request("sandbox.list")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sandboxList"]>>
@@ -1183,6 +1193,10 @@ export async function handleWorkerRequest(
       title?: string;
     };
     return await client.sessionFork?.(input.id, input.turnID, input.title);
+  }
+  if (request.method === "session.rollback.messages") {
+    const input = request.value as { id: string; turnID: string };
+    return await client.sessionRollbackMessages?.(input.id, input.turnID);
   }
   if (request.method === "sandbox.list") return await client.sandboxList?.();
   if (request.method === "sandbox.diff")

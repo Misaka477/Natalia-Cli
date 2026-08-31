@@ -164,6 +164,7 @@ export const RPC_ROUTE_MEMBERS = {
   "session.pin": "sessionPin",
   "session.duplicate": "sessionDuplicate",
   "session.fork": "sessionFork",
+  "session.rollback.messages": "sessionRollbackMessages",
   "session.delete": "sessionDelete",
   "session.new": "sessionNew",
   "session.archive": "sessionArchive",
@@ -342,6 +343,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "session.pin",
   "session.duplicate",
   "session.fork",
+  "session.rollback.messages",
   "session.delete",
   "session.new",
   "session.archive",
@@ -1264,6 +1266,17 @@ export async function handleRPCMessage(
           stringParam(body.params, "id"),
           stringParam(body.params, "turnID"),
           typeof title === "string" ? title : undefined,
+        ),
+      };
+    }
+    if (body.method === "session.rollback.messages") {
+      optionsGuard(client, "sessionRollbackMessages");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionRollbackMessages?.(
+          stringParam(body.params, "id"),
+          stringParam(body.params, "turnID"),
         ),
       };
     }
