@@ -853,8 +853,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       transcriptEl()?.querySelector<HTMLElement>(".natalia-transcript-content");
     const chatContent =
       chatTranscriptEl()?.querySelector<HTMLElement>(".natalia-transcript-content");
+    // Content growth (streaming, tool cards, images) re-pins via the content
+    // node; viewport/window size changes re-pin via the scrollport itself.
     if (transcriptContent) followObserver?.observe(transcriptContent);
     if (chatContent) followObserver?.observe(chatContent);
+    if (transcriptEl()) followObserver?.observe(transcriptEl());
+    if (chatTranscriptEl()) followObserver?.observe(chatTranscriptEl());
     onCleanup(() => followObserver?.disconnect());
 
     void refreshSessions();
