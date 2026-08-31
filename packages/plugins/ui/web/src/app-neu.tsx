@@ -283,6 +283,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [sandboxOpen, setSandboxOpen] = createSignal(false);
   const [governanceOpen, setGovernanceOpen] = createSignal(false);
 
+  let projectionFramePending = false;
   onCleanup(
     props.ctx.projection.subscribe((next) => {
       const replaying = (globalThis as unknown as {
@@ -293,31 +294,34 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // sessions, so skip the heavy clones until the replay completes and then
       // take one final snapshot in openUnresolvedInteractives.
       if (replaying) return;
-      console.log("[web-plugin] projection update", {
-        messages: next.messages.length,
-        sessions: next.sessions.length,
-        workspaces: next.workspaces.length,
+      // Live events stream as many small deltas per second. Clone the
+      // projection at most once per animation frame and let Solid paint one
+      // batched frame instead of one clone/update per raw event.
+      if (projectionFramePending) return;
+      projectionFramePending = true;
+      requestAnimationFrame(() => {
+        projectionFramePending = false;
+        const projected = cloneState(props.ctx.projection.getState());
+        setState(projected);
+        if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+        setTimeout(() => {
+          if (followBottom() && transcriptEl()) {
+            const el = transcriptEl()!;
+            el.scrollTop = el.scrollHeight;
+          }
+          if (chatFollowBottom() && chatTranscriptEl()) {
+            const el = chatTranscriptEl()!;
+            el.scrollTop = el.scrollHeight;
+          }
+        }, 0);
+        const currentTurn = projected.activeTurn;
+        if (currentTurn && activeTurnStartedAtValue() === undefined) {
+          setActiveTurnStartedAt(Date.now());
+        } else if (!currentTurn && activeTurnStartedAtValue() !== undefined) {
+          setActiveTurnStartedAt(undefined);
+          setTurnElapsedMs(0);
+        }
       });
-      const projected = cloneState(next);
-      setState(projected);
-      if (projected.workspaces.length) setWorkspaces(projected.workspaces);
-      setTimeout(() => {
-        if (followBottom() && transcriptEl()) {
-          const el = transcriptEl()!;
-          el.scrollTop = el.scrollHeight;
-        }
-        if (chatFollowBottom() && chatTranscriptEl()) {
-          const el = chatTranscriptEl()!;
-          el.scrollTop = el.scrollHeight;
-        }
-      }, 0);
-      const currentTurn = projected.activeTurn;
-      if (currentTurn && activeTurnStartedAtValue() === undefined) {
-        setActiveTurnStartedAt(Date.now());
-      } else if (!currentTurn && activeTurnStartedAtValue() !== undefined) {
-        setActiveTurnStartedAt(undefined);
-        setTurnElapsedMs(0);
-      }
     }),
   );
 
