@@ -749,15 +749,31 @@ type RuntimeEventData =
       title: string;
       author: "user" | "live_chat" | "main_agent";
       objective: string;
+      context?: string;
+      nonGoals?: string[];
+      assumptions?: string[];
+      dependencies?: string[];
       steps: Array<{
         id: string;
         title: string;
         detail?: string;
         verification?: string;
+        goal?: string;
+        tasks?: Array<{
+          id: string;
+          content: string;
+          acceptance?: string;
+        }>;
+        evidenceRequirements?: string[];
+        risks?: string[];
+        doneCriteria?: string;
       }>;
       constraints?: string[];
       verification?: string[];
       riskNotes?: string[];
+      overallVerification?: string[];
+      rollbackCriteria?: string[];
+      communicationRules?: string[];
       relatedMailboxMessageID?: string;
       /** The task this plan verifies (E3 task contract). */
       taskID?: string;

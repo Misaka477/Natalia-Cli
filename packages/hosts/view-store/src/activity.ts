@@ -210,10 +210,17 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
           title: event.title,
           author: event.author,
           objective: event.objective,
+          ...(event.context ? { context: event.context } : {}),
+          nonGoals: event.nonGoals ?? [],
+          assumptions: event.assumptions ?? [],
+          dependencies: event.dependencies ?? [],
           steps: event.steps,
           constraints: event.constraints ?? [],
           verification: event.verification ?? [],
           riskNotes: event.riskNotes ?? [],
+          overallVerification: event.overallVerification ?? [],
+          rollbackCriteria: event.rollbackCriteria ?? [],
+          communicationRules: event.communicationRules ?? [],
           ...(event.relatedMailboxMessageID
             ? { relatedMailboxMessageID: event.relatedMailboxMessageID }
             : {}),

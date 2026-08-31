@@ -123,10 +123,27 @@ export type RuntimePorts = {
     input: {
       title: string;
       objective: string;
-      steps: Array<{ id: string; title: string }>;
+      context?: string;
+      nonGoals?: string[];
+      assumptions?: string[];
+      dependencies?: string[];
+      steps: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        verification?: string;
+        goal?: string;
+        tasks?: Array<{ id: string; content: string; acceptance?: string }>;
+        evidenceRequirements?: string[];
+        risks?: string[];
+        doneCriteria?: string;
+      }>;
       constraints?: string[];
       verification?: string[];
       riskNotes?: string[];
+      overallVerification?: string[];
+      rollbackCriteria?: string[];
+      communicationRules?: string[];
     },
     exec: SessionExecutionState | undefined,
   ) => Promise<unknown>;

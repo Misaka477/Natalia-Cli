@@ -272,6 +272,10 @@ export function createChatTools(ctx: RuntimeContext) {
           properties: {
             title: { type: "string" },
             objective: { type: "string" },
+            context: { type: "string" },
+            nonGoals: { type: "array", items: { type: "string" } },
+            assumptions: { type: "array", items: { type: "string" } },
+            dependencies: { type: "array", items: { type: "string" } },
             steps: {
               type: "array",
               items: {
@@ -281,6 +285,22 @@ export function createChatTools(ctx: RuntimeContext) {
                   title: { type: "string" },
                   detail: { type: "string" },
                   verification: { type: "string" },
+                  goal: { type: "string" },
+                  tasks: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        content: { type: "string" },
+                        acceptance: { type: "string" },
+                      },
+                      required: ["id", "content"],
+                    },
+                  },
+                  evidenceRequirements: { type: "array", items: { type: "string" } },
+                  risks: { type: "array", items: { type: "string" } },
+                  doneCriteria: { type: "string" },
                 },
                 required: ["id", "title"],
               },
@@ -288,6 +308,9 @@ export function createChatTools(ctx: RuntimeContext) {
             constraints: { type: "array", items: { type: "string" } },
             verification: { type: "array", items: { type: "string" } },
             riskNotes: { type: "array", items: { type: "string" } },
+            overallVerification: { type: "array", items: { type: "string" } },
+            rollbackCriteria: { type: "array", items: { type: "string" } },
+            communicationRules: { type: "array", items: { type: "string" } },
           },
           required: ["title", "objective", "steps"],
           additionalProperties: false,
@@ -296,15 +319,31 @@ export function createChatTools(ctx: RuntimeContext) {
           const args = parsed as {
             title?: string;
             objective?: string;
+            context?: string;
+            nonGoals?: string[];
+            assumptions?: string[];
+            dependencies?: string[];
             steps?: Array<{
               id: string;
               title: string;
               detail?: string;
               verification?: string;
+              goal?: string;
+              tasks?: Array<{
+                id: string;
+                content: string;
+                acceptance?: string;
+              }>;
+              evidenceRequirements?: string[];
+              risks?: string[];
+              doneCriteria?: string;
             }>;
             constraints?: string[];
             verification?: string[];
             riskNotes?: string[];
+            overallVerification?: string[];
+            rollbackCriteria?: string[];
+            communicationRules?: string[];
           };
           if (
             typeof args.title !== "string" ||
@@ -317,12 +356,25 @@ export function createChatTools(ctx: RuntimeContext) {
               {
                 title: args.title,
                 objective: args.objective,
+                ...(args.context ? { context: args.context } : {}),
+                ...(args.nonGoals ? { nonGoals: args.nonGoals } : {}),
+                ...(args.assumptions ? { assumptions: args.assumptions } : {}),
+                ...(args.dependencies ? { dependencies: args.dependencies } : {}),
                 steps: args.steps,
                 ...(args.constraints ? { constraints: args.constraints } : {}),
                 ...(args.verification
                   ? { verification: args.verification }
                   : {}),
                 ...(args.riskNotes ? { riskNotes: args.riskNotes } : {}),
+                ...(args.overallVerification
+                  ? { overallVerification: args.overallVerification }
+                  : {}),
+                ...(args.rollbackCriteria
+                  ? { rollbackCriteria: args.rollbackCriteria }
+                  : {}),
+                ...(args.communicationRules
+                  ? { communicationRules: args.communicationRules }
+                  : {}),
               },
               exec,
             ),

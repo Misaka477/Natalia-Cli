@@ -290,10 +290,17 @@ export type PlanView = {
   title: string;
   author: "user" | "live_chat" | "main_agent";
   objective: string;
+  context?: string;
+  nonGoals: string[];
+  assumptions: string[];
+  dependencies: string[];
   steps: Extract<RuntimeEvent, { type: "plan.draft.created" }>["steps"];
   constraints: string[];
   verification: string[];
   riskNotes: string[];
+  overallVerification: string[];
+  rollbackCriteria: string[];
+  communicationRules: string[];
   relatedMailboxMessageID?: string;
   taskID?: string;
   supersedesPlanID?: string;

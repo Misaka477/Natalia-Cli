@@ -324,15 +324,31 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       title: string;
       author?: "user" | "live_chat" | "main_agent";
       objective: string;
+      context?: string;
+      nonGoals?: string[];
+      assumptions?: string[];
+      dependencies?: string[];
       steps: Array<{
         id: string;
         title: string;
         detail?: string;
         verification?: string;
+        goal?: string;
+        tasks?: Array<{
+          id: string;
+          content: string;
+          acceptance?: string;
+        }>;
+        evidenceRequirements?: string[];
+        risks?: string[];
+        doneCriteria?: string;
       }>;
       constraints?: string[];
       verification?: string[];
       riskNotes?: string[];
+      overallVerification?: string[];
+      rollbackCriteria?: string[];
+      communicationRules?: string[];
       relatedMailboxMessageID?: string;
       supersedesPlanID?: string;
       taskID?: string;
@@ -366,6 +382,16 @@ export function createMailboxPlans(ctx: RuntimeContext) {
         title: input.title,
         author: input.author ?? "live_chat",
         objective: input.objective,
+        ...(input.context ? { context: input.context } : {}),
+        ...(input.nonGoals && input.nonGoals.length
+          ? { nonGoals: input.nonGoals }
+          : {}),
+        ...(input.assumptions && input.assumptions.length
+          ? { assumptions: input.assumptions }
+          : {}),
+        ...(input.dependencies && input.dependencies.length
+          ? { dependencies: input.dependencies }
+          : {}),
         steps: input.steps,
         ...(input.constraints && input.constraints.length
           ? { constraints: input.constraints }
@@ -375,6 +401,15 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           : {}),
         ...(input.riskNotes && input.riskNotes.length
           ? { riskNotes: input.riskNotes }
+          : {}),
+        ...(input.overallVerification && input.overallVerification.length
+          ? { overallVerification: input.overallVerification }
+          : {}),
+        ...(input.rollbackCriteria && input.rollbackCriteria.length
+          ? { rollbackCriteria: input.rollbackCriteria }
+          : {}),
+        ...(input.communicationRules && input.communicationRules.length
+          ? { communicationRules: input.communicationRules }
           : {}),
         ...(input.relatedMailboxMessageID
           ? { relatedMailboxMessageID: input.relatedMailboxMessageID }
