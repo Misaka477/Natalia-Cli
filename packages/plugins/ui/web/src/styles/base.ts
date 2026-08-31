@@ -1775,8 +1775,7 @@ button.neu-settings-item.neu-settings-item-button:active {
 /* ===== Bulk session select ===== */
 .neu-bulk-bar {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
   padding: 6px;
@@ -1787,16 +1786,24 @@ button.neu-settings-item.neu-settings-item-button:active {
 .neu-bulk-count {
   font-size: 11px;
   color: var(--neu-muted);
-  margin-right: 4px;
+  padding: 0 2px;
+}
+.neu-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .neu-bulk-btn {
-  padding: 4px 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 6px;
   border: none;
   border-radius: 8px;
   background: var(--neu-bg-light);
   color: var(--neu-text);
   font-family: inherit;
   font-size: 11px;
+  text-align: center;
   cursor: pointer;
 }
 .neu-bulk-btn:hover {

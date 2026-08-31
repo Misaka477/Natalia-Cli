@@ -1840,44 +1840,46 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             <Show when={bulkSelectMode()}>
               <div class="neu-bulk-bar">
                 <span class="neu-bulk-count">已选 {bulkSelected().size} 项</span>
-                <button
-                  type="button"
-                  class="neu-bulk-btn"
-                  onClick={() => toggleSelectAllVisible()}
-                >
-                  全选
-                </button>
-                <button
-                  type="button"
-                  class="neu-bulk-btn"
-                  onClick={() => void bulkArchiveSelected()}
-                >
-                  归档
-                </button>
-                <button
-                  type="button"
-                  class="neu-bulk-btn"
-                  onClick={() => void bulkRestoreSelected()}
-                >
-                  恢复
-                </button>
-                <button
-                  type="button"
-                  class="neu-bulk-btn neu-bulk-btn-danger"
-                  onClick={() => void bulkDeleteSelected()}
-                >
-                  删除
-                </button>
-                <button
-                  type="button"
-                  class="neu-bulk-btn"
-                  onClick={() => {
-                    setBulkSelectMode(false);
-                    setBulkSelected(new Set());
-                  }}
-                >
-                  取消
-                </button>
+                <div class="neu-bulk-actions">
+                  <button
+                    type="button"
+                    class="neu-bulk-btn"
+                    onClick={() => toggleSelectAllVisible()}
+                  >
+                    全选
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-bulk-btn"
+                    onClick={() => void bulkArchiveSelected()}
+                  >
+                    归档
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-bulk-btn"
+                    onClick={() => void bulkRestoreSelected()}
+                  >
+                    恢复
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-bulk-btn neu-bulk-btn-danger"
+                    onClick={() => void bulkDeleteSelected()}
+                  >
+                    删除
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-bulk-btn"
+                    onClick={() => {
+                      setBulkSelectMode(false);
+                      setBulkSelected(new Set());
+                    }}
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
             </Show>
             <Show when={sidebarMenuOpen()}>
