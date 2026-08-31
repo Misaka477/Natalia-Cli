@@ -2203,19 +2203,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           await props.ctx.runtime.sessionNew?.();
           await refreshSessions();
         }}
-        onFork={() =>
-          props.ctx.runtime.sessionDuplicate?.(
-            selectedSessionID() || state().sessionID || "current",
-            `Fork of ${selectedSession()}`,
-          )
-        }
-        onRename={async () => {
-          if (!selectedSessionID()) return;
-          const title = window.prompt("新标题", selectedSession());
-          if (!title) return;
-          await props.ctx.runtime.sessionRename?.(selectedSessionID(), title);
-          await refreshSessions();
-        }}
         onPin={async () => {
           if (!selectedSessionID()) return;
           const target = sessionList().find((entry) => entry.id === selectedSessionID());
