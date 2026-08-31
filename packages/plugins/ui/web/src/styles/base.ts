@@ -3410,6 +3410,18 @@ button.neu-settings-item.neu-settings-item-button:active {
   }
   .neu-main-panes { gap: 10px; }
 }
+
+/* Compact but short viewports: horizontal main panes are better than
+   stacking two panes vertically when height is at or below 900px. */
+@media (max-width: 1700px) and (min-width: 1001px) and (max-height: 900px) {
+  .neu-shell[data-compact="true"] .neu-main-panes {
+    flex-direction: row;
+  }
+  .neu-shell[data-compact="true"] .neu-pane-divider {
+    height: auto;
+    width: 8px;
+  }
+}
 @media (max-width: 1000px) {
   .neu-shell { padding: 6px; gap: 6px; }
   .neu-app { gap: 6px; }
