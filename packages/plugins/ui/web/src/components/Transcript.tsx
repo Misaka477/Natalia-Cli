@@ -217,11 +217,22 @@ export function MessageRow(props: MessageRowProps) {
   );
 }
 
+const markdownCache = new Map<string, string>();
+const MARKDOWN_CACHE_LIMIT = 512;
+
 function formatContent(text: string): string {
-  return marked.parse(text, {
+  const cached = markdownCache.get(text);
+  if (cached !== undefined) return cached;
+  const html = marked.parse(text, {
     gfm: true,
     breaks: true,
   }) as string;
+  if (markdownCache.size >= MARKDOWN_CACHE_LIMIT) {
+    const oldest = markdownCache.keys().next().value;
+    if (oldest !== undefined) markdownCache.delete(oldest);
+  }
+  markdownCache.set(text, html);
+  return html;
 }
 
 function escapeHtml(text: string): string {
