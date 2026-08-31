@@ -174,9 +174,14 @@ export async function recoverSession(
   const latestContextCheckpoint = [...projection.replayableEvents]
     .reverse()
     .find((event) => event.type === "context.checkpoint");
+  const checkpointHasSummary =
+    latestContextCheckpoint?.type === "context.checkpoint" &&
+    latestContextCheckpoint.snapshot.entries.some(
+      (entry) => entry.role === "summary",
+    );
   if (sqliteEpoch)
     scope.runtimeContext.restoreDurableCheckpoint(sqliteEpoch.snapshot);
-  else if (latestContextCheckpoint)
+  else if (checkpointHasSummary && latestContextCheckpoint)
     scope.runtimeContext.restoreDurableCheckpoint(
       latestContextCheckpoint.snapshot,
     );
@@ -187,7 +192,9 @@ export async function recoverSession(
     throw new Error("context ledger unavailable (natalia-context-ledger)");
   const recoveryRestoreEvents = sqliteEpoch
     ? sessionStore.contextEventsAfter(scope.sessionID, sqliteEpoch)!
-    : scope.modelVisibleEvents(projection.replayableEvents);
+    : checkpointHasSummary && latestContextCheckpoint
+      ? scope.modelVisibleEvents(projection.replayableEvents)
+      : projection.replayableEvents;
   contextLedgerFactory.restore(
     scope.runtimeContext,
     recoveryRestoreEvents,

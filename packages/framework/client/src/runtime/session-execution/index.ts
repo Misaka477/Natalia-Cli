@@ -149,13 +149,18 @@ export function createSessionExecution(
     const checkpointIndex = latestContextCheckpoint
       ? projection.replayableEvents.indexOf(latestContextCheckpoint)
       : -1;
+    const checkpointHasSummary =
+      latestContextCheckpoint?.type === "context.checkpoint" &&
+      latestContextCheckpoint.snapshot.entries.some(
+        (entry) => entry.role === "summary",
+      );
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
-    else if (latestContextCheckpoint)
+    else if (checkpointHasSummary && latestContextCheckpoint)
       execContext.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
     const restoreEvents =
       epoch
         ? sessionStore.contextEventsAfter(sessionID, epoch)!
-        : latestContextCheckpoint
+        : checkpointHasSummary && latestContextCheckpoint
           ? projection.replayableEvents.slice(checkpointIndex + 1)
           : projection.replayableEvents;
     contextLedgerFactory.restore(execContext, restoreEvents);
