@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS message_turns (
 CREATE INDEX IF NOT EXISTS idx_message_turns_session_seq
   ON message_turns(session_id, start_seq);
 
+CREATE TABLE IF NOT EXISTS message_index_state (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+  last_seq INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS session_inputs (
   session_id TEXT NOT NULL REFERENCES sessions(id),
   id TEXT NOT NULL,
@@ -970,12 +975,28 @@ export class SqliteSessionStore {
   }
 
   private ensureMessageIndex(sessionID: SessionID) {
+    const state = this.db
+      .query(
+        `SELECT last_seq FROM message_index_state WHERE session_id = ?`,
+      )
+      .get(sessionID) as { last_seq: number } | undefined;
+    const lastSeq = state?.last_seq ?? 0;
     this.run(
       `INSERT OR IGNORE INTO message_turns(session_id, turn_id, start_seq)
        SELECT session_id, json_extract(event, '$.id'), seq
        FROM events
-         WHERE session_id = ? AND json_extract(event, '$.type') = 'turn.submitted'`,
-      [sessionID],
+         WHERE session_id = ? AND seq > ? AND json_extract(event, '$.type') = 'turn.submitted'`,
+      [sessionID, lastSeq],
+    );
+    const max = this.db
+      .query(
+        `SELECT COALESCE(MAX(seq), 0) AS max_seq FROM events WHERE session_id = ?`,
+      )
+      .get(sessionID) as { max_seq: number };
+    this.run(
+      `INSERT INTO message_index_state(session_id, last_seq) VALUES (?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET last_seq = excluded.last_seq`,
+      [sessionID, max.max_seq],
     );
   }
 
