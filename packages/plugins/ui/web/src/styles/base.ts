@@ -592,7 +592,14 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   padding: 0 8px;
   position: relative;
   z-index: 5;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
+.neu-pane .natalia-message-group:hover .natalia-message-group-actions,
+.neu-pane .natalia-message-group-actions:focus-within {
+  opacity: 1;
+}
+
 .neu-pane .natalia-message-footer {
   display: flex;
   align-items: center;
