@@ -31,6 +31,9 @@ export async function handleRuntimeCommand(argv: string[]) {
         ".natalia",
         "workspace-checkpoints",
       ),
+      // The web server is the long-lived API surface for a workspace; persist
+      // sessions into the same per-workspace SQLite store used by the TUI.
+      useSqliteStore: true,
     });
     await manager.load();
     const client = createWorkspaceRuntimeClient(manager);

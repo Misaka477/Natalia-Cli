@@ -265,6 +265,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 }
 .neu-tree-row:hover .neu-tree-edit { opacity: 1; }
 .neu-tree-edit:hover { color: var(--neu-accent); }
+.neu-shell[data-left-wide="true"] .neu-tree-edit { opacity: 1; }
 .neu-tree-edit-input {
   flex: 1;
   min-width: 0;
@@ -313,7 +314,28 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   cursor: col-resize;
   background: transparent;
   touch-action: none;
+  position: relative;
+  z-index: 2;
 }
+.neu-resizer::after,
+.neu-right-resizer::after {
+  content: "⋮";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--neu-muted);
+  opacity: 0.55;
+  font-size: 12px;
+  line-height: 1;
+}
+.neu-resizer:hover::after,
+.neu-right-resizer:hover::after {
+  color: var(--neu-accent);
+  opacity: 1;
+}
+
 .neu-resizer:hover,
 .neu-right-resizer:hover {
   background: var(--neu-resizer-hover);
@@ -3374,7 +3396,7 @@ button.neu-settings-item.neu-settings-item-button:active {
     width: min(720px, 66vw);
   }
   .neu-shell[data-compact="true"] .neu-resizer {
-    display: none;
+    display: block;
   }
   .neu-shell[data-compact="true"] .neu-main-panes {
     flex-direction: column;

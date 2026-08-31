@@ -58,6 +58,9 @@ function TreeRow(props: {
   depth?: number;
   onClick?: () => void;
   onEdit?: () => void;
+  onAction?: () => void;
+  actionTitle?: string;
+  actionIcon?: string;
   editValue?: string;
   onEditChange?: (value: string) => void;
   onEditCommit?: () => void;
@@ -78,6 +81,19 @@ function TreeRow(props: {
           <>
             <span class="neu-tree-label">{props.label}</span>
             {props.badge ? <span class="neu-badge">{props.badge}</span> : null}
+            <Show when={props.onAction}>
+              <button
+                type="button"
+                class="neu-tree-edit"
+                title={props.actionTitle}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onAction?.();
+                }}
+              >
+                {props.actionIcon}
+              </button>
+            </Show>
             <Show when={props.onEdit}>
               <button
                 type="button"
@@ -123,6 +139,7 @@ function SessionTree(props: {
   onRename?: (id: string, title: string) => unknown;
   onRemoveWorkspace?: (workspaceID: string) => void;
   onRestore?: (sessionID: string) => void;
+  onArchive?: (sessionID: string) => void;
 }) {
   const [editingID, setEditingID] = createSignal<string | null>(null);
   const [draftName, setDraftName] = createSignal("");
@@ -186,6 +203,17 @@ function SessionTree(props: {
                       props.onSelect(session.id, session.name);
                     }
                   }}
+                  onAction={
+                    session.archived
+                      ? props.onRestore
+                        ? () => props.onRestore?.(session.id)
+                        : undefined
+                      : props.onArchive
+                        ? () => props.onArchive?.(session.id)
+                        : undefined
+                  }
+                  actionTitle={session.archived ? "恢复会话" : "归档会话"}
+                  actionIcon={session.archived ? "↩" : "↓"}
                   onEdit={() => {
                     setEditingID(session.id);
                     setDraftName(session.name);
@@ -578,11 +606,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
   }
 
-  async function removeSelectedSession() {
-    const targetID = selectedSessionID();
-    if (!targetID) return;
+  async function archiveSession(targetID: string) {
     try {
-      if (selectedSessionIsActive()) {
+      if (targetID === selectedSessionID() && selectedSessionIsActive()) {
         const other = sessionList().find(
           (session) => session.id !== targetID && !session.archived,
         );
@@ -608,10 +634,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       await refreshSessions();
     } catch (error: unknown) {
       props.ctx.runtime.diagnostic?.(
-        `移除会话失败：${error instanceof Error ? error.message : String(error)}`,
+        `归档会话失败：${error instanceof Error ? error.message : String(error)}`,
         "warning",
       );
     }
+  }
+
+  async function removeSelectedSession() {
+    const targetID = selectedSessionID();
+    if (!targetID) return;
+    await archiveSession(targetID);
   }
 
   async function restoreSession(sessionID: string) {
@@ -1507,6 +1539,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       data-compact={layoutMode() !== "wide"}
       data-tiny={layoutMode() === "tiny"}
       data-left-open={leftVisible()}
+      data-left-wide={leftWidth() >= 230}
       data-right-open={rightVisible()}
     >
       <header class="neu-topbar">
@@ -1684,6 +1717,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 }}
                 onRestore={(sessionID) => {
                   void restoreSession(sessionID);
+                }}
+                onArchive={(sessionID) => {
+                  void archiveSession(sessionID);
                 }}
               />
             </div>

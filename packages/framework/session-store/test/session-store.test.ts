@@ -55,6 +55,40 @@ test("session store controller initializes sqlite mode and lists sessions", asyn
   expect(controller.status()).toEqual({ initialized: false, mode: "sqlite" });
 });
 
+test("sqlite init preserves existing active JSON session history", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-session-store-active-json-"),
+  );
+  const json = new JsonSessionStore(join(root, ".natalia", "sessions"));
+  const legacy = createSessionRecord(
+    "ses_active_json" as SessionID,
+    "Active JSON",
+  );
+  legacy.events.push({
+    type: "turn.finished",
+    id: "turn_json",
+    sessionID: "ses_active_json",
+  } as never);
+  await json.save(legacy);
+  const controller = createSessionStoreController({
+    workspaceRoot: root,
+    sessionID: () => "ses_active_json" as SessionID,
+    useSqliteStore: true,
+    attachments: createAttachmentService(root),
+  });
+
+  await controller.init();
+  const listing = await controller.list();
+  expect(
+    listing.find((session) => session.id === "ses_active_json"),
+  ).toMatchObject({
+    id: "ses_active_json",
+    title: "Active JSON",
+    events: 1,
+  });
+  await controller.close();
+});
+
 test("session store controller archives and restores a session without deleting it", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-archive-"));
   const controller = createSessionStoreController({
@@ -71,13 +105,17 @@ test("session store controller archives and restores a session without deleting 
   expect(archived).toEqual({ id: "ses_archive", archived: true });
 
   const listing = await controller.list();
-  expect(listing.find((session) => session.id === "ses_archive")?.archived).toBe(true);
+  expect(
+    listing.find((session) => session.id === "ses_archive")?.archived,
+  ).toBe(true);
 
   const restored = await controller.restore("ses_archive");
   expect(restored).toEqual({ id: "ses_archive", archived: false });
 
   const after = await controller.list();
-  expect(after.find((session) => session.id === "ses_archive")?.archived).toBe(false);
+  expect(after.find((session) => session.id === "ses_archive")?.archived).toBe(
+    false,
+  );
 
   await controller.close();
 });

@@ -107,10 +107,16 @@ export function createSessionStoreController(input: {
       sqliteStorePath = databasePath;
       console.warn("[session-store] workspaceRoot:", input.workspaceRoot);
       console.warn("[session-store] sqlite db:", databasePath);
-      const startup = sqliteStore.create(
-        input.sessionID(),
-        input.title ?? "New session",
-      );
+      // Import existing JSON sessions before creating the active SQLite row.
+      // If the active session already has JSON history, importing it first
+      // keeps its events visible in the SQLite-backed list; creating an empty
+      // row first would hide that history until a later on-demand load.
+      for (const legacy of await sessionStore.list()) {
+        if (!sqliteStore.get(legacy.id)) sqliteStore.replace(legacy);
+      }
+      const startup =
+        sqliteStore.get(input.sessionID()) ??
+        sqliteStore.create(input.sessionID(), input.title ?? "New session");
       if (input.title && !startup.metadata.titleSource)
         sqliteStore.updateMetadata(input.sessionID(), {
           titleSource: "manual",

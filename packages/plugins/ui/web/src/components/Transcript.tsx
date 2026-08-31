@@ -84,17 +84,19 @@ function AttachmentImage(props: {
     void props.load(props.attachment.path, props.attachment.mediaType).then(setSrc).catch(() => {});
   });
   return (
-    <Show when={src()}>
-      <img class="natalia-message-image" src={src()} alt={props.attachment.name} />
-    </Show>
-    <Show when={!src()}>
-      <div class="natalia-message-attachment-file">
-        <svg viewBox="0 0 16 16" fill="none" class="natalia-message-attachment-icon">
-          <path d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span>{props.attachment.name}</span>
-      </div>
-    </Show>
+    <>
+      <Show when={src()}>
+        <img class="natalia-message-image" src={src()} alt={props.attachment.name} />
+      </Show>
+      <Show when={!src()}>
+        <div class="natalia-message-attachment-file">
+          <svg viewBox="0 0 16 16" fill="none" class="natalia-message-attachment-icon">
+            <path d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>{props.attachment.name}</span>
+        </div>
+      </Show>
+    </>
   );
 }
 
