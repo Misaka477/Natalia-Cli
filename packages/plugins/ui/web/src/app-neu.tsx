@@ -251,6 +251,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let userSelectedSession = false;
   let sessionsRefreshToken = 0;
   let sessionsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let workspacesRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let historyCursor: string | undefined;
   let newerHistoryCursor: string | undefined;
   let loadingOlderHistory = false;
@@ -329,6 +330,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   async function refreshWorkspaces() {
     const roots = await props.ctx.runtime.workspaceRoots?.();
     if (roots) setWorkspaces(roots);
+  }
+
+  function debouncedRefreshWorkspaces(delay = 150) {
+    if (workspacesRefreshTimer) clearTimeout(workspacesRefreshTimer);
+    workspacesRefreshTimer = setTimeout(() => {
+      workspacesRefreshTimer = undefined;
+      void refreshWorkspaces();
+    }, delay);
   }
 
   function sessionRecency(session: RuntimeSessionSummary) {
@@ -537,7 +546,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           event.type === "session.created" ||
           event.type === "session.ready"
         ) {
-          void refreshWorkspaces();
+          debouncedRefreshWorkspaces();
           debouncedRefreshSessions();
         }
       }),
@@ -1166,7 +1175,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const visible = leftVisible();
     if (visible && !leftSidebarWasVisible) {
       debouncedRefreshSessions();
-      void refreshWorkspaces();
+      debouncedRefreshWorkspaces();
     }
     leftSidebarWasVisible = visible;
   });
