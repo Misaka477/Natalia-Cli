@@ -1,17 +1,13 @@
 import { Show, onCleanup, onMount, For } from "solid-js";
 
 type ActionId =
-  | "new"
   | "pin"
-  | "attach"
   | "snapshot"
   | "rollback"
   | "delete";
 
 const actions: Array<{ id: ActionId; label: string; description: string }> = [
-  { id: "new", label: "新建会话", description: "创建一个新的空白会话" },
   { id: "pin", label: "固定/取消固定", description: "切换会话置顶状态" },
-  { id: "attach", label: "切换到此会话", description: "把 runtime 的当前会话切到选中项" },
   { id: "snapshot", label: "创建快照", description: "保存当前会话状态，方便回滚" },
   { id: "rollback", label: "回滚到快照", description: "恢复到最近一次快照" },
   { id: "delete", label: "删除会话", description: "删除当前会话及其附件" },
@@ -21,9 +17,7 @@ export function SessionActionsPanel(props: {
   open: boolean;
   session: string;
   onClose: () => void;
-  onNew?: () => unknown;
   onPin?: () => unknown;
-  onAttach?: () => unknown;
   onSnapshot?: () => unknown;
   onRollback?: () => unknown;
   onDelete?: () => unknown;
@@ -68,9 +62,7 @@ export function SessionActionsPanel(props: {
                   type="button"
                   class="neu-session-action-row"
                   onClick={() => {
-                    if (action.id === "new") props.onNew?.();
-                    else if (action.id === "pin") props.onPin?.();
-                    else if (action.id === "attach") props.onAttach?.();
+                    if (action.id === "pin") props.onPin?.();
                     else if (action.id === "snapshot") props.onSnapshot?.();
                     else if (action.id === "rollback") props.onRollback?.();
                     else if (action.id === "delete") props.onDelete?.();

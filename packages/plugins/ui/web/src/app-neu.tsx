@@ -2199,20 +2199,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={sessionMenuOpen()}
         session={selectedSession()}
         onClose={() => setSessionMenuOpen(false)}
-        onNew={async () => {
-          await props.ctx.runtime.sessionNew?.();
-          await refreshSessions();
-        }}
         onPin={async () => {
           if (!selectedSessionID()) return;
           const target = sessionList().find((entry) => entry.id === selectedSessionID());
           await props.ctx.runtime.sessionPin?.(selectedSessionID(), !target?.pinned);
-          await refreshSessions();
-        }}
-        onAttach={async () => {
-          if (!selectedSessionID()) return;
-          userSelectedSession = true;
-          await props.ctx.runtime.sessionAttach?.(selectedSessionID());
           await refreshSessions();
         }}
         onSnapshot={() => props.ctx.runtime.snapshot()}
