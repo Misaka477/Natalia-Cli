@@ -103,9 +103,15 @@ async function ensureRuntime() {
 
 function stopOwnedRuntime() {
   if (!runtimeOwned || !runtimeProcess) return;
+  const child = runtimeProcess;
   runtimeOwned = false;
-  runtimeProcess.kill("SIGTERM");
   runtimeProcess = undefined;
+  try {
+    child.kill("SIGTERM");
+    child.kill("SIGKILL");
+  } catch {
+    // already gone
+  }
 }
 
 async function runtimeCall(method, params) {
@@ -347,6 +353,15 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   stopOwnedRuntime();
+});
+
+process.on("SIGINT", () => {
+  stopOwnedRuntime();
+  app.exit(0);
+});
+process.on("SIGTERM", () => {
+  stopOwnedRuntime();
+  app.exit(0);
 });
 
 app.on("window-all-closed", () => {
