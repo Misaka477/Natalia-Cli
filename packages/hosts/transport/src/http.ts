@@ -203,12 +203,6 @@ export function createRuntimeHttpServer(
   let nextEventID = 1;
   if (options.events !== false)
     options.client.start((event) => {
-      console.log(
-        "[web-server] event",
-        event.type,
-        "subscribers",
-        subscribers.size,
-      );
       const id = nextEventID++;
       for (const subscriber of subscribers) {
         // Session filtering happens here, server-side: a subscriber that asked

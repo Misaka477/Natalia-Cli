@@ -331,9 +331,6 @@ export function createWebRuntimeClient(
     global.__nataliaStartupStart ??= performance.now();
     const timings = (global.__nataliaStartupTimings ??= {});
     timings[phase] = performance.now() - global.__nataliaStartupStart;
-    console.info(
-      `[startup] ${phase} +${Math.round(timings[phase]!)}ms`,
-    );
   }
 
   const starts: Array<(event: RuntimeEvent) => void> = [];
@@ -510,7 +507,6 @@ export function createWebRuntimeClient(
   }
 
   async function start(onEvent: (event: RuntimeEvent) => void) {
-    console.log("[web-runtime] start called", "listener added");
     starts.push(onEvent);
     if (started) return;
     started = true;
@@ -526,8 +522,7 @@ export function createWebRuntimeClient(
     // Electron: receive runtime events through the main-process IPC bridge.
     if (electron) {
       electron.on<RuntimeEvent>("natalia-runtime-event", (event) => {
-        console.log("[web-runtime] electron event", event.type);
-        emitLive(event);
+          emitLive(event);
       });
       await restoreRecentSession();
       return;
@@ -584,7 +579,6 @@ export function createWebRuntimeClient(
                 if (line.startsWith("data: ")) {
                   try {
                     current = JSON.parse(line.slice(6)) as RuntimeEvent;
-                    console.log("[web-runtime] sse event", current.type);
                   } catch {
                     current = null;
                   }

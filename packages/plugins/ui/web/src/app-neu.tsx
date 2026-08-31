@@ -364,6 +364,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     else chatScrollPending = true;
   }
 
+  function markStartup(phase: string) {
+    const global = globalThis as unknown as {
+      __nataliaStartupStart?: number;
+      __nataliaStartupTimings?: Record<string, number>;
+    };
+    global.__nataliaStartupStart ??= performance.now();
+    const timings = (global.__nataliaStartupTimings ??= {});
+    timings[phase] = performance.now() - global.__nataliaStartupStart;
+  }
+
   function debouncedRefreshWorkspaces(delay = 150) {
     if (workspacesRefreshTimer) clearTimeout(workspacesRefreshTimer);
     workspacesRefreshTimer = setTimeout(() => {
@@ -715,6 +725,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         )
           props.ctx.projection.hydrateSubagents?.(subagents);
         markStartup("secondary.loaded");
+        const timings = (
+          globalThis as unknown as {
+            __nataliaStartupTimings?: Record<string, number>;
+          }
+        ).__nataliaStartupTimings;
+        if (timings) {
+          console.table(timings);
+          console.info("[startup] complete", timings);
+        }
       })();
     };
 
