@@ -625,7 +625,17 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   background: var(--neu-error-soft);
   box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
 }
-.neu-pane .natalia-attachment-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: var(--neu-bg); border-radius: 10px; font-size: 12px; color: var(--neu-muted); box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light); }
+.neu-pane .natalia-attachment-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--neu-bg); border-radius: 12px; font-size: 12px; color: var(--neu-muted); box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light); }
+.neu-pane .natalia-attachment-chip[data-image="true"] {
+  padding-right: 6px;
+}
+.neu-pane .natalia-attachment-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--neu-bg-light);
+}
 
 /* ===== Right secondary sidebar ===== */
 .neu-secondary {

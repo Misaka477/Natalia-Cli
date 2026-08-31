@@ -4,7 +4,7 @@ import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, Run
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, createMemo, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
-import { Composer } from "./components/Composer";
+import { Composer, type ComposerAttachment } from "./components/Composer";
 import {
   ReviewPane,
   TerminalPane,
@@ -227,8 +227,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [naviOpen, setNaviOpen] = createSignal(true);
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
-  const [mainAttachments, setMainAttachments] = createSignal<string[]>([]);
-  const [chatAttachments, setChatAttachments] = createSignal<string[]>([]);
+  const [mainAttachments, setMainAttachments] = createSignal<ComposerAttachment[]>([]);
+  const [chatAttachments, setChatAttachments] = createSignal<ComposerAttachment[]>([]);
   const [selectedSession, setSelectedSession] = createSignal("");
   const [selectedSessionID, setSelectedSessionID] = createSignal("");
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
@@ -425,8 +425,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   function handlePasteAttachments(
     event: ClipboardEvent,
-    current: string[],
-    setAttachments: (value: string[]) => void,
+    current: ComposerAttachment[],
+    setAttachments: (value: ComposerAttachment[]) => void,
   ) {
     const items = Array.from(event.clipboardData?.items ?? []);
     const files = items
@@ -451,7 +451,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           content: base64,
           encoding: "base64",
         }).then(() => {
-          setAttachments([...current, path]);
+          setAttachments([
+            ...current,
+            { path, previewUrl: dataUrl, name: file.name || "clipboard.png" },
+          ]);
         });
       };
       reader.readAsDataURL(file);
@@ -1745,7 +1748,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onInput={setMainDraft}
                 attachments={mainAttachments()}
                 onRemoveAttachment={(path) =>
-                  setMainAttachments(mainAttachments().filter((item) => item !== path))
+                  setMainAttachments(mainAttachments().filter((item) => item.path !== path))
                 }
                 onPaste={(event) => handlePasteAttachments(event, mainAttachments(), setMainAttachments)}
                 onSubmit={() => {
@@ -1755,7 +1758,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     props.ctx.runtime.submit?.({
                       text,
                       ...(mainAttachments().length
-                        ? { attachments: mainAttachments() }
+                        ? { attachments: mainAttachments().map((item) => item.path) }
                         : {}),
                     });
                     setMainDraft("");
@@ -1885,7 +1888,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onInput={setChatDraft}
                 attachments={chatAttachments()}
                 onRemoveAttachment={(path) =>
-                  setChatAttachments(chatAttachments().filter((item) => item !== path))
+                  setChatAttachments(chatAttachments().filter((item) => item.path !== path))
                 }
                 onPaste={(event) => handlePasteAttachments(event, chatAttachments(), setChatAttachments)}
                 onSubmit={() => {
@@ -1894,7 +1897,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     props.ctx.runtime.chatSubmit?.({
                       text,
                       ...(chatAttachments().length
-                        ? { attachments: chatAttachments() }
+                        ? { attachments: chatAttachments().map((item) => item.path) }
                         : {}),
                     });
                     setChatDraft("");

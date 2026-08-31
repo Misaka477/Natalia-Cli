@@ -1,5 +1,11 @@
 import { For, Show, type JSX, createSignal, onMount } from "solid-js";
 
+export interface ComposerAttachment {
+  path: string;
+  previewUrl?: string;
+  name?: string;
+}
+
 export interface ComposerProps {
   value: string;
   placeholder?: string;
@@ -8,7 +14,7 @@ export interface ComposerProps {
   onInput: (value: string) => void;
   onSubmit: () => void;
   onStop?: () => void;
-  attachments?: string[];
+  attachments?: ComposerAttachment[];
   onAddAttachment?: () => void;
   onRemoveAttachment?: (path: string) => void;
   onPaste?: (event: ClipboardEvent) => void;
@@ -58,15 +64,22 @@ export function Composer(props: ComposerProps) {
         <div class="natalia-composer-attachments">
           <For each={props.attachments}>
             {(attachment) => (
-              <div class="natalia-attachment-chip">
-                <svg class="natalia-attachment-icon" viewBox="0 0 16 16" fill="none">
-                  <path d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="natalia-attachment-name">{attachment.split("/").pop()}</span>
+              <div class="natalia-attachment-chip" data-image={Boolean(attachment.previewUrl)}>
+                <Show
+                  when={attachment.previewUrl}
+                  fallback={
+                    <svg class="natalia-attachment-icon" viewBox="0 0 16 16" fill="none">
+                      <path d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  }
+                >
+                  <img class="natalia-attachment-thumb" src={attachment.previewUrl} alt={attachment.name ?? ""} />
+                </Show>
+                <span class="natalia-attachment-name">{attachment.name ?? attachment.path.split("/").pop()}</span>
                 <button
                   type="button"
                   class="natalia-attachment-remove"
-                  onClick={() => props.onRemoveAttachment?.(attachment)}
+                  onClick={() => props.onRemoveAttachment?.(attachment.path)}
                   aria-label="Remove attachment"
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
