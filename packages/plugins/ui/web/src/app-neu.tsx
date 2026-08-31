@@ -731,8 +731,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           }
         ).__nataliaStartupTimings;
         if (timings) {
+          console.warn("[startup] complete", timings);
           console.table(timings);
-          console.info("[startup] complete", timings);
         }
       })();
     };
@@ -822,6 +822,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.runtime.skills?.().then((skills) => {
       if (skills) setSkillCatalog(skills);
     });
+    // DSH-style resize follow: while a pane is pinned to the bottom, any
+    // height change (streaming growth, tool expansion, image load) re-snaps
+    // it to the true floor instead of waiting for another content event.
+    const followObserver =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => {
+            if (followBottom() && transcriptEl()) {
+              const el = transcriptEl()!;
+              el.scrollTop = el.scrollHeight;
+              transcriptObservedTop = el.scrollTop;
+            }
+            if (chatFollowBottom() && chatTranscriptEl()) {
+              const el = chatTranscriptEl()!;
+              el.scrollTop = el.scrollHeight;
+              chatObservedTop = el.scrollTop;
+            }
+          });
+    if (transcriptEl()) followObserver?.observe(transcriptEl());
+    if (chatTranscriptEl()) followObserver?.observe(chatTranscriptEl());
+    onCleanup(() => followObserver?.disconnect());
+
     void refreshSessions();
     void refreshWorkspaces();
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
@@ -1021,6 +1043,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const ledger = Math.min(transcriptObservedTop, floor);
     const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
     if (!movedByReader) {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      if (nearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
       transcriptObservedTop = el.scrollTop;
       return;
     }
@@ -1047,6 +1073,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const ledger = Math.min(chatObservedTop, floor);
     const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
     if (!movedByReader) {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      if (nearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
       chatObservedTop = el.scrollTop;
       return;
     }
