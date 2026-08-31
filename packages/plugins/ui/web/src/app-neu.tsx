@@ -809,6 +809,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       );
       historyCursor = page.cursor.next;
       newerHistoryCursor = undefined;
+      console.warn("[session-ui] main.messages", {
+        sessionID: state().sessionID,
+        pageData: page.data.length,
+        projectedMessages: props.ctx.projection.getState().messages.length,
+      });
       markStartup("main.messages");
       // Chat and subagents are secondary surfaces. Hydrate them in the
       // background so the primary transcript paints first and does not wait
