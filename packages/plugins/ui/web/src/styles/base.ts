@@ -483,6 +483,8 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane .natalia-transcript-empty-title { font-size: 16px; color: var(--neu-text); }
 .neu-pane .natalia-transcript-empty-hint { font-size: 13px; color: var(--neu-muted); }
 .neu-pane .natalia-message {
+  position: relative;
+  z-index: 1;
   max-width: 70%;
   padding: 10px 14px;
   border-radius: 16px;
@@ -584,9 +586,13 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   align-items: center;
   gap: 2px;
   margin-left: auto;
+  position: relative;
+  z-index: 3;
 }
 
 .neu-pane .natalia-message-icon-btn {
+  position: relative;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
