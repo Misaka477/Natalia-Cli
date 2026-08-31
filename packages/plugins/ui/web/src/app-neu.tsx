@@ -167,7 +167,6 @@ function SessionTree(props: {
 
   return (
     <div class="neu-tree">
-      <div class="neu-tree-title">工作区 ({props.workspaces.length})</div>
       <For each={groups()}>
         {(group) => (
           <>
