@@ -761,6 +761,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+        markStartup("first.paint");
+        logStartupSummary();
         const scrollToBottom = () => {
           if (transcriptEl()) {
             const el = transcriptEl()!;
