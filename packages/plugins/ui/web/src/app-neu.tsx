@@ -303,8 +303,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     turnID: string;
     checkpointID?: string;
     label: string;
+    hiddenAfter?: number;
   } | undefined>();
-  const [rollbackNotice, setRollbackNotice] = createSignal<string | undefined>();
+  const [rollbackNotice, setRollbackNotice] = createSignal<{
+    text: string;
+    safetyCheckpointID?: string;
+    restoredCount: number;
+  } | undefined>();
   const [panelRevision, setPanelRevision] = createSignal(0);
   const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
     createSignal(false);
@@ -811,23 +816,74 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   function rollbackDraftFromMessage(message: Message) {
     const checkpointID = checkpointIDForMessage(message);
     const turnID = sessionTurnID(message.id);
+    const messages = mainMessages();
     const userMessage = turnID
-      ? mainMessages().find(
+      ? messages.find(
           (candidate) =>
             sessionTurnID(candidate.id) === turnID && candidate.role === "user",
         )
       : undefined;
+    const targetIndex = messages.findIndex((candidate) => candidate.id === message.id);
     if (userMessage) setMainDraft(userMessage.content);
     setPendingRollback({
       turnID: turnID ?? message.id,
       ...(checkpointID ? { checkpointID } : {}),
       label: userMessage?.content || message.content || "该消息",
+      hiddenAfter: targetIndex >= 0 ? targetIndex + 1 : undefined,
     });
+    setRollbackNotice(undefined);
     if (checkpointID) {
       setReviewRequestedTab("checkpoint");
       setReviewRequestedCheckpointID(checkpointID);
       setRightVisible(true);
       setRightTab("diff");
+    }
+  }
+
+  async function hydrateRecentMessages(options?: { replace?: boolean }) {
+    const page = await props.ctx.runtime.messages?.({ limit: 100 });
+    if (!page?.data.length) {
+      props.ctx.projection.hydrateMessages?.([], "older", options);
+      historyCursor = undefined;
+      newerHistoryCursor = undefined;
+      return;
+    }
+    props.ctx.projection.hydrateMessages?.(
+      [...page.data].reverse(),
+      "older",
+      options,
+    );
+    historyCursor = page.cursor.next;
+    newerHistoryCursor = undefined;
+  }
+
+  async function refreshTranscript() {
+    await hydrateRecentMessages({ replace: true });
+    setState(cloneState(props.ctx.projection.getState()));
+  }
+
+  function cancelPendingRollback() {
+    setPendingRollback(undefined);
+  }
+
+  async function redoAppliedRollback() {
+    const notice = rollbackNotice();
+    if (!notice?.safetyCheckpointID) {
+      setRollbackNotice(undefined);
+      return;
+    }
+    try {
+      await props.ctx.runtime.checkpointRollback?.({
+        id: notice.safetyCheckpointID,
+      });
+      await refreshTranscript();
+    } catch (error: unknown) {
+      props.ctx.runtime.diagnostic?.(
+        `重做失败：${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    } finally {
+      setRollbackNotice(undefined);
     }
   }
 
@@ -1002,21 +1058,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ),
     );
 
-    const hydrateRecentMessages = async () => {
+    const hydrateRecentMessagesOnLoad = async () => {
       // Message-first startup: the latest projected page replaces the old
       // full-log replay. The page is newest-last on the wire; reverse it so the
       // projection's older-merge keeps transcript order.
-      const page = await props.ctx.runtime.messages?.({ limit: 100 });
-      if (!page?.data.length) return;
-      props.ctx.projection.hydrateMessages?.(
-        [...page.data].reverse(),
-        "older",
-      );
-      historyCursor = page.cursor.next;
-      newerHistoryCursor = undefined;
+      await hydrateRecentMessages();
       console.warn("[session-ui] main.messages", {
         sessionID: state().sessionID,
-        pageData: page.data.length,
         projectedMessages: props.ctx.projection.getState().messages.length,
       });
       markStartup("main.messages");
@@ -1073,7 +1121,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         if (isStaleLoad()) return;
         await refreshSessions();
         if (isStaleLoad()) return;
-        await hydrateRecentMessages();
+        await hydrateRecentMessagesOnLoad();
         if (isStaleLoad()) return;
         // Session loading finished; take one projection snapshot instead of
         // cloning once per raw event.
@@ -1537,6 +1585,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       };
     }),
   );
+
+  const visibleMainMessages = createMemo<Message[]>(() => {
+    const hiddenAfter = pendingRollback()?.hiddenAfter;
+    const messages = mainMessages();
+    if (hiddenAfter === undefined) return messages;
+    return messages.slice(0, hiddenAfter);
+  });
 
   const chatMessages = createMemo<Message[]>(() =>
     (state().chatMessages ?? []).map((msg, idx) => {
@@ -2045,7 +2100,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             <div class="neu-pane-content">
               <Show when={selectedSessionID() || state().sessionID || "none"} keyed>
               <Transcript
-                messages={mainMessages()}
+                messages={visibleMainMessages()}
                 emptyTitle="Natalia 已准备好"
                 emptyHint="Natalia 会直接处理工作区任务。"
                 assistantName="Natalia"
@@ -2115,7 +2170,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   <button
                     type="button"
                     class="neu-rollback-cancel"
-                    onClick={() => setPendingRollback(undefined)}
+                    onClick={() => cancelPendingRollback()}
                   >
                     取消
                   </button>
@@ -2123,7 +2178,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </Show>
               <Show when={!pendingRollback() && rollbackNotice()}>
                 <div class="neu-rollback-banner">
-                  <span>{rollbackNotice()}</span>
+                  <span>{rollbackNotice()!.text}</span>
+                  <span class="neu-rollback-hint">
+                    发送新消息前可以重做这些更改
+                  </span>
+                  <Show when={rollbackNotice()!.safetyCheckpointID}>
+                    <button
+                      type="button"
+                      class="neu-rollback-redo"
+                      onClick={() => void redoAppliedRollback()}
+                    >
+                      重做
+                    </button>
+                  </Show>
                   <button
                     type="button"
                     class="neu-rollback-cancel"
@@ -2151,8 +2218,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     const submit = async () => {
                       try {
                         if (rollback?.checkpointID) {
-                          await props.ctx.runtime.checkpointRollback?.({
-                            id: rollback.checkpointID,
+                          const preview =
+                            await props.ctx.runtime.checkpointRollback?.({
+                              id: rollback.checkpointID,
+                            });
+                          await refreshTranscript();
+                          setRollbackNotice({
+                            text: `已还原消息并恢复工作区检查点。`,
+                            safetyCheckpointID: preview?.safetyCheckpointID,
+                            restoredCount: 1,
                           });
                         } else if (rollback) {
                           const sessionID = selectedSessionID() || state().sessionID;
@@ -2162,12 +2236,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                                 sessionID,
                                 rollback.turnID,
                               );
+                            await refreshTranscript();
                             if (result) {
-                              setRollbackNotice(
-                                `已还原 1 条消息。没有可用的文件检查点，因此未恢复工作区更改。`,
-                              );
+                              setRollbackNotice({
+                                text: result.safetyCheckpointID
+                                  ? `已还原 1 条消息，并创建了安全后悔点。`
+                                  : `已还原 1 条消息。没有可用的文件检查点，因此未恢复工作区更改。`,
+                                safetyCheckpointID: result.safetyCheckpointID,
+                                restoredCount: 1,
+                              });
                             }
                           }
+                        } else {
+                          setRollbackNotice(undefined);
                         }
                         console.log("[web-plugin] send", text);
                         if (paths.length && props.ctx.runtime.submitInput) {

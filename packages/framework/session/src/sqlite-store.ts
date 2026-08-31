@@ -119,6 +119,11 @@ CREATE TABLE IF NOT EXISTS context_epochs (
   baseline_seq INTEGER NOT NULL,
   snapshot TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS deleted_sessions (
+  id TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL
+);
 `;
 
 function isDurableFlushBarrier(event: RuntimeEvent) {
@@ -220,6 +225,7 @@ export class SqliteSessionStore {
   }
 
   create(id: SessionID, title: string, now = new Date()): SessionRow {
+    this.clearDeleted(id);
     this.run(
       `INSERT OR IGNORE INTO sessions(id, title, created_at) VALUES (?, ?, ?)`,
       [id, title, now.toISOString()],
@@ -404,7 +410,27 @@ export class SqliteSessionStore {
       this.run(`DELETE FROM session_inputs WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM events WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM sessions WHERE id = ?`, [id]);
+      this.markDeleted(id);
     })();
+  }
+
+  wasDeleted(id: SessionID): boolean {
+    const row = this.db
+      .query(`SELECT 1 AS present FROM deleted_sessions WHERE id = ?`)
+      .get(id) as { present?: number } | undefined;
+    return Boolean(row);
+  }
+
+  markDeleted(id: SessionID, now = new Date()) {
+    this.run(
+      `INSERT INTO deleted_sessions(id, deleted_at) VALUES (?, ?)
+       ON CONFLICT(id) DO UPDATE SET deleted_at = excluded.deleted_at`,
+      [id, now.toISOString()],
+    );
+  }
+
+  clearDeleted(id: SessionID) {
+    this.run(`DELETE FROM deleted_sessions WHERE id = ?`, [id]);
   }
 
   updateMetadata(id: SessionID, partial: Partial<SessionRow["metadata"]>) {
@@ -420,6 +446,7 @@ export class SqliteSessionStore {
 
   replace(session: SessionRecord) {
     const write = this.db.transaction(() => {
+      this.clearDeleted(session.id);
       this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [session.id]);
       this.run(`DELETE FROM message_turns WHERE session_id = ?`, [session.id]);
       this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [session.id]);

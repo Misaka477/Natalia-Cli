@@ -671,6 +671,16 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
  .neu-pane .neu-rollback-cancel:hover {
    color: var(--neu-accent);
  }
+ .neu-pane .neu-rollback-redo {
+   padding: 3px 8px;
+   border: none;
+   border-radius: 8px;
+   background: var(--neu-bg-light);
+   color: var(--neu-accent);
+   font-family: inherit;
+   font-size: 11px;
+   cursor: pointer;
+ }
 
 .neu-pane .natalia-composer {
   flex-shrink: 0;
@@ -875,6 +885,38 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 }
 .review-entity-control {
   padding: 0 12px 8px;
+}
+.review-checkpoint-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+.review-checkpoint-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 8px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 11px;
+  outline: none;
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.review-checkpoint-rename-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.review-checkpoint-rename-btn:hover {
+  color: var(--neu-accent);
 }
 .review-select {
   width: 100%;

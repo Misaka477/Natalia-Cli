@@ -432,6 +432,9 @@ test("SQLite delete removes message index state before session row", () => {
     store.loadMessagePage(sessionID, {});
     store.delete(sessionID);
     expect(store.get(sessionID)).toBeUndefined();
+    expect(store.wasDeleted(sessionID)).toBe(true);
+    store.create(sessionID, "Recreated");
+    expect(store.wasDeleted(sessionID)).toBe(false);
   } finally {
     store.close();
   }

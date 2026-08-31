@@ -107,12 +107,25 @@ export function createSessionStoreController(input: {
       sqliteStorePath = databasePath;
       console.warn("[session-store] workspaceRoot:", input.workspaceRoot);
       console.warn("[session-store] sqlite db:", databasePath);
-      // Import existing JSON sessions before creating the active SQLite row.
-      // If the active session already has JSON history, importing it first
-      // keeps its events visible in the SQLite-backed list; creating an empty
-      // row first would hide that history until a later on-demand load.
+      // Import leftover JSON sessions once, then delete the JSON files so a
+      // later restart cannot resurrect sessions the user already deleted from
+      // SQLite. Once SQLite already has sessions, a JSON id that is missing
+      // there is treated as deleted rather than re-imported.
+      const sqliteHasSessions = sqliteStore.list().length > 0;
       for (const legacy of await sessionStore.list()) {
-        if (!sqliteStore.get(legacy.id)) sqliteStore.replace(legacy);
+        if (sqliteStore.wasDeleted(legacy.id)) {
+          await sessionStore.delete(legacy.id);
+          continue;
+        }
+        if (!sqliteStore.get(legacy.id)) {
+          if (sqliteHasSessions) {
+            sqliteStore.markDeleted(legacy.id);
+            await sessionStore.delete(legacy.id);
+            continue;
+          }
+          sqliteStore.replace(legacy);
+        }
+        await sessionStore.delete(legacy.id);
       }
       const startup =
         sqliteStore.get(input.sessionID()) ??
@@ -398,7 +411,7 @@ export function createSessionStoreController(input: {
       if (!durable && !legacy)
         throw new Error(`session not found: ${id}`);
       if (durable) store.delete(id as SessionID);
-      if (legacy) await sessionStore.delete(id as SessionID);
+      await sessionStore.delete(id as SessionID);
       const removedAttachments = await input.attachments.cleanup(
         durable
           ? store.referencedAttachments()

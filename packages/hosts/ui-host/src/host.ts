@@ -84,11 +84,12 @@ export async function createUiPluginHost<TContext = unknown>(
         projectionListeners.delete(listener);
       };
     },
-    hydrateMessages(messages, direction = "older") {
+    hydrateMessages(messages, direction = "older", options) {
       const evicted = viewStore.hydrateProjectedMessages(
         state,
         messages,
         direction,
+        options,
       );
       for (const listener of projectionListeners) listener(state);
       return evicted;

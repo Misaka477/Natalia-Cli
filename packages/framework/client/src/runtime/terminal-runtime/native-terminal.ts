@@ -17,6 +17,7 @@ type Surface = Pick<
   | "nativeTerminalRead"
   | "nativeTerminalOpenHub"
   | "nativeTerminalRevokeApprovalScope"
+  | "nativeTerminalClaimHumanInput"
   | "nativeTerminalReleaseHumanControl"
   | "nativeTerminalBeginSecureInput"
   | "nativeTerminalEndSecureInput"

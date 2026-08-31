@@ -198,6 +198,9 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     async checkpointRollback(input) {
       return checkpointPreviewFixture(Boolean(input.dryRun));
     },
+    async checkpointRename(input) {
+      return { ...checkpointFixture(), id: input.id, name: input.name };
+    },
     async sandboxList() {
       return [sandboxFixture()];
     },
@@ -391,6 +394,9 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   expect(
     await sdk.checkpointRollback({ id: "checkpoint_0", dryRun: false }),
   ).toMatchObject({ dryRun: false });
+  expect(
+    await sdk.checkpointRename({ id: "checkpoint_0", name: "named" }),
+  ).toMatchObject({ id: "checkpoint_0", name: "named" });
   expect(await sdk.sandboxList()).toMatchObject([{ id: "sandbox_fixture" }]);
   expect(await sdk.sandboxDiff("sandbox_fixture")).toMatchObject([
     { path: "draft.txt" },

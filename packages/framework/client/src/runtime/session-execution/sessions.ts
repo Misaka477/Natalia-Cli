@@ -1,7 +1,9 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
+  CONTEXT_LEDGER_FACTORY_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
   TERMINAL_CONTROLLER_SERVICE,
+  type ContextLedgerFactory,
   type SessionStoreController,
   type TerminalController,
 } from "@natalia/runtime-services";
@@ -35,6 +37,20 @@ export function createSessionsSurface(
     if (!store)
       throw new Error("session store unavailable (natalia-session-store)");
     return store;
+  }
+
+  async function rebuildContextAfterMessageRollback(id: string) {
+    const exec = ctx.ports.getExecutionBySession().get(id as SessionID);
+    if (!exec) return;
+    const factory = ctx.ports.resolveService<ContextLedgerFactory>(
+      CONTEXT_LEDGER_FACTORY_SERVICE,
+    );
+    if (!factory) return;
+    const loaded = await requireSessionStore().load(id as SessionID);
+    exec.session = loaded.session;
+    const next = factory.create();
+    factory.restore(next, loaded.session.events);
+    exec.context = next;
   }
   return {
     sessionAttach: ctx.ports.attachSession,
@@ -78,7 +94,17 @@ export function createSessionsSurface(
     },
     async sessionRollbackMessages(id, turnID) {
       await ctx.ports.getReady();
-      return await requireSessionStore().messageRollback(id, turnID);
+      let safetyCheckpointID: string | undefined;
+      try {
+        safetyCheckpointID = await ctx.ports
+          .getCheckpointRuntime()
+          .createSafetyCheckpoint();
+      } catch {
+        safetyCheckpointID = undefined;
+      }
+      const result = await requireSessionStore().messageRollback(id, turnID);
+      await rebuildContextAfterMessageRollback(id);
+      return { ...result, ...(safetyCheckpointID ? { safetyCheckpointID } : {}) };
     },
     async sessionDelete(id) {
       await ctx.ports.getReady();

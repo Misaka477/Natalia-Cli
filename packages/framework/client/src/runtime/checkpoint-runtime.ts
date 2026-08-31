@@ -10,6 +10,7 @@ import {
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   SUBAGENTS_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
+  type CheckpointController,
   type CheckpointFactory,
   type SubagentsService,
   type RuntimeServiceClient,
@@ -26,6 +27,8 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     checkpointList,
     checkpointPreview,
     checkpointRollback,
+    checkpointRename,
+    createSafetyCheckpoint,
     workspaceDiff,
   };
 
@@ -43,21 +46,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     Awaited<ReturnType<NonNullable<RuntimeServiceClient["checkpointList"]>>>
   > {
     const { controller } = await requireInitializedController();
-    return (await controller.list()).map((record) => ({
-      id: record.id,
-      sequence: record.sequence,
-      turnID: record.turnID,
-      stepID: record.stepID,
-      step: record.step,
-      reason: record.reason,
-      createdAt: record.createdAt,
-      complete: record.complete,
-      errors: record.errors,
-      files: Object.keys(record.manifest.entries).length,
-      changes: record.changes.length,
-      tokenEstimate: record.context.tokenEstimate,
-      diskUsageBytes: record.diskUsageBytes,
-    }));
+    return (await controller.list()).map(toRuntimeCheckpoint);
   }
 
   async function checkpointPreview(id: string) {
@@ -90,6 +79,48 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
       }),
     );
     return preview;
+  }
+
+  async function checkpointRename(input: { id: string; name: string }) {
+    const { controller } = await requireInitializedController();
+    return toRuntimeCheckpoint(await controller.rename(input.id, input.name));
+  }
+
+  async function createSafetyCheckpoint() {
+    const { controller, owner } = await requireInitializedController();
+    if (!controller.isEnabled()) return undefined;
+    const record = await controller.createCheckpoint({
+      reason: "rollback_safety",
+      context: owner.context,
+      step: owner.context.journalStatus().messageCount,
+      status: "rollback_safety",
+    });
+    if (!record.complete)
+      throw new Error(
+        "rollback safety checkpoint is incomplete; refusing message rollback",
+      );
+    return record.id;
+  }
+
+  function toRuntimeCheckpoint(
+    record: Awaited<ReturnType<CheckpointController["list"]>>[number],
+  ): Awaited<ReturnType<NonNullable<RuntimeServiceClient["checkpointList"]>>>[number] {
+    return {
+      id: record.id,
+      sequence: record.sequence,
+      turnID: record.turnID,
+      stepID: record.stepID,
+      step: record.step,
+      reason: record.reason,
+      ...(record.name ? { name: record.name } : {}),
+      createdAt: record.createdAt,
+      complete: record.complete,
+      errors: record.errors,
+      files: Object.keys(record.manifest.entries).length,
+      changes: record.changes.length,
+      tokenEstimate: record.context.tokenEstimate,
+      diskUsageBytes: record.diskUsageBytes,
+    };
   }
 
   function checkpointControllerFor(exec: SessionExecutionState) {

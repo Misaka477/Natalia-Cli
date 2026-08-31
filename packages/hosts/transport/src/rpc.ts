@@ -151,6 +151,7 @@ export const RPC_ROUTE_MEMBERS = {
   "checkpoint.list": "checkpointList",
   "checkpoint.preview": "checkpointPreview",
   "checkpoint.rollback": "checkpointRollback",
+  "checkpoint.rename": "checkpointRename",
   "sandbox.list": "sandboxList",
   "sandbox.diff": "sandboxDiff",
   "sandbox.resources": "sandboxResources",
@@ -335,6 +336,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "config.update",
   "settings.set",
   "checkpoint.rollback",
+  "checkpoint.rename",
   "sandbox.merge",
   "sandbox.delete",
   "sandbox.resource.stop",
@@ -1005,6 +1007,17 @@ export async function handleRPCMessage(
         result: await client.checkpointRollback({
           id: stringParam(body.params, "id"),
           dryRun: typeof dryRun === "boolean" ? dryRun : undefined,
+        }),
+      };
+    }
+    if (body.method === "checkpoint.rename") {
+      optionsGuard(client, "checkpointRename");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.checkpointRename({
+          id: stringParam(body.params, "id"),
+          name: stringParam(body.params, "name"),
         }),
       };
     }

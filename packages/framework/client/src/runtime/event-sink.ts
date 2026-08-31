@@ -144,8 +144,15 @@ export function createEventSink(
         );
       if (!sessionStoreController)
         throw new Error("session store unavailable (natalia-session-store)");
-      if (!sessionStoreController.status().initialized)
-        console.warn("[session-write] skipped uninitialized store", event.type, exec.session.id);
+      if (!sessionStoreController.status().initialized) {
+        if (event.type !== "plugin.update" && event.type !== "projections.updated")
+          console.warn(
+            "[session-write] skipped uninitialized store",
+            event.type,
+            exec.session.id,
+          );
+        return;
+      }
       const sessionSnapshot = structuredClone(exec.session);
       const sessionPersistence = getSessionPersistence();
       const next = sessionPersistence

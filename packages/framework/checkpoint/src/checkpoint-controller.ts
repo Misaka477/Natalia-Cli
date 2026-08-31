@@ -108,6 +108,10 @@ export function createCheckpointController(input: {
     return await get().createCheckpoint(checkpoint);
   }
 
+  async function rename(id: string, name: string) {
+    return await get().rename(id, name);
+  }
+
   function resources(): Array<{
     kind: "subagent" | "tool";
     id: string;
@@ -168,6 +172,7 @@ export function createCheckpointController(input: {
     preview,
     rollback,
     createCheckpoint,
+    rename,
     isEnabled,
     resources,
     rollbackOptions,

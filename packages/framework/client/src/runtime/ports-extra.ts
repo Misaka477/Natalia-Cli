@@ -107,8 +107,14 @@ export type RuntimePortsExtra = {
   initialize: () => Promise<void>;
   getCheckpointRuntime: () => Pick<
     import("@natalia/runtime-services").RuntimeServiceClient,
-    "checkpointList" | "checkpointPreview" | "checkpointRollback" | "workspaceDiff"
-  >;
+    | "checkpointList"
+    | "checkpointPreview"
+    | "checkpointRollback"
+    | "checkpointRename"
+    | "workspaceDiff"
+  > & {
+    createSafetyCheckpoint(): Promise<string | undefined>;
+  };
   toolSettings: (exec?: SessionExecutionState) => Record<string, unknown>;
   authorizeWorkspaceRead: (
     input: { toolName: string; paths: string[] },

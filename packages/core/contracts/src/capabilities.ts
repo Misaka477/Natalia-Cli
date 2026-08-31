@@ -157,7 +157,12 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "nativeTerminalResize",
   ],
   /** Snapshotting the workspace and rolling it back. */
-  checkpoint: ["checkpointList", "checkpointPreview", "checkpointRollback"],
+  checkpoint: [
+    "checkpointList",
+    "checkpointPreview",
+    "checkpointRollback",
+    "checkpointRename",
+  ],
   /** Working inside an isolated copy of the workspace. */
   sandbox: [
     "sandboxList",
@@ -177,6 +182,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sessionPin",
     "sessionDuplicate",
     "sessionFork",
+    "sessionRollbackMessages",
     "sessionDelete",
     "sessionNew",
     "sessionArchive",

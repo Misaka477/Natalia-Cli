@@ -196,6 +196,7 @@ export type RuntimeCheckpoint = {
     | "pre_tool"
     | "pre_compaction"
     | "rollback_safety";
+  name?: string;
   createdAt: string;
   complete: boolean;
   errors: string[];
@@ -2042,6 +2043,10 @@ export type RuntimeClient = {
     id: string;
     dryRun?: boolean;
   }): Promise<CheckpointPreview>;
+  checkpointRename?(input: {
+    id: string;
+    name: string;
+  }): Promise<RuntimeCheckpoint>;
   sandboxList?(): Promise<RuntimeSandbox[]>;
   sandboxDiff?(id: string): Promise<RuntimeSandboxChange[]>;
   sandboxResources?(id: string): Promise<RuntimeSandboxResource[]>;
@@ -2072,7 +2077,7 @@ export type RuntimeClient = {
   sessionRollbackMessages?(
     id: string,
     turnID: string,
-  ): Promise<{ id: string; rolledBackTo: string }>;
+  ): Promise<{ id: string; rolledBackTo: string; safetyCheckpointID?: string }>;
   sessionDelete?(
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;

@@ -229,16 +229,28 @@ export function hydrateProjectedMessages(
   state: AppState,
   messages: RuntimeProjectedMessage[],
   direction: "older" | "newer" = "older",
+  options: { replace?: boolean } = {},
 ): boolean {
-  const existingTurnIDs = new Set(
-    state.messages
-      .filter((message) => message.role === "user")
-      .map((message) => message.id.replace(/:user$/u, "")),
-  );
+  const existingTurnIDs = options.replace
+    ? new Set<string>()
+    : new Set(
+        state.messages
+          .filter((message) => message.role === "user")
+          .map((message) => message.id.replace(/:user$/u, "")),
+      );
   const projected = initialState();
   for (const message of messages) {
     if (existingTurnIDs.has(message.turnID)) continue;
     for (const row of message.rows) applyEvent(projected, row.event);
+  }
+  if (options.replace) {
+    const incoming = projected.messages.map((message) => ({ ...message }));
+    const bounded = boundTranscript(incoming, direction);
+    state.messages = bounded.messages;
+    state.streams = { ...projected.streams };
+    state.streamPhases = { ...projected.streamPhases };
+    state.tools = { ...projected.tools };
+    return bounded.evicted;
   }
   const incoming = projected.messages.map((message) => ({ ...message }));
   if (!incoming.length) return false;

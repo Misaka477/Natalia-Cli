@@ -104,6 +104,7 @@ test("default baseline, user scenario rollback and session restore remain durabl
     context: ledger,
     step: 3,
     status: "ran python",
+    name: "ran python",
   });
 
   expect(await readFile(join(root, "test_example.py"), "utf8")).toContain("ok");
@@ -516,6 +517,23 @@ test("disabled and initialization failure emit visible diagnostics", async () =>
     onEvent: (event) => failed.push(event.type),
   });
   expect(failed).toEqual(["checkpoint.unavailable"]);
+});
+
+test("checkpoint rename persists a user label in the journal", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_rename",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  const renamed = await store.rename("checkpoint_0", "  before tools  ");
+  expect(renamed.name).toBe("before tools");
+  const reopened = await CheckpointStore.open({
+    sessionID: "ses_rename",
+    workspaceRoot: root,
+  });
+  expect((await reopened.list())[0]?.name).toBe("before tools");
 });
 
 async function tempWorkspace() {

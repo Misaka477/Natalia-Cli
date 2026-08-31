@@ -57,6 +57,7 @@ function controllableClient() {
     "checkpointList",
     "checkpointPreview",
     "checkpointRollback",
+    "checkpointRename",
     "sandboxList",
     "sandboxDiff",
     "sandboxResources",

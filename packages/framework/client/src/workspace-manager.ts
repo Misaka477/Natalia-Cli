@@ -1,6 +1,6 @@
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
-import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { RuntimeSessionSummary, WorkspaceSummary, WorkspacePermissionSettings, WorkspaceToolSettings } from "@natalia/contracts";
@@ -167,9 +167,14 @@ async function migrateLegacyWorkspaceSessions(
     for (const entry of files) {
       const source = join(legacyDir, entry.name);
       const target = join(targetDir, entry.name);
-      await copyFile(source, target).catch(() => undefined);
+      try {
+        await rename(source, target);
+      } catch {
+        continue;
+      }
       migrated++;
     }
+    await rm(legacyDir, { recursive: true, force: true }).catch(() => undefined);
     console.warn(
       "[workspace-session] migrated",
       migrated,

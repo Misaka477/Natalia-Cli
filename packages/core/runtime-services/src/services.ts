@@ -192,7 +192,7 @@ export interface SessionStoreController {
   messageRollback(
     id: string,
     turnID: string,
-  ): Promise<{ id: string; rolledBackTo: string }>;
+  ): Promise<{ id: string; rolledBackTo: string; safetyCheckpointID?: string }>;
   delete(id: string): Promise<{ id: string; removedAttachments: number }>;
   create(input: {
     id?: string;
@@ -510,6 +510,10 @@ export interface CheckpointController {
   createCheckpoint(
     input: import("@natalia/runtime").CreateCheckpointInput,
   ): ReturnType<CheckpointStore["createCheckpoint"]>;
+  rename(
+    id: string,
+    name: string,
+  ): ReturnType<CheckpointStore["rename"]>;
   isEnabled(): boolean;
   resources(): Array<{
     kind: "subagent" | "tool";

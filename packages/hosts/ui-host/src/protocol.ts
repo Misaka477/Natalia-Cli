@@ -91,6 +91,7 @@ export type UiProjection = {
   hydrateMessages?(
     messages: RuntimeProjectedMessage[],
     direction?: "older" | "newer",
+    options?: { replace?: boolean },
   ): boolean;
   hydrateChatMessages?(
     messages: ChatMessageRow[],

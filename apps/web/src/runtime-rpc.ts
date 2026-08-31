@@ -70,6 +70,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   checkpointList: "checkpoint.list",
   checkpointPreview: "checkpoint.preview",
   checkpointRollback: "checkpoint.rollback",
+  checkpointRename: "checkpoint.rename",
   sandboxList: "sandbox.list",
   sandboxDiff: "sandbox.diff",
   sandboxResources: "sandbox.resources",
@@ -195,6 +196,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
 
 const RPC_PARAM_NAMES: Record<string, string[]> = {
   checkpointPreview: ["id"],
+  checkpointRename: ["id", "name"],
   sessionTouch: ["id"],
   sessionRename: ["id", "title"],
   sessionPin: ["id", "pinned"],
@@ -704,7 +706,13 @@ export function createWebRuntimeClient(
       } as never;
     },
     diagnostic(message, level) {
-      void call("diagnostic", { message, level });
+      const event: RuntimeEvent = {
+        type: "diagnostic",
+        level: level ?? "warning",
+        message,
+        at: new Date().toISOString(),
+      };
+      for (const listener of starts) listener(event);
     },
     lastSubmission() {
       return undefined;

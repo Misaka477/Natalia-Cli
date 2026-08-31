@@ -57,6 +57,9 @@ test("the members whose refusal must be a value are named, and each names its fi
     "planQueue",
     "planSupersede",
     "planUpdate",
+    "pluginInstall",
+    "pluginSetEnabled",
+    "pluginUninstall",
     "pluginUnload",
     "providerAdd",
     "providerRemove",
@@ -73,6 +76,7 @@ test("the members whose refusal must be a value are named, and each names its fi
     "sessionNew",
     "setChatModelProfile",
     "updateConfig",
+    "workspaceWrite",
   ]);
   for (const [member, semantics] of Object.entries(
     RUNTIME_MEMBER_REFUSAL_SEMANTICS,

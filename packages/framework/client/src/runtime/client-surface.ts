@@ -44,6 +44,7 @@ export function createClientSurface(
     checkpointList: checkpoint.checkpointList,
     checkpointPreview: checkpoint.checkpointPreview,
     checkpointRollback: checkpoint.checkpointRollback,
+    checkpointRename: checkpoint.checkpointRename,
     workspaceDiff: checkpoint.workspaceDiff,
     ...createSandboxRuntime(ctx, options.episodeID),
     ...createTeamRuntime(ctx),

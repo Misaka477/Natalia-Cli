@@ -206,6 +206,10 @@ export type NataliaSDK = {
     id: string;
     dryRun?: boolean;
   }): Promise<import("@natalia/contracts").CheckpointPreview>;
+  checkpointRename(input: {
+    id: string;
+    name: string;
+  }): Promise<import("@natalia/contracts").RuntimeCheckpoint>;
   sandboxList(): Promise<import("@natalia/contracts").RuntimeSandbox[]>;
   sandboxDiff(
     id: string,
@@ -833,6 +837,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     checkpointPreview: async (id) => await call("checkpoint.preview", { id }),
     checkpointRollback: async (input) =>
       await call("checkpoint.rollback", input),
+    checkpointRename: async (input) => await call("checkpoint.rename", input),
     sandboxList: async () => await call("sandbox.list", {}),
     sandboxDiff: async (id) => await call("sandbox.diff", { id }),
     sandboxResources: async (id) => await call("sandbox.resources", { id }),

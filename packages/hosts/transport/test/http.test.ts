@@ -81,6 +81,9 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
     async checkpointRollback(input) {
       return checkpointPreviewFixture(Boolean(input.dryRun));
     },
+    async checkpointRename(input) {
+      return { ...checkpointFixture(), id: input.id, name: input.name };
+    },
     async sandboxList() {
       return [sandboxFixture()];
     },

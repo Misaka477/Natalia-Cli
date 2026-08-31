@@ -85,6 +85,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "checkpoint.list": "checkpointList",
   "checkpoint.preview": "checkpointPreview",
   "checkpoint.rollback": "checkpointRollback",
+  "checkpoint.rename": "checkpointRename",
   "workspace.diff": "workspaceDiff",
   "workspace.git.diff": "workspaceGitDiff",
   "team.pr.list": "teamPRList",
@@ -190,6 +191,7 @@ type WorkerRequest = {
     | "checkpoint.list"
     | "checkpoint.preview"
     | "checkpoint.rollback"
+    | "checkpoint.rename"
     | "workspace.diff"
     | "workspace.git.diff"
     | "team.pr.list"
@@ -694,6 +696,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["checkpointRollback"]>>
       >;
     },
+    async checkpointRename(input) {
+      return (await request("checkpoint.rename", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["checkpointRename"]>>
+      >;
+    },
     async sessionList() {
       return (await request("session.list")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sessionList"]>>
@@ -1146,6 +1153,10 @@ export async function handleWorkerRequest(
   if (request.method === "checkpoint.rollback")
     return await client.checkpointRollback?.(
       request.value as { id: string; dryRun?: boolean },
+    );
+  if (request.method === "checkpoint.rename")
+    return await client.checkpointRename?.(
+      request.value as { id: string; name: string },
     );
   if (request.method === "cancel")
     return client.cancel(

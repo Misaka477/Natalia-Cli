@@ -230,6 +230,8 @@ export function ReviewPane(props: {
   const [selectedCheckpoint, setSelectedCheckpoint] = createSignal<string | null>(null);
   const [checkpointChanges, setCheckpointChanges] = createSignal<DiffItem[]>([]);
   const [checkpointSelected, setCheckpointSelected] = createSignal<string | null>(null);
+  const [renamingCheckpointID, setRenamingCheckpointID] = createSignal<string | null>(null);
+  const [checkpointNameDraft, setCheckpointNameDraft] = createSignal("");
   const [fileWidth, setFileWidth] = createSignal(180);
 
   onMount(() => {
@@ -305,6 +307,33 @@ export function ReviewPane(props: {
   async function selectCheckpoint(id: string) {
     setSelectedCheckpoint(id);
     await loadCheckpointPreview(id);
+  }
+
+  async function refreshCheckpoints() {
+    const checkpointList = (await props.runtime?.checkpointList?.()) ?? [];
+    setCheckpoints(checkpointList);
+    return checkpointList;
+  }
+
+  function checkpointLabel(checkpoint: RuntimeCheckpoint) {
+    const title = checkpoint.name?.trim() || checkpoint.id;
+    return `${title} · ${checkpoint.changes} changes · step ${checkpoint.step}`;
+  }
+
+  function beginRenameCheckpoint(checkpoint: RuntimeCheckpoint) {
+    setRenamingCheckpointID(checkpoint.id);
+    setCheckpointNameDraft(checkpoint.name ?? "");
+  }
+
+  async function commitRenameCheckpoint() {
+    const id = renamingCheckpointID();
+    const name = checkpointNameDraft().trim();
+    setRenamingCheckpointID(null);
+    if (!id || !name) return;
+    const current = checkpoints().find((checkpoint) => checkpoint.id === id);
+    if (current?.name === name) return;
+    await props.runtime?.checkpointRename?.({ id, name });
+    await refreshCheckpoints();
   }
 
   const totalAdditions = () =>
@@ -500,11 +529,52 @@ export function ReviewPane(props: {
               }
               options={userCheckpoints().map((checkpoint) => ({
                 value: checkpoint.id,
-                label: `${checkpoint.id} · ${checkpoint.changes} changes · step ${checkpoint.step}`,
+                label: checkpointLabel(checkpoint),
               }))}
               onChange={(value) => void selectCheckpoint(value)}
             />
           </div>
+          <Show
+            when={userCheckpoints().some((checkpoint) => checkpoint.id === selectedCheckpoint())}
+          >
+            <div class="review-checkpoint-rename">
+              <Show
+                when={renamingCheckpointID() === selectedCheckpoint()}
+                fallback={
+                  <button
+                    type="button"
+                    class="review-checkpoint-rename-btn"
+                    onClick={() => {
+                      const selected = userCheckpoints().find(
+                        (checkpoint) => checkpoint.id === selectedCheckpoint(),
+                      );
+                      if (selected) beginRenameCheckpoint(selected);
+                    }}
+                  >
+                    重命名
+                  </button>
+                }
+              >
+                <input
+                  class="review-checkpoint-rename-input"
+                  value={checkpointNameDraft()}
+                  placeholder="快照名称"
+                  onInput={(event) => setCheckpointNameDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void commitRenameCheckpoint();
+                    if (event.key === "Escape") setRenamingCheckpointID(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  class="review-checkpoint-rename-btn"
+                  onClick={() => void commitRenameCheckpoint()}
+                >
+                  保存
+                </button>
+              </Show>
+            </div>
+          </Show>
         </Show>
         <Show when={safetyCheckpoints().length}>
           <div class="review-section-label">安全点</div>
@@ -517,7 +587,7 @@ export function ReviewPane(props: {
               }
               options={safetyCheckpoints().map((checkpoint) => ({
                 value: checkpoint.id,
-                label: `${checkpoint.id} · ${checkpoint.changes} changes · step ${checkpoint.step}`,
+                label: checkpointLabel(checkpoint),
               }))}
               onChange={(value) => void selectCheckpoint(value)}
             />

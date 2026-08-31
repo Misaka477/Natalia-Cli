@@ -3,6 +3,7 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   applyEvent,
   displayText,
+  hydrateProjectedMessages,
   initialState,
   projectEvents,
   reduceState,
@@ -820,6 +821,45 @@ test("reduceState survives a state held behind a proxy", () => {
     text: "hello",
   });
   expect(text(next, streamID("t1", "assistant"))).toBe("hello");
+});
+
+test("hydrateProjectedMessages replace drops later transcript rows", () => {
+  const state = projectEvents([
+    submitted("t1", "one"),
+    {
+      type: "content.delta",
+      id: streamID("t1", "assistant"),
+      text: "a",
+    } as RuntimeEvent,
+    submitted("t2", "two"),
+  ]);
+  expect(state.messages.length).toBeGreaterThan(1);
+  hydrateProjectedMessages(
+    state,
+    [
+      {
+        id: "t1",
+        turnID: "t1",
+        submitted: submitted("t1", "one") as Extract<
+          RuntimeEvent,
+          { type: "turn.submitted" }
+        >,
+        rows: [
+          {
+            id: "t1:user",
+            turnID: "t1",
+            kind: "user",
+            event: submitted("t1", "one"),
+          },
+        ],
+      },
+    ],
+    "older",
+    { replace: true },
+  );
+  expect(state.messages.some((message) => message.id.includes("t2"))).toBe(
+    false,
+  );
 });
 
 test("an unknown event is ignored rather than fatal", () => {

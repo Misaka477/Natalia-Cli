@@ -82,6 +82,7 @@ export type CheckpointRecord = {
   stepID?: string;
   step: number;
   reason: CheckpointReason;
+  name?: string;
   createdAt: string;
   cwd: string;
   complete: boolean;
@@ -126,6 +127,7 @@ export type CreateCheckpointInput = {
   stepID?: string;
   model?: string;
   status?: string;
+  name?: string;
 };
 
 export type RollbackOptions = {
@@ -279,6 +281,7 @@ export class CheckpointStore {
         stepID: input.stepID,
         step: input.step,
         reason: input.reason,
+        ...(input.name?.trim() ? { name: input.name.trim() } : {}),
         createdAt: this.now().toISOString(),
         cwd: this.workspaceRoot,
         complete: manifest.complete,
@@ -348,6 +351,37 @@ export class CheckpointStore {
     return records.find(
       (record) => record.id === id || String(record.sequence) === id,
     );
+  }
+
+  async rename(id: string, name: string): Promise<CheckpointRecord> {
+    this.assertAvailable();
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("checkpoint name must not be empty");
+    const records = await this.list();
+    const index = records.findIndex(
+      (record) => record.id === id || String(record.sequence) === id,
+    );
+    if (index < 0) throw new Error(`checkpoint not found: ${id}`);
+    const current = records[index]!;
+    const updated: CheckpointRecord = { ...current, name: trimmed };
+    records[index] = updated;
+    await this.writeJournal(records);
+    this.emit({
+      type: "checkpoint.created",
+      id: updated.id,
+      reason: updated.reason,
+      turnID: updated.turnID,
+      stepID: updated.stepID,
+      sequence: updated.sequence,
+      complete: updated.complete,
+      files: Object.keys(updated.manifest.entries).length,
+      changes: updated.changes.length,
+      contextJournalOffset: updated.context.journalOffset,
+      step: updated.context.step,
+      tokenEstimate: updated.context.tokenEstimate,
+      diskUsageBytes: updated.diskUsageBytes,
+    });
+    return updated;
   }
 
   async previewRollback(
@@ -1102,7 +1136,7 @@ function normalizeLegacyCheckpointRecord(
   record: CheckpointRecord,
 ): CheckpointRecord {
   if (
-    record.context.resources.some(
+    record.context?.resources?.some(
       (resource) => (resource.kind as string) === "pty",
     )
   ) {
@@ -1167,7 +1201,8 @@ function resourcePolicies(
 }
 
 function formatCheckpoint(record: CheckpointRecord) {
-  return `${record.id} step=${record.step} reason=${record.reason} files=${Object.keys(record.manifest.entries).length} changes=${record.changes.length} tokens=${record.context.tokenEstimate} ${record.complete ? "complete" : "incomplete"}`;
+  const name = record.name ? ` name=${JSON.stringify(record.name)}` : "";
+  return `${record.id} step=${record.step} reason=${record.reason}${name} files=${Object.keys(record.manifest.entries).length} changes=${record.changes.length} tokens=${record.context.tokenEstimate} ${record.complete ? "complete" : "incomplete"}`;
 }
 
 function formatRollbackPreview(preview: CheckpointPreview) {

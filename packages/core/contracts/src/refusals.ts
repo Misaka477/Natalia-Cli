@@ -238,6 +238,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "refused by the secure-input interlock, like the model-side resize",
   },
+  nativeTerminalClaimHumanInput: {
+    refusal: "error",
+    note: "claiming human input is refused while another party holds it or secure input is active",
+  },
 
   // --- checkpoint ---
   checkpointList: { refusal: "none", note: "pure read" },
@@ -245,6 +249,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   checkpointRollback: {
     refusal: "error",
     note: "a rollback that cannot run leaves the tree untouched and has nothing to report but why",
+  },
+  checkpointRename: {
+    refusal: "error",
+    note: "an unknown checkpoint is an argument error",
   },
 
   // --- sandbox ---
@@ -287,6 +295,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "an unknown session or turn is an argument error",
   },
+  sessionRollbackMessages: {
+    refusal: "error",
+    note: "an unknown session or turn is an argument error",
+  },
   sessionDelete: {
     refusal: "error",
     note: "an unknown session is an argument error",
@@ -313,6 +325,12 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "an unknown session, active turn, or pending interactive request leaves no safe partial attach",
   },
+  subagents: { refusal: "none", note: "pure read" },
+  uploadAttachment: {
+    refusal: "error",
+    note: "an unknown path or policy refusal is an argument error",
+  },
+  attachmentDataUrl: { refusal: "none", note: "pure read" },
 
   // --- mcp ---
   mcpCatalog: { refusal: "none", note: "pure read" },
