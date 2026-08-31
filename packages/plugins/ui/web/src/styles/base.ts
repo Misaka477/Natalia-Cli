@@ -440,6 +440,12 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane .natalia-transcript > * {
   flex-shrink: 0;
 }
+.neu-pane .natalia-transcript-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 100%;
+}
 .neu-pane .natalia-transcript-empty {
   margin: auto;
   display: flex;

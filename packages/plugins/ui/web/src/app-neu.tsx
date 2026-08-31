@@ -849,8 +849,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               chatObservedTop = el.scrollTop;
             }
           });
-    if (transcriptEl()) followObserver?.observe(transcriptEl());
-    if (chatTranscriptEl()) followObserver?.observe(chatTranscriptEl());
+    const transcriptContent =
+      transcriptEl()?.querySelector<HTMLElement>(".natalia-transcript-content");
+    const chatContent =
+      chatTranscriptEl()?.querySelector<HTMLElement>(".natalia-transcript-content");
+    if (transcriptContent) followObserver?.observe(transcriptContent);
+    if (chatContent) followObserver?.observe(chatContent);
     onCleanup(() => followObserver?.disconnect());
 
     void refreshSessions();

@@ -25,6 +25,7 @@ export function Transcript(props: TranscriptProps) {
       ref={props.scrollRef}
       onScroll={props.onScroll}
     >
+      <div class="natalia-transcript-content">
       <Show
         when={props.messages.length > 0}
         fallback={
@@ -58,6 +59,7 @@ export function Transcript(props: TranscriptProps) {
           )}
         </For>
       </Show>
+      </div>
     </div>
   );
 }
