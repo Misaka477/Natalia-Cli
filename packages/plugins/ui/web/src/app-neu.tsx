@@ -767,7 +767,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return "";
   }
 
+  const toolOutputCache = new Map<string, string>();
   function formatToolOutput(name: string, output: string): string {
+    const cacheKey = `${name}\n${output}`;
+    const cached = toolOutputCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+    const formatted = formatToolOutputUncached(name, output);
+    if (toolOutputCache.size >= 512) {
+      const oldest = toolOutputCache.keys().next().value;
+      if (oldest !== undefined) toolOutputCache.delete(oldest);
+    }
+    toolOutputCache.set(cacheKey, formatted);
+    return formatted;
+  }
+
+  function formatToolOutputUncached(name: string, output: string): string {
     if (name === "ask_user") {
       try {
         const parsed = JSON.parse(output) as { answers?: unknown };
