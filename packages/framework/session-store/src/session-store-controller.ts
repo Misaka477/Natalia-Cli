@@ -105,6 +105,7 @@ export function createSessionStoreController(input: {
       if (!sqliteStore) sqliteStore = new SqliteSessionStore(databasePath);
       retainSqliteStore(databasePath, sqliteStore);
       sqliteStorePath = databasePath;
+      console.warn("[session-store] sqlite db:", databasePath);
       const startup = sqliteStore.create(
         input.sessionID(),
         input.title ?? "New session",
