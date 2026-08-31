@@ -53,13 +53,46 @@ export function Transcript(props: TranscriptProps) {
       >
         <For each={props.messages}>
           {(message) => (
-            <MessageRow
-              message={message}
-              assistantName={props.assistantName}
-              assistantInitial={props.assistantInitial}
-              loadAttachmentUrl={props.loadAttachmentUrl}
-              onFork={props.onFork}
-            />
+            <div class="natalia-message-group" data-role={message.role}>
+              <MessageRow
+                message={message}
+                assistantName={props.assistantName}
+                assistantInitial={props.assistantInitial}
+                loadAttachmentUrl={props.loadAttachmentUrl}
+              />
+              <Show when={message.role !== "system"}>
+                <div class="natalia-message-group-actions">
+                  <button
+                    type="button"
+                    class="natalia-message-icon-btn"
+                    title="复制内容"
+                    onClick={() => navigator.clipboard?.writeText(message.content)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <rect x="5.5" y="5.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3" />
+                      <path d="M10.5 4.5H11.5A1.5 1.5 0 0 1 13 6V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                    </svg>
+                    <span>复制</span>
+                  </button>
+                  <Show when={props.onFork && sessionTurnID(message.id)}>
+                    <button
+                      type="button"
+                      class="natalia-message-icon-btn"
+                      title="从此消息 Fork 会话"
+                      onClick={() => props.onFork?.(sessionTurnID(message.id)!)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <circle cx="5" cy="4" r="1.6" stroke="currentColor" stroke-width="1.2" />
+                        <circle cx="5" cy="12" r="1.6" stroke="currentColor" stroke-width="1.2" />
+                        <circle cx="11" cy="12" r="1.6" stroke="currentColor" stroke-width="1.2" />
+                        <path d="M5 5.6V10.4M5 10.4H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                      </svg>
+                      <span>Fork</span>
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+            </div>
           )}
         </For>
       </Show>
@@ -73,7 +106,6 @@ export interface MessageRowProps {
   assistantName?: string;
   assistantInitial?: string;
   loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
-  onFork?: (turnID: string) => void;
 }
 
 function AttachmentImage(props: {
@@ -109,15 +141,6 @@ function sessionTurnID(messageID: string) {
 }
 
 export function MessageRow(props: MessageRowProps) {
-  const [copied, setCopied] = createSignal(false);
-
-  function handleCopy(text: string) {
-    navigator.clipboard?.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
   const isUser = () => props.message.role === "user";
   const isSystem = () => props.message.role === "system";
 
@@ -154,38 +177,6 @@ export function MessageRow(props: MessageRowProps) {
           >
             {props.message.status}
           </span>
-        </Show>
-        <Show when={!isSystem}>
-          <div class="natalia-message-header-actions">
-            <button
-              type="button"
-              class="natalia-message-icon-btn"
-              title={copied() ? "已复制" : "复制内容"}
-              onClick={() => handleCopy(props.message.content)}
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <rect x="5.5" y="5.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3" />
-                <path d="M10.5 4.5H11.5A1.5 1.5 0 0 1 13 6V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-              </svg>
-              <span>复制</span>
-            </button>
-            <Show when={props.onFork && sessionTurnID(props.message.id)}>
-              <button
-                type="button"
-                class="natalia-message-icon-btn"
-                title="从此消息 Fork 会话"
-                onClick={() => props.onFork?.(sessionTurnID(props.message.id)!)}
-              >
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                  <circle cx="5" cy="4" r="1.6" stroke="currentColor" stroke-width="1.2" />
-                  <circle cx="5" cy="12" r="1.6" stroke="currentColor" stroke-width="1.2" />
-                  <circle cx="11" cy="12" r="1.6" stroke="currentColor" stroke-width="1.2" />
-                  <path d="M5 5.6V10.4M5 10.4H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-                </svg>
-                <span>Fork</span>
-              </button>
-            </Show>
-          </div>
         </Show>
       </div>
 
