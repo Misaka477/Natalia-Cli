@@ -164,24 +164,6 @@ export function createSessionExecution(
           ? projection.replayableEvents.slice(checkpointIndex + 1)
           : projection.replayableEvents;
     contextLedgerFactory.restore(execContext, restoreEvents);
-    console.warn("[context-restore] ensureExecution", {
-      sessionID,
-      replayableEvents: projection.replayableEvents.length,
-      restoreEvents: restoreEvents.length,
-      contextEntries: execContext.snapshot().entries.length,
-      latestCheckpoint: latestContextCheckpoint !== undefined,
-      hasEpoch: epoch !== undefined,
-      compactionGeneration:
-        latestContextCheckpoint?.type === "context.checkpoint"
-          ? latestContextCheckpoint.snapshot.compactionGeneration
-          : undefined,
-      hasSummary:
-        latestContextCheckpoint?.type === "context.checkpoint"
-          ? latestContextCheckpoint.snapshot.entries.some(
-              (entry) => entry.role === "summary",
-            )
-          : undefined,
-    });
     const exec: SessionExecutionState = {
       session: loaded,
       context: execContext,
