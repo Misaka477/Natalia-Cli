@@ -579,6 +579,13 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   gap: 2px;
   margin-top: 4px;
 }
+.neu-pane .natalia-message-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
 .neu-pane .natalia-message-icon-btn {
   display: inline-flex;
   align-items: center;
