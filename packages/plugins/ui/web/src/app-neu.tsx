@@ -252,6 +252,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let sessionsRefreshToken = 0;
   let sessionsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let workspacesRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let sessionsRefreshInFlight: Promise<void> | undefined;
+  let workspacesRefreshInFlight: Promise<void> | undefined;
   let historyCursor: string | undefined;
   let newerHistoryCursor: string | undefined;
   let loadingOlderHistory = false;
@@ -326,8 +328,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   );
 
   async function refreshWorkspaces() {
-    const roots = await props.ctx.runtime.workspaceRoots?.();
-    if (roots) setWorkspaces(roots);
+    if (workspacesRefreshInFlight) return workspacesRefreshInFlight;
+    workspacesRefreshInFlight = (async () => {
+      const roots = await props.ctx.runtime.workspaceRoots?.();
+      if (roots) setWorkspaces(roots);
+    })().finally(() => {
+      workspacesRefreshInFlight = undefined;
+    });
+    return workspacesRefreshInFlight;
   }
 
   function schedulePaneScroll(pane: "main" | "chat") {
@@ -374,10 +382,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   async function refreshSessions() {
+    if (sessionsRefreshInFlight) return sessionsRefreshInFlight;
     const token = ++sessionsRefreshToken;
-    const sessions = await props.ctx.runtime.sessionList?.();
-    if (token !== sessionsRefreshToken) return;
-    if (sessions) {
+    sessionsRefreshInFlight = (async () => {
+      const sessions = await props.ctx.runtime.sessionList?.();
+      if (token !== sessionsRefreshToken) return;
+      if (sessions) {
       setSessionList(sessions);
       if (!userSelectedSession && sessions.length) {
         const active = state().sessionID;
@@ -406,7 +416,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           }
         }
       }
-    }
+    })().finally(() => {
+      sessionsRefreshInFlight = undefined;
+    });
+    return sessionsRefreshInFlight;
   }
 
   const visibleSessions = (): RuntimeSessionSummary[] =>
