@@ -348,6 +348,7 @@ export class SqliteSessionStore {
       this.deleteRecoveryProjection(id);
       this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM message_turns WHERE session_id = ?`, [id]);
+      this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM session_inputs WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM events WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM sessions WHERE id = ?`, [id]);
@@ -369,6 +370,7 @@ export class SqliteSessionStore {
     const write = this.db.transaction(() => {
       this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [session.id]);
       this.run(`DELETE FROM message_turns WHERE session_id = ?`, [session.id]);
+      this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [session.id]);
       this.run(`DELETE FROM session_inputs WHERE session_id = ?`, [session.id]);
       this.deleteRecoveryProjection(session.id);
       this.run(`DELETE FROM events WHERE session_id = ?`, [session.id]);

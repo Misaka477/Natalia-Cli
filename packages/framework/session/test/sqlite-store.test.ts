@@ -415,6 +415,28 @@ test("SQLite session records retain inbox through duplicate and fork", () => {
   }
 });
 
+test("SQLite delete removes message index state before session row", () => {
+  const path = join(tmpdir(), `natalia-message-index-delete-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_delete_index" as const;
+  try {
+    store.create(sessionID, "Delete with message index");
+    store.appendEvent(sessionID, {
+      type: "turn.submitted",
+      id: "turn_delete",
+      text: "hello",
+      byteLength: 5,
+      lineCount: 1,
+      sha256: "test",
+    });
+    store.loadMessagePage(sessionID, {});
+    store.delete(sessionID);
+    expect(store.get(sessionID)).toBeUndefined();
+  } finally {
+    store.close();
+  }
+});
+
 test("SQLite enforces session foreign keys", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-foreign-keys-"));
   const store = new SqliteSessionStore(join(root, "sessions.db"));
