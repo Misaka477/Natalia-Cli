@@ -346,6 +346,37 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }),
   );
 
+  const followObserver =
+    typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver(() => {
+          if (followBottom() && transcriptEl()) {
+            const el = transcriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            transcriptObservedTop = el.scrollTop;
+          }
+          if (chatFollowBottom() && chatTranscriptEl()) {
+            const el = chatTranscriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            chatObservedTop = el.scrollTop;
+          }
+        });
+  onCleanup(() => followObserver?.disconnect());
+
+  // Transcript mounts after the session id is resolved; observe it as soon as
+  // the element appears instead of only during the initial onMount.
+  createEffect(() => {
+    const el = transcriptEl();
+    const content = el?.querySelector<HTMLElement>(".natalia-transcript-content");
+    if (el) followObserver?.observe(el);
+    if (content) followObserver?.observe(content);
+    const chatEl = chatTranscriptEl();
+    const chatContent =
+      chatEl?.querySelector<HTMLElement>(".natalia-transcript-content");
+    if (chatEl) followObserver?.observe(chatEl);
+    if (chatContent) followObserver?.observe(chatContent);
+  });
+
   async function refreshWorkspaces() {
     if (workspacesRefreshInFlight) return workspacesRefreshInFlight;
     workspacesRefreshInFlight = (async () => {
@@ -843,36 +874,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.runtime.skills?.().then((skills) => {
       if (skills) setSkillCatalog(skills);
     });
-    // DSH-style resize follow: while a pane is pinned to the bottom, any
-    // height change (streaming growth, tool expansion, image load) re-snaps
-    // it to the true floor instead of waiting for another content event.
-    const followObserver =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(() => {
-            if (followBottom() && transcriptEl()) {
-              const el = transcriptEl()!;
-              el.scrollTop = el.scrollHeight;
-              transcriptObservedTop = el.scrollTop;
-            }
-            if (chatFollowBottom() && chatTranscriptEl()) {
-              const el = chatTranscriptEl()!;
-              el.scrollTop = el.scrollHeight;
-              chatObservedTop = el.scrollTop;
-            }
-          });
-    const transcriptContent =
-      transcriptEl()?.querySelector<HTMLElement>(".natalia-transcript-content");
-    const chatContent =
-      chatTranscriptEl()?.querySelector<HTMLElement>(".natalia-transcript-content");
-    // Content growth (streaming, tool cards, images) re-pins via the content
-    // node; viewport/window size changes re-pin via the scrollport itself.
-    if (transcriptContent) followObserver?.observe(transcriptContent);
-    if (chatContent) followObserver?.observe(chatContent);
-    if (transcriptEl()) followObserver?.observe(transcriptEl());
-    if (chatTranscriptEl()) followObserver?.observe(chatTranscriptEl());
-    onCleanup(() => followObserver?.disconnect());
-
     void refreshSessions();
     void refreshWorkspaces();
     void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
