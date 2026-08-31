@@ -93,6 +93,11 @@ export async function createUiPluginHost<TContext = unknown>(
       for (const listener of projectionListeners) listener(state);
       return evicted;
     },
+    hydrateChatMessages(messages) {
+      const evicted = viewStore.hydrateChatMessages(state, messages);
+      for (const listener of projectionListeners) listener(state);
+      return evicted;
+    },
     reset() {
       state = viewStore.initialState();
       for (const listener of projectionListeners) listener(state);

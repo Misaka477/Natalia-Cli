@@ -34,6 +34,7 @@
  *     now have production writers and project here for any host.
  */
 import type {
+  ChatMessageRow,
   RuntimeEvent,
   RuntimeProjectedMessage,
 } from "@natalia/contracts";
@@ -276,4 +277,31 @@ export function hydrateProjectedMessages(
     state.sessionID = projected.sessionID;
   if (!state.title && projected.title) state.title = projected.title;
   return bounded.evicted;
+}
+
+/**
+ * Hydrates the Live Work Chat rows from the durable chat projection. This is
+ * the chat counterpart of `hydrateProjectedMessages`: it lets the UI reuse the
+ * same lazy-loading path instead of replaying every raw chat event.
+ */
+export function hydrateChatMessages(
+  state: AppState,
+  rows: ChatMessageRow[],
+): boolean {
+  const incoming = rows.map((row) => ({
+    id:
+      row.role === "user"
+        ? `chat:${row.messageID}:user`
+        : `chat:${row.messageID}:assistant`,
+    role: row.role === "user" ? ("user" as const) : ("assistant" as const),
+    text: row.text,
+    pendingText: "",
+  }));
+  if (!incoming.length) return false;
+  const incomingIDs = new Set(incoming.map((row) => row.id));
+  const retained = state.chatMessages.filter(
+    (row) => !incomingIDs.has(row.id),
+  );
+  state.chatMessages = [...incoming, ...retained];
+  return true;
 }

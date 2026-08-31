@@ -1,4 +1,5 @@
 import type {
+  ChatMessageRow,
   RuntimeClient,
   RuntimeEvent,
   RuntimeProjectedMessage,
@@ -89,6 +90,9 @@ export type UiProjection = {
   hydrateMessages?(
     messages: RuntimeProjectedMessage[],
     direction?: "older" | "newer",
+  ): boolean;
+  hydrateChatMessages?(
+    messages: ChatMessageRow[],
   ): boolean;
   /** Resets the projected state for a session/workspace switch. */
   reset?(): void;

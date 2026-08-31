@@ -614,6 +614,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       );
       historyCursor = page.cursor.next;
       newerHistoryCursor = undefined;
+      // The Chat is a separate durable projection. Load it lazily with the same
+      // session entry path so the Chat pane is not empty just because we no
+      // longer replay the raw event log.
+      const chat = await props.ctx.runtime.chatMessages?.();
+      if (chat) props.ctx.projection.hydrateChatMessages?.(chat);
     };
 
     const openUnresolvedInteractives = (event: Event) => {
