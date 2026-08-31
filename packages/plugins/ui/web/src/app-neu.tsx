@@ -640,12 +640,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }
   }
 
-  async function removeSelectedSession() {
-    const targetID = selectedSessionID();
-    if (!targetID) return;
-    await archiveSession(targetID);
-  }
-
   async function restoreSession(sessionID: string) {
     try {
       await props.ctx.runtime.sessionRestore?.(sessionID);
@@ -1668,18 +1662,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <button
                 type="button"
                 class="neu-session-toolbar-btn"
-                disabled={!selectedSessionID() || showArchived()}
-                onClick={() => void removeSelectedSession()}
-              >
-                移除
-              </button>
-              <button
-                type="button"
-                class="neu-session-toolbar-btn"
                 data-active={showArchived()}
                 onClick={() => setShowArchived((value) => !value)}
               >
-                归档
+                显示归档
               </button>
               <button
                 type="button"
