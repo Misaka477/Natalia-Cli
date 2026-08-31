@@ -3210,6 +3210,69 @@ button.neu-settings-item.neu-settings-item-button:active {
   flex-direction: column;
   gap: 12px;
 }
+.neu-workspace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.neu-workspace-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--neu-bg);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-workspace-item-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.neu-workspace-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neu-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.neu-workspace-item-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--neu-accent);
+  color: var(--neu-on-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.neu-workspace-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.neu-workspace-switch {
+  padding: 6px 12px;
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  font-size: 12px;
+}
+.neu-workspace-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.neu-workspace-remove {
+  padding: 6px 12px;
+  background: var(--neu-bg-light);
+  color: var(--neu-error);
+  font-size: 12px;
+}
 
 /* ===== Workspace success ===== */
 .neu-workspace-success {

@@ -50,30 +50,39 @@ export function WorkspacePanel(props: {
             </Show>
             <Show when={props.workspaces?.length}>
               <div class="neu-form-section-title">已添加工作区</div>
-              <For each={props.workspaces ?? []}>
-                {(workspace) => (
-                  <div class="neu-extension-row">
-                    <span class="neu-extension-name">
-                      {workspace.title} {workspace.status === "active" ? "（当前）" : ""}
-                    </span>
-                    <button
-                      type="button"
-                      class="neu-extension-btn"
-                      disabled={workspace.status === "active"}
-                      onClick={() => { void props.onActivate?.(workspace.workspaceID); }}
-                    >
-                      切换
-                    </button>
-                    <button
-                      type="button"
-                      class="neu-extension-btn neu-extension-remove"
-                      onClick={() => { void props.onRemove?.(workspace.workspaceID); }}
-                    >
-                      删除
-                    </button>
-                  </div>
-                )}
-              </For>
+              <div class="neu-workspace-list">
+                <For each={props.workspaces ?? []}>
+                  {(workspace) => (
+                    <div class="neu-workspace-item">
+                      <div class="neu-workspace-item-info">
+                        <span class="neu-workspace-item-title">
+                          {workspace.title}
+                        </span>
+                        <Show when={workspace.status === "active"}>
+                          <span class="neu-workspace-item-badge">当前</span>
+                        </Show>
+                      </div>
+                      <div class="neu-workspace-item-actions">
+                        <button
+                          type="button"
+                          class="neu-form-btn neu-workspace-switch"
+                          disabled={workspace.status === "active"}
+                          onClick={() => { void props.onActivate?.(workspace.workspaceID); }}
+                        >
+                          切换
+                        </button>
+                        <button
+                          type="button"
+                          class="neu-form-btn neu-workspace-remove"
+                          onClick={() => { void props.onRemove?.(workspace.workspaceID); }}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
             </Show>
             <input
               class="neu-form-input"
