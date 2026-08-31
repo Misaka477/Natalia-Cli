@@ -553,6 +553,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       newerHistoryCursor = undefined;
       loadingOlderHistory = false;
       loadingNewerHistory = false;
+      toolOutputCache.clear();
       setFollowBottom(true);
       setShowJumpToBottom(false);
       setChatFollowBottom(true);
