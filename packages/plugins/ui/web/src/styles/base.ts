@@ -573,6 +573,35 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane .natalia-action-btn { padding: 5px 12px; border: none; border-radius: 12px; background: var(--neu-bg); color: var(--neu-text); box-shadow: 4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light); font-size: 12px; cursor: pointer; }
 .neu-pane .natalia-action-btn:active { box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
 .neu-pane .natalia-action-btn-primary { background: var(--neu-accent); color: var(--neu-on-accent); box-shadow: 4px 4px 8px var(--neu-accent-shadow), -4px -4px 8px var(--neu-shadow-light); }
+.neu-pane .natalia-message-footer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+}
+.neu-pane .natalia-message-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--neu-muted);
+  cursor: pointer;
+  opacity: 0.65;
+  transition: color 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+.neu-pane .natalia-message:hover .natalia-message-icon-btn,
+.neu-pane .natalia-message-icon-btn:focus-visible {
+  opacity: 1;
+}
+.neu-pane .natalia-message-icon-btn:hover {
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+}
 
 .neu-pane .natalia-composer {
   flex-shrink: 0;

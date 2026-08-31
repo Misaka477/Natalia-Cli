@@ -658,6 +658,24 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }
   }
 
+  async function forkSessionAtTurn(turnID: string) {
+    const sourceID = selectedSessionID() || state().sessionID;
+    if (!sourceID) return;
+    try {
+      const result = await props.ctx.runtime.sessionFork?.(
+        sourceID,
+        turnID,
+        `Fork of ${selectedSession()}`,
+      );
+      if (result) await refreshSessions();
+    } catch (error: unknown) {
+      props.ctx.runtime.diagnostic?.(
+        `Fork 会话失败：${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    }
+  }
+
   async function physicallyDeleteSelectedSession() {
     const targetID = selectedSessionID();
     if (!targetID) return;
@@ -1815,6 +1833,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 scrollRef={setTranscriptEl}
                 onScroll={handleTranscriptScroll}
                 loadAttachmentUrl={loadAttachmentUrl}
+                onFork={forkSessionAtTurn}
               />
               </Show>
               <Show when={showJumpToBottom()}>

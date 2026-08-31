@@ -17,6 +17,7 @@ export interface TranscriptProps {
   scrollRef?: (el: HTMLDivElement) => void;
   onScroll?: (event: Event) => void;
   loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
+  onFork?: (turnID: string) => void;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -57,6 +58,7 @@ export function Transcript(props: TranscriptProps) {
               assistantName={props.assistantName}
               assistantInitial={props.assistantInitial}
               loadAttachmentUrl={props.loadAttachmentUrl}
+              onFork={props.onFork}
             />
           )}
         </For>
@@ -71,6 +73,7 @@ export interface MessageRowProps {
   assistantName?: string;
   assistantInitial?: string;
   loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
+  onFork?: (turnID: string) => void;
 }
 
 function AttachmentImage(props: {
@@ -98,6 +101,11 @@ function AttachmentImage(props: {
       </Show>
     </>
   );
+}
+
+function sessionTurnID(messageID: string) {
+  if (!messageID.startsWith("turn_")) return undefined;
+  return messageID.replace(/:(?:user|assistant|thinking|system)$/u, "");
 }
 
 export function MessageRow(props: MessageRowProps) {
@@ -242,6 +250,37 @@ export function MessageRow(props: MessageRowProps) {
               </div>
             )}
           </For>
+        </div>
+      </Show>
+
+      <Show when={!isSystem}>
+        <div class="natalia-message-footer">
+          <button
+            type="button"
+            class="natalia-message-icon-btn"
+            title={copied() ? "已复制" : "复制内容"}
+            onClick={() => handleCopy(props.message.content)}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="5.5" y="5.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3" />
+              <path d="M10.5 4.5H11.5A1.5 1.5 0 0 1 13 6V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </button>
+          <Show when={props.onFork && sessionTurnID(props.message.id)}>
+            <button
+              type="button"
+              class="natalia-message-icon-btn"
+              title="从此消息 Fork 会话"
+              onClick={() => props.onFork?.(sessionTurnID(props.message.id)!)}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="5" cy="4" r="1.6" stroke="currentColor" stroke-width="1.2" />
+                <circle cx="5" cy="12" r="1.6" stroke="currentColor" stroke-width="1.2" />
+                <circle cx="11" cy="12" r="1.6" stroke="currentColor" stroke-width="1.2" />
+                <path d="M5 5.6V10.4M5 10.4H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+              </svg>
+            </button>
+          </Show>
         </div>
       </Show>
 
