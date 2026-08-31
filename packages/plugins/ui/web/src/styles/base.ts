@@ -158,6 +158,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   padding: 18px;
   overflow: hidden;
   min-width: 0;
+  position: relative;
 }
 .neu-sidebar-title {
   font-size: 13px;
@@ -1701,6 +1702,90 @@ button.neu-settings-item.neu-settings-item-button {
 }
 button.neu-settings-item.neu-settings-item-button:active {
   box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+}
+
+/* ===== Left sidebar compact header ===== */
+.neu-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.neu-sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.neu-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--neu-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.neu-icon-btn:hover {
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+}
+.neu-icon-btn[data-active="true"] {
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-session-search {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-sidebar-menu {
+  position: absolute;
+  top: 56px;
+  right: 18px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 148px;
+  padding: 6px;
+  background: var(--neu-bg-light);
+  border-radius: 12px;
+  box-shadow: 4px 4px 12px var(--neu-shadow-dark), -4px -4px 12px var(--neu-shadow-light);
+}
+.neu-sidebar-menu-item {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.neu-sidebar-menu-item:hover {
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+}
+.neu-sidebar-menu-toggle[data-active="true"] {
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
 }
 
 /* ===== Session action toolbar / panel ===== */

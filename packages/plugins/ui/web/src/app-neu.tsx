@@ -270,6 +270,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   );
   const [sessionMenuOpen, setSessionMenuOpen] = createSignal(false);
   const [showArchived, setShowArchived] = createSignal(false);
+  const [sessionSearchOpen, setSessionSearchOpen] = createSignal(false);
+  const [sessionQuery, setSessionQuery] = createSignal("");
+  const [sidebarMenuOpen, setSidebarMenuOpen] = createSignal(false);
   const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
@@ -578,10 +581,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return operation;
   }
 
-  const visibleSessions = (): RuntimeSessionSummary[] =>
-    sessionList().filter((session) =>
-      showArchived() ? Boolean(session.archived) : !session.archived,
-    );
+  const visibleSessions = (): RuntimeSessionSummary[] => {
+    const query = sessionQuery().trim().toLowerCase();
+    return sessionList().filter((session) => {
+      if (showArchived() ? !session.archived : session.archived) return false;
+      if (query && !session.title.toLowerCase().includes(query)) return false;
+      return true;
+    });
+  };
 
   async function createSession() {
     await props.ctx.runtime.sessionNew?.();
@@ -1641,47 +1648,106 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       {leftVisible() ? (
         <>
           <aside class="neu-sidebar" style={{ width: `${leftWidth()}px` }}>
-            <div class="neu-sidebar-title">会话管理</div>
-            <div class="neu-session-toolbar">
-              <span class="neu-session-toolbar-label">操作</span>
-              <button
-                type="button"
-                class="neu-session-toolbar-btn"
-                onClick={() => setSessionMenuOpen(true)}
-              >
-                会话
-              </button>
-              <button
-                type="button"
-                class="neu-session-toolbar-btn"
-                disabled={showArchived()}
-                onClick={() => void createSession()}
-              >
-                新建
-              </button>
-              <button
-                type="button"
-                class="neu-session-toolbar-btn"
-                data-active={showArchived()}
-                onClick={() => setShowArchived((value) => !value)}
-              >
-                显示归档
-              </button>
-              <button
-                type="button"
-                class="neu-session-toolbar-btn"
-                onClick={() => setWorkspaceOpen(true)}
-              >
-                工作区
-              </button>
-              <button
-                type="button"
-                class="neu-session-toolbar-btn"
-                onClick={() => setWorkspaceSettingsOpen(true)}
-              >
-                设置
-              </button>
+            <div class="neu-sidebar-header">
+              <span class="neu-sidebar-title">工作区</span>
+              <div class="neu-sidebar-actions">
+                <button
+                  type="button"
+                  class="neu-icon-btn"
+                  title="搜索会话"
+                  data-active={sessionSearchOpen()}
+                  onClick={() => {
+                    setSessionSearchOpen((value) => !value);
+                    setSidebarMenuOpen(false);
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" />
+                    <path d="M10.3 10.3L13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="neu-icon-btn"
+                  title="更多会话操作"
+                  data-active={sidebarMenuOpen()}
+                  onClick={() => {
+                    setSidebarMenuOpen((value) => !value);
+                    setSessionSearchOpen(false);
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 4.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                    <circle cx="6" cy="4.5" r="1.6" fill="var(--neu-bg-light)" stroke="currentColor" stroke-width="1.3" />
+                    <path d="M3 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                    <circle cx="10" cy="11.5" r="1.6" fill="var(--neu-bg-light)" stroke="currentColor" stroke-width="1.3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="neu-icon-btn"
+                  title="新建会话"
+                  onClick={() => {
+                    setSidebarMenuOpen(false);
+                    void createSession();
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </button>
+              </div>
             </div>
+            <Show when={sessionSearchOpen()}>
+              <input
+                class="neu-session-search"
+                placeholder="搜索会话..."
+                value={sessionQuery()}
+                onInput={(event) => setSessionQuery(event.currentTarget.value)}
+              />
+            </Show>
+            <Show when={sidebarMenuOpen()}>
+              <div class="neu-sidebar-menu">
+                <button
+                  type="button"
+                  class="neu-sidebar-menu-item"
+                  onClick={() => {
+                    setSidebarMenuOpen(false);
+                    setSessionMenuOpen(true);
+                  }}
+                >
+                  会话操作
+                </button>
+                <button
+                  type="button"
+                  class="neu-sidebar-menu-item"
+                  onClick={() => {
+                    setSidebarMenuOpen(false);
+                    setWorkspaceOpen(true);
+                  }}
+                >
+                  工作区管理
+                </button>
+                <button
+                  type="button"
+                  class="neu-sidebar-menu-item"
+                  onClick={() => {
+                    setSidebarMenuOpen(false);
+                    setWorkspaceSettingsOpen(true);
+                  }}
+                >
+                  工作区设置
+                </button>
+                <button
+                  type="button"
+                  class="neu-sidebar-menu-item neu-sidebar-menu-toggle"
+                  data-active={showArchived()}
+                  onClick={() => setShowArchived((value) => !value)}
+                >
+                  显示归档
+                </button>
+              </div>
+            </Show>
             <div class="neu-sidebar-content">
               <SessionTree
                 selected={selectedSessionID()}
