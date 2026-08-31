@@ -588,15 +588,11 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   padding: 0;
   border: none;
   border-radius: 6px;
-  background: transparent;
+  background: var(--neu-bg);
   color: var(--neu-muted);
   cursor: pointer;
-  opacity: 0.65;
-  transition: color 0.15s ease, opacity 0.15s ease, background 0.15s ease;
-}
-.neu-pane .natalia-message:hover .natalia-message-icon-btn,
-.neu-pane .natalia-message-icon-btn:focus-visible {
   opacity: 1;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 .neu-pane .natalia-message-icon-btn:hover {
   background: var(--neu-bg);
