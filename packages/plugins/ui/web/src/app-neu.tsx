@@ -299,6 +299,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
   const [reviewRequestedTab, setReviewRequestedTab] = createSignal<"git" | "sandbox" | "checkpoint">("git");
   const [reviewRequestedCheckpointID, setReviewRequestedCheckpointID] = createSignal<string | undefined>();
+  const [pendingRollback, setPendingRollback] = createSignal<{
+    turnID: string;
+    checkpointID?: string;
+    label: string;
+  } | undefined>();
   const [panelRevision, setPanelRevision] = createSignal(0);
   const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
     createSignal(false);
@@ -812,6 +817,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         )
       : undefined;
     if (userMessage) setMainDraft(userMessage.content);
+    setPendingRollback({
+      turnID: turnID ?? message.id,
+      ...(checkpointID ? { checkpointID } : {}),
+      label: userMessage?.content || message.content || "该消息",
+    });
     if (checkpointID) {
       setReviewRequestedTab("checkpoint");
       setReviewRequestedCheckpointID(checkpointID);
@@ -2097,6 +2107,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   menuPosition="top"
                 />
               </div>
+              <Show when={pendingRollback()}>
+                <div class="neu-rollback-banner">
+                  <span>已准备回滚：{pendingRollback()!.label}</span>
+                  <span class="neu-rollback-hint">发送新消息后生效</span>
+                  <button
+                    type="button"
+                    class="neu-rollback-cancel"
+                    onClick={() => setPendingRollback(undefined)}
+                  >
+                    取消
+                  </button>
+                </div>
+              </Show>
               <Composer
                 value={mainDraft()}
                 placeholder="输入消息，使用 @ 提及文件…"
@@ -2111,14 +2134,27 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   const text = mainDraft();
                   const paths = mainAttachments().map((item) => item.path);
                   if (text.trim() || paths.length) {
-                    console.log("[web-plugin] send", text);
-                    if (paths.length && props.ctx.runtime.submitInput) {
-                      props.ctx.runtime.submitInput?.({ text, attachments: paths });
-                    } else {
-                      props.ctx.runtime.submit?.(text);
-                    }
-                    setMainDraft("");
-                    setMainAttachments([]);
+                    const rollback = pendingRollback();
+                    const submit = async () => {
+                      try {
+                        if (rollback?.checkpointID) {
+                          await props.ctx.runtime.checkpointRollback?.({
+                            id: rollback.checkpointID,
+                          });
+                        }
+                        console.log("[web-plugin] send", text);
+                        if (paths.length && props.ctx.runtime.submitInput) {
+                          props.ctx.runtime.submitInput?.({ text, attachments: paths });
+                        } else {
+                          props.ctx.runtime.submit?.(text);
+                        }
+                      } finally {
+                        setMainDraft("");
+                        setMainAttachments([]);
+                        setPendingRollback(undefined);
+                      }
+                    };
+                    void submit();
                   }
                 }}
                 onStop={() => props.ctx.runtime.cancel?.()}
