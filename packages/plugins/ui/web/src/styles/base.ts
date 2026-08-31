@@ -636,6 +636,23 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   border-radius: 8px;
   background: var(--neu-bg-light);
 }
+.neu-pane .natalia-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--neu-muted);
+  cursor: pointer;
+}
+.neu-pane .natalia-attachment-remove:hover {
+  background: var(--neu-bg);
+  color: var(--neu-error);
+}
 
 /* ===== Right secondary sidebar ===== */
 .neu-secondary {
