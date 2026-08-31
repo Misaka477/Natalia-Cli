@@ -484,12 +484,17 @@ export function createWebRuntimeClient(
           ? undefined
           : sessions.find((session) => session.id === persisted && !session.archived);
       const touched = recent.filter((session) => session.lastAccessedAt);
+      const meaningful = recent.filter(
+        (session) => session.title && session.title !== "New session",
+      );
       const nonEmpty = recent.filter((session) => session.events > 0);
       const fallbackSource = touched.length
         ? touched
-        : nonEmpty.length
-          ? nonEmpty
-          : recent;
+        : meaningful.length
+          ? meaningful
+          : nonEmpty.length
+            ? nonEmpty
+            : recent;
       const target = persistedTarget ?? fallbackSource[0];
       newest = target;
       if (newest) {
