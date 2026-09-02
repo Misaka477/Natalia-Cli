@@ -724,8 +724,8 @@ test("custom global config participates in maintenance reads and writes", async 
   ).toBe(true);
 });
 
-test("official catalog contains 15 prebuilt packages and excludes PDF", () => {
-  expect(OFFICIAL_PLUGIN_PACKAGES).toHaveLength(15);
+test("official catalog contains 13 prebuilt packages and excludes PDF", () => {
+  expect(OFFICIAL_PLUGIN_PACKAGES).toHaveLength(13);
   expect(
     OFFICIAL_PLUGIN_PACKAGES.map(({ id }) => id) as readonly string[],
   ).not.toContain("natalia-tool-pdf");
