@@ -12,7 +12,7 @@ import {
   projectedDecisionRecords,
   projectedDriftFindings,
   projectedEvidenceRecords,
-  projectedPlans,
+  projectedPlanDocs,
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
 import type { EpisodeID } from "@natalia/contracts";
@@ -164,10 +164,10 @@ export function createIntelligenceSurface(
       // lifecycle of the plan whose task it belongs to (a projection policy —
       // the journal keeps the recorded status; the query answers what it means
       // now).
-      const plans = projectedPlans(ctx.ports.getSession()!.events);
+      const plans = projectedPlanDocs(ctx.ports.getSession()!.events);
       const planStateForTask = new Map<string, string>();
       for (const plan of plans) {
-        if (plan.taskID) planStateForTask.set(plan.taskID, plan.status);
+        planStateForTask.set(plan.planID, plan.status);
       }
       return projectedEvidenceRecords(ctx.ports.getSession()!.events).map(
         (r) => ({

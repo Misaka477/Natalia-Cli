@@ -47,7 +47,6 @@ export function createEventSink(
       setPendingHumanTerminal,
       maybeContinueAfterHumanInput,
       settleMailboxAtBoundary,
-      activateQueuedPlanAtBoundary,
       reconcileWorkspaceObservation,
       requestNaviWake,
       toolEventTurnID,
@@ -226,11 +225,6 @@ export function createEventSink(
       // turn. The order matters — acknowledge the already-delivered batch before
       // delivering the queued batch, so a fresh delivery is not mis-acked.
       settleMailboxAtBoundary(exec);
-      // P8 C4: a finished turn is also the safe completion point for the active
-      // plan (§6.5 — "A reaches completed / paused / designated safe finish").
-      // Promote the queued-next plan to active so the next turn carries it.
-      // `plan.activated` is not a trigger, so this cannot recurse.
-      activateQueuedPlanAtBoundary(exec);
       // WG4: a finished turn is a natural reconcile point — discover external
       // edits the watcher saw, graph them as isolated nodes, and drift-check
       // them against the active plan. No explicit call needed.

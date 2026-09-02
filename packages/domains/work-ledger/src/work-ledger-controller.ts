@@ -2,7 +2,13 @@ import {
   buildDriftFindingUpdate,
   createDriftEvaluator,
 } from "./drift-evaluator";
-import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
+import {
+  buildPlanDocCreated,
+  buildPlanDocDeleted,
+  buildPlanDocMarked,
+  buildPlanDocStatus,
+  buildPlanDocUpdated,
+} from "./plan-registry";
 import {
   agentActionNode,
   approvalEdge,
@@ -26,8 +32,11 @@ export function createWorkLedgerController(
 ): WorkLedgerController {
   const driftEvaluator = createDriftEvaluator(input);
   return {
-    buildPlanDraftCreated,
-    buildPlanTransition,
+    buildPlanDocCreated,
+    buildPlanDocDeleted,
+    buildPlanDocMarked,
+    buildPlanDocStatus,
+    buildPlanDocUpdated,
     evaluateDrift: driftEvaluator.evaluate,
     buildDriftFindingUpdate,
     agentActionNode,

@@ -63,7 +63,7 @@ function fakeBackend(): RuntimeClient {
       hasPTY: false,
       hasSandbox: false,
     }),
-    planList: async () => [],
+    planDocList: async () => [],
     mailboxList: async () => [],
     driftFindings: async () => [],
     completions: async () => [],

@@ -10,11 +10,7 @@ import {
   readWorkspaceFile,
   searchWorkspaceFiles,
 } from "@natalia/platform";
-import { projectedMailboxMessages, projectedPlans } from "@natalia/session";
-import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { projectedMailboxMessages } from "@natalia/session";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import {
@@ -22,7 +18,6 @@ import {
   type CollaborationService,
 } from "@natalia/collaboration";
 import { chatToolSummary } from "./chat-summary";
-import { createPlansRuntime } from "./plans";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -52,7 +47,6 @@ export function createChatTools(ctx: RuntimeContext) {
       createCollabChatTool,
       enqueueMailboxMessage,
       cancelMailboxMessage,
-      createPlanDraft,
     } = ctx.ports;
     const { tools } = ctx.state;
     const visible: RuntimeTool[] = [];
@@ -265,247 +259,6 @@ export function createChatTools(ctx: RuntimeContext) {
           return JSON.stringify(
             await cancelMailboxMessage(args.messageID, args.reason, exec),
           );
-        },
-      },
-      {
-        name: "plan_create",
-        description:
-          "Create a new plan draft (author: live_chat). It does not touch the active plan. After drafting, call plan_propose so the user can Accept in Chat; only an accepted plan may be handed off.",
-        requiresApproval: false,
-        parameters: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-            objective: { type: "string" },
-            context: { type: "string" },
-            nonGoals: { type: "array", items: { type: "string" } },
-            assumptions: { type: "array", items: { type: "string" } },
-            dependencies: { type: "array", items: { type: "string" } },
-            steps: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                  title: { type: "string" },
-                  detail: { type: "string" },
-                  verification: { type: "string" },
-                  goal: { type: "string" },
-                  tasks: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        id: { type: "string" },
-                        content: { type: "string" },
-                        acceptance: { type: "string" },
-                      },
-                      required: ["id", "content"],
-                    },
-                  },
-                  evidenceRequirements: { type: "array", items: { type: "string" } },
-                  risks: { type: "array", items: { type: "string" } },
-                  doneCriteria: { type: "string" },
-                },
-                required: ["id", "title"],
-              },
-            },
-            constraints: { type: "array", items: { type: "string" } },
-            verification: { type: "array", items: { type: "string" } },
-            riskNotes: { type: "array", items: { type: "string" } },
-            overallVerification: { type: "array", items: { type: "string" } },
-            rollbackCriteria: { type: "array", items: { type: "string" } },
-            communicationRules: { type: "array", items: { type: "string" } },
-          },
-          required: ["title", "objective", "steps"],
-          additionalProperties: false,
-        },
-        async execute(parsed) {
-          const args = parsed as {
-            title?: string;
-            objective?: string;
-            context?: string;
-            nonGoals?: string[];
-            assumptions?: string[];
-            dependencies?: string[];
-            steps?: Array<{
-              id: string;
-              title: string;
-              detail?: string;
-              verification?: string;
-              goal?: string;
-              tasks?: Array<{
-                id: string;
-                content: string;
-                acceptance?: string;
-              }>;
-              evidenceRequirements?: string[];
-              risks?: string[];
-              doneCriteria?: string;
-            }>;
-            constraints?: string[];
-            verification?: string[];
-            riskNotes?: string[];
-            overallVerification?: string[];
-            rollbackCriteria?: string[];
-            communicationRules?: string[];
-          };
-          if (
-            typeof args.title !== "string" ||
-            typeof args.objective !== "string" ||
-            !Array.isArray(args.steps)
-          )
-            return "plan_create requires title, objective and steps";
-          return JSON.stringify(
-            await createPlanDraft(
-              {
-                title: args.title,
-                objective: args.objective,
-                ...(args.context ? { context: args.context } : {}),
-                ...(args.nonGoals ? { nonGoals: args.nonGoals } : {}),
-                ...(args.assumptions ? { assumptions: args.assumptions } : {}),
-                ...(args.dependencies ? { dependencies: args.dependencies } : {}),
-                steps: args.steps,
-                ...(args.constraints ? { constraints: args.constraints } : {}),
-                ...(args.verification
-                  ? { verification: args.verification }
-                  : {}),
-                ...(args.riskNotes ? { riskNotes: args.riskNotes } : {}),
-                ...(args.overallVerification
-                  ? { overallVerification: args.overallVerification }
-                  : {}),
-                ...(args.rollbackCriteria
-                  ? { rollbackCriteria: args.rollbackCriteria }
-                  : {}),
-                ...(args.communicationRules
-                  ? { communicationRules: args.communicationRules }
-                  : {}),
-              },
-              exec,
-            ),
-          );
-        },
-      },
-      {
-        name: "plan_update",
-        description:
-          "Update a plan draft that live_chat authored (bump version). Use it to revise a draft before the user accepts it.",
-        requiresApproval: false,
-        parameters: {
-          type: "object",
-          properties: {
-            planID: { type: "string" },
-            objective: { type: "string" },
-            steps: { type: "array" },
-            constraints: { type: "array", items: { type: "string" } },
-            verification: { type: "array", items: { type: "string" } },
-            riskNotes: { type: "array", items: { type: "string" } },
-            reason: { type: "string" },
-          },
-          required: ["planID"],
-          additionalProperties: false,
-        },
-        async execute(parsed) {
-          const args = parsed as { planID?: string; reason?: string };
-          if (typeof args.planID !== "string")
-            return "plan_update requires planID";
-          const plan = projectedPlans(exec?.session.events ?? []).find(
-            (candidate) =>
-              candidate.planID === args.planID &&
-              candidate.author === "live_chat" &&
-              candidate.status === "draft",
-          );
-          if (!plan) return `no live_chat draft ${args.planID}`;
-          const workLedgerController =
-            ctx.ports.resolveService<WorkLedgerController>(
-              WORK_LEDGER_CONTROLLER_SERVICE,
-            );
-          if (!workLedgerController)
-            throw new Error("work ledger unavailable (natalia-work-ledger)");
-          publishForSession(
-            exec,
-            workLedgerController.buildPlanTransition({
-              id: `${plan.planID}:draft:${plan.version + 1}`,
-              planID: plan.planID,
-              version: plan.version + 1,
-              transition: "draft_updated",
-              at: new Date().toISOString(),
-              reason: args.reason ?? "chat revision",
-            }),
-          );
-          return JSON.stringify({ updated: true, planID: plan.planID });
-        },
-      },
-      {
-        name: "plan_propose",
-        description:
-          "Move a live_chat plan draft to proposed and wait for the user's Allow once / Allow session / Reject decision. Do not mailbox_send next_plan_handoff until this tool returns accepted.",
-        requiresApproval: false,
-        parameters: {
-          type: "object",
-          properties: {
-            planID: { type: "string" },
-          },
-          required: ["planID"],
-          additionalProperties: false,
-        },
-        async execute(parsed, context) {
-          const args = parsed as { planID?: string };
-          if (typeof args.planID !== "string")
-            return "plan_propose requires planID";
-          const known = projectedPlans(exec?.session.events ?? []);
-          const plan = known.find(
-            (candidate) =>
-              candidate.planID === args.planID &&
-              candidate.author === "live_chat",
-          );
-          if (!plan || plan.status !== "draft")
-            return JSON.stringify({
-              proposed: false,
-              planID: args.planID,
-              reason: `no draftable live_chat plan ${args.planID}`,
-              knownPlans: known.map((candidate) => ({
-                planID: candidate.planID,
-                status: candidate.status,
-                title: candidate.title,
-              })),
-            });
-          const outcome = await createPlansRuntime(ctx).proposeAndWait(
-            plan.planID,
-            { signal: context.signal, blockingCaller: true },
-          );
-          if (!outcome.proposed)
-            return JSON.stringify({ ...outcome, planID: plan.planID });
-          if (outcome.decision === "reject") {
-            const feedback = outcome.feedback?.trim();
-            return JSON.stringify({
-              proposed: true,
-              planID: plan.planID,
-              accepted: false,
-              decision: "reject",
-              ...(feedback ? { feedback } : {}),
-              instruction: feedback
-                ? `The user rejected this plan: ${feedback}. Do not hand it off. Continue helping without that plan.`
-                : "The user rejected this plan. Do not hand it off. Continue helping without that plan.",
-            });
-          }
-          if (outcome.decision === "cancelled")
-            return JSON.stringify({
-              proposed: true,
-              planID: plan.planID,
-              accepted: false,
-              decision: "cancelled",
-              instruction:
-                "Plan approval was cancelled before the user decided. Do not hand it off.",
-            });
-          return JSON.stringify({
-            proposed: true,
-            planID: plan.planID,
-            accepted: true,
-            decision: outcome.decision ?? "once",
-            instruction:
-              "The user accepted this plan. Immediately mailbox_send next_plan_handoff with this relatedPlanID so Natalia can start.",
-          });
         },
       },
     );

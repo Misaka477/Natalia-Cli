@@ -718,14 +718,14 @@ export interface InteractiveWaiter {
 }
 
 export type PlanLifecycleState =
-  | "draft"
-  | "proposed"
-  | "accepted"
-  | "queued_next_plan"
-  | "active"
-  | "completed"
-  | "superseded"
-  | "archived";
+  | "marked"
+  | "handed_off"
+  | "executing"
+  | "awaiting_audit"
+  | "auditing"
+  | "audit_passed"
+  | "audit_gaps"
+  | "completed";
 type ServiceOperation = (...args: any[]) => any;
 export interface GovernanceLedgerController {
   seedConstitutionRules: ServiceOperation;
@@ -736,8 +736,11 @@ export interface GovernanceLedgerController {
   evidenceStatusForPlanState: ServiceOperation;
 }
 export interface WorkLedgerController {
-  buildPlanDraftCreated: ServiceOperation;
-  buildPlanTransition: ServiceOperation;
+  buildPlanDocCreated: ServiceOperation;
+  buildPlanDocUpdated: ServiceOperation;
+  buildPlanDocMarked: ServiceOperation;
+  buildPlanDocDeleted: ServiceOperation;
+  buildPlanDocStatus: ServiceOperation;
   evaluateDrift: ServiceOperation;
   buildDriftFindingUpdate: ServiceOperation;
   agentActionNode: ServiceOperation;

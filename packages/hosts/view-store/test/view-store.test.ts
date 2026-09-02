@@ -412,46 +412,29 @@ test("activity facts follow a turn and prioritize user input", () => {
   expect(selectPrimaryActivity(state)).toBeUndefined();
 });
 
-test("an accepted plan is not live planning work", () => {
+test("a plan document that reached a settled status is not live planning work", () => {
   let state = projectEvents([
     {
-      type: "plan.draft.created",
-      id: "plan:1:draft",
+      type: "plan.doc.created",
+      id: "plan:1:created",
       planID: "plan:1",
-      version: 1,
       title: "Scan remaining modules",
-      author: "live_chat",
-      objective: "read-only review",
-      steps: [],
+      documentPath: ".natalia/plans/scan.md",
+      createdBy: "live_chat",
+      status: "marked",
       createdAt: "now",
-    },
-    {
-      type: "plan.proposed",
-      id: "plan:1:proposed",
-      planID: "plan:1",
-      version: 2,
-      proposedAt: "now",
     },
   ]);
   expect(selectPrimaryActivity(state)).toMatchObject({
     kind: "planning",
-    state: "waiting",
+    state: "active",
   });
   state = reduceState(state, {
-    type: "plan.accepted",
-    id: "plan:1:accepted",
+    type: "plan.doc.status",
+    id: "plan:1:status",
     planID: "plan:1",
-    version: 3,
-    acceptedBy: "user",
-    acceptedAt: "now",
-  });
-  expect(selectPrimaryActivity(state)).toBeUndefined();
-  state = reduceState(state, {
-    type: "plan.queued",
-    id: "plan:1:queued",
-    planID: "plan:1",
-    version: 4,
-    queuedAt: "now",
+    status: "audit_passed",
+    at: "now",
   });
   expect(selectPrimaryActivity(state)).toBeUndefined();
 });

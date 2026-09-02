@@ -1,7 +1,7 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { createChatSurface } from "./collaboration/chat";
 import { createMailboxSurface } from "./collaboration/mailbox";
-import { createPlansRuntime } from "./collaboration/plans";
+import { createPlanDocRuntime } from "./collaboration/plan-doc-runtime";
 import { createExtensionsRuntime } from "./commands/extensions-runtime";
 import type { RuntimeContext } from "./context";
 import { createIntelligenceSurface } from "./engineering-intelligence/intelligence";
@@ -57,27 +57,7 @@ export function createClientSurface(
     ...createWorkGraphRuntime(ctx),
     ...createIntelligenceSurface(ctx, options),
     ...createMailboxSurface(ctx),
-    ...(({
-      planList,
-      planCreate,
-      planUpdate,
-      planPropose,
-      planAccept,
-      planQueue,
-      planActivate,
-      planSupersede,
-      planCompleted,
-    }) => ({
-      planList,
-      planCreate,
-      planUpdate,
-      planPropose,
-      planAccept,
-      planQueue,
-      planActivate,
-      planSupersede,
-      planCompleted,
-    }))(createPlansRuntime(ctx)),
+    ...createPlanDocRuntime(ctx),
     ...createChatSurface(ctx),
   };
 }

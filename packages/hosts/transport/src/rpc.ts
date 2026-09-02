@@ -240,16 +240,13 @@ export const RPC_ROUTE_MEMBERS = {
   "mailbox.acknowledge": "mailboxAcknowledge",
   "mailbox.defer": "mailboxDefer",
   "mailbox.supersede": "mailboxSupersede",
-  // P8 C4: durable Live Work Chat plan drafts and lifecycle.
-  "plan.list": "planList",
-  "plan.create": "planCreate",
-  "plan.update": "planUpdate",
-  "plan.propose": "planPropose",
-  "plan.accept": "planAccept",
-  "plan.queue": "planQueue",
-  "plan.activate": "planActivate",
-  "plan.supersede": "planSupersede",
-  "plan.complete": "planCompleted",
+  // Lightweight Markdown plan document registry (replaces P8 C4).
+  "planDoc.list": "planDocList",
+  "planDoc.read": "planDocRead",
+  "planDoc.write": "planDocWrite",
+  "planDoc.mark": "planDocMark",
+  "planDoc.delete": "planDocDelete",
+  "planDoc.status": "planDocStatus",
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
@@ -2024,169 +2021,97 @@ export async function handleRPCMessage(
         ),
       };
     }
-    if (body.method === "plan.list") {
-      optionsGuard(client, "planList");
+    if (body.method === "planDoc.list") {
+      optionsGuard(client, "planDocList");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planList(),
+        result: await client.planDocList?.(),
       };
     }
-    if (body.method === "plan.create") {
-      optionsGuard(client, "planCreate");
+    if (body.method === "planDoc.read") {
+      optionsGuard(client, "planDocRead");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      const path = params?.path;
+      if (typeof planID !== "string" && typeof path !== "string")
+        throw invalidParams("planDoc.read requires planID or path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planDocRead?.({
+          ...(typeof planID === "string" ? { planID } : {}),
+          ...(typeof path === "string" ? { path } : {}),
+        }),
+      };
+    }
+    if (body.method === "planDoc.write") {
+      optionsGuard(client, "planDocWrite");
       const params = body.params as Record<string, unknown> | undefined;
       if (
         !params ||
-        typeof params.title !== "string" ||
-        params.title.trim().length === 0 ||
-        typeof params.objective !== "string" ||
-        params.objective.trim().length === 0 ||
-        !Array.isArray(params.steps) ||
-        params.steps.length === 0
+        typeof params.path !== "string" ||
+        params.path.trim().length === 0 ||
+        typeof params.content !== "string"
       )
-        throw invalidParams(
-          "plan.create requires a title, an objective and at least one step",
-        );
-      const result = await client.planCreate?.({
-        title: params.title,
-        ...(typeof params.author === "string"
-          ? { author: params.author as "user" | "live_chat" | "main_agent" }
-          : {}),
-        objective: params.objective,
-        steps: params.steps as Array<{
-          id: string;
-          title: string;
-          detail?: string;
-          verification?: string;
-        }>,
-        ...(Array.isArray(params.constraints)
-          ? { constraints: params.constraints.map(String) }
-          : {}),
-        ...(Array.isArray(params.verification)
-          ? { verification: params.verification.map(String) }
-          : {}),
-        ...(Array.isArray(params.riskNotes)
-          ? { riskNotes: params.riskNotes.map(String) }
-          : {}),
-        ...(typeof params.relatedMailboxMessageID === "string"
-          ? { relatedMailboxMessageID: params.relatedMailboxMessageID }
-          : {}),
-        ...(typeof params.supersedesPlanID === "string"
-          ? { supersedesPlanID: params.supersedesPlanID }
-          : {}),
-        ...(typeof params.taskID === "string" ? { taskID: params.taskID } : {}),
-      });
-      if (!result)
-        throw invalidParams("plan.create is not implemented by this runtime");
+        throw invalidParams("planDoc.write requires path and content");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result,
-      };
-    }
-    if (body.method === "plan.update") {
-      optionsGuard(client, "planUpdate");
-      const params = body.params as Record<string, unknown> | undefined;
-      const planID = params?.planID;
-      if (typeof planID !== "string" || !planID)
-        throw invalidParams("plan.update requires a planID string");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.planUpdate?.({
-          planID,
-          ...(typeof params.objective === "string"
-            ? { objective: params.objective }
+        result: await client.planDocWrite?.({
+          path: params.path,
+          content: params.content,
+          ...(typeof params.title === "string"
+            ? { title: params.title }
             : {}),
-          ...(Array.isArray(params.steps) ? { steps: params.steps } : {}),
-          ...(Array.isArray(params.constraints)
-            ? { constraints: params.constraints.map(String) }
-            : {}),
-          ...(Array.isArray(params.verification)
-            ? { verification: params.verification.map(String) }
-            : {}),
-          ...(Array.isArray(params.riskNotes)
-            ? { riskNotes: params.riskNotes.map(String) }
-            : {}),
-          ...(typeof params.reason === "string"
-            ? { reason: params.reason }
+          ...(typeof params.planID === "string"
+            ? { planID: params.planID }
             : {}),
         }),
       };
     }
-    if (body.method === "plan.propose") {
-      optionsGuard(client, "planPropose");
+    if (body.method === "planDoc.mark") {
+      optionsGuard(client, "planDocMark");
       const params = body.params as Record<string, unknown> | undefined;
-      const planID = params?.planID;
-      if (typeof planID !== "string" || !planID)
-        throw invalidParams("plan.propose requires a planID string");
+      if (
+        !params ||
+        typeof params.path !== "string" ||
+        params.path.trim().length === 0
+      )
+        throw invalidParams("planDoc.mark requires a path string");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planPropose?.(planID),
+        result: await client.planDocMark?.({
+          path: params.path,
+          ...(typeof params.title === "string"
+            ? { title: params.title }
+            : {}),
+        }),
       };
     }
-    if (body.method === "plan.accept") {
-      optionsGuard(client, "planAccept");
+    if (body.method === "planDoc.delete") {
+      optionsGuard(client, "planDocDelete");
       const params = body.params as Record<string, unknown> | undefined;
       const planID = params?.planID;
       if (typeof planID !== "string" || !planID)
-        throw invalidParams("plan.accept requires a planID string");
+        throw invalidParams("planDoc.delete requires a planID string");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planAccept?.(planID),
+        result: await client.planDocDelete?.(planID),
       };
     }
-    if (body.method === "plan.queue") {
-      optionsGuard(client, "planQueue");
+    if (body.method === "planDoc.status") {
+      optionsGuard(client, "planDocStatus");
       const params = body.params as Record<string, unknown> | undefined;
       const planID = params?.planID;
       if (typeof planID !== "string" || !planID)
-        throw invalidParams("plan.queue requires a planID string");
+        throw invalidParams("planDoc.status requires a planID string");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planQueue?.(planID),
-      };
-    }
-    if (body.method === "plan.activate") {
-      optionsGuard(client, "planActivate");
-      const params = body.params as Record<string, unknown> | undefined;
-      const planID = params?.planID;
-      if (typeof planID !== "string" || !planID)
-        throw invalidParams("plan.activate requires a planID string");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.planActivate?.(planID),
-      };
-    }
-    if (body.method === "plan.supersede") {
-      optionsGuard(client, "planSupersede");
-      const params = body.params as Record<string, unknown> | undefined;
-      const planID = params?.planID;
-      if (typeof planID !== "string" || !planID)
-        throw invalidParams("plan.supersede requires a planID string");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.planSupersede?.(
-          planID,
-          typeof params.reason === "string" ? params.reason : undefined,
-        ),
-      };
-    }
-    if (body.method === "plan.complete") {
-      optionsGuard(client, "planCompleted");
-      const params = body.params as Record<string, unknown> | undefined;
-      const planID = params?.planID;
-      if (typeof planID !== "string" || !planID)
-        throw invalidParams("plan.complete requires a planID string");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.planCompleted?.(planID),
+        result: await client.planDocStatus?.(planID),
       };
     }
     if (body.method === "capabilities") {

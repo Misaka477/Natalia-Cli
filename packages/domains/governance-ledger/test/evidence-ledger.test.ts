@@ -156,19 +156,22 @@ test("completion cards carry the fixed fields and omit empty optional sections",
 });
 
 test("evidence status transition policy maps plan lifecycle to effective status", () => {
-  expect(evidenceStatusForPlanState("accepted", "implemented")).toBe("planned");
-  expect(evidenceStatusForPlanState("queued_next_plan", "validated")).toBe(
-    "planned",
-  );
-  expect(evidenceStatusForPlanState("active", "planned")).toBe("implemented");
-  expect(evidenceStatusForPlanState("completed", "implemented")).toBe(
-    "accepted",
-  );
-  // A draft/proposed/superseded plan does not change the recorded status.
-  expect(evidenceStatusForPlanState("draft", "implemented")).toBe(
+  expect(evidenceStatusForPlanState("marked", "implemented")).toBe(
     "implemented",
   );
-  expect(evidenceStatusForPlanState("superseded", "validated")).toBe(
-    "validated",
+  expect(evidenceStatusForPlanState("executing", "planned")).toBe(
+    "implemented",
+  );
+  expect(evidenceStatusForPlanState("awaiting_audit", "implemented")).toBe(
+    "implemented",
+  );
+  expect(evidenceStatusForPlanState("auditing", "implemented")).toBe(
+    "implemented",
+  );
+  expect(evidenceStatusForPlanState("audit_passed", "implemented")).toBe(
+    "accepted",
+  );
+  expect(evidenceStatusForPlanState("completed", "implemented")).toBe(
+    "accepted",
   );
 });

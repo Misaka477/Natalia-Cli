@@ -95,8 +95,12 @@ export const WORKER_ROUTE_MEMBERS = {
   "subagent.history": "subagentHistory",
   "attachment.upload": "uploadAttachment",
   "attachment.dataUrl": "attachmentDataUrl",
-  "plan.list": "planList",
-  "plan.accept": "planAccept",
+  "planDoc.list": "planDocList",
+  "planDoc.read": "planDocRead",
+  "planDoc.write": "planDocWrite",
+  "planDoc.mark": "planDocMark",
+  "planDoc.delete": "planDocDelete",
+  "planDoc.status": "planDocStatus",
   "mailbox.list": "mailboxList",
   "mailbox.send": "mailboxSend",
   "mailbox.acknowledge": "mailboxAcknowledge",
@@ -203,8 +207,12 @@ type WorkerRequest = {
     | "subagent.history"
     | "attachment.upload"
     | "attachment.dataUrl"
-    | "plan.list"
-    | "plan.accept"
+    | "planDoc.list"
+    | "planDoc.read"
+    | "planDoc.write"
+    | "planDoc.mark"
+    | "planDoc.delete"
+    | "planDoc.status"
     | "mailbox.list"
     | "mailbox.send"
     | "mailbox.acknowledge"
@@ -675,14 +683,34 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>
       >;
     },
-    async planList() {
-      return (await request("plan.list")) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["planList"]>>
+    async planDocList() {
+      return (await request("planDoc.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocList"]>>
       >;
     },
-    async planAccept(planID) {
-      return (await request("plan.accept", planID)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["planAccept"]>>
+    async planDocRead(input) {
+      return (await request("planDoc.read", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocRead"]>>
+      >;
+    },
+    async planDocWrite(input) {
+      return (await request("planDoc.write", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocWrite"]>>
+      >;
+    },
+    async planDocMark(input) {
+      return (await request("planDoc.mark", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocMark"]>>
+      >;
+    },
+    async planDocDelete(planID) {
+      return (await request("planDoc.delete", planID)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocDelete"]>>
+      >;
+    },
+    async planDocStatus(planID) {
+      return (await request("planDoc.status", planID)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>
       >;
     },
     async mailboxList() {
@@ -1118,9 +1146,17 @@ export async function handleWorkerRequest(
     return await client.selectAgent?.(request.value as string);
   if (request.method === "session.snapshot")
     return await client.sessionSnapshot?.();
-  if (request.method === "plan.list") return await client.planList?.();
-  if (request.method === "plan.accept")
-    return await client.planAccept?.(request.value as string);
+  if (request.method === "planDoc.list") return await client.planDocList?.();
+  if (request.method === "planDoc.read")
+    return await client.planDocRead?.(request.value as never);
+  if (request.method === "planDoc.write")
+    return await client.planDocWrite?.(request.value as never);
+  if (request.method === "planDoc.mark")
+    return await client.planDocMark?.(request.value as never);
+  if (request.method === "planDoc.delete")
+    return await client.planDocDelete?.(request.value as string);
+  if (request.method === "planDoc.status")
+    return await client.planDocStatus?.(request.value as string);
   if (request.method === "mailbox.list") return await client.mailboxList?.();
   if (request.method === "mailbox.send")
     return await client.mailboxSend?.(request.value as never);

@@ -201,15 +201,12 @@ test("the remote report says implemented-but-unrouted for the P0-C work list", a
     "mailboxAcknowledge",
     "mailboxDefer",
     "mailboxSupersede",
-    "planList",
-    "planCreate",
-    "planUpdate",
-    "planPropose",
-    "planAccept",
-    "planQueue",
-    "planActivate",
-    "planSupersede",
-    "planCompleted",
+    "planDocList",
+    "planDocRead",
+    "planDocWrite",
+    "planDocMark",
+    "planDocDelete",
+    "planDocStatus",
     "capabilities",
     "submitInput",
     "sessionSnapshot",
@@ -334,7 +331,7 @@ test("the worker channel reports its own gaps instead of hiding them", async () 
   expect(byMember.get("selectAgent")).toBe("implemented_reachable");
   expect(byMember.get("constitutionRules")).toBe("implemented_reachable");
   expect(byMember.get("mailboxSend")).toBe("implemented_reachable");
-  expect(byMember.get("planList")).toBe("implemented_reachable");
+  expect(byMember.get("planDocList")).toBe("implemented_reachable");
   expect(byMember.get("sessionSnapshot")).toBe("implemented_reachable");
   expect(byMember.get("workGraphNodes")).toBe("implemented_unreachable");
 });

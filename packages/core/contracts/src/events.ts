@@ -742,103 +742,41 @@ type RuntimeEventData =
       supersededAt: string;
     }
   | {
-      type: "plan.draft.created";
+      type: "plan.doc.created";
       id: string;
       planID: string;
-      version: number;
       title: string;
-      author: "user" | "live_chat" | "main_agent";
-      objective: string;
-      context?: string;
-      nonGoals?: string[];
-      assumptions?: string[];
-      dependencies?: string[];
-      steps: Array<{
-        id: string;
-        title: string;
-        detail?: string;
-        verification?: string;
-        goal?: string;
-        tasks?: Array<{
-          id: string;
-          content: string;
-          acceptance?: string;
-        }>;
-        evidenceRequirements?: string[];
-        risks?: string[];
-        doneCriteria?: string;
-      }>;
-      constraints?: string[];
-      verification?: string[];
-      riskNotes?: string[];
-      overallVerification?: string[];
-      rollbackCriteria?: string[];
-      communicationRules?: string[];
-      relatedMailboxMessageID?: string;
-      /** The task this plan verifies (E3 task contract). */
-      taskID?: string;
-      supersedesPlanID?: string;
+      documentPath: string;
+      createdBy: "user" | "live_chat" | "main_agent";
+      status: string;
       createdAt: string;
-      reason?: string;
     }
   | {
-      type: "plan.draft.updated";
+      type: "plan.doc.updated";
       id: string;
       planID: string;
-      version: number;
       updatedAt: string;
       reason?: string;
     }
   | {
-      type: "plan.proposed";
+      type: "plan.doc.marked";
       id: string;
       planID: string;
-      version: number;
-      proposedAt: string;
+      markedAt: string;
     }
   | {
-      type: "plan.accepted";
+      type: "plan.doc.deleted";
       id: string;
       planID: string;
-      version: number;
-      acceptedBy: "user";
-      acceptedAt: string;
+      deletedAt: string;
     }
   | {
-      type: "plan.queued";
+      type: "plan.doc.status";
       id: string;
       planID: string;
-      version: number;
-      queuedAt: string;
-    }
-  | {
-      type: "plan.activated";
-      id: string;
-      planID: string;
-      version: number;
-      activatedAt: string;
-    }
-  | {
-      type: "plan.superseded";
-      id: string;
-      planID: string;
-      version: number;
-      reason: string;
-      supersededAt: string;
-    }
-  | {
-      type: "plan.completed";
-      id: string;
-      planID: string;
-      version: number;
-      completedAt: string;
-    }
-  | {
-      type: "plan.archived";
-      id: string;
-      planID: string;
-      version: number;
-      archivedAt: string;
+      status: string;
+      at: string;
+      reason?: string;
     }
   | { type: "status.update"; status: string; detail?: string }
   | {
@@ -2372,83 +2310,53 @@ export type RuntimeClient = {
     messageID: string,
     reason?: string,
   ): Promise<{ superseded: boolean }>;
-  /** The durable Live Work Chat plans, projected from the journal (P8 C4). */
-  planList?(): Promise<
+  /**
+   * Lists persisted plan documents for the active session. Plan content lives
+   * in Markdown under `.natalia/plans/`; this is only the lightweight registry
+   * (planID, documentPath, title, status).
+   */
+  planDocList?(): Promise<
     Array<{
       planID: string;
-      version: number;
       title: string;
-      author: "user" | "live_chat" | "main_agent";
-      objective: string;
-      steps: Array<{
-        id: string;
-        title: string;
-        detail?: string;
-        verification?: string;
-      }>;
-      constraints: string[];
-      verification: string[];
-      riskNotes: string[];
-      relatedMailboxMessageID?: string;
-      supersedesPlanID?: string;
-      createdAt: string;
+      documentPath: string;
       status: string;
-      reason?: string;
-      taskID?: string;
+      createdBy: "user" | "live_chat" | "main_agent";
+      createdAt: string;
+      updatedAt: string;
+      markedAt?: string;
     }>
   >;
+  /** Reads a Markdown plan document by planID or path. */
+  planDocRead?(input: {
+    planID?: string;
+    path?: string;
+  }): Promise<{
+    planID?: string;
+    title?: string;
+    documentPath: string;
+    content: string;
+  }>;
   /**
-   * Creates a plan draft. Plan content (objective, steps, constraints,
-   * verification, risk notes) is safe prose that may reach the journal — never
-   * tool output, file content or secrets.
+   * Writes a Markdown plan document. Only `.natalia/plans/` paths are accepted.
+   * If the path is not yet marked, a draft record is created.
    */
-  planCreate?(input: {
-    title: string;
-    author?: "user" | "live_chat" | "main_agent";
-    objective: string;
-    steps: Array<{
-      id: string;
-      title: string;
-      detail?: string;
-      verification?: string;
-    }>;
-    constraints?: string[];
-    verification?: string[];
-    riskNotes?: string[];
-    relatedMailboxMessageID?: string;
-    supersedesPlanID?: string;
-    taskID?: string;
-  }): Promise<{ created: boolean; planID?: string }>;
-  /** Updates a draft plan's content (keeps the plan, bumps version). */
-  planUpdate?(input: {
-    planID: string;
-    objective?: string;
-    steps?: Array<{
-      id: string;
-      title: string;
-      detail?: string;
-      verification?: string;
-    }>;
-    constraints?: string[];
-    verification?: string[];
-    riskNotes?: string[];
-    reason?: string;
-  }): Promise<{ updated: boolean }>;
-  /** Proposes a draft for user review. */
-  planPropose?(planID: string): Promise<{ proposed: boolean }>;
-  /** Accepts a proposed plan (the user's decision). */
-  planAccept?(planID: string): Promise<{ accepted: boolean }>;
-  /** Queues an accepted plan as next, waiting for the current plan's safe finish. */
-  planQueue?(planID: string): Promise<{ queued: boolean }>;
-  /** Activates a queued-next plan. */
-  planActivate?(planID: string): Promise<{ activated: boolean }>;
-  /** Supersedes a plan, with a safe reason. */
-  planSupersede?(
-    planID: string,
-    reason?: string,
-  ): Promise<{ superseded: boolean }>;
-  /** Marks an active plan completed; its task's evidence moves to accepted (E3). */
-  planCompleted?(planID: string): Promise<{ completed: boolean }>;
+  planDocWrite?(input: {
+    path: string;
+    content: string;
+    title?: string;
+    planID?: string;
+  }): Promise<{ written: boolean; planID?: string }>;
+  /** Marks a plan document as a formal Plan and returns its stable planID. */
+  planDocMark?(input: {
+    path: string;
+    title?: string;
+  }): Promise<{ marked: boolean; planID: string }>;
+  /** Deletes a plan registry record (does not delete the Markdown file). */
+  planDocDelete?(planID: string): Promise<{ deleted: boolean }>;
+  /** Reads the current lifecycle status of a marked plan. */
+  planDocStatus?(planID: string): Promise<{ status: string }>;
+
   evidenceRecords?(): Promise<
     Array<{
       taskID: string;

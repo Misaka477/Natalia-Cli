@@ -250,17 +250,14 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "mailboxDefer",
     "mailboxSupersede",
   ],
-  /** Live Work Chat plan drafts and lifecycle (P8 Phase C4). */
-  plans: [
-    "planList",
-    "planCreate",
-    "planUpdate",
-    "planPropose",
-    "planAccept",
-    "planQueue",
-    "planActivate",
-    "planSupersede",
-    "planCompleted",
+  /** Lightweight Markdown plan document registry (replaces P8 C4). */
+  planDocs: [
+    "planDocList",
+    "planDocRead",
+    "planDocWrite",
+    "planDocMark",
+    "planDocDelete",
+    "planDocStatus",
   ],
   /** Durable attachment upload/storage for pasted or dropped files. */
   attachments: ["uploadAttachment", "attachmentDataUrl"],

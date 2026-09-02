@@ -725,23 +725,21 @@ test("constitution, plans, mailbox and evidence project as host-agnostic facts",
       acknowledgedAt: "2026-08-26T00:00:01.000Z",
     },
     {
-      type: "plan.draft.created",
-      id: "plan:1:draft",
+      type: "plan.doc.created",
+      id: "plan:1:created",
       planID: "plan:1",
-      version: 1,
       title: "Build plan",
-      author: "main_agent",
-      objective: "verify the build",
-      steps: [],
+      documentPath: ".natalia/plans/build-plan.md",
+      createdBy: "main_agent",
+      status: "marked",
       createdAt: "2026-08-26T00:00:00.000Z",
-      taskID: "task_build",
     },
     {
-      type: "plan.proposed",
-      id: "plan:1:proposed",
+      type: "plan.doc.status",
+      id: "plan:1:status",
       planID: "plan:1",
-      version: 1,
-      proposedAt: "2026-08-26T00:00:02.000Z",
+      status: "executing",
+      at: "2026-08-26T00:00:02.000Z",
     },
   ] as RuntimeEvent[]);
   expect(state.constitutionRules["C-REL-001"]?.enforcement).toBe("deny");
@@ -751,8 +749,8 @@ test("constitution, plans, mailbox and evidence project as host-agnostic facts",
   expect(state.completions[0]?.id).toBe("completion:1");
   expect(state.mailbox["mb:1"]?.status).toBe("acknowledged");
   expect(state.plans["plan:1"]).toMatchObject({
-    status: "proposed",
-    taskID: "task_build",
+    status: "executing",
+    documentPath: ".natalia/plans/build-plan.md",
   });
 });
 

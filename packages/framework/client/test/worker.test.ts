@@ -824,30 +824,18 @@ test("fact-domain read queries and mailbox writes route through the channel", as
       hasPTY: false,
       hasSandbox: false,
     }),
-    planList: async () => [
+    planDocList: async () => [
       {
         planID: "plan:1",
-        version: 1,
         title: "t",
-        author: "main_agent",
-        objective: "o",
-        context: undefined,
-        nonGoals: [],
-        assumptions: [],
-        dependencies: [],
-        steps: [],
-        constraints: [],
-        verification: [],
-        riskNotes: [],
-        overallVerification: [],
-        rollbackCriteria: [],
-        communicationRules: [],
-        completedPhaseIDs: [],
-        status: "active",
+        documentPath: ".natalia/plans/plan_1.md",
+        status: "executing",
+        createdBy: "main_agent",
         createdAt: "2026-08-12T00:00:00.000Z",
+        updatedAt: "2026-08-12T00:00:00.000Z",
       },
     ],
-    planAccept: async () => ({ accepted: true }),
+    planDocStatus: async () => ({ status: "executing" }),
     mailboxList: async () => [],
     mailboxSend: async (input) => ({ queued: true, messageID: "mailbox:1" }),
     mailboxAcknowledge: async () => ({ acknowledged: true }),
@@ -868,8 +856,8 @@ test("fact-domain read queries and mailbox writes route through the channel", as
   expect(await client.sessionSnapshot!()).toMatchObject({
     agentStatus: "running",
   });
-  expect(await client.planList!()).toHaveLength(1);
-  expect(await client.planAccept!("plan:1")).toEqual({ accepted: true });
+  expect(await client.planDocList!()).toHaveLength(1);
+  expect(await client.planDocStatus!("plan:1")).toEqual({ status: "executing" });
   expect(
     await client.mailboxSend!({ intent: "clarification", text: "hi" }),
   ).toEqual({

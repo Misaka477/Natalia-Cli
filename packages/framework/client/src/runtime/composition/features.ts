@@ -52,7 +52,6 @@ export function wireFeatures(
   const boundary = createCollaborationBoundary(ctx);
   ports.settleMailboxAtBoundary = boundary.settleMailboxAtBoundary;
   ports.takeLiveUserMessages = boundary.takeLiveUserMessages;
-  ports.activateQueuedPlanAtBoundary = boundary.activateQueuedPlanAtBoundary;
   ports.reconcileWorkspaceObservation = boundary.reconcileWorkspaceObservation;
   const snapshot = createSnapshot(ctx);
   ports.setInFlightOperation = snapshot.setInFlightOperation;
@@ -74,9 +73,6 @@ export function wireFeatures(
   ports.createCollabChatTool = mailboxPlans.createCollabChatTool;
   ports.enqueueMailboxMessage = mailboxPlans.enqueueMailboxMessage;
   ports.cancelMailboxMessage = mailboxPlans.cancelMailboxMessage;
-  ports.createPlanDraft = mailboxPlans.createPlanDraft;
-  ports.createPlanDraftForClient = (input) =>
-    mailboxPlans.createPlanDraft(input);
   ports.enqueueMailboxForClient = (input) =>
     mailboxPlans.enqueueMailboxMessage(input);
   ports.chatSystemPrompt = chatPrompt.chatSystemPrompt;

@@ -154,14 +154,13 @@ test("a live_chat plan approval does not appear in the main transcript", async (
   const { setup, send, state } = await mountState();
   await send(
     {
-      type: "plan.draft.created",
-      id: "plan:navi:draft",
+      type: "plan.doc.created",
+      id: "plan:navi:created",
       planID: "plan:navi",
-      version: 1,
       title: "Scan remaining modules",
-      author: "live_chat",
-      objective: "read-only review",
-      steps: [],
+      documentPath: ".natalia/plans/scan.md",
+      createdBy: "live_chat",
+      status: "marked",
       createdAt: "now",
     },
     {

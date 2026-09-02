@@ -8,12 +8,16 @@ export {
   type DriftSignal,
 } from "./drift-evaluator";
 export {
-  buildPlanDraftCreated,
-  buildPlanTransition,
+  buildPlanDocCreated,
+  buildPlanDocDeleted,
+  buildPlanDocMarked,
+  buildPlanDocStatus,
+  buildPlanDocUpdated,
   type PlanAuthor,
-  type PlanDraftInput,
-  type PlanStep,
-} from "./plan-ledger";
+  type PlanDocCreatedInput,
+  type PlanRecord,
+  type PlanStatus,
+} from "./plan-registry";
 export { createWorkLedgerController } from "./work-ledger-controller";
 export {
   agentActionNode,

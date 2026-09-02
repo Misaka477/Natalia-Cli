@@ -264,7 +264,7 @@ export type AppState = {
   evidence: Array<Extract<RuntimeEvent, { type: "evidence.recorded" }>>;
   completions: Array<Extract<RuntimeEvent, { type: "completion.recorded" }>>;
   mailbox: Record<string, MailboxMessageView>;
-  plans: Record<string, PlanView>;
+  plans: Record<string, PlanDocView>;
 };
 
 export type MailboxMessageView = {
@@ -284,37 +284,15 @@ export type MailboxMessageView = {
   reason?: string;
 };
 
-export type PlanView = {
+export type PlanDocView = {
   planID: string;
-  version: number;
   title: string;
-  author: "user" | "live_chat" | "main_agent";
-  objective: string;
-  context?: string;
-  nonGoals: string[];
-  assumptions: string[];
-  dependencies: string[];
-  steps: Extract<RuntimeEvent, { type: "plan.draft.created" }>["steps"];
-  constraints: string[];
-  verification: string[];
-  riskNotes: string[];
-  overallVerification: string[];
-  rollbackCriteria: string[];
-  communicationRules: string[];
-  relatedMailboxMessageID?: string;
-  taskID?: string;
-  supersedesPlanID?: string;
+  documentPath: string;
+  createdBy: "user" | "live_chat" | "main_agent";
   createdAt: string;
-  status:
-    | "draft"
-    | "proposed"
-    | "accepted"
-    | "queued_next_plan"
-    | "active"
-    | "completed"
-    | "superseded"
-    | "archived";
-  reason?: string;
+  updatedAt: string;
+  markedAt?: string;
+  status: string;
 };
 
 export function initialState(): AppState {
@@ -419,13 +397,7 @@ export function cloneState(state: AppState): AppState {
     evidence: [...state.evidence],
     completions: [...state.completions],
     mailbox: mapRecord(state.mailbox, (value) => ({ ...value })),
-    plans: mapRecord(state.plans, (value) => ({
-      ...value,
-      steps: [...value.steps],
-      constraints: [...value.constraints],
-      verification: [...value.verification],
-      riskNotes: [...value.riskNotes],
-    })),
+    plans: mapRecord(state.plans, (value) => ({ ...value })),
     ...(state.rollback ? { rollback: { ...state.rollback } } : {}),
   };
 }

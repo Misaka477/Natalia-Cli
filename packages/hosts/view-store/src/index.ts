@@ -96,7 +96,7 @@ export {
   type WorkGraphEdgeView,
   type WorkGraphNodeView,
   type MailboxMessageView,
-  type PlanView,
+  type PlanDocView,
 } from "./state";
 export {
   applyActivityEvent,

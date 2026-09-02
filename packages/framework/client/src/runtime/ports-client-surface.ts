@@ -48,11 +48,4 @@ export type RuntimeClientSurfacePorts = {
   ) => ReturnType<
     NonNullable<import("@natalia/contracts").RuntimeClient["mailboxSend"]>
   >;
-  createPlanDraftForClient: (
-    input: Parameters<
-      NonNullable<import("@natalia/contracts").RuntimeClient["planCreate"]>
-    >[0],
-  ) => ReturnType<
-    NonNullable<import("@natalia/contracts").RuntimeClient["planCreate"]>
-  >;
 };

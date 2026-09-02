@@ -784,134 +784,62 @@ export function projectedCollabMessages(
 }
 
 /**
- * Projects the current plan state from the durable journal. The lifecycle is
- * event-sourced: `plan.draft.created` creates the plan (with its content and
- * version) and each transition (`draft.updated`/`proposed`/`accepted`/`queued`/
- * `activated`/`superseded`/`completed`/`archived`) moves it forward and bumps
- * its version. Replaying the journal reproduces the same plan state a live
- * session saw.
+ * Projects the current lightweight plan document registry from the journal.
+ *
+ * Unlike the former C4 plan ledger, this does not store plan content. It only
+ * tracks which Markdown document is a formal Plan, where it lives, and the
+ * lifecycle status used by handoff/execution/audit routing.
  */
-export type ProjectedPlan = {
+export type ProjectedPlanDoc = {
   planID: string;
-  version: number;
   title: string;
-  author: "user" | "live_chat" | "main_agent";
-  objective: string;
-  context?: string;
-  nonGoals: string[];
-  assumptions: string[];
-  dependencies: string[];
-  steps: Array<{
-    id: string;
-    title: string;
-    detail?: string;
-    verification?: string;
-    goal?: string;
-    tasks?: Array<{
-      id: string;
-      content: string;
-      acceptance?: string;
-    }>;
-    evidenceRequirements?: string[];
-    risks?: string[];
-    doneCriteria?: string;
-  }>;
-  constraints: string[];
-  verification: string[];
-  riskNotes: string[];
-  overallVerification: string[];
-  rollbackCriteria: string[];
-  communicationRules: string[];
-  relatedMailboxMessageID?: string;
-  /** The task this plan verifies (E3 task contract). */
-  taskID?: string;
-  supersedesPlanID?: string;
+  documentPath: string;
+  createdBy: "user" | "live_chat" | "main_agent";
   createdAt: string;
-  status:
-    | "draft"
-    | "proposed"
-    | "accepted"
-    | "queued_next_plan"
-    | "active"
-    | "completed"
-    | "superseded"
-    | "archived";
-  reason?: string;
+  updatedAt: string;
+  markedAt?: string;
+  status: string;
 };
 
-export function projectedPlans(events: RuntimeEvent[]): ProjectedPlan[] {
-  const plans = new Map<string, ProjectedPlan>();
-  for (const rawEvent of events) {
-    if (rawEvent.type === "plan.draft.created") {
-      plans.set(rawEvent.planID, {
-        planID: rawEvent.planID,
-        version: rawEvent.version,
-        title: rawEvent.title,
-        author: rawEvent.author,
-        objective: rawEvent.objective,
-        ...(rawEvent.context ? { context: rawEvent.context } : {}),
-        nonGoals: rawEvent.nonGoals ?? [],
-        assumptions: rawEvent.assumptions ?? [],
-        dependencies: rawEvent.dependencies ?? [],
-        steps: rawEvent.steps,
-        constraints: rawEvent.constraints ?? [],
-        verification: rawEvent.verification ?? [],
-        riskNotes: rawEvent.riskNotes ?? [],
-        overallVerification: rawEvent.overallVerification ?? [],
-        rollbackCriteria: rawEvent.rollbackCriteria ?? [],
-        communicationRules: rawEvent.communicationRules ?? [],
-        ...(rawEvent.relatedMailboxMessageID
-          ? { relatedMailboxMessageID: rawEvent.relatedMailboxMessageID }
-          : {}),
-        ...(rawEvent.taskID ? { taskID: rawEvent.taskID } : {}),
-        ...(rawEvent.supersedesPlanID
-          ? { supersedesPlanID: rawEvent.supersedesPlanID }
-          : {}),
-        createdAt: rawEvent.createdAt,
-        status: "draft",
+export function projectedPlanDocs(events: RuntimeEvent[]): ProjectedPlanDoc[] {
+  const plans = new Map<string, ProjectedPlanDoc>();
+  for (const event of events) {
+    if (event.type === "plan.doc.created") {
+      plans.set(event.planID, {
+        planID: event.planID,
+        title: event.title,
+        documentPath: event.documentPath,
+        createdBy: event.createdBy,
+        createdAt: event.createdAt,
+        updatedAt: event.createdAt,
+        status: event.status,
       });
       continue;
     }
+    if (event.type === "plan.doc.deleted") {
+      plans.delete(event.planID);
+      continue;
+    }
     if (
-      rawEvent.type !== "plan.draft.updated" &&
-      rawEvent.type !== "plan.proposed" &&
-      rawEvent.type !== "plan.accepted" &&
-      rawEvent.type !== "plan.queued" &&
-      rawEvent.type !== "plan.activated" &&
-      rawEvent.type !== "plan.superseded" &&
-      rawEvent.type !== "plan.completed" &&
-      rawEvent.type !== "plan.archived"
+      event.type !== "plan.doc.updated" &&
+      event.type !== "plan.doc.marked" &&
+      event.type !== "plan.doc.status"
     )
       continue;
-    const event = rawEvent;
     const plan = plans.get(event.planID);
     if (!plan) continue;
-    plan.version = event.version;
     switch (event.type) {
-      case "plan.draft.updated":
-        if (event.reason) plan.reason = event.reason;
+      case "plan.doc.updated":
+        plan.updatedAt = event.updatedAt;
+        if (event.reason) plan.status = plan.status;
         break;
-      case "plan.proposed":
-        plan.status = "proposed";
+      case "plan.doc.marked":
+        plan.markedAt = event.markedAt;
+        plan.updatedAt = event.markedAt;
         break;
-      case "plan.accepted":
-        plan.status = "accepted";
-        break;
-      case "plan.queued":
-        plan.status = "queued_next_plan";
-        break;
-      case "plan.activated":
-        plan.status = "active";
-        break;
-      case "plan.superseded":
-        plan.status = "superseded";
-        plan.reason = event.reason;
-        break;
-      case "plan.completed":
-        plan.status = "completed";
-        break;
-      case "plan.archived":
-        plan.status = "archived";
+      case "plan.doc.status":
+        plan.status = event.status;
+        plan.updatedAt = event.at;
         break;
     }
   }

@@ -2188,20 +2188,17 @@ function Shell(props: {
               ));
             }}
             onPlanAccept={(planID) => {
-              void props.backend.planAccept?.(planID).catch((error) =>
+              void props.backend.planDocStatus?.(planID).catch((error) =>
                 toast.show({
                   variant: "error",
-                  message: `Plan not accepted: ${
+                  message: `Plan status failed: ${
                     error instanceof Error ? error.message : String(error)
                   }`.slice(0, 160),
                 }),
               );
             }}
             onPlanReject={(planID) => {
-              void props.backend.planSupersede?.(
-                planID,
-                "rejected in live work chat",
-              );
+              void props.backend.planDocStatus?.(planID);
             }}
             selectedTaskID={() => state.facts.selectedTaskID}
             promptMaxHeight={Math.min(

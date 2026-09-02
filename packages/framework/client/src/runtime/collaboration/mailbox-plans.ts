@@ -8,16 +8,12 @@
  */
 import {
   projectedMailboxMessages,
-  projectedPlans,
+  projectedPlanDocs,
   sessionRunCoordinator,
 } from "@natalia/session";
 import {
   buildMailboxQueued,
   buildMailboxStatus,
-} from "@natalia/runtime-services";
-import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
-  type WorkLedgerController,
 } from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
@@ -33,7 +29,6 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     createCollabChatTool,
     enqueueMailboxMessage,
     cancelMailboxMessage,
-    createPlanDraft,
   };
 
   function collaborationMaxAutoRounds() {
@@ -170,27 +165,18 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           queued: false as const,
           reason: "next_plan_handoff requires relatedPlanID",
         };
-      const plan = projectedPlans(owner.session.events).find(
+      const plan = projectedPlanDocs(owner.session.events).find(
         (candidate) => candidate.planID === planID,
       );
-      if (
-        !plan ||
-        plan.status === "superseded" ||
-        plan.status === "completed" ||
-        plan.status === "archived"
-      )
+      if (!plan)
         return {
           queued: false as const,
-          reason: `no live plan ${planID} for next_plan_handoff`,
+          reason: `no marked plan ${planID} for next_plan_handoff`,
         };
-      if (
-        plan.status !== "accepted" &&
-        plan.status !== "queued_next_plan" &&
-        plan.status !== "active"
-      )
+      if (plan.status === "completed")
         return {
           queued: false as const,
-          reason: `plan ${planID} is ${plan.status}; wait for the user to accept it before next_plan_handoff`,
+          reason: `plan ${planID} is already completed`,
         };
     }
     const fingerprint = mailboxFingerprint(
@@ -317,111 +303,6 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       }),
     );
     return { cancelled: true as const, messageID };
-  }
-
-  async function createPlanDraft(
-    input: {
-      title: string;
-      author?: "user" | "live_chat" | "main_agent";
-      objective: string;
-      context?: string;
-      nonGoals?: string[];
-      assumptions?: string[];
-      dependencies?: string[];
-      steps: Array<{
-        id: string;
-        title: string;
-        detail?: string;
-        verification?: string;
-        goal?: string;
-        tasks?: Array<{
-          id: string;
-          content: string;
-          acceptance?: string;
-        }>;
-        evidenceRequirements?: string[];
-        risks?: string[];
-        doneCriteria?: string;
-      }>;
-      constraints?: string[];
-      verification?: string[];
-      riskNotes?: string[];
-      overallVerification?: string[];
-      rollbackCriteria?: string[];
-      communicationRules?: string[];
-      relatedMailboxMessageID?: string;
-      supersedesPlanID?: string;
-      taskID?: string;
-    },
-    targetExec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
-  ) {
-    const { publishForSession, nextPlanSequence } = ctx.ports;
-    const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
-      WORK_LEDGER_CONTROLLER_SERVICE,
-    );
-    if (!workLedgerController)
-      throw new Error("work ledger unavailable (natalia-work-ledger)");
-    if (!targetExec) return { created: false as const };
-    if (
-      typeof input.title !== "string" ||
-      input.title.trim().length === 0 ||
-      typeof input.objective !== "string" ||
-      input.objective.trim().length === 0 ||
-      !Array.isArray(input.steps) ||
-      input.steps.length === 0
-    )
-      return { created: false as const };
-    const now = new Date();
-    const planID = `plan:${Date.now().toString(36)}:${nextPlanSequence()}`;
-    publishForSession(
-      targetExec,
-      workLedgerController.buildPlanDraftCreated({
-        id: `${planID}:draft:0`,
-        planID,
-        version: 1,
-        title: input.title,
-        author: input.author ?? "live_chat",
-        objective: input.objective,
-        ...(input.context ? { context: input.context } : {}),
-        ...(input.nonGoals && input.nonGoals.length
-          ? { nonGoals: input.nonGoals }
-          : {}),
-        ...(input.assumptions && input.assumptions.length
-          ? { assumptions: input.assumptions }
-          : {}),
-        ...(input.dependencies && input.dependencies.length
-          ? { dependencies: input.dependencies }
-          : {}),
-        steps: input.steps,
-        ...(input.constraints && input.constraints.length
-          ? { constraints: input.constraints }
-          : {}),
-        ...(input.verification && input.verification.length
-          ? { verification: input.verification }
-          : {}),
-        ...(input.riskNotes && input.riskNotes.length
-          ? { riskNotes: input.riskNotes }
-          : {}),
-        ...(input.overallVerification && input.overallVerification.length
-          ? { overallVerification: input.overallVerification }
-          : {}),
-        ...(input.rollbackCriteria && input.rollbackCriteria.length
-          ? { rollbackCriteria: input.rollbackCriteria }
-          : {}),
-        ...(input.communicationRules && input.communicationRules.length
-          ? { communicationRules: input.communicationRules }
-          : {}),
-        ...(input.relatedMailboxMessageID
-          ? { relatedMailboxMessageID: input.relatedMailboxMessageID }
-          : {}),
-        ...(input.taskID ? { taskID: input.taskID } : {}),
-        ...(input.supersedesPlanID
-          ? { supersedesPlanID: input.supersedesPlanID }
-          : {}),
-        createdAt: now.toISOString(),
-      }),
-    );
-    return { created: true as const, planID };
   }
 }
 

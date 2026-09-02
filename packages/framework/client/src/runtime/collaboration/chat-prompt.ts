@@ -14,7 +14,7 @@ import {
   projectedDecisionRecords,
   projectedDriftFindings,
   projectedMailboxMessages,
-  projectedPlans,
+  projectedPlanDocs,
 } from "@natalia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
@@ -129,8 +129,8 @@ export function createChatPrompt(ctx: RuntimeContext) {
     const snapshot = exec
       ? currentSessionSnapshot(exec, `snapshot:live:${chatSession.id}`)
       : latestSessionSnapshot(chatSession.events);
-    const plans = projectedPlans(chatSession.events);
-    const activePlan = plans.find((plan) => plan.status === "active");
+    const plans = projectedPlanDocs(chatSession.events);
+    const activePlan = plans.find((plan) => plan.status === "executing" || plan.status === "awaiting_audit" || plan.status === "auditing");
     const mailbox = projectedMailboxMessages(chatSession.events).filter(
       (message) =>
         message.status === "queued" || message.status === "delivered",
@@ -185,17 +185,17 @@ export function createChatPrompt(ctx: RuntimeContext) {
         ? `Main agent's recent output: ${promptData(snapshot.recentOutput)}`
         : "Main agent's recent output: none",
       activePlan
-        ? `Active plan (${activePlan.status}): ${promptData(activePlan.title)} — ${promptData(activePlan.objective)}`
+        ? `Active plan (${activePlan.status}): ${promptData(activePlan.title)} · ${promptData(activePlan.documentPath)}`
         : "Active plan: none",
       plans.length
-        ? `Known plans (use these exact planIDs; never invent one):\n${plans
+        ? `Known plan documents (use these exact planIDs; never invent one):\n${plans
             .slice(-8)
             .map(
               (plan) =>
-                `- ${plan.planID} · ${plan.status} · ${promptData(plan.title)}`,
+                `- ${plan.planID} · ${plan.status} · ${promptData(plan.title)} · ${promptData(plan.documentPath)}`,
             )
             .join("\n")}`
-        : "Known plans: none",
+        : "Known plan documents: none",
       mailbox.length
         ? `Pending mailbox intents:\n${mailbox
             .map(

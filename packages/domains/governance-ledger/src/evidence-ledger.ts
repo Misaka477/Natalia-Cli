@@ -176,12 +176,12 @@ export function evidenceStatusForPlanState(
   recordedStatus: EvidenceRecordedStatus,
 ): EvidenceRecordedStatus {
   switch (planState) {
-    case "accepted":
-      return "planned";
-    case "queued_next_plan":
-      return "planned";
-    case "active":
+    case "executing":
+    case "awaiting_audit":
+    case "auditing":
+    case "audit_gaps":
       return "implemented";
+    case "audit_passed":
     case "completed":
       return "accepted";
     default:

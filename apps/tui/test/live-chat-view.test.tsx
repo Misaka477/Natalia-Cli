@@ -34,7 +34,7 @@ function mockBackend(overrides: Record<string, unknown> = {}) {
       hasSandbox: false,
     }),
     mailboxList: async () => [],
-    planList: async () => [],
+    planDocList: async () => [],
     ...overrides,
   } as unknown as RuntimeClient;
 }
@@ -284,19 +284,15 @@ test("a Chat-proposed plan shows a review card with accept and reject", async ()
     history,
     {},
     {
-      planList: async () => [
+      planDocList: async () => [
         {
           planID: "plan:1",
-          version: 1,
           title: "Switch to Bun-native HTTP",
-          author: "live_chat",
-          objective: "replace the fetch wrapper",
-          steps: [],
-          constraints: [],
-          verification: [],
-          riskNotes: [],
-          status: "proposed",
+          documentPath: ".natalia/plans/plan_1.md",
+          status: "handed_off",
+          createdBy: "live_chat",
           createdAt: "2026-08-14T00:00:00.000Z",
+          updatedAt: "2026-08-14T00:00:00.000Z",
         },
       ],
     },
@@ -396,20 +392,15 @@ test("a selected task highlights the matching plan", async () => {
     history,
     { selectedTaskID: () => "task_build" },
     {
-      planList: async () => [
+      planDocList: async () => [
         {
-          planID: "plan:aligned",
-          version: 1,
+          planID: "task_build",
           title: "Aligned build plan",
-          author: "main_agent",
-          objective: "verify the build",
-          steps: [],
-          constraints: [],
-          verification: [],
-          riskNotes: [],
-          status: "active",
+          documentPath: ".natalia/plans/aligned.md",
+          status: "executing",
+          createdBy: "main_agent",
           createdAt: "2026-08-26T00:00:00.000Z",
-          taskID: "task_build",
+          updatedAt: "2026-08-26T00:00:00.000Z",
         },
       ],
     },

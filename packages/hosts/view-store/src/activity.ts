@@ -201,35 +201,17 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
     case "question.response":
       delete state.activities[questionActivityID(event.id)];
       return;
-    case "plan.draft.created":
+    case "plan.doc.created":
       state.plans = {
         ...state.plans,
         [event.planID]: {
           planID: event.planID,
-          version: event.version,
           title: event.title,
-          author: event.author,
-          objective: event.objective,
-          ...(event.context ? { context: event.context } : {}),
-          nonGoals: event.nonGoals ?? [],
-          assumptions: event.assumptions ?? [],
-          dependencies: event.dependencies ?? [],
-          steps: event.steps,
-          constraints: event.constraints ?? [],
-          verification: event.verification ?? [],
-          riskNotes: event.riskNotes ?? [],
-          overallVerification: event.overallVerification ?? [],
-          rollbackCriteria: event.rollbackCriteria ?? [],
-          communicationRules: event.communicationRules ?? [],
-          ...(event.relatedMailboxMessageID
-            ? { relatedMailboxMessageID: event.relatedMailboxMessageID }
-            : {}),
-          ...(event.taskID ? { taskID: event.taskID } : {}),
-          ...(event.supersedesPlanID
-            ? { supersedesPlanID: event.supersedesPlanID }
-            : {}),
+          documentPath: event.documentPath,
+          createdBy: event.createdBy,
           createdAt: event.createdAt,
-          status: "draft",
+          updatedAt: event.createdAt,
+          status: event.status,
         },
       };
       upsertActivity(state, {
@@ -238,66 +220,29 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
         kind: "planning",
         state: "active",
         label: event.title,
-        detail: event.objective,
+        detail: event.documentPath,
       });
       return;
-    case "plan.draft.updated":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        if (event.reason) plan.reason = event.reason;
-      });
-      upsertActivity(state, {
-        id: planActivityID(event.planID),
-        turnID: event.id,
-        kind: "planning",
-        state: "active",
+    case "plan.doc.updated":
+      updatePlanDoc(state, event.planID, (plan) => {
+        plan.updatedAt = event.updatedAt;
       });
       return;
-    case "plan.proposed":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        plan.status = "proposed";
-      });
-      upsertActivity(state, {
-        id: planActivityID(event.planID),
-        turnID: event.id,
-        kind: "planning",
-        state: "waiting",
+    case "plan.doc.marked":
+      updatePlanDoc(state, event.planID, (plan) => {
+        plan.markedAt = event.markedAt;
+        plan.updatedAt = event.markedAt;
       });
       return;
-    case "plan.accepted":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        plan.status = "accepted";
+    case "plan.doc.status":
+      updatePlanDoc(state, event.planID, (plan) => {
+        plan.status = event.status;
+        plan.updatedAt = event.at;
       });
       delete state.activities[planActivityID(event.planID)];
       return;
-    case "plan.queued":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        plan.status = "queued_next_plan";
-      });
-      delete state.activities[planActivityID(event.planID)];
-      return;
-    case "plan.activated":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        plan.status = "active";
-      });
-      delete state.activities[planActivityID(event.planID)];
-      return;
-    case "plan.superseded":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        plan.status = "superseded";
-        plan.reason = event.reason;
-      });
-      delete state.activities[planActivityID(event.planID)];
-      return;
-    case "plan.completed":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        plan.status = "completed";
-      });
-      delete state.activities[planActivityID(event.planID)];
-      return;
-    case "plan.archived":
-      updatePlan(state, event.planID, event.version, (plan) => {
-        plan.status = "archived";
-      });
+    case "plan.doc.deleted":
+      delete state.plans[event.planID];
       delete state.activities[planActivityID(event.planID)];
       return;
     case "mailbox.queued":
@@ -372,15 +317,14 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
   }
 }
 
-function updatePlan(
+function updatePlanDoc(
   state: AppState,
   planID: string,
-  version: number,
   mutate: (plan: NonNullable<AppState["plans"][string]>) => void,
 ) {
   const existing = state.plans[planID];
   if (!existing) return;
-  const next = { ...existing, version };
+  const next = { ...existing };
   mutate(next);
   state.plans = { ...state.plans, [planID]: next };
 }

@@ -565,48 +565,26 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "supersedes a queued mailbox message with a safe reason",
   },
 
-  // --- Live Work Chat plans (P8 C4) ---
-  planList: { refusal: "none", note: "pure read" },
-  planCreate: {
+  // --- Markdown plan document registry (replaces P8 C4) ---
+  planDocList: { refusal: "none", note: "pure read of the plan registry" },
+  planDocRead: { refusal: "none", note: "pure read of a Markdown plan document" },
+  planDocWrite: {
     refusal: "value",
-    expressedBy: "created",
-    note: "creates a plan draft; plan content is safe prose that may reach the journal, so secrets must be redacted by the caller",
+    expressedBy: "written",
+    note: "writes a Markdown plan document; only .natalia/plans/ paths are accepted",
   },
-  planUpdate: {
+  planDocMark: {
     refusal: "value",
-    expressedBy: "updated",
-    note: "updates a draft plan's content, bumping its version",
+    expressedBy: "marked",
+    note: "marks a plan document as a formal Plan and returns its stable planID",
   },
-  planPropose: {
+  planDocDelete: {
     refusal: "value",
-    expressedBy: "proposed",
-    note: "proposes a draft for user review",
+    expressedBy: "deleted",
+    note: "deletes a plan registry record; does not delete the Markdown file",
   },
-  planAccept: {
-    refusal: "value",
-    expressedBy: "accepted",
-    note: "accepts a proposed plan; the user's decision",
-  },
-  planQueue: {
-    refusal: "value",
-    expressedBy: "queued",
-    note: "queues an accepted plan as next, waiting for the current plan's safe finish",
-  },
-  planActivate: {
-    refusal: "value",
-    expressedBy: "activated",
-    note: "activates a queued-next plan",
-  },
-  planSupersede: {
-    refusal: "value",
-    expressedBy: "superseded",
-    note: "supersedes a plan with a safe reason",
-  },
-  planCompleted: {
-    refusal: "value",
-    expressedBy: "completed",
-    note: "marks an active plan completed; its task's evidence moves to accepted (E3)",
-  },
+  planDocStatus: { refusal: "none", note: "pure read of one plan's lifecycle status" },
+
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 
 type AssertNever<T extends never> = T;

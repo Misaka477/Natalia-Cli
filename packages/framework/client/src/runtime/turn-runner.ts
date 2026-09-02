@@ -11,7 +11,7 @@
 import { providerForModel } from "@natalia/runtime";
 import {
   projectedCollabMessages,
-  projectedPlans,
+  projectedPlanDocs,
 } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import {
@@ -172,19 +172,23 @@ export function createTurnRunner(
           })),
       naviIntro: () => projectedCollabMessages(exec.session.events).length > 0,
       activePlan: () => {
-        const plan = projectedPlans(exec.session.events).find(
-          (candidate) => candidate.status === "active",
+        const plan = projectedPlanDocs(exec.session.events).find(
+          (candidate) =>
+            candidate.status === "executing" ||
+            candidate.status === "awaiting_audit" ||
+            candidate.status === "auditing" ||
+            candidate.status === "audit_gaps",
         );
         if (!plan) return undefined;
         return {
           planID: plan.planID,
-          version: plan.version,
+          version: 1,
           title: plan.title,
-          objective: plan.objective,
-          steps: plan.steps,
-          constraints: plan.constraints,
-          verification: plan.verification,
-          riskNotes: plan.riskNotes,
+          objective: plan.documentPath,
+          steps: [],
+          constraints: [],
+          verification: [],
+          riskNotes: [],
         };
       },
       retry: retryService,

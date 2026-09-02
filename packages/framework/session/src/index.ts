@@ -323,7 +323,7 @@ export {
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectedMailboxMessages,
-  projectedPlans,
+  projectedPlanDocs,
   projectedChatMessages,
   projectedCollabMessages,
   normalizeCollaborationEvent,
@@ -337,7 +337,7 @@ export type {
   ProjectedCapability,
   ProjectedDriftFinding,
   ProjectedCollabMessage,
-  ProjectedPlan,
+  ProjectedPlanDoc,
   SessionProjection,
 } from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";

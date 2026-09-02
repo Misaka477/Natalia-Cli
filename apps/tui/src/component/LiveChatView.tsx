@@ -62,10 +62,8 @@ function chatMessageIDFromBlock(blockID: string): string {
 type PlanRow = {
   planID: string;
   title: string;
-  objective: string;
+  documentPath?: string;
   status: string;
-  author: string;
-  taskID?: string;
   mailboxMessageID?: string;
 };
 
@@ -131,19 +129,18 @@ export function LiveChatView(props: {
   const [inputTarget, setInputTarget] = createSignal<InputRenderable>();
   let input: TextareaRenderable | undefined;
   let chatScroll: ScrollBoxRenderable | undefined;
-  const proposedPlan = () => plans().find((plan) => plan.status === "proposed");
+  const proposedPlan = () => plans().find((plan) => plan.status === "handed_off");
   const handoffPlan = () =>
     plans().find(
       (plan) =>
         plan.mailboxMessageID &&
-        plan.status !== "proposed" &&
-        plan.status !== "superseded" &&
+        plan.status !== "marked" &&
         plan.status !== "completed",
     );
   const alignedPlan = () => {
     const taskID = props.selectedTaskID?.();
     if (!taskID) return undefined;
-    return plans().find((plan) => plan.taskID === taskID);
+    return plans().find((plan) => plan.planID === taskID);
   };
   const liveAgentStatus = () => props.intelligence?.() ?? agentStatus();
 
@@ -158,7 +155,7 @@ export function LiveChatView(props: {
   const refresh = async () => {
     const [snapshot, planRows, mailboxRows] = await Promise.all([
       props.backend.sessionSnapshot?.() ?? Promise.resolve(undefined),
-      props.backend.planList?.() ?? Promise.resolve([]),
+      props.backend.planDocList?.() ?? Promise.resolve([]),
       props.backend.mailboxList?.() ?? Promise.resolve([]),
     ]);
     setAgentStatus(snapshot ?? undefined);
@@ -391,7 +388,7 @@ export function LiveChatView(props: {
               Navi proposed a plan
             </text>
             <text fg={theme.text} wrapMode="word">
-              {plan().title} — {plan().objective}
+              {plan().title}{plan().documentPath ? ` · ${plan().documentPath}` : ""}
             </text>
             <text fg={theme.muted} wrapMode="word">
               Confirm with Natalia's approval card: Allow once, Allow session,

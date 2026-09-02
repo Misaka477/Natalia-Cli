@@ -8,7 +8,7 @@
  * edits and drift-check them against the active plan). Reads live state through
  * `RuntimeContext` at call time.
  */
-import { projectedMailboxMessages, projectedPlans } from "@natalia/session";
+import { projectedMailboxMessages, projectedPlanDocs } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -25,7 +25,6 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     acknowledgeDeliveredMailboxAtBoundary,
     deliverQueuedMailboxAtBoundary,
     takeLiveUserMessages,
-    activateQueuedPlanAtBoundary,
     reconcileWorkspaceObservation,
   };
 
@@ -116,38 +115,6 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
   }
 
   /**
-   * P8 C4: promotes the queued-next plan to active at the turn safe boundary.
-   * §6.5: after the active plan reaches a safe finish, the accepted queued plan
-   * activates and the next Main Agent turn carries it. Projection-driven: only
-   * a plan still `queued_next_plan` is promoted, and one per boundary, so an
-   * already-active plan is never re-activated.
-   */
-  function activateQueuedPlanAtBoundary(exec?: SessionExecutionState) {
-    const { getActiveExec, publishForSession } = ctx.ports;
-    const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
-      WORK_LEDGER_CONTROLLER_SERVICE,
-    );
-    if (!workLedgerController)
-      throw new Error("work ledger unavailable (natalia-work-ledger)");
-    const target = exec ?? getActiveExec();
-    if (!target?.session) return;
-    const queued = projectedPlans(target.session.events).find(
-      (plan) => plan.status === "queued_next_plan",
-    );
-    if (!queued) return;
-    publishForSession(
-      target,
-      workLedgerController.buildPlanTransition({
-        id: `${queued.planID}:activated:${queued.version + 1}`,
-        planID: queued.planID,
-        version: queued.version + 1,
-        transition: "activated",
-        at: new Date().toISOString(),
-      }),
-    );
-  }
-
-  /**
    * WG4: reconcile the watcher hints against the current workspace, graph any
    * confirmed external changes as isolated nodes, and run them through the
    * DriftEvaluator against the active plan (Phase 4 + Phase 5). This is both the
@@ -217,11 +184,15 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         );
       }
       if (confirmed.length) {
-        const activePlan = projectedPlans(target.session.events).find(
-          (plan) => plan.status === "active",
+        const activePlan = projectedPlanDocs(target.session.events).find(
+          (plan) =>
+            plan.status === "executing" ||
+            plan.status === "awaiting_audit" ||
+            plan.status === "auditing" ||
+            plan.status === "audit_gaps",
         );
-        const objective = activePlan?.objective ?? "";
-        const applicableConstraints = activePlan?.constraints ?? [];
+        const objective = activePlan?.title ?? "";
+        const applicableConstraints: string[] = [];
         if (objective || applicableConstraints.length) {
           const findings = workLedgerController.evaluateDrift({
             sessionID: target.session.id,

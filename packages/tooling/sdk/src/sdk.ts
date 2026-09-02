@@ -441,68 +441,35 @@ export type NataliaSDK = {
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSupersede"]>>>
   >;
-  /** The durable Live Work Chat plans, projected from the journal (P8 C4). */
-  planList(): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["planList"]>>>
+  /** Lists persisted plan documents for the active session (P8 C4 replacement). */
+  planDocList(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["planDocList"]>>>
   >;
-  /** Creates a plan draft (P8 C4). */
-  planCreate(input: {
-    title: string;
-    author?: "user" | "live_chat" | "main_agent";
-    objective: string;
-    steps: Array<{
-      id: string;
-      title: string;
-      detail?: string;
-      verification?: string;
-    }>;
-    constraints?: string[];
-    verification?: string[];
-    riskNotes?: string[];
-    relatedMailboxMessageID?: string;
-    supersedesPlanID?: string;
-    taskID?: string;
-  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planCreate"]>>>>;
-  /** Updates a draft plan's content, bumping its version. */
-  planUpdate(input: {
-    planID: string;
-    objective?: string;
-    steps?: Array<{
-      id: string;
-      title: string;
-      detail?: string;
-      verification?: string;
-    }>;
-    constraints?: string[];
-    verification?: string[];
-    riskNotes?: string[];
-    reason?: string;
-  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planUpdate"]>>>>;
-  /** Proposes a draft for user review. */
-  planPropose(
+  /** Reads a Markdown plan document by planID or path. */
+  planDocRead(input: {
+    planID?: string;
+    path?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocRead"]>>>>;
+  /** Writes a Markdown plan document inside `.natalia/plans/`. */
+  planDocWrite(input: {
+    path: string;
+    content: string;
+    title?: string;
+    planID?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocWrite"]>>>>;
+  /** Marks a plan document as a formal Plan and returns its stable planID. */
+  planDocMark(input: {
+    path: string;
+    title?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocMark"]>>>>;
+  /** Deletes a plan registry record (does not delete the Markdown file). */
+  planDocDelete(
     planID: string,
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planPropose"]>>>>;
-  /** Accepts a proposed plan. */
-  planAccept(
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocDelete"]>>>>;
+  /** Reads the current lifecycle status of a marked plan. */
+  planDocStatus(
     planID: string,
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planAccept"]>>>>;
-  /** Queues an accepted plan as next. */
-  planQueue(
-    planID: string,
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planQueue"]>>>>;
-  /** Activates a queued-next plan. */
-  planActivate(
-    planID: string,
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planActivate"]>>>>;
-  /** Supersedes a plan with a safe reason. */
-  planSupersede(
-    planID: string,
-    reason?: string,
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planSupersede"]>>>>;
-  /** Marks an active plan completed; its task's evidence moves to accepted (E3). */
-  planCompleted(
-    planID: string,
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planCompleted"]>>>>;
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>>>;
   driftFindings(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
@@ -881,37 +848,26 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("mailbox.defer", { messageID, reason }),
     mailboxSupersede: async (messageID, reason) =>
       await call("mailbox.supersede", { messageID, reason }),
-    planList: async () => await call("plan.list", {}),
-    planCreate: async (input) =>
-      await call("plan.create", {
-        title: input.title,
-        author: input.author,
-        objective: input.objective,
-        steps: input.steps,
-        constraints: input.constraints ?? [],
-        verification: input.verification ?? [],
-        riskNotes: input.riskNotes ?? [],
-        relatedMailboxMessageID: input.relatedMailboxMessageID,
-        supersedesPlanID: input.supersedesPlanID,
-        taskID: input.taskID,
-      }),
-    planUpdate: async (input) =>
-      await call("plan.update", {
+    planDocList: async () => await call("planDoc.list", {}),
+    planDocRead: async (input) =>
+      await call("planDoc.read", {
         planID: input.planID,
-        objective: input.objective,
-        steps: input.steps,
-        constraints: input.constraints ?? [],
-        verification: input.verification ?? [],
-        riskNotes: input.riskNotes ?? [],
-        reason: input.reason,
+        path: input.path,
       }),
-    planPropose: async (planID) => await call("plan.propose", { planID }),
-    planAccept: async (planID) => await call("plan.accept", { planID }),
-    planQueue: async (planID) => await call("plan.queue", { planID }),
-    planActivate: async (planID) => await call("plan.activate", { planID }),
-    planSupersede: async (planID, reason) =>
-      await call("plan.supersede", { planID, reason }),
-    planCompleted: async (planID) => await call("plan.complete", { planID }),
+    planDocWrite: async (input) =>
+      await call("planDoc.write", {
+        path: input.path,
+        content: input.content,
+        title: input.title,
+        planID: input.planID,
+      }),
+    planDocMark: async (input) =>
+      await call("planDoc.mark", {
+        path: input.path,
+        title: input.title,
+      }),
+    planDocDelete: async (planID) => await call("planDoc.delete", { planID }),
+    planDocStatus: async (planID) => await call("planDoc.status", { planID }),
     driftFindings: async () => await call("drift.findings", {}),
     evaluateDrift: async (input) =>
       await call("drift.evaluate", {
