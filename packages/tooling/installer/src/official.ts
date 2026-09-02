@@ -33,6 +33,11 @@ export const OFFICIAL_PLUGIN_PACKAGES = [
     directory: "natalia-team",
   },
   {
+    id: "natalia-mcp",
+    packageName: "@natalia/plugin-mcp",
+    directory: "natalia-mcp",
+  },
+  {
     id: "natalia-tool-ask",
     packageName: "@natalia/plugin-tool-ask",
     directory: "natalia-tool-ask",

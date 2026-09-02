@@ -42,6 +42,7 @@ const pluginRoots = [
   "packages/plugins/native-terminal",
   "packages/plugins/skills",
   "packages/plugins/team",
+  "packages/plugins/mcp",
   "packages/plugins/tools/ask",
   "packages/plugins/tools/fs-read",
   "packages/plugins/tools/fs-write",
@@ -145,8 +146,8 @@ for (const root of pluginRoots) {
     pluginOutputs.push(resolve(packageOutdir, entry));
 }
 
-if (pluginRoots.length !== 13)
-  throw new Error(`expected 13 release plugins, got ${pluginRoots.length}`);
+if (pluginRoots.length !== 14)
+  throw new Error(`expected 14 release plugins, got ${pluginRoots.length}`);
 for (const artifact of [
   "LICENSE",
   "NOTICE",
