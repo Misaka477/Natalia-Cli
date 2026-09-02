@@ -204,6 +204,8 @@ export type RuntimePorts = {
   nextChatSequence: () => number;
   nextPlanSequence: () => number;
   requestNaviWake: (exec: SessionExecutionState) => void;
+  requestNiaWake: (exec: SessionExecutionState) => void;
+  wakeNia: (exec: SessionExecutionState) => Promise<void>;
   scheduleInternalWake: (
     exec: SessionExecutionState,
     input: import("@natalia/contracts").SubmitInput,

@@ -69,6 +69,8 @@ export function wireFeatures(
   ports.wakeMainForCollaboration = collaborationWake.wakeMainForCollaboration;
   ports.wakeNavi = collaborationWake.wakeNavi;
   ports.requestNaviWake = collaborationWake.requestNaviWake;
+  ports.wakeNia = collaborationWake.wakeNia;
+  ports.requestNiaWake = collaborationWake.requestNiaWake;
   ports.scheduleInternalWake = collaborationWake.scheduleInternalWake;
   const mailboxPlans = createMailboxPlans(ctx);
   ports.createCollabChatTool = mailboxPlans.createCollabChatTool;

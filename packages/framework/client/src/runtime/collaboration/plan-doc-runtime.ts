@@ -249,6 +249,10 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
           at: now,
         }),
       );
+      if (status === "awaiting_audit" || status === "auditing") {
+        const exec = ctx.ports.getActiveExec();
+        if (exec) ctx.ports.requestNiaWake(exec);
+      }
       return { updated: true };
     },
   };

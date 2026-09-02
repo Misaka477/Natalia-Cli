@@ -78,6 +78,7 @@ export type RuntimePortsExtra = {
     signal: AbortSignal,
   ) => Promise<{ text: string }>;
   wakeNavi: (exec: SessionExecutionState) => Promise<void>;
+  wakeNia: (exec: SessionExecutionState) => Promise<void>;
   setTsRuntimeConfig: (config: ConfigV3 | undefined) => void;
   setMaxSteps: (steps: number | undefined) => void;
   setRetryPolicy: (

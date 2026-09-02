@@ -22,6 +22,8 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     scheduleInternalWake,
     requestNaviWake,
     wakeNavi,
+    requestNiaWake,
+    wakeNia,
   };
 
   function wakeMainForCollaboration(
@@ -114,6 +116,42 @@ export function createCollaborationWake(ctx: RuntimeContext) {
           cause instanceof Error ? cause.message : String(cause)
         })`,
         at: new Date().toISOString(),
+      });
+    }
+  }
+
+  function requestNiaWake(exec: SessionExecutionState) {
+    if (ctx.ports.isDisposed()) return;
+    void wakeNia(exec);
+  }
+
+  async function wakeNia(exec: SessionExecutionState) {
+    const { nextChatSequence, publishForSession } = ctx.ports;
+    const controller = ctx.ports.resolveService<ProviderModelController>(
+      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    );
+    if (!exec.provider || !controller) return;
+    const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
+    try {
+      await controller.runChatTurn({
+        sessionID: exec.session.id as SessionID,
+        text: "",
+        responseMessageID,
+        internal: true,
+        provider: exec.provider,
+        channel: "nia",
+      });
+    } catch (cause) {
+      publishForSession(exec, {
+        type: "chat.message.added",
+        id: `${responseMessageID}:chat`,
+        messageID: responseMessageID,
+        role: "chat",
+        text: `(Nia wake error: ${
+          cause instanceof Error ? cause.message : String(cause)
+        })`,
+        at: new Date().toISOString(),
+        channel: "nia",
       });
     }
   }
