@@ -13,7 +13,6 @@ import type {
 } from "@natalia/contracts";
 import {
   createRealRuntimeClient,
-  installExampleDocuments,
 } from "@natalia/client";
 import { callRuntimeRPC } from "@natalia/transport";
 import { createRuntimeHttpServer } from "@natalia/transport/host";
@@ -51,11 +50,9 @@ async function withRuntime<T>(
     events: RuntimeEvent[];
     root: string;
   }) => Promise<T>,
-  options: { withDocuments?: boolean } = {},
+  options: {} = {},
 ): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), "natalia-consumer-"));
-  if (options.withDocuments)
-    await installExampleDocuments({ workspaceRoot: root, includeTasks: true });
   const events: RuntimeEvent[] = [];
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
@@ -223,47 +220,6 @@ test("a consumer can read catalogues and workspace facts over the SDK", async ()
     const status = await sdk.runtimeStatus?.();
     if (status) expect(status.type).toBe("status.snapshot");
   });
-}, 60_000);
-
-test("a consumer can inspect real unattended work over the SDK", async () => {
-  await withRuntime(
-    async ({ baseURL }) => {
-      const sdk = createNataliaSDK({ baseURL, token: "secret" });
-
-      // Scheduled tasks and flows were previously reachable only by running the
-      // CLI, so a remote integration could not list unattended work at all.
-      // Assert against installed documents, because empty lists would pass
-      // whether the routes worked or not.
-      const tasks = await sdk.taskOverview();
-      expect(tasks.tasks.length).toBeGreaterThan(0);
-      expect(tasks.unreadable).toEqual([]);
-      const task = tasks.tasks[0]!;
-      expect(task.taskID).toBeString();
-      expect(task.flowID).toBeString();
-      expect(task.permissionProfile).toBeString();
-
-      const flows = await sdk.flowOverview();
-      expect(flows.flows.length).toBeGreaterThan(0);
-      expect(flows.flows[0]!.stages.length).toBeGreaterThan(0);
-      // A flow reports which tasks run it, so an integration can show impact.
-      expect(Array.isArray(flows.flows[0]!.usedBy)).toBe(true);
-
-      // The catalog is a management surface: every readable task and flow stays
-      // visible, while launch readiness is an explicit fact on each row.
-      const catalog = await sdk.documentCatalog();
-      expect(catalog.some((entry) => entry.kind === "task")).toBe(true);
-      expect(catalog.some((entry) => entry.kind === "flow")).toBe(true);
-      expect(catalog.every((entry) => entry.id.length > 0)).toBe(true);
-      expect(
-        catalog.every(
-          (entry) =>
-            entry.source.kind === "workspace" &&
-            typeof entry.launch.ready === "boolean",
-        ),
-      ).toBe(true);
-    },
-    { withDocuments: true },
-  );
 }, 60_000);
 
 test("a consumer can discover contributed commands", async () => {
@@ -911,229 +867,6 @@ test("an external UI takes over approvals and answers questions", async () => {
     server.stop();
     await runtime.dispose?.();
   }
-}, 60_000);
-
-test("an external orchestrator drives a turn and reads the work graph", async () => {
-  // P0-F scenario 2: submit, watch the event stream, then read the Work
-  // Graph to confirm causality and the task overview for the durable side.
-  await withRuntime(async ({ baseURL }) => {
-    const sdk = createNataliaSDK({ baseURL, token: "secret" });
-
-    const submitted = await sdk.prompt("write notes.md");
-    const events = await collectEventsWhileTriggering(
-      sdk,
-      () => undefined,
-      (event) => event.type === "turn.finished",
-    );
-    expect(events.some((event) => event.type === "turn.submitted")).toBe(true);
-    expect(events.some((event) => event.type === "tool.update")).toBe(true);
-
-    // The Work Graph confirms causality: the tool call that ran is recorded
-    // as a node, and the turn is linked to it.
-    const nodes = await sdk.workGraphNodes();
-    expect(nodes.length).toBeGreaterThan(0);
-    const edges = await sdk.workGraphEdges();
-    expect(Array.isArray(edges)).toBe(true);
-    expect(nodes.some((node) => node.turnID === submitted.id)).toBe(true);
-
-    // The durable side answers with shape, whatever its contents: the
-    // orchestrator can render the overview without knowing what tasks exist.
-    const overview = await sdk.taskOverview();
-    expect(Array.isArray(overview.tasks)).toBe(true);
-    expect(Array.isArray(overview.unreadable)).toBe(true);
-  });
-}, 60_000);
-
-test("an external orchestrator writes flow documents, idempotently", async () => {
-  // P0-G: the write surface, previously CLI-only. The orchestrator creates a
-  // flow document, sees the result say "created", replays the same request
-  // (network retry) and gets "updated" — no second document, no double side
-  // effect. Delete is idempotent the same way: deleting what is already gone
-  // answers alreadyDeleted instead of failing. Path policy refuses like the
-  // workspace surface.
-  await withRuntime(async ({ baseURL }) => {
-    const sdk = createNataliaSDK({ baseURL, token: "secret" });
-    const document = {
-      kind: "natalia-flow" as const,
-      version: 1,
-      flowID: "flow_remote_1",
-      displayName: "Remote flow",
-      directRun: { permissionProfile: "auto" },
-      modules: [
-        {
-          id: "m1",
-          type: "report_output" as const,
-          displayName: "Instructions",
-          instructions: "do the thing",
-        },
-      ],
-    };
-
-    const created = await sdk.saveFlowDocument({
-      path: "remote.yaml",
-      document,
-    });
-    expect(created).toEqual({
-      path: "remote.yaml",
-      flowID: "flow_remote_1",
-      created: true,
-      updated: false,
-    });
-
-    // Replay of the same request: the retry of a dropped network call. No
-    // second side effect — the document exists once, the outcome says updated.
-    const replayed = await sdk.saveFlowDocument({
-      path: "remote.yaml",
-      document,
-    });
-    expect(replayed.created).toBe(false);
-    expect(replayed.updated).toBe(true);
-
-    // The read surface answers by shape. This environment has no real
-    // provider, and the catalog only lists flows that can be run (its
-    // manual-run check requires an available default model), so the flow is
-    // honestly absent here; the write itself is proven by the created ->
-    // updated transition above, which cannot happen without the document
-    // being on disk.
-    const catalog = await sdk.documentCatalog();
-    expect(Array.isArray(catalog)).toBe(true);
-    for (const entry of catalog) {
-      expect(typeof entry.id).toBe("string");
-      expect(typeof entry.path).toBe("string");
-      expect(["workspace", "capability"]).toContain(entry.source.kind);
-      expect(typeof entry.launch.ready).toBe("boolean");
-      if (!entry.launch.ready)
-        expect(entry.launch.reason.length).toBeGreaterThan(0);
-    }
-
-    // A path outside the flow editor is refused with a reason, like the
-    // workspace surface.
-    const refused = await sdk
-      .saveFlowDocument({ path: "../../escape.yaml", document })
-      .catch((error: unknown) => error);
-    expect(failureKind(refused)).toBe("refused");
-
-    const deleted = await sdk.deleteFlowDocument({ path: "remote.yaml" });
-    expect(deleted).toEqual({
-      path: "remote.yaml",
-      deleted: true,
-      alreadyDeleted: false,
-    });
-
-    // Idempotent delete: the retry of the same request.
-    const deletedAgain = await sdk.deleteFlowDocument({ path: "remote.yaml" });
-    expect(deletedAgain).toEqual({
-      path: "remote.yaml",
-      deleted: false,
-      alreadyDeleted: true,
-    });
-  });
-}, 60_000);
-
-test("an external orchestrator validates a task document before delivering it", async () => {
-  // P0-G follow-up: task document validation was CLI-only, so an orchestrator
-  // could deliver a broken task and find out at 02:00. Validation problems
-  // are a value, not an exception: the orchestrator validates, reads the
-  // result, and decides.
-  await withRuntime(async ({ baseURL, root }) => {
-    const sdk = createNataliaSDK({ baseURL, token: "secret" });
-
-    // A well-formed task: its flow has a minimum condition, its profile and
-    // references exist in the default config. Fixtures are written to the
-    // workspace like any other test data; the API under test is the preview.
-    await mkdir(join(root, ".natalia", "flows"), { recursive: true });
-    await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
-    await writeFile(
-      join(root, ".natalia", "flows", "validated.yaml"),
-      [
-        "kind: natalia-flow",
-        "version: 1",
-        "flowID: flow_validate_1",
-        "displayName: Validated flow",
-        "modules:",
-        "  - id: m1",
-        "    type: read_search",
-        "    displayName: Survey",
-        "    minimumConditions:",
-        "      - id: done",
-        "        text: the survey was completed",
-      ].join("\n"),
-    );
-    await writeFile(
-      join(root, ".natalia", "tasks", "validated-task.yaml"),
-      [
-        "kind: natalia-task",
-        "version: 1",
-        "taskID: task_validate_1",
-        "displayName: Validated task",
-        "schedule: manual",
-        "prompt: run",
-        "permissionProfile: auto",
-        "flow:",
-        "  flowID: flow_validate_1",
-        "retry: none",
-        "alerts: []",
-      ].join("\n"),
-    );
-
-    const valid = await sdk.taskPermissionPreview({
-      path: "validated-task.yaml",
-    });
-    expect(valid.valid).toBe(true);
-    expect(valid.taskID).toBe("task_validate_1");
-    expect(valid.flowID).toBe("flow_validate_1");
-    expect(valid.problems).toEqual([]);
-    expect(valid.enabledModules).toBe(1);
-
-    // A broken task: no minimum condition anywhere in its flow. The result
-    // says invalid with the reason; the orchestrator never delivers it.
-    await writeFile(
-      join(root, ".natalia", "flows", "conditionless.yaml"),
-      [
-        "kind: natalia-flow",
-        "version: 1",
-        "flowID: flow_validate_2",
-        "displayName: Conditionless flow",
-        "modules:",
-        "  - id: m1",
-        "    type: read_search",
-        "    displayName: Survey",
-      ].join("\n"),
-    );
-    await writeFile(
-      join(root, ".natalia", "tasks", "conditionless-task.yaml"),
-      [
-        "kind: natalia-task",
-        "version: 1",
-        "taskID: task_validate_3",
-        "displayName: Conditionless task",
-        "schedule: manual",
-        "prompt: run",
-        "permissionProfile: auto",
-        "flow:",
-        "  flowID: flow_validate_2",
-        "retry: none",
-        "alerts: []",
-      ].join("\n"),
-    );
-
-    const invalid = await sdk.taskPermissionPreview({
-      path: "conditionless-task.yaml",
-    });
-    expect(invalid.valid).toBe(false);
-    expect(invalid.conditionlessModules).toContain("m1");
-    expect(
-      invalid.problems.some((problem) =>
-        problem.includes("no minimum completion condition"),
-      ),
-    ).toBe(true);
-
-    // A path outside the task directory is refused, like workspace paths.
-    const refused = await sdk
-      .taskPermissionPreview({ path: "../../escape.yaml" })
-      .catch((error: unknown) => error);
-    expect(failureKind(refused)).toBe("refused");
-  });
 }, 60_000);
 
 test("an external integration configures the runtime the way the TUI does", async () => {

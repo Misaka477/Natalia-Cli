@@ -574,44 +574,6 @@ export type NataliaSDK = {
   submitInput(
     input: import("@natalia/contracts").SubmitInput,
   ): Promise<import("@natalia/contracts").SubmittedTurn>;
-  /** Creates or updates a flow document. Idempotent by path. */
-  saveFlowDocument(input: {
-    path?: string;
-    document: import("@natalia/contracts").NataliaFlowDocumentInput;
-  }): Promise<{
-    path: string;
-    flowID: string;
-    created: boolean;
-    updated: boolean;
-  }>;
-  /** Deletes a flow document. Idempotent: already-gone answers true. */
-  deleteFlowDocument(input: { path: string }): Promise<{
-    path: string;
-    deleted: boolean;
-    alreadyDeleted: boolean;
-  }>;
-  /** Creates or updates a task document. Idempotent by path. */
-  saveTaskDocument(input: {
-    path?: string;
-    document: import("@natalia/contracts").NataliaTaskDocumentInput;
-  }): Promise<{
-    path: string;
-    taskID: string;
-    created: boolean;
-    updated: boolean;
-  }>;
-  /** Deletes a task document. Configured timers must be removed first. */
-  deleteTaskDocument(input: { path: string }): Promise<{
-    path: string;
-    deleted: boolean;
-    alreadyDeleted: boolean;
-  }>;
-  taskSchedule(
-    input: Parameters<NonNullable<RuntimeClient["taskSchedule"]>>[0],
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["taskSchedule"]>>>>;
-  taskUnschedule(
-    input: Parameters<NonNullable<RuntimeClient["taskUnschedule"]>>[0],
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["taskUnschedule"]>>>>;
   /** Writes a config patch (the TUI settings menu path) and applies it. */
   updateConfig(input: {
     patch: Record<string, unknown>;
@@ -632,27 +594,6 @@ export type NataliaSDK = {
     patch: Record<string, unknown>,
     scope: "global" | "project",
   ): Promise<{ applied: boolean }>;
-  /**
-   * Validates a task document and previews its permissions before delivery.
-   * Problems are a value, not an exception.
-   */
-  taskPermissionPreview(input: { path: string }): Promise<{
-    taskID: string;
-    displayName: string;
-    permissionProfile: string;
-    flowID: string;
-    flowDisplayName: string;
-    enabledModules: number;
-    blocked: Array<{ moduleID: string; reason: string }>;
-    conditionlessModules: string[];
-    problems: string[];
-    valid: boolean;
-  }>;
-  taskOverview(): Promise<import("@natalia/contracts").ScheduledTaskOverview>;
-  flowOverview(): Promise<import("@natalia/contracts").FlowOverview>;
-  documentCatalog(): Promise<
-    import("@natalia/contracts").WorkflowDocumentChoice[]
-  >;
   /**
    * What this runtime implements: the required members it has, which capability
    * groups are complete, and which queries answer with nothing because their facts
@@ -1002,20 +943,10 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     capabilities: async () => await call("capabilities", {}),
     sessionSnapshot: async () => await call("session.snapshot", {}),
     submitInput: async (input) => await call("submit.input", input),
-    saveFlowDocument: async (input) => await call("flow.save", input),
-    deleteFlowDocument: async (input) => await call("flow.delete", input),
-    saveTaskDocument: async (input) => await call("task.save", input),
-    deleteTaskDocument: async (input) => await call("task.delete", input),
-    taskSchedule: async (input) => await call("task.schedule", input),
-    taskUnschedule: async (input) => await call("task.unschedule", input),
-    taskPermissionPreview: async (input) => await call("task.preview", input),
     updateConfig: async (input) => await call("config.update", input),
     settingsGet: async () => await call("settings.get", {}),
     settingsSet: async (patch, scope) =>
       await call("settings.set", { patch, scope }),
-    taskOverview: async () => await call("task.overview", {}),
-    flowOverview: async () => await call("flow.overview", {}),
-    documentCatalog: async () => await call("document.catalog", {}),
     reloadConfig: async () => await call("config.reload", {}),
     canReloadConfig: async () => await call("config.canReload", {}),
     availability: async () => await call("runtime.availability", {}),

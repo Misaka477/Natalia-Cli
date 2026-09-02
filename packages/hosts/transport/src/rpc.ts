@@ -196,9 +196,6 @@ export const RPC_ROUTE_MEMBERS = {
   "plugin.list": "plugins",
   "command.catalog": "commandCatalog",
   "command.execute": "commandExecute",
-  "task.overview": "taskOverview",
-  "flow.overview": "flowOverview",
-  "document.catalog": "documentCatalog",
   "runtime.availability": null,
   "runtime.status": "runtimeStatus",
   "diagnostics.list": "diagnostics",
@@ -268,20 +265,6 @@ export const RPC_ROUTE_MEMBERS = {
   "chat.abort": "chatAbort",
   "chat.rollback": "chatRollback",
   // P0-G: the flow write surface, previously CLI-only.
-  "flow.save": "saveFlowDocument",
-  "flow.delete": "deleteFlowDocument",
-  "task.save": "saveTaskDocument",
-  "task.delete": "deleteTaskDocument",
-  "task.schedule": "taskSchedule",
-  "task.unschedule": "taskUnschedule",
-  "task.preview": "taskPermissionPreview",
-  "task.preview-document": "taskPermissionPreviewDocument",
-  "task.load": "loadTaskDocument",
-  "flow.load": "loadFlowDocument",
-  "flow.install-examples": "installExampleDocuments",
-  "task.preview-calendar": "previewSystemdCalendar",
-  "task.permission-usage": "permissionProfileUsage",
-  "flow.decompose-conditions": "decomposeFlowConditions",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /**
@@ -2374,209 +2357,6 @@ export async function handleRPCMessage(
         result: await client.configGet?.(),
       };
     }
-    // --- P0-G follow-up: task document validation (previously CLI-only) ---
-    if (body.method === "settings.get") {
-      optionsGuard(client, "settingsGet");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.settingsGet?.(),
-      };
-    }
-    if (body.method === "settings.set") {
-      const params = body.params;
-      if (!params || typeof params !== "object")
-        throw invalidParams("settings.set.params must be an object");
-      const patch = (params as { patch?: unknown }).patch;
-      if (!patch || typeof patch !== "object" || Array.isArray(patch))
-        throw invalidParams("settings.set.params.patch must be an object");
-      const scope = (params as { scope?: unknown }).scope;
-      if (scope !== "project" && scope !== "global")
-        throw invalidParams(
-          'settings.set.params.scope must be "project" or "global"',
-        );
-      optionsGuard(client, "settingsSet");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.settingsSet?.(
-          patch as Record<string, unknown>,
-          scope as "project" | "global",
-        ),
-      };
-    }
-    // --- P0-G follow-up: task document validation (previously CLI-only) ---
-    if (body.method === "task.preview") {
-      const path = stringParam(body.params, "path");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.taskPermissionPreview?.({ path }),
-      };
-    }
-    if (body.method === "task.preview-document") {
-      const path = stringParam(body.params, "path");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.taskPermissionPreviewDocument?.({ path }),
-      };
-    }
-    if (body.method === "task.load") {
-      const path = stringParam(body.params, "path");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.loadTaskDocument?.({ path }),
-      };
-    }
-    if (body.method === "flow.load") {
-      const path = stringParam(body.params, "path");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.loadFlowDocument?.({ path }),
-      };
-    }
-    if (body.method === "flow.install-examples") {
-      const params = body.params;
-      const includeTasks =
-        params && typeof params === "object"
-          ? typeof (params as { includeTasks?: unknown }).includeTasks ===
-            "boolean"
-            ? (params as { includeTasks: boolean }).includeTasks
-            : undefined
-          : undefined;
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.installExampleDocuments?.(
-          includeTasks === undefined ? undefined : { includeTasks },
-        ),
-      };
-    }
-    if (body.method === "task.preview-calendar") {
-      const calendar = stringParam(body.params, "calendar");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.previewSystemdCalendar?.({ calendar }),
-      };
-    }
-    if (body.method === "task.permission-usage") {
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.permissionProfileUsage?.(),
-      };
-    }
-    if (body.method === "flow.decompose-conditions") {
-      const params = body.params;
-      if (!params || typeof params !== "object")
-        throw invalidParams(
-          "flow.decompose-conditions.params must be an object",
-        );
-      const input = params as Record<string, unknown>;
-      if (
-        typeof input.modelID !== "string" ||
-        typeof input.objective !== "string"
-      )
-        throw invalidParams(
-          "flow.decompose-conditions requires modelID and objective",
-        );
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.decomposeFlowConditions?.({
-          modelID: input.modelID,
-          objective: input.objective,
-        }),
-      };
-    }
-    // --- P0-G: flow document writes (previously CLI-only) ---
-    if (body.method === "flow.save") {
-      const params = body.params;
-      if (!params || typeof params !== "object")
-        throw invalidParams("flow.save.params must be an object");
-      const document = (params as { document?: unknown }).document;
-      if (!document || typeof document !== "object")
-        throw invalidParams("flow.save.params.document must be an object");
-      const path =
-        typeof (params as { path?: unknown }).path === "string"
-          ? (params as { path: string }).path
-          : undefined;
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.saveFlowDocument?.({
-          path,
-          document: document as never,
-        }),
-      };
-    }
-    if (body.method === "flow.delete") {
-      const path = stringParam(body.params, "path");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.deleteFlowDocument?.({ path }),
-      };
-    }
-    if (body.method === "task.save") {
-      const params = body.params;
-      if (!params || typeof params !== "object")
-        throw invalidParams("task.save.params must be an object");
-      const document = (params as { document?: unknown }).document;
-      if (!document || typeof document !== "object")
-        throw invalidParams("task.save.params.document must be an object");
-      const path =
-        typeof (params as { path?: unknown }).path === "string"
-          ? (params as { path: string }).path
-          : undefined;
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.saveTaskDocument?.({
-          path,
-          document: document as never,
-        }),
-      };
-    }
-    if (body.method === "task.delete") {
-      const path = stringParam(body.params, "path");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.deleteTaskDocument?.({ path }),
-      };
-    }
-    if (body.method === "task.schedule") {
-      const params = body.params;
-      if (!params || typeof params !== "object")
-        throw invalidParams("task.schedule.params must be an object");
-      const input = params as Record<string, unknown>;
-      if (typeof input.path !== "string" || typeof input.calendar !== "string")
-        throw invalidParams("task.schedule requires path and calendar");
-      if (input.scope !== "user" && input.scope !== "system")
-        throw invalidParams("task.schedule.scope must be user or system");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.taskSchedule?.({
-          path: input.path,
-          calendar: input.calendar,
-          scope: input.scope,
-        }),
-      };
-    }
-    if (body.method === "task.unschedule") {
-      const path = stringParam(body.params, "path");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.taskUnschedule?.({ path }),
-      };
-    }
     // --- P0-C: submission with attachments, resources and agent mentions ---
     if (body.method === "submit.input") {
       const params = body.params;
@@ -2594,32 +2374,6 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.submitInput?.(input as never),
-      };
-    }
-    // Unattended work, read-only. These are the routes that let another program
-    // inspect scheduled tasks and flows without running the CLI.
-    if (body.method === "task.overview") {
-      optionsGuard(client, "taskOverview");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.taskOverview(),
-      };
-    }
-    if (body.method === "flow.overview") {
-      optionsGuard(client, "flowOverview");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.flowOverview(),
-      };
-    }
-    if (body.method === "document.catalog") {
-      optionsGuard(client, "documentCatalog");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: await client.documentCatalog(),
       };
     }
     if (body.method === "config.reload") {

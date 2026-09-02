@@ -218,26 +218,6 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** Security and configuration management (permission profiles). */
   management: ["permissionList", "permissionSave", "permissionDelete"],
   /** Durable task and flow documents. */
-  automation: [
-    "taskOverview",
-    "flowOverview",
-    "documentCatalog",
-    "loadFlowDocument",
-    "loadTaskDocument",
-    "installExampleDocuments",
-    "saveFlowDocument",
-    "deleteFlowDocument",
-    "saveTaskDocument",
-    "deleteTaskDocument",
-    "taskSchedule",
-    "taskUnschedule",
-    "taskPermissionPreview",
-    "taskPermissionPreviewDocument",
-    "previewSystemdCalendar",
-    "permissionProfileUsage",
-    "decomposeFlowConditions",
-  ],
-  /** Runtime health and its own diagnostics. */
   observability: ["runtimeStatus", "diagnostics", "sessionSnapshot"],
   /** The Work Graph: what happened and what caused it. */
   workGraph: ["workGraphNodes", "workGraphEdges"],

@@ -7,7 +7,6 @@ import {
 } from "@natalia/client";
 import type {
   EpisodeID,
-  EvaluatorResult,
   RuntimeEvent,
   SessionID,
 } from "@natalia/contracts";

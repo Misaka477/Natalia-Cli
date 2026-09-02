@@ -352,25 +352,6 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
     case "compaction.end":
       delete state.activities[compactionActivityID(event.id)];
       return;
-    case "flow.module_event":
-      if (event.kind === "completed") {
-        delete state.activities[flowActivityID(event.moduleID)];
-        return;
-      }
-      upsertActivity(state, {
-        id: flowActivityID(event.moduleID),
-        kind: "workflow",
-        state:
-          event.kind === "blocked" || event.kind === "stalled"
-            ? "waiting"
-            : "active",
-        label: event.moduleType ?? event.moduleID,
-        detail: event.reason,
-      });
-      return;
-    case "flow.finished":
-      removeActivities(state, (activity) => activity.kind === "workflow");
-      return;
     case "turn.cancelled":
       removeTurnActivities(state, event.id);
       removeActivities(
@@ -464,6 +445,4 @@ function compactionActivityID(id: string) {
   return `compaction:${id}`;
 }
 
-function flowActivityID(id: string) {
-  return `flow:${id}`;
-}
+

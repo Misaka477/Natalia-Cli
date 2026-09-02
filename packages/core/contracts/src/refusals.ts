@@ -458,69 +458,6 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "stops the in-flight Chat turn; false means nothing was running",
   },
 
-  // --- automation ---
-  // These report per-entry problems in the result rather than failing the call,
-  // so one unreadable document cannot blank the list.
-  taskOverview: { refusal: "none", note: "pure read; problems are per entry" },
-  flowOverview: { refusal: "none", note: "pure read; problems are per entry" },
-  documentCatalog: { refusal: "none", note: "pure read" },
-  saveFlowDocument: {
-    refusal: "error",
-    note: "a path outside .natalia/flows is refused, like workspace paths",
-  },
-  deleteFlowDocument: {
-    refusal: "error",
-    note: "a flow still referenced by tasks is refused with the referencing tasks; already-deleted is a value",
-  },
-  saveTaskDocument: {
-    refusal: "error",
-    note: "a path outside .natalia/tasks is refused and the validated document is written atomically",
-  },
-  deleteTaskDocument: {
-    refusal: "error",
-    note: "configured timers must be removed first; already-deleted is a value",
-  },
-  taskSchedule: {
-    refusal: "error",
-    note: "invalid calendars, scope changes and systemd failures refuse before task state is written",
-  },
-  taskUnschedule: {
-    refusal: "error",
-    note: "missing timers are an idempotent value; systemd inspection failures refuse closed",
-  },
-  taskPermissionPreview: {
-    refusal: "error",
-    note: "a path outside .natalia/tasks is refused unless it names a visible capability-owned cap: document; validation problems are a value in the result",
-  },
-  taskPermissionPreviewDocument: {
-    refusal: "error",
-    note: "a path outside .natalia/tasks is refused; the full effective module policy layers are returned on success",
-  },
-  loadFlowDocument: {
-    refusal: "error",
-    note: "a path outside .natalia/flows is refused; an unknown document is an argument error",
-  },
-  loadTaskDocument: {
-    refusal: "error",
-    note: "a path outside .natalia/tasks is refused; an unknown document is an argument error",
-  },
-  installExampleDocuments: {
-    refusal: "error",
-    note: "the install writes the bundled example documents; existing files are reported as already installed",
-  },
-  previewSystemdCalendar: {
-    refusal: "error",
-    note: "an invalid or multi-line calendar is refused with the analyzer's message",
-  },
-  permissionProfileUsage: {
-    refusal: "none",
-    note: "pure read of task documents",
-  },
-  decomposeFlowConditions: {
-    refusal: "error",
-    note: "a provider that cannot serve the requested model refuses before any objective text is sent",
-  },
-
   // --- observability ---
   runtimeStatus: { refusal: "none", note: "pure read" },
   diagnostics: { refusal: "none", note: "pure read" },

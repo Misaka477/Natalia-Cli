@@ -50,50 +50,7 @@ export type InteractiveProgramRules = z.infer<
   typeof workflow.interactiveProgramRulesSchema
 >;
 export type ExtensionRules = z.infer<typeof workflow.extensionRulesSchema>;
-export type NataliaFlowDocument = z.infer<
-  typeof workflow.nataliaFlowDocumentSchema
->;
-export type NataliaTaskDocument = z.infer<
-  typeof workflow.nataliaTaskDocumentSchema
->;
-export type NataliaFlowDocumentInput = z.input<
-  typeof workflow.nataliaFlowDocumentSchema
->;
-export type NataliaTaskDocumentInput = z.input<
-  typeof workflow.nataliaTaskDocumentSchema
->;
-export type FlowConditionDecomposition = z.infer<
-  typeof workflow.flowConditionDecompositionSchema
->;
-export type EvaluatorResult = z.infer<typeof workflow.evaluatorResultSchema>;
 
-/**
- * Effective permissions each flow module actually gets for a profile/flow
- * combination. The runtime's `taskPermissionPreviewDocument` port returns this
- * so a UI can preview the module-by-module policy without opening the flow
- * definition itself. Mirror of the `@natalia/workflow` effective-policy shape.
- */
-export type EffectiveModulePermissions = {
-  moduleID: string;
-  moduleType: NataliaFlowDocument["modules"][number]["type"];
-  displayName: string;
-  enabled: boolean;
-  tools: { allowed: string[]; denied: string[] };
-  commandRules: {
-    profile?: { mode: string; commands: string[] };
-    module?: { mode: string; commands: string[] };
-  };
-  interactivePrograms: string[] | "any";
-  extensions: { skills: boolean; mcp: boolean };
-  pathRules?: { read: string[]; write: string[] };
-  profilePathRules?: { read: string[]; write: string[] };
-  blocked?: string;
-};
-export type EffectiveFlowPermissions = {
-  flowID: string;
-  modules: EffectiveModulePermissions[];
-  blocked: Array<{ moduleID: string; reason: string }>;
-};
 export type ModeConfig = z.infer<typeof foundation.modeConfigSchema>;
 export type AgentConfig = z.infer<typeof workflow.agentConfigSchema>;
 export type AgentPermissionRules = z.infer<
@@ -121,93 +78,6 @@ export type ConstitutionRule = z.infer<
 >;
 export type DecisionRecord = z.infer<typeof governance.decisionRecordSchema>;
 export type ScopedOverride = z.infer<typeof governance.scopedOverrideSchema>;
-/**
- * Task and flow overview shapes.
- *
- * These live in contracts rather than in the client because they are wire types:
- * they cross the RPC boundary so an external integration can list and inspect
- * unattended work without running the CLI. The runtime computes them; nobody
- * else may invent them.
- */
-export type ScheduledTaskRow = {
-  taskID: string;
-  displayName: string;
-  path: string;
-  /** The task's own human-readable cadence. The real schedule belongs to the scheduler. */
-  schedule: string;
-  permissionProfile: string;
-  flowID: string;
-  enabledModules: number;
-  retry: NataliaTaskDocument["retry"];
-  alertChannels: string[];
-  /** Channel and event pairs the task subscribed to, for the detail surfaces. */
-  alertEvents: string[];
-  issueTarget?: string;
-  dataSource?: string;
-  systemd?: {
-    calendar: string;
-    scope: "user" | "system";
-    timerUnit?: string;
-    nextRun?: string;
-    generatedCalendar?: string;
-  };
-  lastRun?: {
-    invocationID: string;
-    status: string;
-    startedAt: string;
-    endedAt?: string;
-    skipReason?: string;
-  };
-  consecutiveFailures: number;
-  pendingAlertDeliveries: number;
-  /** Reasons this task would refuse to run right now, empty when it is ready. */
-  problems: string[];
-};
-
-export type FlowStageRow = {
-  moduleID: string;
-  moduleType: string;
-  displayName: string;
-  enabled: boolean;
-  minimumConditions: number;
-  idealConditions: number;
-  hasInstructions: boolean;
-  commandRules?: { mode: string; commands: number };
-  interactivePrograms: number | "any";
-};
-
-export type FlowRow = {
-  flowID: string;
-  displayName: string;
-  path: string;
-  stages: FlowStageRow[];
-  enabledStages: number;
-  /** Tasks in this workspace that run this flow. */
-  usedBy: string[];
-  problems: string[];
-};
-
-export type FlowOverview = {
-  flows: FlowRow[];
-  unreadable: Array<{ path: string; reason: string }>;
-};
-
-export type ScheduledTaskOverview = {
-  tasks: ScheduledTaskRow[];
-  /** Task documents that could not be read at all. */
-  unreadable: Array<{ path: string; reason: string }>;
-};
-
-/** A managed task or flow document and whether its definition is ready to launch. */
-export type WorkflowDocumentChoice = {
-  kind: "task" | "flow";
-  path: string;
-  id: string;
-  displayName: string;
-  source: { kind: "workspace" } | { kind: "capability"; capabilityID: string };
-  launch: { ready: true } | { ready: false; reason: string };
-};
-
 /**
  * The Work Graph vocabulary as types, so a writer cannot invent its own spelling.
  * `workgraph.node_added` / `workgraph.edge_added` declared `kind: string`, which

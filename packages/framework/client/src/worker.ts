@@ -24,23 +24,6 @@ export const WORKER_ROUTE_MEMBERS = {
   resume: "resume",
   "runtime.status": "runtimeStatus",
   "runtime.availability": null,
-  "flow.save": "saveFlowDocument",
-  "flow.delete": "deleteFlowDocument",
-  "task.save": "saveTaskDocument",
-  "task.delete": "deleteTaskDocument",
-  "task.schedule": "taskSchedule",
-  "task.unschedule": "taskUnschedule",
-  "task.preview": "taskPermissionPreview",
-  "task.preview-document": "taskPermissionPreviewDocument",
-  "task.load": "loadTaskDocument",
-  "flow.load": "loadFlowDocument",
-  "flow.install-examples": "installExampleDocuments",
-  "task.preview-calendar": "previewSystemdCalendar",
-  "task.permission-usage": "permissionProfileUsage",
-  "flow.decompose-conditions": "decomposeFlowConditions",
-  "task.overview": "taskOverview",
-  "flow.overview": "flowOverview",
-  "document.catalog": "documentCatalog",
   "command.catalog": "commandCatalog",
   "command.execute": "commandExecute",
   snapshot: "snapshot",
@@ -239,23 +222,6 @@ type WorkerRequest = {
     | "chat.rollback"
     | "chat.model.profile"
     | "chat.model.profile.set"
-    | "flow.save"
-    | "flow.delete"
-    | "task.save"
-    | "task.delete"
-    | "task.schedule"
-    | "task.unschedule"
-    | "task.preview"
-    | "task.preview-document"
-    | "task.load"
-    | "flow.load"
-    | "flow.install-examples"
-    | "task.preview-calendar"
-    | "task.permission-usage"
-    | "flow.decompose-conditions"
-    | "task.overview"
-    | "flow.overview"
-    | "document.catalog"
     | "command.catalog"
     | "command.execute";
   value?: unknown;
@@ -504,91 +470,6 @@ export function createWorkerRuntimeClient(
     async readMcpResource(server, uri) {
       return (await request("mcp.resource", { server, uri })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["readMcpResource"]>>
-      >;
-    },
-    async saveFlowDocument(input) {
-      return (await request("flow.save", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["saveFlowDocument"]>>
-      >;
-    },
-    async deleteFlowDocument(input) {
-      return (await request("flow.delete", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["deleteFlowDocument"]>>
-      >;
-    },
-    async saveTaskDocument(input) {
-      return (await request("task.save", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["saveTaskDocument"]>>
-      >;
-    },
-    async deleteTaskDocument(input) {
-      return (await request("task.delete", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["deleteTaskDocument"]>>
-      >;
-    },
-    async taskSchedule(input) {
-      return (await request("task.schedule", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["taskSchedule"]>>
-      >;
-    },
-    async taskUnschedule(input) {
-      return (await request("task.unschedule", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["taskUnschedule"]>>
-      >;
-    },
-    async taskPermissionPreview(input) {
-      return (await request("task.preview", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["taskPermissionPreview"]>>
-      >;
-    },
-    async taskPermissionPreviewDocument(input) {
-      return (await request("task.preview-document", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["taskPermissionPreviewDocument"]>>
-      >;
-    },
-    async loadTaskDocument(input) {
-      return (await request("task.load", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["loadTaskDocument"]>>
-      >;
-    },
-    async loadFlowDocument(input) {
-      return (await request("flow.load", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["loadFlowDocument"]>>
-      >;
-    },
-    async installExampleDocuments(input) {
-      return (await request("flow.install-examples", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["installExampleDocuments"]>>
-      >;
-    },
-    async previewSystemdCalendar(input) {
-      return (await request("task.preview-calendar", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["previewSystemdCalendar"]>>
-      >;
-    },
-    async permissionProfileUsage() {
-      return (await request("task.permission-usage")) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["permissionProfileUsage"]>>
-      >;
-    },
-    async decomposeFlowConditions(input) {
-      return (await request("flow.decompose-conditions", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["decomposeFlowConditions"]>>
-      >;
-    },
-    async taskOverview() {
-      return (await request("task.overview")) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["taskOverview"]>>
-      >;
-    },
-    async flowOverview() {
-      return (await request("flow.overview")) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["flowOverview"]>>
-      >;
-    },
-    async documentCatalog() {
-      return (await request("document.catalog")) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["documentCatalog"]>>
       >;
     },
     async commandCatalog() {
@@ -1290,53 +1171,6 @@ export async function handleWorkerRequest(
       name: "worker",
       routedMembers: WORKER_ROUTED_MEMBERS,
     });
-  if (request.method === "flow.save")
-    return await client.saveFlowDocument?.(
-      request.value as {
-        path?: string;
-        document: import("@natalia/contracts").NataliaFlowDocumentInput;
-      },
-    );
-  if (request.method === "flow.delete")
-    return await client.deleteFlowDocument?.(request.value as { path: string });
-  if (request.method === "task.save")
-    return await client.saveTaskDocument?.(request.value as never);
-  if (request.method === "task.delete")
-    return await client.deleteTaskDocument?.(request.value as { path: string });
-  if (request.method === "task.schedule")
-    return await client.taskSchedule?.(request.value as never);
-  if (request.method === "task.unschedule")
-    return await client.taskUnschedule?.(request.value as { path: string });
-  if (request.method === "task.preview")
-    return await client.taskPermissionPreview?.(
-      request.value as { path: string },
-    );
-  if (request.method === "task.preview-document")
-    return await client.taskPermissionPreviewDocument?.(
-      request.value as { path: string },
-    );
-  if (request.method === "task.load")
-    return await client.loadTaskDocument?.(request.value as { path: string });
-  if (request.method === "flow.load")
-    return await client.loadFlowDocument?.(request.value as { path: string });
-  if (request.method === "flow.install-examples")
-    return await client.installExampleDocuments?.(
-      request.value as { includeTasks?: boolean } | undefined,
-    );
-  if (request.method === "task.preview-calendar")
-    return await client.previewSystemdCalendar?.(
-      request.value as { calendar: string },
-    );
-  if (request.method === "task.permission-usage")
-    return await client.permissionProfileUsage?.();
-  if (request.method === "flow.decompose-conditions")
-    return await client.decomposeFlowConditions?.(
-      request.value as { modelID: string; objective: string },
-    );
-  if (request.method === "task.overview") return await client.taskOverview?.();
-  if (request.method === "flow.overview") return await client.flowOverview?.();
-  if (request.method === "document.catalog")
-    return await client.documentCatalog?.();
   if (request.method === "command.catalog")
     return await client.commandCatalog?.();
   if (request.method === "command.execute")

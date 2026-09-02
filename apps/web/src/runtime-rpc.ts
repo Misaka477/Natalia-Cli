@@ -115,9 +115,6 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   plugins: "plugin.list",
   commandCatalog: "command.catalog",
   commandExecute: "command.execute",
-  taskOverview: "task.overview",
-  flowOverview: "flow.overview",
-  documentCatalog: "document.catalog",
   runtimeStatus: "runtime.status",
   diagnostics: "diagnostics.list",
   workGraphNodes: "workgraph.nodes",
@@ -179,20 +176,6 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   chatSubmit: "chat.submit",
   chatAbort: "chat.abort",
   chatRollback: "chat.rollback",
-  saveFlowDocument: "flow.save",
-  deleteFlowDocument: "flow.delete",
-  saveTaskDocument: "task.save",
-  deleteTaskDocument: "task.delete",
-  taskSchedule: "task.schedule",
-  taskUnschedule: "task.unschedule",
-  taskPermissionPreview: "task.preview",
-  taskPermissionPreviewDocument: "task.preview-document",
-  loadTaskDocument: "task.load",
-  loadFlowDocument: "flow.load",
-  installExampleDocuments: "flow.install-examples",
-  previewSystemdCalendar: "task.preview-calendar",
-  permissionProfileUsage: "task.permission-usage",
-  decomposeFlowConditions: "flow.decompose-conditions",
 };
 
 const RPC_PARAM_NAMES: Record<string, string[]> = {
@@ -230,23 +213,12 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   nativeTerminalWrite: ["id", "input", "idempotencyKey"],
   nativeTerminalResize: ["id", "rows", "cols"],
   nativeTerminalStart: ["command", "cwd", "id", "sessionID", "agentID"],
-  taskPermissionPreview: ["path"],
-  taskPermissionPreviewDocument: ["path"],
-  loadTaskDocument: ["path"],
-  loadFlowDocument: ["path"],
-  previewSystemdCalendar: ["calendar"],
   diagnostics: ["limit"],
   diagnosticsList: ["limit"],
   getMcpPrompt: ["server", "prompt"],
   readMcpResource: ["server", "resource"],
-  taskSchedule: ["path", "calendar", "scope", "executable", "cliEntry"],
-  taskUnschedule: ["path"],
   providerDiscover: ["type", "baseURL", "apiKey"],
   providerAdd: ["name", "type", "baseURL", "apiKey"],
-  saveFlowDocument: ["path", "document"],
-  deleteFlowDocument: ["path"],
-  saveTaskDocument: ["path", "document"],
-  deleteTaskDocument: ["path"],
   agentCreate: ["name", "config"],
   agentUpdate: ["name", "config"],
   permissionSave: ["name", "profile"],
@@ -272,9 +244,6 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   planActivate: ["plan"],
   planSupersede: ["plan"],
   planCompleted: ["plan"],
-  installExampleDocuments: ["includeTasks"],
-  permissionProfileUsage: ["workspaceRoot"],
-  decomposeFlowConditions: ["flow"],
 };
 
 function buildParams(member: string, args: unknown[]) {
@@ -835,26 +804,6 @@ export function createWebRuntimeClient(
     },
     async providerAdd(input) {
       return (await call("provider.add", { ...input })) as never;
-    },
-    async saveFlowDocument(input) {
-      return (await call("flow.save", {
-        ...(input as Record<string, unknown>),
-      })) as never;
-    },
-    async deleteFlowDocument(input) {
-      return (await call("flow.delete", {
-        ...(input as Record<string, unknown>),
-      })) as never;
-    },
-    async saveTaskDocument(input) {
-      return (await call("task.save", {
-        ...(input as Record<string, unknown>),
-      })) as never;
-    },
-    async deleteTaskDocument(input) {
-      return (await call("task.delete", {
-        ...(input as Record<string, unknown>),
-      })) as never;
     },
     async dispose() {},
   };
