@@ -470,6 +470,11 @@ export type NataliaSDK = {
   planDocStatus(
     planID: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>>>;
+  /** Updates a plan document lifecycle status. */
+  planDocUpdateStatus(input: {
+    planID: string;
+    status: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>>>;
   driftFindings(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
@@ -868,6 +873,11 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     planDocDelete: async (planID) => await call("planDoc.delete", { planID }),
     planDocStatus: async (planID) => await call("planDoc.status", { planID }),
+    planDocUpdateStatus: async (input) =>
+      await call("planDoc.updateStatus", {
+        planID: input.planID,
+        status: input.status,
+      }),
     driftFindings: async () => await call("drift.findings", {}),
     evaluateDrift: async (input) =>
       await call("drift.evaluate", {

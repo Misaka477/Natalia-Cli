@@ -247,6 +247,7 @@ export const RPC_ROUTE_MEMBERS = {
   "planDoc.mark": "planDocMark",
   "planDoc.delete": "planDocDelete",
   "planDoc.status": "planDocStatus",
+  "planDoc.updateStatus": "planDocUpdateStatus",
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
@@ -2112,6 +2113,21 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.planDocStatus?.(planID),
+      };
+    }
+    if (body.method === "planDoc.updateStatus") {
+      optionsGuard(client, "planDocUpdateStatus");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      const status = params?.status;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("planDoc.updateStatus requires a planID string");
+      if (typeof status !== "string" || !status)
+        throw invalidParams("planDoc.updateStatus requires a status string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planDocUpdateStatus?.({ planID, status }),
       };
     }
     if (body.method === "capabilities") {

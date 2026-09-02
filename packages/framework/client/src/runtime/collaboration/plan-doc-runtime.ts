@@ -53,10 +53,10 @@ export type PlanDocRuntime = {
   }): Promise<{ marked: boolean; planID: string }>;
   planDocDelete(planID: string): Promise<{ deleted: boolean }>;
   planDocStatus(planID: string): Promise<{ status: string }>;
-  planDocUpdateStatus(
-    planID: string,
-    status: string,
-  ): Promise<{ updated: boolean }>;
+  planDocUpdateStatus(input: {
+    planID: string;
+    status: string;
+  }): Promise<{ updated: boolean }>;
 };
 
 type IndexEntry = Awaited<
@@ -232,7 +232,8 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       return { status: record?.status ?? "unmarked" };
     },
 
-    async planDocUpdateStatus(planID, status) {
+    async planDocUpdateStatus(input) {
+      const { planID, status } = input;
       const entries = await readIndex(ctx);
       const record = entries[planID];
       if (!record) return { updated: false };

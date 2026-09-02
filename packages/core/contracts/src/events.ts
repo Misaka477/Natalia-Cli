@@ -2366,6 +2366,11 @@ export type RuntimeClient = {
   planDocDelete?(planID: string): Promise<{ deleted: boolean }>;
   /** Reads the current lifecycle status of a marked plan. */
   planDocStatus?(planID: string): Promise<{ status: string }>;
+  /** Updates a plan document lifecycle status (e.g. awaiting_audit, audit_passed). */
+  planDocUpdateStatus?(input: {
+    planID: string;
+    status: string;
+  }): Promise<{ updated: boolean }>;
 
   evidenceRecords?(): Promise<
     Array<{

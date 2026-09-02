@@ -264,10 +264,10 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       }),
     );
     if (input.intent === "next_plan_handoff" && input.relatedPlanID) {
-      await ctx.ports.planDocRuntime.planDocUpdateStatus(
-        input.relatedPlanID,
-        "handed_off",
-      );
+      await ctx.ports.planDocRuntime.planDocUpdateStatus({
+        planID: input.relatedPlanID,
+        status: "handed_off",
+      });
     }
     // Wake the main agent when it is idle: a directive sent through the Live
     // Work Chat must reach it without waiting for the next manual turn, so it

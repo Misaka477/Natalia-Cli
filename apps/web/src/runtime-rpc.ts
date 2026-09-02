@@ -162,6 +162,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   planDocMark: "planDoc.mark",
   planDocDelete: "planDoc.delete",
   planDocStatus: "planDoc.status",
+  planDocUpdateStatus: "planDoc.updateStatus",
   capabilities: "capabilities",
   sessionSnapshot: "session.snapshot",
   submitInput: "submit.input",
@@ -238,6 +239,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   planDocMark: ["input"],
   planDocDelete: ["planID"],
   planDocStatus: ["planID"],
+  planDocUpdateStatus: ["input"],
 };
 
 function buildParams(member: string, args: unknown[]) {

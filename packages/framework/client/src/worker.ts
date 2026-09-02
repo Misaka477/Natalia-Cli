@@ -101,6 +101,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "planDoc.mark": "planDocMark",
   "planDoc.delete": "planDocDelete",
   "planDoc.status": "planDocStatus",
+  "planDoc.updateStatus": "planDocUpdateStatus",
   "mailbox.list": "mailboxList",
   "mailbox.send": "mailboxSend",
   "mailbox.acknowledge": "mailboxAcknowledge",
@@ -213,6 +214,7 @@ type WorkerRequest = {
     | "planDoc.mark"
     | "planDoc.delete"
     | "planDoc.status"
+    | "planDoc.updateStatus"
     | "mailbox.list"
     | "mailbox.send"
     | "mailbox.acknowledge"
@@ -713,6 +715,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>
       >;
     },
+    async planDocUpdateStatus(input) {
+      return (await request("planDoc.updateStatus", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>
+      >;
+    },
     async mailboxList() {
       return (await request("mailbox.list")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["mailboxList"]>>
@@ -1157,6 +1164,8 @@ export async function handleWorkerRequest(
     return await client.planDocDelete?.(request.value as string);
   if (request.method === "planDoc.status")
     return await client.planDocStatus?.(request.value as string);
+  if (request.method === "planDoc.updateStatus")
+    return await client.planDocUpdateStatus?.(request.value as never);
   if (request.method === "mailbox.list") return await client.mailboxList?.();
   if (request.method === "mailbox.send")
     return await client.mailboxSend?.(request.value as never);

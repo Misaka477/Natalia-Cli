@@ -584,6 +584,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "deletes a plan registry record; does not delete the Markdown file",
   },
   planDocStatus: { refusal: "none", note: "pure read of one plan's lifecycle status" },
+  planDocUpdateStatus: {
+    refusal: "value",
+    expressedBy: "updated",
+    note: "updates a plan document lifecycle status",
+  },
 
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 

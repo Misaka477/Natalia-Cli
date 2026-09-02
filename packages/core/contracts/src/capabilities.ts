@@ -258,6 +258,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "planDocMark",
     "planDocDelete",
     "planDocStatus",
+    "planDocUpdateStatus",
   ],
   /** Durable attachment upload/storage for pasted or dropped files. */
   attachments: ["uploadAttachment", "attachmentDataUrl"],
