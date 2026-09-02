@@ -36,12 +36,10 @@
     "@natalia/tool-policy": "workspace:*",
     "@natalia/turn-orchestration": "workspace:*",
     "@natalia/ui-model": "workspace:*",
-    "@natalia/workflow": "workspace:*",
     "@natalia/work-ledger": "workspace:*",
     "@natalia/workspace": "workspace:*"
   },
   "devDependencies": {
-    "@natalia/installer": "workspace:*",
-    "@natalia/workflow-scheduler": "workspace:*"
+    "@natalia/installer": "workspace:*"
   }
 }

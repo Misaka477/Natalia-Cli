@@ -28,16 +28,6 @@ export const OFFICIAL_PLUGIN_PACKAGES = [
     directory: "natalia-skills",
   },
   {
-    id: "natalia-task-module",
-    packageName: "@natalia/plugin-task-module",
-    directory: "natalia-task-module",
-  },
-  {
-    id: "natalia-task-workflow",
-    packageName: "@natalia/plugin-task-workflow",
-    directory: "natalia-task-workflow",
-  },
-  {
     id: "natalia-team",
     packageName: "@natalia/plugin-team",
     directory: "natalia-team",
