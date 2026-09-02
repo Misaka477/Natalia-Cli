@@ -1940,7 +1940,8 @@ async function runWezTermCommand(
         ),
       );
     }, timeoutMs);
-    worker.once("message", (message: unknown) => {
+    const workerEvents = worker as unknown as NodeJS.EventEmitter;
+    workerEvents.once("message", (message: unknown) => {
       const result = message as {
         stdout?: unknown;
         stderr?: unknown;
@@ -1970,8 +1971,8 @@ async function runWezTermCommand(
         }),
       );
     });
-    worker.once("error", (error) => finish(() => reject(error)));
-    worker.once("exit", (code) => {
+    workerEvents.once("error", (error: Error) => finish(() => reject(error)));
+    workerEvents.once("exit", (code: number | null) => {
       if (code !== 0)
         finish(() =>
           reject(new Error(`WezTerm command worker exited: ${code}`)),

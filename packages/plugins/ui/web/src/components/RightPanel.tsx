@@ -1075,7 +1075,7 @@ export function TerminalPane(props: {
                 <div
                   class="terminal-split-stack"
                   style={{
-                    flexDirection: tab.layout === "vertical" ? "row" : "column",
+                    "flex-direction": tab.layout === "vertical" ? "row" : "column",
                   }}
                 >
                   <For each={tab.cells}>

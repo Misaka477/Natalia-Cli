@@ -858,7 +858,7 @@ function runtimeSystemPrompt(input: {
   naviChats?: Array<{
     id: string;
     threadID: string;
-    from: "live_chat" | "main_agent";
+    from: import("@natalia/contracts").CollaborationParticipant;
     text: string;
     round: number;
     expectsReply: boolean;

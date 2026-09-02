@@ -487,6 +487,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     timings[phase] = performance.now() - global.__nataliaStartupStart;
   }
 
+  function logStartupSummary() {
+    console.info("[web-ui] startup complete");
+  }
+
   async function loadAttachmentUrl(path: string, mediaType?: string) {
     const result = await props.ctx.runtime.attachmentDataUrl?.({
       path,
@@ -605,7 +609,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           }
         }
       } finally {
-        if (sessionsRefreshInFlight === operation) {
+        if (token === sessionsRefreshToken) {
           sessionsRefreshInFlight = undefined;
         }
       }
@@ -761,7 +765,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     if (!(await switchAwayFromActiveIfNeeded(ids))) return;
     for (const id of ids) await props.ctx.runtime.sessionArchive?.(id);
     await refreshSessions();
-    setBulkSelected(new Set());
+    setBulkSelected(new Set<string>());
     setBulkSelectMode(false);
   }
 
@@ -770,7 +774,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     if (!ids.length) return;
     for (const id of ids) await props.ctx.runtime.sessionRestore?.(id);
     await refreshSessions();
-    setBulkSelected(new Set());
+    setBulkSelected(new Set<string>());
     setBulkSelectMode(false);
   }
 
@@ -794,7 +798,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       }
       for (const id of ids) await props.ctx.runtime.sessionDelete(id);
       await refreshSessions();
-      setBulkSelected(new Set());
+      setBulkSelected(new Set<string>());
       setBulkSelectMode(false);
     } catch (error: unknown) {
       props.ctx.runtime.diagnostic?.(
@@ -1924,7 +1928,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     setSidebarMenuOpen(false);
                     setSessionSearchOpen(false);
                     setBulkSelectMode((value) => !value);
-                    setBulkSelected(new Set());
+                    setBulkSelected(new Set<string>());
                   }}
                 >
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -1992,7 +1996,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     class="neu-bulk-btn"
                     onClick={() => {
                       setBulkSelectMode(false);
-                      setBulkSelected(new Set());
+                      setBulkSelected(new Set<string>());
                     }}
                   >
                     取消

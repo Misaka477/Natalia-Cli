@@ -47,12 +47,16 @@ export async function runShell(
     context.signal?.addEventListener("abort", abort, { once: true });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += String(chunk)));
-    child.stderr.on("data", (chunk) => (stderr += String(chunk)));
-    child.on("error", (error) => {
+    const childEvents = child as unknown as NodeJS.EventEmitter & {
+      stdout?: { on(event: "data", listener: (chunk: Uint8Array) => void): unknown };
+      stderr?: { on(event: "data", listener: (chunk: Uint8Array) => void): unknown };
+    };
+    childEvents.stdout?.on("data", (chunk) => (stdout += String(chunk)));
+    childEvents.stderr?.on("data", (chunk) => (stderr += String(chunk)));
+    childEvents.on("error", (error: Error) => {
       finish(() => reject(error));
     });
-    child.on("close", (code) => {
+    childEvents.on("close", (code: number | null) => {
       const output = [
         `exit=${code}`,
         stdout && `stdout:\n${stdout}`,

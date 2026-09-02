@@ -4,6 +4,7 @@ import type { AppState } from "@natalia/view-store";
 type ElectronGlobal = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   on<T>(channel: string, listener: (payload: T) => void): () => void;
+  log(...args: unknown[]): void;
 };
 
 type BrowserOwner = "model" | "human" | "shared";

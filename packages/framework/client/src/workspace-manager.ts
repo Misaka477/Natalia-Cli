@@ -151,22 +151,18 @@ async function migrateLegacyWorkspaceSessions(
   legacyBase?: string,
 ): Promise<void> {
   if (!legacyBase) return;
-  const legacyDir = workspaceSessionDir(root, legacyBase);
+  const legacyDir = workspaceSessionDir(root, legacyBase)!;
   const targetDir = join(root, ".natalia", "sessions");
   if (legacyDir === targetDir) return;
   try {
-    const entries = await readdir(legacyDir, { withFileTypes: true }).catch(
-      () => [],
-    );
-    const files = entries.filter(
-      (entry) => entry.isFile() && entry.name.endsWith(".json"),
-    );
+    const entries = (await readdir(legacyDir).catch(() => [])) as string[];
+    const files = entries.filter((name) => name.endsWith(".json"));
     if (!files.length) return;
     await mkdir(targetDir, { recursive: true, mode: 0o700 });
     let migrated = 0;
-    for (const entry of files) {
-      const source = join(legacyDir, entry.name);
-      const target = join(targetDir, entry.name);
+    for (const name of files) {
+      const source = join(legacyDir, name);
+      const target = join(targetDir, name);
       try {
         await rename(source, target);
       } catch {

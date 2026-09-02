@@ -269,8 +269,8 @@ export function createTerminalController(input: {
     return publicSession(requireTerminal().releaseHumanControl(id));
   }
 
-  function claimHumanInput(id: string) {
-    return publicSession(requireTerminal().claimHumanInput(id));
+  async function claimHumanInput(id: string) {
+    return publicSession(await requireTerminal().claimHumanInput(id));
   }
 
   function beginSecureInput(id: string) {

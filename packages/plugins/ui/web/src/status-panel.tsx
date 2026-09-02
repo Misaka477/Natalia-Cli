@@ -23,7 +23,9 @@ function formatToolDetail(tool: ToolBlock): string {
       if (typeof parsed.text === "string" && parsed.text) parts.push(parsed.text);
       if (typeof parsed.command === "string" && parsed.command) parts.push(parsed.command);
       if (Array.isArray(parsed.items) || Array.isArray(parsed.todos))
-        parts.push(`todo 数量: ${(parsed.items ?? parsed.todos).length}`);
+        parts.push(
+          `todo 数量: ${((parsed.items as unknown[] | undefined) ?? (parsed.todos as unknown[] | undefined))!.length}`,
+        );
       if (parts.length) return parts.join("\n");
       return Object.entries(parsed)
         .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`)
@@ -52,7 +54,7 @@ function shortToolLabel(tool: ToolBlock): string {
           : typeof parsed.command === "string"
             ? parsed.command
             : Array.isArray(parsed.items) || Array.isArray(parsed.todos)
-              ? `${(parsed.items ?? parsed.todos).length} items`
+              ? `${((parsed.items as unknown[] | undefined) ?? (parsed.todos as unknown[] | undefined))!.length} items`
               : JSON.stringify(parsed);
     return candidate.length > 96 ? `${candidate.slice(0, 96)}…` : candidate;
   } catch {

@@ -287,10 +287,13 @@ function spawnWithPythonPty(options: PtySpawnOptions): PtyProcess {
     }
   }
 
-  child.stdout.on("data", (chunk: Buffer | string) => {
+  const childEvents = child as unknown as NodeJS.EventEmitter & {
+    stdout?: { on(event: "data", listener: (chunk: Buffer | string) => void): unknown };
+  };
+  childEvents.stdout?.on("data", (chunk) => {
     consume(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   });
-  child.on("exit", (code) => emitExit(code ?? 0));
+  childEvents.on("exit", (code: number | null) => emitExit(code ?? 0));
 
   function send(message: Record<string, unknown>) {
     if (!child.stdin?.writable) return;
@@ -614,7 +617,7 @@ export function createPtyTerminalController(
     return publicSession(session);
   }
 
-  function claimHumanInput(id: string) {
+  async function claimHumanInput(id: string) {
     const session = get(id);
     assertRunning(session);
     if (session.secureInput && session.inputOwner !== "human")

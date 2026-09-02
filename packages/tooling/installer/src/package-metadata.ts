@@ -50,7 +50,7 @@ export async function validateStagedPackage(
       `plugin manifest escapes package directory: ${manifestPath}`,
     );
   const entryPath = await realpath(
-    new URL(manifest.entry, pathToFileURL(manifestPath)),
+    new URL(manifest.entry, pathToFileURL(manifestPath).href),
   );
   if (containedRelative(realPackageDir, entryPath) === undefined)
     throw new Error(

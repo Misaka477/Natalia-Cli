@@ -55,10 +55,11 @@ export async function startNativeInputBroker(input: {
       input.onDenied,
     ),
   );
+  const serverEvents = server as unknown as NodeJS.EventEmitter;
   await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
+    serverEvents.once("error", reject);
     server.listen(endpoint, () => {
-      server.off("error", reject);
+      serverEvents.off("error", reject);
       resolve();
     });
   });

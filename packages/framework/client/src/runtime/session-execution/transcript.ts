@@ -4,6 +4,7 @@ import {
   type SessionStoreController,
 } from "@natalia/runtime-services";
 import { projectInteractiveRequests } from "@natalia/session";
+import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 type Surface = Pick<
@@ -23,7 +24,7 @@ export function createTranscriptSurface(
       );
       if (!sessionStore)
         throw new Error("session store unavailable (natalia-session-store)");
-      const requestedID = options.sessionID ?? ctx.ports.getSessionID();
+      const requestedID = (options.sessionID ?? ctx.ports.getSessionID()) as SessionID;
       const attached = ctx.ports.getSession();
       const fallback =
         attached && attached.id === requestedID ? (attached.events ?? []) : [];

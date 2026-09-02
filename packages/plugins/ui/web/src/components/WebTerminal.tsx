@@ -52,9 +52,9 @@ export type WebTerminalProps = {
 type ServerMessage =
   | { type: "ready"; id: string; rows?: number; cols?: number }
   | { type: "restore"; id: string; text: string }
-  | { type: "output"; data: string }
+  | { type: "output"; data: string; id?: string }
   | { type: "exit"; id: string }
-  | { type: "error"; message: string; fatal?: boolean };
+  | { type: "error"; message: string; fatal?: boolean; id?: string };
 
 const TRANSIENT_CLOSE_CODES = new Set([1001, 1006, 1012, 1013]);
 
