@@ -257,6 +257,10 @@ export function createEventSink(
       // turn. The order matters — acknowledge the already-delivered batch before
       // delivering the queued batch, so a fresh delivery is not mis-acked.
       settleMailboxAtBoundary(exec);
+      // Plan-document summary detection: an executing plan whose Markdown
+      // contains a summary/awaiting-audit marker moves to awaiting_audit and
+      // automatically wakes Nia.
+      void ctx.ports.planDocRuntime.maybeTransitionToAwaitingAudit();
       // WG4: a finished turn is a natural reconcile point — discover external
       // edits the watcher saw, graph them as isolated nodes, and drift-check
       // them against the active plan. No explicit call needed.

@@ -17,6 +17,7 @@ import {
   WORK_LEDGER_CONTROLLER_SERVICE,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { projectedPlanDocs } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 
 export type PlanDocRuntime = {
@@ -57,6 +58,7 @@ export type PlanDocRuntime = {
     planID: string;
     status: string;
   }): Promise<{ updated: boolean }>;
+  maybeTransitionToAwaitingAudit(): Promise<void>;
 };
 
 type IndexEntry = Awaited<
@@ -255,6 +257,30 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         if (exec) ctx.ports.requestNiaWake(exec);
       }
       return { updated: true };
+    },
+
+    async maybeTransitionToAwaitingAudit() {
+      const exec = ctx.ports.getActiveExec();
+      if (!exec) return;
+      const active = projectedPlanDocs(exec.session.events).filter(
+        (plan) => plan.status === "executing",
+      );
+      for (const plan of active) {
+        try {
+          const doc = await this.planDocRead({ planID: plan.planID });
+          const summaryMarker =
+            /^##\s*(?:总结|待审计)\s*$/imu.test(doc.content) ||
+            /待审计/u.test(doc.content);
+          if (summaryMarker) {
+            await this.planDocUpdateStatus({
+              planID: plan.planID,
+              status: "awaiting_audit",
+            });
+          }
+        } catch {
+          // Plan docs may be missing; do not break turn settlement.
+        }
+      }
     },
   };
 }
