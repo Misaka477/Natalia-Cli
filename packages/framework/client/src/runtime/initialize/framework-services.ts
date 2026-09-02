@@ -166,7 +166,6 @@ export async function wireFrameworkServices(
     },
     maxAutoRounds: () =>
       ctx.ports.getTsRuntimeConfig()?.runtime.collaboration.maxAutoRounds ?? 3,
-    planDocUpdateStatus: (input) => ctx.ports.planDocRuntime.planDocUpdateStatus(input),
     service: collaborationService,
   })) {
     collaborationOwner.contribute("tools", tool.name, tool);

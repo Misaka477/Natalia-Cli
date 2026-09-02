@@ -7,7 +7,11 @@
  * events, and trigger session snapshots and safe-boundary settlement. Reads
  * everything it needs from `RuntimeContext` at call time.
  */
-import { appendSessionEvent, projectedChatMessages } from "@natalia/session";
+import {
+  appendSessionEvent,
+  projectedChatMessages,
+  projectedPlanDocs,
+} from "@natalia/session";
 import { runtimeEventDurability } from "@natalia/contracts";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
@@ -257,10 +261,14 @@ export function createEventSink(
       // turn. The order matters — acknowledge the already-delivered batch before
       // delivering the queued batch, so a fresh delivery is not mis-acked.
       settleMailboxAtBoundary(exec);
-      // Plan-document summary detection: an executing plan whose Markdown
-      // contains a summary/awaiting-audit marker moves to awaiting_audit and
-      // automatically wakes Nia.
-      void ctx.ports.planDocRuntime.maybeTransitionToAwaitingAudit();
+      // Simple loop: after Natalia finishes a reply, wake Nia whenever there is
+      // an active plan to audit.
+      if (exec?.session) {
+        const activePlans = projectedPlanDocs(exec.session.events).filter(
+          (plan) => plan.status === "handed_off" || plan.status === "executing",
+        );
+        if (activePlans.length) ctx.ports.requestNiaWake(exec);
+      }
       // WG4: a finished turn is a natural reconcile point — discover external
       // edits the watcher saw, graph them as isolated nodes, and drift-check
       // them against the active plan. No explicit call needed.
