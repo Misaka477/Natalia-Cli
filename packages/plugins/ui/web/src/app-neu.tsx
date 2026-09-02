@@ -1091,6 +1091,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               .__nataliaSessionLoadToken
         )
           props.ctx.projection.hydrateSubagents?.(subagents);
+        const subagentHistory = await props.ctx.runtime.subagentHistory?.();
+        if (
+          subagentHistory &&
+          loadToken ===
+            (globalThis as unknown as { __nataliaSessionLoadToken?: number })
+              .__nataliaSessionLoadToken
+        )
+          props.ctx.projection.hydrateSubagentHistory?.(subagentHistory);
         markStartup("secondary.loaded");
         const timings = (
           globalThis as unknown as {
@@ -2387,6 +2395,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 placeholder="向 Navi 提问…"
                 busy={Boolean(state().chatActivity)}
                 onInput={setChatDraft}
+                onStop={() => void props.ctx.runtime.chatAbort?.()}
                 attachments={chatAttachments()}
                 onRemoveAttachment={(path) =>
                   setChatAttachments(chatAttachments().filter((item) => item.path !== path))
@@ -2395,12 +2404,30 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 onSubmit={() => {
                   const text = chatDraft();
                   if (text.trim() || chatAttachments().length) {
-                    props.ctx.runtime.chatSubmit?.({
+                    console.log("[navi-ui] submitting chat", {
+                      text,
+                      attachments: chatAttachments().map((item) => item.path),
+                    });
+                    const result = props.ctx.runtime.chatSubmit?.({
                       text,
                       ...(chatAttachments().length
                         ? { attachments: chatAttachments().map((item) => item.path) }
                         : {}),
                     });
+                    if (result && typeof result.then === "function") {
+                      void result
+                        .then((value) =>
+                          console.log("[navi-ui] chatSubmit resolved", value),
+                        )
+                        .catch((cause) =>
+                          console.error(
+                            "[navi-ui] chatSubmit failed",
+                            cause instanceof Error
+                              ? cause.message
+                              : String(cause),
+                          ),
+                        );
+                    }
                     setChatDraft("");
                     setChatAttachments([]);
                   }

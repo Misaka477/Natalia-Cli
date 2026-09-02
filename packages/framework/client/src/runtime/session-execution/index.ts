@@ -6,6 +6,7 @@
  * helpers that drive the turn controller for a session. Reads host state
  * through `RuntimeContext` at call time.
  */
+import { providerForModel } from "@natalia/runtime";
 import { projectSession } from "@natalia/session";
 import {
   CONTEXT_LEDGER_FACTORY_SERVICE,
@@ -185,7 +186,13 @@ export function createSessionExecution(
       toolCalls: new Map(),
       provider:
         options.provider ??
-        (getProviderSource() === "environment" ? getProvider() : undefined),
+        (getProviderSource() === "environment" ? getProvider() : undefined) ??
+        (() => {
+          const config = ctx.ports.getTsRuntimeConfig();
+          return config?.defaultModel
+            ? providerForModel(config, config.defaultModel)
+            : undefined;
+        })(),
       runtimeContextConfig: getRuntimeContextConfig(),
       permissionMode: getDefaultPermissionMode(),
       permissionProfile: getDefaultPermissionProfile(),

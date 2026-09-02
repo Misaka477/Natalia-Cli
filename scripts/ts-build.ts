@@ -38,7 +38,7 @@ type PackageManifest = {
 
 const pluginRoots = [
   "packages/plugins/local-tools",
-  "packages/plugins/mcp",
+  "packages/plugins/browser",
   "packages/plugins/native-terminal",
   "packages/plugins/skills",
   "packages/plugins/task-module",

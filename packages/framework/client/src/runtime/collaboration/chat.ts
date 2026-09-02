@@ -90,6 +90,11 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       reasoningEffort?: RuntimeReasoningEffort;
       attachments?: string[];
     }) {
+      console.log("[chat] chatSubmit received", {
+        text: input.text,
+        model: input.model,
+        attachments: input.attachments,
+      });
       const storedAttachments = input.attachments?.length
         ? await ctx.ports
             .resolveService<AttachmentService>(ATTACHMENT_SERVICE)
@@ -101,8 +106,26 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       const controller = ctx.ports.resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       );
-      if (!text || !exec?.provider || !controller) return { messageID: "" };
-      let provider = exec.provider;
+      let provider = exec?.provider;
+      if (!provider) {
+        const config = ctx.ports.getTsRuntimeConfig();
+        provider =
+          (config?.defaultModel &&
+            providerForModel(config, config.defaultModel)) ||
+          ctx.ports.providerFromEnvironment?.();
+        if (provider && exec) exec.provider = provider;
+      }
+      console.log("[chat] chatSubmit state", {
+        text,
+        hasExec: !!exec,
+        hasProvider: !!provider,
+        hasController: !!controller,
+        sessionID: exec?.session.id,
+      });
+      if (!text || !exec || !provider || !controller) {
+        console.warn("[chat] chatSubmit rejected: missing text/exec/provider/controller");
+        return { messageID: "" };
+      }
       if (input.model?.modelID) {
         const config = ctx.ports.getTsRuntimeConfig();
         provider =
@@ -124,12 +147,21 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       });
       const responseMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
       if (controller.chatBusy?.(exec.session.id as SessionID)) {
+        console.log("[chat] chatSubmit queued while busy", {
+          userMessageID,
+          text,
+        });
         exec.pendingChatUserMessages.push({
           messageID: userMessageID,
           text: redactToolOutput(text, true),
         });
         return { messageID: userMessageID };
       }
+      console.log("[chat] chatSubmit running turn", {
+        userMessageID,
+        responseMessageID,
+        text,
+      });
       try {
         await controller.runChatTurn({
           sessionID: exec.session.id as SessionID,
@@ -139,8 +171,10 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           reasoningEffort: input.reasoningEffort,
           attachments: storedAttachments,
         });
+        console.log("[chat] chatSubmit turn finished", responseMessageID);
       } catch (cause) {
         const detail = cause instanceof Error ? cause.message : String(cause);
+        console.error("[chat] chatSubmit turn failed", detail);
         ctx.ports.publishForSession(exec, {
           type: "chat.message.added",
           id: `${responseMessageID}:chat`,

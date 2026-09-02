@@ -326,6 +326,7 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "an unknown session, active turn, or pending interactive request leaves no safe partial attach",
   },
   subagents: { refusal: "none", note: "pure read" },
+  subagentHistory: { refusal: "none", note: "pure read of persisted subagent history" },
   uploadAttachment: {
     refusal: "error",
     note: "an unknown path or policy refusal is an argument error",

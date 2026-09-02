@@ -190,6 +190,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sessionExport",
     "sessionAttach",
     "subagents",
+    "subagentHistory",
   ],
   /** Tools and prompts contributed by MCP servers. */
   mcp: [

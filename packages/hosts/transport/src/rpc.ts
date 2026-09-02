@@ -256,6 +256,7 @@ export const RPC_ROUTE_MEMBERS = {
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
+  "subagent.history": "subagentHistory",
   "attachment.upload": "uploadAttachment",
   "attachment.dataUrl": "attachmentDataUrl",
   "submit.input": "submitInput",
@@ -2227,6 +2228,17 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.subagents?.(),
+      };
+    }
+    if (body.method === "subagent.history") {
+      optionsGuard(client, "subagentHistory");
+      const sessionID = body.params?.sessionID;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.subagentHistory?.(
+          typeof sessionID === "string" ? sessionID : undefined,
+        ),
       };
     }
     if (body.method === "attachment.upload") {

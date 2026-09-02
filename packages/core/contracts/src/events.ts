@@ -2805,6 +2805,7 @@ export type RuntimeClient = {
    * does not require replaying the full session event log.
    */
   subagents?(): Promise<RuntimeSubagentView[]>;
+  subagentHistory?(sessionID?: string): Promise<RuntimeSubagentView[]>;
   /**
    * Rolls the Chat conversation back to a message boundary — the only rollback
    * the Chat may issue, and it never touches workspace/checkpoint state.

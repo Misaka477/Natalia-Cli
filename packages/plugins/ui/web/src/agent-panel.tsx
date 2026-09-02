@@ -1,4 +1,12 @@
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type {
   RuntimeClient,
   RuntimeNativeTerminalSession,
@@ -7,6 +15,27 @@ import type {
 import type { AppState, SubagentView } from "@natalia/view-store";
 import { Transcript } from "./components/Transcript";
 import type { Message } from "./types";
+
+function subagentToolCallsFromText(
+  text: string,
+): NonNullable<Message["toolCalls"]> | undefined {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+(\{[\s\S]*\})$/u);
+  if (!match) return undefined;
+  try {
+    JSON.parse(match[2]!);
+  } catch {
+    return undefined;
+  }
+  return [
+    {
+      name: match[1]!,
+      output: match[2]!,
+      status: "completed",
+      summary: match[1]!,
+    },
+  ];
+}
 
 export function AgentPanel(props: {
   state: AppState;
@@ -150,9 +179,22 @@ export function AgentPanel(props: {
           ? "running"
           : event.status === "failed"
             ? "error"
-            : event.status === "completed" || event.status === "done"
+            : event.status === "completed"
               ? "done"
               : undefined;
+      const toolCalls = subagentToolCallsFromText(text);
+      if (toolCalls) {
+        return {
+          id: `${event.id}:${event.event}:${index}`,
+          role: "assistant",
+          content: "",
+          toolCalls,
+          status: "done",
+          timestamp: event.lastActivityAt
+            ? new Date(event.lastActivityAt).toLocaleTimeString()
+            : undefined,
+        } satisfies Message;
+      }
       return {
         id: `${event.id}:${event.event}:${index}`,
         role: event.event === "log" ? "assistant" : "system",
@@ -162,6 +204,77 @@ export function AgentPanel(props: {
           : undefined,
         status,
       } satisfies Message;
+    });
+  });
+
+  const [subTranscriptEl, setSubTranscriptEl] = createSignal<
+    HTMLDivElement | undefined
+  >();
+  const [subFollowBottom, setSubFollowBottom] = createSignal(true);
+  const [subShowJumpToBottom, setSubShowJumpToBottom] = createSignal(false);
+  let subObservedTop = 0;
+
+  function handleSubagentTranscriptScroll() {
+    const el = subTranscriptEl();
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    setSubFollowBottom(nearBottom);
+    setSubShowJumpToBottom(!nearBottom);
+    subObservedTop = el.scrollTop;
+  }
+
+  function jumpSubagentToBottom() {
+    const el = subTranscriptEl();
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    subObservedTop = el.scrollTop;
+    setSubFollowBottom(true);
+    setSubShowJumpToBottom(false);
+  }
+
+  const subFollowObserver =
+    typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver(() => {
+          if (subFollowBottom() && subTranscriptEl()) {
+            const el = subTranscriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            subObservedTop = el.scrollTop;
+          }
+        });
+  onCleanup(() => subFollowObserver?.disconnect());
+
+  createEffect(() => {
+    const el = subTranscriptEl();
+    const content = el?.querySelector<HTMLElement>(
+      ".natalia-transcript-content",
+    );
+    if (el) subFollowObserver?.observe(el);
+    if (content) subFollowObserver?.observe(content);
+    if (el) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (subFollowBottom() && subTranscriptEl()) {
+            const target = subTranscriptEl()!;
+            target.scrollTop = target.scrollHeight;
+            subObservedTop = target.scrollTop;
+          }
+        });
+      });
+    }
+  });
+
+  createEffect(() => {
+    const id = selectedID();
+    if (!id) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (subFollowBottom() && subTranscriptEl()) {
+          const el = subTranscriptEl()!;
+          el.scrollTop = el.scrollHeight;
+          subObservedTop = el.scrollTop;
+        }
+      });
     });
   });
 
@@ -299,7 +412,19 @@ export function AgentPanel(props: {
                   emptyHint="子 Agent 运行后这里会展示它的信息流"
                   assistantName={selectedSubagent()?.id ?? "Subagent"}
                   assistantInitial="A"
+                  scrollRef={setSubTranscriptEl}
+                  onScroll={handleSubagentTranscriptScroll}
                 />
+                <Show when={subShowJumpToBottom()}>
+                  <button
+                    type="button"
+                    class="neu-jump-bottom"
+                    onClick={jumpSubagentToBottom}
+                    title="跳到底部"
+                  >
+                    ↓
+                  </button>
+                </Show>
               </Show>
             </div>
           </div>

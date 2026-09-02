@@ -5,6 +5,11 @@
  * plus the collaboration/mailbox/plan drafting tools. Reads live state through
  * `RuntimeContext` at call time.
  */
+import {
+  globWorkspaceFiles,
+  readWorkspaceFile,
+  searchWorkspaceFiles,
+} from "@natalia/platform";
 import { projectedMailboxMessages, projectedPlans } from "@natalia/session";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -504,6 +509,108 @@ export function createChatTools(ctx: RuntimeContext) {
         },
       },
     );
+    if (!visible.some((tool) => tool.name === "read_file")) {
+      visible.push({
+        name: "read_file",
+        description:
+          "Read a text file inside the workspace. Use it when the user asks about project files or asks you to read a local document.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            offset: { type: "number" },
+            limit: { type: "number" },
+          },
+          required: ["path"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { path?: string; offset?: number; limit?: number };
+          if (typeof args.path !== "string")
+            return "read_file requires path";
+          try {
+            const result = await readWorkspaceFile({
+              workspaceRoot: ctx.ports.getWorkspaceRoot(),
+              path: args.path,
+              ...(args.offset ? { offset: args.offset } : {}),
+              ...(args.limit ? { limit: args.limit } : {}),
+            });
+            return result.content;
+          } catch (cause) {
+            return cause instanceof Error ? cause.message : String(cause);
+          }
+        },
+      });
+    }
+    if (!visible.some((tool) => tool.name === "glob")) {
+      visible.push({
+        name: "glob",
+        description:
+          "List files under a workspace directory matching a glob pattern. Use it to find md, source, config or test files.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: { type: "string" },
+            path: { type: "string" },
+            limit: { type: "number" },
+          },
+          required: ["pattern"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { pattern?: string; path?: string; limit?: number };
+          if (typeof args.pattern !== "string")
+            return "glob requires pattern";
+          try {
+            const result = await globWorkspaceFiles({
+              workspaceRoot: ctx.ports.getWorkspaceRoot(),
+              pattern: args.pattern,
+              ...(args.path ? { path: args.path } : {}),
+              ...(args.limit ? { limit: args.limit } : {}),
+            });
+            return JSON.stringify(result);
+          } catch (cause) {
+            return cause instanceof Error ? cause.message : String(cause);
+          }
+        },
+      });
+    }
+    if (!visible.some((tool) => tool.name === "grep")) {
+      visible.push({
+        name: "grep",
+        description:
+          "Search file contents in the workspace with a regular expression. Use it to search code, docs or configuration.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            include: { type: "string" },
+            limit: { type: "number" },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { query?: string; include?: string; limit?: number };
+          if (typeof args.query !== "string")
+            return "grep requires query";
+          try {
+            const result = await searchWorkspaceFiles({
+              workspaceRoot: ctx.ports.getWorkspaceRoot(),
+              query: args.query,
+              ...(args.include ? { include: args.include } : {}),
+              ...(args.limit ? { limit: args.limit } : {}),
+            });
+            return JSON.stringify(result);
+          } catch (cause) {
+            return cause instanceof Error ? cause.message : String(cause);
+          }
+        },
+      });
+    }
     return visible;
   }
 }

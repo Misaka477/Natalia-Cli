@@ -173,6 +173,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   submitInput: "submit.input",
   chatMessages: "chat.messages",
   subagents: "session.subagents",
+  subagentHistory: "subagent.history",
   uploadAttachment: "attachment.upload",
   attachmentDataUrl: "attachment.dataUrl",
   chatSubmit: "chat.submit",
@@ -197,6 +198,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
 const RPC_PARAM_NAMES: Record<string, string[]> = {
   checkpointPreview: ["id"],
   checkpointRename: ["id", "name"],
+  subagentHistory: ["sessionID"],
   sessionTouch: ["id"],
   sessionRename: ["id", "title"],
   sessionPin: ["id", "pinned"],
@@ -645,22 +647,42 @@ export function createWebRuntimeClient(
       return (await call("prompt", { text })) as never;
     },
     async submitInput(input) {
-      return (await call("submit.input", {
-        ...(input as Record<string, unknown>),
-      })) as never;
+      console.log("[web-runtime] submitInput", input);
+      try {
+        return (await call("submit.input", {
+          ...(input as Record<string, unknown>),
+        })) as never;
+      } catch (cause) {
+        console.error("[web-runtime] submitInput failed", cause);
+        throw cause;
+      }
     },
     async submitAndWait(input) {
-      return (await call(
-        "submit.andWait",
-        typeof input === "string"
-          ? { text: input }
-          : { ...(input as Record<string, unknown>) },
-      )) as never;
+      console.log("[web-runtime] submitAndWait", input);
+      try {
+        return (await call(
+          "submit.andWait",
+          typeof input === "string"
+            ? { text: input }
+            : { ...(input as Record<string, unknown>) },
+        )) as never;
+      } catch (cause) {
+        console.error("[web-runtime] submitAndWait failed", cause);
+        throw cause;
+      }
     },
     async chatSubmit(input) {
-      return (await call("chat.submit", {
-        ...(input as Record<string, unknown>),
-      })) as { messageID: string };
+      console.log("[web-runtime] chatSubmit", input);
+      try {
+        const result = await call("chat.submit", {
+          ...(input as Record<string, unknown>),
+        });
+        console.log("[web-runtime] chatSubmit result", result);
+        return result as { messageID: string };
+      } catch (cause) {
+        console.error("[web-runtime] chatSubmit failed", cause);
+        throw cause;
+      }
     },
     async chatAbort() {
       return (await call("chat.abort")) as { aborted: boolean };

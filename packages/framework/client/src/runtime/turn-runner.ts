@@ -8,6 +8,7 @@
  * checkpoint, tool execution). Reads host state through `RuntimeContext` at
  * call time.
  */
+import { providerForModel } from "@natalia/runtime";
 import {
   projectedCollabMessages,
   projectedPlans,
@@ -89,7 +90,15 @@ export function createTurnRunner(
       throw new Error("retry service unavailable (natalia-retry)");
     const activeExec = getActiveExec();
     return {
-      provider: () => exec.provider,
+      provider: () => {
+        if (exec.provider) return exec.provider;
+        const config = ctx.ports.getTsRuntimeConfig();
+        const fallback = config?.defaultModel
+          ? providerForModel(config, config.defaultModel)
+          : undefined;
+        if (fallback) exec.provider = fallback;
+        return exec.provider;
+      },
       session: () => exec.session,
       context: () => exec.context,
       tools: () => tools,

@@ -520,6 +520,11 @@ async function resolveWorkspacePath(root: string, input: string) {
 
 function isIgnored(path: string, directory: boolean, rules: IgnoreRule[]) {
   const normalized = path.split(/[\\/]/u).join("/");
+  if (
+    normalized === ".natalia/plans" ||
+    normalized.startsWith(".natalia/plans/")
+  )
+    return false;
   if (normalized.split("/").some((part) => ignoredDirectories.has(part)))
     return true;
   return rules.reduce<boolean>((ignored, rule) => {

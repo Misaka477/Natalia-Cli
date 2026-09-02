@@ -64,6 +64,12 @@ export function createChatTurn(ctx: RuntimeContext) {
       getWorkspaceRoot,
     } = ctx.ports;
     const activeProvider = input.provider ?? input.exec.provider;
+    console.log("[chat-turn] start", {
+      responseMessageID: input.responseMessageID,
+      text: input.text,
+      hasProvider: !!activeProvider,
+      sessionID: input.exec.session.id,
+    });
     if (!activeProvider)
       throw new Error("provider unavailable for live work chat");
     const chatSequence = nextChatSequence;
@@ -126,6 +132,7 @@ export function createChatTurn(ctx: RuntimeContext) {
         }
       }
       const visibleTools = chatTools(input.exec);
+      console.log("[chat-turn] tools", visibleTools.map((tool) => tool.name));
       const toolSchemas = visibleTools.map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -246,6 +253,7 @@ export function createChatTurn(ctx: RuntimeContext) {
           if (chunk.type === "thinking") {
             setPhase("thinking");
             thinking += chunk.text;
+            console.log("[chat-turn] thinking chunk", chunk.text.length);
             publishForSession(input.exec, {
               type: "chat.thinking.delta",
               id: `${input.responseMessageID}:thinking:${chatSequence()}`,

@@ -502,6 +502,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           for await (const chunk of normalized) {
             if (chunk.type === "thinking") {
               result.thinking += chunk.text;
+              console.log("[provider-runner] thinking chunk", chunk.text.length);
               input.publish({
                 type: "thinking.delta",
                 id,

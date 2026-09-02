@@ -99,6 +99,9 @@ export type UiProjection = {
   hydrateSubagents?(
     subagents: RuntimeSubagentView[],
   ): boolean;
+  hydrateSubagentHistory?(
+    history: RuntimeSubagentView[],
+  ): boolean;
   /** Resets the projected state for a session/workspace switch. */
   reset?(): void;
 };

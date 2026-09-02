@@ -6,7 +6,7 @@
  * stream. Keeping it here (framework/runtime) means the web/TUI transport can
  * reuse the same RPC without a plugin depending on view-store internals.
  */
-import type { RuntimeSubagentView } from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeSubagentView, SessionID } from "@natalia/contracts";
 import type { SubagentRecordView } from "@natalia/tools";
 import {
   SUBAGENTS_SERVICE,
@@ -17,7 +17,7 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 
 export function createSubagentRuntime(
   ctx: RuntimeContext,
-): Pick<RuntimeServiceClient, "subagents"> {
+): Pick<RuntimeServiceClient, "subagents" | "subagentHistory"> {
   return {
     async subagents(): Promise<RuntimeSubagentView[]> {
       await ctx.ports.getReady();
@@ -34,6 +34,17 @@ export function createSubagentRuntime(
             record.parentSessionID === activeSessionID,
         )
         .map((record) => toSubagentView(record, subagents));
+    },
+    async subagentHistory(sessionID?: SessionID): Promise<RuntimeSubagentView[]> {
+      await ctx.ports.getReady();
+      const exec = sessionID
+        ? ctx.ports.getExecutionBySession().get(sessionID)
+        : ctx.ports.getActiveExec();
+      const events = exec?.session.events ?? [];
+      return events.filter(
+        (event): event is Extract<RuntimeEvent, { type: "subagent.update" }> =>
+          event.type === "subagent.update",
+      );
     },
   };
 }

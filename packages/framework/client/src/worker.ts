@@ -109,6 +109,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "agent.select": "selectAgent",
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
+  "subagent.history": "subagentHistory",
   "attachment.upload": "uploadAttachment",
   "attachment.dataUrl": "attachmentDataUrl",
   "plan.list": "planList",
@@ -216,6 +217,7 @@ type WorkerRequest = {
     | "runtime.availability"
     | "session.snapshot"
     | "session.subagents"
+    | "subagent.history"
     | "attachment.upload"
     | "attachment.dataUrl"
     | "plan.list"
@@ -867,6 +869,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["subagents"]>>
       >;
     },
+    async subagentHistory(sessionID) {
+      return (await request("subagent.history", sessionID)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["subagentHistory"]>>
+      >;
+    },
     async uploadAttachment(input) {
       return (await request("attachment.upload", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["uploadAttachment"]>>
@@ -1255,6 +1262,8 @@ export async function handleWorkerRequest(
   if (request.method === "chat.messages") return await client.chatMessages?.();
   if (request.method === "session.subagents")
     return await client.subagents?.();
+  if (request.method === "subagent.history")
+    return await client.subagentHistory?.(request.value as never);
   if (request.method === "attachment.upload")
     return await client.uploadAttachment?.(request.value as never);
   if (request.method === "attachment.dataUrl")

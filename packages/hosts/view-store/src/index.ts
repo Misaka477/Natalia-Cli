@@ -33,6 +33,7 @@
  *     live list in `facts`; constitution/decision/evidence/plan/mailbox/workgraph
  *     now have production writers and project here for any host.
  */
+import { subagentHistoryLimit } from "./state";
 import type {
   ChatMessageRow,
   RuntimeEvent,
@@ -333,5 +334,19 @@ export function hydrateSubagents(
   const incoming: Record<string, RuntimeSubagentView> = {};
   for (const subagent of subagents) incoming[subagent.id] = subagent;
   state.subagents = { ...incoming, ...state.subagents };
+  return true;
+}
+
+export function hydrateSubagentHistory(
+  state: AppState,
+  history: RuntimeSubagentView[],
+): boolean {
+  if (!history.length) return false;
+  for (const event of history) {
+    const id = event.id;
+    const list = state.subagentHistory[id] ?? [];
+    if (!list.some((item) => item.id === event.id)) list.push(event);
+    state.subagentHistory[id] = list.slice(-subagentHistoryLimit);
+  }
   return true;
 }
