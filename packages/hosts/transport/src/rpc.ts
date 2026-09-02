@@ -2314,6 +2314,30 @@ export async function handleRPCMessage(
         result: await client.configGet?.(),
       };
     }
+    if (body.method === "settings.get") {
+      optionsGuard(client, "settingsGet");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.settingsGet?.(),
+      };
+    }
+    if (body.method === "settings.set") {
+      optionsGuard(client, "settingsSet");
+      const params = body.params as Record<string, unknown> | undefined;
+      const patch = params?.patch;
+      const scope = params?.scope;
+      if (!patch || typeof patch !== "object")
+        throw invalidParams("settings.set.params.patch must be an object");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.settingsSet?.(
+          patch as Record<string, unknown>,
+          scope as "global" | "project" | undefined,
+        ),
+      };
+    }
     // --- P0-C: submission with attachments, resources and agent mentions ---
     if (body.method === "submit.input") {
       const params = body.params;
