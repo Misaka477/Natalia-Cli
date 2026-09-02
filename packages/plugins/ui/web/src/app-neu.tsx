@@ -26,7 +26,6 @@ import { StatusPanel } from "./status-panel";
 import { SearchPanel } from "./search-panel";
 import { HelpPanel } from "./help-panel";
 import { StashPanel } from "./stash-panel";
-import { FlowTaskPanel } from "./flow-task-panel";
 import { SandboxPanel } from "./sandbox-panel";
 import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
@@ -356,7 +355,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [stashOpen, setStashOpen] = createSignal(false);
-  const [flowTaskOpen, setFlowTaskOpen] = createSignal(false);
   const [sandboxOpen, setSandboxOpen] = createSignal(false);
   const [governanceOpen, setGovernanceOpen] = createSignal(false);
 
@@ -1844,13 +1842,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           <button
             type="button"
             class="neu-topbar-btn"
-            onClick={() => setFlowTaskOpen(true)}
-          >
-            任务
-          </button>
-          <button
-            type="button"
-            class="neu-topbar-btn"
             onClick={() => setSandboxOpen(true)}
           >
             沙箱
@@ -2605,58 +2596,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onClose={() => setSandboxOpen(false)}
         sandboxes={state().sandboxes}
         runtime={props.ctx.runtime}
-      />
-      <FlowTaskPanel
-        open={flowTaskOpen()}
-        onClose={() => setFlowTaskOpen(false)}
-        runtime={props.ctx.runtime}
-        onSaveFlow={(flow) =>
-          props.ctx.runtime.saveFlowDocument?.({
-            path: `${flow.flowID}.yaml`,
-            document: {
-              kind: "natalia-flow",
-              version: 1,
-              flowID: flow.flowID,
-              displayName: flow.displayName,
-              modules: flow.modules.map((mod) => ({
-                id: mod.id,
-                type: mod.type as "read_search" | "terminal" | "shell_command" | "workspace_changes" | "web_fetch" | "skills" | "mcp" | "subagents" | "report_output",
-                displayName: mod.displayName,
-                enabled: mod.enabled,
-                instructions: mod.instructions,
-                minimumConditions: mod.minimumConditions.map((text) => ({ id: `cond_${mod.id}_${text}`, text })),
-                idealConditions: mod.idealConditions.map((text) => ({ id: `ideal_${mod.id}_${text}`, text })),
-                commandRules: {
-                  mode: mod.commandMode,
-                  rules: mod.commandRules.map((command) => ({ command })),
-                },
-              })),
-            },
-          })
-        }
-        onDeleteFlow={(flowID) =>
-          props.ctx.runtime.deleteFlowDocument?.({ path: `${flowID}.yaml` })
-        }
-        onSaveTask={(task) =>
-          props.ctx.runtime.saveTaskDocument?.({
-            path: `${task.taskID}.yaml`,
-            document: {
-              kind: "natalia-task",
-              version: 1,
-              taskID: task.taskID,
-              displayName: task.displayName,
-              schedule: task.schedule,
-              prompt: task.prompt,
-              permissionProfile: task.permissionProfile,
-              flow: { flowID: task.flowID },
-              retry: task.retry as never,
-              alerts: task.alerts,
-            },
-          })
-        }
-        onDeleteTask={(taskID) =>
-          props.ctx.runtime.deleteTaskDocument?.({ path: `${taskID}.yaml` })
-        }
       />
       <StashPanel open={stashOpen()} onClose={() => setStashOpen(false)} />
       <HelpPanel open={helpOpen()} onClose={() => setHelpOpen(false)} />

@@ -196,7 +196,7 @@ export function findFrameworkPluginSurfaceViolation(
 const productPluginImport = /from\s+["']@natalia\/plugin-[a-z-]+["']/u;
 const productPluginFactory = /\bcreate[A-Z][A-Za-z0-9]*Plugin\s*\(/u;
 const migratedServiceImport = new RegExp(
-  String.raw`(?:import|export)\s*(?:type\s*)?\{[^}]*\b(?:ATTACHMENT_SERVICE|AttachmentService|CHECKPOINT_FACTORY_SERVICE|CheckpointFactory|COMPACTION_SERVICE|CompactionService|CONTEXT_LEDGER_FACTORY_SERVICE|ContextLedgerFactory|GOVERNANCE_LEDGER_CONTROLLER_SERVICE|GovernanceLedgerController|InteractiveWaiter|MCP_SERVICE|McpService|PROVIDER_MODEL_CONTROLLER_SERVICE|ProviderModelController|RETRY_SERVICE|RetryService|SANDBOX_SERVICE|SandboxService|SESSION_STORE_CONTROLLER_SERVICE|SessionStoreController|STATUS_SNAPSHOT_CONTROLLER_SERVICE|StatusSnapshotController|SUBAGENTS_SERVICE|SubagentsService|TASK_WORKFLOW_CONTROLLER_SERVICE|TaskWorkflowController|TERMINAL_CONTROLLER_SERVICE|TerminalController|TOOL_POLICY_SERVICE|ToolPolicyService|TURN_CONTROLLER_SERVICE|TurnController|WORK_LEDGER_CONTROLLER_SERVICE|WorkLedgerController|WORKSPACE_FILES_SERVICE|WorkspaceFilesController|WORKSPACE_MUTATIONS_SERVICE|MutationRegistry|WORKSPACE_WRITE_LOCK_SERVICE|WorkspaceWriteLock)\b[^}]*\}\s*from\s*["']@natalia\/(?:(?:collaboration|compaction|governance-ledger|mcp|native-terminal|provider-model|runtime-ui|session-store|subagents|task-workflow|terminal|turn-orchestration|work-ledger)-plugin|plugin-native-terminal)["']`,
+  String.raw`(?:import|export)\s*(?:type\s*)?\{[^}]*\b(?:ATTACHMENT_SERVICE|AttachmentService|CHECKPOINT_FACTORY_SERVICE|CheckpointFactory|COMPACTION_SERVICE|CompactionService|CONTEXT_LEDGER_FACTORY_SERVICE|ContextLedgerFactory|GOVERNANCE_LEDGER_CONTROLLER_SERVICE|GovernanceLedgerController|InteractiveWaiter|MCP_SERVICE|McpService|PROVIDER_MODEL_CONTROLLER_SERVICE|ProviderModelController|RETRY_SERVICE|RetryService|SANDBOX_SERVICE|SandboxService|SESSION_STORE_CONTROLLER_SERVICE|SessionStoreController|STATUS_SNAPSHOT_CONTROLLER_SERVICE|StatusSnapshotController|SUBAGENTS_SERVICE|SubagentsService|TERMINAL_CONTROLLER_SERVICE|TerminalController|TOOL_POLICY_SERVICE|ToolPolicyService|TURN_CONTROLLER_SERVICE|TurnController|WORK_LEDGER_CONTROLLER_SERVICE|WorkLedgerController|WORKSPACE_FILES_SERVICE|WorkspaceFilesController|WORKSPACE_MUTATIONS_SERVICE|MutationRegistry|WORKSPACE_WRITE_LOCK_SERVICE|WorkspaceWriteLock)\b[^}]*\}\s*from\s*["']@natalia\/(?:(?:collaboration|compaction|governance-ledger|mcp|native-terminal|provider-model|runtime-ui|session-store|subagents|terminal|turn-orchestration|work-ledger)-plugin|plugin-native-terminal)["']`,
   "u",
 );
 
@@ -308,7 +308,6 @@ const clientProductPackages = [
   "plugin-native-terminal",
   "skills",
   "subagent",
-  "task-workflow-plugin",
 ];
 
 /** Keep concrete product packages outside the client package boundary. */

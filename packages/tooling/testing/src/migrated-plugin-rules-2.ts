@@ -154,26 +154,6 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
     ],
   },
   {
-    id: "natalia-task-workflow",
-    targets: ["packages/framework/client/src/runtime/main.ts"],
-    forbidden: [
-      {
-        description: "direct task/workflow implementation import",
-        pattern:
-          /from\s+["'](?:\.\.?\/)*(?:task-workflow-controller|task-preflight|task-document|flow-document|workflow-contributions|systemd-adapter|task-workflow-plugin|builtin-plugins\/task-workflow-plugin)["']/u,
-      },
-      {
-        description: "direct workflow document store access",
-        pattern: /(?<!\.)\bNataliaDocumentStore\b/u,
-      },
-      {
-        description: "client-owned task workflow implementation",
-        pattern:
-          /export (?:async )?function (?:createTaskWorkflowPlugin|createTaskWorkflowController|saveTaskDocument|saveFlowDocument|configureTaskSystemd|workflowContributionsProjection)\b/u,
-      },
-    ],
-  },
-  {
     id: "natalia-governance-ledger",
     targets: ["packages/framework/client/src/runtime/main.ts"],
     forbidden: [
