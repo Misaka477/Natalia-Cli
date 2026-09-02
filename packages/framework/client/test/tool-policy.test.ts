@@ -680,7 +680,7 @@ test("real runtime client with allow policy prevents excluded tools from provide
     toolPolicy: policy,
   });
   client.start((event) => events.push(event));
-  await client.submit("run");
+  await client.submitAndWait!("run");
   const toolsSent = requests[0]?.tools ?? [];
   const toolNames = toolsSent.map((t) => t.name);
   expect(toolNames).toContain("read_file");
@@ -759,7 +759,7 @@ test("permission profile command rules deny before execution and audit the decis
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("publish changes");
+  await client.submitAndWait!("publish changes");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -812,7 +812,7 @@ test("explicit toolPolicy cannot bypass agent file permissions", async () => {
     toolPolicy: { allow: ["write_file"] },
   });
   client.start((event) => events.push(event));
-  await client.submit("write protected");
+  await client.submitAndWait!("write protected");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -853,7 +853,7 @@ test("agent command rules block sandbox execution before approval", async () => 
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("run sandbox command");
+  await client.submitAndWait!("run sandbox command");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -908,7 +908,7 @@ test("sandbox merge preflight rejects every denied manifest path atomically", as
     provider: sandboxMergeProvider(),
   });
   client.start((event) => events.push(event));
-  await client.submit("merge sandbox changes");
+  await client.submitAndWait!("merge sandbox changes");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -955,7 +955,7 @@ test("sandbox merge preflight permits a manifest when every path is allowed", as
     provider: sandboxMergeProvider(),
   });
   client.start((event) => events.push(event));
-  await client.submit("merge sandbox changes");
+  await client.submitAndWait!("merge sandbox changes");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -1004,7 +1004,7 @@ test("sandbox merge exclusion applies to catalog and forced execution", async ()
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("merge sandbox changes");
+  await client.submitAndWait!("merge sandbox changes");
 
   expect(requests[0]?.tools?.map((tool) => tool.name)).not.toContain(
     "sandbox_merge",
@@ -1060,7 +1060,7 @@ test("agent read paths block glob and grep before exposing protected files", asy
     provider: searchPolicyProvider(),
   });
   client.start((event) => events.push(event));
-  await client.submit("search workspace");
+  await client.submitAndWait!("search workspace");
 
   for (const name of ["glob", "grep"])
     expect(events).toContainEqual(
@@ -1086,7 +1086,7 @@ test("real runtime client with exclude policy blocks tool execution", async () =
     toolPolicy: policy,
   });
   client.start((event) => events.push(event));
-  await client.submit("read input.txt");
+  await client.submitAndWait!("read input.txt");
   const failedEvents = events.filter(
     (event) =>
       event.type === "tool.update" &&
@@ -1130,7 +1130,7 @@ test("runtime persists safe policy decisions without tool arguments", async () =
     provider: writeProvider("protected.txt"),
   });
   client.start((event) => events.push(event));
-  await client.submit("read input.txt");
+  await client.submitAndWait!("read input.txt");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -1171,7 +1171,7 @@ test("catalog policy denials are durably distinguished from unknown tools", asyn
     provider: blockTestProvider(),
   });
   client.start((event) => events.push(event));
-  await client.submit("read input.txt");
+  await client.submitAndWait!("read input.txt");
 
   expect(events).toContainEqual(
     expect.objectContaining({
@@ -1204,7 +1204,7 @@ test("real runtime client hooks emit diagnostics on preExecute", async () => {
     hooks,
   });
   client.start((event) => events.push(event));
-  await client.submit("read");
+  await client.submitAndWait!("read");
   expect(hookCalls).toContain("pre:read_file");
   const diagEvents = events.filter(
     (event): event is Extract<RuntimeEvent, { type: "diagnostic" }> =>
@@ -1230,7 +1230,7 @@ test("real runtime client hooks call postExecute after tool success", async () =
     hooks,
   });
   client.start((event) => events.push(event));
-  await client.submit("read");
+  await client.submitAndWait!("read");
   expect(captured.length).toBeGreaterThan(0);
   expect(captured[0]?.toolName).toBe("read_file");
 });
@@ -1253,7 +1253,7 @@ test("real runtime client hooks call postExecute with error on failure", async (
     toolPolicy: { exclude: ["read_file"] },
   });
   client.start((event) => events.push(event));
-  await client.submit("read");
+  await client.submitAndWait!("read");
   expect(captured.length).toBe(0);
 });
 
@@ -1271,7 +1271,7 @@ test("real runtime client toolPolicy filters executeToolCalls lookup", async () 
     toolPolicy: policy,
   });
   client.start((event) => events.push(event));
-  await client.submit("read");
+  await client.submitAndWait!("read");
   const succeeded = events.some(
     (event) =>
       event.type === "tool.update" &&
@@ -1298,7 +1298,7 @@ test("real runtime client preExecute hook can block execution", async () => {
     hooks,
   });
   client.start((event) => events.push(event));
-  await client.submit("read");
+  await client.submitAndWait!("read");
   const failedEvents = events.filter(
     (event) =>
       event.type === "tool.update" &&
@@ -1319,7 +1319,7 @@ test("real runtime client no policy or hooks preserves default behavior", async 
     permissionMode: "auto",
   });
   client.start((event) => events.push(event));
-  await client.submit("read");
+  await client.submitAndWait!("read");
   const succeeded = events.some(
     (event) =>
       event.type === "tool.update" &&
