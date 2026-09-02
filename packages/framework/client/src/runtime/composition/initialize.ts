@@ -36,7 +36,6 @@ import {
   SESSION_STORE_CONTROLLER_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   SUBAGENTS_SERVICE,
-  TASK_WORKFLOW_CONTROLLER_SERVICE,
   TERMINAL_CONTROLLER_SERVICE,
   TOOL_POLICY_SERVICE,
   TURN_CONTROLLER_SERVICE,
@@ -50,7 +49,6 @@ import {
   ensureBashCommandParser,
   evaluatePermissionProfileCommandRules,
 } from "@natalia/tools";
-import { effectiveFlowPermissions, moduleToolPolicy } from "@natalia/workflow";
 import { mountPlugins } from "../../plugin-mount";
 import { wireFrameworkServices } from "../initialize/framework-services";
 import { createInitialize } from "../initialize";
@@ -95,14 +93,12 @@ export function wireInitialize(
     scheduleTitleGeneration: features.title.scheduleTitleGeneration,
     deliverQueuedMailboxAtBoundary:
       features.boundary.deliverQueuedMailboxAtBoundary,
-    effectiveFlowPermissions,
     createRealRuntimeClient: (nestedOptions) =>
       createRuntimeClient({
         ...nestedOptions,
         pluginStoreRoot: options.pluginStoreRoot,
       }),
     mountPlugins,
-    moduleToolPolicy,
     agentPolicyLayer: features.permissions.agentPolicyLayer,
     permissionProfileLayer: features.permissions.permissionProfileLayer,
     terminalCommandBuffer: state.terminalCommandBuffer,
@@ -156,7 +152,6 @@ export function wireInitialize(
       toolPolicy: TOOL_POLICY_SERVICE,
       collaborationWaiter: COLLABORATION_WAITER_SERVICE,
       providerModelController: PROVIDER_MODEL_CONTROLLER_SERVICE,
-      taskWorkflowController: TASK_WORKFLOW_CONTROLLER_SERVICE,
     },
   };
   ports.initialize = createInitialize(ctx, options).initialize;

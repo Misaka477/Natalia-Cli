@@ -4,7 +4,9 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
     {
       "path": "../capability"
@@ -23,9 +25,6 @@
     },
     {
       "path": "../tools"
-    },
-    {
-      "path": "../../domains/workflow"
     }
   ]
 }

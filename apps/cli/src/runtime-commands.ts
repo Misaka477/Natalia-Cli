@@ -4,8 +4,6 @@ import {
   createUiAdapterHost,
   createWorkspaceManager,
   createWorkspaceRuntimeClient,
-  newHeadlessExecution,
-  plainRuntimeEvent,
   type UiAdapterHost,
 } from "@natalia/client";
 import { createRecordedFetch } from "@natalia/transport";
@@ -69,7 +67,6 @@ export async function handleRuntimeCommand(argv: string[]) {
   }
   if (command === "eval" || command === "--stdio") {
     const client = createRealRuntimeClient({
-      ...newHeadlessExecution(),
       pluginStoreRoot: pluginStoreRoot(),
       sessionDir: resolve(process.cwd(), ".natalia", "sessions"),
       checkpointDir: resolve(process.cwd(), ".natalia", "checkpoints"),
@@ -183,7 +180,6 @@ async function runOnce(
   permissionProfile?: string,
 ) {
   const client = createRealRuntimeClient({
-    ...newHeadlessExecution(),
     pluginStoreRoot: pluginStoreRoot(),
     permissionProfile,
     sessionDir: resolve(process.cwd(), ".natalia", "sessions"),
@@ -196,11 +192,7 @@ async function runOnce(
       if (event.type === "turn.finished" && event.stopReason === "error")
         failed = true;
       if (json) console.log(JSON.stringify(event));
-      else {
-        if (event.type === "content.delta") text += event.text;
-        const line = plainRuntimeEvent(event);
-        if (line) console.log(line);
-      }
+      else if (event.type === "content.delta") text += event.text;
     });
     if (attachments.length && client.submitInput)
       await client.submitInput({ text: prompt, attachments });

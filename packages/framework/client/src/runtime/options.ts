@@ -7,7 +7,6 @@ import type {
 } from "@natalia/runtime-services";
 import type { StreamingProvider } from "@natalia/runtime";
 import type { ToolRegistry } from "@natalia/tools";
-import type { TaskModuleContext } from "@natalia/workflow";
 
 export type RealRuntimeClientOptions = {
   sessionID?: SessionID;
@@ -28,7 +27,6 @@ export type RealRuntimeClientOptions = {
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
   nativeTerminal?: TerminalControllerInput["external"];
-  taskModuleContext?: TaskModuleContext;
   /** Host-owned registry shared with task delivery and other capability consumers. */
   capabilityRegistry?: CapabilityRegistry;
   /** Preferred host-owned capability lifetime; survives runtime config reloads. */

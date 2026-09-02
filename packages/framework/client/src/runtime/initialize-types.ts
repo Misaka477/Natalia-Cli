@@ -27,7 +27,6 @@ export type InitializeOptions = {
   permissionProfile?: string;
   toolPolicy?: import("@natalia/tools").ToolPolicy;
   hooks?: import("@natalia/tools").ToolHooks;
-  taskModuleContext?: import("@natalia/workflow").TaskModuleContext;
 };
 
 type ResolvedConfig = Awaited<
@@ -56,8 +55,9 @@ export type InitializeDependencies = {
   workspaceCapabilityView?: import("@natalia/capability").CapabilityRegistryView;
   waiterDeps: InteractiveWaiterDeps;
   deliverQueuedMailboxAtBoundary: (exec?: SessionExecutionState) => void;
-  effectiveFlowPermissions: typeof import("@natalia/workflow").effectiveFlowPermissions;
-  createRealRuntimeClient: import("@natalia/runtime-services").TaskWorkflowInput["createRuntimeClient"];
+  createRealRuntimeClient: (
+    options: import("./options").RealRuntimeClientOptions,
+  ) => import("@natalia/contracts").RuntimeClient;
   handleCommand: (
     id: string,
     text: string,
@@ -66,7 +66,6 @@ export type InitializeDependencies = {
   ) => Promise<boolean>;
   scheduleTitleGeneration: (sessionID: SessionID) => void;
   mountPlugins: typeof import("../plugin-mount").mountPlugins;
-  moduleToolPolicy: typeof import("@natalia/workflow").moduleToolPolicy;
   agentPolicyLayer: (
     agent?: AgentDefinition,
   ) => import("@natalia/runtime-services").ToolPolicyHookLayer;
@@ -131,7 +130,6 @@ export type InitializeDependencies = {
     toolPolicy: string;
     collaborationWaiter: string;
     providerModelController: string;
-    taskWorkflowController: string;
   };
 };
 

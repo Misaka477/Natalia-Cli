@@ -23,6 +23,5 @@ export function initializeConstants(ctx: RuntimeContext) {
     TOOL_POLICY_SERVICE: names.toolPolicy,
     COLLABORATION_WAITER_SERVICE: names.collaborationWaiter,
     PROVIDER_MODEL_CONTROLLER_SERVICE: names.providerModelController,
-    TASK_WORKFLOW_CONTROLLER_SERVICE: names.taskWorkflowController,
   };
 }

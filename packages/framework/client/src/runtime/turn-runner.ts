@@ -192,7 +192,6 @@ export function createTurnRunner(
       setLastProviderUsage: (usage) => {
         exec.lastProviderUsage = usage;
       },
-      taskModuleContext: () => options.taskModuleContext,
       publish: (event) => publishForSession(exec, event),
       applyAgentPolicy: () => {
         if (exec === activeExec) applyAgentPolicy();

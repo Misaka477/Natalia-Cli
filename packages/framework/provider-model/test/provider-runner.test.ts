@@ -157,7 +157,6 @@ function makeHarness(
     setLastProviderUsage: (usage) => {
       lastUsage = usage;
     },
-    taskModuleContext: () => undefined,
     publish: (event) => events.push(event),
     applyAgentPolicy: () => undefined,
     applyAgentProvider: () => undefined,

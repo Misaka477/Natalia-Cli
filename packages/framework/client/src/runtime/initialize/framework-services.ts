@@ -48,8 +48,6 @@ import {
   SANDBOX_SERVICE,
   SKILLS_INPUT_SERVICE,
   SUBAGENTS_SERVICE,
-  TASK_MODULE_INPUT_SERVICE,
-  TASK_WORKFLOW_INPUT_SERVICE,
   TERMINAL_INPUT_SERVICE,
   TOOL_POLICY_SERVICE,
   WORKSPACE_FILES_SERVICE,
@@ -60,7 +58,6 @@ import {
   type ContextLedgerFactory,
   type RetryService,
   type SandboxService,
-  type TaskWorkflowInput,
   type TerminalInput,
 } from "@natalia/runtime-services";
 import type {
@@ -274,29 +271,6 @@ export async function wireFrameworkServices(
       SKILLS_INPUT_SERVICE,
       ctx.state.initialize.skillsPluginInput(config),
     );
-    contribute(TASK_MODULE_INPUT_SERVICE, options.taskModuleContext);
-    const taskWorkflow: TaskWorkflowInput = {
-      workspaceRoot,
-      ...(options.globalConfigPath
-        ? { globalConfigPath: options.globalConfigPath }
-        : {}),
-      runtimeConfig: ctx.ports.getTsRuntimeConfig,
-      capabilityViews: () => [
-        ctx.state.initialize.capabilityRegistry,
-        ...(ctx.state.initialize.workspaceCapabilityView
-          ? [ctx.state.initialize.workspaceCapabilityView]
-          : []),
-      ],
-      publishDiagnostic: (message) =>
-        ctx.ports.publish({
-          type: "diagnostic",
-          level: "warning",
-          message,
-        }),
-      resolveFlowPermissions: ctx.state.initialize.effectiveFlowPermissions,
-      createRuntimeClient: ctx.state.initialize.createRealRuntimeClient,
-    };
-    contribute(TASK_WORKFLOW_INPUT_SERVICE, taskWorkflow);
     const terminal: TerminalInput = {
       workspaceRoot,
       publish: (event) =>

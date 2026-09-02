@@ -72,49 +72,22 @@ export function createPermissions(
     const base = policy.createHookLayer(options.toolPolicy);
     const agentLayer = agentPolicyLayer(agent);
     const profileLayer = permissionProfileLayer(profile);
-    const moduleLayer = policy.createHookLayer(
-      options.taskModuleContext
-        ? ctx.state.initialize.moduleToolPolicy(
-            options.taskModuleContext.moduleType,
-          )
-        : undefined,
-    );
-    const modulePermissionLayer = policy.createHookLayer(
-      options.taskModuleContext?.modulePermissions?.tools,
-    );
     const layers = [
       base,
       agentLayer,
       profileLayer,
-      moduleLayer,
-      modulePermissionLayer,
     ];
     return {
       ...policy.createHookLayer(undefined, {
         preExecute: async (event) => {
-          if (
-            options.taskModuleContext &&
-            event.toolName === "flow_module_complete"
-          )
-            return { allowed: true, diagnostics: [] };
           for (const layer of layers) {
             const result = await layer.preExecute(event);
-            if (!result.allowed) {
-              if (layer === moduleLayer)
-                return {
-                  ...result,
-                  diagnostics: [
-                    `blocked outside active ${options.taskModuleContext?.moduleType} module: ${event.toolName}`,
-                  ],
-                };
-              return result;
-            }
+            if (!result.allowed) return result;
           }
           const args = ctx.ports.tryParseToolArguments(event.arguments);
           for (const rules of [
             agent?.permissions,
             profile?.permissions,
-            options.taskModuleContext?.modulePermissions,
           ]) {
             const result = policy.evaluatePermissionRules(
               rules,
@@ -127,18 +100,13 @@ export function createPermissions(
           const terminalCommandBuffer = ctx.ports.getTerminalCommandBuffer();
           const bufferedProfileCommandPermission =
             await terminalCommandBuffer.evaluate(
-              [
-                profile?.commandRules,
-                options.taskModuleContext?.moduleCommandRules,
-              ].filter((rules): rules is PermissionProfileCommandRules =>
-                Boolean(rules),
+              [profile?.commandRules].filter(
+                (rules): rules is PermissionProfileCommandRules =>
+                  Boolean(rules),
               ),
               event.toolName,
               args,
-              [
-                profile?.interactivePrograms,
-                options.taskModuleContext?.moduleInteractivePrograms,
-              ],
+              [profile?.interactivePrograms],
             );
           const profileCommandPermission =
             bufferedProfileCommandPermission ??
@@ -149,17 +117,6 @@ export function createPermissions(
             ));
           if (!profileCommandPermission.allowed)
             return profileCommandPermission;
-          if (!bufferedProfileCommandPermission) {
-            const moduleCommandPermission =
-              await ctx.state.initialize.evaluatePermissionProfileCommandRules(
-                options.taskModuleContext?.moduleCommandRules,
-                event.toolName,
-                args,
-                "active module",
-              );
-            if (!moduleCommandPermission.allowed)
-              return moduleCommandPermission;
-          }
           const extensionResult = extensionToolPermission(
             event.toolName,
             profile,
@@ -213,12 +170,6 @@ export function createPermissions(
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ) {
     const { getSelectedPermissionProfile } = ctx.ports;
-    // The module completion tool is system control, not a capability: it must
-    // stay available even when a profile, agent or module allow-list forgets to
-    // mention it, otherwise the model can never report completion and every
-    // module stalls for a configuration reason nobody can see.
-    if (options.taskModuleContext && toolName === "flow_module_complete")
-      return true;
     return (
       createToolPolicyLayer(exec).isToolAllowed(toolName) &&
       extensionToolPermission(
@@ -234,10 +185,7 @@ export function createPermissions(
       | PermissionProfile
       | undefined = ctx.ports.getSelectedPermissionProfile(),
   ) {
-    return (
-      profile?.extensions?.[extension] !== false &&
-      options.taskModuleContext?.moduleExtensions?.[extension] !== false
-    );
+    return profile?.extensions?.[extension] !== false;
   }
 
   function extensionToolPermission(
@@ -254,10 +202,7 @@ export function createPermissions(
           : undefined;
     if (!extension || extensionEnabled(extension, profile))
       return { allowed: true, diagnostics: [] };
-    const source =
-      options.taskModuleContext?.moduleExtensions?.[extension] === false
-        ? "active module"
-        : "permission profile";
+    const source = "permission profile";
     return {
       allowed: false,
       diagnostics: [`${extension} extensions are disabled by ${source}`],

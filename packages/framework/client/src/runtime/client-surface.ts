@@ -1,5 +1,4 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { createAutomationRuntime } from "./automation-runtime";
 import { createChatSurface } from "./collaboration/chat";
 import { createMailboxSurface } from "./collaboration/mailbox";
 import { createPlansRuntime } from "./collaboration/plans";
@@ -54,7 +53,6 @@ export function createClientSurface(
     ...createMcpRuntime(ctx, options.globalConfigPath),
     ...createExtensionsRuntime(ctx),
     ...createManagementSurface(ctx, options),
-    ...createAutomationRuntime(ctx),
     ...createObservabilitySurface(ctx, options),
     ...createWorkGraphRuntime(ctx),
     ...createIntelligenceSurface(ctx, options),

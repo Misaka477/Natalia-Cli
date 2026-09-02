@@ -4,7 +4,10 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": ["src", "test"],
+  "include": [
+    "src",
+    "test"
+  ],
   "references": [
     {
       "path": "../agent"
@@ -95,12 +98,6 @@
     },
     {
       "path": "../workspace"
-    },
-    {
-      "path": "../../domains/workflow"
-    },
-    {
-      "path": "../workflow-scheduler"
     }
   ]
 }

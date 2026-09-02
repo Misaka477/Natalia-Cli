@@ -69,7 +69,6 @@ export type {
   SessionStoreController,
   StatusSnapshotController,
   SubagentsService,
-  TaskWorkflowController,
   TerminalController,
   ToolPolicyService,
   TurnController,

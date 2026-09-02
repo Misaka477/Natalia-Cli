@@ -17,8 +17,6 @@ import type {
   RuntimeSessionSummary,
   SessionID,
   WorkspaceOperation,
-  NataliaFlowDocument,
-  NataliaTaskDocument,
 } from "@natalia/contracts";
 import type {
   CheckpointStore,
@@ -52,13 +50,6 @@ import type {
   ToolMaterialization,
   ToolRegistry,
 } from "@natalia/tools";
-import type {
-  ContributedNataliaDocuments,
-  TaskModuleContext,
-  WorkflowExecutionHandle,
-  WorkflowExecutionSchedulerService,
-} from "@natalia/workflow";
-
 export type LocalToolsInput = {
   roots: string[];
   trust?: {
@@ -92,28 +83,6 @@ export type SkillsInput = {
     active(sessionID: SessionID): SkillMetadata | undefined;
     activate(sessionID: SessionID, skill: SkillMetadata): void;
   };
-};
-
-export type TaskModuleInput = TaskModuleContext;
-
-export type TaskWorkflowInput = {
-  workspaceRoot: string;
-  globalConfigPath?: string;
-  runtimeConfig(): ConfigV3 | undefined;
-  capabilityViews(): Array<
-    import("@natalia/capability").CapabilityRegistryView
-  >;
-  publishDiagnostic(message: string): void;
-  resolveFlowPermissions: typeof import("@natalia/workflow").effectiveFlowPermissions;
-  createRuntimeClient(options: {
-    episodeID: import("@natalia/contracts").EpisodeID;
-    sessionID: SessionID;
-    title: string;
-    useSqliteStore: boolean;
-    workspaceRoot: string;
-    permissionProfile: string;
-    taskModuleContext: TaskModuleContext;
-  }): RuntimeClient;
 };
 
 export type TerminalInput = TerminalControllerInput;
@@ -385,16 +354,6 @@ export type ProviderRunnerInput = {
   retry: RetryService;
   lastProviderUsage(): ProviderUsage | undefined;
   setLastProviderUsage(usage: ProviderUsage | undefined): void;
-  taskModuleContext():
-    | Pick<
-        TaskModuleContext,
-        | "moduleInstructions"
-        | "moduleContinuation"
-        | "flowID"
-        | "moduleID"
-        | "moduleConditions"
-      >
-    | undefined;
   publish(event: RuntimeEvent): void;
   applyAgentPolicy(): void;
   applyAgentProvider(): void;
@@ -679,109 +638,6 @@ export interface McpService {
 type RuntimeMethod<K extends keyof RuntimeClient> = NonNullable<
   RuntimeClient[K]
 >;
-export type TaskWorkflowController = {
-  taskOverview: RuntimeMethod<"taskOverview">;
-  flowOverview: RuntimeMethod<"flowOverview">;
-  documentCatalog: RuntimeMethod<"documentCatalog">;
-  saveFlowDocument: RuntimeMethod<"saveFlowDocument">;
-  taskPermissionPreview: RuntimeMethod<"taskPermissionPreview">;
-  deleteFlowDocument: RuntimeMethod<"deleteFlowDocument">;
-  saveTaskDocument: RuntimeMethod<"saveTaskDocument">;
-  deleteTaskDocument: RuntimeMethod<"deleteTaskDocument">;
-  taskSchedule: RuntimeMethod<"taskSchedule">;
-  taskUnschedule: RuntimeMethod<"taskUnschedule">;
-  taskPermissionPreviewDocument: RuntimeMethod<"taskPermissionPreviewDocument">;
-  permissionProfileUsage(input?: {
-    workspaceRoot: string;
-  }): Promise<Record<string, string[]>>;
-};
-export type TaskRunResult = {
-  invocationID: string;
-  status: import("@natalia/workflow").NataliaTaskInvocationStatus;
-  waterlineAdvanced: boolean;
-  exitCode: number;
-};
-export type TaskRunInput = {
-  workspaceRoot: string;
-  task: NataliaTaskDocument;
-  flow: NataliaFlowDocument;
-  config: ConfigV3;
-  json: boolean;
-  emit(line: string): void;
-  signal?: AbortSignal;
-};
-export type TaskRunFromDocumentInput = {
-  workspaceRoot: string;
-  path?: string;
-  taskID?: string;
-  contributedDocuments?: ContributedNataliaDocuments;
-  config: ConfigV3;
-  json: boolean;
-  emit(line: string): void;
-  signal?: AbortSignal;
-};
-export type CapabilityTaskExecutionRequest = {
-  workspaceRoot: string;
-  path?: string;
-  taskID?: string;
-  config: ConfigV3;
-  json?: boolean;
-  executionID?: string;
-  idempotencyKey?: string;
-  idempotencyFingerprint?: string;
-  requestedBy?: {
-    transport: "local" | "worker" | "http";
-    sessionID?: string;
-    credentialID?: string;
-  };
-};
-export interface WorkflowCapabilityHost {
-  workspaceRoot?: string;
-  view: import("@natalia/workflow").WorkflowContributionView;
-  acquireExecutionLease(capabilityIDs: string[]): { release(): void };
-}
-export type HeadlessExecution = {
-  episodeID: import("@natalia/contracts").EpisodeID;
-  sessionID: SessionID;
-  title: string;
-  useSqliteStore: boolean;
-};
-export interface TaskWorkflowService extends TaskWorkflowController {
-  runCommand(
-    kind: "task" | "flow",
-    path: string,
-    signal?: AbortSignal,
-  ): Promise<string>;
-  runTask(input: TaskRunInput): Promise<TaskRunResult>;
-  runTaskFromDocument(input: TaskRunFromDocumentInput): Promise<TaskRunResult>;
-  taskPermissionPreviewFor(input: {
-    task: NataliaTaskDocument;
-    flow: NataliaFlowDocument;
-    config: ConfigV3;
-  }): ReturnType<
-    typeof import("@natalia/workflow").effectiveFlowPermissions
-  > & {
-    taskID: string;
-    permissionProfile: string;
-  };
-  taskPermissionPreviewForDocument(input: {
-    workspaceRoot: string;
-    path: string;
-    config: ConfigV3;
-    contributedDocuments?: ContributedNataliaDocuments;
-  }): Promise<ReturnType<TaskWorkflowService["taskPermissionPreviewFor"]>>;
-  permissionProfileUsage(input?: {
-    workspaceRoot: string;
-  }): Promise<Record<string, string[]>>;
-  newHeadlessExecution(): HeadlessExecution;
-  plainRuntimeEvent(event: RuntimeEvent): string | undefined;
-  taskRetryMaxAttempts(retry: NataliaTaskDocument["retry"]): number;
-  runCapabilityTask(input: {
-    capabilities: WorkflowCapabilityHost;
-    scheduler: WorkflowExecutionSchedulerService;
-    request: CapabilityTaskExecutionRequest;
-  }): WorkflowExecutionHandle<TaskRunResult>;
-}
 export interface RuntimeServiceClient extends RuntimeClient {
   service<T>(name: string): Promise<T | undefined>;
   subscribeTerminalOutput?(

@@ -4,7 +4,11 @@
   "compilerOptions": {
     "rootDir": "../.."
   },
-  "include": ["src", "test", "package.json"],
+  "include": [
+    "src",
+    "test",
+    "package.json"
+  ],
   "references": [
     {
       "path": "../../packages/core/capability"
@@ -41,12 +45,6 @@
     },
     {
       "path": "../../packages/core/tools"
-    },
-    {
-      "path": "../../packages/domains/workflow"
-    },
-    {
-      "path": "../../packages/framework/workflow-scheduler"
     }
   ]
 }

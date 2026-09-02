@@ -73,23 +73,7 @@ export function createOfficialRuntimeClient(
   options: RealRuntimeClientOptions = {},
 ) {
   restoreOfficialPluginConfig(options.workspaceRoot ?? process.cwd());
-  const capabilityRegistry =
-    options.capabilityRegistry ??
-    (options.taskModuleContext ? new CapabilityRegistry() : undefined);
-  const taskModuleInputOwner = options.taskModuleContext
-    ? capabilityRegistry?.registerOwner({
-        id: "natalia-test-task-module-input",
-        name: "Task Module Test Input",
-        version: "1.0.0",
-        scope: "session",
-        grants: ["services"],
-      })
-    : undefined;
-  taskModuleInputOwner?.contribute(
-    "services",
-    "task-module.context",
-    options.taskModuleContext,
-  );
+  const capabilityRegistry = options.capabilityRegistry;
   const client = createRuntimeClient({
     ...options,
     pluginStoreRoot:
@@ -106,11 +90,7 @@ export function createOfficialRuntimeClient(
   const dispose = client.dispose?.bind(client);
   if (dispose)
     client.dispose = async () => {
-      try {
-        await dispose();
-      } finally {
-        taskModuleInputOwner?.release();
-      }
+      await dispose();
     };
   return client;
 }

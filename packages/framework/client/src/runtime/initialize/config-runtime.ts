@@ -58,10 +58,8 @@ export async function configureRuntime(
       `permission profile not found: ${options.permissionProfile}`,
     );
   if (
-    (scope.selectedPermissionProfile?.commandRules &&
-      scope.selectedPermissionProfile.commandRules.mode !== "none") ||
-    (options.taskModuleContext?.moduleCommandRules &&
-      options.taskModuleContext.moduleCommandRules.mode !== "none")
+    scope.selectedPermissionProfile?.commandRules &&
+    scope.selectedPermissionProfile.commandRules.mode !== "none"
   )
     await scope.ensureBashCommandParser();
   scope.agentRegistry = scope.agentsFromConfig(tsConfig.config);

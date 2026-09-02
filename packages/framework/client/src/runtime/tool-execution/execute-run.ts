@@ -304,16 +304,6 @@ export async function runExecuteStage(
       tryParseToolArguments(call.arguments),
       result,
     );
-    if (options.taskModuleContext && tool.name !== "flow_module_complete") {
-      options.taskModuleContext.store.recordModuleEvidence({
-        invocationID: options.taskModuleContext.invocationID,
-        attempt: options.taskModuleContext.attempt,
-        flowID: options.taskModuleContext.flowID,
-        moduleID: options.taskModuleContext.moduleID,
-        ref: `tool:${call.id}`,
-        tool: tool.name,
-      });
-    }
     if (
       tool.name === "interactive_terminal_start" ||
       tool.name === "interactive_terminal_stop"

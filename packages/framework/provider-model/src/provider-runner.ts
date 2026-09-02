@@ -258,11 +258,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               ? undefined
               : agent?.systemPrompt ||
                 config?.agentModes[config.defaultAgentMode]?.systemPrompt,
-          moduleInstructions: input.taskModuleContext()?.moduleInstructions,
-          moduleContinuation: input.taskModuleContext()?.moduleContinuation,
-          flowID: input.taskModuleContext()?.flowID,
-          moduleID: input.taskModuleContext()?.moduleID,
-          moduleConditions: input.taskModuleContext()?.moduleConditions,
           skills: input.skillsList(),
           activeSkill: input.activeSkill(),
           naviSuggestions: input.naviSuggestions(),
@@ -837,15 +832,6 @@ function runtimeSystemPrompt(input: {
   permissionMode: PermissionMode;
   agentName?: string;
   agentPrompt?: string;
-  moduleInstructions?: string;
-  moduleContinuation?: string;
-  flowID?: string;
-  moduleID?: string;
-  moduleConditions?: Array<{
-    id: string;
-    text: string;
-    kind: "minimum" | "ideal";
-  }>;
   skills?: SkillMetadata[];
   activeSkill?: SkillMetadata;
   /**
@@ -937,44 +923,6 @@ function runtimeSystemPrompt(input: {
       "<agent_instructions>",
       input.agentPrompt.trim(),
       "</agent_instructions>",
-    );
-  }
-  if (input.moduleInstructions?.trim()) {
-    lines.push(
-      "<active_flow_module_instructions>",
-      input.moduleInstructions.trim(),
-      "</active_flow_module_instructions>",
-    );
-  }
-  if (input.moduleID) {
-    // The completion tool requires the exact runtime-generated module ID and
-    // condition IDs; without this block the model would have to guess them.
-    lines.push(
-      "<active_flow_module>",
-      `Flow: ${input.flowID ?? "unknown"}`,
-      `Module ID: ${input.moduleID}`,
-      "The flowID above is the exact identifier — never the flow's display name. When claiming completion with flow_module_complete, pass exactly this flowID and moduleID, and the condition IDs below.",
-      "You MUST call flow_module_complete to claim completion before ending the turn — never finish the module by answering without it. If a condition is not fully met, claim with the honest status and gaps instead of ending silently.",
-      "For each condition, set status to one of: missing (not met), partial (partly met), satisfied (fully met).",
-      "In evidenceRefs, copy the tool call ID verbatim from the [tool call ID: ...] prefix of a tool result you received this module, keeping the exact tool:<callID> form (for example tool:call_01_xxx). Never invent, abbreviate, re-type or decorate a callID; never use a file name, a path, or prose as a ref. Leave evidenceRefs empty when a condition is met without tool evidence. An unmatched ref is rejected.",
-      input.moduleConditions?.length
-        ? [
-            "Completion conditions:",
-            ...input.moduleConditions.map(
-              (condition) =>
-                `- [${condition.kind}] ${condition.id}: ${condition.text}`,
-            ),
-          ].join("\n")
-        : "This module declares no completion conditions.",
-      "</active_flow_module>",
-    );
-  }
-  if (input.moduleContinuation?.trim()) {
-    lines.push(
-      "<active_flow_module_continuation>",
-      "This controller record is read-only. Continue only the active flow module under these requirements.",
-      input.moduleContinuation.trim(),
-      "</active_flow_module_continuation>",
     );
   }
   // Enumerated from the live skill registry on every turn, so installing or

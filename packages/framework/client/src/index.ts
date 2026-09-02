@@ -6,14 +6,6 @@ export {
   type BashCommandRule,
 } from "@natalia/tools";
 export { compactionDisplayLine } from "./compaction-display";
-export {
-  installExampleDocuments,
-  type ExampleDocumentInstallResult,
-} from "./example-documents";
-export {
-  workflowDocumentCatalog,
-  type WorkflowDocumentChoice,
-} from "@natalia/workflow";
 export { createFakeBackend } from "./fixture";
 export {
   createUiAdapterHost,
@@ -23,104 +15,12 @@ export {
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./runtime/main";
 export type { RuntimeServiceClient } from "@natalia/runtime-services";
 export {
-  TASK_WORKFLOW_CONTROLLER_SERVICE,
-  type TaskWorkflowService,
-} from "@natalia/runtime-services";
-export {
   classifyPermissionFamily,
   PERMISSION_FAMILIES,
   type PermissionFamily,
 } from "@natalia/contracts";
-export {
-  flowOverview,
-  scheduledTaskOverview,
-  type FlowOverview,
-  type FlowRow,
-  type FlowStageRow,
-  type ScheduledTaskOverview,
-  type ScheduledTaskRow,
-} from "@natalia/workflow";
-export {
-  deleteFlowDocument,
-  loadFlowDocument,
-  manualFlowTask,
-  newFlowID,
-  saveFlowDocument,
-} from "@natalia/workflow";
-export {
-  decomposeFlowConditions,
-  defaultExecutionProviderID,
-  flowConditionModels,
-  parseFlowConditionDecomposition,
-  type FlowConditionModel,
-} from "./flow-condition-decomposition";
-export {
-  runTask,
-  runTaskFromDocument,
-  taskPermissionPreviewForDocument,
-  type TaskRunResult,
-} from "./task-controller";
-export {
-  newHeadlessExecution,
-  plainRuntimeEvent,
-  taskPermissionPreview,
-  taskRetryMaxAttempts,
-  type HeadlessExecution,
-} from "@natalia/workflow";
 export { assertConfigApplied } from "@natalia/config";
-export { assertTaskReferences } from "@natalia/workflow";
-export {
-  effectiveFlowPermissions,
-  effectiveModulePermissions,
-  type EffectiveFlowPermissions,
-  type EffectiveModulePermissions,
-} from "@natalia/workflow";
-export {
-  configWithoutPermissionProfile,
-  grantablePermissionTools,
-  parseToolAllowList,
-  permissionProfileRemovalProblem,
-  permissionProfileUsage,
-  type PermissionProfileUsage,
-  type ToolAllowListEdit,
-} from "./permission-profile";
-export {
-  deleteTaskDocument,
-  configureTaskSystemd,
-  loadTaskDocument,
-  newScheduledTaskID,
-  removeTaskSystemd,
-  saveTaskDocument,
-} from "@natalia/workflow";
-export {
-  generateTaskUnits,
-  installUserTaskUnits,
-  nextSystemdRun,
-  previewSystemdCalendar,
-  removeUserTaskUnits,
-  runSystemctl,
-  systemInstallCommands,
-  systemRemoveCommands,
-  type GeneratedTaskUnits,
-  type SystemdCommandResult,
-  type SystemdCalendarPreview,
-  type SystemdCommandRunner,
-  writeGeneratedTaskUnits,
-} from "@natalia/workflow";
 export type { RealRuntimeClientOptions } from "./runtime/options";
-export {
-  workflowContributionsProjection,
-  type WorkflowContributionsProjection,
-} from "@natalia/workflow";
-export type {
-  WorkflowExecutionEvent,
-  WorkflowExecutionHandle,
-  WorkflowExecutionStatus,
-} from "@natalia/workflow";
-export {
-  CapabilityExecutionHost,
-  type CapabilityTaskExecutionRequest,
-} from "./capability-execution-host";
 export { CapabilityHost } from "@natalia/capability";
 export {
   toolFamilyCapabilityID,

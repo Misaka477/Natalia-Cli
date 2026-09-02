@@ -249,16 +249,6 @@ export function createExecuteCalls(
       ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
     if (!policy)
       throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
-    const moduleToolLayer = policy.createHookLayer(
-      options.taskModuleContext
-        ? ctx.state.initialize.moduleToolPolicy(
-            options.taskModuleContext.moduleType,
-          )
-        : undefined,
-    );
-    const modulePermissionToolLayer = policy.createHookLayer(
-      options.taskModuleContext?.modulePermissions?.tools,
-    );
     // B: the model can attach an image (a screenshot it took) so the next
     // provider step shows it back to the model, gated by the model's image
     // input capability.
@@ -344,7 +334,7 @@ export function createExecuteCalls(
           content: toolResultContent(
             `ERROR: ${reason}`,
             call.id,
-            options.taskModuleContext,
+            undefined,
           ),
         });
         execContext.add({
@@ -375,15 +365,11 @@ export function createExecuteCalls(
               exec?.permissionMode === "read_only" &&
               registered.requiresApproval
                 ? readOnlyToolMessage(call.name)
-                : !moduleToolLayer.isToolAllowed(call.name)
-                  ? `blocked outside active ${options.taskModuleContext?.moduleType} module: ${call.name}`
-                  : !modulePermissionToolLayer.isToolAllowed(call.name)
-                    ? `blocked by active module policy: ${call.name}`
-                    : (extensionToolPermission(
-                        call.name,
-                        exec?.permissionProfile,
-                      ).diagnostics[0] ??
-                      "tool is excluded from the runtime catalog by policy"),
+                : (extensionToolPermission(
+                    call.name,
+                    exec?.permissionProfile,
+                  ).diagnostics[0] ??
+                  "tool is excluded from the runtime catalog by policy"),
           });
         publish({
           type: "tool.update",
@@ -410,7 +396,7 @@ export function createExecuteCalls(
           content: toolResultContent(
             `ERROR: ${reason}`,
             call.id,
-            options.taskModuleContext,
+            undefined,
           ),
         });
         execContext.add({
@@ -432,7 +418,7 @@ export function createExecuteCalls(
         role: "tool",
         toolCallID: call.id,
         toolName: call.name,
-        content: toolResultContent(result, call.id, options.taskModuleContext),
+        content: toolResultContent(result, call.id, undefined),
       });
       execContext.add({
         id: `${turnID}:${call.id}:result`,
