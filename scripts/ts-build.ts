@@ -41,8 +41,6 @@ const pluginRoots = [
   "packages/plugins/browser",
   "packages/plugins/native-terminal",
   "packages/plugins/skills",
-  "packages/plugins/task-module",
-  "packages/plugins/task-workflow",
   "packages/plugins/team",
   "packages/plugins/tools/ask",
   "packages/plugins/tools/fs-read",
@@ -147,8 +145,8 @@ for (const root of pluginRoots) {
     pluginOutputs.push(resolve(packageOutdir, entry));
 }
 
-if (pluginRoots.length !== 15)
-  throw new Error(`expected 15 release plugins, got ${pluginRoots.length}`);
+if (pluginRoots.length !== 13)
+  throw new Error(`expected 13 release plugins, got ${pluginRoots.length}`);
 for (const artifact of [
   "LICENSE",
   "NOTICE",
