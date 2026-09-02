@@ -73,6 +73,7 @@ export type RuntimePortsExtra = {
       responseMessageID: string;
       exec: SessionExecutionState;
       internal?: boolean;
+      channel?: import("@natalia/contracts").ChatChannel;
     },
     signal: AbortSignal,
   ) => Promise<{ text: string }>;

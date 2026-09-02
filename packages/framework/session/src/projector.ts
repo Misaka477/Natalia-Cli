@@ -618,6 +618,7 @@ export type ProjectedChatMessage = {
   role: "user" | "chat";
   text: string;
   at: string;
+  channel?: import("@natalia/contracts").ChatChannel;
 };
 
 export function projectedChatMessages(
@@ -631,12 +632,15 @@ export function projectedChatMessages(
         role: event.role,
         text: event.text,
         at: event.at,
+        ...(event.channel ? { channel: event.channel } : {}),
       });
       continue;
     }
     if (event.type === "chat.rollback") {
       const index = messages.findIndex(
-        (message) => message.messageID === event.toMessageID,
+        (message) =>
+          message.messageID === event.toMessageID &&
+          (event.channel == null || message.channel === event.channel),
       );
       if (index !== -1) messages.splice(index + 1);
       else messages.length = 0;

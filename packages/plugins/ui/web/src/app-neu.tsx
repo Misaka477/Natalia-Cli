@@ -17,6 +17,8 @@ import { SessionActionsPanel } from "./session-actions-panel";
 import { AgentPanel } from "./agent-panel";
 import { BrowserPanel } from "./browser-panel";
 import { TodoPanel } from "./todo-panel";
+import { PlanPanel } from "./plan-panel";
+import { NiaPanel } from "./nia-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { NeuSelect } from "./components/NeuSelect";
@@ -31,7 +33,7 @@ import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
-type RightTab = "diff" | "terminal" | "files" | "browser" | "agent" | "todo";
+type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "browser" | "agent" | "todo";
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -1600,7 +1602,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   });
 
   const chatMessages = createMemo<Message[]>(() =>
-    (state().chatMessages ?? []).map((msg, idx) => {
+    (state().chatMessages ?? [])
+      .filter((msg) => (msg.channel ?? "navi") === "navi")
+      .map((msg, idx) => {
       if (msg.tool) {
         return {
           id: msg.id,
@@ -1709,6 +1713,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     panelRevision();
     const tabs: { id: RightTab; label: string }[] = [
       { id: "diff", label: "审阅 / Diff" },
+      { id: "plan", label: "计划" },
+      { id: "nia", label: "Nia" },
       { id: "todo", label: "待办" },
       { id: "agent", label: "协同" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
@@ -2461,6 +2467,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   requestedTab={reviewRequestedTab()}
                   requestedCheckpointID={reviewRequestedCheckpointID()}
                 />
+              </Show>
+              <Show when={rightTab() === "plan"}>
+                <PlanPanel state={state()} runtime={props.ctx.runtime} />
+              </Show>
+              <Show when={rightTab() === "nia"}>
+                <NiaPanel state={state()} runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "todo"}>
                 <TodoPanel state={state()} />

@@ -16,7 +16,7 @@ import {
   projectedMailboxMessages,
   projectedPlanDocs,
 } from "@natalia/session";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { ChatChannel, RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -116,13 +116,70 @@ export function createChatPrompt(ctx: RuntimeContext) {
       .join("\n");
   }
 
+  function niaSystemPrompt(
+    exec: SessionExecutionState,
+    chatSession: NonNullable<SessionExecutionState["session"]>,
+  ): string {
+    const { currentSessionSnapshot } = ctx.ports;
+    const snapshot = exec ? currentSessionSnapshot(exec, `snapshot:nia:${chatSession.id}`) : undefined;
+    const plans = projectedPlanDocs(chatSession.events);
+    const activePlan = plans.find(
+      (plan) =>
+        plan.status === "executing" ||
+        plan.status === "awaiting_audit" ||
+        plan.status === "auditing" ||
+        plan.status === "audit_gaps",
+    );
+    const mailbox = projectedMailboxMessages(chatSession.events).filter(
+      (message) => message.status === "queued" || message.status === "delivered",
+    );
+    return [
+      "<nia_chat_persona>",
+      "You are Nia, Natalia's independent read-only audit agent.",
+      "You inspect plans and workspace state, verify evidence, find gaps, and report findings in natural language.",
+      "You never write files, never modify plans, never run shells or processes, and never change runtime state.",
+      "You use read-only tools: read_file, glob, grep, web_fetch, web_search, session_snapshot, plan_doc_read, plan_doc_list, mailbox_status, workspace/diff reads.",
+      "Answer in the user's language. Be exact and concise; cite what the context and tools actually show.",
+      "</nia_chat_persona>",
+      "<live_work_context>",
+      `Main agent: ${snapshot?.agentStatus ?? "unknown"}${snapshot?.currentStep ? ` · ${promptData(snapshot.currentStep)}` : ""}${snapshot?.activeTool ? ` · tool: ${promptData(snapshot.activeTool)}` : ""}`,
+      `Changed files: ${snapshot?.changedFiles ?? 0} · unvalidated: ${snapshot?.unvalidatedChanges ?? 0}`,
+      activePlan
+        ? `Active plan: ${activePlan.planID} · ${activePlan.status} · ${promptData(activePlan.title)} · ${promptData(activePlan.documentPath)}`
+        : "Active plan: none",
+      plans.length
+        ? `Known plan documents:\n${plans
+            .slice(-8)
+            .map(
+              (plan) =>
+                `- ${plan.planID} · ${plan.status} · ${promptData(plan.title)} · ${promptData(plan.documentPath)}`,
+            )
+            .join("\n")}`
+        : "Known plan documents: none",
+      mailbox.length
+        ? `Pending mailbox intents:\n${mailbox
+            .map(
+              (message) =>
+                `- ${message.messageID} [${message.priority}] ${message.intent}: ${promptData(message.safeSummary)} (${message.status})`,
+            )
+            .join("\n")}`
+        : "Pending mailbox intents: none",
+      "</live_work_context>",
+    ].filter(Boolean).join("\n");
+  }
+
   /** The Chat system prompt: persona + the shared safe live-work context. */
   function chatSystemPrompt(
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    channel: ChatChannel = "navi",
   ): string {
     const { currentSessionSnapshot } = ctx.ports;
     const chatSession = exec?.session;
-    if (!chatSession) return "You are Natalia's Live Work Chat.";
+    if (!chatSession)
+      return channel === "nia"
+        ? "You are Nia, the read-only audit agent."
+        : "You are Natalia's Live Work Chat.";
+    if (channel === "nia") return niaSystemPrompt(exec, chatSession);
     // The real session intelligence snapshot the runtime publishes, not a
     // stub: agent status (idle/paused/running), step, active tool, changed
     // files and recent output are all journal-derived facts (§56.59).

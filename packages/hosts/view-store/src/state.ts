@@ -52,6 +52,8 @@ export type MessageBlock = {
   status?: string;
   /** Present only on thinking blocks the provider allows a UI to render. */
   reasoningVisible?: boolean;
+  /** Which Live Work Chat channel owns this block (defaults to navi). */
+  channel?: "navi" | "nia";
   tool?: ToolBlock;
   taskID?: string;
 };
@@ -169,6 +171,7 @@ export type ChatActivityView = {
   startedAt: number;
   toolName?: string;
   error?: string;
+  channel?: "navi" | "nia";
 };
 
 /** An advisory line a UI shows while something transient is happening. */

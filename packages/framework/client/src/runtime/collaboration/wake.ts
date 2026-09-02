@@ -70,7 +70,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     if (!exec.provider || !controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
     const expert = exec.advisorPending === true;
-    const expertProfile = exec.chatModelProfile?.expert;
+    const expertProfile = exec.chatModelProfile?.navi?.expert;
     let provider = exec.provider;
     if (expert && expertProfile?.modelID) {
       const config = ctx.ports.getTsRuntimeConfig();

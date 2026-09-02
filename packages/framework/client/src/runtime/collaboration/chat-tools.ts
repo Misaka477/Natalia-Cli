@@ -37,6 +37,7 @@ export function createChatTools(ctx: RuntimeContext) {
 
   function chatTools(
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    channel: "navi" | "nia" = "navi",
   ): RuntimeTool[] {
     const {
       getExecutionBySession,
@@ -358,6 +359,119 @@ export function createChatTools(ctx: RuntimeContext) {
               ...(args.limit ? { limit: args.limit } : {}),
             });
             return JSON.stringify(result);
+          } catch (cause) {
+            return cause instanceof Error ? cause.message : String(cause);
+          }
+        },
+      });
+    }
+    if (!visible.some((tool) => tool.name === "plan_doc_list")) {
+      visible.push({
+        name: "plan_doc_list",
+        description:
+          "List the current session's plan documents. Marked plan documents carry a stable planID and documentPath.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        async execute() {
+          return JSON.stringify(await ctx.ports.planDocRuntime.planDocList());
+        },
+      });
+    }
+    if (!visible.some((tool) => tool.name === "plan_doc_read")) {
+      visible.push({
+        name: "plan_doc_read",
+        description:
+          "Read a Markdown plan document by planID or path. Plan documents live under .natalia/plans/.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            planID: { type: "string" },
+            path: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { planID?: string; path?: string };
+          if (!args.planID && !args.path)
+            return "plan_doc_read requires planID or path";
+          try {
+            return JSON.stringify(
+              await ctx.ports.planDocRuntime.planDocRead({
+                ...(args.planID ? { planID: args.planID } : {}),
+                ...(args.path ? { path: args.path } : {}),
+              }),
+            );
+          } catch (cause) {
+            return cause instanceof Error ? cause.message : String(cause);
+          }
+        },
+      });
+    }
+    if (!visible.some((tool) => tool.name === "plan_doc_write")) {
+      visible.push({
+        name: "plan_doc_write",
+        description:
+          "Write or update a Markdown plan document under .natalia/plans/. Use it when the user asks to draft or revise a plan document. Never write project source with this tool.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            content: { type: "string" },
+            title: { type: "string" },
+          },
+          required: ["path", "content"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { path?: string; content?: string; title?: string };
+          if (typeof args.path !== "string" || typeof args.content !== "string")
+            return "plan_doc_write requires path and content";
+          try {
+            return JSON.stringify(
+              await ctx.ports.planDocRuntime.planDocWrite({
+                path: args.path,
+                content: args.content,
+                ...(args.title ? { title: args.title } : {}),
+              }),
+            );
+          } catch (cause) {
+            return cause instanceof Error ? cause.message : String(cause);
+          }
+        },
+      });
+    }
+    if (!visible.some((tool) => tool.name === "plan_doc_mark")) {
+      visible.push({
+        name: "plan_doc_mark",
+        description:
+          "Mark a Markdown plan document as a formal Plan. It returns a stable planID used for handoff and audit routing.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            title: { type: "string" },
+          },
+          required: ["path"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { path?: string; title?: string };
+          if (typeof args.path !== "string")
+            return "plan_doc_mark requires path";
+          try {
+            return JSON.stringify(
+              await ctx.ports.planDocRuntime.planDocMark({
+                path: args.path,
+                ...(args.title ? { title: args.title } : {}),
+              }),
+            );
           } catch (cause) {
             return cause instanceof Error ? cause.message : String(cause);
           }

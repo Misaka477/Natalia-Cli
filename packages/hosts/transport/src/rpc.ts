@@ -2184,10 +2184,11 @@ export async function handleRPCMessage(
     }
     if (body.method === "chat.model.profile") {
       optionsGuard(client, "chatModelProfile");
+      const channel = (body.params as { channel?: import("@natalia/contracts").ChatChannel } | undefined)?.channel;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatModelProfile?.(),
+        result: await client.chatModelProfile?.(channel),
       };
     }
     if (body.method === "chat.model.profile.set") {
@@ -2196,6 +2197,7 @@ export async function handleRPCMessage(
       if (!params || typeof params !== "object")
         throw invalidParams("chat.model.profile.set.params must be an object");
       const profile = (params as { profile?: unknown }).profile;
+      const channel = (params as { channel?: import("@natalia/contracts").ChatChannel }).channel;
       if (!profile || typeof profile !== "object")
         throw invalidParams("chat.model.profile.set.params.profile must be an object");
       return {
@@ -2203,23 +2205,26 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.setChatModelProfile?.(
           profile as import("@natalia/contracts").ChatModelProfile,
+          channel,
         ),
       };
     }
     if (body.method === "chat.messages") {
       optionsGuard(client, "chatMessages");
+      const channel = (body.params as { channel?: import("@natalia/contracts").ChatChannel } | undefined)?.channel;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatMessages(),
+        result: await client.chatMessages?.(channel),
       };
     }
     if (body.method === "chat.abort") {
       optionsGuard(client, "chatAbort");
+      const channel = (body.params as { channel?: import("@natalia/contracts").ChatChannel } | undefined)?.channel;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatAbort?.(),
+        result: await client.chatAbort?.(channel),
       };
     }
     if (body.method === "chat.submit") {
@@ -2228,12 +2233,22 @@ export async function handleRPCMessage(
       if (!params || typeof params !== "object")
         throw invalidParams("chat.submit.params must be an object");
       const text = (params as { text?: unknown }).text;
+      const channel = (params as { channel?: import("@natalia/contracts").ChatChannel }).channel;
       if (typeof text !== "string")
         throw invalidParams("chat.submit.params.text must be a string");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatSubmit({ text }),
+        result: await client.chatSubmit({
+          text,
+          ...(channel ? { channel } : {}),
+          ...(typeof (params as { model?: unknown }).model === "object"
+            ? { model: (params as { model?: { modelID?: string; variant?: string } }).model }
+            : {}),
+          ...(typeof (params as { reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort }).reasoningEffort !== "undefined"
+            ? { reasoningEffort: (params as { reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort }).reasoningEffort }
+            : {}),
+        }),
       };
     }
     if (body.method === "chat.rollback") {
@@ -2242,6 +2257,7 @@ export async function handleRPCMessage(
       if (!params || typeof params !== "object")
         throw invalidParams("chat.rollback.params must be an object");
       const toMessageID = (params as { toMessageID?: unknown }).toMessageID;
+      const channel = (params as { channel?: import("@natalia/contracts").ChatChannel }).channel;
       if (typeof toMessageID !== "string")
         throw invalidParams(
           "chat.rollback.params.toMessageID must be a string",
@@ -2249,7 +2265,7 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatRollback({ toMessageID }),
+        result: await client.chatRollback({ toMessageID }, channel),
       };
     }
     // --- P0-G follow-up: the config write surface (previously TUI-only) ---

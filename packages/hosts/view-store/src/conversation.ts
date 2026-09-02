@@ -450,6 +450,7 @@ function appendStream(
     text: string;
     attempt?: number;
     reasoningVisible?: boolean;
+    channel?: "navi" | "nia";
   },
 ): void {
   const stream = (target.streams[input.id] ??= newStream());
@@ -468,7 +469,7 @@ function appendStream(
   stream.retrySkip = applied.retrySkip;
   if (!applied.text && applied.retrySkip) {
     // The whole chunk was text we already have; nothing to render yet.
-    writeStreamBlock(target, input.id, input.role, input.reasoningVisible);
+    writeStreamBlock(target, input.id, input.role, input.reasoningVisible, input.channel);
     return;
   }
   stream.tail += applied.text;
@@ -508,7 +509,7 @@ function appendStream(
       stream.segmentIndex += 1;
       stream.committed = "";
       stream.tail = carried;
-      writeStreamBlock(target, input.id, input.role, input.reasoningVisible);
+      writeStreamBlock(target, input.id, input.role, input.reasoningVisible, input.channel);
       return;
     }
   }
@@ -521,6 +522,7 @@ function writeStreamBlock(
   id: string,
   role: "thinking" | "assistant",
   reasoningVisible?: boolean,
+  channel?: "navi" | "nia",
 ): void {
   const stream = target.streams[id];
   if (!stream) return;
@@ -536,6 +538,7 @@ function writeStreamBlock(
     {
       pendingText: stream.tail,
       ...(role === "thinking" ? { reasoningVisible } : {}),
+      ...(channel ? { channel } : {}),
     },
   );
 }
@@ -655,6 +658,10 @@ function chatTarget(state: AppState): StreamTarget {
   };
 }
 
+function chatChannelOf(event: RuntimeEvent): "navi" | "nia" {
+  return (event as { channel?: "navi" | "nia" }).channel ?? "navi";
+}
+
 /**
  * Projects the Live Work Chat conversation through the same streaming machinery
  * as the main transcript (§8.3: one projection, not a separate drift-prone
@@ -670,6 +677,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         messageID: event.messageID,
         phase: "waiting",
         startedAt: event.startedAt,
+        channel: chatChannelOf(event),
       };
       return true;
     case "chat.turn.phase":
@@ -689,6 +697,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
           role: "user",
           text: event.text,
           pendingText: "",
+          channel: chatChannelOf(event),
         });
         return true;
       }
@@ -706,6 +715,8 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       );
       if (event.text && !alreadyRendered)
         upsertInto(state.chatMessages, currentID, "assistant", event.text);
+      const settled = state.chatMessages.find((block) => block.id === currentID);
+      if (settled && !settled.channel) settled.channel = chatChannelOf(event);
       delete state.chatStreams[key];
       delete state.chatStreams[`chat:${event.messageID}:thinking`];
       delete state.chatStreamPhases[`chat:${event.messageID}`];
@@ -721,6 +732,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         id: `chat:${event.messageID}:assistant`,
         role: "assistant",
         text: event.text,
+        channel: chatChannelOf(event),
       });
       return true;
     case "chat.thinking.delta":
@@ -733,6 +745,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         id: `chat:${event.messageID}:thinking`,
         role: "thinking",
         text: event.text,
+        channel: chatChannelOf(event),
       });
       return true;
     case "chat.tool.used": {
@@ -764,6 +777,10 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         event.status,
         { tool },
       );
+      const toolBlock = state.chatMessages.find(
+        (block) => block.id === `chat:${event.id}:tool`,
+      );
+      if (toolBlock) toolBlock.channel = chatChannelOf(event);
       return true;
     }
     case "chat.rollback": {

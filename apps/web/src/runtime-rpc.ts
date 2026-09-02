@@ -647,8 +647,17 @@ export function createWebRuntimeClient(
         throw cause;
       }
     },
-    async chatAbort() {
-      return (await call("chat.abort")) as { aborted: boolean };
+    async chatAbort(channel?) {
+      return (await call("chat.abort", channel ? { channel } : undefined)) as { aborted: boolean };
+    },
+    async chatMessages(channel?) {
+      return (await call("chat.messages", channel ? { channel } : undefined)) as never;
+    },
+    async chatRollback(input, channel?) {
+      return (await call("chat.rollback", {
+        ...input,
+        ...(channel ? { channel } : {}),
+      })) as never;
     },
     cancel(reason) {
       void call("cancel", { reason });
@@ -668,11 +677,11 @@ export function createWebRuntimeClient(
     async setReasoningEffort(effort) {
       await call("model.reasoning.set", { effort });
     },
-    async chatModelProfile() {
-      return (await call<ChatModelProfile>("chat.model.profile")) as never;
+    async chatModelProfile(channel?) {
+      return (await call<ChatModelProfile>("chat.model.profile", channel ? { channel } : undefined)) as never;
     },
-    async setChatModelProfile(profile) {
-      return (await call("chat.model.profile.set", { profile })) as never;
+    async setChatModelProfile(profile, channel?) {
+      return (await call("chat.model.profile.set", { profile, ...(channel ? { channel } : {}) })) as never;
     },
     async checkpointList() {
       return (await call("checkpoint.list")) as never;

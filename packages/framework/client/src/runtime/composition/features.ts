@@ -7,6 +7,7 @@ import { createChatPrompt } from "../collaboration/chat-prompt";
 import { createChatTools } from "../collaboration/chat-tools";
 import { createCollaborationWake } from "../collaboration/wake";
 import { createMailboxPlans } from "../collaboration/mailbox-plans";
+import { createPlanDocRuntime } from "../collaboration/plan-doc-runtime";
 import { createChatTurn } from "../collaboration/chat-turn";
 import { createPluginAssembly } from "../plugin-assembly";
 import { createConfigReload } from "../config-reload";
@@ -75,6 +76,7 @@ export function wireFeatures(
   ports.cancelMailboxMessage = mailboxPlans.cancelMailboxMessage;
   ports.enqueueMailboxForClient = (input) =>
     mailboxPlans.enqueueMailboxMessage(input);
+  ports.planDocRuntime = createPlanDocRuntime(ctx);
   ports.chatSystemPrompt = chatPrompt.chatSystemPrompt;
   ports.chatTools = chatTools.chatTools;
   ports.chatToolSummary = chatTools.chatToolSummary;

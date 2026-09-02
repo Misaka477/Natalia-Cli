@@ -768,8 +768,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["approveOverride"]>>
       >;
     },
-    async chatMessages() {
-      return (await request("chat.messages")) as Awaited<
+    async chatMessages(channel) {
+      return (await request("chat.messages", channel)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
       >;
     },
@@ -798,23 +798,23 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["chatSubmit"]>>
       >;
     },
-    async chatAbort() {
-      return (await request("chat.abort")) as Awaited<
+    async chatAbort(channel) {
+      return (await request("chat.abort", channel)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatAbort"]>>
       >;
     },
-    async chatRollback(input) {
-      return (await request("chat.rollback", input)) as Awaited<
+    async chatRollback(input, channel) {
+      return (await request("chat.rollback", { input, channel })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatRollback"]>>
       >;
     },
-    async chatModelProfile() {
-      return (await request("chat.model.profile")) as Awaited<
+    async chatModelProfile(channel) {
+      return (await request("chat.model.profile", channel)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatModelProfile"]>>
       >;
     },
-    async setChatModelProfile(profile) {
-      return (await request("chat.model.profile.set", profile)) as Awaited<
+    async setChatModelProfile(profile, channel) {
+      return (await request("chat.model.profile.set", { profile, channel })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["setChatModelProfile"]>>
       >;
     },
@@ -1176,7 +1176,8 @@ export async function handleWorkerRequest(
     return await client.requestOverride?.(request.value as never);
   if (request.method === "constitution.override.approve")
     return await client.approveOverride?.(request.value as never);
-  if (request.method === "chat.messages") return await client.chatMessages?.();
+  if (request.method === "chat.messages")
+    return await client.chatMessages?.(request.value as never);
   if (request.method === "session.subagents")
     return await client.subagents?.();
   if (request.method === "subagent.history")
@@ -1186,17 +1187,20 @@ export async function handleWorkerRequest(
   if (request.method === "attachment.dataUrl")
     return await client.attachmentDataUrl?.(request.value as never);
   if (request.method === "chat.submit")
-    return await client.chatSubmit?.(request.value as { text: string });
-  if (request.method === "chat.abort") return await client.chatAbort?.();
+    return await client.chatSubmit?.(request.value as never);
+  if (request.method === "chat.abort")
+    return await client.chatAbort?.(request.value as never);
   if (request.method === "chat.rollback")
     return await client.chatRollback?.(
-      request.value as { toMessageID: string },
+      (request.value as { input: { toMessageID: string }; channel?: never }).input ?? request.value as never,
+      (request.value as { channel?: never })?.channel,
     );
   if (request.method === "chat.model.profile")
-    return await client.chatModelProfile?.();
+    return await client.chatModelProfile?.(request.value as never);
   if (request.method === "chat.model.profile.set")
     return await client.setChatModelProfile?.(
-      request.value as import("@natalia/contracts").ChatModelProfile,
+      (request.value as { profile: import("@natalia/contracts").ChatModelProfile }).profile,
+      (request.value as { channel?: never })?.channel,
     );
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);

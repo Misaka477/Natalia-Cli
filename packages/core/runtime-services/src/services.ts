@@ -1,6 +1,7 @@
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import type {
   ApprovalResponse,
+  ChatChannel,
   CheckpointResourcePolicy,
   ConfigV3,
   ConfirmedWorkspaceChange,
@@ -242,6 +243,7 @@ export type ProviderChatTurnInput = {
   provider?: import("@natalia/runtime").StreamingProvider;
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
   attachments?: import("@natalia/contracts").LocalAttachment[];
+  channel?: ChatChannel;
 };
 export type SkillMetadata = {
   name: string;
@@ -400,9 +402,9 @@ export type ProviderModelControllerInput = {
 export interface ProviderModelController {
   runTurn(sessionID: SessionID, turn: ProviderTurnInput): Promise<void>;
   runChatTurn(turn: ProviderChatTurnInput): Promise<void>;
-  requestChatWake(sessionID: SessionID): void;
-  chatBusy?(sessionID: SessionID): boolean;
-  abortChat?(sessionID: SessionID): boolean;
+  requestChatWake(sessionID: SessionID, channel?: ChatChannel): void;
+  chatBusy?(sessionID: SessionID, channel?: ChatChannel): boolean;
+  abortChat?(sessionID: SessionID, channel?: ChatChannel): boolean;
   dispose(): Promise<void>;
 }
 

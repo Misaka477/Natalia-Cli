@@ -1,4 +1,4 @@
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { ChatChannel, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ProviderChatTurnInput,
   ProviderModelController,
@@ -12,11 +12,14 @@ export function createProviderModelController(
   input: ProviderModelControllerInput,
 ): ProviderModelController {
   const runners = new Map<SessionID, ReturnType<typeof createProviderRunner>>();
-  const chatAborts = new Map<SessionID, AbortController>();
-  const chatTasks = new Map<SessionID, Promise<void>>();
-  const chatWakePending = new Set<SessionID>();
-  const chatWakeTasks = new Map<SessionID, Promise<void>>();
+  const chatAborts = new Map<ChatKey, AbortController>();
+  const chatTasks = new Map<ChatKey, Promise<void>>();
+  const chatWakePending = new Set<ChatKey>();
+  const chatWakeTasks = new Map<ChatKey, Promise<void>>();
   let disposed = false;
+  type ChatKey = string;
+  const chatKey = (sessionID: SessionID, channel: ChatChannel | undefined) =>
+    `${sessionID}:${channel ?? "navi"}`;
 
   input.initialize();
 
@@ -35,11 +38,13 @@ export function createProviderModelController(
 
   async function runChatTurn(turn: ProviderChatTurnInput) {
     if (disposed) throw new Error("provider/model controller disposed");
+    const channel = turn.channel ?? "navi";
+    const key = chatKey(turn.sessionID, channel);
     if (!input.chat.available(turn.sessionID))
       throw new Error("provider unavailable for live work chat");
-    if (chatAborts.has(turn.sessionID)) {
+    if (chatAborts.has(key)) {
       if (turn.internal) return;
-      throw new Error("live work chat is already busy for this session");
+      throw new Error(`${channel} is already busy for this session`);
     }
 
     const startedAt = Date.now();
@@ -49,11 +54,12 @@ export function createProviderModelController(
       messageID: turn.responseMessageID,
       startedAt,
       ...(turn.internal ? { internal: true } : {}),
+      ...(channel ? { channel } : {}),
     });
     const abort = new AbortController();
-    chatAborts.set(turn.sessionID, abort);
+    chatAborts.set(key, abort);
     const task = input.chat.runBody(turn, abort.signal);
-    chatTasks.set(turn.sessionID, task);
+    chatTasks.set(key, task);
     try {
       await task;
       input.chat.publish(turn.sessionID, {
@@ -63,6 +69,7 @@ export function createProviderModelController(
         stopReason: "done",
         startedAt,
         endedAt: Date.now(),
+        ...(channel ? { channel } : {}),
       });
     } catch (cause) {
       input.chat.publish(turn.sessionID, {
@@ -75,33 +82,35 @@ export function createProviderModelController(
         ...(!abort.signal.aborted
           ? { error: cause instanceof Error ? cause.message : String(cause) }
           : {}),
+        ...(channel ? { channel } : {}),
       });
       throw cause;
     } finally {
-      if (chatTasks.get(turn.sessionID) === task)
-        chatTasks.delete(turn.sessionID);
-      if (chatAborts.get(turn.sessionID) === abort)
-        chatAborts.delete(turn.sessionID);
+      if (chatTasks.get(key) === task)
+        chatTasks.delete(key);
+      if (chatAborts.get(key) === abort)
+        chatAborts.delete(key);
     }
   }
 
-  function requestChatWake(sessionID: SessionID) {
+  function requestChatWake(sessionID: SessionID, channel?: ChatChannel) {
     if (disposed) return;
-    chatWakePending.add(sessionID);
-    if (chatWakeTasks.has(sessionID)) return;
+    const key = chatKey(sessionID, channel);
+    chatWakePending.add(key);
+    if (chatWakeTasks.has(key)) return;
     const task = (async () => {
-      while (chatWakePending.delete(sessionID) && !disposed) {
-        await chatTasks.get(sessionID)?.catch(() => undefined);
+      while (chatWakePending.delete(key) && !disposed) {
+        await chatTasks.get(key)?.catch(() => undefined);
         if (!disposed && input.chat.available(sessionID))
           await input.chat.wake(sessionID);
       }
     })().finally(() => {
-      if (chatWakeTasks.get(sessionID) === task)
-        chatWakeTasks.delete(sessionID);
-      if (chatWakePending.has(sessionID) && !disposed)
-        requestChatWake(sessionID);
+      if (chatWakeTasks.get(key) === task)
+        chatWakeTasks.delete(key);
+      if (chatWakePending.has(key) && !disposed)
+        requestChatWake(sessionID, channel);
     });
-    chatWakeTasks.set(sessionID, task);
+    chatWakeTasks.set(key, task);
   }
 
   async function dispose() {
@@ -117,14 +126,14 @@ export function createProviderModelController(
     runners.clear();
   }
 
-  function chatBusy(sessionID: SessionID) {
-    return chatAborts.has(sessionID);
+  function chatBusy(sessionID: SessionID, channel?: ChatChannel) {
+    return chatAborts.has(chatKey(sessionID, channel));
   }
 
-  function abortChat(sessionID: SessionID) {
-    const abort = chatAborts.get(sessionID);
+  function abortChat(sessionID: SessionID, channel?: ChatChannel) {
+    const abort = chatAborts.get(chatKey(sessionID, channel));
     if (!abort) return false;
-    abort.abort(new Error("live work chat aborted"));
+    abort.abort(new Error(`${channel ?? "navi"} aborted`));
     return true;
   }
 

@@ -287,6 +287,8 @@ export type ToolStatus =
 
 export type CollaborationParticipant = "main_agent" | "live_chat";
 
+export type ChatChannel = "navi" | "nia";
+
 export type CollaborationKind =
   | "chat"
   | "suggestion"
@@ -1068,6 +1070,7 @@ type RuntimeEventData =
       messageID: string;
       startedAt: number;
       internal?: boolean;
+      channel?: ChatChannel;
     }
   | {
       type: "chat.turn.phase";
@@ -1075,6 +1078,7 @@ type RuntimeEventData =
       messageID: string;
       phase: "waiting" | "thinking" | "generating" | "using_tool";
       toolName?: string;
+      channel?: ChatChannel;
     }
   | {
       type: "chat.turn.finished";
@@ -1084,6 +1088,7 @@ type RuntimeEventData =
       startedAt: number;
       endedAt: number;
       error?: string;
+      channel?: ChatChannel;
     }
   | {
       type: "chat.message.added";
@@ -1092,18 +1097,21 @@ type RuntimeEventData =
       role: "user" | "chat";
       text: string;
       at: string;
+      channel?: ChatChannel;
     }
   | {
       type: "chat.message.delta";
       id: string;
       messageID: string;
       text: string;
+      channel?: ChatChannel;
     }
   | {
       type: "chat.thinking.delta";
       id: string;
       messageID: string;
       text: string;
+      channel?: ChatChannel;
     }
   | {
       type: "chat.tool.used";
@@ -1117,6 +1125,7 @@ type RuntimeEventData =
       startedAt?: number;
       endedAt?: number;
       at: string;
+      channel?: ChatChannel;
     }
   | {
       type: "chat.rollback";
@@ -1124,6 +1133,7 @@ type RuntimeEventData =
       toMessageID: string;
       removed: number;
       at: string;
+      channel?: ChatChannel;
     }
   | {
       type: "collab.suggestion";
@@ -2525,15 +2535,16 @@ export type RuntimeClient = {
     model?: { modelID?: string; variant?: string };
     reasoningEffort?: RuntimeReasoningEffort;
     attachments?: string[];
+    channel?: ChatChannel;
   }): Promise<{ messageID: string }>;
-  chatAbort?(): Promise<{ aborted: boolean }>;
-  chatModelProfile?(): Promise<ChatModelProfile>;
-  setChatModelProfile?(profile: ChatModelProfile): Promise<{ saved: boolean }>;
+  chatAbort?(channel?: ChatChannel): Promise<{ aborted: boolean }>;
+  chatModelProfile?(channel?: ChatChannel): Promise<ChatModelProfile>;
+  setChatModelProfile?(profile: ChatModelProfile, channel?: ChatChannel): Promise<{ saved: boolean }>;
   /**
    * The durable Chat conversation, oldest first. `chat.rollback` truncates it
    * at a message boundary, so the projection returns the effective history.
    */
-  chatMessages?(): Promise<ChatMessageRow[]>;
+  chatMessages?(channel?: ChatChannel): Promise<ChatMessageRow[]>;
   /**
    * Current subagent views for the active session. The runtime keeps subagent
    * records in its own persistent registry, so this is a lazy read surface; it
@@ -2547,7 +2558,7 @@ export type RuntimeClient = {
    */
   chatRollback?(input: {
     toMessageID: string;
-  }): Promise<{ rolledBackTo: string; removed: number }>;
+  }, channel?: ChatChannel): Promise<{ rolledBackTo: string; removed: number }>;
 };
 
 export type ChatModelProfile = {

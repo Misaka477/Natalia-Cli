@@ -8,7 +8,7 @@ import type {
   RuntimeServiceClient,
 } from "@natalia/runtime-services";
 import { providerForModel } from "@natalia/runtime";
-import type { RuntimeReasoningEffort, SessionID } from "@natalia/contracts";
+import type { ChatChannel, ChatModelProfile, RuntimeReasoningEffort, SessionID } from "@natalia/contracts";
 import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 type Surface = Pick<
@@ -30,21 +30,24 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
 }
 export function createChatSurface(ctx: RuntimeContext): Surface {
   return {
-    async chatMessages() {
+    async chatMessages(channel?: ChatChannel) {
       if (!ctx.ports.getSession()) return [];
-      return projectedChatMessages(ctx.ports.getSession()!.events).map(
-        (message) => ({
+      return projectedChatMessages(ctx.ports.getSession()!.events)
+        .filter((message) => (message.channel ?? "navi") === (channel ?? "navi"))
+        .map((message) => ({
           messageID: message.messageID,
           role: message.role,
           text: message.text,
           at: message.at,
-        }),
-      );
+        }));
     },
-    async chatRollback(input: { toMessageID: string }) {
+    async chatRollback(input: { toMessageID: string }, channel?: ChatChannel) {
       if (!ctx.ports.getSession())
         return { rolledBackTo: input.toMessageID, removed: 0 };
-      const history = projectedChatMessages(ctx.ports.getSession()!.events);
+      const channelKey = channel ?? "navi";
+      const history = projectedChatMessages(ctx.ports.getSession()!.events).filter(
+        (message) => (message.channel ?? "navi") === channelKey,
+      );
       const index = history.findIndex(
         (message) => message.messageID === input.toMessageID,
       );
@@ -61,27 +64,32 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         toMessageID: input.toMessageID,
         removed,
         at: new Date().toISOString(),
+        ...(channel ? { channel } : {}),
       });
       return { rolledBackTo: input.toMessageID, removed };
     },
-    async chatModelProfile() {
+    async chatModelProfile(channel?: ChatChannel) {
       const exec = ctx.ports.getActiveExec();
-      return exec?.chatModelProfile ?? {};
+      if (!exec) return {};
+      const profiles = exec.chatModelProfile as Record<string, ChatModelProfile> | undefined;
+      return (profiles?.[channel ?? "navi"] as ChatModelProfile) ?? {};
     },
-    async setChatModelProfile(profile) {
+    async setChatModelProfile(profile, channel?: ChatChannel) {
       const exec = ctx.ports.getActiveExec();
       if (!exec) return { saved: false };
-      exec.chatModelProfile = profile;
+      const profiles = { ...(exec.chatModelProfile as Record<string, ChatModelProfile> | undefined) };
+      profiles[channel ?? "navi"] = profile;
+      (exec as { chatModelProfile?: unknown }).chatModelProfile = profiles;
       return { saved: true };
     },
-    async chatAbort() {
+    async chatAbort(channel?: ChatChannel) {
       const exec = ctx.ports.getActiveExec();
       const controller = ctx.ports.resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       );
       if (!exec || !controller?.abortChat) return { aborted: false as const };
       return {
-        aborted: controller.abortChat(exec.session.id as SessionID),
+        aborted: controller.abortChat(exec.session.id as SessionID, channel),
       };
     },
     async chatSubmit(input: {
@@ -89,11 +97,14 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       model?: { modelID?: string; variant?: string };
       reasoningEffort?: RuntimeReasoningEffort;
       attachments?: string[];
+      channel?: ChatChannel;
     }) {
+      const channel = input.channel ?? "navi";
       console.log("[chat] chatSubmit received", {
         text: input.text,
         model: input.model,
         attachments: input.attachments,
+        channel,
       });
       const storedAttachments = input.attachments?.length
         ? await ctx.ports
@@ -144,9 +155,10 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         role: "user",
         text: redactToolOutput(text, true),
         at: now.toISOString(),
+        ...(channel ? { channel } : {}),
       });
       const responseMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
-      if (controller.chatBusy?.(exec.session.id as SessionID)) {
+      if (controller.chatBusy?.(exec.session.id as SessionID, channel)) {
         console.log("[chat] chatSubmit queued while busy", {
           userMessageID,
           text,
@@ -170,6 +182,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           provider,
           reasoningEffort: input.reasoningEffort,
           attachments: storedAttachments,
+          channel,
         });
         console.log("[chat] chatSubmit turn finished", responseMessageID);
       } catch (cause) {
@@ -182,6 +195,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           role: "chat",
           text: `Chat could not finish this turn: ${detail.split("\n")[0]!.slice(0, 240)}`,
           at: new Date().toISOString(),
+          ...(channel ? { channel } : {}),
         });
       }
       return { messageID: responseMessageID };

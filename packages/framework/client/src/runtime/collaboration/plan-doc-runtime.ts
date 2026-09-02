@@ -19,15 +19,45 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 
-type PlanDocRuntime = Pick<
-  RuntimeServiceClient,
-  | "planDocList"
-  | "planDocRead"
-  | "planDocWrite"
-  | "planDocMark"
-  | "planDocDelete"
-  | "planDocStatus"
->;
+export type PlanDocRuntime = {
+  planDocList(): Promise<
+    Array<{
+      planID: string;
+      title: string;
+      documentPath: string;
+      status: string;
+      createdBy: "user" | "live_chat" | "main_agent";
+      createdAt: string;
+      updatedAt: string;
+      markedAt?: string;
+    }>
+  >;
+  planDocRead(input: {
+    planID?: string;
+    path?: string;
+  }): Promise<{
+    planID?: string;
+    title?: string;
+    documentPath: string;
+    content: string;
+  }>;
+  planDocWrite(input: {
+    path: string;
+    content: string;
+    title?: string;
+    planID?: string;
+  }): Promise<{ written: boolean; planID?: string }>;
+  planDocMark(input: {
+    path: string;
+    title?: string;
+  }): Promise<{ marked: boolean; planID: string }>;
+  planDocDelete(planID: string): Promise<{ deleted: boolean }>;
+  planDocStatus(planID: string): Promise<{ status: string }>;
+  planDocUpdateStatus(
+    planID: string,
+    status: string,
+  ): Promise<{ updated: boolean }>;
+};
 
 type IndexEntry = Awaited<
   ReturnType<NonNullable<RuntimeServiceClient["planDocList"]>>
@@ -200,6 +230,26 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       const entries = await readIndex(ctx);
       const record = entries[planID];
       return { status: record?.status ?? "unmarked" };
+    },
+
+    async planDocUpdateStatus(planID, status) {
+      const entries = await readIndex(ctx);
+      const record = entries[planID];
+      if (!record) return { updated: false };
+      const now = new Date().toISOString();
+      record.status = status;
+      record.updatedAt = now;
+      entries[planID] = record;
+      await writeIndex(ctx, entries);
+      publish(
+        requireWorkLedger().buildPlanDocStatus({
+          id: `${planID}:status:${ctx.ports.nextPlanSequence()}`,
+          planID,
+          status,
+          at: now,
+        }),
+      );
+      return { updated: true };
     },
   };
 }

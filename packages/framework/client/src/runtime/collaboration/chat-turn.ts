@@ -23,7 +23,7 @@ import {
   type AttachmentService,
 } from "@natalia/runtime-services";
 import type { ProviderMessage, ProviderToolCall } from "@natalia/runtime";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { ChatChannel, RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -50,6 +50,7 @@ export function createChatTurn(ctx: RuntimeContext) {
       provider?: import("@natalia/runtime").StreamingProvider;
       reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
       attachments?: import("@natalia/contracts").LocalAttachment[];
+      channel?: ChatChannel;
     },
     signal: AbortSignal,
   ) {
@@ -64,6 +65,7 @@ export function createChatTurn(ctx: RuntimeContext) {
       getWorkspaceRoot,
     } = ctx.ports;
     const activeProvider = input.provider ?? input.exec.provider;
+    const channel: ChatChannel = input.channel ?? "navi";
     console.log("[chat-turn] start", {
       responseMessageID: input.responseMessageID,
       text: input.text,
@@ -76,10 +78,11 @@ export function createChatTurn(ctx: RuntimeContext) {
     try {
       const history = projectedChatMessages(input.exec.session.events);
       const messages: ProviderMessage[] = [
-        { role: "system", content: chatSystemPrompt(input.exec) },
+        { role: "system", content: chatSystemPrompt(input.exec, channel) },
       ];
       for (const message of history) {
         if (message.messageID === input.responseMessageID) continue;
+        if ((message.channel ?? "navi") !== channel) continue;
         // Provider roles already distinguish the user from Navi. Repeating a
         // literal [Navi] marker on every assistant turn encourages models to
         // copy the name as a reply prefix and amplify it across later turns.
@@ -131,7 +134,7 @@ export function createChatTurn(ctx: RuntimeContext) {
           }
         }
       }
-      const visibleTools = chatTools(input.exec);
+      const visibleTools = chatTools(input.exec, channel);
       console.log("[chat-turn] tools", visibleTools.map((tool) => tool.name));
       const toolSchemas = visibleTools.map((tool) => ({
         name: tool.name,
@@ -156,6 +159,7 @@ export function createChatTurn(ctx: RuntimeContext) {
           messageID: input.responseMessageID,
           phase: next,
           ...(toolName ? { toolName } : {}),
+          ...(channel ? { channel } : {}),
         });
       };
       const requiredNataliaReply = () => {
@@ -262,6 +266,7 @@ export function createChatTurn(ctx: RuntimeContext) {
               // projection appends each chunk, so a full-accumulated payload
               // would be re-appended every time and grow without bound.
               text: chunk.text,
+              ...(channel ? { channel } : {}),
             });
             continue;
           }
@@ -274,6 +279,7 @@ export function createChatTurn(ctx: RuntimeContext) {
               id: `${input.responseMessageID}:delta:${chatSequence()}`,
               messageID: input.responseMessageID,
               text: chunk.text,
+              ...(channel ? { channel } : {}),
             });
           }
           if (chunk.type === "tool_call") calls.push(...chunk.calls);
@@ -400,6 +406,7 @@ export function createChatTurn(ctx: RuntimeContext) {
             result,
             argumentsRaw: call.arguments,
             at: new Date().toISOString(),
+            ...(channel ? { channel } : {}),
           });
           setPhase("waiting");
           messages.push({
@@ -423,6 +430,7 @@ export function createChatTurn(ctx: RuntimeContext) {
           id: `${input.responseMessageID}:delta:${chatSequence()}`,
           messageID: input.responseMessageID,
           text: MISSING_FINAL_RESPONSE_FALLBACK,
+          ...(channel ? { channel } : {}),
         });
         publishForSession(input.exec, {
           type: "diagnostic",
@@ -438,6 +446,7 @@ export function createChatTurn(ctx: RuntimeContext) {
         role: "chat",
         text: redactToolOutput(output.trim() || "(no reply)", true),
         at: new Date().toISOString(),
+        ...(channel ? { channel } : {}),
       });
       return { text: output };
     } finally {

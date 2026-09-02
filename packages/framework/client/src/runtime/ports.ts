@@ -208,9 +208,13 @@ export type RuntimePorts = {
     exec: SessionExecutionState,
     input: import("@natalia/contracts").SubmitInput,
   ) => void;
-  chatSystemPrompt: (exec?: SessionExecutionState) => string;
+  chatSystemPrompt: (
+    exec?: SessionExecutionState,
+    channel?: import("@natalia/contracts").ChatChannel,
+  ) => string;
   chatTools: (
     exec?: SessionExecutionState,
+    channel?: "navi" | "nia",
   ) => import("@natalia/tools").RuntimeTool[];
   effectiveMaxSteps: (exec?: SessionExecutionState) => number;
   waitIfPaused: (exec?: SessionExecutionState) => Promise<void>;
@@ -219,6 +223,7 @@ export type RuntimePorts = {
     args: Record<string, unknown>,
     result: string,
   ) => string;
+  planDocRuntime: import("./collaboration/plan-doc-runtime").PlanDocRuntime;
   getSelectedAgent: () => AgentDefinition | undefined;
   getSelectedModel: () => { modelID?: string; variant?: string } | undefined;
   getProviderSource: () =>
