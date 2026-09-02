@@ -677,7 +677,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         messageID: event.messageID,
         phase: "waiting",
         startedAt: event.startedAt,
-        channel: chatChannelOf(event),
+        ...(event.channel ? { channel: event.channel } : {}),
       };
       return true;
     case "chat.turn.phase":
