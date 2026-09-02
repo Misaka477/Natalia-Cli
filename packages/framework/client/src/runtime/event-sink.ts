@@ -7,7 +7,7 @@
  * events, and trigger session snapshots and safe-boundary settlement. Reads
  * everything it needs from `RuntimeContext` at call time.
  */
-import { appendSessionEvent } from "@natalia/session";
+import { appendSessionEvent, projectedChatMessages } from "@natalia/session";
 import { runtimeEventDurability } from "@natalia/contracts";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
@@ -211,6 +211,38 @@ export function createEventSink(
     ) {
       exec.advisorPending = true;
       requestNaviWake(exec);
+    }
+    if (
+      !event.agentID &&
+      event.type === "chat.turn.finished" &&
+      event.channel === "nia" &&
+      event.stopReason === "done" &&
+      exec?.session
+    ) {
+      // Fallback: even if Nia did not explicitly call collab_chat, forward the
+      // final Nia reply to the main agent so the closed loop can continue.
+      const niaMessages = projectedChatMessages(exec.session.events).filter(
+        (message) => message.channel === "nia",
+      );
+      const last = niaMessages[niaMessages.length - 1];
+      if (last) {
+        const id = `collab:nia-fallback:${event.messageID}`;
+        publishForSession(exec, {
+          type: "collab.message",
+          message: {
+            id,
+            threadID: id,
+            from: "nia",
+            to: "main_agent",
+            kind: "chat",
+            text: last.text,
+            round: 1,
+            expectsReply: false,
+            at: new Date().toISOString(),
+          },
+        });
+        ctx.ports.wakeMainForCollaboration(exec, id, "nia audit");
+      }
     }
     if (
       !event.agentID &&
