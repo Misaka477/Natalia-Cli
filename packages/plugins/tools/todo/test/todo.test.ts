@@ -16,9 +16,6 @@ test("the todo family describes the tools it ships", () => {
   expect(family.id).toBe("todo");
   expect(family.scope).toBe("session");
   expect(family.tools).toEqual(todoTools);
-  expect(todoTools.find((tool) => tool.name === "plan")?.requiresApproval).toBe(
-    false,
-  );
   expect(
     todoTools.find((tool) => tool.name === "todo_write")?.requiresApproval,
   ).toBe(false);
@@ -57,7 +54,7 @@ test("todo tools isolate durable items by session", async () => {
       .execute({}, { workspaceRoot: root, sessionID: "ses_b" }),
   ).toBe("[]");
   await tools
-    .get("plan")!
+    .get("todo_write")!
     .execute(
       { items: [{ content: "cutover evidence", status: "pending" }] },
       { workspaceRoot: root, sessionID: "ses_a" },

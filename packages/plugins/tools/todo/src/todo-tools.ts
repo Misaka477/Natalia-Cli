@@ -24,23 +24,6 @@ type TodoItem = {
 
 export const TODO_PLUGIN_ID = "natalia-tool-todo";
 
-function planTool(): RuntimeTool {
-  return {
-    name: "plan",
-    description: "Create or update this session's durable execution plan.",
-    requiresApproval: false,
-    parameters: {
-      type: "object",
-      properties: { items: { type: "array" } },
-      required: ["items"],
-      additionalProperties: false,
-    },
-    async execute(input, context) {
-      return await todoWriteTool().execute(input, context);
-    },
-  };
-}
-
 function todoReadTool(): RuntimeTool {
   return {
     name: "todo_read",
@@ -154,7 +137,6 @@ function todoPath(workspaceRoot: string, sessionID: string) {
 }
 
 export const todoTools: RuntimeTool[] = [
-  planTool(),
   todoReadTool(),
   todoWriteTool(),
 ];
