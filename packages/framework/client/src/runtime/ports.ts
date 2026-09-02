@@ -7,7 +7,7 @@
  */
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import type { CapabilityRegistryHost } from "@natalia/capability";
-import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { CollaborationParticipant, ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ContextLedgerFactory,
   CheckpointController,
@@ -98,7 +98,7 @@ export type RuntimePorts = {
     kind: string,
   ) => void;
   createCollabChatTool: (
-    from: "live_chat" | "main_agent",
+    from: CollaborationParticipant,
     exec: SessionExecutionState | undefined,
   ) => import("@natalia/tools").RuntimeTool;
   enqueueMailboxMessage: (

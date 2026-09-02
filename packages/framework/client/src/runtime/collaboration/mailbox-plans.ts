@@ -16,7 +16,7 @@ import {
   buildMailboxStatus,
 } from "@natalia/runtime-services";
 import type { RuntimeTool } from "@natalia/tools";
-import type { SessionID } from "@natalia/contracts";
+import type { CollaborationParticipant, SessionID } from "@natalia/contracts";
 import {
   COLLABORATION_SERVICE,
   type CollaborationService,
@@ -38,7 +38,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
   }
 
   function createCollabChatTool(
-    sender: "main_agent" | "live_chat",
+    sender: CollaborationParticipant,
     boundExec?: SessionExecutionState,
   ): RuntimeTool {
     const {
@@ -52,7 +52,9 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       description:
         sender === "main_agent"
           ? "Send or directly reply to an informal message with Navi. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Navi already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. Automatic exchanges are capped by runtime.collaboration.maxAutoRounds. This is never a user directive or work-state decision."
-          : "Send or directly reply to an informal message with Natalia. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Natalia already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. Automatic exchanges are capped by runtime.collaboration.maxAutoRounds. Never use this instead of mailbox_send for a confirmed user directive.",
+          : sender === "nia"
+            ? "Send or directly reply to an informal message with Natalia or Navi. Use to report audit findings, request continuation, or ask for context. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID."
+            : "Send or directly reply to an informal message with Natalia. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Natalia already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. Automatic exchanges are capped by runtime.collaboration.maxAutoRounds. Never use this instead of mailbox_send for a confirmed user directive.",
       requiresApproval: false,
       parameters: {
         type: "object",
@@ -106,7 +108,9 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           return error instanceof Error ? error.message : String(error);
         }
         if (result.wake.recipient === "live_chat") requestNaviWake(owner);
-        else wakeMainForCollaboration(owner, result.message.id, "chat message");
+        else if (result.wake.recipient === "nia") {
+          // A peer sends to Nia; Nia wakes through its own channel.
+        } else wakeMainForCollaboration(owner, result.message.id, "chat message");
         return JSON.stringify({
           sent: true,
           messageID: result.message.id,

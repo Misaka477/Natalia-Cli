@@ -285,7 +285,7 @@ export type ToolStatus =
   | "rejected"
   | "cancelled";
 
-export type CollaborationParticipant = "main_agent" | "live_chat";
+export type CollaborationParticipant = "main_agent" | "live_chat" | "nia";
 
 export type ChatChannel = "navi" | "nia";
 
@@ -1176,8 +1176,8 @@ type RuntimeEventData =
       type: "collab.chat";
       id: string;
       threadID: string;
-      from: "live_chat" | "main_agent";
-      to: "live_chat" | "main_agent";
+      from: CollaborationParticipant;
+      to: CollaborationParticipant;
       text: string;
       /** Direct reply to the preceding open chat message, when present. */
       replyToID?: string;

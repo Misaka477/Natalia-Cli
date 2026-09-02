@@ -20,6 +20,7 @@ export type CollaborationWake = {
 type SendBase = {
   sessionID: SessionID;
   text: string;
+  to?: CollaborationParticipant;
 };
 
 export type SendCollaborationInput =
@@ -91,7 +92,9 @@ export function createCollaborationService(
       if (!input.text.trim()) throw new Error("collaboration text is required");
       if (!ports.events(input.sessionID)) throw new Error("no session");
       const messages = list(input.sessionID);
-      const to = input.from === "main_agent" ? "live_chat" : "main_agent";
+      const to =
+        input.to ??
+        (input.from === "main_agent" ? "live_chat" : "main_agent");
       const target =
         "replyToID" in input
           ? messages.find((message) => message.id === input.replyToID)

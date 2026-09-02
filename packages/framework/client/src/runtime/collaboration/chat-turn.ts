@@ -93,15 +93,16 @@ export function createChatTurn(ctx: RuntimeContext) {
         );
       }
       if (input.internal) {
-        // A wake turn has no human prompt: tell Navi to answer her sister's
-        // pending collaboration messages (the questions are in her context).
-        // This must be a user turn: Anthropic-compatible providers extract all
-        // system messages into `system`, and reject the resulting empty
-        // `messages` array.
+        // A wake turn has no human prompt: tell the peer to respond to its
+        // channel-specific context. This must be a user turn:
+        // Anthropic-compatible providers extract all system messages into
+        // `system`, and reject the resulting empty `messages` array.
         messages.push({
           role: "user",
           content:
-            "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply you have already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Set continueConversation=true if your reply asks a question, invites a follow-up, or says you will wait for more; false explicitly closes the conversation. Keep replies concise.",
+            channel === "nia"
+              ? "You are Nia. Your audit wake request has arrived. Read the plan and shared context, perform the audit, then send your findings back to Natalia with collab_chat if needed. Be concise and exact."
+              : "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply you have already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Set continueConversation=true if your reply asks a question, invites a follow-up, or says you will wait for more; false explicitly closes the conversation. Keep replies concise.",
         });
       }
       if (input.attachments?.length) {

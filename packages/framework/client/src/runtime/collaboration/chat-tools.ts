@@ -478,6 +478,23 @@ export function createChatTools(ctx: RuntimeContext) {
         },
       });
     }
+    if (channel === "nia") {
+      if (!visible.some((tool) => tool.name === "collab_chat"))
+        visible.push(ctx.ports.createCollabChatTool("nia", exec));
+      const allowed = new Set([
+        "read_file",
+        "glob",
+        "grep",
+        "web_fetch",
+        "web_search",
+        "session_snapshot",
+        "plan_doc_list",
+        "plan_doc_read",
+        "mailbox_status",
+        "collab_chat",
+      ]);
+      return visible.filter((tool) => allowed.has(tool.name));
+    }
     return visible;
   }
 }

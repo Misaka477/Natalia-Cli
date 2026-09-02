@@ -159,7 +159,35 @@ export function collaborationTools(
     },
   };
 
-  return [mailboxAcknowledge, respond, inbox, chat, ask];
+  const askNia: RuntimeTool = {
+    name: "collab_ask_nia",
+    description:
+      "Ask Nia, the read-only audit agent, to audit a plan or inspect workspace evidence. Use it at the summary/awaiting-audit stage.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: { question: { type: "string" } },
+      required: ["question"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const question = (parsed as { question?: string }).question;
+      if (typeof question !== "string" || !question.trim())
+        return "collab_ask_nia requires question";
+      const sessionID = context.sessionID as SessionID | undefined;
+      if (!sessionID || !sessionEvents(sessionID)) return "no session";
+      await ports.service.send({
+        sessionID,
+        kind: "question",
+        from: "main_agent",
+        to: "nia",
+        text: ports.redact(question),
+      });
+      return JSON.stringify({ asked: true });
+    },
+  };
+
+  return [mailboxAcknowledge, respond, inbox, chat, ask, askNia];
 }
 
 function createMainAgentChatTool(
