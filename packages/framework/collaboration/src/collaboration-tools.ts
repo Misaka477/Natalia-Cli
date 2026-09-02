@@ -15,6 +15,10 @@ export type CollaborationToolPorts = {
   requestWake(sessionID: SessionID): void;
   maxAutoRounds(): number;
   service: CollaborationService;
+  planDocUpdateStatus?: (input: {
+    planID: string;
+    status: string;
+  }) => Promise<{ updated: boolean }>;
 };
 
 export function collaborationTools(
@@ -187,7 +191,37 @@ export function collaborationTools(
     },
   };
 
-  return [mailboxAcknowledge, respond, inbox, chat, ask, askNia];
+  const planStatus: RuntimeTool = {
+    name: "plan_doc_set_status",
+    description:
+      "Update a plan document lifecycle status. Use it when execution reaches awaiting_audit, or when returning audit_passed/audit_gaps results.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        planID: { type: "string" },
+        status: { type: "string" },
+      },
+      required: ["planID", "status"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      if (!ports.planDocUpdateStatus) return "plan status registry unavailable";
+      const args = parsed as { planID?: string; status?: string };
+      if (typeof args.planID !== "string" || typeof args.status !== "string")
+        return "plan_doc_set_status requires planID and status";
+      const sessionID = context.sessionID as SessionID | undefined;
+      if (!sessionID) return "no session";
+      return JSON.stringify(
+        await ports.planDocUpdateStatus({
+          planID: args.planID,
+          status: args.status,
+        }),
+      );
+    },
+  };
+
+  return [mailboxAcknowledge, respond, inbox, chat, ask, askNia, planStatus];
 }
 
 function createMainAgentChatTool(
