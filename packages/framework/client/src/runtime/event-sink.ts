@@ -246,6 +246,25 @@ export function createEventSink(
           },
         });
         ctx.ports.wakeMainForCollaboration(exec, id, "nia audit");
+        // Avoid the audit loop: when Nia reports the work is complete, mark the
+        // active plan completed so Natalia's next reply does not re-wake Nia.
+        const auditDone =
+          /全部完成|全部通过|没有缺口|已完成|audit_passed|no gaps|all done/iu.test(
+            last.text,
+          );
+        if (auditDone) {
+          const active = projectedPlanDocs(exec.session.events).filter(
+            (plan) =>
+              plan.status === "handed_off" ||
+              plan.status === "executing" ||
+              plan.status === "audit_gaps",
+          );
+          for (const plan of active)
+            void ctx.ports.planDocRuntime.planDocUpdateStatus({
+              planID: plan.planID,
+              status: "completed",
+            });
+        }
       }
     }
     if (
