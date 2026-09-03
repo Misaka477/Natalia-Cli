@@ -251,3 +251,26 @@ test("two sessions runtimeStatus resolve independently", async () => {
   expect(statusB).toBeTruthy();
   await client.dispose?.();
 });
+
+test("two sessions diagnostics resolve independently", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-diag");
+  const client = createOfficialRuntimeClient({
+    workspaceRoot,
+    provider: {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const createdA = await client.sessionNew?.();
+  const createdB = await client.sessionNew?.();
+  const diagA = await client.diagnostics?.(100, createdA?.sessionID);
+  const diagB = await client.diagnostics?.(100, createdB?.sessionID);
+  expect(Array.isArray(diagA)).toBe(true);
+  expect(Array.isArray(diagB)).toBe(true);
+  await client.dispose?.();
+});
