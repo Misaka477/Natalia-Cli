@@ -155,35 +155,31 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
         </div>
       </Show>
       <Show when={plans().length}>
-        <div class="review-diff">
-          <div class="review-diff-header">
-            <span class="review-diff-path">已标记 Plan</span>
-          </div>
-          <div class="review-diff-content">
+        <div class="agent-layout">
+          <div class="agent-sidebar">
+            <div class="review-section-label">已标记 Plan</div>
             <For each={plans()}>
               {(plan) => (
-                <div
-                  class="todo-row"
+                <button
+                  type="button"
+                  class="agent-card"
                   data-active={selected()?.planID === plan.planID}
                   onClick={() => selectPlan(plan.planID)}
                 >
-                  <span class="todo-dot" data-status={plan.status} />
-                  <span class="todo-text">{plan.title}</span>
-                  <span class="todo-status">{plan.status}</span>
-                </div>
+                  <div class="agent-card-title">{plan.title}</div>
+                  <div class="agent-card-status">{plan.status}</div>
+                  <div class="agent-card-detail">{plan.documentPath}</div>
+                </button>
               )}
             </For>
           </div>
-        </div>
-        <div class="review-diff">
-          <div class="review-diff-header">
-            <span class="review-diff-path">编辑器</span>
-          </div>
-          <div class="review-diff-content plan-panel-editor-host">
-            <Show when={selected()} fallback={<div class="review-empty">先选择或标记一个 Plan</div>}>
-              <div class="plan-panel-doc-meta">
-                <span>{selected()!.planID}</span>
-                <span>{selected()!.documentPath}</span>
+          <div class="agent-stream">
+            <Show when={selected()} fallback={<div class="agent-empty">先选择或标记一个 Plan</div>}>
+              <div class="agent-stream-header">
+                <div class="agent-stream-title">{selected()!.title}</div>
+                <div class="agent-stream-meta">
+                  {selected()!.planID} · {selected()!.documentPath}
+                </div>
               </div>
               <div class="plan-panel-doc-buttons">
                 <button
