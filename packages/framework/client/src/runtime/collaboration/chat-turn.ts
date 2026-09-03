@@ -237,6 +237,10 @@ export function createChatTurn(ctx: RuntimeContext) {
         // configured cap of 1 block Chat until Main stops, defeating its core
         // always-available contract. The chat controller still limits each session to
         // one Chat stream at a time.
+        if (process.env.NATALIA_DEBUG_NIA === "1" && channel === "nia") {
+          console.error("[nia-debug] messages", JSON.stringify(messages));
+          console.error("[nia-debug] tools", JSON.stringify(toolSchemas));
+        }
         const stream = activeProvider.stream({
           messages: finalOnlyStep
             ? [
