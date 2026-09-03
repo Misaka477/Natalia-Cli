@@ -62,7 +62,9 @@ export function createSessionAdmission(
     );
     if (!workLedger)
       throw new Error("work ledger unavailable (natalia-work-ledger)");
-    const targetSessionID = input.sessionID ?? forSessionID ?? getSessionID();
+    const targetSessionID = (
+      input.sessionID ?? forSessionID ?? getSessionID()
+    ) as SessionID;
     const targetExec = await ensureExecution(targetSessionID);
     if (isDisposed()) throw new Error("runtime disposed");
     const targetSession = targetExec.session;

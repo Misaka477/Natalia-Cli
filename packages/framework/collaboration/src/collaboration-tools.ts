@@ -91,8 +91,9 @@ export function collaborationTools(
         return "collab_respond requires messageID and decision";
       const sessionID = context.sessionID as SessionID | undefined;
       if (!sessionID || !sessionEvents(sessionID)) return "no session";
+      let result;
       try {
-        await ports.service.send({
+        result = await ports.service.send({
           sessionID,
           kind: "response",
           from: "main_agent",
@@ -164,7 +165,7 @@ export function collaborationTools(
         return "collab_ask requires question";
       const sessionID = context.sessionID as SessionID | undefined;
       if (!sessionID || !sessionEvents(sessionID)) return "no session";
-      await ports.service.send({
+      const result = await ports.service.send({
         sessionID,
         kind: "question",
         from: "main_agent",

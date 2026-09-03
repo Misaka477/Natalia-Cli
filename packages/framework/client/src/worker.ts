@@ -685,8 +685,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>
       >;
     },
-    async planDocList() {
-      return (await request("planDoc.list")) as Awaited<
+    async planDocList(sessionID) {
+      return (await request("planDoc.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["planDocList"]>>
       >;
     },
@@ -705,13 +705,13 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["planDocMark"]>>
       >;
     },
-    async planDocDelete(planID) {
-      return (await request("planDoc.delete", planID)) as Awaited<
+    async planDocDelete(planID, sessionID) {
+      return (await request("planDoc.delete", { planID, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["planDocDelete"]>>
       >;
     },
-    async planDocStatus(planID) {
-      return (await request("planDoc.status", planID)) as Awaited<
+    async planDocStatus(planID, sessionID) {
+      return (await request("planDoc.status", { planID, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>
       >;
     },
@@ -775,8 +775,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["approveOverride"]>>
       >;
     },
-    async chatMessages(channel) {
-      return (await request("chat.messages", channel)) as Awaited<
+    async chatMessages(channel, sessionID) {
+      return (await request("chat.messages", { channel, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
       >;
     },
@@ -805,23 +805,23 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["chatSubmit"]>>
       >;
     },
-    async chatAbort(channel) {
-      return (await request("chat.abort", channel)) as Awaited<
+    async chatAbort(channel, sessionID) {
+      return (await request("chat.abort", { channel, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatAbort"]>>
       >;
     },
-    async chatRollback(input, channel) {
-      return (await request("chat.rollback", { input, channel })) as Awaited<
+    async chatRollback(input, channel, sessionID) {
+      return (await request("chat.rollback", { input, channel, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatRollback"]>>
       >;
     },
-    async chatModelProfile(channel) {
-      return (await request("chat.model.profile", channel)) as Awaited<
+    async chatModelProfile(channel, sessionID) {
+      return (await request("chat.model.profile", { channel, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatModelProfile"]>>
       >;
     },
-    async setChatModelProfile(profile, channel) {
-      return (await request("chat.model.profile.set", { profile, channel })) as Awaited<
+    async setChatModelProfile(profile, channel, sessionID) {
+      return (await request("chat.model.profile.set", { profile, channel, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["setChatModelProfile"]>>
       >;
     },
@@ -830,8 +830,8 @@ export function createWorkerRuntimeClient(
       port.removeEventListener("message", onMessage);
       port.close?.();
     },
-    cancel(reason) {
-      notify("cancel", reason);
+    cancel(reason, sessionID) {
+      notify("cancel", { reason, sessionID });
     },
     // A round trip rather than a notification: these answer whether the runtime
     // actually paused, and a channel that cannot see the answer would have to
@@ -1081,10 +1081,17 @@ export async function handleWorkerRequest(
     return await client.checkpointRename?.(
       request.value as { id: string; name: string },
     );
-  if (request.method === "cancel")
+  if (request.method === "cancel") {
+    const value = request.value as { reason?: unknown; sessionID?: string } | string | undefined;
     return client.cancel(
-      typeof request.value === "string" ? request.value : undefined,
+      typeof value === "string"
+        ? value
+        : typeof value?.reason === "string"
+          ? value.reason
+          : undefined,
+      typeof value === "string" ? undefined : value?.sessionID,
     );
+  }
   if (request.method === "pause")
     return client.pause?.(
       typeof request.value === "string" ? request.value : undefined,
@@ -1153,17 +1160,24 @@ export async function handleWorkerRequest(
     return await client.selectAgent?.(request.value as string);
   if (request.method === "session.snapshot")
     return await client.sessionSnapshot?.();
-  if (request.method === "planDoc.list") return await client.planDocList?.();
+  if (request.method === "planDoc.list")
+    return await client.planDocList?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "planDoc.read")
     return await client.planDocRead?.(request.value as never);
   if (request.method === "planDoc.write")
     return await client.planDocWrite?.(request.value as never);
   if (request.method === "planDoc.mark")
     return await client.planDocMark?.(request.value as never);
-  if (request.method === "planDoc.delete")
-    return await client.planDocDelete?.(request.value as string);
-  if (request.method === "planDoc.status")
-    return await client.planDocStatus?.(request.value as string);
+  if (request.method === "planDoc.delete") {
+    const value = request.value as { planID: string; sessionID?: string };
+    return await client.planDocDelete?.(value.planID, value.sessionID);
+  }
+  if (request.method === "planDoc.status") {
+    const value = request.value as { planID: string; sessionID?: string };
+    return await client.planDocStatus?.(value.planID, value.sessionID);
+  }
   if (request.method === "planDoc.updateStatus")
     return await client.planDocUpdateStatus?.(request.value as never);
   if (request.method === "mailbox.list") return await client.mailboxList?.();
@@ -1185,8 +1199,12 @@ export async function handleWorkerRequest(
     return await client.requestOverride?.(request.value as never);
   if (request.method === "constitution.override.approve")
     return await client.approveOverride?.(request.value as never);
-  if (request.method === "chat.messages")
-    return await client.chatMessages?.(request.value as never);
+  if (request.method === "chat.messages") {
+    const value = request.value as
+      | { channel?: import("@natalia/contracts").ChatChannel; sessionID?: string }
+      | undefined;
+    return await client.chatMessages?.(value?.channel, value?.sessionID);
+  }
   if (request.method === "session.subagents")
     return await client.subagents?.();
   if (request.method === "subagent.history")
@@ -1197,20 +1215,38 @@ export async function handleWorkerRequest(
     return await client.attachmentDataUrl?.(request.value as never);
   if (request.method === "chat.submit")
     return await client.chatSubmit?.(request.value as never);
-  if (request.method === "chat.abort")
-    return await client.chatAbort?.(request.value as never);
-  if (request.method === "chat.rollback")
-    return await client.chatRollback?.(
-      (request.value as { input: { toMessageID: string }; channel?: never }).input ?? request.value as never,
-      (request.value as { channel?: never })?.channel,
-    );
-  if (request.method === "chat.model.profile")
-    return await client.chatModelProfile?.(request.value as never);
-  if (request.method === "chat.model.profile.set")
+  if (request.method === "chat.abort") {
+    const value = request.value as
+      | { channel?: import("@natalia/contracts").ChatChannel; sessionID?: string }
+      | undefined;
+    return await client.chatAbort?.(value?.channel, value?.sessionID);
+  }
+  if (request.method === "chat.rollback") {
+    const value = request.value as {
+      input: { toMessageID: string };
+      channel?: import("@natalia/contracts").ChatChannel;
+      sessionID?: string;
+    };
+    return await client.chatRollback?.(value.input, value.channel, value.sessionID);
+  }
+  if (request.method === "chat.model.profile") {
+    const value = request.value as
+      | { channel?: import("@natalia/contracts").ChatChannel; sessionID?: string }
+      | undefined;
+    return await client.chatModelProfile?.(value?.channel, value?.sessionID);
+  }
+  if (request.method === "chat.model.profile.set") {
+    const value = request.value as {
+      profile: import("@natalia/contracts").ChatModelProfile;
+      channel?: import("@natalia/contracts").ChatChannel;
+      sessionID?: string;
+    };
     return await client.setChatModelProfile?.(
-      (request.value as { profile: import("@natalia/contracts").ChatModelProfile }).profile,
-      (request.value as { channel?: never })?.channel,
+      value.profile,
+      value.channel,
+      value.sessionID,
     );
+  }
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
   if (request.method === "question")

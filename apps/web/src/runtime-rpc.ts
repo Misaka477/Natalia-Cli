@@ -645,20 +645,27 @@ export function createWebRuntimeClient(
         throw cause;
       }
     },
-    async chatAbort(channel?) {
-      return (await call("chat.abort", channel ? { channel } : undefined)) as { aborted: boolean };
+    async chatAbort(channel?, sessionID?) {
+      return (await call("chat.abort", {
+        ...(channel ? { channel } : {}),
+        ...(sessionID ? { sessionID } : {}),
+      })) as { aborted: boolean };
     },
-    async chatMessages(channel?) {
-      return (await call("chat.messages", channel ? { channel } : undefined)) as never;
+    async chatMessages(channel?, sessionID?) {
+      return (await call("chat.messages", {
+        ...(channel ? { channel } : {}),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
     },
-    async chatRollback(input, channel?) {
+    async chatRollback(input, channel?, sessionID?) {
       return (await call("chat.rollback", {
         ...input,
         ...(channel ? { channel } : {}),
+        ...(sessionID ? { sessionID } : {}),
       })) as never;
     },
-    cancel(reason) {
-      void call("cancel", { reason });
+    cancel(reason, sessionID) {
+      void call("cancel", { reason, ...(sessionID ? { sessionID } : {}) });
     },
     async modelCatalog() {
       return (await call<RuntimeModelCatalogEntry[]>("model.catalog")) as never;
@@ -675,11 +682,18 @@ export function createWebRuntimeClient(
     async setReasoningEffort(effort) {
       await call("model.reasoning.set", { effort });
     },
-    async chatModelProfile(channel?) {
-      return (await call<ChatModelProfile>("chat.model.profile", channel ? { channel } : undefined)) as never;
+    async chatModelProfile(channel?, sessionID?) {
+      return (await call<ChatModelProfile>("chat.model.profile", {
+        ...(channel ? { channel } : {}),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
     },
-    async setChatModelProfile(profile, channel?) {
-      return (await call("chat.model.profile.set", { profile, ...(channel ? { channel } : {}) })) as never;
+    async setChatModelProfile(profile, channel?, sessionID?) {
+      return (await call("chat.model.profile.set", {
+        profile,
+        ...(channel ? { channel } : {}),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
     },
     async checkpointList() {
       return (await call("checkpoint.list")) as never;

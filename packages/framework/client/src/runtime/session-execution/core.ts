@@ -3,7 +3,7 @@ import {
   TURN_CONTROLLER_SERVICE,
   type TurnController,
 } from "@natalia/runtime-services";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { sessionRunCoordinator } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
@@ -59,10 +59,14 @@ export function createCoreSurface(
       );
       return submitted;
     },
-    cancel(reason = "user cancel") {
-      const cancelledSessionID = ctx.ports.getSessionID();
+    cancel(reason = "user cancel", sessionID) {
+      const cancelledSessionID = (
+        sessionID ?? ctx.ports.getSessionID()
+      ) as SessionID;
       const coordinator = sessionRunCoordinator(cancelledSessionID);
-      const cancelledExec = ctx.ports.getActiveExec();
+      const cancelledExec =
+        ctx.ports.getExecutionBySession().get(cancelledSessionID as SessionID) ??
+        ctx.ports.getActiveExec();
       const runningTurnID = cancelledExec?.activeTurnID;
       const pendingTurnID = runningTurnID
         ? undefined
@@ -159,7 +163,9 @@ export function createCoreSurface(
     activeAtSubmit: boolean,
     explicitSessionID?: string,
   ) {
-    const sessionID = explicitSessionID ?? ctx.ports.getSessionID();
+    const sessionID = (
+      explicitSessionID ?? ctx.ports.getSessionID()
+    ) as SessionID;
     let submittedIndex = -1;
     let started = false;
     while (!ctx.ports.isDisposed()) {

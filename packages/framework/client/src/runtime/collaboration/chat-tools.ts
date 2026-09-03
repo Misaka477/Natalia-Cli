@@ -137,7 +137,7 @@ export function createChatTools(ctx: RuntimeContext) {
           // Symmetric round-robin: if the main agent is idle, wake it to see
           // the suggestion; if it is working, the suggestion reaches its next
           // turn through <navi_collaborations>.
-          wakeMainForCollaboration(exec, message.id, "suggestion");
+          wakeMainForCollaboration(exec, message.id, "suggestion", "Navi");
           return JSON.stringify({ sent: true });
         },
       },
@@ -182,7 +182,7 @@ export function createChatTools(ctx: RuntimeContext) {
           } catch (error) {
             return error instanceof Error ? error.message : String(error);
           }
-          wakeMainForCollaboration(owner, message.id, "answer");
+          wakeMainForCollaboration(owner, message.id, "answer", "Navi");
           return JSON.stringify({ answered: true });
         },
       },

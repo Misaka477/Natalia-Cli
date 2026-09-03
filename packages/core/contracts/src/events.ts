@@ -1840,7 +1840,7 @@ export type RuntimeClient = {
    * running turn would change the rules the turn started under.
    */
   reloadConfig?(): Promise<{ applied: boolean; reason?: string }>;
-  cancel(reason?: string): void;
+  cancel(reason?: string, sessionID?: string): void;
   /**
    * Pauses the running turn. Refusal is a value: there may be nothing running, or
    * it may already be paused, and both are ordinary answers. Returning nothing
@@ -2327,7 +2327,7 @@ export type RuntimeClient = {
    * in Markdown under `.natalia/plans/`; this is only the lightweight registry
    * (planID, documentPath, title, status).
    */
-  planDocList?(): Promise<
+  planDocList?(sessionID?: string): Promise<
     Array<{
       planID: string;
       title: string;
@@ -2343,6 +2343,7 @@ export type RuntimeClient = {
   planDocRead?(input: {
     planID?: string;
     path?: string;
+    sessionID?: string;
   }): Promise<{
     planID?: string;
     title?: string;
@@ -2358,20 +2359,23 @@ export type RuntimeClient = {
     content: string;
     title?: string;
     planID?: string;
+    sessionID?: string;
   }): Promise<{ written: boolean; planID?: string }>;
   /** Marks a plan document as a formal Plan and returns its stable planID. */
   planDocMark?(input: {
     path: string;
     title?: string;
+    sessionID?: string;
   }): Promise<{ marked: boolean; planID: string }>;
   /** Deletes a plan registry record (does not delete the Markdown file). */
-  planDocDelete?(planID: string): Promise<{ deleted: boolean }>;
+  planDocDelete?(planID: string, sessionID?: string): Promise<{ deleted: boolean }>;
   /** Reads the current lifecycle status of a marked plan. */
-  planDocStatus?(planID: string): Promise<{ status: string }>;
+  planDocStatus?(planID: string, sessionID?: string): Promise<{ status: string }>;
   /** Updates a plan document lifecycle status (e.g. awaiting_audit, audit_passed). */
   planDocUpdateStatus?(input: {
     planID: string;
     status: string;
+    sessionID?: string;
   }): Promise<{ updated: boolean }>;
 
   evidenceRecords?(): Promise<
@@ -2543,15 +2547,16 @@ export type RuntimeClient = {
     reasoningEffort?: RuntimeReasoningEffort;
     attachments?: string[];
     channel?: ChatChannel;
+    sessionID?: string;
   }): Promise<{ messageID: string }>;
-  chatAbort?(channel?: ChatChannel): Promise<{ aborted: boolean }>;
-  chatModelProfile?(channel?: ChatChannel): Promise<ChatModelProfile>;
-  setChatModelProfile?(profile: ChatModelProfile, channel?: ChatChannel): Promise<{ saved: boolean }>;
+  chatAbort?(channel?: ChatChannel, sessionID?: string): Promise<{ aborted: boolean }>;
+  chatModelProfile?(channel?: ChatChannel, sessionID?: string): Promise<ChatModelProfile>;
+  setChatModelProfile?(profile: ChatModelProfile, channel?: ChatChannel, sessionID?: string): Promise<{ saved: boolean }>;
   /**
    * The durable Chat conversation, oldest first. `chat.rollback` truncates it
    * at a message boundary, so the projection returns the effective history.
    */
-  chatMessages?(channel?: ChatChannel): Promise<ChatMessageRow[]>;
+  chatMessages?(channel?: ChatChannel, sessionID?: string): Promise<ChatMessageRow[]>;
   /**
    * Current subagent views for the active session. The runtime keeps subagent
    * records in its own persistent registry, so this is a lazy read surface; it
@@ -2565,7 +2570,7 @@ export type RuntimeClient = {
    */
   chatRollback?(input: {
     toMessageID: string;
-  }, channel?: ChatChannel): Promise<{ rolledBackTo: string; removed: number }>;
+  }, channel?: ChatChannel, sessionID?: string): Promise<{ rolledBackTo: string; removed: number }>;
 };
 
 export type ChatModelProfile = {

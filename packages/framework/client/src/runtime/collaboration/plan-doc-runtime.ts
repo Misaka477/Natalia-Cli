@@ -20,7 +20,7 @@ import {
 import type { RuntimeContext } from "../context";
 
 export type PlanDocRuntime = {
-  planDocList(): Promise<
+  planDocList(sessionID?: string): Promise<
     Array<{
       planID: string;
       title: string;
@@ -35,6 +35,7 @@ export type PlanDocRuntime = {
   planDocRead(input: {
     planID?: string;
     path?: string;
+    sessionID?: string;
   }): Promise<{
     planID?: string;
     title?: string;
@@ -46,16 +47,19 @@ export type PlanDocRuntime = {
     content: string;
     title?: string;
     planID?: string;
+    sessionID?: string;
   }): Promise<{ written: boolean; planID?: string }>;
   planDocMark(input: {
     path: string;
     title?: string;
+    sessionID?: string;
   }): Promise<{ marked: boolean; planID: string }>;
-  planDocDelete(planID: string): Promise<{ deleted: boolean }>;
-  planDocStatus(planID: string): Promise<{ status: string }>;
+  planDocDelete(planID: string, sessionID?: string): Promise<{ deleted: boolean }>;
+  planDocStatus(planID: string, sessionID?: string): Promise<{ status: string }>;
   planDocUpdateStatus(input: {
     planID: string;
     status: string;
+    sessionID?: string;
   }): Promise<{ updated: boolean }>;
 };
 
@@ -144,12 +148,23 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     return ledger;
   }
 
-  function publish(event: import("@natalia/contracts").RuntimeEvent) {
-    ctx.ports.publishForSession(ctx.ports.getActiveExec(), event);
+  function sessionExec(sessionID?: string) {
+    if (sessionID)
+      return ctx.ports
+        .getExecutionBySession()
+        .get(sessionID as import("@natalia/contracts").SessionID);
+    return ctx.ports.getActiveExec();
+  }
+
+  function publish(
+    event: import("@natalia/contracts").RuntimeEvent,
+    sessionID?: string,
+  ) {
+    ctx.ports.publishForSession(sessionExec(sessionID), event);
   }
 
   return {
-    async planDocList() {
+    async planDocList(_sessionID?: string) {
       const entries = await readIndex(ctx);
       return Object.values(entries);
     },
@@ -215,11 +230,12 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
           status: record.status,
           createdAt: record.createdAt,
         }),
+        input.sessionID,
       );
       return { marked: true, planID };
     },
 
-    async planDocDelete(planID) {
+    async planDocDelete(planID, sessionID?) {
       const entries = await readIndex(ctx);
       if (!entries[planID]) return { deleted: false };
       const record = entries[planID];
@@ -235,12 +251,15 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         }
       }
       try {
-        publish({
-          type: "plan.doc.deleted",
-          id: `${planID}:deleted:${ctx.ports.nextPlanSequence()}`,
-          planID,
-          deletedAt: new Date().toISOString(),
-        });
+        publish(
+          {
+            type: "plan.doc.deleted",
+            id: `${planID}:deleted:${ctx.ports.nextPlanSequence()}`,
+            planID,
+            deletedAt: new Date().toISOString(),
+          },
+          sessionID,
+        );
       } catch (error) {
         // Deletion from the registry already succeeded; a projection event
         // failure should not make the RPC call look like it failed.
@@ -249,14 +268,14 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       return { deleted: true };
     },
 
-    async planDocStatus(planID) {
+    async planDocStatus(planID, _sessionID?) {
       const entries = await readIndex(ctx);
       const record = entries[planID];
       return { status: record?.status ?? "unmarked" };
     },
 
     async planDocUpdateStatus(input) {
-      const { planID, status } = input;
+      const { planID, status, sessionID } = input;
       const entries = await readIndex(ctx);
       const record = entries[planID];
       if (!record) return { updated: false };
@@ -272,9 +291,10 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
           status,
           at: now,
         }),
+        sessionID,
       );
       if (status === "awaiting_audit" || status === "auditing") {
-        const exec = ctx.ports.getActiveExec();
+        const exec = sessionExec(sessionID);
         if (exec) ctx.ports.requestNiaWake(exec);
       }
       return { updated: true };

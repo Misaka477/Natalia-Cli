@@ -595,6 +595,9 @@ export async function handleRPCMessage(
         typeof request.params?.reason === "string"
           ? request.params.reason
           : undefined,
+        typeof request.params?.sessionID === "string"
+          ? request.params.sessionID
+          : undefined,
       );
       return {
         jsonrpc: "2.0",
@@ -2033,10 +2036,11 @@ export async function handleRPCMessage(
     }
     if (body.method === "planDoc.list") {
       optionsGuard(client, "planDocList");
+      const sessionID = (body.params as { sessionID?: string } | undefined)?.sessionID;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planDocList?.(),
+        result: await client.planDocList?.(sessionID),
       };
     }
     if (body.method === "planDoc.read") {
@@ -2052,6 +2056,9 @@ export async function handleRPCMessage(
         result: await client.planDocRead?.({
           ...(typeof planID === "string" ? { planID } : {}),
           ...(typeof path === "string" ? { path } : {}),
+          ...(typeof params?.sessionID === "string"
+            ? { sessionID: params.sessionID }
+            : {}),
         }),
       };
     }
@@ -2077,6 +2084,9 @@ export async function handleRPCMessage(
           ...(typeof params.planID === "string"
             ? { planID: params.planID }
             : {}),
+          ...(typeof params.sessionID === "string"
+            ? { sessionID: params.sessionID }
+            : {}),
         }),
       };
     }
@@ -2097,6 +2107,9 @@ export async function handleRPCMessage(
           ...(typeof params.title === "string"
             ? { title: params.title }
             : {}),
+          ...(typeof params.sessionID === "string"
+            ? { sessionID: params.sessionID }
+            : {}),
         }),
       };
     }
@@ -2109,7 +2122,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planDocDelete?.(planID),
+        result: await client.planDocDelete?.(
+          planID,
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
       };
     }
     if (body.method === "planDoc.status") {
@@ -2121,7 +2137,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planDocStatus?.(planID),
+        result: await client.planDocStatus?.(
+          planID,
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
       };
     }
     if (body.method === "planDoc.updateStatus") {
@@ -2136,7 +2155,13 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.planDocUpdateStatus?.({ planID, status }),
+        result: await client.planDocUpdateStatus?.({
+          planID,
+          status,
+          ...(typeof params?.sessionID === "string"
+            ? { sessionID: params.sessionID }
+            : {}),
+        }),
       };
     }
     if (body.method === "capabilities") {
@@ -2209,11 +2234,16 @@ export async function handleRPCMessage(
     }
     if (body.method === "chat.model.profile") {
       optionsGuard(client, "chatModelProfile");
-      const channel = (body.params as { channel?: import("@natalia/contracts").ChatChannel } | undefined)?.channel;
+      const params = body.params as
+        | {
+            channel?: import("@natalia/contracts").ChatChannel;
+            sessionID?: string;
+          }
+        | undefined;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatModelProfile?.(channel),
+        result: await client.chatModelProfile?.(params?.channel, params?.sessionID),
       };
     }
     if (body.method === "chat.model.profile.set") {
@@ -2231,25 +2261,36 @@ export async function handleRPCMessage(
         result: await client.setChatModelProfile?.(
           profile as import("@natalia/contracts").ChatModelProfile,
           channel,
+          (params as { sessionID?: string }).sessionID,
         ),
       };
     }
     if (body.method === "chat.messages") {
       optionsGuard(client, "chatMessages");
-      const channel = (body.params as { channel?: import("@natalia/contracts").ChatChannel } | undefined)?.channel;
+      const params = body.params as
+        | {
+            channel?: import("@natalia/contracts").ChatChannel;
+            sessionID?: string;
+          }
+        | undefined;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatMessages?.(channel),
+        result: await client.chatMessages?.(params?.channel, params?.sessionID),
       };
     }
     if (body.method === "chat.abort") {
       optionsGuard(client, "chatAbort");
-      const channel = (body.params as { channel?: import("@natalia/contracts").ChatChannel } | undefined)?.channel;
+      const params = body.params as
+        | {
+            channel?: import("@natalia/contracts").ChatChannel;
+            sessionID?: string;
+          }
+        | undefined;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatAbort?.(channel),
+        result: await client.chatAbort?.(params?.channel, params?.sessionID),
       };
     }
     if (body.method === "chat.submit") {
@@ -2273,6 +2314,9 @@ export async function handleRPCMessage(
           ...(typeof (params as { reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort }).reasoningEffort !== "undefined"
             ? { reasoningEffort: (params as { reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort }).reasoningEffort }
             : {}),
+          ...(typeof (params as { sessionID?: string }).sessionID === "string"
+            ? { sessionID: (params as { sessionID?: string }).sessionID }
+            : {}),
         }),
       };
     }
@@ -2283,6 +2327,7 @@ export async function handleRPCMessage(
         throw invalidParams("chat.rollback.params must be an object");
       const toMessageID = (params as { toMessageID?: unknown }).toMessageID;
       const channel = (params as { channel?: import("@natalia/contracts").ChatChannel }).channel;
+      const sessionID = (params as { sessionID?: string }).sessionID;
       if (typeof toMessageID !== "string")
         throw invalidParams(
           "chat.rollback.params.toMessageID must be a string",
@@ -2290,7 +2335,7 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatRollback({ toMessageID }, channel),
+        result: await client.chatRollback({ toMessageID }, channel, sessionID),
       };
     }
     // --- P0-G follow-up: the config write surface (previously TUI-only) ---

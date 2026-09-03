@@ -2486,12 +2486,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <Show when={rightTab() === "plan"}>
                 <PlanPanel state={state()} runtime={props.ctx.runtime} />
               </Show>
-              <Show when={rightTab() === "nia"}>
-                <NiaPanel
-                  key={state().sessionID ?? selectedSessionID() ?? "none"}
-                  state={state()}
-                  runtime={props.ctx.runtime}
-                />
+              <Show
+                when={rightTab() === "nia"}
+                keyed={state().sessionID ?? selectedSessionID() ?? "none"}
+              >
+                <NiaPanel state={state()} runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "todo"}>
                 <TodoPanel state={state()} />
