@@ -490,7 +490,7 @@ export type NataliaSDK = {
       summary?: string;
     }>;
     evidenceRefs?: string[];
-  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["evaluateDrift"]>>>>;
+  }, sessionID?: string): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["evaluateDrift"]>>>>;
   /** Acknowledges an open drift finding (P7 D3). */
   acknowledgeDriftFinding(input: {
     findingID: string;
@@ -531,6 +531,7 @@ export type NataliaSDK = {
   >;
   requestOverride(
     input: Parameters<NonNullable<RuntimeClient["requestOverride"]>>[0],
+    sessionID?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["requestOverride"]>>>>;
   approveOverride(
     input: Parameters<NonNullable<RuntimeClient["approveOverride"]>>[0],
@@ -804,7 +805,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("constitution.rules", sessionID ? { sessionID } : {}),
     decisionRecords: async (sessionID) =>
       await call("decision.records", sessionID ? { sessionID } : {}),
-    recordDecision: async (input) =>
+    recordDecision: async (input, sessionID) =>
       await call("decision.record", {
         decision: input.decision,
         rationale: input.rationale ?? [],
@@ -812,20 +813,22 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         consequences: input.consequences ?? [],
         linkedPlans: input.linkedPlans ?? [],
         linkedConstraints: input.linkedConstraints ?? [],
+        ...(sessionID ? { sessionID } : {}),
       }),
     evidenceRecords: async (sessionID) =>
       await call("evidence.records", sessionID ? { sessionID } : {}),
-    recordValidation: async (input) =>
+    recordValidation: async (input, sessionID) =>
       await call("evidence.record", {
         taskID: input.taskID,
         objective: input.objective,
         command: input.command,
         timeoutSec: input.timeoutSec,
         knownGaps: input.knownGaps ?? [],
+        ...(sessionID ? { sessionID } : {}),
       }),
     completions: async (sessionID) =>
       await call("completion.records", sessionID ? { sessionID } : {}),
-    recordCompletion: async (input) =>
+    recordCompletion: async (input, sessionID) =>
       await call("completion.record", {
         taskID: input.taskID,
         objective: input.objective,
@@ -838,6 +841,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         rollbackState: input.rollbackState,
         evidenceIDs: input.evidenceIDs ?? [],
         changePaths: input.changePaths ?? [],
+        ...(sessionID ? { sessionID } : {}),
       }),
     mailboxList: async () => await call("mailbox.list", {}),
     mailboxSend: async (input) =>
@@ -885,19 +889,21 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     driftFindings: async (sessionID) =>
       await call("drift.findings", sessionID ? { sessionID } : {}),
-    evaluateDrift: async (input) =>
+    evaluateDrift: async (input, sessionID) =>
       await call("drift.evaluate", {
         objective: input.objective,
         currentActivity: input.currentActivity,
         applicableConstraints: input.applicableConstraints ?? [],
         changes: input.changes ?? [],
         evidenceRefs: input.evidenceRefs ?? [],
+        ...(sessionID ? { sessionID } : {}),
       }),
-    acknowledgeDriftFinding: async (input) =>
+    acknowledgeDriftFinding: async (input, sessionID) =>
       await call("drift.acknowledge", {
         findingID: input.findingID,
         status: input.status,
         rationale: input.rationale,
+        ...(sessionID ? { sessionID } : {}),
       }),
     confirmedWorkspaceChanges: async (sessionID) =>
       await call("observation.confirmed", sessionID ? { sessionID } : {}),
@@ -910,8 +916,11 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     registeredTools: async (sessionID) =>
       await call("tools.registered", sessionID ? { sessionID } : {}),
     projectionContributions: async () => await call("projections.list", {}),
-    requestOverride: async (input) =>
-      await call("constitution.override.request", input),
+    requestOverride: async (input, sessionID) =>
+      await call("constitution.override.request", {
+        ...input,
+        ...(sessionID ? { sessionID } : {}),
+      }),
     approveOverride: async (input) =>
       await call("constitution.override.approve", input),
     capabilities: async () => await call("capabilities", {}),
