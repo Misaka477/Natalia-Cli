@@ -351,10 +351,10 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalResize"]>>>
   >;
   /** Intelligence queries. Routed and reachable; answer empty until there are writers. */
-  constitutionRules(): Promise<
+  constitutionRules(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["constitutionRules"]>>>
   >;
-  decisionRecords(): Promise<
+  decisionRecords(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>>
   >;
   /** Records a durable decision fact (CST3 writer). */
@@ -368,7 +368,7 @@ export type NataliaSDK = {
   }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordDecision"]>>>
   >;
-  evidenceRecords(): Promise<
+  evidenceRecords(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>>
   >;
   /** Runs a validation command and records the outcome as durable evidence. */
@@ -382,7 +382,7 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["recordValidation"]>>>
   >;
   /** The completion cards, projected from the journal (P2 E4). */
-  completions(): Promise<
+  completions(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["completions"]>>>
   >;
   /** Records a completion card and its validated_by Work Graph edges. */
@@ -475,7 +475,7 @@ export type NataliaSDK = {
     planID: string;
     status: string;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>>>;
-  driftFindings(): Promise<
+  driftFindings(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
   /** Runs the DriftEvaluator against safe signals and publishes findings. */
@@ -500,7 +500,7 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["acknowledgeDriftFinding"]>>>
   >;
   /** Reconciles watcher hints and returns the confirmed changes (WG4 Phase 3). */
-  confirmedWorkspaceChanges(): Promise<
+  confirmedWorkspaceChanges(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["confirmedWorkspaceChanges"]>>>
   >;
   /** Returns the object-store backed global workspace diff. */
@@ -520,10 +520,10 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["gitRefs"]>>>
   >;
   /** Lists the current session's sandboxed sub-agent PRs. */
-  teamPRList(): Promise<
+  teamPRList(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["teamPRList"]>>>
   >;
-  registeredTools(): Promise<
+  registeredTools(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
   >;
   projectionContributions(): Promise<
@@ -539,7 +539,7 @@ export type NataliaSDK = {
   capabilities(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["capabilities"]>>>
   >;
-  sessionSnapshot(): Promise<
+  sessionSnapshot(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>>
   >;
   /** Submits a turn with attachments, resources and agent mentions. */
@@ -582,9 +582,10 @@ export type NataliaSDK = {
   reloadConfig(): Promise<{ applied: boolean; reason?: string }>;
   canReloadConfig(): Promise<{ allowed: boolean; reason?: string }>;
   availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
-  runtimeStatus(): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
+  runtimeStatus(sessionID?: string): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
   diagnostics(
     limit?: number,
+    sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeDiagnostic[]>;
   health(): Promise<{ ok: boolean; apiVersion: number }>;
   events(options?: {
@@ -799,8 +800,10 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("nativeTerminal.write", input),
     nativeTerminalResize: async (input) =>
       await call("nativeTerminal.resize", input),
-    constitutionRules: async () => await call("constitution.rules", {}),
-    decisionRecords: async () => await call("decision.records", {}),
+    constitutionRules: async (sessionID) =>
+      await call("constitution.rules", sessionID ? { sessionID } : {}),
+    decisionRecords: async (sessionID) =>
+      await call("decision.records", sessionID ? { sessionID } : {}),
     recordDecision: async (input) =>
       await call("decision.record", {
         decision: input.decision,
@@ -810,7 +813,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         linkedPlans: input.linkedPlans ?? [],
         linkedConstraints: input.linkedConstraints ?? [],
       }),
-    evidenceRecords: async () => await call("evidence.records", {}),
+    evidenceRecords: async (sessionID) =>
+      await call("evidence.records", sessionID ? { sessionID } : {}),
     recordValidation: async (input) =>
       await call("evidence.record", {
         taskID: input.taskID,
@@ -819,7 +823,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         timeoutSec: input.timeoutSec,
         knownGaps: input.knownGaps ?? [],
       }),
-    completions: async () => await call("completion.records", {}),
+    completions: async (sessionID) =>
+      await call("completion.records", sessionID ? { sessionID } : {}),
     recordCompletion: async (input) =>
       await call("completion.record", {
         taskID: input.taskID,
@@ -878,7 +883,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         planID: input.planID,
         status: input.status,
       }),
-    driftFindings: async () => await call("drift.findings", {}),
+    driftFindings: async (sessionID) =>
+      await call("drift.findings", sessionID ? { sessionID } : {}),
     evaluateDrift: async (input) =>
       await call("drift.evaluate", {
         objective: input.objective,
@@ -893,21 +899,24 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         status: input.status,
         rationale: input.rationale,
       }),
-    confirmedWorkspaceChanges: async () =>
-      await call("observation.confirmed", {}),
+    confirmedWorkspaceChanges: async (sessionID) =>
+      await call("observation.confirmed", sessionID ? { sessionID } : {}),
     workspaceDiff: async () => await call("workspace.diff", {}),
     workspaceGitDiff: async (input) =>
       await call("workspace.git.diff", input ?? {}),
     gitRefs: async () => await call("git.refs", {}),
-    teamPRList: async () => await call("team.pr.list", {}),
-    registeredTools: async () => await call("tools.registered", {}),
+    teamPRList: async (sessionID) =>
+      await call("team.pr.list", sessionID ? { sessionID } : {}),
+    registeredTools: async (sessionID) =>
+      await call("tools.registered", sessionID ? { sessionID } : {}),
     projectionContributions: async () => await call("projections.list", {}),
     requestOverride: async (input) =>
       await call("constitution.override.request", input),
     approveOverride: async (input) =>
       await call("constitution.override.approve", input),
     capabilities: async () => await call("capabilities", {}),
-    sessionSnapshot: async () => await call("session.snapshot", {}),
+    sessionSnapshot: async (sessionID) =>
+      await call("session.snapshot", sessionID ? { sessionID } : {}),
     submitInput: async (input) => await call("submit.input", input),
     updateConfig: async (input) => await call("config.update", input),
     settingsGet: async () => await call("settings.get", {}),
@@ -916,9 +925,19 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     reloadConfig: async () => await call("config.reload", {}),
     canReloadConfig: async () => await call("config.canReload", {}),
     availability: async () => await call("runtime.availability", {}),
-    runtimeStatus: async () => await call("runtime.status", {}),
-    diagnostics: async (limit) =>
-      await call("diagnostics.list", limit === undefined ? {} : { limit }),
+    runtimeStatus: async (sessionID) =>
+      await call("runtime.status", sessionID ? { sessionID } : {}),
+    diagnostics: async (limit, sessionID) =>
+      await call(
+        "diagnostics.list",
+        limit === undefined
+          ? sessionID
+            ? { sessionID }
+            : {}
+          : sessionID
+            ? { limit, sessionID }
+            : { limit },
+      ),
     health: async () => {
       const response = await fetchImpl(`${baseURL}/healthz`);
       if (!response.ok) throw new Error(`health failed: ${response.status}`);
