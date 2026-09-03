@@ -542,7 +542,7 @@ export interface MutationRegistry {
   pendingCount(): number;
 }
 export interface WorkspaceWriteLock {
-  acquire(): Promise<() => void>;
+  acquire(sessionID?: string): Promise<() => void>;
 }
 export interface WorkspaceFilesController {
   init(): Promise<void>;

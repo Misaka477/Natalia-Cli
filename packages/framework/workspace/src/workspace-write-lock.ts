@@ -13,7 +13,8 @@ export function createWorkspaceWriteLock(): WorkspaceWriteLock {
   let chain: Promise<void> = Promise.resolve();
 
   /** Acquires the lock; resolves with the release function. */
-  function acquire(): Promise<() => void> {
+  function acquire(sessionID?: string): Promise<() => void> {
+    console.log("[workspace-write-lock] acquire", sessionID ?? "active");
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;

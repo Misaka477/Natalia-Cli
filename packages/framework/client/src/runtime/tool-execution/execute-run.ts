@@ -212,7 +212,7 @@ export async function runExecuteStage(
       tool.name,
       parsed as Record<string, unknown>,
     )
-      ? await workspaceWriteLock.acquire()
+      ? await workspaceWriteLock.acquire(exec.session.id)
       : undefined;
     // E1: create a pre-tool checkpoint for side-effecting calls so a tool card
     // can offer a precise "restore to just before this call".  The checkpoint
