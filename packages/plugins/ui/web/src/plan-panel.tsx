@@ -121,118 +121,118 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
 
   return (
     <div class="review-pane">
-      <div class="review-header">
-        <div class="review-title">
-          <span>计划文档</span>
-        </div>
-        <div class="review-meta">
-          <span class="review-count">{plans().length} plans</span>
-        </div>
+      <div class="review-section-label">计划文档</div>
+      <div class="review-checkpoint-rename">
+        <input
+          class="review-checkpoint-rename-input"
+          type="text"
+          placeholder="输入 .natalia/plans/ 下的 Markdown 文件路径"
+          value={markPath()}
+          onInput={(event) => setMarkPath(event.currentTarget.value)}
+        />
+        <button
+          type="button"
+          class="review-checkpoint-rename-btn"
+          onClick={() => void markPlan()}
+        >
+          标记为 Plan
+        </button>
+        <button
+          type="button"
+          class="review-checkpoint-rename-btn"
+          onClick={() => void newPlan()}
+        >
+          新建
+        </button>
       </div>
-      <div class="review-body">
-        <Show when={!plans().length}>
-          <div class="agent-empty-full">
-            <div class="review-empty-icon">📄</div>
-            <div class="review-empty-title">暂无计划文档</div>
-            <div class="review-empty-desc">
-              可手动新建计划文档，或先用 Navi 写入 .natalia/plans/ 下的 Markdown 文件，再在这里标记为 Plan。
-            </div>
+      <Show when={!plans().length}>
+        <div class="agent-empty-full">
+          <div class="review-empty-icon">📄</div>
+          <div class="review-empty-title">暂无计划文档</div>
+          <div class="review-empty-desc">
+            可手动新建计划文档，或先用 Navi 写入 .natalia/plans/ 下的 Markdown 文件，再在这里标记为 Plan。
           </div>
-        </Show>
-        <Show when={plans().length}>
-          <div class="review-diff">
-            <div class="review-diff-header">
-              <span class="review-diff-path">已标记 Plan</span>
-            </div>
-            <div class="review-diff-content">
-              <For each={plans()}>
-                {(plan) => (
-                  <div
-                    class="todo-row"
-                    data-active={selected()?.planID === plan.planID}
-                    onClick={() => selectPlan(plan.planID)}
-                  >
-                    <span class="todo-dot" data-status={plan.status} />
-                    <span class="todo-text">{plan.title}</span>
-                    <span class="todo-status">{plan.status}</span>
-                  </div>
-                )}
-              </For>
-            </div>
+        </div>
+      </Show>
+      <Show when={plans().length}>
+        <div class="review-diff">
+          <div class="review-diff-header">
+            <span class="review-diff-path">已标记 Plan</span>
           </div>
-          <div class="review-diff">
-            <div class="review-diff-header">
-              <span class="review-diff-path">编辑器</span>
-            </div>
-            <div class="review-diff-content">
-              <Show when={selected()} fallback={<div class="review-empty">先选择或标记一个 Plan</div>}>
-                <div class="plan-panel-doc-meta">
-                  <span>{selected()!.planID}</span>
-                  <span>{selected()!.documentPath}</span>
+          <div class="review-diff-content">
+            <For each={plans()}>
+              {(plan) => (
+                <div
+                  class="todo-row"
+                  data-active={selected()?.planID === plan.planID}
+                  onClick={() => selectPlan(plan.planID)}
+                >
+                  <span class="todo-dot" data-status={plan.status} />
+                  <span class="todo-text">{plan.title}</span>
+                  <span class="todo-status">{plan.status}</span>
                 </div>
-                <div class="plan-panel-doc-buttons">
-                  <button
-                    type="button"
-                    class="review-action"
-                    onClick={() => void saveSelected()}
-                    disabled={saving()}
-                  >
-                    保存
-                  </button>
-                  <button
-                    type="button"
-                    class="review-action"
-                    onClick={() => setPreview(!preview())}
-                  >
-                    {preview() ? "编辑" : "预览"}
-                  </button>
-                  <button
-                    type="button"
-                    class="review-action"
-                    onClick={() =>
-                      void props.runtime?.planDocDelete?.(selected()!.planID)
-                    }
-                  >
-                    删除标记
-                  </button>
-                </div>
-                <Show
-                  when={preview()}
-                  fallback={
-                    <textarea
-                      class="plan-panel-editor"
-                      value={draft()}
-                      onInput={(event) => setDraft(event.currentTarget.value)}
-                    />
+              )}
+            </For>
+          </div>
+        </div>
+        <div class="review-diff">
+          <div class="review-diff-header">
+            <span class="review-diff-path">编辑器</span>
+          </div>
+          <div class="review-diff-content plan-panel-editor-host">
+            <Show when={selected()} fallback={<div class="review-empty">先选择或标记一个 Plan</div>}>
+              <div class="plan-panel-doc-meta">
+                <span>{selected()!.planID}</span>
+                <span>{selected()!.documentPath}</span>
+              </div>
+              <div class="plan-panel-doc-buttons">
+                <button
+                  type="button"
+                  class="review-checkpoint-rename-btn"
+                  onClick={() => void saveSelected()}
+                  disabled={saving()}
+                >
+                  保存
+                </button>
+                <button
+                  type="button"
+                  class="review-checkpoint-rename-btn"
+                  onClick={() => setPreview(!preview())}
+                >
+                  {preview() ? "编辑" : "预览"}
+                </button>
+                <button
+                  type="button"
+                  class="review-checkpoint-rename-btn"
+                  onClick={() =>
+                    void props.runtime?.planDocDelete?.(selected()!.planID)
                   }
                 >
-                  <pre class="plan-panel-preview">{draft()}</pre>
-                </Show>
+                  删除标记
+                </button>
+              </div>
+              <Show
+                when={preview()}
+                fallback={
+                  <textarea
+                    class="plan-panel-editor"
+                    value={draft()}
+                    onInput={(event) => setDraft(event.currentTarget.value)}
+                  />
+                }
+              >
+                <pre class="plan-panel-preview">{draft()}</pre>
               </Show>
-            </div>
+            </Show>
           </div>
-        </Show>
-        <div class="plan-panel-mark-row">
-          <input
-            type="text"
-            placeholder="输入 .natalia/plans/ 下的 Markdown 文件路径"
-            value={markPath()}
-            onInput={(event) => setMarkPath(event.currentTarget.value)}
-          />
-          <button type="button" class="review-action" onClick={() => void markPlan()}>
-            标记为 Plan
-          </button>
-          <button type="button" class="review-action" onClick={() => void newPlan()}>
-            新建计划文档
-          </button>
         </div>
-        <Show when={notice()}>
-          <div class="plan-panel-notice">{notice()}</div>
-        </Show>
-        <Show when={error()}>
-          <div class="plan-panel-error">{error()}</div>
-        </Show>
-      </div>
+      </Show>
+      <Show when={notice()}>
+        <div class="plan-panel-notice">{notice()}</div>
+      </Show>
+      <Show when={error()}>
+        <div class="plan-panel-error">{error()}</div>
+      </Show>
     </div>
   );
 }

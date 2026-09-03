@@ -1203,6 +1203,58 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .agent-stream .natalia-transcript { flex: 1; }
 .agent-empty { padding: 12px; color: var(--neu-muted); font-size: 12px; }
 .agent-tree-child { margin-left: 12px; }
+.plan-panel-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 12px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-family: var(--neu-font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  resize: none;
+  outline: none;
+  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+}
+.plan-panel-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  font-family: var(--neu-font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.plan-panel-doc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--neu-muted);
+  padding: 2px 0 6px;
+}
+.plan-panel-doc-buttons {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+.plan-panel-notice {
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--neu-success);
+}
+.plan-panel-error {
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--neu-error);
+}
 .todo-row {
   display: flex;
   align-items: center;
