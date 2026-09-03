@@ -75,20 +75,33 @@ export function createIntelligenceSurface(
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     return ledger;
   }
+  function intelligenceExec(sessionID?: string) {
+    return sessionID
+      ? ctx.ports
+          .getExecutionBySession()
+          .get(sessionID as import("@natalia/contracts").SessionID) ??
+          ctx.ports.getActiveExec()
+      : ctx.ports.getActiveExec();
+  }
+  function intelligenceSession(sessionID?: string) {
+    return intelligenceExec(sessionID)?.session;
+  }
   return {
-    async confirmedWorkspaceChanges() {
+    async confirmedWorkspaceChanges(sessionID?: string) {
       await ctx.ports.getReady();
-      if (!ctx.ports.getSession()) return [];
-      return ctx.ports.reconcileWorkspaceObservation(ctx.ports.getActiveExec());
+      const exec = intelligenceExec(sessionID);
+      if (!exec) return [];
+      return ctx.ports.reconcileWorkspaceObservation(exec);
     },
-    async constitutionRules() {
-      if (!ctx.ports.getSession()) return [];
+    async constitutionRules(sessionID?: string) {
+      const session = intelligenceSession(sessionID);
+      if (!session) return [];
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
       return projectedConstitutionRules([
         ...instance.events,
-        ...ctx.ports.getSession()!.events,
+        ...session.events,
       ]).map((r) => ({
         ruleID: r.ruleID,
         statement: r.statement,
@@ -99,14 +112,15 @@ export function createIntelligenceSurface(
         overridePolicy: r.overridePolicy,
       }));
     },
-    async decisionRecords() {
-      if (!ctx.ports.getSession()) return [];
+    async decisionRecords(sessionID?: string) {
+      const session = intelligenceSession(sessionID);
+      if (!session) return [];
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
       return projectedDecisionRecords([
         ...instance.events,
-        ...ctx.ports.getSession()!.events,
+        ...session.events,
       ]).map((r) => ({
         decision: r.decision,
         rationale: r.rationale ?? [],
@@ -134,8 +148,9 @@ export function createIntelligenceSurface(
       consequences?: string[];
       linkedPlans?: string[];
       linkedConstraints?: string[];
-    }) {
-      if (!ctx.ports.getSession()) return { recorded: false as const };
+    }, sessionID?: string) {
+      const exec = intelligenceExec(sessionID);
+      if (!exec?.session) return { recorded: false as const };
       const event = requireGovernanceLedger().recordDecision({
         id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
         ...input,
@@ -146,30 +161,31 @@ export function createIntelligenceSurface(
           "decisions.jsonl",
           event,
         );
-      ctx.ports.publishForSession(ctx.ports.getActiveExec(), event);
+      ctx.ports.publishForSession(exec, event);
       // CST4 Work Graph linkage: the decision is a `decision` node in the graph.
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        exec,
         requireWorkLedger().decisionNode({
           decisionID: event.id,
           decision: event.decision,
-          sessionID: ctx.ports.getSessionID(),
+          sessionID: exec.session.id,
         }),
       );
       return { recorded: true as const };
     },
-    async evidenceRecords() {
-      if (!ctx.ports.getSession()) return [];
+    async evidenceRecords(sessionID?: string) {
+      const session = intelligenceSession(sessionID);
+      if (!session) return [];
       // P2 E3: the effective status of each evidence record is driven by the
       // lifecycle of the plan whose task it belongs to (a projection policy —
       // the journal keeps the recorded status; the query answers what it means
       // now).
-      const plans = projectedPlanDocs(ctx.ports.getSession()!.events);
+      const plans = projectedPlanDocs(session.events);
       const planStateForTask = new Map<string, string>();
       for (const plan of plans) {
         planStateForTask.set(plan.planID, plan.status);
       }
-      return projectedEvidenceRecords(ctx.ports.getSession()!.events).map(
+      return projectedEvidenceRecords(session.events).map(
         (r) => ({
           taskID: r.taskID,
           objective: r.objective,
@@ -187,9 +203,10 @@ export function createIntelligenceSurface(
         }),
       );
     },
-    async completions() {
-      if (!ctx.ports.getSession()) return [];
-      return projectedCompletions(ctx.ports.getSession()!.events).map((c) => ({
+    async completions(sessionID?: string) {
+      const session = intelligenceSession(sessionID);
+      if (!session) return [];
+      return projectedCompletions(session.events).map((c) => ({
         completionID: c.id,
         taskID: c.taskID,
         objective: c.objective,
@@ -218,8 +235,8 @@ export function createIntelligenceSurface(
       command: string;
       timeoutSec?: number;
       knownGaps?: string[];
-    }) {
-      const owner = ctx.ports.getActiveExec();
+    }, sessionID?: string) {
+      const owner = intelligenceExec(sessionID);
       if (!owner) return { recorded: false as const };
       if (
         typeof input.taskID !== "string" ||
@@ -287,8 +304,9 @@ export function createIntelligenceSurface(
       rollbackState?: "clean" | "available" | "none" | "needs_promotion";
       evidenceIDs?: string[];
       changePaths?: string[];
-    }) {
-      if (!ctx.ports.getSession()) return { recorded: false as const };
+    }, sessionID?: string) {
+      const exec = intelligenceExec(sessionID);
+      if (!exec?.session) return { recorded: false as const };
       if (
         !input.taskID.trim() ||
         !input.objective.trim() ||
@@ -321,12 +339,12 @@ export function createIntelligenceSurface(
         evidenceIDs: input.evidenceIDs,
         recordedAt,
       });
-      ctx.ports.publishForSession(ctx.ports.getActiveExec(), event);
+      ctx.ports.publishForSession(exec, event);
       // P2 E4 Work Graph integration: each completed change is validated by the
       // card through a `validated_by` edge.
       for (const path of input.changePaths ?? [])
         ctx.ports.publishForSession(
-          ctx.ports.getActiveExec(),
+          exec,
           requireWorkLedger().completionValidationEdge({
             changeID: event.taskID,
             path,
@@ -335,9 +353,10 @@ export function createIntelligenceSurface(
         );
       return { recorded: true as const, completionID };
     },
-    async driftFindings() {
-      if (!ctx.ports.getSession()) return [];
-      return projectedDriftFindings(ctx.ports.getSession()!.events).map(
+    async driftFindings(sessionID?: string) {
+      const session = intelligenceSession(sessionID);
+      if (!session) return [];
+      return projectedDriftFindings(session.events).map(
         (f) => ({
           findingID: f.findingID,
           severity: f.severity,
@@ -367,13 +386,14 @@ export function createIntelligenceSurface(
         summary?: string;
       }>;
       evidenceRefs?: string[];
-    }) {
-      if (!ctx.ports.getSession()) return { opened: 0 as const };
+    }, sessionID?: string) {
+      const exec = intelligenceExec(sessionID);
+      if (!exec?.session) return { opened: 0 as const };
       if (!input.objective.trim() || !input.currentActivity.trim())
         return { opened: 0 as const };
       const findings = requireWorkLedger().evaluateDrift({
-        sessionID: ctx.ports.getSessionID(),
-        turnID: ctx.ports.getActiveExec()?.activeTurnID,
+        sessionID: exec.session.id,
+        turnID: exec.activeTurnID,
         objective: input.objective,
         currentActivity: input.currentActivity,
         applicableConstraints: input.applicableConstraints ?? [],
@@ -381,7 +401,7 @@ export function createIntelligenceSurface(
         evidenceRefs: input.evidenceRefs ?? [],
       });
       for (const finding of findings)
-        ctx.ports.publishForSession(ctx.ports.getActiveExec(), finding);
+        ctx.ports.publishForSession(exec, finding);
       return { opened: findings.length };
     },
     /**
@@ -392,11 +412,12 @@ export function createIntelligenceSurface(
       findingID: string;
       status: "explained" | "dismissed" | "corrected";
       rationale?: string;
-    }) {
-      if (!ctx.ports.getSession()) return { acknowledged: false as const };
+    }, sessionID?: string) {
+      const exec = intelligenceExec(sessionID);
+      if (!exec?.session) return { acknowledged: false as const };
       if (!input.findingID.trim()) return { acknowledged: false as const };
       const finding = projectedDriftFindings(
-        ctx.ports.getSession()!.events,
+        exec.session.events,
       ).find(
         (candidate) =>
           candidate.findingID === input.findingID &&
@@ -404,7 +425,7 @@ export function createIntelligenceSurface(
       );
       if (!finding) return { acknowledged: false as const };
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        exec,
         requireWorkLedger().buildDriftFindingUpdate({
           id: `drift:${Date.now().toString(36)}:${input.findingID}`,
           findingID: input.findingID,
@@ -420,9 +441,10 @@ export function createIntelligenceSurface(
       paths?: string[];
       taskID?: string;
       expiresAt?: string;
-    }) {
+    }, sessionID?: string) {
       await ctx.ports.getReady();
-      const session = ctx.ports.getSession();
+      const exec = intelligenceExec(sessionID);
+      const session = exec?.session;
       if (!session || !input.ruleID.trim() || !input.reason.trim())
         return {
           requested: false as const,
@@ -460,7 +482,7 @@ export function createIntelligenceSurface(
         "decisions.jsonl",
         granted,
       );
-      ctx.ports.publishForSession(ctx.ports.getActiveExec(), granted);
+      ctx.ports.publishForSession(exec, granted);
       return { requested: true as const, requestID };
     },
     async approveOverride(input: {
@@ -473,9 +495,10 @@ export function createIntelligenceSurface(
       });
       return { approved: outcome.accepted && input.decision === "once" };
     },
-    async registeredTools() {
-      if (!ctx.ports.getSession()) return [];
-      return projectedCanonicalTools(ctx.ports.getSession()!.events).map(
+    async registeredTools(sessionID?: string) {
+      const session = intelligenceSession(sessionID);
+      if (!session) return [];
+      return projectedCanonicalTools(session.events).map(
         (t) => ({
           name: t.name,
           owner: t.owner,

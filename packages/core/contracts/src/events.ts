@@ -1745,7 +1745,7 @@ export type RuntimeClient = {
    * return the confirmed changes (WG4 Phase 3 read surface). Confirmed changes
    * are not written to the Work Graph yet (Phase 4).
    */
-  confirmedWorkspaceChanges?(): Promise<
+  confirmedWorkspaceChanges?(sessionID?: string): Promise<
     Array<{
       id: string;
       workspaceRoot: string;
@@ -2261,7 +2261,7 @@ export type RuntimeClient = {
   respondQuestion(
     response: QuestionResponse,
   ): InteractiveResponseOutcome | Promise<InteractiveResponseOutcome>;
-  constitutionRules?(): Promise<
+  constitutionRules?(sessionID?: string): Promise<
     Array<{
       ruleID: string;
       statement: string;
@@ -2272,7 +2272,7 @@ export type RuntimeClient = {
       overridePolicy: "forbidden" | "user_scoped" | "user_explicit";
     }>
   >;
-  decisionRecords?(): Promise<
+  decisionRecords?(sessionID?: string): Promise<
     Array<{
       decision: string;
       rationale: string[];
@@ -2399,7 +2399,7 @@ export type RuntimeClient = {
     sessionID?: string;
   }): Promise<{ updated: boolean }>;
 
-  evidenceRecords?(): Promise<
+  evidenceRecords?(sessionID?: string): Promise<
     Array<{
       taskID: string;
       objective: string;
@@ -2432,13 +2432,13 @@ export type RuntimeClient = {
     command: string;
     timeoutSec?: number;
     knownGaps?: string[];
-  }): Promise<{
+  }, sessionID?: string): Promise<{
     recorded: boolean;
     result?: "passed" | "failed";
     safeSummary?: string;
   }>;
   /** The completion cards, projected from the journal (P2 E4). */
-  completions?(): Promise<
+  completions?(sessionID?: string): Promise<
     Array<{
       completionID: string;
       taskID: string;
@@ -2479,7 +2479,7 @@ export type RuntimeClient = {
     rollbackState?: "clean" | "available" | "none" | "needs_promotion";
     evidenceIDs?: string[];
     changePaths?: string[];
-  }): Promise<{ recorded: boolean; completionID?: string }>;
+  }, sessionID?: string): Promise<{ recorded: boolean; completionID?: string }>;
   sessionSnapshot?(sessionID?: string): Promise<
     | {
         agentStatus: string;
@@ -2492,7 +2492,7 @@ export type RuntimeClient = {
       }
     | undefined
   >;
-  driftFindings?(): Promise<
+  driftFindings?(sessionID?: string): Promise<
     Array<{
       findingID: string;
       severity: "advisory" | "warning" | "high";
@@ -2520,7 +2520,7 @@ export type RuntimeClient = {
       summary?: string;
     }>;
     evidenceRefs?: string[];
-  }): Promise<{ opened: number }>;
+  }, sessionID?: string): Promise<{ opened: number }>;
   /**
    * Acknowledge a drift finding (P7 D3): the Main Agent explains it, the user
    * dismisses it, or the work corrects it. Only an open finding can transition.
@@ -2529,19 +2529,19 @@ export type RuntimeClient = {
     findingID: string;
     status: "explained" | "dismissed" | "corrected";
     rationale?: string;
-  }): Promise<{ acknowledged: boolean }>;
+  }, sessionID?: string): Promise<{ acknowledged: boolean }>;
   requestOverride?(input: {
     ruleID: string;
     reason: string;
     paths?: string[];
     taskID?: string;
     expiresAt?: string;
-  }): Promise<{ requested: boolean; requestID?: string; reason?: string }>;
+  }, sessionID?: string): Promise<{ requested: boolean; requestID?: string; reason?: string }>;
   approveOverride?(input: {
     requestID: string;
     decision: "once" | "reject";
   }): Promise<{ approved: boolean }>;
-  registeredTools?(): Promise<
+  registeredTools?(sessionID?: string): Promise<
     Array<{
       name: string;
       owner: string;

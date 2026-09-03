@@ -1743,7 +1743,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.completions(),
+        result: await client.completions?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "completion.record") {
@@ -1872,7 +1874,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.confirmedWorkspaceChanges?.(),
+        result: await client.confirmedWorkspaceChanges?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "workspace.diff") {

@@ -735,28 +735,28 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["mailboxAcknowledge"]>>
       >;
     },
-    async driftFindings() {
-      return (await request("drift.list")) as Awaited<
+    async driftFindings(sessionID) {
+      return (await request("drift.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["driftFindings"]>>
       >;
     },
-    async completions() {
-      return (await request("completions")) as Awaited<
+    async completions(sessionID) {
+      return (await request("completions", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["completions"]>>
       >;
     },
-    async constitutionRules() {
-      return (await request("constitution.list")) as Awaited<
+    async constitutionRules(sessionID) {
+      return (await request("constitution.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["constitutionRules"]>>
       >;
     },
-    async decisionRecords() {
-      return (await request("decision.list")) as Awaited<
+    async decisionRecords(sessionID) {
+      return (await request("decision.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>
       >;
     },
-    async evidenceRecords() {
-      return (await request("evidence.list")) as Awaited<
+    async evidenceRecords(sessionID) {
+      return (await request("evidence.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>
       >;
     },
@@ -765,8 +765,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["projectionContributions"]>>
       >;
     },
-    async requestOverride(input) {
-      return (await request("constitution.override.request", input)) as Awaited<
+    async requestOverride(input, sessionID) {
+      return (await request("constitution.override.request", { ...input, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["requestOverride"]>>
       >;
     },
@@ -1217,14 +1217,26 @@ export async function handleWorkerRequest(
     const value = request.value as { messageID: string; sessionID?: string };
     return await client.mailboxAcknowledge?.(value.messageID, value.sessionID);
   }
-  if (request.method === "drift.list") return await client.driftFindings?.();
-  if (request.method === "completions") return await client.completions?.();
+  if (request.method === "drift.list")
+    return await client.driftFindings?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "completions")
+    return await client.completions?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "constitution.list")
-    return await client.constitutionRules?.();
+    return await client.constitutionRules?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "decision.list")
-    return await client.decisionRecords?.();
+    return await client.decisionRecords?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "evidence.list")
-    return await client.evidenceRecords?.();
+    return await client.evidenceRecords?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "projections.list")
     return await client.projectionContributions?.();
   if (request.method === "constitution.override.request")
