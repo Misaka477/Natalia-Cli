@@ -1049,8 +1049,8 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   display: flex;
   flex-direction: column;
 }
-.nia-transcript-wrap .neu-jump-bottom {
-  bottom: 16px;
+.nia-flat-pane .neu-jump-bottom {
+  bottom: 110px;
   right: 16px;
 }
 

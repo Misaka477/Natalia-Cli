@@ -228,17 +228,17 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
             scrollRef={setNiaTranscriptEl}
             onScroll={handleNiaScroll}
           />
-          <Show when={niaShowJumpToBottom()}>
-            <button
-              type="button"
-              class="neu-jump-bottom"
-              onClick={jumpNiaToBottom}
-              title="跳到底部"
-            >
-              ↓
-            </button>
-          </Show>
         </div>
+        <Show when={niaShowJumpToBottom()}>
+          <button
+            type="button"
+            class="neu-jump-bottom"
+            onClick={jumpNiaToBottom}
+            title="跳到底部"
+          >
+            ↓
+          </button>
+        </Show>
         <Show when={active()}>
           <div class="neu-activity-bar" data-running={true}>
             <span class="neu-activity-pulse" />
