@@ -310,6 +310,7 @@ export function hydrateChatMessages(
     role: row.role === "user" ? ("user" as const) : ("assistant" as const),
     text: row.text,
     pendingText: "",
+    ...(row.channel ? { channel: row.channel } : {}),
   }));
   if (!incoming.length) return false;
   const incomingIDs = new Set(incoming.map((row) => row.id));

@@ -2584,6 +2584,7 @@ export type ChatMessageRow = {
   role: "user" | "chat";
   text: string;
   at: string;
+  channel?: ChatChannel;
 };
 
 export type FakeBackend = RuntimeClient;

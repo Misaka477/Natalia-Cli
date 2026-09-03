@@ -39,6 +39,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           role: message.role,
           text: message.text,
           at: message.at,
+          ...(message.channel ? { channel: message.channel } : {}),
         }));
     },
     async chatRollback(input: { toMessageID: string }, channel?: ChatChannel) {
