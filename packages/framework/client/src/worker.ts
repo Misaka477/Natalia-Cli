@@ -501,13 +501,13 @@ export function createWorkerRuntimeClient(
       >;
     },
 
-    async nativeTerminalList() {
-      return (await request("native-terminal.list")) as Awaited<
+    async nativeTerminalList(sessionID) {
+      return (await request("native-terminal.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalList"]>>
       >;
     },
-    async nativeTerminalRead(id) {
-      return (await request("native-terminal.read", id)) as Awaited<
+    async nativeTerminalRead(id, sessionID) {
+      return (await request("native-terminal.read", { id, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalRead"]>>
       >;
     },
@@ -516,35 +516,35 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["nativeTerminalOpenHub"]>>
       >;
     },
-    async nativeTerminalReleaseHumanControl(id) {
+    async nativeTerminalReleaseHumanControl(id, sessionID) {
       return (await request(
         "native-terminal.release-human-control",
-        id,
+        { id, sessionID },
       )) as Awaited<
         ReturnType<
           NonNullable<RuntimeClient["nativeTerminalReleaseHumanControl"]>
         >
       >;
     },
-    async nativeTerminalRevokeApprovalScope(id) {
+    async nativeTerminalRevokeApprovalScope(id, sessionID) {
       return (await request(
         "native-terminal.revoke-approval-scope",
-        id,
+        { id, sessionID },
       )) as Awaited<
         ReturnType<
           NonNullable<RuntimeClient["nativeTerminalRevokeApprovalScope"]>
         >
       >;
     },
-    async nativeTerminalStop(id) {
-      return (await request("native-terminal.stop", id)) as Awaited<
+    async nativeTerminalStop(id, sessionID) {
+      return (await request("native-terminal.stop", { id, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalStop"]>>
       >;
     },
-    async nativeTerminalBeginSecureInput(id) {
+    async nativeTerminalBeginSecureInput(id, sessionID) {
       return (await request(
         "native-terminal.begin-secure-input",
-        id,
+        { id, sessionID },
       )) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalBeginSecureInput"]>>
       >;
@@ -1036,29 +1036,37 @@ export async function handleWorkerRequest(
       (request.value as { uri: string }).uri,
     );
   if (request.method === "native-terminal.list")
-    return await client.nativeTerminalList?.();
-  if (request.method === "native-terminal.read")
-    return await client.nativeTerminalRead?.(request.value as string);
+    return await client.nativeTerminalList?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "native-terminal.read") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.nativeTerminalRead?.(value.id, value.sessionID);
+  }
   if (request.method === "native-terminal.open-hub")
     return await client.nativeTerminalOpenHub?.();
-  if (request.method === "native-terminal.release-human-control")
-    return await client.nativeTerminalReleaseHumanControl?.(
-      request.value as string,
-    );
+  if (request.method === "native-terminal.release-human-control") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.nativeTerminalReleaseHumanControl?.(value.id, value.sessionID);
+  }
   if (request.method === "diagnostics")
     return await client.diagnostics?.(request.value as number | undefined);
-  if (request.method === "native-terminal.revoke-approval-scope")
-    return await client.nativeTerminalRevokeApprovalScope?.(
-      request.value as string,
-    );
-  if (request.method === "native-terminal.stop")
-    return await client.nativeTerminalStop?.(request.value as string);
-  if (request.method === "native-terminal.begin-secure-input")
-    return await client.nativeTerminalBeginSecureInput?.(
-      request.value as string,
-    );
-  if (request.method === "native-terminal.end-secure-input")
-    return await client.nativeTerminalEndSecureInput?.(request.value as string);
+  if (request.method === "native-terminal.revoke-approval-scope") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.nativeTerminalRevokeApprovalScope?.(value.id, value.sessionID);
+  }
+  if (request.method === "native-terminal.stop") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.nativeTerminalStop?.(value.id, value.sessionID);
+  }
+  if (request.method === "native-terminal.begin-secure-input") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.nativeTerminalBeginSecureInput?.(value.id, value.sessionID);
+  }
+  if (request.method === "native-terminal.end-secure-input") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.nativeTerminalEndSecureInput?.(value.id, value.sessionID);
+  }
   if (request.method === "checkpoint.list")
     return await client.checkpointList?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,

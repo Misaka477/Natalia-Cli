@@ -39,14 +39,14 @@ export function createNativeTerminalSurface(
   options: ClientSurfaceOptions,
 ): Surface {
   return {
-    async nativeTerminalList() {
+    async nativeTerminalList(_sessionID?: string) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
       return (await terminal?.list()) ?? [];
     },
-    async nativeTerminalRead(id) {
+    async nativeTerminalRead(id, _sessionID?: string) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -63,7 +63,7 @@ export function createNativeTerminalSurface(
       if (!terminal) throw new Error("Native Terminal Host is unavailable");
       return await terminal.openHub();
     },
-    async nativeTerminalRevokeApprovalScope(id) {
+    async nativeTerminalRevokeApprovalScope(id, _sessionID?: string) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -71,7 +71,7 @@ export function createNativeTerminalSurface(
       if (!terminal) throw new Error("Native Terminal Host is unavailable");
       return ctx.ports.getInteractive().revokeTerminalApprovalScope(id);
     },
-    async nativeTerminalClaimHumanInput(id) {
+    async nativeTerminalClaimHumanInput(id, _sessionID?: string) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -80,7 +80,7 @@ export function createNativeTerminalSurface(
         throw new Error("Native Terminal Host is unavailable");
       return await terminal.claimHumanInput(id);
     },
-    async nativeTerminalReleaseHumanControl(id) {
+    async nativeTerminalReleaseHumanControl(id, sessionID) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -88,11 +88,15 @@ export function createNativeTerminalSurface(
       if (!terminal) throw new Error("Native Terminal Host is unavailable");
       const sessionView = terminal.releaseHumanControl(id);
       // TERM-M.3 (c): the remote release path triggers the same continuation
-      // as the local timeline-detach path.
-      void ctx.ports.maybeContinueAfterHumanInput(id);
+      // as the local timeline-detach path. Pass the owning session so a
+      // background session's terminal release does not fall back to active.
+      void ctx.ports.maybeContinueAfterHumanInput(
+        id,
+        sessionID as import("@natalia/contracts").SessionID | undefined,
+      );
       return sessionView;
     },
-    async nativeTerminalBeginSecureInput(id) {
+    async nativeTerminalBeginSecureInput(id, _sessionID?: string) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -100,7 +104,7 @@ export function createNativeTerminalSurface(
       if (!terminal) throw new Error("Native Terminal Host is unavailable");
       return terminal.beginSecureInput(id);
     },
-    async nativeTerminalEndSecureInput(id) {
+    async nativeTerminalEndSecureInput(id, _sessionID?: string) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -108,7 +112,7 @@ export function createNativeTerminalSurface(
       if (!terminal) throw new Error("Native Terminal Host is unavailable");
       return terminal.endSecureInput(id);
     },
-    async nativeTerminalStop(id) {
+    async nativeTerminalStop(id, _sessionID?: string) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -144,7 +148,12 @@ export function createNativeTerminalSurface(
         throw refusalFromRegistry(error);
       }
     },
-    async nativeTerminalWrite(input) {
+    async nativeTerminalWrite(input: {
+      id: string;
+      input: string;
+      idempotencyKey?: string;
+      sessionID?: string;
+    }) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
@@ -160,7 +169,12 @@ export function createNativeTerminalSurface(
         throw refusalFromRegistry(error);
       }
     },
-    async nativeTerminalResize(input) {
+    async nativeTerminalResize(input: {
+      id: string;
+      rows: number;
+      cols: number;
+      sessionID?: string;
+    }) {
       await ctx.ports.getReady();
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,

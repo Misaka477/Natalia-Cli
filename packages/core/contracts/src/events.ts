@@ -1918,27 +1918,37 @@ export type RuntimeClient = {
     path?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
-  nativeTerminalList?(): Promise<RuntimeNativeTerminalSession[]>;
-  nativeTerminalRead?(id: string): Promise<{ id: string; text: string }>;
+  nativeTerminalList?(sessionID?: string): Promise<RuntimeNativeTerminalSession[]>;
+  nativeTerminalRead?(id: string, sessionID?: string): Promise<{ id: string; text: string }>;
   nativeTerminalOpenHub?(): Promise<{ muxWindowID: number }>;
   nativeTerminalClaimHumanInput?(
     id: string,
+    sessionID?: string,
   ): Promise<RuntimeNativeTerminalSession>;
-  nativeTerminalRevokeApprovalScope?(id: string): Promise<{
+  nativeTerminalRevokeApprovalScope?(
+    id: string,
+    sessionID?: string,
+  ): Promise<{
     id: string;
     scope: string;
     revoked: boolean;
   }>;
   nativeTerminalReleaseHumanControl?(
     id: string,
+    sessionID?: string,
   ): Promise<RuntimeNativeTerminalSession>;
   nativeTerminalBeginSecureInput?(
     id: string,
+    sessionID?: string,
   ): Promise<RuntimeNativeTerminalSession>;
   nativeTerminalEndSecureInput?(
     id: string,
+    sessionID?: string,
   ): Promise<RuntimeNativeTerminalSession>;
-  nativeTerminalStop?(id: string): Promise<RuntimeNativeTerminalSession>;
+  nativeTerminalStop?(
+    id: string,
+    sessionID?: string,
+  ): Promise<RuntimeNativeTerminalSession>;
   /**
    * Starts a native terminal session remotely. The route exists and is a write;
    * the host must explicitly enable terminal writes (`terminalWrite: true`),
@@ -1964,6 +1974,7 @@ export type RuntimeClient = {
     id: string;
     input: string;
     idempotencyKey?: string;
+    sessionID?: string;
   }): Promise<{
     id: string;
     writtenBytes: number;
@@ -1977,6 +1988,7 @@ export type RuntimeClient = {
     id: string;
     rows: number;
     cols: number;
+    sessionID?: string;
   }): Promise<RuntimeNativeTerminalSession>;
   checkpointList?(sessionID?: string): Promise<RuntimeCheckpoint[]>;
   checkpointPreview?(id: string, sessionID?: string): Promise<CheckpointPreview>;

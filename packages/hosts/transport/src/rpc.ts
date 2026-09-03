@@ -1449,7 +1449,7 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalList(),
+        result: await client.nativeTerminalList?.(optionalStringParam(body.params, "sessionID")),
       };
     }
     if (body.method === "nativeTerminal.read") {
@@ -1457,7 +1457,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalRead(stringParam(body.params, "id")),
+        result: await client.nativeTerminalRead?.(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "nativeTerminal.stop") {
@@ -1465,7 +1468,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalStop(stringParam(body.params, "id")),
+        result: await client.nativeTerminalStop?.(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "nativeTerminal.openHub") {
@@ -1481,8 +1487,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalClaimHumanInput(
+        result: await client.nativeTerminalClaimHumanInput?.(
           stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }
@@ -1491,8 +1498,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalRevokeApprovalScope(
+        result: await client.nativeTerminalRevokeApprovalScope?.(
           stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }
@@ -1501,8 +1509,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalReleaseHumanControl(
+        result: await client.nativeTerminalReleaseHumanControl?.(
           stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }
@@ -1511,8 +1520,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalBeginSecureInput(
+        result: await client.nativeTerminalBeginSecureInput?.(
           stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }
@@ -1521,8 +1531,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalEndSecureInput(
+        result: await client.nativeTerminalEndSecureInput?.(
           stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }
@@ -1592,6 +1603,9 @@ export async function handleRPCMessage(
           id,
           input,
           idempotencyKey,
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
         }),
       };
     }
