@@ -46,8 +46,8 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
    * messages no longer re-inject as ordinary tagged user messages.
    */
   function acknowledgeDeliveredMailboxAtBoundary(exec?: SessionExecutionState) {
-    const { getActiveExec, publishForSession, nextMailboxSequence } = ctx.ports;
-    const target = exec ?? getActiveExec();
+    const { publishForSession, nextMailboxSequence } = ctx.ports;
+    const target = exec;
     if (!target?.session) return;
     const delivered = projectedMailboxMessages(target.session.events).filter(
       (message) => message.status === "delivered",
@@ -73,8 +73,8 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
    * left alone, and a message that was already delivered is untouched.
    */
   function deliverQueuedMailboxAtBoundary(exec?: SessionExecutionState) {
-    const { getActiveExec, publishForSession, nextMailboxSequence } = ctx.ports;
-    const target = exec ?? getActiveExec();
+    const { publishForSession, nextMailboxSequence } = ctx.ports;
+    const target = exec;
     if (!target?.session) return;
     const queued = projectedMailboxMessages(target.session.events).filter(
       (message) => message.status === "queued",
@@ -94,7 +94,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
   }
 
   function takeLiveUserMessages(exec?: SessionExecutionState) {
-    const target = exec ?? ctx.ports.getActiveExec();
+    const target = exec;
     if (!target?.session) return [];
     deliverQueuedMailboxAtBoundary(target);
     const injected = target.injectedMailboxIDs;
@@ -148,7 +148,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
   > {
     return (async () => {
       if (ctx.ports.isDisposed()) return [];
-      const { getActiveExec, publishForSession } = ctx.ports;
+      const { publishForSession } = ctx.ports;
       const workLedgerController =
         ctx.ports.resolveService<WorkLedgerController>(
           WORK_LEDGER_CONTROLLER_SERVICE,
@@ -159,7 +159,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         ctx.ports.resolveService<WorkspaceFilesController>(
           WORKSPACE_FILES_SERVICE,
         );
-      const target = exec ?? getActiveExec();
+      const target = exec;
       if (!target?.session || ctx.ports.isDisposed()) return [];
       let confirmed: Awaited<
         ReturnType<NonNullable<typeof workspaceFilesController>["reconcile"]>
