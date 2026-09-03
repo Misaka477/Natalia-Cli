@@ -14,14 +14,17 @@ export function createObservabilitySurface(
       await ctx.ports.ensureReady();
       return await ctx.ports.runtimeStatusSnapshot();
     },
-    async diagnostics(limit = 100) {
+    async diagnostics(limit = 100, sessionID?: string) {
       await ctx.ports.getReady();
-      const entries = ctx.ports.getActiveExec()
+      const exec = sessionID
+        ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
+        : ctx.ports.getActiveExec();
+      const entries = exec
         ? [
             ...ctx.ports.getRuntimeDiagnostics(),
             ...(ctx.ports
               .getRuntimeDiagnosticsBySession()
-              .get(ctx.ports.getActiveExec()!.session.id) ?? []),
+              .get(exec.session.id) ?? []),
           ]
         : ctx.ports.getRuntimeDiagnostics();
       return entries.slice(-Math.min(500, Math.max(1, limit)));

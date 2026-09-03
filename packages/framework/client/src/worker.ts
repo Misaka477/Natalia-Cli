@@ -851,8 +851,8 @@ export function createWorkerRuntimeClient(
       notify("snapshot");
       return { type: "snapshot.created", id, files: [] };
     },
-    async diagnostics(limit) {
-      return (await request("diagnostics", limit)) as Awaited<
+    async diagnostics(limit, sessionID) {
+      return (await request("diagnostics", { limit, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["diagnostics"]>>
       >;
     },
@@ -1049,8 +1049,13 @@ export async function handleWorkerRequest(
     const value = request.value as { id: string; sessionID?: string };
     return await client.nativeTerminalReleaseHumanControl?.(value.id, value.sessionID);
   }
-  if (request.method === "diagnostics")
-    return await client.diagnostics?.(request.value as number | undefined);
+  if (request.method === "diagnostics") {
+    const value = request.value as { limit?: number; sessionID?: string } | number | undefined;
+    return await client.diagnostics?.(
+      typeof value === "number" ? value : value?.limit,
+      typeof value === "number" ? undefined : value?.sessionID,
+    );
+  }
   if (request.method === "native-terminal.revoke-approval-scope") {
     const value = request.value as { id: string; sessionID?: string };
     return await client.nativeTerminalRevokeApprovalScope?.(value.id, value.sessionID);

@@ -2539,6 +2539,7 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.diagnostics(
           typeof limit === "number" ? limit : undefined,
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }

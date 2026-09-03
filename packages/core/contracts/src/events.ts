@@ -2243,7 +2243,7 @@ export type RuntimeClient = {
   commandCatalog?(): Promise<ContributedCommand[]>;
   commandExecute?(input: ContributedCommandExecution): Promise<void>;
   runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
-  diagnostics?(limit?: number): Promise<RuntimeDiagnostic[]>;
+  diagnostics?(limit?: number, sessionID?: string): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;
