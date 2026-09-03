@@ -420,7 +420,7 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["recordCompletion"]>>>
   >;
   /** The durable Live Work Chat mailbox, projected from the journal. */
-  mailboxList(): Promise<
+  mailboxList(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxList"]>>>
   >;
   /** Enqueues a Live Work Chat intent as a durable mailbox message. */
@@ -432,6 +432,7 @@ export type NataliaSDK = {
     safeSummary?: string;
     relatedPlanID?: string;
     deliveryPolicy?: string;
+    sessionID?: string;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSend"]>>>>;
   /** Marks a queued mailbox message delivered at a safe boundary. */
   mailboxDeliver(
@@ -456,7 +457,7 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSupersede"]>>>
   >;
   /** Lists persisted plan documents for the active session (P8 C4 replacement). */
-  planDocList(): Promise<
+  planDocList(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["planDocList"]>>>
   >;
   /** Reads a Markdown plan document by planID or path. */
@@ -883,7 +884,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         changePaths: input.changePaths ?? [],
         ...(sessionID ? { sessionID } : {}),
       }),
-    mailboxList: async () => await call("mailbox.list", {}),
+    mailboxList: async (sessionID) =>
+      await call("mailbox.list", sessionID ? { sessionID } : {}),
     mailboxSend: async (input) =>
       await call("mailbox.send", {
         source: input.source,
@@ -902,7 +904,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("mailbox.defer", { messageID, reason }),
     mailboxSupersede: async (messageID, reason) =>
       await call("mailbox.supersede", { messageID, reason }),
-    planDocList: async () => await call("planDoc.list", {}),
+    planDocList: async (sessionID) =>
+      await call("planDoc.list", sessionID ? { sessionID } : {}),
     planDocRead: async (input) =>
       await call("planDoc.read", {
         planID: input.planID,
