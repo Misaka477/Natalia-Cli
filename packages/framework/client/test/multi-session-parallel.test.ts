@@ -191,3 +191,38 @@ test("two sessions chat concurrently without cross-channel mixing", async () => 
   expect(rowsB?.some((row) => row.text.includes("chat a"))).toBe(false);
   await client.dispose?.();
 });
+
+test("two sessions mailbox messages do not leak across sessions", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-mailbox");
+  const client = createOfficialRuntimeClient({
+    workspaceRoot,
+    provider: {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const createdA = await client.sessionNew?.();
+  const createdB = await client.sessionNew?.();
+  await client.mailboxSend?.({
+    intent: "request_report",
+    text: "mailbox for A",
+    sessionID: createdA?.sessionID,
+  });
+  await client.mailboxSend?.({
+    intent: "request_report",
+    text: "mailbox for B",
+    sessionID: createdB?.sessionID,
+  });
+  const rowsA = await client.mailboxList?.(createdA?.sessionID);
+  const rowsB = await client.mailboxList?.(createdB?.sessionID);
+  expect(rowsA?.some((row) => row.text.includes("mailbox for A"))).toBe(true);
+  expect(rowsB?.some((row) => row.text.includes("mailbox for B"))).toBe(true);
+  expect(rowsA?.some((row) => row.text.includes("mailbox for B"))).toBe(false);
+  expect(rowsB?.some((row) => row.text.includes("mailbox for A"))).toBe(false);
+  await client.dispose?.();
+});

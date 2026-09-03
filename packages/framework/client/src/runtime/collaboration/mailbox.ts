@@ -20,17 +20,22 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
   );
 }
 
-function mailboxExec(ctx: RuntimeContext, sessionID?: string) {
+async function mailboxExec(ctx: RuntimeContext, sessionID?: string) {
   if (sessionID)
-    return ctx.ports
-      .getExecutionBySession()
-      .get(sessionID as import("@natalia/contracts").SessionID);
+    return (
+      ctx.ports
+        .getExecutionBySession()
+        .get(sessionID as import("@natalia/contracts").SessionID) ??
+      (await ctx.ports.ensureExecution(
+        sessionID as import("@natalia/contracts").SessionID,
+      ))
+    );
   return ctx.ports.getActiveExec();
 }
 export function createMailboxSurface(ctx: RuntimeContext): Surface {
   return {
     async mailboxList(sessionID?: string) {
-      const exec = mailboxExec(ctx, sessionID);
+      const exec = await mailboxExec(ctx, sessionID);
       if (!exec) return [];
       return projectedMailboxMessages(exec.session.events).map(
         (m) => ({
@@ -61,7 +66,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       return ctx.ports.enqueueMailboxForClient(input);
     },
     async mailboxDeliver(messageID: string, sessionID?: string) {
-      const exec = mailboxExec(ctx, sessionID);
+      const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { delivered: false as const };
       const message = projectedMailboxMessages(
@@ -80,7 +85,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       return { delivered: true as const };
     },
     async mailboxAcknowledge(messageID: string, sessionID?: string) {
-      const exec = mailboxExec(ctx, sessionID);
+      const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { acknowledged: false as const };
       const message = projectedMailboxMessages(
@@ -99,7 +104,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       return { acknowledged: true as const };
     },
     async mailboxDefer(messageID: string, reason?: string, sessionID?: string) {
-      const exec = mailboxExec(ctx, sessionID);
+      const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { deferred: false as const };
       const message = projectedMailboxMessages(
@@ -120,7 +125,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       return { deferred: true as const };
     },
     async mailboxSupersede(messageID: string, reason?: string, sessionID?: string) {
-      const exec = mailboxExec(ctx, sessionID);
+      const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { superseded: false as const };
       const message = projectedMailboxMessages(

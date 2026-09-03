@@ -76,12 +76,15 @@ export function wireFeatures(
   ports.createCollabChatTool = mailboxPlans.createCollabChatTool;
   ports.enqueueMailboxMessage = mailboxPlans.enqueueMailboxMessage;
   ports.cancelMailboxMessage = mailboxPlans.cancelMailboxMessage;
-  ports.enqueueMailboxForClient = (input) => {
+  ports.enqueueMailboxForClient = async (input) => {
     const sessionID = (input as { sessionID?: string }).sessionID;
     const exec = sessionID
-      ? ctx.ports
+      ? (ctx.ports
           .getExecutionBySession()
-          .get(sessionID as import("@natalia/contracts").SessionID)
+          .get(sessionID as import("@natalia/contracts").SessionID) ??
+        (await ctx.ports.ensureExecution(
+          sessionID as import("@natalia/contracts").SessionID,
+        )))
       : undefined;
     return mailboxPlans.enqueueMailboxMessage(input, exec);
   };
