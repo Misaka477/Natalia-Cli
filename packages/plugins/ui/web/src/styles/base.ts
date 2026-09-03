@@ -1022,20 +1022,20 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .review-additions { color: var(--neu-success); font-weight: 600; }
 .review-deletions { color: var(--neu-error); font-weight: 600; }
 .review-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.nia-panel-body {
-  flex-direction: column;
-  gap: 8px;
+.nia-flat-pane {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+.nia-flat-pane .neu-pane-header {
+  background: transparent;
+  box-shadow: none;
+  padding: 10px 14px 4px;
+}
+.nia-flat-pane .neu-pane-content {
+  background: transparent;
+  box-shadow: none;
   padding: 0 12px 12px;
-}
-.nia-panel-body .natalia-transcript {
-  flex: 1;
-  min-height: 0;
-}
-.nia-panel-body .neu-main-toolbar {
-  flex-shrink: 0;
-}
-.nia-panel-body .natalia-composer {
-  flex-shrink: 0;
 }
 
 .review-empty {

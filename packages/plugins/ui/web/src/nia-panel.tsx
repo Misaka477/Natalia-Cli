@@ -125,18 +125,14 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
       : undefined;
 
   return (
-    <div class="review-pane">
-      <div class="review-header">
-        <div class="review-title">
-          <span>Nia</span>
-        </div>
-        <div class="review-meta">
-          <span class="review-count" data-running={Boolean(active())}>
-            {active() ? "running" : "idle"}
-          </span>
-        </div>
+    <div class="neu-pane nia-flat-pane">
+      <div class="neu-pane-header">
+        <span class="neu-pane-title">Nia</span>
+        <span class="neu-pane-status" data-running={Boolean(active())}>
+          {active() ? "running" : "idle"}
+        </span>
       </div>
-      <div class="review-body nia-panel-body">
+      <div class="neu-pane-content">
         <Transcript
           messages={messages()}
           emptyTitle="向 Nia 提问"
