@@ -114,7 +114,7 @@ export function createSandboxRuntime(
     },
     async sandboxResources(id, sessionID?: string) {
       await ctx.ports.getReady();
-      const owner = sessionOwner(sessionID);
+      const owner = await sessionOwner(sessionID);
       assertSandboxOwned(owner, id);
       return requireSandboxes().resourcesFor(id);
     },
@@ -135,7 +135,7 @@ export function createSandboxRuntime(
     },
     async sandboxMerge(id, sessionID?) {
       await ctx.ports.getReady();
-      const owner = sessionOwner(sessionID);
+      const owner = await sessionOwner(sessionID);
       assertSandboxOwned(owner, id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
@@ -274,7 +274,7 @@ export function createSandboxRuntime(
     },
     async sandboxDelete(id, sessionID?) {
       await ctx.ports.getReady();
-      const owner = sessionOwner(sessionID);
+      const owner = await sessionOwner(sessionID);
       assertSandboxOwned(owner, id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
@@ -302,7 +302,7 @@ export function createSandboxRuntime(
       sessionID?: string;
     }) {
       await ctx.ports.getReady();
-      const owner = sessionOwner(input.sessionID);
+      const owner = await sessionOwner(input.sessionID);
       assertSandboxOwned(owner, input.id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
