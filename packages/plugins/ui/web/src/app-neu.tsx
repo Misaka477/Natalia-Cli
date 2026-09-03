@@ -2113,29 +2113,31 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             </div>
             <div class="neu-pane-content">
               <Show when={selectedSessionID() || state().sessionID || "none"} keyed>
-              <Transcript
-                messages={visibleMainMessages()}
-                emptyTitle="Natalia 已准备好"
-                emptyHint="Natalia 会直接处理工作区任务。"
-                assistantName="Natalia"
-                assistantInitial="N"
-                scrollRef={setTranscriptEl}
-                onScroll={handleTranscriptScroll}
-                loadAttachmentUrl={loadAttachmentUrl}
-                onFork={forkSessionAtTurn}
-                onRollback={rollbackDraftFromMessage}
-                checkpointIDForMessage={checkpointIDForMessage}
-              />
-              </Show>
-              <Show when={showJumpToBottom()}>
-                <button
-                  type="button"
-                  class="neu-jump-bottom"
-                  onClick={jumpToBottom}
-                  title="跳到底部"
-                >
-                  ↓
-                </button>
+              <div class="main-transcript-wrap">
+                <Transcript
+                  messages={visibleMainMessages()}
+                  emptyTitle="Natalia 已准备好"
+                  emptyHint="Natalia 会直接处理工作区任务。"
+                  assistantName="Natalia"
+                  assistantInitial="N"
+                  scrollRef={setTranscriptEl}
+                  onScroll={handleTranscriptScroll}
+                  loadAttachmentUrl={loadAttachmentUrl}
+                  onFork={forkSessionAtTurn}
+                  onRollback={rollbackDraftFromMessage}
+                  checkpointIDForMessage={checkpointIDForMessage}
+                />
+                <Show when={showJumpToBottom()}>
+                  <button
+                    type="button"
+                    class="neu-jump-bottom"
+                    onClick={jumpToBottom}
+                    title="跳到底部"
+                  >
+                    ↓
+                  </button>
+                </Show>
+              </div>
               </Show>
               <div class="neu-activity-bar" data-running={state().activeTurn}>
                 <span class="neu-activity-pulse" />
@@ -2299,26 +2301,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             </div>
             <div class="neu-pane-content">
               <Show when={selectedSessionID() || state().sessionID || "none"} keyed>
-              <Transcript
-                messages={chatMessages()}
-                emptyTitle="向 Navi 提问"
-                emptyHint="Navi 用于规划和审查，不直接操作工作区。"
-                assistantName="Navi"
-                assistantInitial="V"
-                scrollRef={setChatTranscriptEl}
-                onScroll={handleChatTranscriptScroll}
-                loadAttachmentUrl={loadAttachmentUrl}
-              />
-              </Show>
-              <Show when={chatShowJumpToBottom()}>
-                <button
-                  type="button"
-                  class="neu-jump-bottom"
-                  onClick={jumpChatToBottom}
-                  title="跳到底部"
-                >
-                  ↓
-                </button>
+              <div class="chat-transcript-wrap">
+                <Transcript
+                  messages={chatMessages()}
+                  emptyTitle="向 Navi 提问"
+                  emptyHint="Navi 用于规划和审查，不直接操作工作区。"
+                  assistantName="Navi"
+                  assistantInitial="V"
+                  scrollRef={setChatTranscriptEl}
+                  onScroll={handleChatTranscriptScroll}
+                  loadAttachmentUrl={loadAttachmentUrl}
+                />
+                <Show when={chatShowJumpToBottom()}>
+                  <button
+                    type="button"
+                    class="neu-jump-bottom"
+                    onClick={jumpChatToBottom}
+                    title="跳到底部"
+                  >
+                    ↓
+                  </button>
+                </Show>
+              </div>
               </Show>
               <div class="neu-activity-bar" data-running={Boolean(naviChatActivity())}>
                 <span class="neu-activity-pulse" />
