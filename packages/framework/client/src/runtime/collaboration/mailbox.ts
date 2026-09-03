@@ -19,11 +19,20 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
       `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
   );
 }
+
+function mailboxExec(ctx: RuntimeContext, sessionID?: string) {
+  if (sessionID)
+    return ctx.ports
+      .getExecutionBySession()
+      .get(sessionID as import("@natalia/contracts").SessionID);
+  return ctx.ports.getActiveExec();
+}
 export function createMailboxSurface(ctx: RuntimeContext): Surface {
   return {
-    async mailboxList() {
-      if (!ctx.ports.getSession()) return [];
-      return projectedMailboxMessages(ctx.ports.getSession()!.events).map(
+    async mailboxList(sessionID?: string) {
+      const exec = mailboxExec(ctx, sessionID);
+      if (!exec) return [];
+      return projectedMailboxMessages(exec.session.events).map(
         (m) => ({
           messageID: m.messageID,
           source: m.source,
@@ -47,22 +56,20 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       safeSummary?: string;
       relatedPlanID?: string;
       deliveryPolicy?: string;
+      sessionID?: string;
     }) {
       return ctx.ports.enqueueMailboxForClient(input);
     },
-    async mailboxDeliver(messageID: string) {
-      if (
-        !ctx.ports.getSession() ||
-        typeof messageID !== "string" ||
-        !messageID
-      )
+    async mailboxDeliver(messageID: string, sessionID?: string) {
+      const exec = mailboxExec(ctx, sessionID);
+      if (!exec || typeof messageID !== "string" || !messageID)
         return { delivered: false as const };
       const message = projectedMailboxMessages(
-        ctx.ports.getSession()!.events,
+        exec.session.events,
       ).find((m) => m.messageID === messageID && m.status === "queued");
       if (!message) return { delivered: false as const };
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        exec,
         buildMailboxStatus({
           id: `${messageID}:delivered:${ctx.ports.nextMailboxSequence()}`,
           messageID,
@@ -72,19 +79,16 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       );
       return { delivered: true as const };
     },
-    async mailboxAcknowledge(messageID: string) {
-      if (
-        !ctx.ports.getSession() ||
-        typeof messageID !== "string" ||
-        !messageID
-      )
+    async mailboxAcknowledge(messageID: string, sessionID?: string) {
+      const exec = mailboxExec(ctx, sessionID);
+      if (!exec || typeof messageID !== "string" || !messageID)
         return { acknowledged: false as const };
       const message = projectedMailboxMessages(
-        ctx.ports.getSession()!.events,
+        exec.session.events,
       ).find((m) => m.messageID === messageID && m.status === "delivered");
       if (!message) return { acknowledged: false as const };
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        exec,
         buildMailboxStatus({
           id: `${messageID}:acknowledged:${ctx.ports.nextMailboxSequence()}`,
           messageID,
@@ -94,19 +98,16 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       );
       return { acknowledged: true as const };
     },
-    async mailboxDefer(messageID: string, reason?: string) {
-      if (
-        !ctx.ports.getSession() ||
-        typeof messageID !== "string" ||
-        !messageID
-      )
+    async mailboxDefer(messageID: string, reason?: string, sessionID?: string) {
+      const exec = mailboxExec(ctx, sessionID);
+      if (!exec || typeof messageID !== "string" || !messageID)
         return { deferred: false as const };
       const message = projectedMailboxMessages(
-        ctx.ports.getSession()!.events,
+        exec.session.events,
       ).find((m) => m.messageID === messageID && m.status === "queued");
       if (!message) return { deferred: false as const };
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        exec,
         buildMailboxStatus({
           id: `${messageID}:deferred:${ctx.ports.nextMailboxSequence()}`,
           messageID,
@@ -118,19 +119,16 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       );
       return { deferred: true as const };
     },
-    async mailboxSupersede(messageID: string, reason?: string) {
-      if (
-        !ctx.ports.getSession() ||
-        typeof messageID !== "string" ||
-        !messageID
-      )
+    async mailboxSupersede(messageID: string, reason?: string, sessionID?: string) {
+      const exec = mailboxExec(ctx, sessionID);
+      if (!exec || typeof messageID !== "string" || !messageID)
         return { superseded: false as const };
       const message = projectedMailboxMessages(
-        ctx.ports.getSession()!.events,
+        exec.session.events,
       ).find((m) => m.messageID === messageID && m.status === "queued");
       if (!message) return { superseded: false as const };
       ctx.ports.publishForSession(
-        ctx.ports.getActiveExec(),
+        exec,
         buildMailboxStatus({
           id: `${messageID}:superseded:${ctx.ports.nextMailboxSequence()}`,
           messageID,

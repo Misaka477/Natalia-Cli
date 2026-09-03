@@ -720,8 +720,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>
       >;
     },
-    async mailboxList() {
-      return (await request("mailbox.list")) as Awaited<
+    async mailboxList(sessionID) {
+      return (await request("mailbox.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["mailboxList"]>>
       >;
     },
@@ -730,8 +730,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["mailboxSend"]>>
       >;
     },
-    async mailboxAcknowledge(messageID) {
-      return (await request("mailbox.acknowledge", messageID)) as Awaited<
+    async mailboxAcknowledge(messageID, sessionID) {
+      return (await request("mailbox.acknowledge", { messageID, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["mailboxAcknowledge"]>>
       >;
     },
@@ -1180,11 +1180,16 @@ export async function handleWorkerRequest(
   }
   if (request.method === "planDoc.updateStatus")
     return await client.planDocUpdateStatus?.(request.value as never);
-  if (request.method === "mailbox.list") return await client.mailboxList?.();
+  if (request.method === "mailbox.list")
+    return await client.mailboxList?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "mailbox.send")
     return await client.mailboxSend?.(request.value as never);
-  if (request.method === "mailbox.acknowledge")
-    return await client.mailboxAcknowledge?.(request.value as string);
+  if (request.method === "mailbox.acknowledge") {
+    const value = request.value as { messageID: string; sessionID?: string };
+    return await client.mailboxAcknowledge?.(value.messageID, value.sessionID);
+  }
   if (request.method === "drift.list") return await client.driftFindings?.();
   if (request.method === "completions") return await client.completions?.();
   if (request.method === "constitution.list")

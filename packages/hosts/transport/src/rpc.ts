@@ -1930,10 +1930,11 @@ export async function handleRPCMessage(
     }
     if (body.method === "mailbox.list") {
       optionsGuard(client, "mailboxList");
+      const sessionID = (body.params as { sessionID?: string } | undefined)?.sessionID;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.mailboxList(),
+        result: await client.mailboxList?.(sessionID),
       };
     }
     if (body.method === "mailbox.send") {
@@ -1971,6 +1972,9 @@ export async function handleRPCMessage(
         ...(typeof params.deliveryPolicy === "string"
           ? { deliveryPolicy: params.deliveryPolicy }
           : {}),
+        ...(typeof params.sessionID === "string"
+          ? { sessionID: params.sessionID }
+          : {}),
       });
       if (!result)
         throw invalidParams("mailbox.send is not implemented by this runtime");
@@ -1989,7 +1993,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.mailboxDeliver?.(messageID),
+        result: await client.mailboxDeliver?.(
+          messageID,
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
       };
     }
     if (body.method === "mailbox.acknowledge") {
@@ -2001,7 +2008,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.mailboxAcknowledge?.(messageID),
+        result: await client.mailboxAcknowledge?.(
+          messageID,
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
       };
     }
     if (body.method === "mailbox.defer") {
@@ -2016,6 +2026,7 @@ export async function handleRPCMessage(
         result: await client.mailboxDefer?.(
           messageID,
           typeof params.reason === "string" ? params.reason : undefined,
+          typeof params.sessionID === "string" ? params.sessionID : undefined,
         ),
       };
     }
@@ -2031,6 +2042,7 @@ export async function handleRPCMessage(
         result: await client.mailboxSupersede?.(
           messageID,
           typeof params.reason === "string" ? params.reason : undefined,
+          typeof params.sessionID === "string" ? params.sessionID : undefined,
         ),
       };
     }

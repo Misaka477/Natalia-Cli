@@ -1720,6 +1720,7 @@ export type RuntimeClient = {
     limit?: number;
   }): Promise<RuntimeHistory>;
   messages?(options?: {
+    sessionID?: string;
     limit?: number;
     order?: "asc" | "desc";
     cursor?: string;
@@ -2279,7 +2280,7 @@ export type RuntimeClient = {
     linkedConstraints?: string[];
   }): Promise<{ recorded: boolean }>;
   /** The durable mailbox of Live Work Chat intents, projected from the journal. */
-  mailboxList?(): Promise<
+  mailboxList?(sessionID?: string): Promise<
     Array<{
       messageID: string;
       source: "user_via_live_chat" | "system";
@@ -2307,20 +2308,23 @@ export type RuntimeClient = {
     safeSummary?: string;
     relatedPlanID?: string;
     deliveryPolicy?: string;
+    sessionID?: string;
   }): Promise<{ queued: boolean; messageID?: string }>;
   /** Marks a queued mailbox message delivered at a safe boundary. */
-  mailboxDeliver?(messageID: string): Promise<{ delivered: boolean }>;
+  mailboxDeliver?(messageID: string, sessionID?: string): Promise<{ delivered: boolean }>;
   /** Acknowledges a delivered mailbox message. */
-  mailboxAcknowledge?(messageID: string): Promise<{ acknowledged: boolean }>;
+  mailboxAcknowledge?(messageID: string, sessionID?: string): Promise<{ acknowledged: boolean }>;
   /** Defers a mailbox message, with a safe reason. */
   mailboxDefer?(
     messageID: string,
     reason?: string,
+    sessionID?: string,
   ): Promise<{ deferred: boolean }>;
   /** Supersedes a mailbox message, with a safe reason. */
   mailboxSupersede?(
     messageID: string,
     reason?: string,
+    sessionID?: string,
   ): Promise<{ superseded: boolean }>;
   /**
    * Lists persisted plan documents for the active session. Plan content lives
@@ -2459,7 +2463,7 @@ export type RuntimeClient = {
     evidenceIDs?: string[];
     changePaths?: string[];
   }): Promise<{ recorded: boolean; completionID?: string }>;
-  sessionSnapshot?(): Promise<
+  sessionSnapshot?(sessionID?: string): Promise<
     | {
         agentStatus: string;
         currentStep?: string;
