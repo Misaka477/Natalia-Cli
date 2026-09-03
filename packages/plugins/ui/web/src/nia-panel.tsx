@@ -1,5 +1,8 @@
 import { For, Show, createMemo, createSignal, onMount } from "solid-js";
-import type { RuntimeClient } from "@natalia/contracts";
+import type {
+  RuntimeClient,
+  RuntimeModelCatalogEntry,
+} from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
@@ -11,6 +14,9 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [modelID, setModelID] = createSignal("");
   const [reasoning, setReasoning] = createSignal("medium");
   const [busy, setBusy] = createSignal(false);
+  const [modelCatalog, setModelCatalog] = createSignal<
+    RuntimeModelCatalogEntry[]
+  >([]);
 
   const messages = createMemo<Message[]>(() =>
     (props.state.chatMessages ?? [])
@@ -45,9 +51,25 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
       }),
   );
 
+  const modelOptions = () =>
+    modelCatalog().map((entry) => ({
+      value: entry.id,
+      label: entry.id,
+    }));
+
   onMount(() => {
     void loadProfile();
+    void loadCatalog();
   });
+
+  async function loadCatalog() {
+    try {
+      const catalog = await props.runtime?.modelCatalog?.();
+      setModelCatalog(catalog ?? []);
+    } catch {
+      // Catalog may be unavailable until the runtime is fully ready.
+    }
+  }
 
   async function loadProfile() {
     try {
@@ -133,7 +155,7 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
         <div class="neu-main-toolbar">
           <NeuSelect
             value={modelID()}
-            options={[]}
+            options={modelOptions()}
             placeholder="Nia 模型"
             onChange={(next) => {
               setModelID(next);
