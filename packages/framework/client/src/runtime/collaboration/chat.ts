@@ -29,18 +29,23 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
   );
 }
 
-function chatExec(
+async function chatExec(
   ctx: RuntimeContext,
   sessionID?: string,
 ) {
   if (sessionID)
-    return ctx.ports.getExecutionBySession().get(sessionID as SessionID);
+    return (
+      ctx.ports
+        .getExecutionBySession()
+        .get(sessionID as SessionID) ??
+      (await ctx.ports.ensureExecution(sessionID as SessionID))
+    );
   return ctx.ports.getActiveExec();
 }
 export function createChatSurface(ctx: RuntimeContext): Surface {
   return {
     async chatMessages(channel?: ChatChannel, sessionID?: string) {
-      const exec = chatExec(ctx, sessionID);
+      const exec = await chatExec(ctx, sessionID);
       if (!exec) return [];
       return projectedChatMessages(exec.session.events)
         .filter((message) => (message.channel ?? "navi") === (channel ?? "navi"))
@@ -53,7 +58,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         }));
     },
     async chatRollback(input: { toMessageID: string }, channel?: ChatChannel, sessionID?: string) {
-      const exec = chatExec(ctx, sessionID);
+      const exec = await chatExec(ctx, sessionID);
       if (!exec)
         return { rolledBackTo: input.toMessageID, removed: 0 };
       const channelKey = channel ?? "navi";
@@ -81,13 +86,13 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       return { rolledBackTo: input.toMessageID, removed };
     },
     async chatModelProfile(channel?: ChatChannel, sessionID?: string) {
-      const exec = chatExec(ctx, sessionID);
+      const exec = await chatExec(ctx, sessionID);
       if (!exec) return {};
       const profiles = exec.chatModelProfile as Record<string, ChatModelProfile> | undefined;
       return (profiles?.[channel ?? "navi"] as ChatModelProfile) ?? {};
     },
     async setChatModelProfile(profile, channel?: ChatChannel, sessionID?: string) {
-      const exec = chatExec(ctx, sessionID);
+      const exec = await chatExec(ctx, sessionID);
       if (!exec) return { saved: false };
       const profiles = { ...(exec.chatModelProfile as Record<string, ChatModelProfile> | undefined) };
       profiles[channel ?? "navi"] = profile;
@@ -95,7 +100,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       return { saved: true };
     },
     async chatAbort(channel?: ChatChannel, sessionID?: string) {
-      const exec = chatExec(ctx, sessionID);
+      const exec = await chatExec(ctx, sessionID);
       const controller = ctx.ports.resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       );
@@ -126,9 +131,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         : undefined;
       await ctx.ports.getReady();
       const text = typeof input.text === "string" ? input.text.trim() : "";
-      let exec = chatExec(ctx, input.sessionID);
-      if (!exec && input.sessionID)
-        exec = await ctx.ports.ensureExecution(input.sessionID as SessionID);
+      const exec = await chatExec(ctx, input.sessionID);
       const controller = ctx.ports.resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       );
