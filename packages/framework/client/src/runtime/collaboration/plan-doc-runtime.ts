@@ -10,7 +10,7 @@
  * Read-only: this module only writes `.natalia/plans/` plan documents and the
  * index. It never touches project source, shell, sandbox or checkpoints.
  */
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
@@ -222,8 +222,18 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     async planDocDelete(planID) {
       const entries = await readIndex(ctx);
       if (!entries[planID]) return { deleted: false };
+      const record = entries[planID];
       delete entries[planID];
       await writeIndex(ctx, entries);
+      if (record?.documentPath) {
+        try {
+          await rm(ensurePlanPath(ctx, record.documentPath), { force: true });
+        } catch (error) {
+          // The registry entry is gone; a missing/unlinked Markdown file
+          // should not make delete look like a failure.
+          console.warn("[plan-doc] delete Markdown file failed", error);
+        }
+      }
       try {
         publish({
           type: "plan.doc.deleted",

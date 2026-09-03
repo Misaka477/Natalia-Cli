@@ -239,7 +239,11 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
                   type="button"
                   class="plan-panel-btn"
                   onClick={() =>
-                    void props.runtime?.planDocDelete?.(selected()!.planID)
+                    void (async () => {
+                      await props.runtime?.planDocDelete?.(selected()!.planID);
+                      setSelectedID(undefined);
+                      await refreshPlans();
+                    })()
                   }
                 >
                   删除标记
