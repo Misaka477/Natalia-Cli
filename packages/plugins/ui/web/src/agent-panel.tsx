@@ -404,7 +404,7 @@ export function AgentPanel(props: {
                 </span>
               </Show>
             </div>
-            <div class="review-diff-content">
+            <div class="review-diff-content neu-pane nia-flat-pane">
               <Show when={selectedSubagent()} fallback={<div class="review-empty"><div class="review-empty-title">选择一个子 Agent 查看信息流</div></div>}>
                 <Transcript
                   messages={subagentMessages()}
