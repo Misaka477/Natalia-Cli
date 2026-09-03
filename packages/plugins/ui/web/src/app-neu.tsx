@@ -1021,8 +1021,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const elapsedTimer = setInterval(() => {
       if (activeTurnStartedAtValue() !== undefined)
         setTurnElapsedMs(Date.now() - activeTurnStartedAtValue()!);
-      if (state().chatActivity?.startedAt)
-        setChatElapsedMs(Date.now() - state().chatActivity!.startedAt);
+      if (naviChatActivity()?.startedAt)
+        setChatElapsedMs(Date.now() - naviChatActivity()!.startedAt);
     }, 1000);
     onCleanup(() => clearInterval(elapsedTimer));
 
@@ -1491,7 +1491,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function chatActivityLabel(): string {
-    const activity = state().chatActivity;
+    const activity = naviChatActivity();
     if (!activity) return "idle";
     switch (activity.phase) {
       case "waiting":
@@ -1605,6 +1605,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return messages.slice(0, hiddenAfter);
   });
 
+  const naviChatActivity = () =>
+    state().chatActivity?.channel === "navi"
+      ? state().chatActivity
+      : undefined;
+
   const chatMessages = createMemo<Message[]>(() =>
     (state().chatMessages ?? [])
       .filter((msg) => (msg.channel ?? "navi") === "navi")
@@ -1631,7 +1636,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
         content: msg.text + (msg.pendingText || ""),
         streaming: Boolean(
-          state().chatActivity &&
+          naviChatActivity() &&
             idx === state().chatMessages.length - 1 &&
             msg.role !== "user",
         ),
@@ -2288,8 +2293,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           <div class="neu-pane">
             <div class="neu-pane-header">
               <span class="neu-pane-title">Navi</span>
-              <span class="neu-pane-status" data-running={state().chatActivity}>
-                {state().chatActivity ? "running" : "idle"}
+              <span class="neu-pane-status" data-running={naviChatActivity()}>
+                {naviChatActivity() ? "running" : "idle"}
               </span>
             </div>
             <div class="neu-pane-content">
@@ -2315,10 +2320,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   ↓
                 </button>
               </Show>
-              <div class="neu-activity-bar" data-running={Boolean(state().chatActivity)}>
+              <div class="neu-activity-bar" data-running={Boolean(naviChatActivity())}>
                 <span class="neu-activity-pulse" />
                 <span class="neu-activity-label">
-                  {state().chatActivity
+                  {naviChatActivity()
                     ? `${chatActivityLabel()} · ${formatDuration(chatElapsedMs())}`
                     : "idle"}
                 </span>
@@ -2394,7 +2399,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <Composer
                 value={chatDraft()}
                 placeholder="向 Navi 提问…"
-                busy={Boolean(state().chatActivity)}
+                busy={Boolean(naviChatActivity())}
                 onInput={setChatDraft}
                 onStop={() => void props.ctx.runtime.chatAbort?.()}
                 attachments={chatAttachments()}
