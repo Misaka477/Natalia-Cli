@@ -99,7 +99,14 @@ function ensurePlanPath(ctx: RuntimeContext, inputPath: string) {
   if (!inputPath || typeof inputPath !== "string")
     throw new Error("plan document path is required");
   const root = planRoot(ctx) + "/";
-  const resolved = resolve(root, inputPath);
+  // Accept both plan-dir-relative names ("neon-plan.md") and workspace
+  // paths (".natalia/plans/neon-plan.md", "natalia/plans/neon-plan.md").
+  const normalizedInput = inputPath
+    .trim()
+    .replace(/^[.\/]*natalia\/plans[\/]*/u, "")
+    .replace(/^\.natalia[\/]plans[\/]*/u, "")
+    .replace(/^[\/]+/u, "");
+  const resolved = resolve(root, normalizedInput);
   if (!resolved.startsWith(root) && resolved !== root)
     throw new Error(`plan document path is outside ${PLAN_DIR}: ${inputPath}`);
   if (isAbsolute(inputPath)) {
