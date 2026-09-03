@@ -1,6 +1,17 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
+
+type PlanRow = {
+  planID: string;
+  title: string;
+  documentPath: string;
+  status: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  markedAt?: string;
+};
 
 export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [selectedID, setSelectedID] = createSignal<string | undefined>();
@@ -10,15 +21,32 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [error, setError] = createSignal("");
   const [saving, setSaving] = createSignal(false);
   const [markPath, setMarkPath] = createSignal("");
+  const [localPlans, setLocalPlans] = createSignal<PlanRow[]>([]);
 
   const plans = createMemo(() =>
-    Object.values(props.state.plans ?? {}).sort((a, b) =>
-      b.createdAt.localeCompare(a.createdAt),
-    ),
+    localPlans().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   );
   const selected = createMemo(() =>
     plans().find((plan) => plan.planID === selectedID()) ?? plans()[0],
   );
+
+  async function refreshPlans() {
+    try {
+      const list = (await props.runtime?.planDocList?.()) ?? [];
+      setLocalPlans(
+        list.map((plan) => ({
+          ...plan,
+          createdBy: plan.createdBy,
+        })),
+      );
+    } catch {
+      // Keep the current list if the runtime is not ready yet.
+    }
+  }
+
+  onMount(() => {
+    void refreshPlans();
+  });
 
   async function readSelected() {
     const plan = selected();
@@ -67,6 +95,7 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
       );
       setMarkPath("");
       setError("");
+      await refreshPlans();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -108,6 +137,7 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
       setError("");
       setSelectedID(result?.planID);
       setPreview(false);
+      await refreshPlans();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
