@@ -2513,6 +2513,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <ParallelSessionsPanel
                   sessions={sessionList()}
                   selectedSessionID={selectedSessionID() || state().sessionID}
+                  runtime={props.ctx.runtime}
                   onSelect={(id, name) => {
                     userSelectedSession = true;
                     setSelectedSessionID(id);
