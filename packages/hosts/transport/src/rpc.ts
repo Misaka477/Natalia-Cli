@@ -1027,10 +1027,11 @@ export async function handleRPCMessage(
     }
     if (body.method === "sandbox.list") {
       optionsGuard(client, "sandboxList");
+      const sessionID = optionalStringParam(body.params, "sessionID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.sandboxList(),
+        result: await client.sandboxList?.(sessionID),
       };
     }
     if (body.method === "sandbox.diff") {
@@ -1038,7 +1039,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.sandboxDiff(stringParam(body.params, "id")),
+        result: await client.sandboxDiff?.(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "sandbox.resources") {
@@ -1046,7 +1050,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.sandboxResources(stringParam(body.params, "id")),
+        result: await client.sandboxResources?.(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "sandbox.resource.output") {
@@ -1069,6 +1076,9 @@ export async function handleRPCMessage(
           id: stringParam(body.params, "id"),
           resourceID: stringParam(body.params, "resourceID"),
           maxBytes: typeof maxBytes === "number" ? maxBytes : undefined,
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
         }),
       };
     }
@@ -1077,7 +1087,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.sandboxMerge(stringParam(body.params, "id")),
+        result: await client.sandboxMerge?.(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "sandbox.delete") {
@@ -1085,7 +1098,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.sandboxDelete(stringParam(body.params, "id")),
+        result: await client.sandboxDelete?.(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "sandbox.resource.stop") {
@@ -1096,6 +1112,9 @@ export async function handleRPCMessage(
         result: await client.sandboxResourceStop({
           id: stringParam(body.params, "id"),
           resourceID: stringParam(body.params, "resourceID"),
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
         }),
       };
     }

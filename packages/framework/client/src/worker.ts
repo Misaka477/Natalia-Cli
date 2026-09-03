@@ -640,18 +640,18 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["sessionRollbackMessages"]>>
       >;
     },
-    async sandboxList() {
-      return (await request("sandbox.list")) as Awaited<
+    async sandboxList(sessionID) {
+      return (await request("sandbox.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sandboxList"]>>
       >;
     },
-    async sandboxDiff(id) {
-      return (await request("sandbox.diff", id)) as Awaited<
+    async sandboxDiff(id, sessionID) {
+      return (await request("sandbox.diff", { id, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sandboxDiff"]>>
       >;
     },
-    async sandboxResources(id) {
-      return (await request("sandbox.resources", id)) as Awaited<
+    async sandboxResources(id, sessionID) {
+      return (await request("sandbox.resources", { id, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sandboxResources"]>>
       >;
     },
@@ -665,13 +665,13 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["sandboxResourceStop"]>>
       >;
     },
-    async sandboxMerge(id) {
-      return (await request("sandbox.merge", id)) as Awaited<
+    async sandboxMerge(id, sessionID) {
+      return (await request("sandbox.merge", { id, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sandboxMerge"]>>
       >;
     },
-    async sandboxDelete(id) {
-      return (await request("sandbox.delete", id)) as Awaited<
+    async sandboxDelete(id, sessionID) {
+      return (await request("sandbox.delete", { id, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sandboxDelete"]>>
       >;
     },
@@ -1150,16 +1150,20 @@ export async function handleWorkerRequest(
     return await client.sandboxResources?.(request.value as string);
   if (request.method === "sandbox.resource-output")
     return await client.sandboxResourceOutput?.(
-      request.value as { id: string; resourceID: string; maxBytes?: number },
+      request.value as { id: string; resourceID: string; maxBytes?: number; sessionID?: string },
     );
   if (request.method === "sandbox.resource-stop")
     return await client.sandboxResourceStop?.(
-      request.value as { id: string; resourceID: string },
+      request.value as { id: string; resourceID: string; sessionID?: string },
     );
-  if (request.method === "sandbox.merge")
-    return await client.sandboxMerge?.(request.value as string);
-  if (request.method === "sandbox.delete")
-    return await client.sandboxDelete?.(request.value as string);
+  if (request.method === "sandbox.merge") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.sandboxMerge?.(value.id, value.sessionID);
+  }
+  if (request.method === "sandbox.delete") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.sandboxDelete?.(value.id, value.sessionID);
+  }
   if (request.method === "agent.select")
     return await client.selectAgent?.(request.value as string);
   if (request.method === "session.snapshot")

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { EpisodeID, SandboxDiffKind } from "@natalia/contracts";
+import type { EpisodeID, SandboxDiffKind, SessionID } from "@natalia/contracts";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
@@ -49,6 +49,16 @@ export function createSandboxRuntime(
     );
   }
 
+  function sessionOwner(sessionID?: string) {
+    const owner = sessionID
+      ? ctx.ports
+          .getExecutionBySession()
+          .get(sessionID as SessionID) ?? ctx.ports.getActiveExec()
+      : ctx.ports.getActiveExec();
+    if (!owner) throw new Error("session is not initialized");
+    return owner;
+  }
+
   function requireGovernanceLedger() {
     const ledger = ctx.ports.resolveService<GovernanceLedgerController>(
       GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
@@ -68,7 +78,7 @@ export function createSandboxRuntime(
   }
 
   return {
-    async sandboxList() {
+    async sandboxList(_sessionID?: string) {
       await ctx.ports.getReady();
       return (await requireSandboxes().list()).map((sandbox) => ({
         id: sandbox.id,
@@ -79,15 +89,20 @@ export function createSandboxRuntime(
         envAllowlist: sandbox.envAllowlist,
       }));
     },
-    async sandboxDiff(id) {
+    async sandboxDiff(id, _sessionID?: string) {
       await ctx.ports.getReady();
       return await requireSandboxes().previewMerge(id);
     },
-    async sandboxResources(id) {
+    async sandboxResources(id, _sessionID?: string) {
       await ctx.ports.getReady();
       return requireSandboxes().resourcesFor(id);
     },
-    async sandboxResourceOutput(input) {
+    async sandboxResourceOutput(input: {
+      id: string;
+      resourceID: string;
+      maxBytes?: number;
+      sessionID?: string;
+    }) {
       await ctx.ports.getReady();
       return await requireSandboxes().resourceOutput(
         input.id,
@@ -95,10 +110,9 @@ export function createSandboxRuntime(
         input.maxBytes,
       );
     },
-    async sandboxMerge(id) {
+    async sandboxMerge(id, sessionID?) {
       await ctx.ports.getReady();
-      const owner = ctx.ports.getActiveExec();
-      if (!owner) throw new Error("session is not initialized");
+      const owner = sessionOwner(sessionID);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_merge",
@@ -234,10 +248,9 @@ export function createSandboxRuntime(
         throw error;
       }
     },
-    async sandboxDelete(id) {
+    async sandboxDelete(id, sessionID?) {
       await ctx.ports.getReady();
-      const owner = ctx.ports.getActiveExec();
-      if (!owner) throw new Error("session is not initialized");
+      const owner = sessionOwner(sessionID);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_delete",
@@ -258,10 +271,13 @@ export function createSandboxRuntime(
       });
       return result;
     },
-    async sandboxResourceStop(input) {
+    async sandboxResourceStop(input: {
+      id: string;
+      resourceID: string;
+      sessionID?: string;
+    }) {
       await ctx.ports.getReady();
-      const owner = ctx.ports.getActiveExec();
-      if (!owner) throw new Error("session is not initialized");
+      const owner = sessionOwner(input.sessionID);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_resource_stop",

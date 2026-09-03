@@ -1990,22 +1990,24 @@ export type RuntimeClient = {
     name: string;
     sessionID?: string;
   }): Promise<RuntimeCheckpoint>;
-  sandboxList?(): Promise<RuntimeSandbox[]>;
-  sandboxDiff?(id: string): Promise<RuntimeSandboxChange[]>;
-  sandboxResources?(id: string): Promise<RuntimeSandboxResource[]>;
+  sandboxList?(sessionID?: string): Promise<RuntimeSandbox[]>;
+  sandboxDiff?(id: string, sessionID?: string): Promise<RuntimeSandboxChange[]>;
+  sandboxResources?(id: string, sessionID?: string): Promise<RuntimeSandboxResource[]>;
   sandboxResourceOutput?(input: {
     id: string;
     resourceID: string;
     maxBytes?: number;
+    sessionID?: string;
   }): Promise<string>;
-  sandboxMerge?(id: string): Promise<RuntimeSandboxChange[]>;
-  sandboxDelete?(id: string): Promise<{
+  sandboxMerge?(id: string, sessionID?: string): Promise<RuntimeSandboxChange[]>;
+  sandboxDelete?(id: string, sessionID?: string): Promise<{
     pendingChanges: RuntimeSandboxChange[];
     runningResources: string[];
   }>;
   sandboxResourceStop?(input: {
     id: string;
     resourceID: string;
+    sessionID?: string;
   }): Promise<RuntimeSandboxResource>;
   sessionList?(): Promise<RuntimeSessionSummary[]>;
   sessionTouch?(id: string): Promise<void>;
