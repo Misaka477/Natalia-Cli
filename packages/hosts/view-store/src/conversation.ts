@@ -831,11 +831,12 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       );
       return true;
     case "collab.chat":
+      if (event.from === "nia" || event.to === "nia") return true;
       upsertInto(
         state.chatMessages,
         `chat:${event.id}:collab`,
         "system",
-        `${event.from === "main_agent" ? "Natalia → Navi" : event.from === "nia" ? "Nia → Natalia" : "Navi → Natalia"}: ${event.text}`,
+        `${event.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia"}: ${event.text}`,
       );
       return true;
     case "collab.response":
@@ -848,12 +849,9 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       return true;
     case "collab.message": {
       const message = event.message;
+      if (message.from === "nia" || message.to === "nia") return true;
       const direction =
-        message.from === "main_agent"
-          ? "Natalia → Navi"
-          : message.from === "nia"
-            ? "Nia → Natalia"
-            : "Navi → Natalia";
+        message.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia";
       const text =
         message.kind === "notice"
           ? `${direction}: [${message.noticeType}] ${message.text}`
