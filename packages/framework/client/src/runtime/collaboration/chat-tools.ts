@@ -479,61 +479,6 @@ export function createChatTools(ctx: RuntimeContext) {
         },
       });
     }
-    if (!visible.some((tool) => tool.name === "workspace_diff")) {
-      visible.push({
-        name: "workspace_diff",
-        description:
-          "Read the workspace diff against the earliest complete checkpoint. Use it to see all current changes, including external edits.",
-        requiresApproval: false,
-        parameters: {
-          type: "object",
-          properties: {},
-          additionalProperties: false,
-        },
-        async execute() {
-          const checkpoint = ctx.ports.getCheckpointRuntime();
-          if (!checkpoint?.workspaceDiff)
-            return "workspace_diff unavailable";
-          try {
-            return JSON.stringify(await checkpoint.workspaceDiff());
-          } catch (cause) {
-            return cause instanceof Error ? cause.message : String(cause);
-          }
-        },
-      });
-    }
-    if (!visible.some((tool) => tool.name === "workspace_git_diff")) {
-      visible.push({
-        name: "workspace_git_diff",
-        description:
-          "Read the git-backed workspace diff (git status + git diff). Use it when the user asks about repository changes.",
-        requiresApproval: false,
-        parameters: {
-          type: "object",
-          properties: {
-            from: { type: "string" },
-            to: { type: "string" },
-            path: { type: "string" },
-          },
-          additionalProperties: false,
-        },
-        async execute(parsed) {
-          const args = parsed as { from?: string; to?: string; path?: string };
-          try {
-            const runtime = createWorkspaceRuntime(ctx);
-            return JSON.stringify(
-              await runtime.workspaceGitDiff?.({
-                ...(args.from ? { from: args.from } : {}),
-                ...(args.to ? { to: args.to } : {}),
-                ...(args.path ? { path: args.path } : {}),
-              }),
-            );
-          } catch (cause) {
-            return cause instanceof Error ? cause.message : String(cause);
-          }
-        },
-      });
-    }
     if (channel === "nia") {
       if (!visible.some((tool) => tool.name === "collab_chat"))
         visible.push(ctx.ports.createCollabChatTool("nia", exec));
@@ -547,8 +492,6 @@ export function createChatTools(ctx: RuntimeContext) {
         "plan_doc_list",
         "plan_doc_read",
         "mailbox_status",
-        "workspace_diff",
-        "workspace_git_diff",
         "collab_chat",
       ]);
       return visible.filter((tool) => allowed.has(tool.name));
