@@ -38,6 +38,7 @@ export function ParallelSessionsPanel(props: {
   });
 
   function statusOf(session: RuntimeSessionSummary) {
+    if (session.pendingHumanTerminal) return "waiting_human";
     const base = session.status ?? (session.cancelled ? "error" : session.resumable ? "idle" : "running");
     return liveStatuses()[session.id] ?? base;
   }
@@ -63,7 +64,7 @@ export function ParallelSessionsPanel(props: {
             >
               <div class="agent-card-title">{session.title}</div>
               <div class="agent-card-status" data-active={status === "running"}>
-                {status === "running" ? "运行中" : status === "idle" ? "空闲" : status === "error" ? "错误" : status}
+                {status === "running" ? "运行中" : status === "idle" ? "空闲" : status === "waiting_human" ? "等待人工" : status === "error" ? "错误" : status}
               </div>
               <div class="agent-card-detail">
                 {session.id} · {session.events} events
