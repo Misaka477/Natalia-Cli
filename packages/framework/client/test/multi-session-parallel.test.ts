@@ -154,3 +154,40 @@ test("hundred sessions submit and finish concurrently without cross-cancel", asy
   for (const result of results) expect(result?.id).toBeTruthy();
   await client.dispose?.();
 });
+
+test("two sessions chat concurrently without cross-channel mixing", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-chat");
+  const client = createOfficialRuntimeClient({
+    workspaceRoot,
+    provider: {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield { type: "content" as const, text: "chat reply" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const createdA = await client.sessionNew?.();
+  const createdB = await client.sessionNew?.();
+  const a = await client.chatSubmit?.({
+    text: "chat a",
+    channel: "navi",
+    sessionID: createdA?.sessionID,
+  });
+  const b = await client.chatSubmit?.({
+    text: "chat b",
+    channel: "navi",
+    sessionID: createdB?.sessionID,
+  });
+  expect(a?.messageID).toBeTruthy();
+  expect(b?.messageID).toBeTruthy();
+  const rowsA = await client.chatMessages?.("navi", createdA?.sessionID);
+  const rowsB = await client.chatMessages?.("navi", createdB?.sessionID);
+  expect(rowsA?.some((row) => row.text.includes("chat a"))).toBe(true);
+  expect(rowsB?.some((row) => row.text.includes("chat b"))).toBe(true);
+  expect(rowsA?.some((row) => row.text.includes("chat b"))).toBe(false);
+  expect(rowsB?.some((row) => row.text.includes("chat a"))).toBe(false);
+  await client.dispose?.();
+});

@@ -126,7 +126,9 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         : undefined;
       await ctx.ports.getReady();
       const text = typeof input.text === "string" ? input.text.trim() : "";
-      const exec = chatExec(ctx, input.sessionID);
+      let exec = chatExec(ctx, input.sessionID);
+      if (!exec && input.sessionID)
+        exec = await ctx.ports.ensureExecution(input.sessionID as SessionID);
       const controller = ctx.ports.resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       );
