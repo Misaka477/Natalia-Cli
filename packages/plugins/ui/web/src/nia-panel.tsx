@@ -1,7 +1,10 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
+import { Transcript } from "./components/Transcript";
+import { Composer } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
+import type { Message } from "./types";
 
 export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [draft, setDraft] = createSignal("");
@@ -9,19 +12,80 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [reasoning, setReasoning] = createSignal("medium");
   const [busy, setBusy] = createSignal(false);
 
-  const messages = createMemo(() =>
-    (props.state.chatMessages ?? []).filter(
-      (message) => (message.channel ?? "navi") === "nia",
-    ),
+  const messages = createMemo<Message[]>(() =>
+    (props.state.chatMessages ?? [])
+      .filter((message) => (message.channel ?? "navi") === "nia")
+      .map((msg, idx) => {
+        if (msg.tool) {
+          return {
+            id: msg.id,
+            role: "assistant",
+            content: "",
+            toolCalls: [
+              {
+                name: msg.tool.name,
+                output: msg.tool.result ?? msg.tool.summary,
+                status: msg.tool.status,
+                summary: msg.tool.summary,
+              },
+            ],
+          };
+        }
+        return {
+          id: msg.id,
+          role: msg.role === "user" ? "user" : "assistant",
+          thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+          content: msg.text + (msg.pendingText ?? ""),
+          streaming: Boolean(
+            props.state.chatActivity?.channel === "nia" &&
+              idx === (props.state.chatMessages ?? []).length - 1 &&
+              msg.role !== "user",
+          ),
+        };
+      }),
   );
 
-  async function send(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || busy()) return;
+  onMount(() => {
+    void loadProfile();
+  });
+
+  async function loadProfile() {
+    try {
+      const profile = await props.runtime?.chatModelProfile?.("nia");
+      setModelID(profile?.normal?.modelID ?? "");
+      setReasoning(profile?.normal?.reasoningEffort ?? "medium");
+    } catch {
+      // Profile may be unavailable until the runtime is fully ready.
+    }
+  }
+
+  async function saveProfile(patch: {
+    modelID?: string;
+    reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  }) {
+    const current = await props.runtime?.chatModelProfile?.("nia").catch(() => undefined);
+    await props.runtime?.setChatModelProfile?.(
+      {
+        ...(current ?? {}),
+        normal: {
+          ...(current?.normal ?? {}),
+          ...(patch.modelID !== undefined ? { modelID: patch.modelID } : {}),
+          ...(patch.reasoningEffort !== undefined
+            ? { reasoningEffort: patch.reasoningEffort }
+            : {}),
+        },
+      },
+      "nia",
+    );
+  }
+
+  async function submit() {
+    const text = draft();
+    if (!text.trim() || busy()) return;
     setBusy(true);
     try {
       await props.runtime?.chatSubmit?.({
-        text: trimmed,
+        text,
         channel: "nia",
         reasoningEffort: reasoning() as "minimal" | "low" | "medium" | "high" | "xhigh",
       });
@@ -33,59 +97,48 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     }
   }
 
+  const active = () =>
+    props.state.chatActivity?.channel === "nia"
+      ? props.state.chatActivity
+      : undefined;
+
   return (
-    <div class="review-pane">
-      <div class="review-header">
-        <div class="review-title">
-          <span>Nia 审计</span>
-        </div>
-        <div class="review-meta">
-          <span class="review-count" data-running={messages().length}>
-            {busy() ? "running" : `${messages().length} messages`}
-          </span>
-        </div>
+    <div class="neu-pane">
+      <div class="neu-pane-header">
+        <span class="neu-pane-title">Nia</span>
+        <span class="neu-pane-status" data-running={Boolean(active())}>
+          {active() ? "running" : "idle"}
+        </span>
       </div>
-      <div class="review-body">
-        <Show
-          when={messages().length}
-          fallback={
-            <div class="agent-empty-full">
-              <div class="review-empty-icon">🔍</div>
-              <div class="review-empty-title">Nia 尚未开始审计</div>
-              <div class="review-empty-desc">
-                Nia 始终在线，收到审计消息后会自动启动。
-              </div>
-            </div>
-          }
-        >
-          <div class="nia-transcript">
-            <For each={messages()}>
-              {(message) => (
-                <div class="nia-message" data-role={message.role}>
-                  <div class="nia-message-role">
-                    {message.role === "user" ? "你" : "Nia"}
-                  </div>
-                  <div class="nia-message-text">{message.text + message.pendingText}</div>
-                </div>
-              )}
-            </For>
+      <div class="neu-pane-content">
+        <Transcript
+          messages={messages()}
+          emptyTitle="向 Nia 提问"
+          emptyHint="Nia 用于审计，只读、不写代码、不写 Plan。"
+          assistantName="Nia"
+          assistantInitial="N"
+        />
+        <Show when={active()}>
+          <div class="neu-activity-bar" data-running={true}>
+            <span class="neu-activity-pulse" />
+            <span class="neu-activity-label">
+              {active()?.phase === "using_tool"
+                ? `使用 ${active()?.toolName ?? ""}`
+                : active()?.phase === "thinking"
+                  ? "思考中"
+                  : "生成中"}
+            </span>
           </div>
         </Show>
-        <div class="plan-panel-mark-row">
-          <button
-            type="button"
-            class="review-action"
-            onClick={() => void send("请审计当前选中的 Plan，按计划源文件逐项核对。")}
-          >
-            手动启动 Nia
-          </button>
-        </div>
         <div class="neu-main-toolbar">
           <NeuSelect
             value={modelID()}
             options={[]}
             placeholder="Nia 模型"
-            onChange={setModelID}
+            onChange={(next) => {
+              setModelID(next);
+              void saveProfile({ modelID: next });
+            }}
             menuPosition="top"
           />
           <NeuSelect
@@ -97,27 +150,37 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
               { value: "high", label: "high" },
               { value: "xhigh", label: "xhigh" },
             ]}
-            onChange={setReasoning}
+            onChange={(next) => {
+              setReasoning(next);
+              void saveProfile({
+                reasoningEffort: next as "minimal" | "low" | "medium" | "high" | "xhigh",
+              });
+            }}
             placeholder="Nia 推理"
             menuPosition="top"
           />
-        </div>
-        <textarea
-          class="plan-panel-editor"
-          value={draft()}
-          placeholder="向 Nia 提问…"
-          onInput={(event) => setDraft(event.currentTarget.value)}
-        />
-        <div class="plan-panel-mark-row">
           <button
             type="button"
-            class="review-action"
-            onClick={() => void send(draft())}
-            disabled={busy() || !draft().trim()}
+            class="neu-select-trigger"
+            style={{ width: "auto" }}
+            onClick={() =>
+              void props.runtime?.chatSubmit?.({
+                text: "请审计当前选中的 Plan，按计划源文件逐项核对。",
+                channel: "nia",
+              })
+            }
           >
-            发送
+            手动启动
           </button>
         </div>
+        <Composer
+          value={draft()}
+          placeholder="向 Nia 提问…"
+          busy={Boolean(active()) || busy()}
+          onInput={setDraft}
+          onStop={() => void props.runtime?.chatAbort?.("nia")}
+          onSubmit={() => void submit()}
+        />
       </div>
     </div>
   );
