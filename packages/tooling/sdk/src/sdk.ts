@@ -276,16 +276,18 @@ export type NataliaSDK = {
   workGraphNodes(): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
   workGraphEdges(): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
   /** The native terminal host. P0-D scopes the secure-input members. */
-  nativeTerminalList(): Promise<
+  nativeTerminalList(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalList"]>>>
   >;
   nativeTerminalRead(
     id: string,
+    sessionID?: string,
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalRead"]>>>
   >;
   nativeTerminalStop(
     id: string,
+    sessionID?: string,
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalStop"]>>>
   >;
@@ -294,6 +296,7 @@ export type NataliaSDK = {
   >;
   nativeTerminalRevokeApprovalScope(
     id: string,
+    sessionID?: string,
   ): Promise<
     Awaited<
       ReturnType<
@@ -303,6 +306,7 @@ export type NataliaSDK = {
   >;
   nativeTerminalReleaseHumanControl(
     id: string,
+    sessionID?: string,
   ): Promise<
     Awaited<
       ReturnType<
@@ -312,6 +316,7 @@ export type NataliaSDK = {
   >;
   nativeTerminalBeginSecureInput(
     id: string,
+    sessionID?: string,
   ): Promise<
     Awaited<
       ReturnType<NonNullable<RuntimeClient["nativeTerminalBeginSecureInput"]>>
@@ -319,6 +324,7 @@ export type NataliaSDK = {
   >;
   nativeTerminalEndSecureInput(
     id: string,
+    sessionID?: string,
   ): Promise<
     Awaited<
       ReturnType<NonNullable<RuntimeClient["nativeTerminalEndSecureInput"]>>
@@ -783,18 +789,31 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     },
     workGraphNodes: async () => await call("workgraph.nodes", {}),
     workGraphEdges: async () => await call("workgraph.edges", {}),
-    nativeTerminalList: async () => await call("nativeTerminal.list", {}),
+    nativeTerminalList: async (sessionID) =>
+      await call("nativeTerminal.list", sessionID ? { sessionID } : {}),
     nativeTerminalRead: async (id) => await call("nativeTerminal.read", { id }),
     nativeTerminalStop: async (id) => await call("nativeTerminal.stop", { id }),
     nativeTerminalOpenHub: async () => await call("nativeTerminal.openHub", {}),
-    nativeTerminalRevokeApprovalScope: async (id) =>
-      await call("nativeTerminal.revokeApprovalScope", { id }),
-    nativeTerminalReleaseHumanControl: async (id) =>
-      await call("nativeTerminal.releaseHumanControl", { id }),
-    nativeTerminalBeginSecureInput: async (id) =>
-      await call("nativeTerminal.beginSecureInput", { id }),
-    nativeTerminalEndSecureInput: async (id) =>
-      await call("nativeTerminal.endSecureInput", { id }),
+    nativeTerminalRevokeApprovalScope: async (id, sessionID) =>
+      await call("nativeTerminal.revokeApprovalScope", {
+        id,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    nativeTerminalReleaseHumanControl: async (id, sessionID) =>
+      await call("nativeTerminal.releaseHumanControl", {
+        id,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    nativeTerminalBeginSecureInput: async (id, sessionID) =>
+      await call("nativeTerminal.beginSecureInput", {
+        id,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    nativeTerminalEndSecureInput: async (id, sessionID) =>
+      await call("nativeTerminal.endSecureInput", {
+        id,
+        ...(sessionID ? { sessionID } : {}),
+      }),
     nativeTerminalStart: async (input) =>
       await call("nativeTerminal.start", input),
     nativeTerminalWrite: async (input) =>
