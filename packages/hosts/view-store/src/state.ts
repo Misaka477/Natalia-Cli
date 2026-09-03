@@ -217,11 +217,19 @@ export type AppState = {
   activities: Record<string, ActivityView>;
 
   // live work chat
-  /** The Chat conversation, projected like the main transcript (§8.3). */
+  /** The Navi Live Work Chat conversation, projected like the main transcript (§8.3). */
   chatMessages: MessageBlock[];
   chatStreams: Record<string, StreamState>;
   chatStreamPhases: Record<string, "thinking" | "assistant">;
   chatActivity?: ChatActivityView;
+  /**
+   * The Nia audit conversation. Nia is a separate agent with its own complete
+   * projection; it must never share Navi's stream.
+   */
+  niaMessages: MessageBlock[];
+  niaStreams: Record<string, StreamState>;
+  niaStreamPhases: Record<string, "thinking" | "assistant">;
+  niaActivity?: ChatActivityView;
 
   // resources
   terminals: Record<string, TerminalView>;
@@ -322,6 +330,9 @@ export function initialState(): AppState {
     chatMessages: [],
     chatStreams: {},
     chatStreamPhases: {},
+    niaMessages: [],
+    niaStreams: {},
+    niaStreamPhases: {},
     terminals: {},
     terminalTimeline: {},
     terminalApprovals: {},
@@ -377,6 +388,12 @@ export function cloneState(state: AppState): AppState {
     })),
     chatStreams: mapRecord(state.chatStreams, (value) => ({ ...value })),
     chatStreamPhases: { ...state.chatStreamPhases },
+    niaMessages: state.niaMessages.map((block) => ({
+      ...block,
+      ...(block.tool ? { tool: { ...block.tool } } : {}),
+    })),
+    niaStreams: mapRecord(state.niaStreams, (value) => ({ ...value })),
+    niaStreamPhases: { ...state.niaStreamPhases },
     terminals: { ...state.terminals },
     terminalTimeline: mapRecord(state.terminalTimeline, (value) => [...value]),
     terminalApprovals: { ...state.terminalApprovals },

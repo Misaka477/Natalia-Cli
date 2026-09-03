@@ -298,27 +298,62 @@ export function hydrateProjectedMessages(
  * the chat counterpart of `hydrateProjectedMessages`: it lets the UI reuse the
  * same lazy-loading path instead of replaying every raw chat event.
  */
+function chatRowToBlock(row: ChatMessageRow): {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  pendingText: string;
+  channel: "navi" | "nia";
+} {
+  const internal = row.role === "user" && row.text.startsWith("(internal");
+  return {
+    id: internal
+      ? `chat:${row.messageID}:system`
+      : row.role === "user"
+        ? `chat:${row.messageID}:user`
+        : `chat:${row.messageID}:assistant`,
+    role: internal
+      ? ("system" as const)
+      : row.role === "user"
+        ? ("user" as const)
+        : ("assistant" as const),
+    text: row.text,
+    pendingText: "",
+    channel: row.channel ?? "navi",
+  };
+}
+
+/**
+ * Hydrates the Live Work Chat rows from the durable chat projection. Navi and
+ * Nia are independent streams: the channel on each durable row routes it into
+ * that agent's own projection so neither UI can read the other's transcript.
+ */
 export function hydrateChatMessages(
   state: AppState,
   rows: ChatMessageRow[],
 ): boolean {
-  const incoming = rows.map((row) => ({
-    id:
-      row.role === "user"
-        ? `chat:${row.messageID}:user`
-        : `chat:${row.messageID}:assistant`,
-    role: row.role === "user" ? ("user" as const) : ("assistant" as const),
-    text: row.text,
-    pendingText: "",
-    ...(row.channel ? { channel: row.channel } : {}),
-  }));
-  if (!incoming.length) return false;
-  const incomingIDs = new Set(incoming.map((row) => row.id));
-  const retained = state.chatMessages.filter(
-    (row) => !incomingIDs.has(row.id),
-  );
-  state.chatMessages = [...incoming, ...retained];
-  return true;
+  if (!rows.length) return false;
+  const naviIncoming: ReturnType<typeof chatRowToBlock>[] = [];
+  const niaIncoming: ReturnType<typeof chatRowToBlock>[] = [];
+  for (const row of rows) {
+    const block = chatRowToBlock(row);
+    if (block.channel === "nia") niaIncoming.push(block);
+    else naviIncoming.push(block);
+  }
+  let changed = false;
+  const merge = (
+    target: AppState["chatMessages"],
+    incoming: ReturnType<typeof chatRowToBlock>[],
+  ) => {
+    if (!incoming.length) return;
+    const incomingIDs = new Set(incoming.map((row) => row.id));
+    const retained = target.filter((row) => !incomingIDs.has(row.id));
+    target.splice(0, target.length, ...incoming, ...retained);
+    changed = true;
+  };
+  merge(state.chatMessages, naviIncoming);
+  merge(state.niaMessages, niaIncoming);
+  return changed;
 }
 
 

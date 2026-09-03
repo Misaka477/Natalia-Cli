@@ -3,6 +3,7 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   applyEvent,
   displayText,
+  hydrateChatMessages,
   hydrateProjectedMessages,
   initialState,
   projectEvents,
@@ -1227,6 +1228,7 @@ test("chat activity follows its own lifecycle without replacing main activity", 
     phase: "thinking",
     startedAt: 100,
     toolName: undefined,
+    channel: "navi",
   });
   expect(selectPrimaryActivity(state)?.turnID).toBe("t1");
   applyEvent(state, {
@@ -1240,6 +1242,120 @@ test("chat activity follows its own lifecycle without replacing main activity", 
   expect(state.chatActivity).toBeUndefined();
 });
 
+test("Nia has its own complete chat stream and never mixes into Navi", () => {
+  const state = projectEvents([
+    {
+      type: "chat.turn.started",
+      id: "chat:navi:started",
+      messageID: "chat:navi",
+      startedAt: 1,
+      channel: "navi",
+    },
+    {
+      type: "chat.message.added",
+      id: "chat:navi:user",
+      messageID: "chat:navi",
+      role: "user",
+      text: "Navi question",
+      at: "t1",
+      channel: "navi",
+    },
+    {
+      type: "chat.message.added",
+      id: "chat:navi:chat",
+      messageID: "chat:navi",
+      role: "chat",
+      text: "Navi answer",
+      at: "t2",
+      channel: "navi",
+    },
+    {
+      type: "chat.turn.started",
+      id: "chat:nia:started",
+      messageID: "chat:nia",
+      startedAt: 3,
+      channel: "nia",
+    },
+    {
+      type: "chat.message.delta",
+      id: "chat:nia:delta",
+      messageID: "chat:nia",
+      text: "Nia audit result ",
+      channel: "nia",
+    },
+    {
+      type: "chat.tool.used",
+      id: "chat:nia:tool:1",
+      messageID: "chat:nia",
+      toolName: "read_file",
+      status: "succeeded",
+      summary: "read a file",
+      result: "{}",
+      argumentsRaw: "{}",
+      at: "t3",
+      channel: "nia",
+    },
+    {
+      type: "collab.chat",
+      id: "collab:nia:1",
+      threadID: "collab:nia:1",
+      from: "nia",
+      to: "main_agent",
+      text: "audit findings sent",
+      round: 1,
+      expectsReply: false,
+      at: "t4",
+    },
+    {
+      type: "chat.message.added",
+      id: "chat:nia:chat",
+      messageID: "chat:nia",
+      role: "chat",
+      text: "Nia audit result",
+      at: "t5",
+      channel: "nia",
+    },
+  ]);
+
+  expect(state.chatMessages.map((block) => displayText(block))).toEqual([
+    "Navi question",
+    "Navi answer",
+  ]);
+  expect(state.niaMessages.map((block) => displayText(block))).toEqual([
+    "Nia audit result ",
+    "read a file",
+    "Nia → Natalia: audit findings sent",
+    "Nia audit result",
+  ]);
+  expect(state.chatActivity?.messageID).toBe("chat:navi");
+  expect(state.niaActivity?.messageID).toBe("chat:nia");
+  expect(state.niaMessages.some((block) => block.id.includes("chat:navi"))).toBe(false);
+  expect(state.chatMessages.some((block) => block.id.includes("chat:nia"))).toBe(false);
+});
+
+
+test("hydrating chat rows splits Navi and Nia into independent streams", () => {
+  const state = initialState();
+  const changed = hydrateChatMessages(state, [
+    {
+      messageID: "chat:navi",
+      role: "user",
+      text: "hi navi",
+      at: "t1",
+      channel: "navi",
+    },
+    {
+      messageID: "chat:nia",
+      role: "chat",
+      text: "audit result",
+      at: "t2",
+      channel: "nia",
+    },
+  ]);
+  expect(changed).toBe(true);
+  expect(state.chatMessages.map((block) => block.text)).toEqual(["hi navi"]);
+  expect(state.niaMessages.map((block) => block.text)).toEqual(["audit result"]);
+});
 test("events from another session do not mix into the current transcript", () => {
   const state = initialState();
   applyEvent(state, {

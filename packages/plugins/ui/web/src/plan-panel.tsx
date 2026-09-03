@@ -14,6 +14,30 @@ type PlanRow = {
   markedAt?: string;
 };
 
+const PLAN_STATUS_LABELS: Record<string, string> = {
+  handed_off: "已交接",
+  executing: "执行中",
+  awaiting_audit: "待审计",
+  auditing: "审计中",
+  audit_gaps: "有缺口",
+  completed: "已完成",
+  unmarked: "未标记",
+};
+
+function planStatusLabel(status: string): string {
+  return PLAN_STATUS_LABELS[status] ?? status;
+}
+
+function isActivePlanStatus(status: string): boolean {
+  return new Set([
+    "handed_off",
+    "executing",
+    "awaiting_audit",
+    "auditing",
+    "audit_gaps",
+  ]).has(status);
+}
+
 function MarkdownPreview(props: { content: string }) {
   const html = createMemo(
     () => marked.parse(props.content ?? "") as string,
@@ -34,9 +58,23 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const plans = createMemo(() =>
     localPlans().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   );
-  const selected = createMemo(() =>
-    plans().find((plan) => plan.planID === selectedID()) ?? plans()[0],
+  const activePlan = createMemo(() =>
+    plans().find((plan) => isActivePlanStatus(plan.status)),
   );
+  const selected = createMemo(() =>
+    plans().find((plan) => plan.planID === selectedID()) ??
+    activePlan() ??
+    plans()[0],
+  );
+
+  function rememberSelected(planID?: string) {
+    if (!planID) return;
+    try {
+      localStorage.setItem("natalia.selectedPlanID", planID);
+    } catch {
+      // localStorage may be unavailable in some hosts.
+    }
+  }
 
   async function refreshPlans() {
     try {
@@ -47,6 +85,24 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
           createdBy: plan.createdBy,
         })),
       );
+      const next =
+        (() => {
+          try {
+            const stored = localStorage.getItem("natalia.selectedPlanID");
+            return (
+              list.find((plan) => plan.planID === stored) ??
+              list.find((plan) => isActivePlanStatus(plan.status)) ??
+              list[0]
+            );
+          } catch {
+            return list.find((plan) => isActivePlanStatus(plan.status)) ?? list[0];
+          }
+        })();
+      if (next) {
+        setSelectedID(next.planID);
+        rememberSelected(next.planID);
+        void readSelected(next.planID);
+      }
     } catch {
       // Keep the current list if the runtime is not ready yet.
     }
@@ -56,8 +112,10 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     void refreshPlans();
   });
 
-  async function readSelected() {
-    const plan = selected();
+  async function readSelected(planID?: string) {
+    const plan = planID
+      ? plans().find((candidate) => candidate.planID === planID)
+      : selected();
     if (!plan) return;
     try {
       const result = await props.runtime?.planDocRead?.({ planID: plan.planID });
@@ -85,6 +143,26 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function setActivePlan() {
+    const plan = selected();
+    if (!plan) return;
+    try {
+      const result = await props.runtime?.planDocUpdateStatus?.({
+        planID: plan.planID,
+        status: "executing",
+      });
+      setNotice(
+        result?.updated
+          ? `已将「${plan.title}」设为当前活跃计划`
+          : "设置未生效",
+      );
+      setError("");
+      await refreshPlans();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
 
@@ -153,8 +231,9 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
 
   function selectPlan(planID: string) {
     setSelectedID(planID);
+    rememberSelected(planID);
     setPreview(false);
-    void readSelected();
+    void readSelected(planID);
   }
 
   return (
@@ -205,7 +284,12 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
                   onClick={() => selectPlan(plan.planID)}
                 >
                   <div class="agent-card-title">{plan.title}</div>
-                  <div class="agent-card-status">{plan.status}</div>
+                  <div
+                    class="agent-card-status"
+                    data-active={isActivePlanStatus(plan.status)}
+                  >
+                    {planStatusLabel(plan.status)}
+                  </div>
                   <div class="agent-card-detail">{plan.documentPath}</div>
                 </button>
               )}
@@ -217,6 +301,9 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
                 <div class="agent-stream-title">{selected()!.title}</div>
                 <div class="agent-stream-meta">
                   {selected()!.planID} · {selected()!.documentPath}
+                  <Show when={activePlan()?.planID === selected()!.planID}>
+                    <span class="plan-panel-active-badge">当前活跃</span>
+                  </Show>
                 </div>
               </div>
               <div class="plan-panel-doc-buttons">
@@ -234,6 +321,14 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
                   onClick={() => setPreview(!preview())}
                 >
                   {preview() ? "编辑" : "预览"}
+                </button>
+                <button
+                  type="button"
+                  class="plan-panel-btn"
+                  disabled={activePlan()?.planID === selected()!.planID}
+                  onClick={() => void setActivePlan()}
+                >
+                  {activePlan()?.planID === selected()!.planID ? "活跃中" : "设为当前活跃"}
                 </button>
                 <button
                   type="button"

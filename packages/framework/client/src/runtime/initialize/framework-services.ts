@@ -160,9 +160,22 @@ export async function wireFrameworkServices(
     },
     redact: (text) => ctx.ports.redactToolOutput(text, true),
     nextMailboxSequence: ctx.ports.nextMailboxSequence,
-    requestWake: (sessionID) => {
+    requestWake: (sessionID, request) => {
       const exec = ctx.ports.getExecutionBySession().get(sessionID);
-      if (exec) ctx.ports.requestNaviWake(exec);
+      if (!exec) return;
+      const recipient = request?.recipient ?? "live_chat";
+      if (recipient === "live_chat") {
+        ctx.ports.requestNaviWake(exec);
+      } else if (recipient === "nia") {
+        ctx.ports.requestNiaWake(exec);
+      } else {
+        ctx.ports.wakeMainForCollaboration(
+          exec,
+          request?.messageID ?? "collab-wake",
+          request?.kind ?? "chat message",
+          request?.source === "nia" ? "Nia" : "Navi",
+        );
+      }
     },
     maxAutoRounds: () =>
       ctx.ports.getTsRuntimeConfig()?.runtime.collaboration.maxAutoRounds ?? 3,

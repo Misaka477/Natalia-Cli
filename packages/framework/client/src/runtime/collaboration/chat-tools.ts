@@ -480,8 +480,71 @@ export function createChatTools(ctx: RuntimeContext) {
       });
     }
     if (channel === "nia") {
-      if (!visible.some((tool) => tool.name === "collab_chat"))
-        visible.push(ctx.ports.createCollabChatTool("nia", exec));
+      console.log("[nia-chat-tools] channel", channel, "exec", Boolean(exec), "visible", visible.map((tool) => tool.name));
+      // The Navi channel may have already registered collab_chat with sender
+      // live_chat. Nia must never reuse that tool: it would send Nia's audit
+      // as if it came from Navi. Remove any existing bind and install the
+      // Nia-bound collab_chat tool.
+      const existingCollabIndex = visible.findIndex(
+        (tool) => tool.name === "collab_chat",
+      );
+      if (existingCollabIndex !== -1) {
+        visible.splice(existingCollabIndex, 1);
+        console.log("[nia-chat-tools] removed existing collab_chat before binding sender=nia");
+      }
+      console.log("[nia-chat-tools] creating collab_chat sender=nia");
+      visible.push(ctx.ports.createCollabChatTool("nia", exec));
+      if (!visible.some((tool) => tool.name === "audit_report")) {
+        visible.push({
+          name: "audit_report",
+          description:
+            "Submit the audit outcome for an active plan. Use passed when every plan item is verified and no gaps remain; use gaps when the audit found missing evidence, incomplete implementation, or mismatches. The runtime will mark the plan completed or audit_gaps and route the result back to Natalia.",
+          requiresApproval: false,
+          parameters: {
+            type: "object",
+            properties: {
+              planID: { type: "string", description: "The exact planID being audited." },
+              verdict: {
+                type: "string",
+                enum: ["passed", "gaps"],
+                description: "passed when the plan is fully verified; gaps when there are open audit findings.",
+              },
+              gaps: {
+                type: "array",
+                items: { type: "string" },
+                description: "Optional concrete gap descriptions when verdict is gaps.",
+              },
+            },
+            required: ["planID", "verdict"],
+            additionalProperties: false,
+          },
+          async execute(parsed) {
+            const args = parsed as {
+              planID?: string;
+              verdict?: string;
+              gaps?: string[];
+            };
+            if (
+              typeof args.planID !== "string" ||
+              (args.verdict !== "passed" && args.verdict !== "gaps")
+            )
+              return "audit_report requires planID and verdict passed|gaps";
+            const status = args.verdict === "passed" ? "completed" : "audit_gaps";
+            const result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
+              planID: args.planID,
+              status,
+            });
+            return JSON.stringify({
+              reported: true,
+              planID: args.planID,
+              verdict: args.verdict,
+              status,
+              gaps: args.gaps ?? [],
+              updated: result.updated,
+            });
+          },
+        });
+      }
       const allowed = new Set([
         "read_file",
         "glob",
@@ -493,6 +556,7 @@ export function createChatTools(ctx: RuntimeContext) {
         "plan_doc_read",
         "mailbox_status",
         "collab_chat",
+        "audit_report",
       ]);
       return visible.filter((tool) => allowed.has(tool.name));
     }

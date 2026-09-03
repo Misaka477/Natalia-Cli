@@ -32,36 +32,34 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   >([]);
 
   const messages = createMemo<Message[]>(() =>
-    (props.state.chatMessages ?? [])
-      .filter((message) => (message.channel ?? "navi") === "nia")
-      .map((msg, idx) => {
-        if (msg.tool) {
-          return {
-            id: msg.id,
-            role: "assistant",
-            content: "",
-            toolCalls: [
-              {
-                name: msg.tool.name,
-                output: msg.tool.result ?? msg.tool.summary,
-                status: msg.tool.status,
-                summary: msg.tool.summary,
-              },
-            ],
-          };
-        }
+    (props.state.niaMessages ?? []).map((msg, idx) => {
+      if (msg.tool) {
         return {
           id: msg.id,
-          role: msg.role === "user" ? "user" : "assistant",
-          thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
-          content: msg.text + (msg.pendingText ?? ""),
-          streaming: Boolean(
-            props.state.chatActivity?.channel === "nia" &&
-              idx === (props.state.chatMessages ?? []).length - 1 &&
-              msg.role !== "user",
-          ),
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              name: msg.tool.name,
+              output: msg.tool.result ?? msg.tool.summary,
+              status: msg.tool.status,
+              summary: msg.tool.summary,
+            },
+          ],
         };
-      }),
+      }
+      return {
+        id: msg.id,
+        role: msg.role === "user" ? "user" : "assistant",
+        thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+        content: msg.text + (msg.pendingText ?? ""),
+        streaming: Boolean(
+          props.state.niaActivity &&
+            idx === (props.state.niaMessages ?? []).length - 1 &&
+            msg.role !== "user",
+        ),
+      };
+    }),
   );
 
   const modelOptions = () =>
@@ -176,13 +174,15 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     const text = draft();
     if (!text.trim() || busy()) return;
     setBusy(true);
+    // Match the Navi composer: clear immediately on send, not after the whole
+    // chat turn finishes.
+    setDraft("");
     try {
       await props.runtime?.chatSubmit?.({
         text,
         channel: "nia",
         reasoningEffort: reasoning() as "minimal" | "low" | "medium" | "high" | "xhigh",
       });
-      setDraft("");
     } catch (cause) {
       console.error("[nia-ui] submit failed", cause);
     } finally {
@@ -190,10 +190,7 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     }
   }
 
-  const active = () =>
-    props.state.chatActivity?.channel === "nia"
-      ? props.state.chatActivity
-      : undefined;
+  const active = () => props.state.niaActivity;
 
   return (
     <div class="neu-pane nia-flat-pane">
@@ -203,18 +200,6 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
           <span class="neu-pane-status" data-running={Boolean(active())}>
             {active() ? "running" : "idle"}
           </span>
-          <button
-            type="button"
-            class="plan-panel-btn"
-            onClick={() =>
-              void props.runtime?.chatSubmit?.({
-                text: "请审计当前选中的 Plan，按计划源文件逐项核对。",
-                channel: "nia",
-              })
-            }
-          >
-            手动启动
-          </button>
         </span>
       </div>
       <div class="neu-pane-content">

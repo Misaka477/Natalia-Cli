@@ -30,12 +30,14 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     exec: SessionExecutionState,
     sourceID: string,
     kind: string,
+    source: "Navi" | "Nia" = "Navi",
   ) {
     if (ctx.ports.isDisposed()) return;
     const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
+    console.log("[collab-wake-main]", { source, kind, sourceID, sessionID: exec.session.id });
     scheduleInternalWake(exec, {
       id: `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
-      text: `(internal collaboration wake: Navi sent a ${kind}; read the collaboration context. This is not a user message.)`,
+      text: `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`,
       delivery: coordinator.active ? "queue" : "steer",
     });
   }
@@ -57,6 +59,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   }
 
   function requestNaviWake(exec: SessionExecutionState) {
+    console.log("[navi-wake] requestNaviWake", { sessionID: exec.session.id });
     ctx.ports
       .resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
@@ -65,6 +68,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   }
 
   async function wakeNavi(exec: SessionExecutionState) {
+    console.log("[navi-wake] wakeNavi start", { sessionID: exec.session.id });
     const { publishForSession, nextChatSequence } = ctx.ports;
     const controller = ctx.ports.resolveService<ProviderModelController>(
       PROVIDER_MODEL_CONTROLLER_SERVICE,

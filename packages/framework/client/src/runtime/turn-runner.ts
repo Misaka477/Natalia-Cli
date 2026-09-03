@@ -159,18 +159,52 @@ export function createTurnRunner(
             answer: message.text,
           })),
       naviChats: () =>
-        projectedCollabMessages(exec.session.events)
-          .filter((message) => message.kind === "chat")
-          .map((message) => ({
-            id: message.id,
-            threadID: message.threadID ?? "",
-            from: message.from,
-            text: message.text,
-            round: message.round ?? 1,
-            expectsReply: message.expectsReply ?? false,
-            status: message.status,
-          })),
-      naviIntro: () => projectedCollabMessages(exec.session.events).length > 0,
+        projectedCollabMessages(exec.session.events).flatMap((message) =>
+          message.kind === "chat" &&
+          (message.from === "main_agent" || message.to === "main_agent") &&
+          (message.from === "live_chat" || message.to === "live_chat")
+            ? [
+                {
+                  id: message.id,
+                  threadID: message.threadID ?? "",
+                  from: message.from,
+                  to: message.to,
+                  text: message.text,
+                  round: message.round ?? 1,
+                  expectsReply: message.expectsReply ?? false,
+                  status: message.status,
+                },
+              ]
+            : [],
+        ),
+      naviIntro: () =>
+        projectedCollabMessages(exec.session.events).some(
+          (message) =>
+            (message.from === "main_agent" || message.to === "main_agent") &&
+            (message.from === "live_chat" || message.to === "live_chat"),
+        ),
+      niaChats: () =>
+        projectedCollabMessages(exec.session.events).flatMap((message) =>
+          message.kind === "chat" &&
+          (message.from === "nia" || message.to === "nia")
+            ? [
+                {
+                  id: message.id,
+                  threadID: message.threadID ?? "",
+                  from: message.from,
+                  to: message.to,
+                  text: message.text,
+                  round: message.round ?? 1,
+                  expectsReply: message.expectsReply ?? false,
+                  status: message.status,
+                },
+              ]
+            : [],
+        ),
+      niaIntro: () =>
+        projectedCollabMessages(exec.session.events).some(
+          (message) => message.from === "nia" || message.to === "nia",
+        ),
       activePlan: () => {
         const plan = projectedPlanDocs(exec.session.events).find(
           (candidate) =>

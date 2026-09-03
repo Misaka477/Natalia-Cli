@@ -101,6 +101,16 @@ export function createCollaborationService(
           : undefined;
       const message = buildMessage(input, to, target, messages, ports);
       ports.publish(input.sessionID, { type: "collab.message", message });
+      console.log("[collab-trace] send", {
+        from: input.from,
+        to,
+        kind: message.kind,
+        messageID: message.id,
+        threadID: message.threadID,
+        replyToID: message.replyToID,
+        expectsReply: message.expectsReply,
+        text: input.text.slice(0, 120),
+      });
       return {
         message,
         wake: {

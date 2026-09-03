@@ -96,6 +96,7 @@ export type RuntimePorts = {
     exec: SessionExecutionState,
     id: string,
     kind: string,
+    source: "Navi" | "Nia" = "Navi",
   ) => void;
   createCollabChatTool: (
     from: CollaborationParticipant,

@@ -22,6 +22,7 @@ import {
   streamSegmentChars,
   upsertBlock,
   type AppState,
+  type ChatActivityView,
   type MessageBlock,
   type StreamState,
   type ToolBlock,
@@ -650,62 +651,99 @@ function userText(
   return `${event.text}\n\nAttachments: ${attachments}`;
 }
 
-function chatTarget(state: AppState): StreamTarget {
-  return {
-    messages: state.chatMessages,
-    streams: state.chatStreams,
-    streamPhases: state.chatStreamPhases,
-  };
+function chatSurface(
+  state: AppState,
+  channel: "navi" | "nia",
+): StreamTarget {
+  return channel === "nia"
+    ? {
+        messages: state.niaMessages,
+        streams: state.niaStreams,
+        streamPhases: state.niaStreamPhases,
+      }
+    : {
+        messages: state.chatMessages,
+        streams: state.chatStreams,
+        streamPhases: state.chatStreamPhases,
+      };
 }
 
+
 function chatChannelOf(event: RuntimeEvent): "navi" | "nia" {
+  // audit_report is Nia-only. Even if a legacy/malformed event omits the
+  // channel, it must never land in Navi's stream.
+  if (
+    event.type === "chat.tool.used" &&
+    event.toolName === "audit_report"
+  )
+    return "nia";
   return (event as { channel?: "navi" | "nia" }).channel ?? "navi";
 }
 
 /**
  * Projects the Live Work Chat conversation through the same streaming machinery
- * as the main transcript (§8.3: one projection, not a separate drift-prone
- * copy). `chat.message.delta` streams into an assistant stream keyed by the
- * message id, `chat.thinking.delta` into a thinking stream, the final
- * `chat.message.added` flushes and (on replay) synthesizes the block, tool
- * actions narrate as system rows, and `chat.rollback` truncates at a boundary.
+ * as the main transcript (§8.3: one projection per agent, not a separate
+ * drift-prone copy). Navi and Nia each own a complete projection: streamed
+ * deltas, thinking, tool rows, durable messages and rollback state. The
+ * `channel` field on each chat event routes it to the right agent's stream so
+ * Nia audit output can never leak into the Navi Live Work Chat.
  */
 export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
+  const channel = chatChannelOf(event);
   switch (event.type) {
-    case "chat.turn.started":
-      state.chatActivity = {
+    case "chat.turn.started": {
+      const activity: ChatActivityView = {
         messageID: event.messageID,
         phase: "waiting",
         startedAt: event.startedAt,
-        ...(event.channel ? { channel: event.channel } : {}),
+        channel,
       };
+      if (channel === "nia") state.niaActivity = activity;
+      else state.chatActivity = activity;
       return true;
-    case "chat.turn.phase":
-      if (state.chatActivity?.messageID === event.messageID) {
+    }
+    case "chat.turn.phase": {
+      if (channel === "nia") {
+        if (state.niaActivity?.messageID === event.messageID) {
+          state.niaActivity.phase = event.phase;
+          state.niaActivity.toolName = event.toolName;
+        }
+      } else if (state.chatActivity?.messageID === event.messageID) {
         state.chatActivity.phase = event.phase;
         state.chatActivity.toolName = event.toolName;
       }
       return true;
-    case "chat.turn.finished":
-      if (state.chatActivity?.messageID === event.messageID)
+    }
+    case "chat.turn.finished": {
+      if (channel === "nia") {
+        if (state.niaActivity?.messageID === event.messageID)
+          state.niaActivity = undefined;
+      } else if (state.chatActivity?.messageID === event.messageID) {
         state.chatActivity = undefined;
+      }
       return true;
+    }
     case "chat.message.added": {
+      const target = chatSurface(state, channel);
       if (event.role === "user") {
-        state.chatMessages.push({
-          id: `chat:${event.messageID}:user`,
-          role: "user",
+        // Internal synthetic prompts (advisor wake, mailbox steering) are
+        // not human user turns. Render them as system rows so a chat pane
+        // does not show an internal instruction as if the user sent it.
+        const internal = event.text.startsWith("(internal");
+        target.messages.push({
+          id: `chat:${event.messageID}:${internal ? "system" : "user"}`,
+          role: internal ? "system" : "user",
           text: event.text,
           pendingText: "",
-          channel: chatChannelOf(event),
+          channel,
         });
         return true;
       }
       const key = `chat:${event.messageID}:assistant`;
-      flushStream(chatTarget(state), key);
-      const stream = state.chatStreams[key];
+      flushStream(target, key);
+      const stream = target.streams[key];
       const currentID = stream ? segmentID(key, stream.segmentIndex) : key;
-      const current = state.chatMessages.find(
+      const current = target.messages.find(
         (block) => block.id === currentID,
       );
       // Live streaming has already filled the segment; durable replay is the
@@ -714,46 +752,50 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         current && (current.text || current.pendingText),
       );
       if (event.text && !alreadyRendered)
-        upsertInto(state.chatMessages, currentID, "assistant", event.text);
-      const settled = state.chatMessages.find((block) => block.id === currentID);
-      if (settled && !settled.channel) settled.channel = chatChannelOf(event);
-      delete state.chatStreams[key];
-      delete state.chatStreams[`chat:${event.messageID}:thinking`];
-      delete state.chatStreamPhases[`chat:${event.messageID}`];
+        upsertInto(target.messages, currentID, "assistant", event.text);
+      const settled = target.messages.find((block) => block.id === currentID);
+      if (settled && !settled.channel) settled.channel = channel;
+      delete target.streams[key];
+      delete target.streams[`chat:${event.messageID}:thinking`];
+      delete target.streamPhases[`chat:${event.messageID}`];
       return true;
     }
-    case "chat.message.delta":
+    case "chat.message.delta": {
+      const target = chatSurface(state, channel);
       prepareStreamPhase(
-        chatTarget(state),
+        target,
         `chat:${event.messageID}`,
         "assistant",
       );
-      appendStream(chatTarget(state), {
+      appendStream(target, {
         id: `chat:${event.messageID}:assistant`,
         role: "assistant",
         text: event.text,
-        channel: chatChannelOf(event),
+        channel,
       });
       return true;
-    case "chat.thinking.delta":
+    }
+    case "chat.thinking.delta": {
+      const target = chatSurface(state, channel);
       prepareStreamPhase(
-        chatTarget(state),
+        target,
         `chat:${event.messageID}`,
         "thinking",
       );
-      appendStream(chatTarget(state), {
+      appendStream(target, {
         id: `chat:${event.messageID}:thinking`,
         role: "thinking",
         text: event.text,
-        channel: chatChannelOf(event),
+        channel,
       });
       return true;
+    }
     case "chat.tool.used": {
       // Mirrors the transcript's `tool.update`: commit any in-flight text,
       // open a fresh segment so the model's post-tool reply renders BELOW the
       // card (not merged into the block above it), then insert the card.
       const turnKey = `chat:${event.messageID}`;
-      const target = chatTarget(state);
+      const target = chatSurface(state, channel);
       flushStream(target, `${turnKey}:thinking`);
       flushStream(target, `${turnKey}:assistant`);
       beginPostToolSegment(target, turnKey);
@@ -770,32 +812,33 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         ...(event.endedAt !== undefined ? { endedAt: event.endedAt } : {}),
       };
       upsertInto(
-        state.chatMessages,
+        target.messages,
         `chat:${event.id}:tool`,
         "tool",
         event.summary,
         event.status,
         { tool },
       );
-      const toolBlock = state.chatMessages.find(
+      const toolBlock = target.messages.find(
         (block) => block.id === `chat:${event.id}:tool`,
       );
-      if (toolBlock) toolBlock.channel = chatChannelOf(event);
+      if (toolBlock) toolBlock.channel = channel;
       return true;
     }
     case "chat.rollback": {
+      const target = chatSurface(state, channel);
       const boundary = `chat:${event.toMessageID}`;
-      const index = state.chatMessages.findIndex((block) =>
+      const index = target.messages.findIndex((block) =>
         block.id.startsWith(`${boundary}:`),
       );
       if (index !== -1) {
-        const isUser = state.chatMessages[index]?.role === "user";
+        const isUser = target.messages[index]?.role === "user";
         // A user-message rollback moves that message into the composer as a
         // draft, so remove the card itself as well as everything after it.
-        state.chatMessages.splice(isUser ? index : index + 1);
-      } else state.chatMessages.length = 0;
-      state.chatStreams = {};
-      state.chatStreamPhases = {};
+        target.messages.splice(isUser ? index : index + 1);
+      } else target.messages.length = 0;
+      target.streams = {};
+      target.streamPhases = {};
       return true;
     }
     case "collab.suggestion":
@@ -830,8 +873,24 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         `Navi → Natalia: ${event.answer}`,
       );
       return true;
-    case "collab.chat":
-      if (event.from === "nia" || event.to === "nia") return true;
+    case "collab.chat": {
+      if (event.from === "nia" || event.to === "nia") {
+        const direction =
+          event.from === "main_agent"
+            ? "Natalia → Nia"
+            : event.from === "live_chat"
+              ? "Navi → Nia"
+              : event.to === "main_agent"
+                ? "Nia → Natalia"
+                : "Nia → Navi";
+        upsertInto(
+          state.niaMessages,
+          `chat:${event.id}:collab`,
+          "system",
+          `${direction}: ${event.text}`,
+        );
+        return true;
+      }
       upsertInto(
         state.chatMessages,
         `chat:${event.id}:collab`,
@@ -839,6 +898,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
         `${event.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia"}: ${event.text}`,
       );
       return true;
+    }
     case "collab.response":
       upsertInto(
         state.chatMessages,
@@ -849,7 +909,29 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       return true;
     case "collab.message": {
       const message = event.message;
-      if (message.from === "nia" || message.to === "nia") return true;
+      if (message.from === "nia" || message.to === "nia") {
+        const direction =
+          message.from === "main_agent"
+            ? "Natalia → Nia"
+            : message.from === "live_chat"
+              ? "Navi → Nia"
+              : message.to === "main_agent"
+                ? "Nia → Natalia"
+                : "Nia → Navi";
+        const text =
+          message.kind === "notice"
+            ? `${direction}: [${message.noticeType}] ${message.text}`
+            : message.kind === "response"
+              ? `Nia ${message.decision}${message.reason ? ` (${message.reason})` : ""}`
+              : `${direction}: ${message.text}`;
+        upsertInto(
+          state.niaMessages,
+          `chat:${message.id}:collab`,
+          "system",
+          text,
+        );
+        return true;
+      }
       const direction =
         message.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia";
       const text =

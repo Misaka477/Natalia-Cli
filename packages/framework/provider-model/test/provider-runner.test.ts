@@ -51,6 +51,7 @@ function makeHarness(
       id: string;
       threadID: string;
       from: "live_chat" | "main_agent";
+      to: "live_chat" | "main_agent";
       text: string;
       round: number;
       expectsReply: boolean;
@@ -84,6 +85,7 @@ function makeHarness(
       thresholdPercent: number;
       reserved: number;
     };
+    preservedRecentMessages?: number;
   },
 ) {
   const events: RuntimeEvent[] = [];
@@ -137,7 +139,18 @@ function makeHarness(
     setActiveModelCapabilities: () => undefined,
     permissionMode: () => "auto",
     workspaceRoot: () => "/tmp/ws",
-    tsRuntimeConfig: () => undefined,
+    tsRuntimeConfig: () =>
+      options?.preservedRecentMessages === undefined
+        ? undefined
+        : ({
+            version: 3,
+            instructions: { enabled: true },
+            defaultAgentMode: "",
+            agentModes: {},
+            context: {
+              preservedRecentMessages: options.preservedRecentMessages,
+            },
+          } as unknown as import("@natalia/contracts").ConfigV3),
     runtimeContextConfig: () =>
       options?.runtimeContextConfig ?? {
         max: 200000,
@@ -592,42 +605,45 @@ test("the main agent keeps retrying transient failures until recovery", async ()
 test("context-limit recovery keeps compacted context and recovered tool results for later steps", async () => {
   let calls = 0;
   const requests: ProviderStreamRequest[] = [];
-  const { runner, ledger } = makeHarness({
-    provider: "scripted",
-    model: "m1",
-    async *stream(request) {
-      calls++;
-      requests.push(request);
-      if (calls === 1)
-        throw providerError({ kind: "context_limit", message: "too long" });
-      if (calls === 2) {
-        yield content("compacted summary");
-        return;
-      }
-      if (calls === 3) {
-        yield toolCall([
-          { id: "call_recovered", name: "read_file", arguments: "{}" },
-        ]);
-        return;
-      }
-      expect(
-        request.messages.some(
-          (message) =>
-            message.role === "system" &&
-            message.content.includes("compacted summary"),
-        ),
-      ).toBe(true);
-      expect(
-        request.messages.some(
-          (message) =>
-            message.role === "tool" &&
-            message.toolCallID === "call_recovered" &&
-            message.content === "ok",
-        ),
-      ).toBe(true);
-      yield content("recovered final");
+  const { runner, ledger } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        calls++;
+        requests.push(request);
+        if (calls === 1)
+          throw providerError({ kind: "context_limit", message: "too long" });
+        if (calls === 2) {
+          yield content("compacted summary");
+          return;
+        }
+        if (calls === 3) {
+          yield toolCall([
+            { id: "call_recovered", name: "read_file", arguments: "{}" },
+          ]);
+          return;
+        }
+        expect(
+          request.messages.some(
+            (message) =>
+              message.role === "system" &&
+              message.content.includes("compacted summary"),
+          ),
+        ).toBe(true);
+        expect(
+          request.messages.some(
+            (message) =>
+              message.role === "tool" &&
+              message.toolCallID === "call_recovered" &&
+              message.content === "ok",
+          ),
+        ).toBe(true);
+        yield content("recovered final");
+      },
     },
-  });
+    { preservedRecentMessages: 0 },
+  );
   for (let index = 0; index < 3; index++)
     ledger.add({
       id: `old-${index}`,
@@ -672,6 +688,7 @@ test("provider steps compact proactively before dispatching an oversized request
         thresholdPercent: 50,
         reserved: 10,
       },
+      preservedRecentMessages: 0,
     },
   );
   ledger.add({
@@ -820,6 +837,7 @@ test("pending Navi chat renders as a required direct reply without becoming user
           id: "collab:chat:pending",
           threadID: "collab:chat:thread",
           from: "live_chat",
+          to: "main_agent",
           text: "Did you account for the empty case?",
           round: 2,
           expectsReply: true,

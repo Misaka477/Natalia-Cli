@@ -214,6 +214,7 @@ export function createEventSink(
       event.stopReason === "error"
     ) {
       exec.advisorPending = true;
+      console.log("[navi-wake-trigger] main turn error");
       requestNaviWake(exec);
     }
     if (
@@ -223,39 +224,92 @@ export function createEventSink(
       event.stopReason === "done" &&
       exec?.session
     ) {
-      // Fallback: even if Nia did not explicitly call collab_chat, forward the
-      // final Nia reply to the main agent so the closed loop can continue.
       const niaMessages = projectedChatMessages(exec.session.events).filter(
         (message) => message.channel === "nia",
       );
       const last = niaMessages[niaMessages.length - 1];
-      if (last) {
-        // Wake Natalia with the audit result as an internal steering turn,
-        // without polluting the Navi Live Work Chat transcript.
+      const niaAuditWake = exec.session.events.some(
+        (candidate) =>
+          candidate.type === "chat.turn.started" &&
+          candidate.messageID === event.messageID &&
+          candidate.internal === true,
+      );
+      const auditReported = exec.session.events.some(
+        (candidate) =>
+          candidate.type === "chat.tool.used" &&
+          candidate.messageID === event.messageID &&
+          candidate.toolName === "audit_report",
+      );
+      const niaCollabSent = exec.session.events.some(
+        (candidate) =>
+          candidate.type === "chat.tool.used" &&
+          candidate.messageID === event.messageID &&
+          candidate.toolName === "collab_chat",
+      );
+      const auditReportEvent = exec.session.events.find(
+        (candidate): candidate is Extract<RuntimeEvent, { type: "chat.tool.used" }> =>
+          candidate.type === "chat.tool.used" &&
+          candidate.messageID === event.messageID &&
+          candidate.toolName === "audit_report",
+      );
+      let auditSummary = last?.text ?? "";
+      if (auditReportEvent?.argumentsRaw) {
+        try {
+          const args = JSON.parse(auditReportEvent.argumentsRaw) as {
+            gaps?: string[];
+          };
+          if (Array.isArray(args.gaps) && args.gaps.length) {
+            auditSummary += `\n\nGap list from audit_report:\n${args.gaps
+              .map((gap, index) => `${index + 1}. ${gap}`)
+              .join("\n")}`;
+          }
+        } catch {
+          // Keep the natural-language fallback if arguments are not JSON.
+        }
+      }
+      // Nia's audit wake usually goes through collab_chat or audit_report.
+      // Always forward when audit_report was used, even for a manually started
+      // Nia audit, because that report has already changed the plan lifecycle.
+      // Only skip when Nia actively used collab_chat, so the formal audit
+      // message is not duplicated.
+      const shouldForwardAudit = niaAuditWake || auditReported;
+      console.log("[nia-audit-tail]", {
+        messageID: event.messageID,
+        niaAuditWake,
+        auditReported,
+        niaCollabSent,
+        shouldForwardAudit,
+        forwarded: Boolean(last && shouldForwardAudit && !niaCollabSent),
+        lastText: last?.text.slice(0, 120),
+      });
+      if (last && shouldForwardAudit && !niaCollabSent) {
         const wakeID = `turn_nia_${event.messageID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
         ctx.ports.scheduleInternalWake(exec, {
           id: wakeID,
-          text: `(internal Nia audit result: ${last.text})`,
+          text: `(internal Nia audit result: ${auditSummary}. This is internal context for you and the user. Do not forward it to Navi; act on the findings directly.)`,
           delivery: "steer",
         });
-        // Avoid the audit loop: when Nia reports the work is complete, mark the
-        // active plan completed so Natalia's next reply does not re-wake Nia.
+      }
+      // If Nia did not call audit_report, fall back to known audit phrasing so
+      // the plan lifecycle still closes even when the model forgets the tool.
+      if (last && niaAuditWake && !auditReported) {
         const auditDone =
           /全部完成|全部通过|没有缺口|已完成|audit_passed|no gaps|all done/iu.test(
             last.text,
           );
-        if (auditDone) {
-          const active = projectedPlanDocs(exec.session.events).filter(
-            (plan) =>
-              plan.status === "handed_off" ||
-              plan.status === "executing" ||
-              plan.status === "audit_gaps",
-          );
-          for (const plan of active)
-            void ctx.ports.planDocRuntime.planDocUpdateStatus({
-              planID: plan.planID,
-              status: "completed",
-            });
+        const active = projectedPlanDocs(exec.session.events).filter(
+          (plan) =>
+            plan.status === "handed_off" ||
+            plan.status === "executing" ||
+            plan.status === "awaiting_audit" ||
+            plan.status === "auditing" ||
+            plan.status === "audit_gaps",
+        );
+        for (const plan of active) {
+          void ctx.ports.planDocRuntime.planDocUpdateStatus({
+            planID: plan.planID,
+            status: auditDone ? "completed" : "audit_gaps",
+          });
         }
       }
     }
@@ -272,13 +326,21 @@ export function createEventSink(
       // turn. The order matters — acknowledge the already-delivered batch before
       // delivering the queued batch, so a fresh delivery is not mis-acked.
       settleMailboxAtBoundary(exec);
-      // Simple loop: after Natalia finishes a reply, wake Nia whenever there is
-      // an active plan to audit.
+      // Runtime-owned plan lifecycle: after Natalia finishes, promote any
+      // executed plan to awaiting_audit. planDocUpdateStatus itself wakes Nia,
+      // so this never depends on the model remembering to call a status tool.
       if (exec?.session) {
         const activePlans = projectedPlanDocs(exec.session.events).filter(
-          (plan) => plan.status === "handed_off" || plan.status === "executing",
+          (plan) =>
+            plan.status === "handed_off" ||
+            plan.status === "executing" ||
+            plan.status === "audit_gaps",
         );
-        if (activePlans.length) ctx.ports.requestNiaWake(exec);
+        for (const plan of activePlans)
+          void ctx.ports.planDocRuntime.planDocUpdateStatus({
+            planID: plan.planID,
+            status: "awaiting_audit",
+          });
       }
       // WG4: a finished turn is a natural reconcile point — discover external
       // edits the watcher saw, graph them as isolated nodes, and drift-check

@@ -1,5 +1,8 @@
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import { projectedMailboxMessages } from "@natalia/session";
+import {
+  projectedCollabMessages,
+  projectedMailboxMessages,
+} from "@natalia/session";
 import {
   buildMailboxStatus,
   createMailboxAcknowledgeTool,
@@ -12,7 +15,15 @@ export type CollaborationToolPorts = {
   publish(sessionID: SessionID, event: RuntimeEvent): void;
   redact(text: string): string;
   nextMailboxSequence(): number;
-  requestWake(sessionID: SessionID): void;
+  requestWake(
+    sessionID: SessionID,
+    request?: {
+      recipient: import("@natalia/contracts").CollaborationParticipant;
+      messageID: string;
+      kind?: string;
+      source?: import("@natalia/contracts").CollaborationParticipant;
+    },
+  ): void;
   maxAutoRounds(): number;
   service: CollaborationService;
 };
@@ -93,7 +104,12 @@ export function collaborationTools(
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
       }
-      ports.requestWake(sessionID);
+      ports.requestWake(sessionID, {
+        recipient: result.wake.recipient,
+        messageID: result.message.id,
+        kind: "response",
+        source: "live_chat",
+      });
       return JSON.stringify({ responded: true });
     },
   };
@@ -154,7 +170,12 @@ export function collaborationTools(
         from: "main_agent",
         text: ports.redact(question),
       });
-      ports.requestWake(sessionID);
+      ports.requestWake(sessionID, {
+        recipient: result.wake.recipient,
+        messageID: result.message.id,
+        kind: "question",
+        source: "main_agent",
+      });
       return JSON.stringify({ asked: true });
     },
   };
@@ -169,12 +190,18 @@ function createMainAgentChatTool(
   return {
     name: "collab_chat",
     description:
-      "Send or directly reply to an informal message with Navi. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Navi already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true.",
+      "Send or directly reply to an informal message with Navi or Nia. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means that sister already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. For a new message to Nia, set to to \"nia\"; otherwise it defaults to Navi. ",
     requiresApproval: false,
     parameters: {
       type: "object",
       properties: {
         text: { type: "string" },
+        to: {
+          type: "string",
+          enum: ["live_chat", "nia"],
+          description:
+            "The sister to send a new informal chat to. Omitted means Navi (live_chat). When replying with messageID, the recipient is inferred from the original message.",
+        },
         messageID: { type: "string" },
         continueConversation: {
           type: "boolean",
@@ -188,6 +215,7 @@ function createMainAgentChatTool(
     async execute(parsed, context) {
       const args = parsed as {
         text?: string;
+        to?: "live_chat" | "nia";
         messageID?: string;
         continueConversation?: boolean;
       };
@@ -198,12 +226,20 @@ function createMainAgentChatTool(
       if (!sessionID || !events) return "no session";
       const suppliedID = args.messageID?.trim();
       const wantsContinuation = args.continueConversation === true;
+      const messages = projectedCollabMessages(events);
+      const target = suppliedID
+        ? messages.find((message) => message.id === suppliedID)
+        : undefined;
+      const to =
+        args.to ??
+        (target ? (target.from === "main_agent" ? target.to : target.from) : "live_chat");
       let result;
       try {
         result = await ports.service.send({
           sessionID,
           kind: "chat",
           from: "main_agent",
+          to,
           text: ports.redact(args.text),
           ...(suppliedID ? { replyToID: suppliedID } : {}),
           ...(suppliedID
@@ -215,11 +251,17 @@ function createMainAgentChatTool(
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
       }
-      ports.requestWake(sessionID);
+      ports.requestWake(sessionID, {
+        recipient: result.wake.recipient,
+        messageID: result.message.id,
+        kind: "chat",
+        source: "main_agent",
+      });
       return JSON.stringify({
         sent: true,
         messageID: result.message.id,
         threadID: result.message.threadID,
+        to: result.message.to,
         round: result.message.kind === "chat" ? result.message.round : 1,
         expectsReply: result.message.expectsReply,
         receivedReply: Boolean(suppliedID),

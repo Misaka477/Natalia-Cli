@@ -41,6 +41,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     sender: CollaborationParticipant,
     boundExec?: SessionExecutionState,
   ): RuntimeTool {
+    console.log("[collab-chat-tool] create", { sender, hasExec: Boolean(boundExec) });
     const {
       getExecutionBySession,
       redactToolOutput,
@@ -90,13 +91,14 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           COLLABORATION_SERVICE,
         );
         if (!service) return "collaboration service unavailable";
+        const cleanText = redactToolOutput(args.text, true);
         let result;
         try {
           result = await service.send({
             sessionID: owner.session.id as SessionID,
             kind: "chat",
             from: sender,
-            text: redactToolOutput(args.text, true),
+            text: cleanText,
             ...(suppliedID ? { replyToID: suppliedID } : {}),
             ...(suppliedID
               ? { continueConversation: wantsContinuation }
@@ -107,10 +109,35 @@ export function createMailboxPlans(ctx: RuntimeContext) {
         } catch (error) {
           return error instanceof Error ? error.message : String(error);
         }
-        if (result.wake.recipient === "live_chat") requestNaviWake(owner);
-        else if (result.wake.recipient === "nia") {
-          // A peer sends to Nia; Nia wakes through its own channel.
-        } else wakeMainForCollaboration(owner, result.message.id, "chat message");
+        console.log("[collab-chat-tool] result", {
+          sender,
+          messageID: result.message.id,
+          threadID: result.message.threadID,
+          recipient: result.wake.recipient,
+          messageTo: result.message.to,
+          expectsReply: result.message.expectsReply,
+          text: args.text.slice(0, 120),
+        });
+        if (result.wake.recipient === "live_chat") {
+          console.log("[navi-wake-trigger] collab_chat to live_chat", {
+            sender,
+            messageID: result.message.id,
+            recipient: result.wake.recipient,
+          });
+          requestNaviWake(owner);
+        } else if (result.wake.recipient === "nia") {
+          console.log("[nia-wake-trigger] collab_chat to nia", {
+            sender,
+            messageID: result.message.id,
+          });
+          ctx.ports.requestNiaWake(owner);
+        } else
+          wakeMainForCollaboration(
+            owner,
+            result.message.id,
+            "chat message",
+            sender === "nia" ? "Nia" : "Navi",
+          );
         return JSON.stringify({
           sent: true,
           messageID: result.message.id,

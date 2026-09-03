@@ -330,12 +330,24 @@ export type ProviderRunnerInput = {
     id: string;
     threadID: string;
     from: import("@natalia/contracts").CollaborationParticipant;
+    to: import("@natalia/contracts").CollaborationParticipant;
     text: string;
     round: number;
     expectsReply: boolean;
     status: string;
   }>;
   naviIntro(): boolean;
+  niaChats?(): Array<{
+    id: string;
+    threadID: string;
+    from: import("@natalia/contracts").CollaborationParticipant;
+    to: import("@natalia/contracts").CollaborationParticipant;
+    text: string;
+    round: number;
+    expectsReply: boolean;
+    status: string;
+  }>;
+  niaIntro?(): boolean;
   activePlan():
     | {
         planID: string;

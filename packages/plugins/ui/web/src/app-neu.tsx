@@ -1079,14 +1079,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         __nataliaSessionLoadToken?: number;
       }).__nataliaSessionLoadToken;
       void (async () => {
-        const chat = await props.ctx.runtime.chatMessages?.();
+        const [naviChat, niaChat] = await Promise.all([
+          props.ctx.runtime.chatMessages?.("navi"),
+          props.ctx.runtime.chatMessages?.("nia"),
+        ]);
         if (
-          chat &&
           loadToken ===
             (globalThis as unknown as { __nataliaSessionLoadToken?: number })
               .__nataliaSessionLoadToken
-        )
-          props.ctx.projection.hydrateChatMessages?.(chat);
+        ) {
+          if (naviChat)
+            props.ctx.projection.hydrateChatMessages?.(naviChat);
+          if (niaChat)
+            props.ctx.projection.hydrateChatMessages?.(niaChat);
+        }
         const subagents = await props.ctx.runtime.subagents?.();
         if (
           subagents &&
@@ -1605,15 +1611,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return messages.slice(0, hiddenAfter);
   });
 
-  const naviChatActivity = () =>
-    state().chatActivity?.channel === "navi"
-      ? state().chatActivity
-      : undefined;
+  const naviChatActivity = () => state().chatActivity;
 
   const chatMessages = createMemo<Message[]>(() =>
-    (state().chatMessages ?? [])
-      .filter((msg) => (msg.channel ?? "navi") === "navi")
-      .map((msg, idx) => {
+    (state().chatMessages ?? []).map((msg, idx) => {
       if (msg.tool) {
         return {
           id: msg.id,
@@ -2486,7 +2487,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <PlanPanel state={state()} runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "nia"}>
-                <NiaPanel state={state()} runtime={props.ctx.runtime} />
+                <NiaPanel
+                  key={state().sessionID ?? selectedSessionID() ?? "none"}
+                  state={state()}
+                  runtime={props.ctx.runtime}
+                />
               </Show>
               <Show when={rightTab() === "todo"}>
                 <TodoPanel state={state()} />
