@@ -230,6 +230,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   requestOverride: ["request"],
   approveOverride: ["approval"],
   mailboxSend: ["message"],
+  sessionSnapshot: ["sessionID"],
   mailboxDeliver: ["messageID"],
   mailboxAcknowledge: ["messageID"],
   mailboxDefer: ["messageID"],

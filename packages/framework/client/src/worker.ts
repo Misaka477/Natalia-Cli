@@ -680,8 +680,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["selectAgent"]>>
       >;
     },
-    async sessionSnapshot() {
-      return (await request("session.snapshot")) as Awaited<
+    async sessionSnapshot(sessionID) {
+      return (await request("session.snapshot", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>
       >;
     },
@@ -1159,7 +1159,9 @@ export async function handleWorkerRequest(
   if (request.method === "agent.select")
     return await client.selectAgent?.(request.value as string);
   if (request.method === "session.snapshot")
-    return await client.sessionSnapshot?.();
+    return await client.sessionSnapshot?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "planDoc.list")
     return await client.planDocList?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,

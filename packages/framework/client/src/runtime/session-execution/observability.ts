@@ -26,11 +26,14 @@ export function createObservabilitySurface(
         : ctx.ports.getRuntimeDiagnostics();
       return entries.slice(-Math.min(500, Math.max(1, limit)));
     },
-    async sessionSnapshot() {
-      if (!ctx.ports.getActiveExec()) return undefined;
+    async sessionSnapshot(sessionID) {
+      const exec = sessionID
+        ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
+        : ctx.ports.getActiveExec();
+      if (!exec) return undefined;
       return ctx.ports.currentSessionSnapshot(
-        ctx.ports.getActiveExec()!,
-        `snapshot:live:${ctx.ports.getActiveExec()!.session.id}`,
+        exec,
+        `snapshot:live:${exec.session.id}`,
       );
     },
   };

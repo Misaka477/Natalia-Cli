@@ -32,18 +32,17 @@ export function createTranscriptSurface(
     },
     async messages(options = {}) {
       await ctx.ports.getReady();
-      if (!ctx.ports.getSession())
+      const requestedID = (options.sessionID ?? ctx.ports.getSessionID()) as SessionID;
+      const exec = ctx.ports.getExecutionBySession().get(requestedID);
+      const session = exec?.session ?? ctx.ports.getSession();
+      if (!session)
         throw new Error("session initialization did not complete");
       const sessionStore = ctx.ports.resolveService<SessionStoreController>(
         SESSION_STORE_CONTROLLER_SERVICE,
       );
       if (!sessionStore)
         throw new Error("session store unavailable (natalia-session-store)");
-      return await sessionStore.messages(
-        ctx.ports.getSessionID(),
-        ctx.ports.getSession()!,
-        options,
-      );
+      return await sessionStore.messages(requestedID, session, options);
     },
     async pendingInteractive() {
       await ctx.ports.getReady();

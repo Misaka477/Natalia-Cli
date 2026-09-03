@@ -1177,6 +1177,7 @@ export async function handleRPCMessage(
     }
     if (body.method === "session.messages") {
       optionsGuard(client, "messages");
+      const sessionID = optionalStringParam(body.params, "sessionID");
       const limit = body.params?.limit;
       const order = body.params?.order;
       const cursor = body.params?.cursor;
@@ -1204,6 +1205,7 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.messages({
+          sessionID,
           limit: typeof limit === "number" ? limit : undefined,
           order: order as "asc" | "desc" | undefined,
           cursor: typeof cursor === "string" ? cursor : undefined,
@@ -2186,10 +2188,11 @@ export async function handleRPCMessage(
     }
     if (body.method === "session.snapshot") {
       optionsGuard(client, "sessionSnapshot");
+      const sessionID = optionalStringParam(body.params, "sessionID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.sessionSnapshot(),
+        result: await client.sessionSnapshot?.(sessionID),
       };
     }
     if (body.method === "session.subagents") {
