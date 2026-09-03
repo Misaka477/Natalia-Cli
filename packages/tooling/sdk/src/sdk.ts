@@ -198,24 +198,31 @@ export type NataliaSDK = {
     checkpointID: string,
     options?: { dryRun?: boolean },
   ): Promise<SubmittedTurn>;
-  checkpointList(): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
+  checkpointList(sessionID?: string): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
   checkpointPreview(
     id: string,
+    sessionID?: string,
   ): Promise<import("@natalia/contracts").CheckpointPreview>;
-  checkpointRollback(input: {
-    id: string;
-    dryRun?: boolean;
-  }): Promise<import("@natalia/contracts").CheckpointPreview>;
+  checkpointRollback(
+    input: {
+      id: string;
+      dryRun?: boolean;
+      sessionID?: string;
+    },
+  ): Promise<import("@natalia/contracts").CheckpointPreview>;
   checkpointRename(input: {
     id: string;
     name: string;
+    sessionID?: string;
   }): Promise<import("@natalia/contracts").RuntimeCheckpoint>;
-  sandboxList(): Promise<import("@natalia/contracts").RuntimeSandbox[]>;
+  sandboxList(sessionID?: string): Promise<import("@natalia/contracts").RuntimeSandbox[]>;
   sandboxDiff(
     id: string,
+    sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
   sandboxResources(
     id: string,
+    sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeSandboxResource[]>;
   sandboxResourceOutput(input: {
     id: string;
@@ -224,8 +231,9 @@ export type NataliaSDK = {
   }): Promise<string>;
   sandboxMerge(
     id: string,
+    sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
-  sandboxDelete(id: string): Promise<{
+  sandboxDelete(id: string, sessionID?: string): Promise<{
     pendingChanges: import("@natalia/contracts").RuntimeSandboxChange[];
     runningResources: string[];
   }>;
@@ -754,18 +762,31 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call<SubmittedTurn>("prompt", {
         text: `/rollback ${checkpointID}${rollbackOptions.dryRun ? " --dry-run" : ""}`,
       }),
-    checkpointList: async () => await call("checkpoint.list", {}),
-    checkpointPreview: async (id) => await call("checkpoint.preview", { id }),
+    checkpointList: async (sessionID) =>
+      await call("checkpoint.list", sessionID ? { sessionID } : {}),
+    checkpointPreview: async (id, sessionID) =>
+      await call("checkpoint.preview", {
+        id,
+        ...(sessionID ? { sessionID } : {}),
+      }),
     checkpointRollback: async (input) =>
       await call("checkpoint.rollback", input),
     checkpointRename: async (input) => await call("checkpoint.rename", input),
-    sandboxList: async () => await call("sandbox.list", {}),
-    sandboxDiff: async (id) => await call("sandbox.diff", { id }),
-    sandboxResources: async (id) => await call("sandbox.resources", { id }),
+    sandboxList: async (sessionID) =>
+      await call("sandbox.list", sessionID ? { sessionID } : {}),
+    sandboxDiff: async (id, sessionID) =>
+      await call("sandbox.diff", { id, ...(sessionID ? { sessionID } : {}) }),
+    sandboxResources: async (id, sessionID) =>
+      await call("sandbox.resources", {
+        id,
+        ...(sessionID ? { sessionID } : {}),
+      }),
     sandboxResourceOutput: async (input) =>
       await call("sandbox.resource.output", input),
-    sandboxMerge: async (id) => await call("sandbox.merge", { id }),
-    sandboxDelete: async (id) => await call("sandbox.delete", { id }),
+    sandboxMerge: async (id, sessionID) =>
+      await call("sandbox.merge", { id, ...(sessionID ? { sessionID } : {}) }),
+    sandboxDelete: async (id, sessionID) =>
+      await call("sandbox.delete", { id, ...(sessionID ? { sessionID } : {}) }),
     sandboxResourceStop: async (input) =>
       await call("sandbox.resource.stop", input),
     snapshot: async () => await call<RuntimeEvent>("snapshot", {}),
