@@ -59,6 +59,20 @@ export function createSandboxRuntime(
     return owner;
   }
 
+  function sandboxIDsFor(owner: import("./context").SessionExecutionState | undefined) {
+    if (!owner?.session) return new Set<string>();
+    return new Set(
+      owner.session.events
+        .filter((event) => event.type === "sandbox.update")
+        .map((event) => event.id),
+    );
+  }
+
+  function assertSandboxOwned(owner: import("./context").SessionExecutionState, id: string) {
+    if (!sandboxIDsFor(owner).has(id))
+      throw new Error(`sandbox ${id} does not belong to session ${owner.session.id}`);
+  }
+
   function requireGovernanceLedger() {
     const ledger = ctx.ports.resolveService<GovernanceLedgerController>(
       GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
@@ -78,23 +92,31 @@ export function createSandboxRuntime(
   }
 
   return {
-    async sandboxList(_sessionID?: string) {
+    async sandboxList(sessionID?: string) {
       await ctx.ports.getReady();
-      return (await requireSandboxes().list()).map((sandbox) => ({
-        id: sandbox.id,
-        root: sandbox.root,
-        isolationLevel: sandbox.isolationLevel,
-        changedFiles: sandbox.changedFiles.length,
-        runningResources: sandbox.runningResources.length,
-        envAllowlist: sandbox.envAllowlist,
-      }));
+      const owner = sessionID ? sessionOwner(sessionID) : ctx.ports.getActiveExec();
+      const owned = sandboxIDsFor(owner);
+      return (await requireSandboxes().list())
+        .filter((sandbox) => owned.size === 0 || owned.has(sandbox.id))
+        .map((sandbox) => ({
+          id: sandbox.id,
+          root: sandbox.root,
+          isolationLevel: sandbox.isolationLevel,
+          changedFiles: sandbox.changedFiles.length,
+          runningResources: sandbox.runningResources.length,
+          envAllowlist: sandbox.envAllowlist,
+        }));
     },
-    async sandboxDiff(id, _sessionID?: string) {
+    async sandboxDiff(id, sessionID?: string) {
       await ctx.ports.getReady();
+      const owner = sessionOwner(sessionID);
+      assertSandboxOwned(owner, id);
       return await requireSandboxes().previewMerge(id);
     },
-    async sandboxResources(id, _sessionID?: string) {
+    async sandboxResources(id, sessionID?: string) {
       await ctx.ports.getReady();
+      const owner = sessionOwner(sessionID);
+      assertSandboxOwned(owner, id);
       return requireSandboxes().resourcesFor(id);
     },
     async sandboxResourceOutput(input: {
@@ -104,6 +126,8 @@ export function createSandboxRuntime(
       sessionID?: string;
     }) {
       await ctx.ports.getReady();
+      const owner = sessionOwner(input.sessionID);
+      assertSandboxOwned(owner, input.id);
       return await requireSandboxes().resourceOutput(
         input.id,
         input.resourceID,
@@ -113,6 +137,7 @@ export function createSandboxRuntime(
     async sandboxMerge(id, sessionID?) {
       await ctx.ports.getReady();
       const owner = sessionOwner(sessionID);
+      assertSandboxOwned(owner, id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_merge",
@@ -251,6 +276,7 @@ export function createSandboxRuntime(
     async sandboxDelete(id, sessionID?) {
       await ctx.ports.getReady();
       const owner = sessionOwner(sessionID);
+      assertSandboxOwned(owner, id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_delete",
@@ -278,6 +304,7 @@ export function createSandboxRuntime(
     }) {
       await ctx.ports.getReady();
       const owner = sessionOwner(input.sessionID);
+      assertSandboxOwned(owner, input.id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_resource_stop",
