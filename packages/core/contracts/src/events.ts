@@ -2242,7 +2242,7 @@ export type RuntimeClient = {
    */
   commandCatalog?(): Promise<ContributedCommand[]>;
   commandExecute?(input: ContributedCommandExecution): Promise<void>;
-  runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
+  runtimeStatus?(sessionID?: string): Promise<RuntimeStatusSnapshot>;
   diagnostics?(limit?: number, sessionID?: string): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;

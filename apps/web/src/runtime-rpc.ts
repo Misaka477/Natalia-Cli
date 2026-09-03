@@ -217,6 +217,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   nativeTerminalWrite: ["id", "input", "idempotencyKey", "sessionID"],
   nativeTerminalResize: ["id", "rows", "cols", "sessionID"],
   nativeTerminalStart: ["command", "cwd", "id", "sessionID", "agentID"],
+  runtimeStatus: ["sessionID"],
   diagnostics: ["limit", "sessionID"],
   diagnosticsList: ["limit", "sessionID"],
   getMcpPrompt: ["server", "prompt"],

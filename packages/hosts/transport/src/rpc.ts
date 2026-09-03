@@ -2522,7 +2522,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.runtimeStatus(),
+        result: await client.runtimeStatus?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "diagnostics.list") {

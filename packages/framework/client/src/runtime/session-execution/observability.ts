@@ -1,3 +1,7 @@
+import {
+  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  type StatusSnapshotController,
+} from "@natalia/runtime-services";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
@@ -10,9 +14,22 @@ export function createObservabilitySurface(
   options: ClientSurfaceOptions,
 ): Surface {
   return {
-    async runtimeStatus() {
+    async runtimeStatus(sessionID?: string) {
       await ctx.ports.ensureReady();
-      return await ctx.ports.runtimeStatusSnapshot();
+      const exec = sessionID
+        ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
+        : ctx.ports.getActiveExec();
+      if (!exec) return await ctx.ports.runtimeStatusSnapshot();
+      const status = ctx.ports.resolveService<StatusSnapshotController>(
+        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+      );
+      if (!status)
+        throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+      return await status.snapshotFor({
+        provider: exec.provider,
+        context: exec.context,
+        permissionMode: exec.permissionMode,
+      });
     },
     async diagnostics(limit = 100, sessionID?: string) {
       await ctx.ports.getReady();

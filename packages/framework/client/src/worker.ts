@@ -374,8 +374,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["reloadConfig"]>>
       >;
     },
-    async runtimeStatus() {
-      return (await request("runtime.status")) as Awaited<
+    async runtimeStatus(sessionID) {
+      return (await request("runtime.status", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["runtimeStatus"]>>
       >;
     },
@@ -985,7 +985,9 @@ export async function handleWorkerRequest(
     return await client.pendingInteractive();
   }
   if (request.method === "runtime.status")
-    return await client.runtimeStatus?.();
+    return await client.runtimeStatus?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "history")
     return await client.history?.(request.value as never);
   if (request.method === "messages")
