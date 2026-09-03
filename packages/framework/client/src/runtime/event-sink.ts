@@ -230,22 +230,14 @@ export function createEventSink(
       );
       const last = niaMessages[niaMessages.length - 1];
       if (last) {
-        const id = `collab:nia-fallback:${event.messageID}`;
-        publishForSession(exec, {
-          type: "collab.message",
-          message: {
-            id,
-            threadID: id,
-            from: "nia",
-            to: "main_agent",
-            kind: "chat",
-            text: last.text,
-            round: 1,
-            expectsReply: false,
-            at: new Date().toISOString(),
-          },
+        // Wake Natalia with the audit result as an internal steering turn,
+        // without polluting the Navi Live Work Chat transcript.
+        const wakeID = `turn_nia_${event.messageID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
+        ctx.ports.scheduleInternalWake(exec, {
+          id: wakeID,
+          text: `(internal Nia audit result: ${last.text})`,
+          delivery: "steer",
         });
-        ctx.ports.wakeMainForCollaboration(exec, id, "nia audit");
         // Avoid the audit loop: when Nia reports the work is complete, mark the
         // active plan completed so Natalia's next reply does not re-wake Nia.
         const auditDone =
