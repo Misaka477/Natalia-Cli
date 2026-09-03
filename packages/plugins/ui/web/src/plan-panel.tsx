@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { marked } from "marked";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
 
@@ -12,6 +13,13 @@ type PlanRow = {
   updatedAt: string;
   markedAt?: string;
 };
+
+function MarkdownPreview(props: { content: string }) {
+  const html = createMemo(
+    () => marked.parse(props.content ?? "") as string,
+  );
+  return <div class="plan-panel-preview markdown-body" innerHTML={html()} />;
+}
 
 export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [selectedID, setSelectedID] = createSignal<string | undefined>();
@@ -247,7 +255,7 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
                   />
                 }
               >
-                <pre class="plan-panel-preview">{draft()}</pre>
+                <MarkdownPreview content={draft()} />
               </Show>
             </Show>
           </div>

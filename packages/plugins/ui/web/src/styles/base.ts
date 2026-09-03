@@ -1223,14 +1223,55 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px;
+  padding: 14px 16px;
   border-radius: 12px;
   background: var(--neu-bg-light);
   color: var(--neu-text);
   font-family: var(--neu-font-mono);
-  font-size: 12px;
-  line-height: 1.65;
-  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.plan-panel-preview.markdown-body h1,
+.plan-panel-preview.markdown-body h2,
+.plan-panel-preview.markdown-body h3,
+.plan-panel-preview.markdown-body h4 {
+  margin: 0.8em 0 0.4em;
+  line-height: 1.3;
+}
+.plan-panel-preview.markdown-body h1 { font-size: 1.4em; }
+.plan-panel-preview.markdown-body h2 { font-size: 1.25em; }
+.plan-panel-preview.markdown-body h3 { font-size: 1.1em; }
+.plan-panel-preview.markdown-body p { margin: 0.5em 0; }
+.plan-panel-preview.markdown-body ul,
+.plan-panel-preview.markdown-body ol { margin: 0.5em 0; padding-left: 1.4em; }
+.plan-panel-preview.markdown-body li { margin: 0.15em 0; }
+.plan-panel-preview.markdown-body code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--neu-bg);
+  font-family: var(--neu-font-mono);
+  font-size: 0.9em;
+}
+.plan-panel-preview.markdown-body pre {
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--neu-bg);
+  overflow: auto;
+}
+.plan-panel-preview.markdown-body blockquote {
+  margin: 0.6em 0;
+  padding: 0.2em 1em;
+  border-left: 3px solid var(--neu-accent);
+  color: var(--neu-muted);
+}
+.plan-panel-preview.markdown-body table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+}
+.plan-panel-preview.markdown-body th,
+.plan-panel-preview.markdown-body td {
+  padding: 4px 8px;
+  border: 1px solid var(--neu-divider);
 }
 .plan-panel-doc-meta {
   display: flex;
