@@ -39,15 +39,24 @@ export function createCoreSurface(
       // keeping the process alive after dispose.
       void ctx.ports.ensureReady();
     },
-    async submit(text) {
-      return await ctx.ports.submitInput({ text });
+    async submit(text, sessionID) {
+      return await ctx.ports.submitInput({
+        text,
+        ...(sessionID ? { sessionID } : {}),
+      });
     },
     async submitAndWait(input) {
-      const submitted = await ctx.ports.submitInput(
-        typeof input === "string" ? { text: input } : input,
+      const normalized =
+        typeof input === "string" ? { text: input } : input;
+      const submitted = await ctx.ports.submitInput(normalized);
+      const exec = ctx.ports
+        .getExecutionBySession()
+        .get((normalized.sessionID ?? ctx.ports.getSessionID()) as never);
+      await waitForTurnSettled(
+        submitted.id,
+        Boolean(exec?.activeTurnID),
+        normalized.sessionID,
       );
-      const exec = ctx.ports.getExecutionBySession().get(ctx.ports.getSessionID());
-      await waitForTurnSettled(submitted.id, Boolean(exec?.activeTurnID));
       return submitted;
     },
     cancel(reason = "user cancel") {
@@ -145,8 +154,12 @@ export function createCoreSurface(
     },
   };
 
-  async function waitForTurnSettled(id: string, activeAtSubmit: boolean) {
-    const sessionID = ctx.ports.getSessionID();
+  async function waitForTurnSettled(
+    id: string,
+    activeAtSubmit: boolean,
+    explicitSessionID?: string,
+  ) {
+    const sessionID = explicitSessionID ?? ctx.ports.getSessionID();
     let submittedIndex = -1;
     let started = false;
     while (!ctx.ports.isDisposed()) {

@@ -603,9 +603,9 @@ export function createWebRuntimeClient(
 
   const impl: RuntimeClient = {
     start,
-    async submit(text) {
-      console.log("[web-runtime] submit", text);
-      return (await call("prompt", { text })) as never;
+    async submit(text, sessionID) {
+      console.log("[web-runtime] submit", { text, sessionID });
+      return (await call("prompt", { text, ...(sessionID ? { sessionID } : {}) })) as never;
     },
     async submitInput(input) {
       console.log("[web-runtime] submitInput", input);

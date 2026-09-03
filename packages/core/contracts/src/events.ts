@@ -1281,6 +1281,8 @@ export type SubmitInput = {
   attachments?: string[];
   resources?: PromptResourceMention[];
   agents?: PromptAgentMention[];
+  /** Target a specific session. When omitted, the runtime uses the active UI session. */
+  sessionID?: string;
 };
 export type RuntimeHistoryEvent = { seq: number; event: RuntimeEvent };
 export type RuntimeHistory = {
@@ -1702,7 +1704,7 @@ export type RuntimeClient = {
     onEvent: (event: RuntimeEvent) => void,
     options?: { replay?: "all" | "none" },
   ): void;
-  submit(text: string): Promise<SubmittedTurn>;
+  submit(text: string, sessionID?: string): Promise<SubmittedTurn>;
   /**
    * Submit a turn and wait until the turn reaches a durable terminal state
    * (`turn.finished` or `turn.cancelled`). The normal `submit` method remains

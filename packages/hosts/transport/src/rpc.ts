@@ -552,6 +552,9 @@ export async function handleRPCMessage(
           ))
       )
         throw invalidParams("prompt.params.agents must be agent mentions");
+      const sessionID = request.params?.sessionID;
+      if (sessionID !== undefined && typeof sessionID !== "string")
+        throw invalidParams("prompt.params.sessionID must be a string");
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
@@ -566,19 +569,25 @@ export async function handleRPCMessage(
               agents: agents as
                 | import("@natalia/contracts").PromptAgentMention[]
                 | undefined,
+              ...(sessionID ? { sessionID } : {}),
             })
-          : await client.submit(text),
+          : await client.submit(text, sessionID),
       };
     }
     if (request.method === "submit.andWait") {
       const text = request.params?.text;
       if (typeof text !== "string")
         throw invalidParams("submit.andWait.params.text must be a string");
+      const sessionID = request.params?.sessionID;
+      if (sessionID !== undefined && typeof sessionID !== "string")
+        throw invalidParams("submit.andWait.params.sessionID must be a string");
       optionsGuard(client, "submitAndWait");
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
-        result: await client.submitAndWait(text),
+        result: await client.submitAndWait(
+          sessionID ? { text, sessionID } : text,
+        ),
       };
     }
     if (request.method === "cancel") {
