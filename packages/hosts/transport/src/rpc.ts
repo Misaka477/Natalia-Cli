@@ -1643,7 +1643,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.constitutionRules(),
+        result: await client.constitutionRules?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "decision.records") {
@@ -1651,7 +1653,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.decisionRecords(),
+        result: await client.decisionRecords?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "decision.record") {
@@ -1663,29 +1667,32 @@ export async function handleRPCMessage(
         params.decision.trim().length === 0
       )
         throw invalidParams("decision.record requires a decision string");
-      const result = await client.recordDecision?.({
-        decision: params.decision,
-        ...(Array.isArray(params.rationale)
-          ? { rationale: params.rationale.map(String) }
-          : {}),
-        ...(Array.isArray(params.alternatives)
-          ? {
-              alternatives: params.alternatives as {
-                option: string;
-                rejectedReason?: string;
-              }[],
-            }
-          : {}),
-        ...(Array.isArray(params.consequences)
-          ? { consequences: params.consequences.map(String) }
-          : {}),
-        ...(Array.isArray(params.linkedPlans)
-          ? { linkedPlans: params.linkedPlans.map(String) }
-          : {}),
-        ...(Array.isArray(params.linkedConstraints)
-          ? { linkedConstraints: params.linkedConstraints.map(String) }
-          : {}),
-      });
+      const result = await client.recordDecision?.(
+        {
+          decision: params.decision,
+          ...(Array.isArray(params.rationale)
+            ? { rationale: params.rationale.map(String) }
+            : {}),
+          ...(Array.isArray(params.alternatives)
+            ? {
+                alternatives: params.alternatives as {
+                  option: string;
+                  rejectedReason?: string;
+                }[],
+              }
+            : {}),
+          ...(Array.isArray(params.consequences)
+            ? { consequences: params.consequences.map(String) }
+            : {}),
+          ...(Array.isArray(params.linkedPlans)
+            ? { linkedPlans: params.linkedPlans.map(String) }
+            : {}),
+          ...(Array.isArray(params.linkedConstraints)
+            ? { linkedConstraints: params.linkedConstraints.map(String) }
+            : {}),
+        },
+        optionalStringParam(body.params, "sessionID"),
+      );
       if (!result)
         throw invalidParams(
           "decision.record is not implemented by this runtime",
@@ -1701,7 +1708,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.evidenceRecords(),
+        result: await client.evidenceRecords?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "evidence.record") {
@@ -1717,17 +1726,20 @@ export async function handleRPCMessage(
         throw invalidParams(
           "evidence.record requires a taskID and a command string",
         );
-      const result = await client.recordValidation?.({
-        taskID: params.taskID,
-        objective: typeof params.objective === "string" ? params.objective : "",
-        command: params.command,
-        ...(typeof params.timeoutSec === "number"
-          ? { timeoutSec: params.timeoutSec }
-          : {}),
-        ...(Array.isArray(params.knownGaps)
-          ? { knownGaps: params.knownGaps.map(String) }
-          : {}),
-      });
+      const result = await client.recordValidation?.(
+        {
+          taskID: params.taskID,
+          objective: typeof params.objective === "string" ? params.objective : "",
+          command: params.command,
+          ...(typeof params.timeoutSec === "number"
+            ? { timeoutSec: params.timeoutSec }
+            : {}),
+          ...(Array.isArray(params.knownGaps)
+            ? { knownGaps: params.knownGaps.map(String) }
+            : {}),
+        },
+        optionalStringParam(body.params, "sessionID"),
+      );
       if (!result)
         throw invalidParams(
           "evidence.record is not implemented by this runtime",
@@ -1761,41 +1773,44 @@ export async function handleRPCMessage(
         throw invalidParams(
           "completion.record requires a taskID and a changeSummary string",
         );
-      const result = await client.recordCompletion?.({
-        taskID: params.taskID,
-        objective: typeof params.objective === "string" ? params.objective : "",
-        changeSummary: params.changeSummary,
-        ...(typeof params.behaviorImpact === "string"
-          ? { behaviorImpact: params.behaviorImpact }
-          : {}),
-        ...(Array.isArray(params.validations)
-          ? { validations: params.validations }
-          : {}),
-        ...(typeof params.humanValidation === "string"
-          ? { humanValidation: params.humanValidation }
-          : {}),
-        ...(Array.isArray(params.knownGaps)
-          ? { knownGaps: params.knownGaps.map(String) }
-          : {}),
-        ...(Array.isArray(params.externalSideEffects)
-          ? { externalSideEffects: params.externalSideEffects.map(String) }
-          : {}),
-        ...(typeof params.rollbackState === "string"
-          ? {
-              rollbackState: params.rollbackState as
-                | "clean"
-                | "available"
-                | "none"
-                | "needs_promotion",
-            }
-          : {}),
-        ...(Array.isArray(params.evidenceIDs)
-          ? { evidenceIDs: params.evidenceIDs.map(String) }
-          : {}),
-        ...(Array.isArray(params.changePaths)
-          ? { changePaths: params.changePaths.map(String) }
-          : {}),
-      });
+      const result = await client.recordCompletion?.(
+        {
+          taskID: params.taskID,
+          objective: typeof params.objective === "string" ? params.objective : "",
+          changeSummary: params.changeSummary,
+          ...(typeof params.behaviorImpact === "string"
+            ? { behaviorImpact: params.behaviorImpact }
+            : {}),
+          ...(Array.isArray(params.validations)
+            ? { validations: params.validations }
+            : {}),
+          ...(typeof params.humanValidation === "string"
+            ? { humanValidation: params.humanValidation }
+            : {}),
+          ...(Array.isArray(params.knownGaps)
+            ? { knownGaps: params.knownGaps.map(String) }
+            : {}),
+          ...(Array.isArray(params.externalSideEffects)
+            ? { externalSideEffects: params.externalSideEffects.map(String) }
+            : {}),
+          ...(typeof params.rollbackState === "string"
+            ? {
+                rollbackState: params.rollbackState as
+                  | "clean"
+                  | "available"
+                  | "none"
+                  | "needs_promotion",
+              }
+            : {}),
+          ...(Array.isArray(params.evidenceIDs)
+            ? { evidenceIDs: params.evidenceIDs.map(String) }
+            : {}),
+          ...(Array.isArray(params.changePaths)
+            ? { changePaths: params.changePaths.map(String) }
+            : {}),
+        },
+        optionalStringParam(body.params, "sessionID"),
+      );
       if (!result)
         throw invalidParams(
           "completion.record is not implemented by this runtime",
@@ -1811,7 +1826,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.driftFindings(),
+        result: await client.driftFindings?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "drift.evaluate") {
@@ -1827,17 +1844,20 @@ export async function handleRPCMessage(
         throw invalidParams(
           "drift.evaluate requires an objective and a currentActivity string",
         );
-      const result = await client.evaluateDrift?.({
-        objective: params.objective,
-        currentActivity: params.currentActivity,
-        ...(Array.isArray(params.applicableConstraints)
-          ? { applicableConstraints: params.applicableConstraints.map(String) }
-          : {}),
-        ...(Array.isArray(params.changes) ? { changes: params.changes } : {}),
-        ...(Array.isArray(params.evidenceRefs)
-          ? { evidenceRefs: params.evidenceRefs.map(String) }
-          : {}),
-      });
+      const result = await client.evaluateDrift?.(
+        {
+          objective: params.objective,
+          currentActivity: params.currentActivity,
+          ...(Array.isArray(params.applicableConstraints)
+            ? { applicableConstraints: params.applicableConstraints.map(String) }
+            : {}),
+          ...(Array.isArray(params.changes) ? { changes: params.changes } : {}),
+          ...(Array.isArray(params.evidenceRefs)
+            ? { evidenceRefs: params.evidenceRefs.map(String) }
+            : {}),
+        },
+        optionalStringParam(body.params, "sessionID"),
+      );
       if (!result)
         throw invalidParams(
           "drift.evaluate is not implemented by this runtime",
@@ -1860,13 +1880,16 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.acknowledgeDriftFinding?.({
-          findingID: params.findingID,
-          status: params.status as "explained" | "dismissed" | "corrected",
-          ...(typeof params.rationale === "string"
-            ? { rationale: params.rationale }
-            : {}),
-        }),
+        result: await client.acknowledgeDriftFinding?.(
+          {
+            findingID: params.findingID,
+            status: params.status as "explained" | "dismissed" | "corrected",
+            ...(typeof params.rationale === "string"
+              ? { rationale: params.rationale }
+              : {}),
+          },
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "observation.confirmed") {
@@ -1919,7 +1942,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.registeredTools(),
+        result: await client.registeredTools?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "projections.list") {
@@ -1940,7 +1965,8 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.requestOverride({
+        result: await client.requestOverride?.(
+          {
           ruleID: params.ruleID,
           reason: params.reason,
           ...(Array.isArray(params.paths)
@@ -1956,7 +1982,9 @@ export async function handleRPCMessage(
           ...(typeof params.expiresAt === "string"
             ? { expiresAt: params.expiresAt }
             : {}),
-        }),
+          },
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "constitution.override.approve") {
