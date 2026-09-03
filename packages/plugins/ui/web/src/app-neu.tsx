@@ -186,8 +186,36 @@ function SessionTree(props: {
     }));
   });
 
+  const runningSessions = createMemo(() =>
+    props.sessions
+      .map((session) => ({
+        id: session.id,
+        name: session.title,
+        status: session.status ?? (session.cancelled ? "error" : session.resumable ? "idle" : "running"),
+        archived: Boolean(session.archived),
+      }))
+      .filter((session) => session.status === "running"),
+  );
+
   return (
     <div class="neu-tree">
+      <Show when={runningSessions().length > 0}>
+        <div class="neu-workspace-row">
+          <span class="neu-workspace-name">并行会话</span>
+          <span class="neu-count">{runningSessions().length}</span>
+        </div>
+        <For each={runningSessions()}>
+          {(session) => (
+            <TreeRow
+              label={session.name}
+              selected={props.selected === session.id}
+              status={session.status}
+              depth={0}
+              onClick={() => props.onSelect(session.id, session.name)}
+            />
+          )}
+        </For>
+      </Show>
       <For each={groups()}>
         {(group) => (
           <>
