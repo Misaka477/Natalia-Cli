@@ -946,8 +946,16 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         path: input.path,
         title: input.title,
       }),
-    planDocDelete: async (planID) => await call("planDoc.delete", { planID }),
-    planDocStatus: async (planID) => await call("planDoc.status", { planID }),
+    planDocDelete: async (planID, sessionID) =>
+      await call("planDoc.delete", {
+        planID,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    planDocStatus: async (planID, sessionID) =>
+      await call("planDoc.status", {
+        planID,
+        ...(sessionID ? { sessionID } : {}),
+      }),
     planDocUpdateStatus: async (input) =>
       await call("planDoc.updateStatus", {
         planID: input.planID,
