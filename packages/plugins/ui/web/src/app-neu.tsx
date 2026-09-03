@@ -1718,7 +1718,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const tabs: { id: RightTab; label: string }[] = [
       { id: "diff", label: "审阅 / Diff" },
       { id: "plan", label: "计划" },
-      { id: "nia", label: "Nia" },
       { id: "todo", label: "待办" },
       { id: "agent", label: "协同" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
@@ -1766,6 +1765,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     layoutMode() === "wide" ||
     (layoutMode() === "compact" && !leftVisible() && !rightVisible()) ||
     (layoutMode() === "tiny" && naviOpen() && !leftVisible() && !rightVisible());
+  const niaVisible = () => layoutMode() === "wide";
 
   let leftSidebarWasVisible = true;
   createEffect(() => {
@@ -2437,6 +2437,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             </div>
           </div>
           </Show>
+
+          <Show when={niaVisible()}>
+            <NiaPanel state={state()} runtime={props.ctx.runtime} />
+          </Show>
         </div>
       </section>
 
@@ -2474,9 +2478,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </Show>
               <Show when={rightTab() === "plan"}>
                 <PlanPanel state={state()} runtime={props.ctx.runtime} />
-              </Show>
-              <Show when={rightTab() === "nia"}>
-                <NiaPanel state={state()} runtime={props.ctx.runtime} />
               </Show>
               <Show when={rightTab() === "todo"}>
                 <TodoPanel state={state()} />
