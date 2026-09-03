@@ -131,6 +131,11 @@ export function createNativeTerminalSurface(
       const owner = ctx.ports.getActiveExec();
       const sessionID = input.sessionID ?? owner?.session.id;
       if (!sessionID) throw new RuntimeRefusal("session is not initialized");
+      if (
+        input.sessionID &&
+        !ctx.ports.getExecutionBySession().get(input.sessionID as import("@natalia/contracts").SessionID)
+      )
+        throw new RuntimeRefusal(`session not found: ${input.sessionID}`);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
