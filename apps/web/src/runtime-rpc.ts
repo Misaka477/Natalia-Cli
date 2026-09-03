@@ -234,12 +234,8 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   mailboxAcknowledge: ["messageID"],
   mailboxDefer: ["messageID"],
   mailboxSupersede: ["messageID"],
-  planDocRead: ["input"],
-  planDocWrite: ["input"],
-  planDocMark: ["input"],
   planDocDelete: ["planID"],
   planDocStatus: ["planID"],
-  planDocUpdateStatus: ["input"],
 };
 
 function buildParams(member: string, args: unknown[]) {
