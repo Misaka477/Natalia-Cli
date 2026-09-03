@@ -58,6 +58,19 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
             event.status,
           )
         ) {
+          // Terminal tool.update events are durable, while queued/running
+          // markers are live. If the initial call marker is not in the replay
+          // set, reconstruct a tool_call from the terminal event so the
+          // provider still sees the call/result pair.
+          if (!recordedCalls.has(event.callID)) {
+            recordedCalls.add(event.callID);
+            context.add({
+              id: `restore:${event.id}:call`,
+              role: "tool_call",
+              content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
+              pairID: event.callID,
+            });
+          }
           recordedResults.add(event.callID);
           context.add({
             id: `restore:${event.id}:result`,

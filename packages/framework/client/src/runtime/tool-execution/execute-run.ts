@@ -129,6 +129,7 @@ export async function runExecuteStage(
         status: "rejected",
         summary: refusal.reason,
         result: refusal.reason,
+        argumentsDelta: call.arguments,
         endedAt: Date.now(),
       });
       publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
@@ -320,6 +321,7 @@ export async function runExecuteStage(
       status: "succeeded",
       summary: result.slice(0, 200),
       result,
+      argumentsDelta: call.arguments,
       metadata: {
         ...(bounded.outputPath ? { outputPath: bounded.outputPath } : {}),
         ...(projectedRender ? { render: projectedRender } : {}),
@@ -394,6 +396,7 @@ export async function runExecuteStage(
       status: "failed",
       summary: message,
       result: message,
+      argumentsDelta: call.arguments,
       endedAt: Date.now(),
     });
     // A failed call is as much a fact as a successful one; the error text stays
