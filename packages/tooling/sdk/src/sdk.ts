@@ -437,10 +437,12 @@ export type NataliaSDK = {
   /** Marks a queued mailbox message delivered at a safe boundary. */
   mailboxDeliver(
     messageID: string,
+    sessionID?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mailboxDeliver"]>>>>;
   /** Acknowledges a delivered mailbox message. */
   mailboxAcknowledge(
     messageID: string,
+    sessionID?: string,
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxAcknowledge"]>>>
   >;
@@ -448,11 +450,13 @@ export type NataliaSDK = {
   mailboxDefer(
     messageID: string,
     reason?: string,
+    sessionID?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mailboxDefer"]>>>>;
   /** Supersedes a queued mailbox message with a safe reason. */
   mailboxSupersede(
     messageID: string,
     reason?: string,
+    sessionID?: string,
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSupersede"]>>>
   >;
@@ -896,14 +900,28 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         relatedPlanID: input.relatedPlanID,
         deliveryPolicy: input.deliveryPolicy,
       }),
-    mailboxDeliver: async (messageID) =>
-      await call("mailbox.deliver", { messageID }),
-    mailboxAcknowledge: async (messageID) =>
-      await call("mailbox.acknowledge", { messageID }),
-    mailboxDefer: async (messageID, reason) =>
-      await call("mailbox.defer", { messageID, reason }),
-    mailboxSupersede: async (messageID, reason) =>
-      await call("mailbox.supersede", { messageID, reason }),
+    mailboxDeliver: async (messageID, sessionID) =>
+      await call("mailbox.deliver", {
+        messageID,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    mailboxAcknowledge: async (messageID, sessionID) =>
+      await call("mailbox.acknowledge", {
+        messageID,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    mailboxDefer: async (messageID, reason, sessionID) =>
+      await call("mailbox.defer", {
+        messageID,
+        reason,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    mailboxSupersede: async (messageID, reason, sessionID) =>
+      await call("mailbox.supersede", {
+        messageID,
+        reason,
+        ...(sessionID ? { sessionID } : {}),
+      }),
     planDocList: async (sessionID) =>
       await call("planDoc.list", sessionID ? { sessionID } : {}),
     planDocRead: async (input) =>
