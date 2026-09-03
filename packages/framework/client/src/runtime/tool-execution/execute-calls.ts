@@ -87,8 +87,10 @@ export function createExecuteCalls(
     );
     if (!workLedgerController)
       throw new Error("work ledger unavailable (natalia-work-ledger)");
-    const activeExec = getActiveExec();
-    const exec = executionForTurn(turnID) ?? activeExec;
+    const sessionID = ctx.ports.getSessionID();
+    const exec =
+      executionForTurn(turnID) ??
+      ctx.ports.getExecutionBySession().get(sessionID as never);
     if (!exec) return undefined;
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const rules = projectedConstitutionRules(exec.session.events);
@@ -260,9 +262,9 @@ export function createExecuteCalls(
       mediaType: "application/pdf";
       dataURL: string;
     }> = [];
-    const exec =
-      executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
-      activeExec;
+    const exec = executionBySession.get(turnSession.get(turnID) ?? sessionID);
+    if (!exec)
+      throw new Error(`no execution state for turn ${turnID}`);
     const attachImage = currentModelImageInput(exec)
       ? async (path: string) => {
           const mediaType = mediaTypeForImage(path);
