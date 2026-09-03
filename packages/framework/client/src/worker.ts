@@ -574,8 +574,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["gitRefs"]>>
       >;
     },
-    async teamPRList() {
-      return (await request("team.pr.list")) as Awaited<
+    async teamPRList(sessionID) {
+      return (await request("team.pr.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["teamPRList"]>>
       >;
     },
@@ -780,8 +780,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
       >;
     },
-    async subagents() {
-      return (await request("session.subagents")) as Awaited<
+    async subagents(sessionID) {
+      return (await request("session.subagents", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["subagents"]>>
       >;
     },
@@ -1085,7 +1085,9 @@ export async function handleWorkerRequest(
   if (request.method === "git.refs")
     return await client.gitRefs?.();
   if (request.method === "team.pr.list")
-    return await client.teamPRList?.();
+    return await client.teamPRList?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "checkpoint.preview") {
     const value = request.value as { id: string; sessionID?: string };
     return await client.checkpointPreview?.(value.id, value.sessionID);
@@ -1234,7 +1236,9 @@ export async function handleWorkerRequest(
     return await client.chatMessages?.(value?.channel, value?.sessionID);
   }
   if (request.method === "session.subagents")
-    return await client.subagents?.();
+    return await client.subagents?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "subagent.history")
     return await client.subagentHistory?.(request.value as never);
   if (request.method === "attachment.upload")

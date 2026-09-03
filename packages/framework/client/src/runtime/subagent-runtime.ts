@@ -19,19 +19,20 @@ export function createSubagentRuntime(
   ctx: RuntimeContext,
 ): Pick<RuntimeServiceClient, "subagents" | "subagentHistory"> {
   return {
-    async subagents(): Promise<RuntimeSubagentView[]> {
+    async subagents(sessionID?: string): Promise<RuntimeSubagentView[]> {
       await ctx.ports.getReady();
       const subagents =
         ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
       if (!subagents?.enabled()) return [];
-      const activeSessionID = ctx.ports.getActiveExec()?.session.id;
+      const ownerSessionID =
+        sessionID ?? ctx.ports.getActiveExec()?.session.id;
       return subagents
         .list()
         .filter(
           (record) =>
-            !activeSessionID ||
+            !ownerSessionID ||
             !record.parentSessionID ||
-            record.parentSessionID === activeSessionID,
+            record.parentSessionID === ownerSessionID,
         )
         .map((record) => toSubagentView(record, subagents));
     },

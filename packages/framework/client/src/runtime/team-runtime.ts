@@ -13,20 +13,21 @@ export function createTeamRuntime(ctx: RuntimeContext) {
     teamPRList,
   };
 
-  async function teamPRList(): Promise<RuntimeTeamPR[]> {
+  async function teamPRList(sessionID?: string): Promise<RuntimeTeamPR[]> {
     await ctx.ports.getReady();
     const subagents =
       ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
     const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
-    const activeSessionID = ctx.ports.getActiveExec()?.session.id;
+    const ownerSessionID =
+      sessionID ?? ctx.ports.getActiveExec()?.session.id;
     if (!subagents?.enabled()) return [];
     const prs: RuntimeTeamPR[] = [];
     for (const record of subagents.list()) {
       if (record.mode !== "sandbox") continue;
       if (
-        activeSessionID &&
+        ownerSessionID &&
         record.parentSessionID &&
-        record.parentSessionID !== activeSessionID
+        record.parentSessionID !== ownerSessionID
       )
         continue;
       const diff =

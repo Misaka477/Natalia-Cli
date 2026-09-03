@@ -1795,7 +1795,7 @@ export type RuntimeClient = {
    * Merging/approval remains model-driven through `team_review`; this surface
    * only lets a UI observe the PR queue.
    */
-  teamPRList?(): Promise<RuntimeTeamPR[]>;
+  teamPRList?(sessionID?: string): Promise<RuntimeTeamPR[]>;
   dispose?(): Promise<void>;
   /**
    * Whether config could be applied right now. Advisory only: a turn can start
@@ -2583,7 +2583,7 @@ export type RuntimeClient = {
    * records in its own persistent registry, so this is a lazy read surface; it
    * does not require replaying the full session event log.
    */
-  subagents?(): Promise<RuntimeSubagentView[]>;
+  subagents?(sessionID?: string): Promise<RuntimeSubagentView[]>;
   subagentHistory?(sessionID?: string): Promise<RuntimeSubagentView[]>;
   /**
    * Rolls the Chat conversation back to a message boundary — the only rollback

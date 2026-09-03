@@ -1905,7 +1905,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.teamPRList?.(),
+        result: await client.teamPRList?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "tools.registered") {
@@ -2243,7 +2245,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.subagents?.(),
+        result: await client.subagents?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "subagent.history") {

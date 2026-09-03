@@ -180,6 +180,8 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   checkpointPreview: ["id", "sessionID"],
   checkpointRename: ["id", "name", "sessionID"],
   subagentHistory: ["sessionID"],
+  subagents: ["sessionID"],
+  teamPRList: ["sessionID"],
   sessionTouch: ["id"],
   sessionRename: ["id", "title"],
   sessionPin: ["id", "pinned"],
