@@ -69,8 +69,8 @@ export function createLifecycleSurface(
           CheckpointFactory & { close?(): void }
         >(CHECKPOINT_FACTORY_SERVICE)
         ?.close?.();
-      ctx.state.frameworkServices?.close();
       await ctx.ports.getPluginsController().close();
+      ctx.state.frameworkServices?.close();
       await ctx.ports.getPerformanceTrace().stop();
     },
     async canReloadConfig() {
