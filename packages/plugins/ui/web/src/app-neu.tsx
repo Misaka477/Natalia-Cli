@@ -95,6 +95,9 @@ function TreeRow(props: {
         fallback={
           <>
             <span class="neu-tree-label">{props.label}</span>
+            {props.status === "running" ? (
+              <span class="neu-badge neu-badge-running">并行中</span>
+            ) : null}
             {props.badge ? <span class="neu-badge">{props.badge}</span> : null}
             <Show when={!props.bulkMode && props.onAction}>
               <button
