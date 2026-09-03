@@ -218,25 +218,27 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
         </span>
       </div>
       <div class="neu-pane-content">
-        <Transcript
-          messages={messages()}
-          emptyTitle="向 Nia 提问"
-          emptyHint="Nia 用于审计，只读、不写代码、不写 Plan。"
-          assistantName="Nia"
-          assistantInitial="N"
-          scrollRef={setNiaTranscriptEl}
-          onScroll={handleNiaScroll}
-        />
-        <Show when={niaShowJumpToBottom()}>
-          <button
-            type="button"
-            class="neu-jump-bottom"
-            onClick={jumpNiaToBottom}
-            title="跳到底部"
-          >
-            ↓
-          </button>
-        </Show>
+        <div class="nia-transcript-wrap">
+          <Transcript
+            messages={messages()}
+            emptyTitle="向 Nia 提问"
+            emptyHint="Nia 用于审计，只读、不写代码、不写 Plan。"
+            assistantName="Nia"
+            assistantInitial="N"
+            scrollRef={setNiaTranscriptEl}
+            onScroll={handleNiaScroll}
+          />
+          <Show when={niaShowJumpToBottom()}>
+            <button
+              type="button"
+              class="neu-jump-bottom"
+              onClick={jumpNiaToBottom}
+              title="跳到底部"
+            >
+              ↓
+            </button>
+          </Show>
+        </div>
         <Show when={active()}>
           <div class="neu-activity-bar" data-running={true}>
             <span class="neu-activity-pulse" />

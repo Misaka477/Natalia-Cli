@@ -1042,6 +1042,17 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   box-shadow: none;
   padding: 0 12px 12px;
 }
+.nia-transcript-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.nia-transcript-wrap .neu-jump-bottom {
+  bottom: 16px;
+  right: 16px;
+}
 
 .review-empty {
   flex: 1;
