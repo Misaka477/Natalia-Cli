@@ -1351,6 +1351,7 @@ export type ContributedCommandExecution = {
   name: string;
   raw: string;
   args: string[];
+  sessionID?: string;
 };
 
 /** Host-owned runtime ports exposed to a mounted UI adapter. */

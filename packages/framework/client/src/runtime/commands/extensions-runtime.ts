@@ -51,7 +51,10 @@ export function createExtensionsRuntime(ctx: RuntimeContext): Surface {
       const expected = `/${input.name}`;
       if (raw !== expected && !raw.startsWith(`${expected} `))
         throw new Error(`command input does not match ${expected}`);
-      await ctx.ports.submitInput({ text: raw });
+      await ctx.ports.submitInput({
+        text: raw,
+        ...(input.sessionID ? { sessionID: input.sessionID } : {}),
+      });
     },
     async pluginUnload(id) {
       await ctx.ports.getReady();
