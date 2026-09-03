@@ -19,6 +19,7 @@ import { BrowserPanel } from "./browser-panel";
 import { TodoPanel } from "./todo-panel";
 import { PlanPanel } from "./plan-panel";
 import { NiaPanel } from "./nia-panel";
+import { ParallelSessionsPanel } from "./parallel-sessions-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { NeuSelect } from "./components/NeuSelect";
@@ -33,7 +34,7 @@ import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
-type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "browser" | "agent" | "todo";
+type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "browser" | "agent" | "todo" | "sessions";
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -1758,6 +1759,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       { id: "nia", label: "Nia" },
       { id: "todo", label: "待办" },
       { id: "agent", label: "协同" },
+      { id: "sessions", label: "会话" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
       ...(browserPanel() ? [{ id: "browser" as RightTab, label: "浏览器" }] : []),
@@ -2507,6 +2509,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </For>
             </div>
             <div class="neu-secondary-content">
+              <Show when={rightTab() === "sessions"}>
+                <ParallelSessionsPanel
+                  sessions={sessionList()}
+                  selectedSessionID={selectedSessionID() || state().sessionID}
+                  onSelect={(id, name) => {
+                    userSelectedSession = true;
+                    setSelectedSessionID(id);
+                    setSelectedSession(name);
+                    void props.ctx.runtime
+                      .sessionAttach?.(id)
+                      .then(() => refreshSessions());
+                  }}
+                />
+              </Show>
               <Show when={rightTab() === "diff"}>
                 <ReviewPane
                   runtime={props.ctx.runtime}
