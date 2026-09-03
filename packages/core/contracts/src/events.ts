@@ -1849,7 +1849,7 @@ export type RuntimeClient = {
    * made the RPC reply claim `paused: true` in every case, including when the
    * runtime had done nothing at all.
    */
-  pause?(reason?: string): PauseOutcome | Promise<PauseOutcome>;
+  pause?(reason?: string, sessionID?: string): PauseOutcome | Promise<PauseOutcome>;
   /** Resumes a paused turn. Refusal is a value, as with `pause`. */
   resume?(): ResumeOutcome | Promise<ResumeOutcome>;
   /**

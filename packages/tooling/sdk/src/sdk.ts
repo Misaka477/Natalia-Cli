@@ -34,8 +34,8 @@ export type NataliaSDK = {
    * deferred until the current turn ends are all ordinary answers, and a caller
    * that cannot see them will render the wrong thing.
    */
-  pause(reason?: string): Promise<import("@natalia/contracts").PauseOutcome>;
-  resume(): Promise<import("@natalia/contracts").ResumeOutcome>;
+  pause(reason?: string, sessionID?: string): Promise<import("@natalia/contracts").PauseOutcome>;
+  resume(sessionID?: string): Promise<import("@natalia/contracts").ResumeOutcome>;
   selectAgent(
     name?: string,
   ): Promise<import("@natalia/contracts").AgentSelectionOutcome>;
@@ -687,8 +687,13 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     cancel: async (reason) => {
       await call("cancel", reason ? { reason } : {});
     },
-    pause: async (reason) => await call("pause", reason ? { reason } : {}),
-    resume: async () => await call("resume", {}),
+    pause: async (reason, sessionID) =>
+      await call("pause", {
+        ...(reason ? { reason } : {}),
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    resume: async (sessionID) =>
+      await call("resume", sessionID ? { sessionID } : {}),
     selectAgent: async (name) =>
       await call("agent.select", name === undefined ? {} : { name }),
     agents: async () => await call("agent.list", {}),

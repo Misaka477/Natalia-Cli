@@ -236,6 +236,8 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   permissionSave: ["name", "profile"],
   mcpServerAdd: ["name", "config"],
   commandExecute: ["command", "args"],
+  pause: ["reason", "sessionID"],
+  resume: ["sessionID"],
   recordDecision: ["decision"],
   recordValidation: ["evidence"],
   recordCompletion: ["completion"],

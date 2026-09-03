@@ -836,13 +836,13 @@ export function createWorkerRuntimeClient(
     // A round trip rather than a notification: these answer whether the runtime
     // actually paused, and a channel that cannot see the answer would have to
     // make one up.
-    async pause(reason) {
-      return (await request("pause", reason)) as Awaited<
+    async pause(reason, sessionID) {
+      return (await request("pause", { reason, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["pause"]>>
       >;
     },
-    async resume() {
-      return (await request("resume")) as Awaited<
+    async resume(sessionID) {
+      return (await request("resume", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["resume"]>>
       >;
     },
@@ -1113,11 +1113,17 @@ export async function handleWorkerRequest(
       typeof value === "string" ? undefined : value?.sessionID,
     );
   }
-  if (request.method === "pause")
+  if (request.method === "pause") {
+    const value = request.value as { reason?: string; sessionID?: string } | string | undefined;
     return client.pause?.(
-      typeof request.value === "string" ? request.value : undefined,
+      typeof value === "string" ? value : value?.reason,
+      typeof value === "string" ? undefined : value?.sessionID,
     );
-  if (request.method === "resume") return client.resume?.();
+  }
+  if (request.method === "resume") {
+    const value = request.value as { sessionID?: string } | undefined;
+    return client.resume?.(value?.sessionID);
+  }
   if (request.method === "snapshot") return client.snapshot();
   if (request.method === "diagnostic") {
     const input = request.value as { message?: unknown; level?: unknown };

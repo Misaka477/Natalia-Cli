@@ -7,29 +7,33 @@ export function createTurnControlSurface(
   options: ClientSurfaceOptions,
 ): Surface {
   return {
-    pause(reason = "user pause") {
+    pause(reason = "user pause", sessionID?) {
       // Refusing is a value: a caller that gets `paused: true` when nothing was
       // paused has been told the turn is held when it is not.
-      const exec = ctx.ports.getActiveExec();
+      const exec = sessionID
+        ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
+        : ctx.ports.getActiveExec();
       if (!exec?.lastSubmitted)
         return { paused: false, reason: "no turn has been submitted" };
       if (exec.paused) return { paused: true, reason: "already paused" };
       exec.paused = true;
       ctx.ports.setPaused(true);
-      ctx.ports.publish({
+      ctx.ports.publishForSession(exec, {
         type: "turn.paused",
         id: exec.lastSubmitted.id,
         reason,
       });
-      ctx.ports.publish({
+      ctx.ports.publishForSession(exec, {
         type: "status.update",
         status: "paused",
         detail: reason,
       });
       return { paused: true };
     },
-    resume() {
-      const exec = ctx.ports.getActiveExec();
+    resume(sessionID?) {
+      const exec = sessionID
+        ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
+        : ctx.ports.getActiveExec();
       if (!exec?.lastSubmitted)
         return { resumed: false, reason: "no turn has been submitted" };
       if (!exec.paused)
@@ -39,8 +43,8 @@ export function createTurnControlSurface(
       const waiters = exec.pauseWaiters;
       exec.pauseWaiters = [];
       for (const resolveWaiter of waiters) resolveWaiter();
-      ctx.ports.publish({ type: "turn.resumed", id: exec.lastSubmitted.id });
-      ctx.ports.publish({
+      ctx.ports.publishForSession(exec, { type: "turn.resumed", id: exec.lastSubmitted.id });
+      ctx.ports.publishForSession(exec, {
         type: "status.update",
         status: "running",
         detail: "resumed",

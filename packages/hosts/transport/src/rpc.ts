@@ -617,6 +617,7 @@ export async function handleRPCMessage(
           typeof body.params?.reason === "string"
             ? body.params.reason
             : undefined,
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }
@@ -625,7 +626,7 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.resume(),
+        result: await client.resume?.(optionalStringParam(body.params, "sessionID")),
       };
     }
     if (body.method === "agent.select") {
