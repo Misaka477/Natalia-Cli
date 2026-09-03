@@ -6649,6 +6649,21 @@ test("restart projects unresolved interactive requests from durable events", asy
     approvals: [],
     questions: [],
   });
+  await waitForAsync(async () => {
+    const history = await client.history!({ limit: 500 });
+    return (
+      history.events.some(
+        (entry) =>
+          entry.event.type === "approval.response" &&
+          entry.event.id === "approval_open",
+      ) &&
+      history.events.some(
+        (entry) =>
+          entry.event.type === "question.response" &&
+          entry.event.id === "question_open",
+      )
+    );
+  });
   const history = await client.history!({ limit: 500 });
   expect(
     history.events.filter(
