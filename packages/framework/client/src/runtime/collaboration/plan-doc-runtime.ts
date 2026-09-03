@@ -224,12 +224,18 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       if (!entries[planID]) return { deleted: false };
       delete entries[planID];
       await writeIndex(ctx, entries);
-      publish({
-        type: "plan.doc.deleted",
-        id: `${planID}:deleted:${ctx.ports.nextPlanSequence()}`,
-        planID,
-        deletedAt: new Date().toISOString(),
-      });
+      try {
+        publish({
+          type: "plan.doc.deleted",
+          id: `${planID}:deleted:${ctx.ports.nextPlanSequence()}`,
+          planID,
+          deletedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        // Deletion from the registry already succeeded; a projection event
+        // failure should not make the RPC call look like it failed.
+        console.warn("[plan-doc] delete event publish failed", error);
+      }
       return { deleted: true };
     },
 

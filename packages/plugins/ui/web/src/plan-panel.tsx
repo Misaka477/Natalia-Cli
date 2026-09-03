@@ -170,14 +170,14 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
         />
         <button
           type="button"
-          class="review-checkpoint-rename-btn"
+          class="plan-panel-btn"
           onClick={() => void markPlan()}
         >
           标记为 Plan
         </button>
         <button
           type="button"
-          class="review-checkpoint-rename-btn"
+          class="plan-panel-btn"
           onClick={() => void newPlan()}
         >
           新建
@@ -222,7 +222,7 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
               <div class="plan-panel-doc-buttons">
                 <button
                   type="button"
-                  class="review-checkpoint-rename-btn"
+                  class="plan-panel-btn"
                   onClick={() => void saveSelected()}
                   disabled={saving()}
                 >
@@ -230,14 +230,14 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
                 </button>
                 <button
                   type="button"
-                  class="review-checkpoint-rename-btn"
+                  class="plan-panel-btn"
                   onClick={() => setPreview(!preview())}
                 >
                   {preview() ? "编辑" : "预览"}
                 </button>
                 <button
                   type="button"
-                  class="review-checkpoint-rename-btn"
+                  class="plan-panel-btn"
                   onClick={() =>
                     void props.runtime?.planDocDelete?.(selected()!.planID)
                   }

@@ -1296,6 +1296,24 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   font-size: 11px;
   color: var(--neu-error);
 }
+.plan-panel-btn {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light);
+}
+.plan-panel-btn:hover {
+  color: var(--neu-accent);
+}
+.plan-panel-btn:active {
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
 .todo-row {
   display: flex;
   align-items: center;
