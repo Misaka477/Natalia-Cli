@@ -15,7 +15,7 @@ export function ParallelSessionsPanel(props: {
       (session) => (session.status ?? "running") === "running",
     );
     let cancelled = false;
-    const timer = setInterval(() => {
+    const refresh = () => {
       if (disposed || cancelled) return;
       for (const session of running) {
         void props.runtime?.runtimeStatus?.(session.id).then((status) => {
@@ -26,7 +26,9 @@ export function ParallelSessionsPanel(props: {
           }));
         }).catch(() => undefined);
       }
-    }, 2000);
+    };
+    refresh();
+    const timer = setInterval(refresh, 2000);
     return () => {
       cancelled = true;
       clearInterval(timer);
