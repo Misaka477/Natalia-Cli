@@ -49,9 +49,10 @@ export function createSandboxRuntime(
     );
   }
 
-  function sessionOwner(sessionID?: string) {
+  async function sessionOwner(sessionID?: string) {
     const owner = sessionID
-      ? ctx.ports.getExecutionBySession().get(sessionID as SessionID)
+      ? (ctx.ports.getExecutionBySession().get(sessionID as SessionID) ??
+        (await ctx.ports.ensureExecution(sessionID as SessionID)))
       : ctx.ports.getActiveExec();
     if (!owner) throw new Error("session is not initialized");
     return owner;
@@ -92,7 +93,7 @@ export function createSandboxRuntime(
   return {
     async sandboxList(sessionID?: string) {
       await ctx.ports.getReady();
-      const owner = sessionID ? sessionOwner(sessionID) : ctx.ports.getActiveExec();
+      const owner = sessionID ? await sessionOwner(sessionID) : ctx.ports.getActiveExec();
       const owned = sandboxIDsFor(owner);
       return (await requireSandboxes().list())
         .filter((sandbox) => owned.size === 0 || owned.has(sandbox.id))
@@ -107,7 +108,7 @@ export function createSandboxRuntime(
     },
     async sandboxDiff(id, sessionID?: string) {
       await ctx.ports.getReady();
-      const owner = sessionOwner(sessionID);
+      const owner = await sessionOwner(sessionID);
       assertSandboxOwned(owner, id);
       return await requireSandboxes().previewMerge(id);
     },
@@ -124,7 +125,7 @@ export function createSandboxRuntime(
       sessionID?: string;
     }) {
       await ctx.ports.getReady();
-      const owner = sessionOwner(input.sessionID);
+      const owner = await sessionOwner(input.sessionID);
       assertSandboxOwned(owner, input.id);
       return await requireSandboxes().resourceOutput(
         input.id,
