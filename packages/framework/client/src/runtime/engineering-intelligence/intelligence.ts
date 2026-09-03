@@ -79,8 +79,7 @@ export function createIntelligenceSurface(
     return sessionID
       ? ctx.ports
           .getExecutionBySession()
-          .get(sessionID as import("@natalia/contracts").SessionID) ??
-          ctx.ports.getActiveExec()
+          .get(sessionID as import("@natalia/contracts").SessionID)
       : ctx.ports.getActiveExec();
   }
   function intelligenceSession(sessionID?: string) {

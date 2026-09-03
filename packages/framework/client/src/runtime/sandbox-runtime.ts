@@ -51,9 +51,7 @@ export function createSandboxRuntime(
 
   function sessionOwner(sessionID?: string) {
     const owner = sessionID
-      ? ctx.ports
-          .getExecutionBySession()
-          .get(sessionID as SessionID) ?? ctx.ports.getActiveExec()
+      ? ctx.ports.getExecutionBySession().get(sessionID as SessionID)
       : ctx.ports.getActiveExec();
     if (!owner) throw new Error("session is not initialized");
     return owner;
