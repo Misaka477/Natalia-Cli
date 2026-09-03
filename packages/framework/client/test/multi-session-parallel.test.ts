@@ -305,3 +305,34 @@ test("two hundred sessions submit and finish concurrently without cross-cancel",
   for (const result of results) expect(result?.id).toBeTruthy();
   await client.dispose?.();
 });
+
+test("five hundred sessions submit and finish concurrently without cross-cancel", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-500");
+  const client = createOfficialRuntimeClient({
+    workspaceRoot,
+    provider: {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const sessions = [];
+  for (let i = 0; i < 500; i++) {
+    const created = await client.sessionNew?.();
+    if (created?.sessionID) sessions.push(created.sessionID);
+  }
+  const tasks = sessions.map((sessionID, index) =>
+    client.submitAndWait?.({
+      text: `session ${index}`,
+      sessionID,
+    }),
+  );
+  const results = await Promise.all(tasks);
+  expect(results.length).toBe(500);
+  for (const result of results) expect(result?.id).toBeTruthy();
+  await client.dispose?.();
+});
