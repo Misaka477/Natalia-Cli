@@ -274,3 +274,34 @@ test("two sessions diagnostics resolve independently", async () => {
   expect(Array.isArray(diagB)).toBe(true);
   await client.dispose?.();
 });
+
+test("two hundred sessions submit and finish concurrently without cross-cancel", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-200");
+  const client = createOfficialRuntimeClient({
+    workspaceRoot,
+    provider: {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const sessions = [];
+  for (let i = 0; i < 200; i++) {
+    const created = await client.sessionNew?.();
+    if (created?.sessionID) sessions.push(created.sessionID);
+  }
+  const tasks = sessions.map((sessionID, index) =>
+    client.submitAndWait?.({
+      text: `session ${index}`,
+      sessionID,
+    }),
+  );
+  const results = await Promise.all(tasks);
+  expect(results.length).toBe(200);
+  for (const result of results) expect(result?.id).toBeTruthy();
+  await client.dispose?.();
+});
