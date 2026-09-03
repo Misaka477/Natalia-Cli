@@ -17,6 +17,7 @@ import {
   type StatusSnapshotController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 
@@ -32,9 +33,13 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     workspaceDiff,
   };
 
-  async function requireInitializedController() {
+  async function requireInitializedController(sessionID?: string) {
     await ctx.ports.getReady();
-    const owner = ctx.ports.getActiveExec();
+    const owner = sessionID
+      ? ctx.ports
+          .getExecutionBySession()
+          .get(sessionID as SessionID) ?? ctx.ports.getActiveExec()
+      : ctx.ports.getActiveExec();
     if (!owner) throw new Error("session is not initialized");
     const controller = await initializeCheckpointController(owner);
     if (!controller)
@@ -42,15 +47,15 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     return { controller, owner };
   }
 
-  async function checkpointList(): Promise<
+  async function checkpointList(sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeServiceClient["checkpointList"]>>>
   > {
-    const { controller } = await requireInitializedController();
+    const { controller } = await requireInitializedController(sessionID);
     return (await controller.list()).map(toRuntimeCheckpoint);
   }
 
-  async function checkpointPreview(id: string) {
-    const { controller } = await requireInitializedController();
+  async function checkpointPreview(id: string, sessionID?: string) {
+    const { controller } = await requireInitializedController(sessionID);
     return await controller.preview(id);
   }
 
@@ -61,8 +66,8 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     return await controller.get().workspaceDiff();
   }
 
-  async function checkpointRollback(input: { id: string; dryRun?: boolean }) {
-    const { controller, owner } = await requireInitializedController();
+  async function checkpointRollback(input: { id: string; dryRun?: boolean; sessionID?: string }) {
+    const { controller, owner } = await requireInitializedController(input.sessionID);
     const preview = await controller.rollback(input.id, {
       dryRun: input.dryRun,
     });
@@ -81,8 +86,8 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     return preview;
   }
 
-  async function checkpointRename(input: { id: string; name: string }) {
-    const { controller } = await requireInitializedController();
+  async function checkpointRename(input: { id: string; name: string; sessionID?: string }) {
+    const { controller } = await requireInitializedController(input.sessionID);
     return toRuntimeCheckpoint(await controller.rename(input.id, input.name));
   }
 

@@ -974,10 +974,11 @@ export async function handleRPCMessage(
 
     if (body.method === "checkpoint.list") {
       optionsGuard(client, "checkpointList");
+      const sessionID = optionalStringParam(body.params, "sessionID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.checkpointList(),
+        result: await client.checkpointList?.(sessionID),
       };
     }
     if (body.method === "checkpoint.preview") {
@@ -985,7 +986,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.checkpointPreview(stringParam(body.params, "id")),
+        result: await client.checkpointPreview(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "checkpoint.rollback") {
@@ -1001,6 +1005,9 @@ export async function handleRPCMessage(
         result: await client.checkpointRollback({
           id: stringParam(body.params, "id"),
           dryRun: typeof dryRun === "boolean" ? dryRun : undefined,
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
         }),
       };
     }
@@ -1012,6 +1019,9 @@ export async function handleRPCMessage(
         result: await client.checkpointRename({
           id: stringParam(body.params, "id"),
           name: stringParam(body.params, "name"),
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
         }),
       };
     }

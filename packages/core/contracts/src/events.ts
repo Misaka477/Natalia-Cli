@@ -1978,15 +1978,17 @@ export type RuntimeClient = {
     rows: number;
     cols: number;
   }): Promise<RuntimeNativeTerminalSession>;
-  checkpointList?(): Promise<RuntimeCheckpoint[]>;
-  checkpointPreview?(id: string): Promise<CheckpointPreview>;
+  checkpointList?(sessionID?: string): Promise<RuntimeCheckpoint[]>;
+  checkpointPreview?(id: string, sessionID?: string): Promise<CheckpointPreview>;
   checkpointRollback?(input: {
     id: string;
     dryRun?: boolean;
+    sessionID?: string;
   }): Promise<CheckpointPreview>;
   checkpointRename?(input: {
     id: string;
     name: string;
+    sessionID?: string;
   }): Promise<RuntimeCheckpoint>;
   sandboxList?(): Promise<RuntimeSandbox[]>;
   sandboxDiff?(id: string): Promise<RuntimeSandboxChange[]>;

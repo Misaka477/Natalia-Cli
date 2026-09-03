@@ -554,8 +554,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["nativeTerminalEndSecureInput"]>>
       >;
     },
-    async checkpointList() {
-      return (await request("checkpoint.list")) as Awaited<
+    async checkpointList(sessionID) {
+      return (await request("checkpoint.list", sessionID ? { sessionID } : undefined)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["checkpointList"]>>
       >;
     },
@@ -579,8 +579,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["teamPRList"]>>
       >;
     },
-    async checkpointPreview(id) {
-      return (await request("checkpoint.preview", id)) as Awaited<
+    async checkpointPreview(id, sessionID) {
+      return (await request("checkpoint.preview", { id, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["checkpointPreview"]>>
       >;
     },
@@ -1060,7 +1060,9 @@ export async function handleWorkerRequest(
   if (request.method === "native-terminal.end-secure-input")
     return await client.nativeTerminalEndSecureInput?.(request.value as string);
   if (request.method === "checkpoint.list")
-    return await client.checkpointList?.();
+    return await client.checkpointList?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "workspace.diff")
     return await client.workspaceDiff?.();
   if (request.method === "workspace.git.diff")
@@ -1071,15 +1073,17 @@ export async function handleWorkerRequest(
     return await client.gitRefs?.();
   if (request.method === "team.pr.list")
     return await client.teamPRList?.();
-  if (request.method === "checkpoint.preview")
-    return await client.checkpointPreview?.(request.value as string);
+  if (request.method === "checkpoint.preview") {
+    const value = request.value as { id: string; sessionID?: string };
+    return await client.checkpointPreview?.(value.id, value.sessionID);
+  }
   if (request.method === "checkpoint.rollback")
     return await client.checkpointRollback?.(
-      request.value as { id: string; dryRun?: boolean },
+      request.value as { id: string; dryRun?: boolean; sessionID?: string },
     );
   if (request.method === "checkpoint.rename")
     return await client.checkpointRename?.(
-      request.value as { id: string; name: string },
+      request.value as { id: string; name: string; sessionID?: string },
     );
   if (request.method === "cancel") {
     const value = request.value as { reason?: unknown; sessionID?: string } | string | undefined;

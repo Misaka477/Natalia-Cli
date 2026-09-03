@@ -177,8 +177,8 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
 };
 
 const RPC_PARAM_NAMES: Record<string, string[]> = {
-  checkpointPreview: ["id"],
-  checkpointRename: ["id", "name"],
+  checkpointPreview: ["id", "sessionID"],
+  checkpointRename: ["id", "name", "sessionID"],
   subagentHistory: ["sessionID"],
   sessionTouch: ["id"],
   sessionRename: ["id", "title"],
@@ -696,8 +696,8 @@ export function createWebRuntimeClient(
         ...(sessionID ? { sessionID } : {}),
       })) as never;
     },
-    async checkpointList() {
-      return (await call("checkpoint.list")) as never;
+    async checkpointList(sessionID) {
+      return (await call("checkpoint.list", sessionID ? { sessionID } : undefined)) as never;
     },
     async checkpointRollback(input) {
       return (await call("checkpoint.rollback", {
