@@ -72,6 +72,47 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     }
   }
 
+  async function newPlan() {
+    const id = `plan_${Date.now().toString(36)}`;
+    const path = `.natalia/plans/${id}.md`;
+    const title = `新计划 ${id}`;
+    try {
+      await props.runtime?.planDocWrite?.({
+        path,
+        title,
+        content: `# ${title}
+
+## 目标
+
+
+## 步骤
+
+
+## 验证
+
+
+## 总结
+
+`,
+      });
+      const result = await props.runtime?.planDocMark?.({
+        path,
+        title,
+      });
+      setNotice(
+        result?.marked && result.planID
+          ? `已创建并标记为 Plan：${result.planID}`
+          : "创建未生效",
+      );
+      setMarkPath("");
+      setError("");
+      setSelectedID(result?.planID);
+      setPreview(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   function selectPlan(planID: string) {
     setSelectedID(planID);
     setPreview(false);
@@ -88,19 +129,17 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
           <span class="review-count">{plans().length} plans</span>
         </div>
       </div>
-      <Show
-        when={plans().length || markPath()}
-        fallback={
+      <div class="review-body">
+        <Show when={!plans().length}>
           <div class="agent-empty-full">
             <div class="review-empty-icon">📄</div>
             <div class="review-empty-title">暂无计划文档</div>
             <div class="review-empty-desc">
-              先把 Markdown 计划文档写入 .natalia/plans/，再标记为 Plan。
+              可手动新建计划文档，或先用 Navi 写入 .natalia/plans/ 下的 Markdown 文件，再在这里标记为 Plan。
             </div>
           </div>
-        }
-      >
-        <div class="review-body">
+        </Show>
+        <Show when={plans().length}>
           <div class="review-diff">
             <div class="review-diff-header">
               <span class="review-diff-path">已标记 Plan</span>
@@ -126,7 +165,7 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
               <span class="review-diff-path">编辑器</span>
             </div>
             <div class="review-diff-content">
-              <Show when={selected()} fallback={<div class="review-empty">先标记一个 Plan</div>}>
+              <Show when={selected()} fallback={<div class="review-empty">先选择或标记一个 Plan</div>}>
                 <div class="plan-panel-doc-meta">
                   <span>{selected()!.planID}</span>
                   <span>{selected()!.documentPath}</span>
@@ -172,25 +211,28 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
               </Show>
             </div>
           </div>
-          <div class="plan-panel-mark-row">
-            <input
-              type="text"
-              placeholder="输入 .natalia/plans/ 下的 Markdown 文件路径"
-              value={markPath()}
-              onInput={(event) => setMarkPath(event.currentTarget.value)}
-            />
-            <button type="button" class="review-action" onClick={() => void markPlan()}>
-              标记为 Plan
-            </button>
-          </div>
-          <Show when={notice()}>
-            <div class="plan-panel-notice">{notice()}</div>
-          </Show>
-          <Show when={error()}>
-            <div class="plan-panel-error">{error()}</div>
-          </Show>
+        </Show>
+        <div class="plan-panel-mark-row">
+          <input
+            type="text"
+            placeholder="输入 .natalia/plans/ 下的 Markdown 文件路径"
+            value={markPath()}
+            onInput={(event) => setMarkPath(event.currentTarget.value)}
+          />
+          <button type="button" class="review-action" onClick={() => void markPlan()}>
+            标记为 Plan
+          </button>
+          <button type="button" class="review-action" onClick={() => void newPlan()}>
+            新建计划文档
+          </button>
         </div>
-      </Show>
+        <Show when={notice()}>
+          <div class="plan-panel-notice">{notice()}</div>
+        </Show>
+        <Show when={error()}>
+          <div class="plan-panel-error">{error()}</div>
+        </Show>
+      </div>
     </div>
   );
 }
