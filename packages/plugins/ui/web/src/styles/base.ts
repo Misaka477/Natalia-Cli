@@ -1032,6 +1032,11 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   box-shadow: none;
   padding: 10px 14px 4px;
 }
+.nia-flat-pane .neu-pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .nia-flat-pane .neu-pane-content {
   background: transparent;
   box-shadow: none;

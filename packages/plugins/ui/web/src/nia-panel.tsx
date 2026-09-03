@@ -199,8 +199,22 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     <div class="neu-pane nia-flat-pane">
       <div class="neu-pane-header">
         <span class="neu-pane-title">Nia</span>
-        <span class="neu-pane-status" data-running={Boolean(active())}>
-          {active() ? "running" : "idle"}
+        <span class="neu-pane-header-actions">
+          <span class="neu-pane-status" data-running={Boolean(active())}>
+            {active() ? "running" : "idle"}
+          </span>
+          <button
+            type="button"
+            class="plan-panel-btn"
+            onClick={() =>
+              void props.runtime?.chatSubmit?.({
+                text: "请审计当前选中的 Plan，按计划源文件逐项核对。",
+                channel: "nia",
+              })
+            }
+          >
+            手动启动
+          </button>
         </span>
       </div>
       <div class="neu-pane-content">
@@ -264,19 +278,6 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
             placeholder="Nia 推理"
             menuPosition="top"
           />
-          <button
-            type="button"
-            class="neu-select-trigger"
-            style={{ width: "auto" }}
-            onClick={() =>
-              void props.runtime?.chatSubmit?.({
-                text: "请审计当前选中的 Plan，按计划源文件逐项核对。",
-                channel: "nia",
-              })
-            }
-          >
-            手动启动
-          </button>
         </div>
         <Composer
           value={draft()}
