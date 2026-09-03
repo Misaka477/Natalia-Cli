@@ -1,4 +1,12 @@
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type {
   RuntimeClient,
   RuntimeModelCatalogEntry,
@@ -14,6 +22,11 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [modelID, setModelID] = createSignal("");
   const [reasoning, setReasoning] = createSignal("medium");
   const [busy, setBusy] = createSignal(false);
+  let niaObservedTop = 0;
+  const niaTranscriptRef = createSignal<HTMLDivElement | undefined>(undefined);
+  const [niaTranscriptEl, setNiaTranscriptEl] = niaTranscriptRef;
+  const [niaFollowBottom, setNiaFollowBottom] = createSignal(true);
+  const [niaShowJumpToBottom, setNiaShowJumpToBottom] = createSignal(false);
   const [modelCatalog, setModelCatalog] = createSignal<
     RuntimeModelCatalogEntry[]
   >([]);
@@ -81,6 +94,64 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     }
   }
 
+  function handleNiaScroll() {
+    const el = niaTranscriptEl();
+    if (!el) return;
+    const floor = Math.max(0, el.scrollHeight - el.clientHeight);
+    const ledger = Math.min(niaObservedTop, floor);
+    const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
+    if (!movedByReader) {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      if (nearBottom) el.scrollTop = el.scrollHeight;
+      niaObservedTop = el.scrollTop;
+      return;
+    }
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    setNiaFollowBottom(nearBottom);
+    setNiaShowJumpToBottom(!nearBottom);
+    niaObservedTop = el.scrollTop;
+  }
+
+  function jumpNiaToBottom() {
+    const el = niaTranscriptEl();
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    niaObservedTop = el.scrollTop;
+    setNiaFollowBottom(true);
+    setNiaShowJumpToBottom(false);
+  }
+
+  const niaObserver =
+    typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver(() => {
+          if (niaFollowBottom() && niaTranscriptEl()) {
+            const el = niaTranscriptEl()!;
+            el.scrollTop = el.scrollHeight;
+            niaObservedTop = el.scrollTop;
+          }
+        });
+  onCleanup(() => niaObserver?.disconnect());
+
+  createEffect(() => {
+    const el = niaTranscriptEl();
+    const content =
+      el?.querySelector<HTMLElement>(".natalia-transcript-content");
+    if (el) niaObserver?.observe(el);
+    if (content) niaObserver?.observe(content);
+    if (el) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (niaFollowBottom() && niaTranscriptEl()) {
+            const target = niaTranscriptEl()!;
+            target.scrollTop = target.scrollHeight;
+            niaObservedTop = target.scrollTop;
+          }
+        });
+      });
+    }
+  });
+
   async function saveProfile(patch: {
     modelID?: string;
     reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -139,7 +210,19 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
           emptyHint="Nia 用于审计，只读、不写代码、不写 Plan。"
           assistantName="Nia"
           assistantInitial="N"
+          scrollRef={setNiaTranscriptEl}
+          onScroll={handleNiaScroll}
         />
+        <Show when={niaShowJumpToBottom()}>
+          <button
+            type="button"
+            class="neu-jump-bottom"
+            onClick={jumpNiaToBottom}
+            title="跳到底部"
+          >
+            ↓
+          </button>
+        </Show>
         <Show when={active()}>
           <div class="neu-activity-bar" data-running={true}>
             <span class="neu-activity-pulse" />
