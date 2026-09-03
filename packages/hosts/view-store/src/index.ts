@@ -300,7 +300,7 @@ export function hydrateProjectedMessages(
  */
 function chatRowToBlock(row: ChatMessageRow): {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   text: string;
   pendingText: string;
   channel: "navi" | "nia";

@@ -1851,7 +1851,7 @@ export type RuntimeClient = {
    */
   pause?(reason?: string, sessionID?: string): PauseOutcome | Promise<PauseOutcome>;
   /** Resumes a paused turn. Refusal is a value, as with `pause`. */
-  resume?(): ResumeOutcome | Promise<ResumeOutcome>;
+  resume?(sessionID?: string): ResumeOutcome | Promise<ResumeOutcome>;
   /**
    * Selects the agent for subsequent turns. Three outcomes are real and were all
    * invisible to a caller: applied now, deferred until the running turn ends, or

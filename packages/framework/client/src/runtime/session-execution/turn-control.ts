@@ -7,7 +7,7 @@ export function createTurnControlSurface(
   options: ClientSurfaceOptions,
 ): Surface {
   return {
-    pause(reason = "user pause", sessionID?) {
+    pause(reason = "user pause", sessionID?: string) {
       // Refusing is a value: a caller that gets `paused: true` when nothing was
       // paused has been told the turn is held when it is not.
       const exec = sessionID
@@ -30,7 +30,7 @@ export function createTurnControlSurface(
       });
       return { paused: true };
     },
-    resume(sessionID?) {
+    resume(sessionID?: string) {
       const exec = sessionID
         ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
         : ctx.ports.getActiveExec();

@@ -379,7 +379,7 @@ export type NataliaSDK = {
     consequences?: string[];
     linkedPlans?: string[];
     linkedConstraints?: string[];
-  }): Promise<
+  }, sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordDecision"]>>>
   >;
   evidenceRecords(sessionID?: string): Promise<
@@ -392,7 +392,7 @@ export type NataliaSDK = {
     command: string;
     timeoutSec?: number;
     knownGaps?: string[];
-  }): Promise<
+  }, sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordValidation"]>>>
   >;
   /** The completion cards, projected from the journal (P2 E4). */
@@ -416,7 +416,7 @@ export type NataliaSDK = {
     rollbackState?: "clean" | "available" | "none" | "needs_promotion";
     evidenceIDs?: string[];
     changePaths?: string[];
-  }): Promise<
+  }, sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordCompletion"]>>>
   >;
   /** The durable Live Work Chat mailbox, projected from the journal. */
