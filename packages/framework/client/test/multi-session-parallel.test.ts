@@ -226,3 +226,28 @@ test("two sessions mailbox messages do not leak across sessions", async () => {
   expect(rowsB?.some((row) => row.text.includes("mailbox for A"))).toBe(false);
   await client.dispose?.();
 });
+
+test("two sessions runtimeStatus resolve independently", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-status");
+  const client = createOfficialRuntimeClient({
+    workspaceRoot,
+    provider: {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const createdA = await client.sessionNew?.();
+  const createdB = await client.sessionNew?.();
+  await client.submitAndWait?.({ text: "a", sessionID: createdA?.sessionID });
+  await client.submitAndWait?.({ text: "b", sessionID: createdB?.sessionID });
+  const statusA = await client.runtimeStatus?.(createdA?.sessionID);
+  const statusB = await client.runtimeStatus?.(createdB?.sessionID);
+  expect(statusA).toBeTruthy();
+  expect(statusB).toBeTruthy();
+  await client.dispose?.();
+});
