@@ -184,27 +184,32 @@ async function handle(message) {
       case "execute_js": {
         const beforeTabs = await chrome.tabs.query({});
         const beforeIds = new Set(beforeTabs.map((tab) => tab.id));
-        let beforeText = "";
+        let before = { text: "", title: "", url: "" };
         try {
-          const beforeScan = await scan(payload.tabId, { textOnly: true, maxlen: 20000 });
-          beforeText = beforeScan.text || "";
+          before = await scan(payload.tabId, { textOnly: true, maxlen: 20000 });
         } catch {
-          beforeText = "";
+          before = { text: "", title: "", url: "" };
         }
         const value = await evaluate(String(payload.script || ""), payload.tabId);
         const afterTabs = await chrome.tabs.query({});
         const newTabs = afterTabs
           .filter((tab) => !beforeIds.has(tab.id))
           .map((tab) => ({ id: tab.id, url: tab.url }));
-        let afterText = "";
+        let after = { text: "", title: "", url: "" };
         try {
-          const afterScan = await scan(payload.tabId, { textOnly: true, maxlen: 20000 });
-          afterText = afterScan.text || "";
+          after = await scan(payload.tabId, { textOnly: true, maxlen: 20000 });
         } catch {
-          afterText = "";
+          after = { text: "", title: "", url: "" };
         }
+        const beforeText = before.text || "";
+        const afterText = after.text || "";
         let topChange = "";
-        if (beforeText !== afterText) {
+        let changed = beforeText !== afterText || before.title !== after.title || before.url !== after.url;
+        if (before.title !== after.title) {
+          topChange = `title: ${before.title} -> ${after.title}`;
+        } else if (before.url !== after.url) {
+          topChange = `url: ${before.url} -> ${after.url}`;
+        } else if (beforeText !== afterText) {
           const beforeLines = beforeText.split("\n");
           const afterLines = afterText.split("\n");
           const limit = Math.min(beforeLines.length, afterLines.length, 200);
@@ -226,7 +231,7 @@ async function handle(message) {
           result: value,
           tabId: active,
           diff: {
-            changed: beforeText !== afterText,
+            changed,
             beforeLength: beforeText.length,
             afterLength: afterText.length,
             topChange,
