@@ -10,6 +10,7 @@ const { createBrowserHost } = require("./browser-host.cjs");
 // On Wayland/niri the GPU compositor path is noisy and can stall rendering.
 // Disable hardware acceleration; Electron still renders and screenshots fine.
 app.disableHardwareAcceleration();
+app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 
 
 const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
