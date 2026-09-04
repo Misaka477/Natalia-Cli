@@ -14,7 +14,7 @@ export const fileEditorStyles = `
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 6px 8px;
+  padding: 22px 6px 8px;
   font-size: 13px;
   color: var(--neu-text);
 }
@@ -42,7 +42,81 @@ export const fileEditorStyles = `
 .neu-file-action-danger {
   color: var(--neu-error);
 }
+.neu-top-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.neu-top-row .neu-file-header {
+  flex: 0 0 auto;
+}
+.neu-file-tabs-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+  background: var(--neu-bg);
+  border-radius: 16px;
+  padding: 6px 8px;
+  box-shadow: 3px 3px 8px var(--neu-shadow-dark), -3px -3px 8px var(--neu-shadow-light);
+}
+.neu-file-tabs-scrollbar {
+  position: relative;
+  flex-shrink: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--neu-bg-light);
+  box-shadow: inset 1px 1px 2px var(--neu-shadow-dark), inset -1px -1px 2px var(--neu-shadow-light);
+  margin: 0 6px;
+}
+.neu-file-tabs-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 30px;
+  border-radius: 3px;
+  background: var(--neu-accent);
+  display: none;
+  cursor: grab;
+}
+.neu-top-row .neu-file-editor-tabs {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+}
+.neu-top-row .neu-file-editor-tabs::-webkit-scrollbar {
+  display: none;
+}
+.neu-top-row .neu-file-editor-tab {
+  flex-shrink: 0;
+}
 .neu-file-body { flex: 1; display: flex; min-height: 0; overflow: hidden; gap: 10px; }
+.neu-file-tree-shell {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  overflow: hidden;
+}
+.neu-file-tree-shell .neu-file-tree {
+  flex: 1;
+  margin-top: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  background: var(--neu-bg);
+  border-radius: 12px;
+  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+  padding: 6px;
+  min-width: 120px;
+}
 .neu-file-tree {
   flex: 0 0 auto;
   overflow-y: auto;
@@ -78,6 +152,18 @@ export const fileEditorStyles = `
   color: var(--neu-text);
   font-size: 12px;
   box-shadow: 4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light);
+}
+.neu-file-editor-tab[data-active="true"] {
+  background: var(--neu-bg-light);
+  color: var(--neu-accent);
+  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+}
+.neu-file-editor-tab[data-active="true"] .neu-file-editor-tab-label {
+  color: var(--neu-accent);
+  font-weight: 600;
+}
+.neu-file-editor-tab[data-active="true"] .neu-tab-dirty {
+  background: var(--neu-accent);
 }
 .neu-file-editor-tab-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .neu-file-editor-tab .neu-tab-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--neu-accent); }

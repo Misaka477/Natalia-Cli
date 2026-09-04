@@ -169,6 +169,7 @@ export function FileEditor(props: {
 }) {
   const [contents, setContents] = createSignal<Record<string, string>>({});
   const [selectedPath, setSelectedPath] = createSignal<string>("");
+  const [openTabs, setOpenTabs] = createSignal<Array<{ path: string }>>([]);
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set(["."]));
   const [preview, setPreview] = createSignal(false);
   const [fileWidth, setFileWidth] = createSignal(140);
@@ -215,8 +216,48 @@ export function FileEditor(props: {
   } | null>(null);
   let cmContainer: HTMLDivElement | undefined;
   let cmView: EditorView | undefined;
+  let tabsRef: HTMLDivElement | undefined;
+  let tabsThumbRef: HTMLDivElement | undefined;
+  let tabsScrollbarRef: HTMLDivElement | undefined;
   const languageCompartment = new Compartment();
+
+  function updateTabsThumb() {
+    const el = tabsRef;
+    const thumb = tabsThumbRef;
+    const bar = tabsScrollbarRef;
+    if (!el || !thumb || !bar) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    const barWidth = bar.clientWidth;
+    if (maxScroll <= 0) {
+      thumb.style.display = "none";
+      return;
+    }
+    thumb.style.display = "block";
+    const thumbWidth = Math.max(30, (barWidth / el.scrollWidth) * barWidth);
+    thumb.style.width = `${thumbWidth}px`;
+    const maxThumbLeft = barWidth - thumbWidth;
+    thumb.style.left = `${(el.scrollLeft / maxScroll) * maxThumbLeft}px`;
+  }
+
+  function startTabsDrag(event: PointerEvent) {
+    const el = tabsRef;
+    if (!el) return;
+    event.preventDefault();
+    const startLeft = event.clientX;
+    const startScroll = el.scrollLeft;
+    const move = (next: PointerEvent) => {
+      el.scrollLeft = startScroll + (next.clientX - startLeft);
+      updateTabsThumb();
+    };
+    const finish = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+  }
   onMount(() => {
+    requestAnimationFrame(() => updateTabsThumb());
     cmView = new EditorView({
       doc: selectedContent(),
       extensions: [
@@ -259,17 +300,6 @@ export function FileEditor(props: {
       }
     });
 
-    const timer = setInterval(() => {
-      void refreshTree();
-    }, 2000);
-    const onFocus = () => {
-      void refreshTree();
-    };
-    window.addEventListener("focus", onFocus);
-    onCleanup(() => {
-      clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
-    });
   });
 
   async function toggle(path: string) {
@@ -326,7 +356,23 @@ export function FileEditor(props: {
     return contents()[selectedPath()] ?? "";
   }
 
+  function closeTab(path: string) {
+    const nextTabs = openTabs().filter((tab) => tab.path !== path);
+    setOpenTabs(nextTabs);
+    if (selectedPath() === path) {
+      if (nextTabs.length) {
+        const next = nextTabs[nextTabs.length - 1]!.path;
+        selectFile(next);
+      } else {
+        setSelectedPath("");
+      }
+    }
+  }
+
   function selectFile(path: string) {
+    if (!openTabs().some((tab) => tab.path === path)) {
+      setOpenTabs([...openTabs(), { path }]);
+    }
     setSelectedPath(path);
     setPreview(path.endsWith(".md") || path.endsWith(".markdown"));
     if (props.transport) {
@@ -738,53 +784,23 @@ export function FileEditor(props: {
 
   return (
     <div class="neu-file-pane">
-      <div class="neu-file-header">
-        <span>资源管理器</span>
-        <div class="neu-file-actions">
-          <button
-            type="button"
-            class="neu-file-action"
-            onClick={openNewFile}
-          >
-            新建文件
-          </button>
-          <button
-            type="button"
-            class="neu-file-action"
-            onClick={openNewFolder}
-          >
-            新建文件夹
-          </button>
-          <button
-            type="button"
-            class="neu-file-action"
-            disabled={!selectedPath()}
-            onClick={() => openRename(selectedPath())}
-          >
-            重命名
-          </button>
-          <button
-            type="button"
-            class="neu-file-action neu-file-action-danger"
-            disabled={!selectedPath()}
-            onClick={() => void deleteSelected()}
-          >
-            删除
-          </button>
+      <div class="neu-top-row">
+        <div class="neu-file-header">
+          <span>资源管理器</span>
         </div>
-      </div>
-      <div class="neu-file-body">
-        <div class="file-tree neu-file-tree" style={{ width: `${fileWidth()}px` }}>
-          {renderTree(tree(), 0)}
-        </div>
-        <div
-          class="file-pane-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          onPointerDown={startFileResize}
-        />
-        <div class="neu-file-editor">
-          <div class="neu-file-editor-tabs">
+        <div class="neu-file-tabs-scroll">
+          <div
+            class="neu-file-tabs-scrollbar"
+            ref={tabsScrollbarRef}
+            onPointerDown={startTabsDrag}
+          >
+            <div class="neu-file-tabs-thumb" ref={tabsThumbRef} />
+          </div>
+          <div
+            class="neu-file-editor-tabs"
+            ref={tabsRef}
+            onScroll={updateTabsThumb}
+          >
             <Show when={selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")}>
               <button
                 type="button"
@@ -803,40 +819,70 @@ export function FileEditor(props: {
                 预览
               </button>
             </Show>
-            <div class="neu-file-editor-tab" data-active={!preview() || !(selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown"))}>
-              <svg class="file-tree-icon file-tree-file-icon" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M4 2C4 1.44772 4.44772 1 5 1H10L12 3V14C12 14.5523 11.5523 15 11 15H5C4.44772 15 4 14.5523 4 14V2Z"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                />
-                <path
-                  d="M10 1V3H12"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  stroke-linecap="round"
-                />
-              </svg>
-              <span class="neu-file-editor-tab-label">
-                {selectedPath().split("/").pop()}
-              </span>
-              <span class="neu-tab-dirty" />
-              <button
-                type="button"
-                class="neu-tab-close"
-                aria-label="关闭文件"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path
-                    d="M3.5 3.5l7 7M10.5 3.5l-7 7"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                    stroke-linecap="round"
-                  />
-                </svg>
-              </button>
-            </div>
+            <For each={openTabs()}>
+              {(tab) => (
+                <div
+                  class="neu-file-editor-tab"
+                  data-active={selectedPath() === tab.path}
+                  onClick={() => {
+                    selectFile(tab.path);
+                    setPreview(false);
+                  }}
+                >
+                  <svg class="file-tree-icon file-tree-file-icon" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M4 2C4 1.44772 4.44772 1 5 1H10L12 3V14C12 14.5523 11.5523 15 11 15H5C4.44772 15 4 14.5523 4 14V2Z"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                    />
+                    <path
+                      d="M10 1V3H12"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                  <span class="neu-file-editor-tab-label">
+                    {tab.path.split("/").pop()}
+                  </span>
+                  <span class="neu-tab-dirty" />
+                  <button
+                    type="button"
+                    class="neu-tab-close"
+                    aria-label="关闭文件"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      closeTab(tab.path);
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path
+                        d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </For>
           </div>
+        </div>
+      </div>
+      <div class="neu-file-body">
+        <div class="neu-file-tree-shell" style={{ width: `${fileWidth()}px` }}>
+          <div class="file-tree neu-file-tree">
+            {renderTree(tree(), 0)}
+          </div>
+        </div>
+        <div
+          class="file-pane-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={startFileResize}
+        />
+        <div class="neu-file-editor">
           <div class="neu-file-breadcrumbs">
             <For each={breadcrumbs()}>
               {(part, index) => (
