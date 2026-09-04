@@ -182,8 +182,57 @@ async function handle(message) {
         break;
       }
       case "execute_js": {
+        const beforeTabs = await chrome.tabs.query({});
+        const beforeIds = new Set(beforeTabs.map((tab) => tab.id));
+        let beforeText = "";
+        try {
+          const beforeScan = await scan(payload.tabId, { textOnly: true, maxlen: 20000 });
+          beforeText = beforeScan.text || "";
+        } catch {
+          beforeText = "";
+        }
         const value = await evaluate(String(payload.script || ""), payload.tabId);
-        result = { result: value, tabId: payload.tabId };
+        const afterTabs = await chrome.tabs.query({});
+        const newTabs = afterTabs
+          .filter((tab) => !beforeIds.has(tab.id))
+          .map((tab) => ({ id: tab.id, url: tab.url }));
+        let afterText = "";
+        try {
+          const afterScan = await scan(payload.tabId, { textOnly: true, maxlen: 20000 });
+          afterText = afterScan.text || "";
+        } catch {
+          afterText = "";
+        }
+        let topChange = "";
+        if (beforeText !== afterText) {
+          const beforeLines = beforeText.split("\n");
+          const afterLines = afterText.split("\n");
+          const limit = Math.min(beforeLines.length, afterLines.length, 200);
+          for (let i = 0; i < limit; i += 1) {
+            if (beforeLines[i] !== afterLines[i]) {
+              topChange = `line ${i + 1}: ${String(afterLines[i]).slice(0, 120)}`;
+              break;
+            }
+          }
+          if (!topChange) {
+            topChange =
+              beforeLines.length !== afterLines.length
+                ? `line count changed ${beforeLines.length} -> ${afterLines.length}`
+                : "content changed";
+          }
+        }
+        const active = await activeTab(payload.tabId);
+        result = {
+          result: value,
+          tabId: active,
+          diff: {
+            changed: beforeText !== afterText,
+            beforeLength: beforeText.length,
+            afterLength: afterText.length,
+            topChange,
+          },
+          newTabs,
+        };
         break;
       }
       case "click": {
