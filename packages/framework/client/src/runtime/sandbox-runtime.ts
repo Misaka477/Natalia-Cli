@@ -96,7 +96,7 @@ export function createSandboxRuntime(
       const owner = sessionID ? await sessionOwner(sessionID) : ctx.ports.getActiveExec();
       const owned = sandboxIDsFor(owner);
       return (await requireSandboxes().list())
-        .filter((sandbox) => owned.size === 0 || owned.has(sandbox.id))
+        .filter((sandbox) => owned.has(sandbox.id))
         .map((sandbox) => ({
           id: sandbox.id,
           root: sandbox.root,

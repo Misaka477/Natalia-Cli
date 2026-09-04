@@ -286,10 +286,15 @@ export function ReviewPane(props: {
   }
 
   async function loadSandboxDiff(id: string) {
-    const changes = (await props.runtime?.sandboxDiff?.(id)) ?? [];
-    const mapped = changes.map(toDiffItem);
-    setSandboxChanges(mapped);
-    if (mapped.length) setSandboxSelected(mapped[0]!.path);
+    try {
+      const changes = (await props.runtime?.sandboxDiff?.(id)) ?? [];
+      const mapped = changes.map(toDiffItem);
+      setSandboxChanges(mapped);
+      if (mapped.length) setSandboxSelected(mapped[0]!.path);
+    } catch {
+      setSandboxChanges([]);
+      setSandboxSelected(null);
+    }
   }
 
   async function selectSandbox(id: string) {

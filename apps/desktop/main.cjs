@@ -7,6 +7,11 @@ const WebSocket = require("ws");
 const http = require("http");
 const { createBrowserHost } = require("./browser-host.cjs");
 
+// On Wayland/niri the GPU compositor path is noisy and can stall rendering.
+// Disable hardware acceleration; Electron still renders and screenshots fine.
+app.disableHardwareAcceleration();
+
+
 const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
 const WORKSPACE_ROOT = path.resolve(__dirname, "../..");
 let runtimeURL = process.env.NATALIA_RUNTIME_URL || "";
