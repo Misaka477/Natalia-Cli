@@ -168,7 +168,7 @@ function createBrowserHost(options) {
 
   function state(sessionID, extra = {}) {
     const owned = sessionID
-      ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID)
+      ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID || tab.sessionID === "__default__")
       : [...tabs.values()];
     const activeIdValue = activeIdFor(sessionID);
     const active = activeIdValue ? tabs.get(activeIdValue) : undefined;
@@ -614,7 +614,7 @@ function createBrowserHost(options) {
 
   function listTabs(sessionID) {
     const owned = sessionID
-      ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID)
+      ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID || tab.sessionID === "__default__")
       : [...tabs.values()];
     const active = owned.find((tab) => tab.id === activeIdFor(sessionID));
     return {
