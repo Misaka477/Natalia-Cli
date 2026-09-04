@@ -146,8 +146,8 @@ async function handle(message) {
         result = {
           ok: true,
           tabId: tab.id,
-          url: tab.url,
-          targetUrl,
+          requestedUrl: targetUrl,
+          currentUrl: tab.url,
         };
         break;
       }
