@@ -55,23 +55,32 @@ async function activeTab(tabId) {
   return tab.id;
 }
 
-async function scan(tabId) {
+async function scan(tabId, options = {}) {
   const id = await activeTab(tabId);
+  const offset = Number(options.offset) || 0;
+  const maxlen = Number(options.maxlen) || 35000;
   const results = await chrome.scripting.executeScript({
     target: { tabId: id },
-    func: () => {
+    func: (offset, maxlen) => {
       const text = document.body?.innerText || "";
       const html = document.body?.innerHTML || "";
       const title = document.title;
       const url = location.href;
+      const textEnd = Math.min(text.length, offset + maxlen);
+      const htmlEnd = Math.min(html.length, offset + maxlen);
       return {
-        text: text.slice(0, 35000),
-        html: html.slice(0, 35000),
+        text: text.slice(offset, textEnd),
+        html: html.slice(offset, htmlEnd),
+        totalTextLength: text.length,
+        totalHtmlLength: html.length,
+        offset,
+        maxlen,
         title,
         url,
-        truncated: text.length > 35000 || html.length > 35000,
+        truncated: textEnd < text.length || htmlEnd < html.length,
       };
     },
+    args: [offset, maxlen],
   });
   return results[0]?.result || { text: "", html: "", title: "", url: "" };
 }
@@ -160,7 +169,7 @@ async function handle(message) {
         break;
       }
       case "scan": {
-        result = await scan(payload.tabId);
+        result = await scan(payload.tabId, payload);
         break;
       }
       case "read": {
