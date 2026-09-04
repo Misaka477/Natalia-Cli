@@ -1,1 +1,0 @@
-export { createBrowserBridgeServer } from "./server";

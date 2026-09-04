@@ -46,6 +46,7 @@
       "@natalia/plugin-local-tools": [
         "packages/plugins/local-tools/src/index.ts"
       ],
+      "@natalia/plugin-browser": ["packages/plugins/browser/src/index.ts"],
       "@natalia/plugin-mcp": ["packages/plugins/mcp/src/index.ts"],
       "@natalia/object-store": ["packages/hosts/object-store/src/index.ts"],
       "@natalia/plugin-native-terminal": [
