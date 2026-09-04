@@ -1,5 +1,114 @@
 # Natalia Browser Plugin
 
+[中文](#中文) | [English](#english)
+
+<a id="english"></a>
+
+## English
+
+`@natalia/plugin-browser` provides full browser control through a local bridge server and a browser extension that connects the user's existing Chrome / Edge / Firefox.
+
+The plugin contains:
+
+- `src/server.ts`: local bridge server, listening on `127.0.0.1:18765` by default
+- `src/extension/chromium/`: Chrome / Edge extension
+- `src/extension/firefox/`: Firefox extension
+- `scripts/install.ts`: automatic install/launch helper
+
+## Installing the browser extension
+
+### Option 1: automatic install helper
+
+From the repository root:
+
+```bash
+bun packages/plugins/browser/scripts/install.ts
+```
+
+Or from the plugin directory:
+
+```bash
+cd packages/plugins/browser
+bun run install-extension
+```
+
+The helper will:
+
+1. Start the local bridge server.
+2. Detect a Chromium browser (Chrome / Edge / Brave / Opera / Vivaldi / Arc).
+3. If the browser is not running, launch it with `--load-extension`.
+4. If the browser is already running, open the extensions page and print the folder to load manually.
+
+### Option 2: manual install
+
+#### Chrome / Edge
+
+1. Open the extensions page:
+   - Chrome: `chrome://extensions`
+   - Edge: `edge://extensions`
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select:
+
+```text
+packages/plugins/browser/src/extension/chromium
+```
+
+#### Firefox
+
+1. Open:
+
+```text
+about:debugging#/runtime/this-firefox
+```
+
+2. Click **Load Temporary Add-on**.
+3. Select:
+
+```text
+packages/plugins/browser/src/extension/firefox/manifest.json
+```
+
+> A temporary Firefox add-on must be reloaded after the browser restarts.
+
+## Starting the local bridge server
+
+Usually you do not need to start it manually: the plugin starts the bridge server automatically on the first `browser_*` tool call.
+
+If you need to start it manually to check connectivity:
+
+```bash
+bun packages/plugins/browser/src/server.ts
+```
+
+## Verifying extension connection
+
+After loading the extension, it automatically connects to:
+
+```text
+ws://127.0.0.1:18765
+```
+
+The extension reconnects every second if the connection is lost.
+
+After the server is running, check its status:
+
+```bash
+curl http://127.0.0.1:18765/healthz
+```
+
+A successful connection looks like:
+
+```json
+{"ok":true,"extensions":1}
+```
+
+If `extensions` is `0`, the extension is not connected yet; verify that the extension is loaded and the local bridge server is running.
+
+<a id="chinese"></a>
+
+## 中文
+
 `@natalia/plugin-browser` 提供完整的浏览器控制能力，通过本地 bridge server 和浏览器扩展连接用户现有的 Chrome / Edge / Firefox。
 
 插件中包含：

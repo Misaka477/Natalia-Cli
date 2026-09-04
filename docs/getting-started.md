@@ -1,385 +1,321 @@
-# Natalia CLI: Install and Use
+# Natalia Getting Started
 
-A complete path from a fresh machine to a working agent, including skills.
+[中文](#中文) | [English](#english)
 
-This guide is self-contained and covers Linux, macOS, and Windows.
+<a id="english"></a>
 
-Commands are given for PowerShell and for bash. Run whichever matches your shell.
+## English
 
----
+Natalia is a local-first coding-agent runtime. This guide covers installing the workspace, configuring a provider, and using the three shipped front ends:
 
-## 1. Install the prerequisites
+- **CLI** (`apps/cli`)
+- **Web shell** (`apps/web`, package `@natalia/web-shell`)
+- **Desktop** (`apps/desktop`, package `@natalia/desktop`)
 
-| Component                                           | Required              | Why                                                                                                                                                 |
-| --------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Bun](https://bun.com/docs/installation) 1.3.x      | yes                   | The whole runtime uses `Bun.*` APIs. Node is not a substitute.                                                                                      |
-| [Git for Windows](https://git-scm.com/download/win) | Windows only          | Shell tools, workflows, skill scripts, and the sandbox all run through a bash-compatible shell. Without it those tools fail with an explicit error. |
-| Three `wezterm*` binaries (Natalia fork build)      | interactive terminals | `interactive_terminal_*` has no fallback, and a stock WezTerm cannot be used.                                                                       |
-| A provider credential                               | for live turns        | Any OpenAI-compatible, Anthropic, or Gemini key.                                                                                                    |
-| Chrome, Chromium, or Edge                           | optional              | `browser_screenshot` only. On Windows all three are discovered automatically and Edge ships with the OS.                                            |
+There is no legacy TUI application in the current tree.
 
-Install Bun:
+## 1. Prerequisites
 
-```powershell
-powershell -c "irm bun.sh/install.ps1|iex"
-```
+- Bun 1.3+
+- A provider credential for live model turns
+- Git for Windows when using shell/workspace automation on Windows
+- The managed WezTerm fork when using interactive terminal tools
+
+## 2. Install
 
 ```bash
-curl -fsSL https://bun.sh/install | bash
-```
-
-### Windows: make Git Bash discoverable
-
-Natalia looks for Git Bash under `%ProgramFiles%`, `%ProgramW6432%`,
-`%ProgramFiles(x86)%`, and `%LOCALAPPDATA%\Programs`. If you installed Git
-somewhere else, point at it once, permanently:
-
-```powershell
-setx NATALIA_BASH_EXECUTABLE "D:\path\to\Git\bin\bash.exe"
-```
-
-Then **open a new terminal** so the variable takes effect.
-
-## 2. Get the code and install dependencies
-
-```powershell
-git clone <repository-url> natalia-cli
-cd natalia-cli
 bun install
 ```
 
-`bun install` is mandatory: workspace packages resolve without it, but the
-third-party dependencies (`@opentui/*`, `solid-js`, `zod`) do not.
+The workspace uses Bun workspaces. On Windows, if `node_modules` uses the isolated layout and `@natalia/*` links are not visible, run:
 
-> **If, after `bun install`, the root `node_modules` has no `@natalia/*`
-> links** (bun ≥ 1.3 defaults to the isolated layout on Windows, leaving every
-> package under `node_modules/.bun` and making `tsc` fail with `Cannot find
-module '@natalia/client'`), run `bun install --linker=hoisted` from the
-> repository root to rebuild the standard hoisted layout.
->
-> An `IntxLNK` parse error (the account cannot create symlinks; that needs
-> Administrator or Developer Mode) is behavior of bun 1.2 and earlier; the
-> old advice of `--backend copyfile` or installing from inside `apps\tui`
-> only fixes local resolution and no longer applies to bun ≥ 1.3.
-
-The interactive terminal also needs the WezTerm binaries. **They must be the
-Natalia fork build** — a stock or system-installed WezTerm cannot be used: the
-runtime never falls back to `PATH`, and the patched GUI is the only one that
-participates in input ownership arbitration. Build the fork, or copy its
-binaries from a machine that has them:
-
-```powershell
-# from Linux, cross-compiling for Windows
-npm run native-terminal:build-wezterm:windows-cross
-# on Windows with MSVC
-npm run native-terminal:build-wezterm:windows
-```
-
-They land in `packages/plugins/native-terminal/wezterm/target/release/`.
-
-**From a Windows release archive** — the prebuilt fork binaries are included in
-the archive at their expected path, so nothing needs to be moved:
-
-```text
-packages/plugins/native-terminal/wezterm/target/release/
-├── wezterm.exe            ← CLI client
-├── wezterm-gui.exe        ← visible window
-└── wezterm-mux-server.exe ← background multiplexer daemon
-```
-
-The runtime finds them at this **fixed path relative to the repository root**
-(derived from the module location, not the current directory), and the three
-binaries must stay in the same directory — the mux server and GUI are located
-relative to `wezterm.exe`. If you place the binaries elsewhere, keep all three
-together and set `NATALIA_WEZTERM_EXECUTABLE` to the full path of
-`wezterm.exe`. Whatever you point it at must be a **Natalia fork build**, not a
-stock WezTerm.
-
-Verify once after unpacking:
-
-```powershell
-packages\plugin-native-terminal\wezterm\target\release\wezterm.exe --version
-packages\plugin-native-terminal\wezterm\target\release\wezterm-gui.exe start
+```bash
+bun install --linker=hoisted
 ```
 
 ## 3. Configure a provider
 
-Environment variables are the simplest way and keep credentials out of files:
-
-```powershell
-$env:NATALIA_API_KEY  = "..."
-$env:NATALIA_MODEL    = "gpt-4o-mini"
-$env:NATALIA_PROVIDER = "openai-compatible"
-$env:NATALIA_BASE_URL = "https://api.example.com/v1"   # optional
-```
+Environment variables take effect immediately:
 
 ```bash
-export NATALIA_API_KEY="..."
-export NATALIA_MODEL="gpt-4o-mini"
 export NATALIA_PROVIDER="openai-compatible"
-export NATALIA_BASE_URL="https://api.example.com/v1"   # optional
+export NATALIA_API_KEY="sk-..."
+export NATALIA_MODEL="your-model-id"
 ```
 
-Alternatively put credentials under `providers` in `.natalia/config.json`, or
-configure them in the TUI Settings Center (`ctrl+,`). A file takes precedence
-over the environment.
+Or write `.natalia/config.json` in the workspace:
 
-Settings saved in the TUI are read when the runtime initializes. If you
-configure a provider from an empty state, restart the TUI so it starts a session
-with that provider.
-
-Never commit an API key, and never paste one into a prompt, a screenshot, or a
-session file.
-
-## 4. Start the TUI
-
-The TUI **must be started from `apps/tui`**:
-
-```powershell
-cd apps\tui
-bun run src/main.tsx --workspace C:\path\to\your\project
+```json
+{
+  "version": 3,
+  "providers": {
+    "my-provider": {
+      "type": "openai-compatible",
+      "baseURL": "https://api.example.com/v1",
+      "apiKey": "sk-...",
+      "enabled": true
+    }
+  },
+  "defaultModel": "your-model-id"
+}
 ```
+
+Never commit API keys.
+
+## 4. CLI
+
+Run a single turn:
 
 ```bash
-cd apps/tui
-bun run src/main.tsx --workspace /path/to/your/project
+npm run ts:cli -- run "List the repository files"
+npm run ts:cli -- run --json "List the repository files"
 ```
 
-Starting from the repository root fails with
-`Cannot find module 'react/jsx-dev-runtime'`, because Bun resolves the JSX
-runtime from the current directory's `tsconfig.json` and only
-`apps/tui/tsconfig.json` sets `jsxImportSource` to `@opentui/solid`.
-
-Because the start directory is fixed, `--workspace` decides which project the
-agent works on. Without it the workspace becomes the Natalia repository itself.
-
-The TUI mounts through the same generic UI adapter host as every other UI
-(`createUiAdapterHost` in `@natalia/client`). A UI package is an ordinary
-plugin: create it with `--template ui`, install it once into the Natalia
-instance plugin store, then launch it by adapter kind:
+Stream JSON Lines statements through stdin:
 
 ```bash
-npm run ts:cli -- plugin create ./my-ui --id yourco.web --template ui
-npm run ts:cli -- plugin install ./my-ui
-npm run ts:cli -- ui ui.yourco.web
+printf '%s\n' '{"prompt":"List the repository files"}' | npm run ts:cli -- eval
 ```
 
-`plugin install` enables the package in the current workspace. Disable,
-re-enable, or uninstall it with the same plugin commands used for tools. The
-complete from-zero paths for a new plugin and a new UI are in the
-[plugin guide](plugin-guide.md#2-from-zero-a-new-plugin-and-a-new-ui).
-
-| Flag                | Effect                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `--workspace <dir>` | The directory the agent reads, writes, and checkpoints.                                                             |
-| `--session <id>`    | Resume a session instead of starting a new one.                                                                     |
-| `--doctor`          | Start the TUI and immediately run `/doctor`, reporting the resolved provider, workspace, tool count, and readiness. |
-| `--diagnostics`     | Same, but runs `/diagnostics` for verbose runtime detail.                                                           |
-
-`NATALIA_WORKSPACE` has the same effect as `--workspace`.
-
-### Health check
-
-```powershell
-bun run src/main.tsx --doctor --workspace C:\path\to\your\project
-```
-
-This starts the TUI and runs `/doctor` for you; it stays open afterwards, so
-read the report and leave with `ctrl+d`.
-
-A healthy report shows your provider, the workspace path, `native tools: 66`
-(the count grows as tools are added), the discovered skill count, and `ready`.
-`provider: not configured` means step 3 did not take effect.
-
-## 5. Drive the TUI
-
-Type a request and press Enter. Useful keys:
-
-| Key                 | Action                                        |
-| ------------------- | --------------------------------------------- |
-| `enter`             | Submit                                        |
-| `ctrl+j`            | Newline instead of submitting                 |
-| `ctrl+c`            | Cancel the current turn                       |
-| `ctrl+d`            | Exit (on an empty composer)                   |
-| `ctrl+p`            | Command palette                               |
-| `alt+p`             | Cycle panes for the current responsive layout |
-| `ctrl+b`            | Sidebar                                       |
-| `ctrl+n` / `ctrl+l` | New session / session list                    |
-| `ctrl+i` / `ctrl+h` | Status / help                                 |
-| `up` / `down`       | Move through the `/` and `@` completion list  |
-| `escape`            | Dismiss completions                           |
-
-Type `/` for commands and `@` to mention a workspace file, an agent, or an MCP
-resource.
-
-Live Work Chat and the sidebar are responsive default panes. Below 112 columns,
-`Alt+P` cycles Main, Chat, and Sidebar. From 112 to 167 columns it switches
-the secondary pane between Chat and Sidebar. From 168 columns onward all three
-panes are visible and the shortcut cycles focus between them.
-
-Frequently used commands:
-
-| Command                                         | Purpose                              |
-| ----------------------------------------------- | ------------------------------------ |
-| `/help`, `/doctor`, `/status`                   | Help, health, runtime snapshot       |
-| `/sessions`, `/models`, `/model <name>`         | Sessions and model selection         |
-| `/files <query>`, `/search <text>`              | Find files, search content           |
-| `/skills`, `/skill <name>`                      | List and activate skills             |
-| `/checkpoint`, `/checkpoints`, `/rollback <id>` | Workspace checkpoints                |
-| `/agents`, `/agent <name>`                      | Agent selection                      |
-| `/editor`                                       | Edit the draft in an external editor |
-| `/pause`, `/resume`                             | Pause and resume at a safe boundary  |
-
-`/editor` needs `EDITOR` or `VISUAL`. Neither is normally set on Windows, so set
-one to an editor that blocks until closed:
-
-```powershell
-setx EDITOR "code --wait"
-```
-
-### Coordinating subagents
-
-For parallel work, ask the agent to spawn independent subagents and wait for
-them together. Natalia uses `agent_wait` for this coordination, so quiet work
-does not generate status-polling noise. A wait timeout means only that the
-caller stopped waiting; the subagents keep running and can be waited on again.
-
-Stopping is guarded. `agent_stop` requires a reason, and normal requests do not
-interrupt active or recently active subagents. Force stop is an approved
-override for work that must be interrupted immediately and is recorded as such
-in the lifecycle audit.
-
-## 6. Install skills
-
-A skill is a directory containing `SKILL.md`. Natalia discovers skills at
-startup, advertises them to the model, and loads one on demand.
-
-Choose a scope:
-
-| Scope   | Location                                                                                  | Use when                                                      |
-| ------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| user    | `%APPDATA%\natalia-cli\skills\` (Windows), `~/.config/natalia-cli/skills/` (Linux, macOS) | the skill is general purpose and should work in every project |
-| project | `<workspace>/.natalia/skills/`                                                            | the skill belongs to one repository                           |
-
-For a skill repository that keeps its skills in a `skills/` folder:
-
-```powershell
-git clone --depth 1 <skill-repo-url> "$env:TEMP\pull"
-$dst = "$env:APPDATA\natalia-cli\skills"
-New-Item -ItemType Directory -Path $dst -Force
-Get-ChildItem "$env:TEMP\pull\skills" -Directory |
-  ForEach-Object { Copy-Item $_.FullName -Destination $dst -Recurse -Force }
-Remove-Item "$env:TEMP\pull" -Recurse -Force
-```
+Inspect runtime state:
 
 ```bash
-git clone --depth 1 <skill-repo-url> /tmp/pull
-mkdir -p ~/.config/natalia-cli/skills
-cp -r /tmp/pull/skills/* ~/.config/natalia-cli/skills/
-rm -rf /tmp/pull
+npm run ts:cli -- status
+npm run ts:cli -- doctor
+npm run ts:cli -- diagnose
 ```
 
-Swap the destination for `<workspace>/.natalia/skills` to install per project.
-When the same skill name exists in both, the project copy wins.
+Manage sessions and workspaces:
 
-Remove a skill by deleting its directory.
-
-Skills can also be pulled from a URL declared under `skills.urls` in
-`.natalia/config.json`. The URL must serve an `index.json` listing the available
-skills, and each entry is fetched into the user skill directory.
-
-### Verify
-
-Restart the TUI, then:
-
-```text
-/skills
+```bash
+npm run ts:cli -- session list
+npm run ts:cli -- session show <id>
+npm run ts:cli -- fs list --path src --limit 100
 ```
 
-Every installed skill is listed with its name and description. `--doctor` also
-reports the count.
+See `docs/commands.md` for the full CLI command reference.
 
-If a skill is missing, the usual causes are a missing `SKILL.md`, a `name` that
-is not lowercase letters, digits, and hyphens, block-style YAML in the
-frontmatter, or a UTF-8 BOM. Note that **one malformed `SKILL.md` makes every
-skill unavailable**, and the error does not name the offending directory; remove
-the directory you added last to confirm.
+## 5. Web shell
 
-### Use
+Start the web shell development environment:
 
-The installed skills are described to the model on every turn, so simply state
-the task:
-
-```text
-Plan the export feature for this project.
+```bash
+npm run ts:ui
 ```
 
-To pick one yourself:
+This starts a local runtime and the Vite dev server for `@natalia/web-shell`. The web UI includes a workspace tree, a session tree, approval/question panels, plugin management, terminal panes, and checkpoint UI.
 
-```text
-/skill planning-layer-runtime
+Production build:
+
+```bash
+npm --workspace @natalia/web-shell run build
 ```
 
-`/skill` loads it without spending a model turn, which is handy when you already
-know which one you want.
+## 6. Desktop
 
-## 7. Interactive terminals
+The desktop app is an Electron wrapper around the same web shell UI.
 
-Ask the agent to open an interactive terminal and it starts a WezTerm window
-driven through a mux server. Several sessions can be open at once, for example
-one running an editor and one running a REPL. What runs inside a pane is up to
-you, and the agent can launch other interactive programs on request.
+```bash
+npm --workspace @natalia/desktop run dev
+```
 
-If the first attempt reports a WezTerm timeout, retry once: the first mux server
-start pays a cold-start cost on Windows.
+It starts the runtime automatically and opens the desktop window with workspace/session navigation.
 
-## 8. Escape hatches
+## 7. Multi-workspace
 
-| Variable                     | Purpose                                                                                                                             |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `NATALIA_BASH_EXECUTABLE`    | Absolute path to `bash.exe` when Git for Windows is installed outside the searched locations.                                       |
-| `NATALIA_WEZTERM_EXECUTABLE` | Absolute path to `wezterm.exe` when the binaries are not in the fork's build directory. Its siblings must be in the same directory. |
-| `NATALIA_CHROME_BIN`         | Browser for `browser_screenshot`. Set it if discovery picks a broken install; Edge works well on Windows.                           |
-| `EDITOR`, `VISUAL`           | External editor for `/editor`.                                                                                                      |
-| `NATALIA_WORKSPACE`          | Same as `--workspace`.                                                                                                              |
+Natalia supports multiple workspaces in one host process. Each workspace has its own runtime client and session store; they share the same global config path and plugin store.
 
-## 9. Where your data lives
+- Add a workspace through the web/desktop workspace panel.
+- Activate a workspace to make it the active runtime.
+- Use `NATALIA_WORKSPACES_FILE` to point at a workspace registry JSON when embedding the runtime.
 
-| Contents                                      | Location                                                             |
-| --------------------------------------------- | -------------------------------------------------------------------- |
-| Project config, sessions, checkpoints, skills | `<workspace>/.natalia/`                                              |
-| Plugin enablement for this workspace          | `<workspace>/.natalia/config.json` (`plugins.enabled`)               |
-| Installed plugin packages                     | Natalia instance `plugin-store` (`natalia.lock` + `node_modules`)    |
-| Global config                                 | `%APPDATA%\natalia-cli\` (Windows), `~/.config/natalia-cli/` (POSIX) |
-| Terminal runtime files                        | `%LOCALAPPDATA%` (Windows), `$XDG_RUNTIME_DIR` (POSIX)               |
+The web/desktop UI renders a workspace tree and the workspace -> session tree from the same projected state.
 
-`.natalia/` is git-ignored, and it holds credentials if you saved any through
-the Settings Center. Do not copy it between machines or into a repository.
+## 8. Multi-session
 
-## 10. Known limits on Windows
+A workspace can run multiple sessions concurrently. The web/desktop UI shows sessions in a tree and allows attaching, resuming, and switching between them.
 
-- File modes are advisory. `chmod` and `mode:` cannot set execute bits, so
-  sandbox mode changes do not affect executability.
-- Process ownership checks degrade to a liveness check, because `/proc` is
-  unavailable.
-- Every shell-backed tool requires a bash-compatible shell. There is
-  deliberately no `cmd.exe` fallback, because that would silently reinterpret
-  quoted commands.
+CLI session commands operate on session records:
 
-## 11. If something goes wrong
+```bash
+npm run ts:cli -- session list
+npm run ts:cli -- session show <id>
+npm run ts:cli -- session rename <id> "New title"
+npm run ts:cli -- session pin <id>
+npm run ts:cli -- session delete <id>
+```
 
-| Symptom                                                                         | Cause and fix                                                                          |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `Cannot find module 'react/jsx-dev-runtime'`                                    | Started outside `apps/tui`. `cd apps/tui` first.                                       |
-| `IntxLNK` parse error                                                           | Account cannot create symlinks (bun ≤ 1.2). See step 2.                                |
-| No `@natalia/*` in root `node_modules` (`Cannot find module '@natalia/client'`) | bun ≥ 1.3 isolated layout. Run `bun install --linker=hoisted`, see step 2.             |
-| `A bash-compatible shell is unavailable`                                        | Install Git for Windows, or set `NATALIA_BASH_EXECUTABLE`, then open a new terminal.   |
-| `provider: not configured`                                                      | Step 3 did not apply. Verify the variables in the same terminal, then restart the TUI. |
-| `No real provider configured` on submit                                         | The provider was saved after the runtime started. Restart the TUI.                     |
-| `external editor is not configured`                                             | Set `EDITOR` or `VISUAL`, see step 5.                                                  |
-| Skills do not appear                                                            | See the verification notes in step 6.                                                  |
-| WezTerm timeout on the first terminal                                           | Retry once; cold start.                                                                |
-| The agent works in the wrong directory                                          | Pass `--workspace`.                                                                    |
+## 9. Where data lives
 
-Collect details with `/doctor` and `/diagnostics` inside the TUI, or pass
-`--doctor` at startup to have the report run for you.
+| Data | Location |
+| --- | --- |
+| Workspace config, sessions, checkpoints | `<workspace>/.natalia/` |
+| Global config | `~/.config/natalia-cli/config.json` |
+| Workspace registry | `~/.config/natalia-cli/workspaces.json` |
+
+Override global paths with `NATALIA_CONFIG` and `NATALIA_WORKSPACES_FILE`.
+
+## 10. Troubleshooting
+
+- `provider: not configured` — set `NATALIA_PROVIDER` / `NATALIA_API_KEY` / `NATALIA_MODEL` or fill `.natalia/config.json`.
+- `No real provider configured` — restart the runtime after changing provider config.
+- Browser tools missing extension — see `packages/plugins/browser/README.md`.
+
+<a id="chinese"></a>
+
+## 中文
+
+Natalia 是 local-first 的 coding-agent runtime。本指南覆盖安装工作区、配置 provider，以及使用三个已提供的前端：
+
+- **CLI**（`apps/cli`）
+- **Web shell**（`apps/web`，包名 `@natalia/web-shell`）
+- **Desktop**（`apps/desktop`，包名 `@natalia/desktop`）
+
+当前代码树中没有旧的 TUI 应用。
+
+## 1. 环境要求
+
+- Bun 1.3+
+- 真实模型对话需要 provider 凭据
+- Windows 上使用 shell/workspace 自动化时需要 Git for Windows
+- 使用交互式终端工具时需要 managed WezTerm fork
+
+## 2. 安装
+
+```bash
+bun install
+```
+
+项目使用 Bun workspaces。Windows 上如果 `node_modules` 使用 isolated layout 导致看不到 `@natalia/*` 链接，运行：
+
+```bash
+bun install --linker=hoisted
+```
+
+## 3. 配置 provider
+
+环境变量立即生效：
+
+```bash
+export NATALIA_PROVIDER="openai-compatible"
+export NATALIA_API_KEY="sk-..."
+export NATALIA_MODEL="your-model-id"
+```
+
+或者在 workspace 中写 `.natalia/config.json`：
+
+```json
+{
+  "version": 3,
+  "providers": {
+    "my-provider": {
+      "type": "openai-compatible",
+      "baseURL": "https://api.example.com/v1",
+      "apiKey": "sk-...",
+      "enabled": true
+    }
+  },
+  "defaultModel": "your-model-id"
+}
+```
+
+不要把 API key 提交到仓库。
+
+## 4. CLI
+
+执行单轮任务：
+
+```bash
+npm run ts:cli -- run "List the repository files"
+npm run ts:cli -- run --json "List the repository files"
+```
+
+通过 stdin 流式传入 JSON Lines：
+
+```bash
+printf '%s\n' '{"prompt":"List the repository files"}' | npm run ts:cli -- eval
+```
+
+查看运行时状态：
+
+```bash
+npm run ts:cli -- status
+npm run ts:cli -- doctor
+npm run ts:cli -- diagnose
+```
+
+管理 session 与 workspace：
+
+```bash
+npm run ts:cli -- session list
+npm run ts:cli -- session show <id>
+npm run ts:cli -- fs list --path src --limit 100
+```
+
+完整 CLI 命令见 `docs/commands.md`。
+
+## 5. Web shell
+
+启动 Web shell 开发环境：
+
+```bash
+npm run ts:ui
+```
+
+这会启动本地 runtime 和 `@natalia/web-shell` 的 Vite dev server。Web UI 包含 workspace 树、session 树、审批/提问面板、插件管理、终端面板和 checkpoint UI。
+
+生产构建：
+
+```bash
+npm --workspace @natalia/web-shell run build
+```
+
+## 6. Desktop
+
+Desktop 是基于同一 Web shell UI 的 Electron 桌面应用。
+
+```bash
+npm --workspace @natalia/desktop run dev
+```
+
+它会自动启动 runtime，并打开带 workspace/session 导航的桌面窗口。
+
+## 7. 多 Workspace
+
+Natalia 支持在一个 host 进程里同时管理多个 workspace。每个 workspace 有独立的 runtime client 和 session store；它们共享同一个 global config 路径和 plugin store。
+
+- 通过 Web/Desktop 的 workspace 面板添加 workspace。
+- 激活 workspace 后它成为 active runtime。
+- 嵌入 runtime 时可用 `NATALIA_WORKSPACES_FILE` 指定 workspace registry JSON。
+
+Web/Desktop UI 从同一份 projection 渲染 workspace 树和 workspace -> session 树。
+
+## 8. 多 Session
+
+同一个 workspace 可以并发运行多个 session。Web/Desktop UI 用 session 树展示它们，并支持附加、恢复和切换。
+
+CLI session 命令操作 session 记录：
+
+```bash
+npm run ts:cli -- session list
+npm run ts:cli -- session show <id>
+npm run ts:cli -- session rename <id> "New title"
+npm run ts:cli -- session pin <id>
+npm run ts:cli -- session delete <id>
+```
+
+## 9. 数据存放位置
+
+| 数据 | 位置 |
+| --- | --- |
+| workspace 配置、session、checkpoint | `<workspace>/.natalia/` |
+| global 配置 | `~/.config/natalia-cli/config.json` |
+| workspace registry | `~/.config/natalia-cli/workspaces.json` |
+
+可用 `NATALIA_CONFIG` 和 `NATALIA_WORKSPACES_FILE` 覆盖全局路径。
+
+## 10. 故障排查
+
+- `provider: not configured`：设置 `NATALIA_PROVIDER` / `NATALIA_API_KEY` / `NATALIA_MODEL`，或填写 `.natalia/config.json`。
+- `No real provider configured`：修改 provider 配置后重启 runtime。
+- 浏览器工具缺少扩展：见 `packages/plugins/browser/README.md`。

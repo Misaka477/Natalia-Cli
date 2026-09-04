@@ -26,8 +26,6 @@
     "native-terminal:build-wezterm:windows-cross": "npx bun scripts/build-wezterm-windows.ts",
     "native-terminal:build-wezterm:ubuntu": "npx bun scripts/build-wezterm-ubuntu.ts",
     "smoke:native-terminal:headless": "env -u DISPLAY -u WAYLAND_DISPLAY npx bun scripts/native-terminal-headless-smoke.ts",
-    "perf:baseline": "npx bun scripts/perf/perf-0.ts",
-    "perf:p0-trace": "npx bun scripts/perf/p0-trace-summary.ts",
     "smoke:cli:automation": "npx bun scripts/cli-automation-smoke.ts",
     "guard:imports": "npx bun run packages/tooling/testing/bin/import-guard.ts",
     "ts:ui": "bun scripts/dev-web-ui.ts",
