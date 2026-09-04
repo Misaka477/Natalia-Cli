@@ -634,6 +634,7 @@ export function SettingsPanel(props: {
                               class="neu-settings-item neu-settings-item-button"
                               onClick={() => {
                                 const next = !gpuAcceleration();
+                                console.log("[settings] GPU 加速 toggle", next);
                                 setGpuAcceleration(next);
                                 props.preferences?.set("gpuAcceleration", next);
                                 const electron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
