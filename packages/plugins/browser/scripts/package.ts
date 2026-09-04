@@ -2,8 +2,8 @@
  * Package the Natalia Browser Bridge extensions for store upload.
  *
  * Outputs:
- *   packages/browser-bridge/dist/natalia-browser-bridge-chromium.zip
- *   packages/browser-bridge/dist/natalia-browser-bridge-firefox.zip
+ *   packages/plugins/browser/dist/natalia-browser-bridge-chromium.zip
+ *   packages/plugins/browser/dist/natalia-browser-bridge-firefox.zip
  */
 import { mkdir, readdir, rm, writeFile, copyFile, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";

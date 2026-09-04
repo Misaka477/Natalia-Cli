@@ -1,5 +1,6 @@
 import type { Plugin, PluginAPI, PluginManifest } from "@natalia/plugin";
 import { browserTools } from "./tools";
+import { getBrowserBridgeLifecycle } from "./browser-bridge-lifecycle";
 
 export const BROWSER_PLUGIN_ID = "natalia-tool-browser";
 
@@ -29,6 +30,7 @@ export function createBrowserPlugin(): Plugin {
     },
     async dispose() {
       for (const dispose of disposers.splice(0)) dispose();
+      await getBrowserBridgeLifecycle().close();
     },
   };
 }

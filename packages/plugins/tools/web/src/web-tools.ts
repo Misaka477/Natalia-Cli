@@ -1,21 +1,14 @@
 /**
  * The web tool family, as a separately packaged family.
  *
- * Depends on the framework for the tool-authoring surface, on the platform
- * package for shell quoting, and on the shell family for headless browser runs.
- * It knows nothing about the runtime or the capability kernel.
+ * It provides the basic web surface (fetch and search) only. The full browser
+ * surface is owned by the separate natalia-tool-browser plugin.
  */
-import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
-import { isWindows, shellQuote } from "@natalia/platform";
 import {
+  assertNetworkURL,
   numberOr,
-  optionalString,
   requireObject,
   requireString,
-  runShell,
-  workspacePath,
 } from "@natalia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type {
@@ -23,8 +16,6 @@ import type {
   ToolExecutionContext,
   ToolFamily,
 } from "@natalia/tools";
-
-import { assertNetworkURL, browserTools } from "@natalia/plugin-browser";
 
 export const WEB_PLUGIN_ID = "natalia-tool-web";
 
@@ -175,7 +166,6 @@ function selectWebSearchSource(input: {
 export const webTools: RuntimeTool[] = [
   webFetchTool(),
   webSearchTool(),
-  ...browserTools,
 ];
 
 /**

@@ -4,26 +4,24 @@
  * These tools control the user's existing browser through the local
  * ExternalBrowserBridge (browser extension + bridge server).
  */
-import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
-import { isWindows, shellQuote } from "@natalia/platform";
+import { dirname, relative } from "node:path";
 import {
+  assertNetworkURL,
   numberOr,
   optionalString,
   requireObject,
   requireString,
-  runShell,
   workspacePath,
 } from "@natalia/tools";
 import type { RuntimeTool, ToolExecutionContext, ToolFamily } from "@natalia/tools";
+import { getBrowserBridgeLifecycle } from "./browser-bridge-lifecycle";
+
+export const BROWSER_BRIDGE_EXTENSION_MISSING_ERROR =
+  "Natalia Browser Bridge 扩展未安装或未启用。请告诉用户安装该扩展。";
 
 function sharedBrowserBase(): string | undefined {
   return process.env.NATALIA_BROWSER_BRIDGE_URL || undefined;
-}
-
-function sharedBrowserAvailable(): boolean {
-  return Boolean(sharedBrowserBase());
 }
 
 function optionalTabId(value: unknown): string | number | undefined {
@@ -40,16 +38,25 @@ function optionalTabId(value: unknown): string | number | undefined {
   return value as string;
 }
 
+async function resolveBrowserBridgeBase(): Promise<string> {
+  const lifecycle = getBrowserBridgeLifecycle();
+  await lifecycle.ensureStarted();
+  if (!lifecycle.isConnected()) {
+    throw new Error(BROWSER_BRIDGE_EXTENSION_MISSING_ERROR);
+  }
+  const base = lifecycle.getBaseUrl();
+  if (!base) {
+    throw new Error(BROWSER_BRIDGE_EXTENSION_MISSING_ERROR);
+  }
+  return base;
+}
+
 async function browserBridgeCall(
   action: string,
   input: Record<string, unknown> = {},
   sessionID?: string,
 ): Promise<unknown> {
-  const base = sharedBrowserBase();
-  if (!base)
-    throw new Error(
-      "browser bridge is not available. Start it with: bun packages/browser-bridge/src/server.ts. If the extension is not installed, run: bun packages/browser-bridge/scripts/install.ts",
-    );
+  const base = sharedBrowserBase() ?? (await resolveBrowserBridgeBase());
   const payload = sessionID ? { ...input, sessionID } : input;
   const response = await fetch(`${base.replace(/\/$/, "")}/browser/${action}`, {
     method: "POST",
@@ -77,7 +84,7 @@ function browserScreenshotTool(): RuntimeTool {
   return {
     name: "browser_screenshot",
     description:
-      "Capture a real screenshot from the shared browser when available; otherwise fall back to a headless Chrome/Chromium binary.",
+      "Capture a real screenshot from the shared browser through the Natalia Browser Bridge extension.",
     requiresApproval: true,
     timeoutSec: 60,
     parameters: {
@@ -103,64 +110,26 @@ function browserScreenshotTool(): RuntimeTool {
       await mkdir(dirname(output), { recursive: true });
       if (url) assertNetworkURL(url, context);
 
-      if (sharedBrowserAvailable()) {
-        let tabId: string | number | undefined;
-        if (url) {
-          const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
-            tabId?: string | number;
-          };
-          tabId = opened.tabId;
-          if (!tabId) throw new Error("shared browser opened a tab but returned no id");
-        }
-        const result = (await browserBridgeCall("screenshot", {
-          ...(tabId ? { tabId } : {}),
-        }, context.sessionID)) as { data?: string };
-        const data = String(result.data ?? "");
-        const base64 = data.replace(/^data:image\/[^;]+;base64,/u, "");
-        if (!base64)
-          throw new Error("shared browser screenshot returned no image data");
-        await writeFile(output, Buffer.from(base64, "base64"));
-        return JSON.stringify({
-          path: relative(context.workspaceRoot, output),
-          via: "shared-browser",
-        });
+      let tabId: string | number | undefined;
+      if (url) {
+        const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
+          tabId?: string | number;
+        };
+        tabId = opened.tabId;
+        if (!tabId) throw new Error("shared browser opened a tab but returned no id");
       }
-
-      if (!url)
-        throw new Error(
-          "browser_screenshot without the shared browser bridge requires a url",
-        );
-      const chrome =
-        context.settings?.browserBinary ??
-        process.env.NATALIA_CHROME_BIN ??
-        (await firstExecutable([
-          "chromium",
-          "chromium-browser",
-          "google-chrome",
-          "chrome",
-          "msedge",
-        ]));
-      if (!chrome)
-        throw new Error(
-          "shared browser bridge is unavailable and browser_screenshot fallback requires Chrome/Chromium; run Natalia Desktop to use the self-contained shared browser",
-        );
-      const profile = context.settings?.browserPersistentProfile
-        ? context.settings.browserProfileDir
-          ? ` --user-data-dir=${shellQuote(workspacePath(context.workspaceRoot, context.settings.browserProfileDir))}`
-          : ""
-        : "";
-      const locale = context.settings?.browserLocale
-        ? ` --lang=${shellQuote(context.settings.browserLocale)}`
-        : "";
-      const timezone = context.settings?.browserTimezone
-        ? ` --timezone=${shellQuote(context.settings.browserTimezone)}`
-        : "";
-      await runShell(
-        `${shellQuote(chrome)} --headless=new --disable-gpu --no-sandbox --window-size=${Math.trunc(numberOr(args.width, 1280))},${Math.trunc(numberOr(args.height, 720))}${profile}${locale}${timezone} --screenshot=${shellQuote(output)} ${shellQuote(url)}`,
-        context,
-        60,
-      );
-      return JSON.stringify({ path: relative(context.workspaceRoot, output) });
+      const result = (await browserBridgeCall("screenshot", {
+        ...(tabId ? { tabId } : {}),
+      }, context.sessionID)) as { data?: string };
+      const data = String(result.data ?? "");
+      const base64 = data.replace(/^data:image\/[^;]+;base64,/u, "");
+      if (!base64)
+        throw new Error("shared browser screenshot returned no image data");
+      await writeFile(output, Buffer.from(base64, "base64"));
+      return JSON.stringify({
+        path: relative(context.workspaceRoot, output),
+        via: "shared-browser",
+      });
     },
   };
 }
@@ -393,77 +362,6 @@ function browserInputTool(): RuntimeTool {
     },
   };
 }
-
-export function assertNetworkURL(input: string, context: ToolExecutionContext) {
-  const url = new URL(input);
-  const allowedSchemes = context.settings?.allowedSchemes ?? ["https", "http"];
-  if (!allowedSchemes.includes(url.protocol.slice(0, -1)))
-    throw new Error(`network scheme is not allowed: ${url.protocol}`);
-  const host = url.hostname.toLowerCase();
-  const allowed = context.settings?.allowedHosts ?? [];
-  const allowedGroups = context.settings?.allowedHostGroups ?? [allowed];
-  const denied = context.settings?.deniedHosts ?? [];
-  if (denied.some((pattern) => hostMatches(host, pattern)))
-    throw new Error(`network host denied: ${host}`);
-  if (
-    allowedGroups.some(
-      (group) =>
-        group.length && !group.some((pattern) => hostMatches(host, pattern)),
-    )
-  )
-    throw new Error(`network host is not allowed: ${host}`);
-  const localhost =
-    host === "localhost" || host === "::1" || host.startsWith("127.");
-  if (localhost && context.settings?.allowLocalhost === false)
-    throw new Error(`localhost network access is not allowed: ${host}`);
-  const privateAddress = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/u.test(
-    host,
-  );
-  if (privateAddress && context.settings?.allowPrivate === false)
-    throw new Error(`private network access is not allowed: ${host}`);
-}
-
-function hostMatches(host: string, pattern: string) {
-  const normalized = pattern.toLowerCase();
-  return normalized.startsWith("*.")
-    ? host.endsWith(normalized.slice(1))
-    : host === normalized;
-}
-
-async function firstExecutable(names: string[]) {
-  // Resolved without a shell. The previous `bash -lc "command -v"` probe was
-  // the one call site that bypassed the platform shell helper, and on Windows
-  // a bare `bash` is the WSL launcher rather than Git bash, so the lookup ran
-  // inside a Linux distro and could never see a Windows browser. Bun.which
-  // performs the same PATH resolution on POSIX without spawning anything.
-  for (const name of names) {
-    const resolved = Bun.which(name);
-    if (resolved) return resolved;
-  }
-  // Windows installers do not put browsers on PATH, so PATH resolution alone
-  // never finds an installed Chrome or Edge. POSIX has no such well-known
-  // locations and skips this entirely.
-  if (!isWindows()) return undefined;
-  const env = process.env;
-  const roots = [
-    env.LOCALAPPDATA,
-    env.ProgramFiles,
-    env.ProgramW6432,
-    env["ProgramFiles(x86)"],
-  ].filter((root): root is string => Boolean(root));
-  const relative = [
-    join("Google", "Chrome", "Application", "chrome.exe"),
-    join("Chromium", "Application", "chrome.exe"),
-    join("Microsoft", "Edge", "Application", "msedge.exe"),
-  ];
-  for (const root of roots)
-    for (const suffix of relative) {
-      const candidate = join(root, suffix);
-      if (existsSync(candidate)) return candidate;
-    }
-  return undefined;
-}
-
 
 export const browserTools: RuntimeTool[] = [
   browserScreenshotTool(),

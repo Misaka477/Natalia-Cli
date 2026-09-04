@@ -11,7 +11,7 @@ import { spawn, execSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname; // packages/browser-bridge
+const ROOT = new URL("..", import.meta.url).pathname; // packages/plugins/browser
 const EXT_DIR = join(ROOT, "src/extension/chromium");
 const BRIDGE_URL = process.env.NATALIA_BROWSER_BRIDGE_URL || "http://127.0.0.1:18765";
 

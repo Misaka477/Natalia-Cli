@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "@natalia/tools": "workspace:*",
-    "@natalia/plugin": "workspace:*",
-    "@natalia/platform": "workspace:*"
+    "@natalia/plugin": "workspace:*"
   },
   "scripts": {
     "install-extension": "bun scripts/install.ts",

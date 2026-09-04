@@ -1,4 +1,5 @@
 export { validateToolParameters, assertValidToolParameters } from "./validate";
+export { assertNetworkURL } from "./network";
 export {
   parseUnifiedPatch,
   applyUnifiedPatchToText,

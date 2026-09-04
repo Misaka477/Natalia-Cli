@@ -6,6 +6,8 @@
  * same server; the server forwards to the extension and relays the result.
  */
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type BrowserBridgeServerOptions = {
   host?: string;
@@ -179,6 +181,10 @@ export async function startBrowserBridgeServer(
   return bridge;
 }
 
-if (import.meta.main) {
+if (
+  import.meta.main &&
+  process.argv[1] !== undefined &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   await startBrowserBridgeServer();
 }
