@@ -141,6 +141,13 @@ async function main() {
 
   if (running[0]) console.log(`[natalia-browser-bridge] detected running browser: ${browser}`);
   else console.log(`[natalia-browser-bridge] browser: ${browser}`);
+
+  if (/firefox|safari/i.test(browser)) {
+    console.error("This helper currently only auto-installs Chromium browsers.");
+    console.error("Firefox support is still under development.");
+    process.exit(1);
+  }
+
   console.log(`[natalia-browser-bridge] extension dir: ${EXT_DIR}`);
 
   if (!isBrowserRunning()) {
