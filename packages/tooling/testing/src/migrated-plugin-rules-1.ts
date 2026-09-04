@@ -180,44 +180,6 @@ export const migratedPluginRules1: readonly MigratedPluginRule[] = [
     ],
   },
   {
-    id: "natalia-workflow-scheduler",
-    targets: [
-      "packages/framework/client/src/index.ts",
-      "packages/framework/client/src/runtime/main.ts",
-      "packages/framework/client/src/capability-execution-host.ts",
-      "packages/framework/client/src/worker.ts",
-      "packages/framework/client/test/capability-execution-host.test.ts",
-      "packages/framework/client/test/worker.test.ts",
-      "apps/cli/src/command-dispatcher.ts",
-      "apps/tui/src/runtime-worker.ts",
-    ],
-    forbidden: [
-      {
-        description: "direct workflow scheduler construction",
-        pattern: /\bnew\s+WorkflowExecutionScheduler\b/u,
-      },
-      {
-        description: "direct workflow scheduler implementation import",
-        pattern:
-          /from\s+["'](?:\.\.?\/)*(?:workflow-execution-scheduler|workflow-scheduler-host|workflow-scheduler-plugin|builtin-plugins\/workflow-scheduler-plugin)["']/u,
-      },
-      {
-        description: "client-owned workflow scheduler implementation",
-        pattern:
-          /export (?:class WorkflowExecutionScheduler|function createWorkflowScheduler(?:Plugin)?Host|function createWorkflowSchedulerPlugin)\b/u,
-      },
-      {
-        description: "concrete workflow scheduler type outside its owner",
-        pattern: /\bWorkflowExecutionScheduler\b/u,
-      },
-      {
-        description: "workflow scheduler host imported through client facade",
-        pattern:
-          /import\s*\{[^}]*\bcreateWorkflowScheduler(?:Plugin)?Host\b[^}]*\}\s*from\s*["']@natalia\/client["']/u,
-      },
-    ],
-  },
-  {
     id: "natalia-turn-orchestration",
     targets: ["packages/framework/client/src/runtime/main.ts"],
     forbidden: [

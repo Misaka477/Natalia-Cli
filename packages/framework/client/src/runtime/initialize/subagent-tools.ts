@@ -12,6 +12,13 @@ import type {
   ToolHookEvent,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
+import {
+  clearRepeat,
+  recordRepeat,
+  repeatKey,
+  REPEAT_MAX,
+  REPEAT_WINDOW_MS,
+} from "../tool-execution/repeat-guard";
 
 export async function createSubagentTools(
   ctx: RuntimeContext,
@@ -33,7 +40,7 @@ export async function createSubagentTools(
     runner: SubagentRunnerContext;
     visibleTools: RuntimeTool[];
     childWorkspaceRoot: string;
-    repeatedCalls: Map<string, number>;
+    repeatedCalls: Map<string, number[]>;
     exec: SessionExecutionState;
     writeAuthorize?: (input: {
       toolName: string;
@@ -62,11 +69,14 @@ export async function createSubagentTools(
       });
       return `ERROR: ${message}`;
     }
-    const dedupKey = `${call.name}\u0000${call.arguments}`;
-    const occurrences = (input.repeatedCalls.get(dedupKey) ?? 0) + 1;
-    input.repeatedCalls.set(dedupKey, occurrences);
-    if (occurrences > 12 && !scope.WAITING_TOOLS.has(tool.name)) {
-      const message = `blocked repeated tool call after ${occurrences} identical attempts: ${tool.name}`;
+    const dedupKey = repeatKey(
+      tool.name,
+      call.arguments,
+      input.childWorkspaceRoot,
+    );
+    const repeat = recordRepeat(input.repeatedCalls, dedupKey);
+    if (repeat.blocked && !scope.WAITING_TOOLS.has(tool.name)) {
+      const message = `blocked repeated tool call after ${repeat.count} identical attempts within ${Math.round(REPEAT_WINDOW_MS / 1000)}s (max ${REPEAT_MAX}): ${tool.name}`;
       publishSubagentEvent(runner, {
         type: "tool.update",
         id: toolID,
@@ -169,6 +179,7 @@ export async function createSubagentTools(
       await scope
         .createToolPolicyLayer(input.exec)
         .postExecute({ ...hookEvent, result });
+      clearRepeat(input.repeatedCalls, dedupKey);
       publishSubagentEvent(runner, {
         type: "tool.update",
         id: toolID,

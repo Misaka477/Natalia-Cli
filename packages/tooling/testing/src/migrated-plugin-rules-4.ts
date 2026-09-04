@@ -260,10 +260,6 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
   {
     id: "natalia-ui-command-host",
     targets: [
-      "apps/tui/src/app/App.tsx",
-      "apps/tui/src/app/command-controller.tsx",
-      "apps/tui/src/component/CommandPalette.tsx",
-      "apps/tui/src/component/PromptAutocomplete.tsx",
       "packages/framework/runtime-status/src/status-controller.ts",
     ],
     forbidden: [

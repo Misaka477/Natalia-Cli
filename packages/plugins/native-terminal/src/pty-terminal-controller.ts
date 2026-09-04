@@ -393,6 +393,14 @@ export function createPtyTerminalController(
     return activeSession === undefined || session.sessionID === activeSession;
   }
 
+  function assertSessionOwner(session: PtySession, sessionID?: string) {
+    const expected = sessionID ?? activeSession;
+    if (expected && session.sessionID && session.sessionID !== expected)
+      throw new Error(
+        `terminal ${session.id} belongs to session ${session.sessionID}`,
+      );
+  }
+
   function get(id: string): PtySession {
     const session = sessions.get(id);
     if (!session)
@@ -562,8 +570,12 @@ export function createPtyTerminalController(
     return await list();
   }
 
-  async function read(id: string, options?: { maxLines?: number }) {
+  async function read(
+    id: string,
+    options?: { maxLines?: number; sessionID?: string },
+  ) {
     const session = get(id);
+    assertSessionOwner(session, options?.sessionID);
     assertReadable(session);
     return {
       text: lineWindow(session.output, options?.maxLines),
@@ -583,8 +595,9 @@ export function createPtyTerminalController(
     return { muxWindowID: 0 };
   }
 
-  function releaseHumanControl(id: string) {
+  function releaseHumanControl(id: string, sessionID?: string) {
     const session = get(id);
+    assertSessionOwner(session, sessionID);
     if (session.secureInput)
       throw new Error(
         "secure input must end before returning control to model",
@@ -596,8 +609,9 @@ export function createPtyTerminalController(
     return publicSession(session);
   }
 
-  function beginSecureInput(id: string) {
+  function beginSecureInput(id: string, sessionID?: string) {
     const session = get(id);
+    assertSessionOwner(session, sessionID);
     assertRunning(session);
     if (session.inputOwner !== "human")
       throw new Error("secure input requires human terminal control");
@@ -608,8 +622,9 @@ export function createPtyTerminalController(
     return publicSession(session);
   }
 
-  function endSecureInput(id: string) {
+  function endSecureInput(id: string, sessionID?: string) {
     const session = get(id);
+    assertSessionOwner(session, sessionID);
     session.secureInput = false;
     session.revision += 1;
     notifyRevision(session.id);
@@ -617,8 +632,9 @@ export function createPtyTerminalController(
     return publicSession(session);
   }
 
-  async function claimHumanInput(id: string) {
+  async function claimHumanInput(id: string, sessionID?: string) {
     const session = get(id);
+    assertSessionOwner(session, sessionID);
     assertRunning(session);
     if (session.secureInput && session.inputOwner !== "human")
       throw new Error("secure input requires human terminal control");
@@ -630,8 +646,13 @@ export function createPtyTerminalController(
     return publicSession(session);
   }
 
-  async function stop(id: string, actor: "model" | "human" | "system") {
+  async function stop(
+    id: string,
+    actor: "model" | "human" | "system",
+    sessionID?: string,
+  ) {
     const session = get(id);
+    assertSessionOwner(session, sessionID);
     if (session.status === "running") {
       try {
         session.pty?.kill();
@@ -729,9 +750,10 @@ export function createPtyTerminalController(
   async function write(
     id: string,
     value: string,
-    options?: { idempotencyKey?: string },
+    options?: { idempotencyKey?: string; sessionID?: string },
   ) {
     const session = get(id);
+    assertSessionOwner(session, options?.sessionID);
     assertRunning(session);
     if (session.inputOwner !== "model")
       throw new Error("terminal input is controlled by a human");
@@ -790,8 +812,10 @@ export function createPtyTerminalController(
     rows: number,
     cols: number,
     actor: "model" | "human",
+    sessionID?: string,
   ) {
     const session = get(id);
+    assertSessionOwner(session, sessionID);
     assertRunning(session);
     if (!Number.isInteger(rows) || rows < 1 || rows > 500)
       throw new Error("terminal rows must be an integer between 1 and 500");
@@ -890,8 +914,9 @@ export function createPtyTerminalController(
     current.lastObservedRevision = revision;
   }
 
-  async function requestHuman(id: string, reason: string) {
+  async function requestHuman(id: string, reason: string, sessionID?: string) {
     const current = get(id);
+    assertSessionOwner(current, sessionID);
     assertRunning(current);
     if (typeof reason !== "string" || reason.length === 0)
       throw new Error("request_human requires a reason");

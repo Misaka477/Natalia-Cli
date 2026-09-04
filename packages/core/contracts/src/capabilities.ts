@@ -128,6 +128,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "workspaceList",
     "workspaceRead",
     "workspaceWrite",
+    "workspaceWriteConflicts",
     "workspaceGlob",
     "workspaceDiff",
     "workspaceGitDiff",

@@ -168,7 +168,12 @@ export type TerminalToolService = {
   reconcile(): Promise<TerminalSessionView[]>;
   read(
     id: string,
-    options?: { maxLines?: number; startLine?: number; endLine?: number },
+    options?: {
+      maxLines?: number;
+      startLine?: number;
+      endLine?: number;
+      sessionID?: string;
+    },
   ): Promise<{
     text: string;
     cursorX: number;
@@ -207,7 +212,7 @@ export type TerminalToolService = {
   write(
     id: string,
     value: string,
-    options?: { idempotencyKey?: string },
+    options?: { idempotencyKey?: string; sessionID?: string },
   ): Promise<{
     writtenBytes: number;
     delivery: "accepted" | "duplicate" | "cancelled";
@@ -217,11 +222,17 @@ export type TerminalToolService = {
     rows: number,
     cols: number,
     actor: "model" | "human",
+    sessionID?: string,
   ): Promise<TerminalSessionView>;
-  requestHuman(id: string, reason: string): Promise<TerminalSessionView>;
+  requestHuman(
+    id: string,
+    reason: string,
+    sessionID?: string,
+  ): Promise<TerminalSessionView>;
   stop(
     id: string,
     actor: "model" | "human" | "system",
+    sessionID?: string,
   ): Promise<TerminalSessionView>;
 };
 

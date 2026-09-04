@@ -214,14 +214,20 @@ test("pty controller isolates sessions via setActiveSession", async () => {
   expect(await controller.list()).toEqual([
     expect.objectContaining({ id: b.id }),
   ]);
-  expect((await controller.read(a.id)).text).toBe("");
-  await expect(controller.write(a.id, "from-b\n")).resolves.toMatchObject({
-    delivery: "accepted",
-  });
+  await expect(controller.read(a.id)).rejects.toThrow(
+    /belongs to session/,
+  );
+  await expect(controller.write(a.id, "from-b\n")).rejects.toThrow(
+    /belongs to session/,
+  );
   controller.setActiveSession("ses_a");
   expect((await controller.list()).map((session) => session.id)).toEqual([
     a.id,
   ]);
+  expect((await controller.read(a.id)).text).toBe("");
+  await expect(controller.write(a.id, "from-a\n")).resolves.toMatchObject({
+    delivery: "accepted",
+  });
   await controller.close();
 });
 

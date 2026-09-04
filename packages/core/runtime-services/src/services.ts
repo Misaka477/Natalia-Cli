@@ -2,6 +2,7 @@ import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import type {
   ApprovalResponse,
   ChatChannel,
+  ChatModelProfile,
   CheckpointResourcePolicy,
   ConfigV3,
   ConfirmedWorkspaceChange,
@@ -15,6 +16,7 @@ import type {
   RuntimeEvent,
   RuntimeMessagePage,
   RuntimeNativeTerminalSession,
+  RuntimeReasoningEffort,
   RuntimeSessionSummary,
   SessionID,
   WorkspaceOperation,
@@ -108,6 +110,10 @@ export type SessionStoreRecoveryView = {
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
+  reasoningEffort?: RuntimeReasoningEffort;
+  chatModelProfile?: Record<string, ChatModelProfile>;
+  permissionMode?: "ask" | "auto" | "read_only";
+  permissionProfile?: string;
   attachments: Map<string, LocalAttachment[]>;
   diagnostics: Array<Extract<RuntimeEvent, { type: "diagnostic" }>>;
 };
@@ -541,8 +547,17 @@ export interface MutationRegistry {
   forget(key: string): void;
   pendingCount(): number;
 }
+export type WorkspaceWriteActivity = {
+  sessionID?: string;
+  paths: string[];
+  acquiredAt: number;
+  queuedAt: number;
+  active: boolean;
+};
+
 export interface WorkspaceWriteLock {
-  acquire(sessionID?: string): Promise<() => void>;
+  acquire(sessionID?: string, paths?: string[]): Promise<() => void>;
+  snapshot(): WorkspaceWriteActivity[];
 }
 export interface WorkspaceFilesController {
   init(): Promise<void>;
@@ -559,7 +574,7 @@ export interface TerminalController {
   reconcile(): Promise<RuntimeNativeTerminalSession[]>;
   read(
     id: string,
-    options?: { maxLines?: number },
+    options?: { maxLines?: number; sessionID?: string },
   ): Promise<{
     text: string;
     cursorX: number;
@@ -568,12 +583,22 @@ export interface TerminalController {
     cols: number;
   }>;
   openHub(): Promise<{ muxWindowID: number }>;
-  releaseHumanControl(id: string): RuntimeNativeTerminalSession;
-  beginSecureInput(id: string): RuntimeNativeTerminalSession;
-  endSecureInput(id: string): RuntimeNativeTerminalSession;
+  releaseHumanControl(
+    id: string,
+    sessionID?: string,
+  ): RuntimeNativeTerminalSession;
+  beginSecureInput(
+    id: string,
+    sessionID?: string,
+  ): RuntimeNativeTerminalSession;
+  endSecureInput(
+    id: string,
+    sessionID?: string,
+  ): RuntimeNativeTerminalSession;
   stop(
     id: string,
     actor: "model" | "human" | "system",
+    sessionID?: string,
   ): Promise<RuntimeNativeTerminalSession>;
   start(input: {
     command: string;
@@ -585,7 +610,10 @@ export interface TerminalController {
   write(
     id: string,
     value: string,
-    options?: { idempotencyKey?: string },
+    options?: {
+      idempotencyKey?: string;
+      sessionID?: string;
+    },
   ): Promise<{
     writtenBytes: number;
     delivery: "accepted" | "duplicate" | "cancelled";
@@ -595,6 +623,7 @@ export interface TerminalController {
     rows: number,
     cols: number,
     actor: "model" | "human",
+    sessionID?: string,
   ): Promise<RuntimeNativeTerminalSession>;
   snapshot(id: string): ReturnType<TerminalToolService["snapshot"]>;
   observe(
@@ -607,8 +636,12 @@ export interface TerminalController {
   requestHuman(
     id: string,
     reason: string,
+    sessionID?: string,
   ): Promise<RuntimeNativeTerminalSession>;
-  claimHumanInput?(id: string): Promise<RuntimeNativeTerminalSession>;
+  claimHumanInput?(
+    id: string,
+    sessionID?: string,
+  ): Promise<RuntimeNativeTerminalSession>;
   ttyName(id: string): Promise<string | undefined>;
   setActiveSession(sessionID: string | undefined): void;
   subscribeOutput?(id: string, listener: (chunk: string) => void): () => void;

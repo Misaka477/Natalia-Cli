@@ -103,7 +103,7 @@ export async function installSubagents(
         "You are a focused Natalia TS/Bun subagent. Use the provided native tools to inspect, edit, and validate the workspace. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
       task,
     );
-    const repeatedCalls = new Map<string, number>();
+    const repeatedCalls = new Map<string, number[]>();
     const maxSubagentSteps = scope.effectiveMaxSteps(exec);
     const activeContextConfig = { ...exec.runtimeContextConfig };
     for (let step = 1; step <= maxSubagentSteps; step++) {
@@ -197,7 +197,7 @@ export async function installSubagents(
         "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
         task,
       );
-      const repeatedCalls = new Map<string, number>();
+      const repeatedCalls = new Map<string, number[]>();
       runner.log(`accepted: ${task}`);
       beginSubagentConversation(runner, task);
       const maxSubagentSteps = scope.effectiveMaxSteps(exec);

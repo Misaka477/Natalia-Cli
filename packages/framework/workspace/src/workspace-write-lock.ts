@@ -6,23 +6,74 @@
  * a promise chain — the next writer waits for the previous one to release —
  * so writers serialise in acquisition order while readers and everything else
  * stay parallel.
+ *
+ * The lock also keeps a lightweight activity snapshot so the runtime can tell
+ * which session is currently or about to write which paths. It is observational
+ * only; it never changes the serialisation guarantee.
  */
-import type { WorkspaceWriteLock } from "@natalia/runtime-services";
+import type {
+  WorkspaceWriteActivity,
+  WorkspaceWriteLock,
+} from "@natalia/runtime-services";
+
+type LockRequest = {
+  sessionID?: string;
+  paths: string[];
+  queuedAt: number;
+  acquiredAt: number;
+  active: boolean;
+  release?: () => void;
+};
 
 export function createWorkspaceWriteLock(): WorkspaceWriteLock {
   let chain: Promise<void> = Promise.resolve();
+  const requests: LockRequest[] = [];
 
   /** Acquires the lock; resolves with the release function. */
-  function acquire(sessionID?: string): Promise<() => void> {
-    console.log("[workspace-write-lock] acquire", sessionID ?? "active");
+  function acquire(
+    sessionID?: string,
+    paths: string[] = [],
+  ): Promise<() => void> {
+    const request: LockRequest = {
+      sessionID,
+      paths,
+      queuedAt: Date.now(),
+      acquiredAt: 0,
+      active: false,
+    };
+    requests.push(request);
     let release!: () => void;
+    let released = false;
     const gate = new Promise<void>((resolve) => {
-      release = resolve;
+      release = () => {
+        if (released) return;
+        released = true;
+        request.active = false;
+        request.acquiredAt = 0;
+        const index = requests.indexOf(request);
+        if (index >= 0) requests.splice(index, 1);
+        resolve();
+      };
     });
+    request.release = release;
     const previous = chain;
     chain = previous.then(() => gate);
-    return previous.then(() => release);
+    return previous.then(() => {
+      request.active = true;
+      request.acquiredAt = Date.now();
+      return release;
+    });
   }
 
-  return { acquire };
+  function snapshot(): WorkspaceWriteActivity[] {
+    return requests.map((request) => ({
+      sessionID: request.sessionID,
+      paths: request.paths,
+      acquiredAt: request.acquiredAt,
+      queuedAt: request.queuedAt,
+      active: request.active,
+    }));
+  }
+
+  return { acquire, snapshot };
 }

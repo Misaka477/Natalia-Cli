@@ -15,6 +15,13 @@ export type SessionProjection = {
   replayableEvents: RuntimeEvent[];
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
+  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+  chatModelProfile?: Record<
+    string,
+    import("@natalia/contracts").ChatModelProfile
+  >;
+  permissionMode?: "ask" | "auto" | "read_only";
+  permissionProfile?: string;
 };
 
 /** Selects the model-visible durable context after the latest epoch baseline. */
@@ -57,6 +64,10 @@ export function projectSession(session: SessionRecord): SessionProjection {
     replayableEvents: replayable,
     selectedAgent: selectedAgentFromEvents(replayable),
     selectedModel: selectedModelFromEvents(replayable),
+    reasoningEffort: reasoningEffortFromEvents(replayable),
+    chatModelProfile: chatModelProfileFromEvents(replayable),
+    permissionMode: permissionModeFromEvents(replayable),
+    permissionProfile: permissionProfileFromEvents(replayable),
   };
 }
 
@@ -71,6 +82,47 @@ export function selectedModelFromEvents(events: RuntimeEvent[]) {
   for (const event of [...events].reverse())
     if (event.type === "model.selection")
       return { modelID: event.modelID, variant: event.variant };
+  return undefined;
+}
+
+export function reasoningEffortFromEvents(
+  events: RuntimeEvent[],
+): import("@natalia/contracts").RuntimeReasoningEffort | undefined {
+  for (const event of [...events].reverse())
+    if (event.type === "model.reasoning.set")
+      return event.reasoningEffort;
+  return undefined;
+}
+
+export function chatModelProfileFromEvents(
+  events: RuntimeEvent[],
+): Record<string, import("@natalia/contracts").ChatModelProfile> | undefined {
+  let profile: Record<
+    string,
+    import("@natalia/contracts").ChatModelProfile
+  > | undefined;
+  for (const event of events) {
+    if (event.type === "chat.model.profile") {
+      profile = profile ?? {};
+      profile[event.channel] = event.profile;
+    }
+  }
+  return profile;
+}
+
+export function permissionModeFromEvents(
+  events: RuntimeEvent[],
+): "ask" | "auto" | "read_only" | undefined {
+  for (const event of [...events].reverse())
+    if (event.type === "session.permission.mode") return event.mode;
+  return undefined;
+}
+
+export function permissionProfileFromEvents(
+  events: RuntimeEvent[],
+): string | undefined {
+  for (const event of [...events].reverse())
+    if (event.type === "session.permission.mode") return event.profile;
   return undefined;
 }
 

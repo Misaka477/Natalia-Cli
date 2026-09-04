@@ -157,7 +157,9 @@ export function createEventSink(
         return;
       }
       const sessionSnapshot = structuredClone(exec.session);
-      const sessionPersistence = getSessionPersistence();
+      const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
+        exec.session.id,
+      );
       const next = sessionPersistence
         .then(() => {
           if (sessionStoreController.status().initialized)
@@ -170,7 +172,12 @@ export function createEventSink(
             message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
           });
         });
-      setSessionPersistence(next);
+      ctx.ports.setSessionPersistenceForSession(exec.session.id, next);
+      setSessionPersistence(
+        Promise.allSettled([getSessionPersistence(), next]).then(
+          () => undefined,
+        ),
+      );
     }
     const pluginStartedAt = performance.now();
     if (!event.agentID) getPluginsController().dispatch(event);
@@ -309,6 +316,7 @@ export function createEventSink(
           void ctx.ports.planDocRuntime.planDocUpdateStatus({
             planID: plan.planID,
             status: auditDone ? "completed" : "audit_gaps",
+            sessionID: exec.session.id,
           });
         }
       }
@@ -340,6 +348,7 @@ export function createEventSink(
           void ctx.ports.planDocRuntime.planDocUpdateStatus({
             planID: plan.planID,
             status: "awaiting_audit",
+            sessionID: exec.session.id,
           });
       }
       // WG4: a finished turn is a natural reconcile point — discover external

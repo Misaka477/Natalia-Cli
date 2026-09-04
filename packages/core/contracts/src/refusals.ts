@@ -166,6 +166,7 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "written",
     note: "a file write succeeds or reports a refusal; the value carries the outcome",
   },
+  workspaceWriteConflicts: { refusal: "none", note: "pure local lock-state read" },
   workspaceGlob: {
     refusal: "error",
     note: "path and pattern policy refuse",

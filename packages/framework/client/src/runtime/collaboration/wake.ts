@@ -37,7 +37,10 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     console.log("[collab-wake-main]", { source, kind, sourceID, sessionID: exec.session.id });
     scheduleInternalWake(exec, {
       id: `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
-      text: `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`,
+      text:
+        source === "Nia"
+          ? `(internal collaboration wake: Nia sent a ${kind}; read her audit findings in <nia_collaborations>, perform the required remediation work now, then reply to Nia with what you changed. Do not acknowledge with chat alone. This is not a user message.)`
+          : `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`,
       delivery: coordinator.active ? "queue" : "steer",
     });
   }

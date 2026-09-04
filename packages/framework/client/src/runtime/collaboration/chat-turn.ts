@@ -101,8 +101,8 @@ export function createChatTurn(ctx: RuntimeContext) {
           role: "user",
           content:
             channel === "nia"
-              ? "You are Nia. Your audit wake request has arrived. Read the plan and shared context, perform the audit, then call audit_report with planID and verdict passed or gaps, and use collab_chat to send the concrete findings back to Natalia. Be concise and exact."
-              : "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations>. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply you have already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Set continueConversation=true if your reply asks a question, invites a follow-up, or says you will wait for more; false explicitly closes the conversation. Keep replies concise.",
+              ? "You are Nia. Your audit wake request has arrived. Read the plan and shared context, perform the audit, then call audit_report with planID and verdict passed or gaps, and use collab_chat to send the concrete findings back to Natalia. If this is a re-audit after Natalia's reply, verify her claimed fixes in the actual workspace/plan; if gaps remain, report them again with audit_report and ask her to continue. Be concise and exact."
+              : "Natalia (the main agent) sent you collaboration messages, or needs your expert guidance. Read <natalia_collaborations> and the Main context. If there is an internal advisor request, you MUST reply with concise technical advice as your chat text. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply you have already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Set continueConversation=true if your reply asks a question, invites a follow-up, or says you will wait for more; false explicitly closes the conversation. Always produce a concrete reply; never leave the response empty.",
         });
       }
       if (input.attachments?.length) {
@@ -427,7 +427,10 @@ export function createChatTurn(ctx: RuntimeContext) {
         throw new Error(
           `chat turn reached its step limit without ${unresolvedNataliaReply.action} ${unresolvedNataliaReply.id}`,
         );
-      if ((usedTools || ranFinalOnlyStep) && !finalResponse.trim()) {
+      if (
+        ((usedTools || ranFinalOnlyStep) || input.internal) &&
+        !finalResponse.trim()
+      ) {
         output += MISSING_FINAL_RESPONSE_FALLBACK;
         setPhase("generating");
         publishForSession(input.exec, {
@@ -441,7 +444,7 @@ export function createChatTurn(ctx: RuntimeContext) {
           type: "diagnostic",
           level: "warning",
           message:
-            "Provider omitted the required final chat response; emitted a deterministic fallback",
+            "Provider omitted the required internal chat response; emitted a deterministic fallback",
         });
       }
       publishForSession(input.exec, {

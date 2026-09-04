@@ -139,6 +139,7 @@ export const RPC_ROUTE_MEMBERS = {
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
   "workspace.write": "workspaceWrite",
+  "workspace.writeConflicts": "workspaceWriteConflicts",
   "workspace.glob": "workspaceGlob",
   "workspace.roots": "workspaceRoots",
   "workspace.add": "workspaceAdd",
@@ -640,7 +641,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.selectAgent(name),
+        result: await client.selectAgent(
+          name,
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "agent.list") {
@@ -664,7 +668,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.modelSelection(),
+        result: await client.modelSelection(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "model.select") {
@@ -675,7 +681,11 @@ export async function handleRPCMessage(
         throw invalidParams("model.select.params.modelID must be a string");
       if (variant !== undefined && typeof variant !== "string")
         throw invalidParams("model.select.params.variant must be a string");
-      await client.selectModel(modelID, variant);
+      await client.selectModel(
+        modelID,
+        variant,
+        optionalStringParam(body.params, "sessionID"),
+      );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -687,7 +697,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: (await client.reasoningEffort()) ?? null,
+        result:
+          (await client.reasoningEffort(
+            optionalStringParam(body.params, "sessionID"),
+          )) ?? null,
       };
     }
     if (body.method === "model.reasoning.set") {
@@ -702,6 +715,7 @@ export async function handleRPCMessage(
         );
       await client.setReasoningEffort(
         effort as "minimal" | "low" | "medium" | "high" | "xhigh" | undefined,
+        optionalStringParam(body.params, "sessionID"),
       );
       return {
         jsonrpc: "2.0",
@@ -862,6 +876,14 @@ export async function handleRPCMessage(
           content,
           ...(encoding ? { encoding: encoding as "utf8" | "base64" } : {}),
         }),
+      };
+    }
+    if (body.method === "workspace.writeConflicts") {
+      optionsGuard(client, "workspaceWriteConflicts");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.workspaceWriteConflicts?.()) ?? [],
       };
     }
     if (body.method === "workspace.glob") {

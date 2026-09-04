@@ -15,7 +15,7 @@ export type RuntimeInitializePorts = {
     string,
     import("@natalia/contracts").LocalAttachment[]
   >;
-  getToolCalls: () => Map<string, number>;
+  getToolCalls: () => Map<string, number[]>;
   getActiveSkill: () =>
     | import("@natalia/runtime-services").SkillMetadata
     | undefined;

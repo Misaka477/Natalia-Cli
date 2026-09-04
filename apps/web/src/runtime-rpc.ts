@@ -59,6 +59,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   workspaceRead: "workspace.read",
   workspaceGlob: "workspace.glob",
   workspaceWrite: "workspace.write",
+  workspaceWriteConflicts: "workspace.writeConflicts",
   workspaceRoots: "workspace.roots",
   workspaceAdd: "workspace.add",
   workspaceRemove: "workspace.remove",
@@ -229,6 +230,11 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   diagnosticsList: ["limit", "sessionID"],
   getMcpPrompt: ["server", "prompt"],
   readMcpResource: ["server", "resource"],
+  selectAgent: ["name", "sessionID"],
+  modelSelection: ["sessionID"],
+  selectModel: ["modelID", "variant", "sessionID"],
+  reasoningEffort: ["sessionID"],
+  setReasoningEffort: ["effort", "sessionID"],
   providerDiscover: ["type", "baseURL", "apiKey"],
   providerAdd: ["name", "type", "baseURL", "apiKey"],
   agentCreate: ["name", "config"],
@@ -687,17 +693,66 @@ export function createWebRuntimeClient(
     async modelCatalog() {
       return (await call<RuntimeModelCatalogEntry[]>("model.catalog")) as never;
     },
-    async modelSelection() {
-      return (await call<RuntimeModelSelection>("model.selection")) as never;
+    async modelSelection(sessionID?) {
+      return (await call<RuntimeModelSelection>(
+        "model.selection",
+        sessionID ? { sessionID } : undefined,
+      )) as never;
     },
-    async selectModel(modelID, variant) {
-      await call("model.select", { modelID, variant });
+    async selectModel(modelID, variant, sessionID?) {
+      await call("model.select", {
+        ...(modelID === undefined ? {} : { modelID }),
+        ...(variant === undefined ? {} : { variant }),
+        ...(sessionID ? { sessionID } : {}),
+      });
     },
-    async reasoningEffort() {
-      return (await call<RuntimeReasoningEffort>("model.reasoning")) as never;
+    async reasoningEffort(sessionID?) {
+      return (await call<RuntimeReasoningEffort>(
+        "model.reasoning",
+        sessionID ? { sessionID } : undefined,
+      )) as never;
     },
-    async setReasoningEffort(effort) {
-      await call("model.reasoning.set", { effort });
+    async setReasoningEffort(effort, sessionID?) {
+      await call("model.reasoning.set", {
+        ...(effort === undefined ? {} : { effort }),
+        ...(sessionID ? { sessionID } : {}),
+      });
+    },
+    async recordDecision(input, sessionID?) {
+      return (await call("decision.record", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async recordValidation(input, sessionID?) {
+      return (await call("evidence.record", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async recordCompletion(input, sessionID?) {
+      return (await call("completion.record", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async evaluateDrift(input, sessionID?) {
+      return (await call("drift.evaluate", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async acknowledgeDriftFinding(input, sessionID?) {
+      return (await call("drift.acknowledge", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async requestOverride(input, sessionID?) {
+      return (await call("constitution.override.request", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
     },
     async chatModelProfile(channel?, sessionID?) {
       return (await call<ChatModelProfile>("chat.model.profile", {

@@ -202,12 +202,12 @@ export function createExecuteCalls(
   }
 
   /**
-   * The tool result the model actually reads. In a flow module episode the
+   * The tool result the model actually reads. In an internal module episode the
    * call ID is prepended to the content of text-shaped results, because
    * models reliably read content but routinely ignore the protocol-level
    * tool_call_id — without this the model cannot know its own call ID and
-   * guesses evidenceRefs. JSON-shaped results (report_issue, read_data_source
-   * and friends) stay untouched: the model consumes them verbatim.
+   * guesses evidenceRefs. JSON-shaped results stay untouched: the model
+   * consumes them verbatim.
    */
   function toolResultContent(
     content: string,

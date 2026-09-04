@@ -184,18 +184,4 @@ export const migratedPluginRules2: readonly MigratedPluginRule[] = [
       },
     ],
   },
-  {
-    id: "natalia-tui",
-    targets: ["apps/tui/src/main.tsx"],
-    forbidden: [
-      {
-        description: "direct TUI renderer lifecycle",
-        pattern: /\b(?:runTuiShell|createCliRenderer)\b/u,
-      },
-      {
-        description: "direct TUI worker lifecycle",
-        pattern: /\b(?:createWorkerRuntimeClient|MessageChannel|Worker)\b/u,
-      },
-    ],
-  },
 ];

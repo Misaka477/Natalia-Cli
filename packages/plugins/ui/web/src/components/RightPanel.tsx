@@ -1,7 +1,8 @@
-import { createSignal, createEffect, For, Show, onMount } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import type {
   RuntimeCheckpoint,
   RuntimeClient,
+  RuntimeEvent,
   RuntimeGitRef,
   RuntimeNativeTerminalSession,
   RuntimeSandbox,
@@ -746,6 +747,9 @@ export function TerminalPane(props: {
   runtimeURL?: string;
   token?: string;
   active?: boolean;
+  events?: {
+    subscribe(listener: (event: RuntimeEvent) => void): () => void;
+  };
 } = {}) {
   const [tabs, setTabs] = createSignal<TerminalTab[]>([]);
   const [activeID, setActiveID] = createSignal<string>();
@@ -812,6 +816,32 @@ export function TerminalPane(props: {
     if (previous === key) return key;
     void loadTabs(sessionID);
     return key;
+  });
+
+  createEffect(() => {
+    const events = props.events;
+    const sessionID = props.sessionID;
+    if (!events || !sessionID) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = events.subscribe((event) => {
+      const relevant =
+        event.type === "terminal.update" ||
+        (event.type === "terminal.action" &&
+          (event.action === "started" || event.action === "exit")) ||
+        (event.type === "terminal.timeline" &&
+          (event.action === "started" || event.action === "exit"));
+      if (!relevant) return;
+      if (sessionID && event.sessionID && event.sessionID !== sessionID)
+        return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (sessionID) void loadTabs(sessionID);
+      }, 50);
+    });
+    onCleanup(() => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    });
   });
 
   async function refreshSessions() {

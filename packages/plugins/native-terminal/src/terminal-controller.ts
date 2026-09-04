@@ -256,7 +256,10 @@ export function createTerminalController(input: {
     return nativeTerminal ? await reconcile() : [];
   }
 
-  async function read(id: string, options?: { maxLines?: number }) {
+  async function read(
+    id: string,
+    options?: { maxLines?: number; sessionID?: string },
+  ) {
     return await requireTerminal().read(id, options);
   }
 
@@ -265,24 +268,30 @@ export function createTerminalController(input: {
     return { muxWindowID: hub.muxWindowID };
   }
 
-  function releaseHumanControl(id: string) {
-    return publicSession(requireTerminal().releaseHumanControl(id));
+  function releaseHumanControl(id: string, sessionID?: string) {
+    return publicSession(requireTerminal().releaseHumanControl(id, sessionID));
   }
 
-  async function claimHumanInput(id: string) {
-    return publicSession(await requireTerminal().claimHumanInput(id));
+  async function claimHumanInput(id: string, sessionID?: string) {
+    return publicSession(
+      await requireTerminal().claimHumanInput(id, sessionID),
+    );
   }
 
-  function beginSecureInput(id: string) {
-    return publicSession(requireTerminal().beginSecureInput(id));
+  function beginSecureInput(id: string, sessionID?: string) {
+    return publicSession(requireTerminal().beginSecureInput(id, sessionID));
   }
 
-  function endSecureInput(id: string) {
-    return publicSession(requireTerminal().endSecureInput(id));
+  function endSecureInput(id: string, sessionID?: string) {
+    return publicSession(requireTerminal().endSecureInput(id, sessionID));
   }
 
-  async function stop(id: string, actor: "model" | "human" | "system") {
-    return publicSession(await requireTerminal().stop(id, actor));
+  async function stop(
+    id: string,
+    actor: "model" | "human" | "system",
+    sessionID?: string,
+  ) {
+    return publicSession(await requireTerminal().stop(id, actor, sessionID));
   }
 
   async function start(input: {
@@ -298,7 +307,7 @@ export function createTerminalController(input: {
   async function write(
     id: string,
     value: string,
-    options?: { idempotencyKey?: string },
+    options?: { idempotencyKey?: string; sessionID?: string },
   ) {
     return await requireTerminal().write(id, value, options);
   }
@@ -308,8 +317,11 @@ export function createTerminalController(input: {
     rows: number,
     cols: number,
     actor: "model" | "human",
+    sessionID?: string,
   ) {
-    return publicSession(await requireTerminal().resize(id, rows, cols, actor));
+    return publicSession(
+      await requireTerminal().resize(id, rows, cols, actor, sessionID),
+    );
   }
 
   async function ttyName(id: string) {
@@ -337,8 +349,10 @@ export function createTerminalController(input: {
     requireTerminal().markObserved(id, text, revision);
   }
 
-  async function requestHuman(id: string, reason: string) {
-    return publicSession(await requireTerminal().requestHuman(id, reason));
+  async function requestHuman(id: string, reason: string, sessionID?: string) {
+    return publicSession(
+      await requireTerminal().requestHuman(id, reason, sessionID),
+    );
   }
 
   /**

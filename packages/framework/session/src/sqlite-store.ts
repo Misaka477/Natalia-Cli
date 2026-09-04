@@ -90,7 +90,11 @@ CREATE TABLE IF NOT EXISTS recovery_selection (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id),
   agent_name TEXT,
   model_id TEXT,
-  model_variant TEXT
+  model_variant TEXT,
+  reasoning_effort TEXT,
+  chat_model_profile TEXT,
+  permission_mode TEXT,
+  permission_profile TEXT
 );
 
 CREATE TABLE IF NOT EXISTS recovery_attachments (
@@ -159,6 +163,13 @@ export type StoredRecoveryProjection = {
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
+  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+  chatModelProfile?: Record<
+    string,
+    import("@natalia/contracts").ChatModelProfile
+  >;
+  permissionMode?: "ask" | "auto" | "read_only";
+  permissionProfile?: string;
   attachments: Map<string, import("@natalia/contracts").LocalAttachment[]>;
   diagnostics: Array<Extract<RuntimeEvent, { type: "diagnostic" }>>;
 };
@@ -183,9 +194,31 @@ export class SqliteSessionStore {
     this.db.exec("PRAGMA synchronous=NORMAL");
     this.db.exec("PRAGMA busy_timeout=5000");
     this.db.exec(SCHEMA);
+    this.ensureNewRecoveryColumns();
     this.insertEventStatement = this.db.prepare(
       `INSERT INTO events(session_id, event) VALUES (?, ?)`,
     );
+  }
+
+  private ensureNewRecoveryColumns() {
+    const columns = new Set(
+      (
+        this.db
+          .query(`PRAGMA table_info(recovery_selection)`)
+          .all() as Array<{ name: string }>
+      ).map((column) => column.name),
+    );
+    const additions: Array<[string, string]> = [
+      ["reasoning_effort", "TEXT"],
+      ["chat_model_profile", "TEXT"],
+      ["permission_mode", "TEXT"],
+      ["permission_profile", "TEXT"],
+    ];
+    for (const [name, type] of additions)
+      if (!columns.has(name))
+        this.db.exec(
+          `ALTER TABLE recovery_selection ADD COLUMN ${name} ${type}`,
+        );
   }
 
   close() {
@@ -515,10 +548,18 @@ export class SqliteSessionStore {
       .all(sessionID) as Array<{ kind: string; event: string }>;
     const selection = this.db
       .query(
-        `SELECT agent_name, model_id, model_variant FROM recovery_selection WHERE session_id = ?`,
+        `SELECT agent_name, model_id, model_variant, reasoning_effort, chat_model_profile, permission_mode, permission_profile FROM recovery_selection WHERE session_id = ?`,
       )
       .get(sessionID) as
-      | { agent_name?: string; model_id?: string; model_variant?: string }
+      | {
+          agent_name?: string;
+          model_id?: string;
+          model_variant?: string;
+          reasoning_effort?: string;
+          chat_model_profile?: string;
+          permission_mode?: string;
+          permission_profile?: string;
+        }
       | undefined;
     const attachments = new Map<
       string,
@@ -566,6 +607,22 @@ export class SqliteSessionStore {
         selection?.model_id || selection?.model_variant
           ? { modelID: selection.model_id, variant: selection.model_variant }
           : undefined,
+      reasoningEffort:
+        (selection?.reasoning_effort as
+          | import("@natalia/contracts").RuntimeReasoningEffort
+          | undefined) ?? undefined,
+      chatModelProfile: selection?.chat_model_profile
+        ? (JSON.parse(
+            selection.chat_model_profile,
+          ) as Record<string, import("@natalia/contracts").ChatModelProfile>)
+        : undefined,
+      permissionMode:
+        (selection?.permission_mode as
+          | "ask"
+          | "auto"
+          | "read_only"
+          | undefined) ?? undefined,
+      permissionProfile: selection?.permission_profile ?? undefined,
       attachments,
       diagnostics: diagnostics.map(
         (row) =>
@@ -1013,6 +1070,36 @@ export class SqliteSessionStore {
         `INSERT INTO recovery_selection(session_id, model_id, model_variant) VALUES (?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET model_id = excluded.model_id, model_variant = excluded.model_variant`,
         [sessionID, event.modelID ?? null, event.variant ?? null],
+      );
+    if (event.type === "model.reasoning.set")
+      this.run(
+        `INSERT INTO recovery_selection(session_id, reasoning_effort) VALUES (?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET reasoning_effort = excluded.reasoning_effort`,
+        [sessionID, event.reasoningEffort ?? null],
+      );
+    if (event.type === "chat.model.profile") {
+      const existing = this.db
+        .query(
+          `SELECT chat_model_profile FROM recovery_selection WHERE session_id = ?`,
+        )
+        .get(sessionID) as { chat_model_profile?: string } | undefined;
+      const profiles = existing?.chat_model_profile
+        ? (JSON.parse(
+            existing.chat_model_profile,
+          ) as Record<string, import("@natalia/contracts").ChatModelProfile>)
+        : {};
+      profiles[event.channel] = event.profile;
+      this.run(
+        `INSERT INTO recovery_selection(session_id, chat_model_profile) VALUES (?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET chat_model_profile = excluded.chat_model_profile`,
+        [sessionID, JSON.stringify(profiles)],
+      );
+    }
+    if (event.type === "session.permission.mode")
+      this.run(
+        `INSERT INTO recovery_selection(session_id, permission_mode, permission_profile) VALUES (?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET permission_mode = excluded.permission_mode, permission_profile = excluded.permission_profile`,
+        [sessionID, event.mode, event.profile ?? null],
       );
     if (event.type === "diagnostic") {
       this.run(

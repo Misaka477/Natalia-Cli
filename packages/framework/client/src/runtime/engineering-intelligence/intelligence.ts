@@ -75,25 +75,28 @@ export function createIntelligenceSurface(
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     return ledger;
   }
-  function intelligenceExec(sessionID?: string) {
+  async function intelligenceExec(sessionID?: string) {
     return sessionID
-      ? ctx.ports
+      ? (ctx.ports
           .getExecutionBySession()
-          .get(sessionID as import("@natalia/contracts").SessionID)
+          .get(sessionID as import("@natalia/contracts").SessionID) ??
+        (await ctx.ports.ensureExecution(
+          sessionID as import("@natalia/contracts").SessionID,
+        )))
       : ctx.ports.getActiveExec();
   }
-  function intelligenceSession(sessionID?: string) {
-    return intelligenceExec(sessionID)?.session;
+  async function intelligenceSession(sessionID?: string) {
+    return (await intelligenceExec(sessionID))?.session;
   }
   return {
     async confirmedWorkspaceChanges(sessionID?: string) {
       await ctx.ports.getReady();
-      const exec = intelligenceExec(sessionID);
+      const exec = await intelligenceExec(sessionID);
       if (!exec) return [];
       return ctx.ports.reconcileWorkspaceObservation(exec);
     },
     async constitutionRules(sessionID?: string) {
-      const session = intelligenceSession(sessionID);
+      const session = await intelligenceSession(sessionID);
       if (!session) return [];
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
@@ -112,7 +115,7 @@ export function createIntelligenceSurface(
       }));
     },
     async decisionRecords(sessionID?: string) {
-      const session = intelligenceSession(sessionID);
+      const session = await intelligenceSession(sessionID);
       if (!session) return [];
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
@@ -148,7 +151,7 @@ export function createIntelligenceSurface(
       linkedPlans?: string[];
       linkedConstraints?: string[];
     }, sessionID?: string) {
-      const exec = intelligenceExec(sessionID);
+      const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { recorded: false as const };
       const event = requireGovernanceLedger().recordDecision({
         id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
@@ -173,7 +176,7 @@ export function createIntelligenceSurface(
       return { recorded: true as const };
     },
     async evidenceRecords(sessionID?: string) {
-      const session = intelligenceSession(sessionID);
+      const session = await intelligenceSession(sessionID);
       if (!session) return [];
       // P2 E3: the effective status of each evidence record is driven by the
       // lifecycle of the plan whose task it belongs to (a projection policy —
@@ -203,7 +206,7 @@ export function createIntelligenceSurface(
       );
     },
     async completions(sessionID?: string) {
-      const session = intelligenceSession(sessionID);
+      const session = await intelligenceSession(sessionID);
       if (!session) return [];
       return projectedCompletions(session.events).map((c) => ({
         completionID: c.id,
@@ -235,7 +238,7 @@ export function createIntelligenceSurface(
       timeoutSec?: number;
       knownGaps?: string[];
     }, sessionID?: string) {
-      const owner = intelligenceExec(sessionID);
+      const owner = await intelligenceExec(sessionID);
       if (!owner) return { recorded: false as const };
       if (
         typeof input.taskID !== "string" ||
@@ -304,7 +307,7 @@ export function createIntelligenceSurface(
       evidenceIDs?: string[];
       changePaths?: string[];
     }, sessionID?: string) {
-      const exec = intelligenceExec(sessionID);
+      const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { recorded: false as const };
       if (
         !input.taskID.trim() ||
@@ -353,7 +356,7 @@ export function createIntelligenceSurface(
       return { recorded: true as const, completionID };
     },
     async driftFindings(sessionID?: string) {
-      const session = intelligenceSession(sessionID);
+      const session = await intelligenceSession(sessionID);
       if (!session) return [];
       return projectedDriftFindings(session.events).map(
         (f) => ({
@@ -386,7 +389,7 @@ export function createIntelligenceSurface(
       }>;
       evidenceRefs?: string[];
     }, sessionID?: string) {
-      const exec = intelligenceExec(sessionID);
+      const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { opened: 0 as const };
       if (!input.objective.trim() || !input.currentActivity.trim())
         return { opened: 0 as const };
@@ -412,7 +415,7 @@ export function createIntelligenceSurface(
       status: "explained" | "dismissed" | "corrected";
       rationale?: string;
     }, sessionID?: string) {
-      const exec = intelligenceExec(sessionID);
+      const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { acknowledged: false as const };
       if (!input.findingID.trim()) return { acknowledged: false as const };
       const finding = projectedDriftFindings(
@@ -442,7 +445,7 @@ export function createIntelligenceSurface(
       expiresAt?: string;
     }, sessionID?: string) {
       await ctx.ports.getReady();
-      const exec = intelligenceExec(sessionID);
+      const exec = await intelligenceExec(sessionID);
       const session = exec?.session;
       if (!session || !input.ruleID.trim() || !input.reason.trim())
         return {
@@ -495,7 +498,7 @@ export function createIntelligenceSurface(
       return { approved: outcome.accepted && input.decision === "once" };
     },
     async registeredTools(sessionID?: string) {
-      const session = intelligenceSession(sessionID);
+      const session = await intelligenceSession(sessionID);
       if (!session) return [];
       return projectedCanonicalTools(session.events).map(
         (t) => ({

@@ -149,7 +149,7 @@ export async function recoverSession(
     if (restored) {
       scope.selectedAgent = restored;
       scope.applyAgentPolicy();
-      scope.applyAgentProvider();
+      scope.applyAgentProvider(scope.activeExec);
     } else {
       scope.publish({
         type: "diagnostic",
@@ -162,8 +162,20 @@ export async function recoverSession(
     sqliteRecovery?.selectedModel ?? projection.selectedModel;
   if (recoveredModel) {
     scope.selectedModel = recoveredModel;
-    scope.applyAgentProvider();
+    scope.applyAgentProvider(scope.activeExec);
   }
+  const recoveredReasoning =
+    sqliteRecovery?.reasoningEffort ?? projection.reasoningEffort;
+  if (recoveredReasoning && scope.activeExec)
+    scope.activeExec.reasoningEffort = recoveredReasoning;
+  const recoveredChatProfile =
+    sqliteRecovery?.chatModelProfile ?? projection.chatModelProfile;
+  if (recoveredChatProfile && scope.activeExec)
+    scope.activeExec.chatModelProfile = recoveredChatProfile;
+  const recoveredPermissionMode =
+    sqliteRecovery?.permissionMode ?? projection.permissionMode;
+  if (recoveredPermissionMode && scope.activeExec)
+    scope.activeExec.permissionMode = recoveredPermissionMode;
   await scope.cleanupToolOutput(scope.workspaceRoot).catch((error) =>
     scope.publish({
       type: "diagnostic",

@@ -57,7 +57,9 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
     };
     const sessionSnapshot = structuredClone(targetSession);
     const pendingSnapshot = targetSession.metadata.pendingHumanTerminal;
-    const sessionPersistence = getSessionPersistence();
+    const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
+      forSessionID,
+    );
     const next = sessionPersistence
       .then(() =>
         sessionStoreController.updateMetadata(sessionSnapshot, {
@@ -71,7 +73,12 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
           message: `pending human terminal persistence failed: ${error instanceof Error ? error.message : String(error)}`,
         }),
       );
-    setSessionPersistence(next);
+    ctx.ports.setSessionPersistenceForSession(forSessionID, next);
+    setSessionPersistence(
+      Promise.allSettled([getSessionPersistence(), next]).then(
+        () => undefined,
+      ),
+    );
     await next;
   }
 
@@ -94,7 +101,9 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
     targetSession.metadata = { ...targetSession.metadata };
     delete targetSession.metadata.pendingHumanTerminal;
     const sessionSnapshot = structuredClone(targetSession);
-    const sessionPersistence = getSessionPersistence();
+    const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
+      forSessionID,
+    );
     const next = sessionPersistence
       .then(() =>
         sessionStoreController.updateMetadata(sessionSnapshot, {
@@ -108,7 +117,12 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
           message: `pending human terminal clear failed: ${error instanceof Error ? error.message : String(error)}`,
         }),
       );
-    setSessionPersistence(next);
+    ctx.ports.setSessionPersistenceForSession(forSessionID, next);
+    setSessionPersistence(
+      Promise.allSettled([getSessionPersistence(), next]).then(
+        () => undefined,
+      ),
+    );
     await next;
     return true;
   }
@@ -177,7 +191,9 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
       });
     }
     if (terminalStatusByID.get(terminal.id) !== terminal.status) {
-      terminalStatusByID.set(terminal.id, terminal.status);
+      if (terminal.status === "exited")
+        terminalStatusByID.delete(terminal.id);
+      else terminalStatusByID.set(terminal.id, terminal.status);
       scheduleRuntimeStatusSnapshot();
     }
   }

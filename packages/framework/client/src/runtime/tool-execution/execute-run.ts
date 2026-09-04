@@ -208,11 +208,12 @@ export async function runExecuteStage(
     const signal = executionController.signal;
     // D2: workspace writes serialise across sessions.
 
-    releaseWriteLock = toolPolicy.workspaceWritePathForTool(
+    const writePathForLock = toolPolicy.workspaceWritePathForTool(
       tool.name,
       parsed as Record<string, unknown>,
-    )
-      ? await workspaceWriteLock.acquire(exec.session.id)
+    );
+    releaseWriteLock = writePathForLock
+      ? await workspaceWriteLock.acquire(exec.session.id, [writePathForLock])
       : undefined;
     // E1: create a pre-tool checkpoint for side-effecting calls so a tool card
     // can offer a precise "restore to just before this call".  The checkpoint

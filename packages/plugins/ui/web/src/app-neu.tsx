@@ -19,7 +19,6 @@ import { BrowserPanel } from "./browser-panel";
 import { TodoPanel } from "./todo-panel";
 import { PlanPanel } from "./plan-panel";
 import { NiaPanel } from "./nia-panel";
-import { ParallelSessionsPanel } from "./parallel-sessions-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { NeuSelect } from "./components/NeuSelect";
@@ -34,7 +33,7 @@ import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
-type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "browser" | "agent" | "todo" | "sessions";
+type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "browser" | "agent" | "todo";
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -383,6 +382,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [activeTurnStartedAtValue, setActiveTurnStartedAt] = activeTurnStartedAt;
   const [modelOpen, setModelOpen] = createSignal(false);
   const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
+  const [modelSelectionSignal, setModelSelectionSignal] = createSignal<
+    { modelID?: string; variant?: string } | undefined
+  >(undefined);
   const [config, setConfig] = createSignal<ConfigV3 | undefined>(undefined);
   const [reasoningEffort, setReasoningEffortSignal] = createSignal<string>("medium");
   const [chatProfile, setChatProfile] = createSignal<ChatModelProfile>({});
@@ -962,6 +964,42 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }
   }
 
+  let perSessionLoadToken = 0;
+  async function loadPerSessionModelConfig(sessionID: string) {
+    const token = ++perSessionLoadToken;
+    setModelSelectionSignal(undefined);
+    setReasoningEffortSignal("medium");
+    setChatProfile({});
+    const [selectionResult, effortResult, profileResult] =
+      await Promise.allSettled([
+        props.ctx.runtime.modelSelection?.(sessionID),
+        props.ctx.runtime.reasoningEffort?.(sessionID),
+        props.ctx.runtime.chatModelProfile?.("navi", sessionID),
+      ]);
+    if (token !== perSessionLoadToken) return;
+    if (
+      selectionResult.status === "fulfilled" &&
+      selectionResult.value?.modelID
+    )
+      setModelSelectionSignal(selectionResult.value);
+    if (
+      effortResult.status === "fulfilled" &&
+      effortResult.value
+    )
+      setReasoningEffortSignal(effortResult.value);
+    if (
+      profileResult.status === "fulfilled" &&
+      profileResult.value &&
+      (profileResult.value.normal?.modelID || profileResult.value.expert?.modelID)
+    )
+      setChatProfile(profileResult.value);
+  }
+
+  createEffect(() => {
+    const sessionID = selectedSessionID() || state().sessionID;
+    if (sessionID) void loadPerSessionModelConfig(sessionID);
+  });
+
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
@@ -1256,12 +1294,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     });
 
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
-    void props.ctx.runtime.reasoningEffort?.().then((effort) => {
-      if (effort) setReasoningEffortSignal(effort);
-    });
-    void props.ctx.runtime.chatModelProfile?.().then((profile) => {
-      if (profile) setChatProfile(profile);
-    });
     void props.ctx.runtime.registeredTools?.().then((tools) => {
       if (tools) setRegisteredTools(tools.map((tool) => tool.name));
     });
@@ -1302,7 +1334,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   async function updateChatProfile(next: ChatModelProfile) {
     setChatProfile(next);
-    await props.ctx.runtime.setChatModelProfile?.(next);
+    const sessionID = selectedSessionID() || state().sessionID;
+    await props.ctx.runtime.setChatModelProfile?.(next, "navi", sessionID);
   }
   function formatValue(value: unknown): string {
     if (value === null) return "null";
@@ -1759,7 +1792,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       { id: "nia", label: "Nia" },
       { id: "todo", label: "待办" },
       { id: "agent", label: "协同" },
-      { id: "sessions", label: "会话" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
       ...(browserPanel() ? [{ id: "browser" as RightTab, label: "浏览器" }] : []),
@@ -2099,7 +2131,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   setSelectedSession(name);
                   void props.ctx.runtime
                     .sessionAttach?.(id)
-                    .then(() => refreshSessions());
+                    .then(() => {
+                      refreshSessions();
+                      void loadPerSessionModelConfig(id);
+                    });
                 }}
                 onRemoveWorkspace={(workspaceID) => {
                   void removeWorkspace(workspaceID);
@@ -2183,9 +2218,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </div>
               <div class="neu-main-toolbar">
                 <NeuSelect
-                  value={state().modelSelection?.modelID ?? ""}
+                  value={modelSelectionSignal()?.modelID ?? ""}
                   options={modelOptions()}
-                  onChange={(modelID) => void props.ctx.runtime.selectModel?.(modelID)}
+                  onChange={(modelID) => {
+                    const sessionID = selectedSessionID() || state().sessionID;
+                    setModelSelectionSignal({ modelID, variant: undefined });
+                    void props.ctx.runtime.selectModel?.(modelID, undefined, sessionID);
+                  }}
                   placeholder="选择模型"
                   menuPosition="top"
                 />
@@ -2199,8 +2238,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     { value: "xhigh", label: "xhigh" },
                   ]}
                   onChange={(effort) => {
+                    const sessionID = selectedSessionID() || state().sessionID;
                     setReasoningEffortSignal(effort);
-                    void props.ctx.runtime.setReasoningEffort?.(effort as "minimal" | "low" | "medium" | "high" | "xhigh");
+                    void props.ctx.runtime.setReasoningEffort?.(effort as "minimal" | "low" | "medium" | "high" | "xhigh", sessionID);
                   }}
                   placeholder="推理强度"
                   menuPosition="top"
@@ -2509,21 +2549,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               </For>
             </div>
             <div class="neu-secondary-content">
-              <Show when={rightTab() === "sessions"}>
-                <ParallelSessionsPanel
-                  sessions={sessionList()}
-                  selectedSessionID={selectedSessionID() || state().sessionID}
-                  runtime={props.ctx.runtime}
-                  onSelect={(id, name) => {
-                    userSelectedSession = true;
-                    setSelectedSessionID(id);
-                    setSelectedSession(name);
-                    void props.ctx.runtime
-                      .sessionAttach?.(id)
-                      .then(() => refreshSessions());
-                  }}
-                />
-              </Show>
               <Show when={rightTab() === "diff"}>
                 <ReviewPane
                   runtime={props.ctx.runtime}
@@ -2537,12 +2562,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <Show
                 when={
                   rightTab() === "nia"
-                    ? state().sessionID ?? selectedSessionID() ?? "none"
+                    ? selectedSessionID() || state().sessionID || "none"
                     : false
                 }
                 keyed
               >
-                <NiaPanel state={state()} runtime={props.ctx.runtime} />
+                <NiaPanel
+                  state={state()}
+                  runtime={props.ctx.runtime}
+                  sessionID={selectedSessionID() || state().sessionID}
+                />
               </Show>
               <Show when={rightTab() === "todo"}>
                 <TodoPanel state={state()} />
@@ -2563,6 +2592,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       ?.runtimeURL
                   }
                   active={rightTab() === "terminal"}
+                  events={props.ctx.events}
                 />
               </Show>
               <Show when={rightTab() === "files" && filePanel()}>
@@ -2695,7 +2725,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={modelOpen()}
         onClose={() => setModelOpen(false)}
         catalog={modelCatalog()}
-        selection={state().modelSelection ?? undefined}
+        selection={modelSelectionSignal() ?? undefined}
         providers={config()?.providers}
         config={config()}
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}

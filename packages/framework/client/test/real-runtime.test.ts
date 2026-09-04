@@ -4424,11 +4424,12 @@ test("runtime model selections persist across reopen and expose safe catalogs", 
       sessionID,
     });
     reopened.start(() => undefined);
-    expect(await reopened.reasoningEffort?.()).toBeUndefined();
+    expect(await reopened.reasoningEffort?.()).toBe("high");
     await reopened.submitAndWait!("restored model");
     expect(requests[1]).toMatchObject({
       model: "beta",
       temperature: 0.2,
+      reasoning_effort: "high",
     });
   } finally {
     server.stop(true);

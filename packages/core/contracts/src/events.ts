@@ -499,6 +499,20 @@ type RuntimeEventData =
     }
   | { type: "agent.selection"; name?: string; pending: boolean }
   | { type: "model.selection"; modelID?: string; variant?: string }
+  | {
+      type: "model.reasoning.set";
+      reasoningEffort?: RuntimeReasoningEffort;
+    }
+  | {
+      type: "chat.model.profile";
+      channel: ChatChannel;
+      profile: ChatModelProfile;
+    }
+  | {
+      type: "session.permission.mode";
+      mode: "ask" | "auto" | "read_only";
+      profile?: string;
+    }
   | { type: "task.selection"; taskID: string; evidenceID?: string }
   | {
       type: "projections.updated";
@@ -1859,14 +1873,24 @@ export type RuntimeClient = {
    */
   selectAgent?(
     name?: string,
+    sessionID?: string,
   ): AgentSelectionOutcome | Promise<AgentSelectionOutcome>;
   agents?(): Promise<RuntimeAgentCatalogEntry[]>;
   modelCatalog?(): Promise<RuntimeModelCatalogEntry[]>;
-  modelSelection?(): Promise<RuntimeModelSelection>;
-  selectModel?(modelID?: string, variant?: string): Promise<void>;
+  modelSelection?(sessionID?: string): Promise<RuntimeModelSelection>;
+  selectModel?(
+    modelID?: string,
+    variant?: string,
+    sessionID?: string,
+  ): Promise<void>;
   /** A session-local Composer override for subsequent provider requests. */
-  reasoningEffort?(): Promise<RuntimeReasoningEffort | undefined>;
-  setReasoningEffort?(effort?: RuntimeReasoningEffort): Promise<void>;
+  reasoningEffort?(
+    sessionID?: string,
+  ): Promise<RuntimeReasoningEffort | undefined>;
+  setReasoningEffort?(
+    effort?: RuntimeReasoningEffort,
+    sessionID?: string,
+  ): Promise<void>;
   skills?(): Promise<RuntimeSkillCatalogEntry[]>;
   workspaceFiles?(input?: {
     query?: string;
@@ -1894,6 +1918,19 @@ export type RuntimeClient = {
     content: string;
     encoding?: "utf8" | "base64";
   }): Promise<{ written: boolean }>;
+  /**
+   * Returns the current workspace write-lock activity: which sessions are
+   * currently writing (or waiting to write) which paths. Read-only.
+   */
+  workspaceWriteConflicts?(): Promise<
+    Array<{
+      sessionID?: string;
+      paths: string[];
+      acquiredAt: number;
+      queuedAt: number;
+      active: boolean;
+    }>
+  >;
   /** Lists all workspace roots managed by this runtime host. */
   workspaceRoots?(): Promise<WorkspaceSummary[]>;
   /** Adds a workspace root to the runtime host. */
@@ -2295,7 +2332,7 @@ export type RuntimeClient = {
     consequences?: string[];
     linkedPlans?: string[];
     linkedConstraints?: string[];
-  }): Promise<{ recorded: boolean }>;
+  }, sessionID?: string): Promise<{ recorded: boolean }>;
   /** The durable mailbox of Live Work Chat intents, projected from the journal. */
   mailboxList?(sessionID?: string): Promise<
     Array<{

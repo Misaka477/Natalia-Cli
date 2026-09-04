@@ -94,9 +94,15 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
     async setChatModelProfile(profile, channel?: ChatChannel, sessionID?: string) {
       const exec = await chatExec(ctx, sessionID);
       if (!exec) return { saved: false };
+      const profileChannel = channel ?? "navi";
       const profiles = { ...(exec.chatModelProfile as Record<string, ChatModelProfile> | undefined) };
-      profiles[channel ?? "navi"] = profile;
+      profiles[profileChannel] = profile;
       (exec as { chatModelProfile?: unknown }).chatModelProfile = profiles;
+      ctx.ports.publishForSession(exec, {
+        type: "chat.model.profile",
+        channel: profileChannel,
+        profile,
+      });
       return { saved: true };
     },
     async chatAbort(channel?: ChatChannel, sessionID?: string) {

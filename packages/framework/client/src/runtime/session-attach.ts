@@ -107,7 +107,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
     setLastProviderUsage(undefined);
     clearRuntimeDiagnostics();
     applyAgentPolicy();
-    applyAgentProvider();
+    applyAgentProvider(exec);
 
     const projection = projectSession(exec.session);
     const diagnostics =
@@ -131,9 +131,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
     setProvider(exec.provider ?? getProvider());
     if (exec.selectedAgent) {
       applyAgentPolicy();
-      applyAgentProvider();
+      applyAgentProvider(exec);
     } else if (exec.selectedModel) {
-      applyAgentProvider();
+      applyAgentProvider(exec);
     }
     await initializeCheckpointController(exec);
     publishForSession(exec, {

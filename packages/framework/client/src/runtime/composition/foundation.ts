@@ -110,6 +110,11 @@ export function wireFoundation(ctx: RuntimeContext) {
     state.replayMode = mode;
   };
   ports.getSessionPersistence = () => state.sessionPersistence;
+  ports.getSessionPersistenceForSession = (sessionID) =>
+    state.sessionPersistenceBySession.get(sessionID) ?? Promise.resolve();
+  ports.setSessionPersistenceForSession = (sessionID, next) => {
+    state.sessionPersistenceBySession.set(sessionID, next);
+  };
   ports.getProviderConcurrencyLimiter = () => state.providerConcurrencyLimiter;
   ports.getExecutionBySession = () => state.executionBySession;
   ports.getTurnSession = () => state.turnSession;

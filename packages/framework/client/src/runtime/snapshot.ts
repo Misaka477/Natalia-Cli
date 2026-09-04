@@ -160,7 +160,9 @@ export function createSnapshot(ctx: RuntimeContext) {
     if (operation) targetSession.metadata.inFlightOperation = operation;
     else delete targetSession.metadata.inFlightOperation;
     const sessionSnapshot = structuredClone(targetSession);
-    const sessionPersistence = getSessionPersistence();
+    const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
+      exec.session.id,
+    );
     const next = sessionPersistence
       .then(() =>
         sessionStoreController.updateMetadata(sessionSnapshot, {
@@ -174,7 +176,12 @@ export function createSnapshot(ctx: RuntimeContext) {
           message: `in-flight operation audit persistence failed: ${error instanceof Error ? error.message : String(error)}`,
         }),
       );
-    setSessionPersistence(next);
+    ctx.ports.setSessionPersistenceForSession(exec.session.id, next);
+    setSessionPersistence(
+      Promise.allSettled([getSessionPersistence(), next]).then(
+        () => undefined,
+      ),
+    );
     await next;
   }
 }

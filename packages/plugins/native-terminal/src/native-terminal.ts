@@ -918,6 +918,17 @@ export class NativeTerminalRegistry {
     this.activeSession = sessionID;
   }
 
+  private assertSessionOwner(
+    session: NativeTerminalSession,
+    sessionID?: string,
+  ) {
+    const expected = sessionID ?? this.activeSession;
+    if (expected && session.sessionID && session.sessionID !== expected)
+      throw new Error(
+        `terminal ${session.id} belongs to session ${session.sessionID}`,
+      );
+  }
+
   async start(input: {
     command: string;
     cwd: string;
@@ -1239,9 +1250,15 @@ export class NativeTerminalRegistry {
 
   async read(
     id: string,
-    options?: { maxLines?: number; startLine?: number; endLine?: number },
+    options?: {
+      maxLines?: number;
+      startLine?: number;
+      endLine?: number;
+      sessionID?: string;
+    },
   ) {
     const session = this.get(id);
+    this.assertSessionOwner(session, options?.sessionID);
     await this.reconcile();
     this.assertReadable(session);
     return await this.readSession(session, options);
@@ -1268,9 +1285,10 @@ export class NativeTerminalRegistry {
   async write(
     id: string,
     data: string,
-    options: { idempotencyKey?: string } = {},
+    options: { idempotencyKey?: string; sessionID?: string } = {},
   ): Promise<NativeTerminalWriteResult> {
     const session = this.get(id);
+    this.assertSessionOwner(session, options.sessionID);
     await this.reconcile();
     this.assertRunning(session);
     if (session.inputOwner !== "model")
@@ -1426,8 +1444,9 @@ export class NativeTerminalRegistry {
       );
   }
 
-  async claimHumanInput(id: string) {
+  async claimHumanInput(id: string, sessionID?: string) {
     const session = this.get(id);
+    this.assertSessionOwner(session, sessionID);
     this.assertRunning(session);
     if (session.secureInput && session.inputOwner !== "human")
       throw new Error("secure input requires human terminal control");
@@ -1465,8 +1484,9 @@ export class NativeTerminalRegistry {
     return session;
   }
 
-  releaseHumanControl(id: string) {
+  releaseHumanControl(id: string, sessionID?: string) {
     const session = this.get(id);
+    this.assertSessionOwner(session, sessionID);
     if (session.secureInput)
       throw new Error(
         "secure input must end before returning control to model",
@@ -1478,8 +1498,9 @@ export class NativeTerminalRegistry {
     return session;
   }
 
-  beginSecureInput(id: string) {
+  beginSecureInput(id: string, sessionID?: string) {
     const session = this.get(id);
+    this.assertSessionOwner(session, sessionID);
     this.assertRunning(session);
     if (session.inputOwner !== "human")
       throw new Error("secure input requires human terminal control");
@@ -1490,8 +1511,9 @@ export class NativeTerminalRegistry {
     return session;
   }
 
-  endSecureInput(id: string) {
+  endSecureInput(id: string, sessionID?: string) {
     const session = this.get(id);
+    this.assertSessionOwner(session, sessionID);
     session.secureInput = false;
     session.revision += 1;
     this.notifyRevision(session.id);
@@ -1582,8 +1604,10 @@ export class NativeTerminalRegistry {
     rows: number,
     cols: number,
     actor: "model" | "human" = "model",
+    sessionID?: string,
   ) {
     const session = this.get(id);
+    this.assertSessionOwner(session, sessionID);
     await this.reconcile();
     this.assertRunning(session);
     this.assertNoHumanSecureInput("resizing a terminal", actor);
@@ -1600,8 +1624,13 @@ export class NativeTerminalRegistry {
     return session;
   }
 
-  async stop(id: string, actor: "model" | "human" | "system" = "system") {
+  async stop(
+    id: string,
+    actor: "model" | "human" | "system" = "system",
+    sessionID?: string,
+  ) {
     const session = this.get(id);
+    this.assertSessionOwner(session, sessionID);
     this.assertNoHumanSecureInput(
       "stopping a terminal",
       actor === "system" ? "human" : actor,
@@ -1643,8 +1672,9 @@ export class NativeTerminalRegistry {
    * bounded and must describe the kind of input needed, never screen content,
    * file content, or anything that looks like a secret.
    */
-  async requestHuman(id: string, reason: string) {
+  async requestHuman(id: string, reason: string, sessionID?: string) {
     const session = this.get(id);
+    this.assertSessionOwner(session, sessionID);
     this.assertRunning(session);
     if (typeof reason !== "string" || reason.length === 0)
       throw new Error("request_human requires a reason");

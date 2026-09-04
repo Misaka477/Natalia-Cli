@@ -53,31 +53,6 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
     ],
   },
   {
-    id: "natalia-task-module",
-    targets: ["packages/framework/client/src/runtime/main.ts"],
-    forbidden: [
-      {
-        description: "task module tool construction",
-        pattern:
-          /\b(?:registerTaskModuleCapability|taskModuleCapability|taskModuleTools)\b/u,
-      },
-      {
-        description: "direct task module implementation import",
-        pattern:
-          /from\s+["'](?:\.\/task-module-plugin|\.\/builtin-plugins\/task-module-plugin|\.\/capabilities\/task-module-tools|\.\.\/capabilities\/task-module-tools)["']/u,
-      },
-      {
-        description: "direct task module plugin package import",
-        pattern: /from\s+["']@natalia\/task-module-plugin["']/u,
-      },
-      {
-        description: "client-owned task module implementation",
-        pattern:
-          /export\s+(?:async\s+)?function\s+(?:taskModuleTools|createTaskModulePlugin|createFlowModuleCompleteTool|createReportIssueTool|createReadDataSourceTool)\b/u,
-      },
-    ],
-  },
-  {
     id: "natalia-sandbox",
     targets: [
       "packages/framework/client/src/runtime/main.ts",
@@ -162,31 +137,6 @@ export const migratedPluginRules3: readonly MigratedPluginRule[] = [
         description: "client-owned team implementation",
         pattern:
           /export\s+(?:async\s+)?(?:function|const)\s+(?:createTeamPlugin|createTeamFanoutTool|createTeamReviewTool|runFanOut|reviewPRs|validateOwnershipMap|ORCHESTRATOR_SYSTEM_PROMPT|TEAM_MODE_DIRECTIVE)\b/u,
-      },
-    ],
-  },
-  {
-    id: "natalia-workflow-scheduler",
-    targets: [
-      "packages/framework/client/src/index.ts",
-      "packages/framework/workflow-scheduler/src/index.ts",
-      "packages/framework/workflow-scheduler/src/workflow-scheduler-host.ts",
-    ],
-    forbidden: [
-      {
-        description: "workflow scheduler composition re-exported by client",
-        pattern:
-          /export\s+(?:type\s+)?\{[^}]*\b(?:createWorkflowSchedulerHost|createWorkflowSchedulerPluginHost|WORKFLOW_SCHEDULER_PLUGIN_ID|WORKFLOW_SCHEDULER_SERVICE)\b[^}]*\}\s+from\s+["']@natalia\/workflow-scheduler["']/u,
-      },
-      {
-        description: "concrete workflow scheduler exported by public barrel",
-        pattern:
-          /export\s+(?:type\s+)?\{[^}]*\bWorkflowExecutionScheduler\b[^}]*\}\s+from\s+["']\.\/workflow-execution-scheduler["']/u,
-      },
-      {
-        description: "workflow scheduler host generic service escape hatch",
-        pattern:
-          /return\s*\{\s*scheduler\s*,[\s\S]{0,200}?\bservice\s*:\s*<T>\s*\([^)]*\)\s*=>/u,
       },
     ],
   },

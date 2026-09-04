@@ -120,6 +120,9 @@ function interactiveReadTool(): RuntimeTool {
           maxLines: Math.max(1, Math.min(numberOr(args.maxLines, 60), 200)),
           startLine: pageStartLine,
           endLine,
+          ...(context.parentSessionID
+            ? { sessionID: context.parentSessionID }
+            : {}),
         });
       const page = nativeTerminalReadPage(text, {
         startLine: pageStartLine,
@@ -364,6 +367,9 @@ function interactiveWriteTool(): RuntimeTool {
       const data = requireString(args.input, "input");
       const result = await requireNativeTerminal(context).write(id, data, {
         idempotencyKey: optionalString(args.idempotencyKey),
+        ...(context.parentSessionID
+          ? { sessionID: context.parentSessionID }
+          : {}),
       });
       return JSON.stringify({
         id,
@@ -398,6 +404,9 @@ function interactiveSendLineTool(): RuntimeTool {
         `${text}\r`,
         {
           idempotencyKey: optionalString(args.idempotencyKey),
+          ...(context.parentSessionID
+            ? { sessionID: context.parentSessionID }
+            : {}),
         },
       );
       return JSON.stringify({ id, ...result, submitted: true });
@@ -441,7 +450,11 @@ function interactiveKeyTool(): RuntimeTool {
         : [requireObject({ key: requireString(args.key, "key") })];
       if (!sequence.length) throw new Error("keys must not be empty");
       const bytes = sequence.map(encodeTerminalKey).join("");
-      const result = await requireNativeTerminal(context).write(id, bytes);
+      const result = await requireNativeTerminal(context).write(id, bytes, {
+        ...(context.parentSessionID
+          ? { sessionID: context.parentSessionID }
+          : {}),
+      });
       return JSON.stringify({ id, keys: sequence, ...result });
     },
   };
@@ -511,6 +524,9 @@ function interactiveInputTool(): RuntimeTool {
       if (!bytes) throw new Error("input must not be empty");
       const result = await requireNativeTerminal(context).write(id, bytes, {
         idempotencyKey: optionalString(args.idempotencyKey),
+        ...(context.parentSessionID
+          ? { sessionID: context.parentSessionID }
+          : {}),
       });
       return JSON.stringify({
         id,
@@ -593,7 +609,13 @@ function interactiveResizeTool(): RuntimeTool {
       const cols = numberOr(args.cols, 120);
       return JSON.stringify(
         modelNativeTerminalInfo(
-          await requireNativeTerminal(context).resize(id, rows, cols, "model"),
+          await requireNativeTerminal(context).resize(
+            id,
+            rows,
+            cols,
+            "model",
+            context.parentSessionID,
+          ),
         ),
         null,
         2,
@@ -625,6 +647,7 @@ function interactiveRequestHumanTool(): RuntimeTool {
       const session = await requireNativeTerminal(context).requestHuman(
         id,
         reason,
+        context.parentSessionID,
       );
       return JSON.stringify(
         {

@@ -141,7 +141,7 @@ export function createProviderSelection(
   };
 
   function currentModelImageInput(
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec: SessionExecutionState | undefined,
   ): boolean {
     const { getTsRuntimeConfig, getSelectedAgent, getSelectedModel } =
       ctx.ports;
@@ -160,7 +160,7 @@ export function createProviderSelection(
   }
 
   function currentModelPdfInput(
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec: SessionExecutionState | undefined,
   ): boolean {
     const { getTsRuntimeConfig, getSelectedAgent, getSelectedModel } =
       ctx.ports;
@@ -211,7 +211,7 @@ export function createProviderSelection(
   }
 
   function applyAgentProvider(
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec: SessionExecutionState | undefined,
   ) {
     const {
       getTsRuntimeConfig,
@@ -295,7 +295,7 @@ export function createProviderSelection(
   }
 
   function effectiveMaxSteps(
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec: SessionExecutionState | undefined,
   ) {
     const { getSelectedAgent, getMaxSteps } = ctx.ports;
     return (
@@ -311,7 +311,7 @@ export function createProviderSelection(
    * setting, then the schema default.
    */
   function redactToolOutputEnabled(
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec: SessionExecutionState | undefined,
   ) {
     const { getSelectedAgent, getTsRuntimeConfig } = ctx.ports;
     return (
@@ -325,7 +325,7 @@ export function createProviderSelection(
   async function selectRuntimeModel(
     modelID?: string,
     variant?: string,
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec?: SessionExecutionState | undefined,
   ) {
     const {
       getReady,

@@ -518,7 +518,7 @@ export function createChatTools(ctx: RuntimeContext) {
             required: ["planID", "verdict"],
             additionalProperties: false,
           },
-          async execute(parsed) {
+          async execute(parsed, context) {
             const args = parsed as {
               planID?: string;
               verdict?: string;
@@ -533,6 +533,9 @@ export function createChatTools(ctx: RuntimeContext) {
             const result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
               planID: args.planID,
               status,
+              ...((context as { sessionID?: string } | undefined)?.sessionID
+                ? { sessionID: (context as { sessionID: string }).sessionID }
+                : {}),
             });
             return JSON.stringify({
               reported: true,

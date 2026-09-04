@@ -17,7 +17,11 @@ import { Composer } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
 import type { Message } from "./types";
 
-export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
+export function NiaPanel(props: {
+  state: AppState;
+  runtime?: RuntimeClient;
+  sessionID?: string;
+}) {
   const [draft, setDraft] = createSignal("");
   const [modelID, setModelID] = createSignal("");
   const [reasoning, setReasoning] = createSignal("medium");
@@ -30,6 +34,7 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const [modelCatalog, setModelCatalog] = createSignal<
     RuntimeModelCatalogEntry[]
   >([]);
+  let profileLoadToken = 0;
 
   const messages = createMemo<Message[]>(() =>
     (props.state.niaMessages ?? []).map((msg, idx) => {
@@ -73,6 +78,10 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     void loadCatalog();
   });
 
+  createEffect(() => {
+    void loadProfile();
+  });
+
   async function loadCatalog() {
     try {
       const catalog = await props.runtime?.modelCatalog?.();
@@ -83,8 +92,15 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   }
 
   async function loadProfile() {
+    const token = ++profileLoadToken;
+    const requestedSessionID = props.sessionID;
     try {
-      const profile = await props.runtime?.chatModelProfile?.("nia");
+      const profile = await props.runtime?.chatModelProfile?.(
+        "nia",
+        requestedSessionID,
+      );
+      if (token !== profileLoadToken || requestedSessionID !== props.sessionID)
+        return;
       setModelID(profile?.normal?.modelID ?? "");
       setReasoning(profile?.normal?.reasoningEffort ?? "medium");
     } catch {
@@ -154,7 +170,9 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     modelID?: string;
     reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
   }) {
-    const current = await props.runtime?.chatModelProfile?.("nia").catch(() => undefined);
+    const current = await props.runtime
+      ?.chatModelProfile?.("nia", props.sessionID)
+      .catch(() => undefined);
     await props.runtime?.setChatModelProfile?.(
       {
         ...(current ?? {}),
@@ -167,6 +185,7 @@ export function NiaPanel(props: { state: AppState; runtime?: RuntimeClient }) {
         },
       },
       "nia",
+      props.sessionID,
     );
   }
 

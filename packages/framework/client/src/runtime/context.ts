@@ -130,7 +130,7 @@ export type RuntimeState = {
   defaultPermissionMode: "ask" | "auto" | "read_only";
   defaultPermissionProfile?: PermissionProfile;
   maxSteps?: number;
-  toolCalls: Map<string, number>;
+  toolCalls: Map<string, number[]>;
   waiterDeps: InteractiveWaiterDeps;
   sink?: (event: RuntimeEvent) => void;
   replayMode: "all" | "none";
@@ -157,6 +157,7 @@ export type RuntimeState = {
   agentRegistry?: AgentRegistry;
   lastProviderUsage?: { inputTokens: number; outputTokens: number };
   sessionPersistence: Promise<void>;
+  sessionPersistenceBySession: Map<SessionID, Promise<void>>;
   nativeRuntimeID: string;
   tsRuntimeConfig?: ConfigV3;
   frameworkServices?: FrameworkServices;

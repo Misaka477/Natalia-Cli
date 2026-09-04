@@ -7,12 +7,10 @@ import { NeuSelect } from "./components/NeuSelect";
 const BUILTIN_PERMISSION_PROFILES = ["ask", "auto", "read_only"];
 
 const TOOL_FAMILIES = [
-  "flow_module_complete",
   "read_file",
   "glob",
   "grep",
   "read_media_file",
-  "read_data_source",
   "interactive_terminal_*",
   "terminal_observe",
   "run_shell",
@@ -24,7 +22,6 @@ const TOOL_FAMILIES = [
   "browser_screenshot",
   "skill_load",
   "agent_*",
-  "report_issue",
 ];
 
 type CategoryId = "model" | "security" | "runtime" | "extensions" | "interface" | "storage";

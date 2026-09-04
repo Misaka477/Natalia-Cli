@@ -38,18 +38,26 @@ export type NataliaSDK = {
   resume(sessionID?: string): Promise<import("@natalia/contracts").ResumeOutcome>;
   selectAgent(
     name?: string,
+    sessionID?: string,
   ): Promise<import("@natalia/contracts").AgentSelectionOutcome>;
   agents(): Promise<import("@natalia/contracts").RuntimeAgentCatalogEntry[]>;
   modelCatalog(): Promise<
     import("@natalia/contracts").RuntimeModelCatalogEntry[]
   >;
-  modelSelection(): Promise<import("@natalia/contracts").RuntimeModelSelection>;
-  selectModel(modelID?: string, variant?: string): Promise<void>;
-  reasoningEffort(): Promise<
-    import("@natalia/contracts").RuntimeReasoningEffort | undefined
-  >;
+  modelSelection(
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").RuntimeModelSelection>;
+  selectModel(
+    modelID?: string,
+    variant?: string,
+    sessionID?: string,
+  ): Promise<void>;
+  reasoningEffort(
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").RuntimeReasoningEffort | undefined>;
   setReasoningEffort(
     effort?: import("@natalia/contracts").RuntimeReasoningEffort,
+    sessionID?: string,
   ): Promise<void>;
   skills(): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
   workspaceFiles(input?: {
@@ -72,6 +80,9 @@ export type NataliaSDK = {
     offset?: number;
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceContent>;
+  workspaceWriteConflicts(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["workspaceWriteConflicts"]>>>
+  >;
   workspaceGlob(input: {
     pattern: string;
     path?: string;
@@ -484,10 +495,12 @@ export type NataliaSDK = {
   /** Deletes a plan registry record (does not delete the Markdown file). */
   planDocDelete(
     planID: string,
+    sessionID?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocDelete"]>>>>;
   /** Reads the current lifecycle status of a marked plan. */
   planDocStatus(
     planID: string,
+    sessionID?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>>>;
   /** Updates a plan document lifecycle status. */
   planDocUpdateStatus(input: {
@@ -515,7 +528,7 @@ export type NataliaSDK = {
     findingID: string;
     status: "explained" | "dismissed" | "corrected";
     rationale?: string;
-  }): Promise<
+  }, sessionID?: string): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["acknowledgeDriftFinding"]>>>
   >;
   /** Reconciles watcher hints and returns the confirmed changes (WG4 Phase 3). */
@@ -694,21 +707,32 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     resume: async (sessionID) =>
       await call("resume", sessionID ? { sessionID } : {}),
-    selectAgent: async (name) =>
-      await call("agent.select", name === undefined ? {} : { name }),
+    selectAgent: async (name, sessionID) =>
+      await call("agent.select", {
+        ...(name === undefined ? {} : { name }),
+        ...(sessionID ? { sessionID } : {}),
+      }),
     agents: async () => await call("agent.list", {}),
     modelCatalog: async () => await call("model.catalog", {}),
-    modelSelection: async () => await call("model.selection", {}),
-    selectModel: async (modelID, variant) => {
+    modelSelection: async (sessionID) =>
+      await call("model.selection", sessionID ? { sessionID } : {}),
+    selectModel: async (modelID, variant, sessionID) => {
       await call("model.select", {
         ...(modelID === undefined ? {} : { modelID }),
         ...(variant === undefined ? {} : { variant }),
+        ...(sessionID ? { sessionID } : {}),
       });
     },
-    reasoningEffort: async () =>
-      (await call("model.reasoning", {})) ?? undefined,
-    setReasoningEffort: async (effort) => {
-      await call("model.reasoning.set", effort === undefined ? {} : { effort });
+    reasoningEffort: async (sessionID) =>
+      (await call(
+        "model.reasoning",
+        sessionID ? { sessionID } : {},
+      )) ?? undefined,
+    setReasoningEffort: async (effort, sessionID) => {
+      await call("model.reasoning.set", {
+        ...(effort === undefined ? {} : { effort }),
+        ...(sessionID ? { sessionID } : {}),
+      });
     },
     skills: async () => await call("skills.list", {}),
     workspaceFiles: async (input = {}) => await call("workspace.files", input),
@@ -716,6 +740,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     workspaceList: async (input = {}) => await call("workspace.list", input),
     workspaceRead: async (input) => await call("workspace.read", input),
     workspaceGlob: async (input) => await call("workspace.glob", input),
+    workspaceWriteConflicts: async () =>
+      await call("workspace.writeConflicts", {}),
     sessions: async () => await call("session.list", {}),
     touchSession: async (id) => {
       await call("session.touch", { id });

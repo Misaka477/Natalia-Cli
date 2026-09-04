@@ -294,6 +294,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       await ctx.ports.planDocRuntime.planDocUpdateStatus({
         planID: input.relatedPlanID,
         status: "handed_off",
+        sessionID: owner.session.id,
       });
     }
     // Wake the main agent when it is idle: a directive sent through the Live

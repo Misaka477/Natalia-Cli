@@ -19,7 +19,7 @@ export type SessionExecutionState = {
   session: SessionRecord;
   context: RuntimeContextLedger;
   attachmentReferences: Map<string, LocalAttachment[]>;
-  toolCalls: Map<string, number>;
+  toolCalls: Map<string, number[]>;
   provider?: StreamingProvider;
   runtimeContextConfig: RuntimeContextStatusConfig;
   activeModelCapabilities?: ModelCapabilities;

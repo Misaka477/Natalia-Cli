@@ -92,12 +92,6 @@
       "@natalia/sandbox": ["packages/framework/sandbox/src/index.ts"],
       "@natalia/plugin-skills": ["packages/plugins/skills/src/index.ts"],
       "@natalia/subagents": ["packages/framework/subagents/src/index.ts"],
-      "@natalia/plugin-task-module": [
-        "packages/plugins/task-module/src/index.ts"
-      ],
-      "@natalia/plugin-task-workflow": [
-        "packages/plugins/task-workflow/src/index.ts"
-      ],
       "@natalia/plugin-team": ["packages/plugins/team/src/index.ts"],
       "@natalia/tool-policy": ["packages/framework/tool-policy/src/index.ts"],
       "@natalia/tools": ["packages/core/tools/src/index.ts"],
@@ -106,10 +100,6 @@
       ],
       "@natalia/work-ledger": ["packages/domains/work-ledger/src/index.ts"],
       "@natalia/workspace": ["packages/framework/workspace/src/index.ts"],
-      "@natalia/workflow": ["packages/domains/workflow/src/index.ts"],
-      "@natalia/workflow-scheduler": [
-        "packages/framework/workflow-scheduler/src/index.ts"
-      ]
     },
     "noUncheckedIndexedAccess": false,
     "noEmit": false,

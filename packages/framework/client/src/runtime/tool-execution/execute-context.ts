@@ -114,7 +114,9 @@ export function buildToolExecutionContext(input: BuildContextInput) {
       const update = event as Extract<RuntimeEvent, { type: "sandbox.update" }>;
       publish(update);
       if (sandboxResourcesByID.get(update.id) !== update.runningResources) {
-        sandboxResourcesByID.set(update.id, update.runningResources);
+        if (update.runningResources === 0)
+          sandboxResourcesByID.delete(update.id);
+        else sandboxResourcesByID.set(update.id, update.runningResources);
         scheduleRuntimeStatusSnapshot();
       }
     },

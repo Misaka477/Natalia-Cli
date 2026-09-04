@@ -22,6 +22,30 @@ import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 
+const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
+  64,
+  Number(process.env.NATALIA_MAX_IDLE_SESSIONS ?? 512),
+);
+
+function pruneIdleSessionExecutions(ctx: RuntimeContext) {
+  const { executionBySession } = ctx.state;
+  if (executionBySession.size <= MAX_IDLE_SESSION_EXECUTIONS) return;
+  const active = ctx.ports.getActiveExec();
+  for (const [sessionID, exec] of executionBySession) {
+    if (exec === active) continue;
+    if (
+      exec.activeAbort ||
+      exec.activeTurnID ||
+      exec.paused ||
+      exec.endTurnWaitingHuman
+    )
+      continue;
+    executionBySession.delete(sessionID);
+    ctx.state.sessionPersistenceBySession.delete(sessionID);
+    if (executionBySession.size <= MAX_IDLE_SESSION_EXECUTIONS) return;
+  }
+}
+
 export function createSessionExecution(
   ctx: RuntimeContext,
   options: RealRuntimeClientOptions,
@@ -141,6 +165,7 @@ export function createSessionExecution(
       throw new Error("context ledger unavailable (natalia-context-ledger)");
     const stored = await sessionStore.load(sessionID);
     const loaded = stored.session;
+    const recovery = stored.recovery;
     const execContext = contextLedgerFactory.create();
     const projection = projectSession(loaded);
     const epoch = stored.contextEpoch;
@@ -194,18 +219,27 @@ export function createSessionExecution(
             : undefined;
         })(),
       runtimeContextConfig: getRuntimeContextConfig(),
-      permissionMode: getDefaultPermissionMode(),
+      permissionMode:
+        recovery?.permissionMode ??
+        projection.permissionMode ??
+        getDefaultPermissionMode(),
       permissionProfile: getDefaultPermissionProfile(),
       selectedAgent: projection.selectedAgent
         ? getAgentRegistry()?.select(projection.selectedAgent)
         : undefined,
-      selectedModel: projection.selectedModel,
+      selectedModel:
+        recovery?.selectedModel ?? projection.selectedModel,
+      reasoningEffort:
+        recovery?.reasoningEffort ?? projection.reasoningEffort,
+      chatModelProfile:
+        recovery?.chatModelProfile ?? projection.chatModelProfile,
       paused: false,
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
       pendingChatUserMessages: [],
     };
     executionBySession.set(sessionID, exec);
+    pruneIdleSessionExecutions(ctx);
     console.log("[trace] ensureExecution done", sessionID, "provider", exec.provider?.provider ?? exec.provider?.model ?? "none");
     applyAgentProvider(exec);
     await refreshExecutionContextConfig(exec);

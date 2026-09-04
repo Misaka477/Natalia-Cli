@@ -14,12 +14,6 @@ import {
   SqliteSessionStore,
 } from "../../packages/framework/session/src";
 import type { StreamingProvider } from "../../packages/framework/runtime/src";
-import {
-  boundHistoryCache,
-  historyCacheLimit,
-} from "../../apps/tui/src/history-page-cache";
-import { groupTimelineBlocks } from "../../apps/tui/src/routes/session/timeline-virtualizer";
-
 type Sample = {
   elapsedMs: number;
   memory: NodeJS.MemoryUsage;
@@ -43,9 +37,9 @@ try {
     sqliteWriterReaderContentionScenario(tempRoot),
     jsonSessionSaveScenario(tempRoot),
     projectionScenario(),
-    tuiProjectionScenario(),
-    tuiHistoryCacheScenario(),
-    tuiHistoryScrollReloadScenario(),
+
+
+
   ]);
   const report = {
     version: 1,
@@ -397,113 +391,6 @@ async function projectionScenario(): Promise<Scenario> {
       throw new Error("message projection fixture incomplete");
   }
   return { name: "project_1000_turns_4000_events", samples };
-}
-
-async function tuiProjectionScenario(): Promise<Scenario> {
-  const markdown = [
-    "# PERF-0",
-    "",
-    "- item".repeat(2_000),
-    "",
-    "```ts",
-    "x".repeat(40_000),
-    "```",
-  ].join("\n");
-  const blocks = Array.from({ length: 2_000 }, (_, index) => ({
-    id: `turn_${Math.floor(index / 4)}:${index}`,
-    role: index % 4 === 0 ? "assistant" : "tool",
-    text: index === 0 ? markdown : `tool fixture ${index}`,
-  }));
-  const samples: Sample[] = [];
-  for (let index = 0; index < 3; index++) {
-    const start = performance.now();
-    const groups = groupTimelineBlocks(blocks, 12);
-    samples.push({
-      elapsedMs: performance.now() - start,
-      memory: process.memoryUsage(),
-    });
-    if (!groups.length) throw new Error("TUI grouping fixture incomplete");
-  }
-  return {
-    name: "tui_long_markdown_and_500_tool_cards",
-    samples,
-    result: { messageBlocks: blocks.length, toolCards: 500 },
-  };
-}
-
-async function tuiHistoryCacheScenario(): Promise<Scenario> {
-  const samples: Sample[] = [];
-  let cachedMessages = 0;
-  for (let run = 0; run < 3; run++) {
-    const messages = Array.from({ length: 2_000 }, (_, index) => [
-      {
-        id: `turn_${index}:user`,
-        role: "user" as const,
-        text: `user ${index}`,
-      },
-      {
-        id: `turn_${index}:assistant`,
-        role: "assistant" as const,
-        text: `assistant ${index}`,
-      },
-    ]).flat();
-    const start = performance.now();
-    const result = boundHistoryCache(messages, "older");
-    samples.push({
-      elapsedMs: performance.now() - start,
-      memory: process.memoryUsage(),
-    });
-    cachedMessages = result.messages.length;
-    if (!result.evicted || cachedMessages > historyCacheLimit)
-      throw new Error("TUI history cache fixture was not bounded");
-  }
-  return {
-    name: "tui_2000_turn_history_cache_bound",
-    samples,
-    result: { sourceMessages: 4_000, cachedMessages, historyCacheLimit },
-  };
-}
-
-async function tuiHistoryScrollReloadScenario(): Promise<Scenario> {
-  const turns = Array.from({ length: 2_000 }, (_, index) => [
-    { id: `turn_${index}:user`, role: "user" as const, text: `user ${index}` },
-    {
-      id: `turn_${index}:assistant`,
-      role: "assistant" as const,
-      text: `assistant ${index}`,
-    },
-  ]).flat();
-  const samples: Sample[] = [];
-  let cached = turns.slice(-240);
-  for (let run = 0; run < 3; run++) {
-    const start = performance.now();
-    for (let page = 0; page < 20; page++) {
-      const older = turns.slice(
-        Math.max(0, turns.length - 240 - (page + 1) * 100),
-        Math.max(0, turns.length - 240 - page * 100),
-      );
-      cached = boundHistoryCache([...older, ...cached], "older").messages;
-      cached = boundHistoryCache(
-        [...cached, ...turns.slice(-100)],
-        "newer",
-      ).messages;
-    }
-    samples.push({
-      elapsedMs: performance.now() - start,
-      memory: process.memoryUsage(),
-    });
-    if (cached.length > historyCacheLimit)
-      throw new Error("history scroll reload fixture exceeded cache limit");
-  }
-  return {
-    name: "tui_10k_events_2k_blocks_history_scroll_reload",
-    samples,
-    result: {
-      sourceBlocks: turns.length,
-      cachedBlocks: cached.length,
-      pageCycles: 20,
-    },
-  };
 }
 
 function scriptedProvider(): StreamingProvider {

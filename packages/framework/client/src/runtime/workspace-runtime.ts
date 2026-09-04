@@ -18,6 +18,7 @@ type WorkspaceRuntime = Pick<
   | "workspaceRead"
   | "workspaceGlob"
   | "workspaceWrite"
+  | "workspaceWriteConflicts"
   | "workspaceGitDiff"
   | "gitRefs"
 >;
@@ -65,6 +66,10 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });
+    },
+    async workspaceWriteConflicts() {
+      await ctx.ports.getReady();
+      return ctx.ports.getWorkspaceWriteLock()?.snapshot() ?? [];
     },
     async workspaceGitDiff(input?: {
       from?: string;

@@ -36,7 +36,7 @@ export type RuntimePortsExtra = {
   setAttachmentReferences: (
     refs: Map<string, import("@natalia/contracts").LocalAttachment[]>,
   ) => void;
-  setToolCalls: (calls: Map<string, number>) => void;
+  setToolCalls: (calls: Map<string, number[]>) => void;
   setPauseWaiters: (waiters: Array<() => void>) => void;
   setActiveSkill: (
     skill: import("@natalia/runtime-services").SkillMetadata | undefined,
@@ -141,7 +141,7 @@ export type RuntimePortsExtra = {
     terminalID: string;
     reason: string;
   }) => void;
-  redactToolOutputEnabled: (exec?: SessionExecutionState) => boolean;
+  redactToolOutputEnabled: (exec: SessionExecutionState | undefined) => boolean;
   waitForToolExecution: <T>(
     execution: Promise<T>,
     signal?: AbortSignal,

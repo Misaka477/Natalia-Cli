@@ -63,6 +63,11 @@ export type RuntimePorts = {
   isDisposed: () => boolean;
   getSessionPersistence: () => Promise<void>;
   setSessionPersistence: (next: Promise<void>) => void;
+  getSessionPersistenceForSession: (sessionID: SessionID) => Promise<void>;
+  setSessionPersistenceForSession: (
+    sessionID: SessionID,
+    next: Promise<void>,
+  ) => void;
   redactToolOutput: (output: string, redact: boolean | undefined) => string;
   getSink: () => ((event: RuntimeEvent) => void) | undefined;
   setPendingHumanTerminal: (
@@ -127,8 +132,8 @@ export type RuntimePorts = {
   getActiveTurnID: () => string | undefined;
   getPauseWaiters: () => Array<() => void>;
   getRuntimeContext: () => RuntimeContextLedger;
-  currentModelImageInput: (exec?: SessionExecutionState) => boolean;
-  currentModelPdfInput: (exec?: SessionExecutionState) => boolean;
+  currentModelImageInput: (exec: SessionExecutionState | undefined) => boolean;
+  currentModelPdfInput: (exec: SessionExecutionState | undefined) => boolean;
   modelCapabilitiesForExecution: (
     exec: SessionExecutionState | undefined,
   ) => import("@natalia/contracts").ModelCapabilities;
@@ -167,7 +172,7 @@ export type RuntimePorts = {
     toolResource: string,
     commandText?: string,
   ) => string | undefined;
-  isToolAllowed: (toolName: string, exec?: SessionExecutionState) => boolean;
+  isToolAllowed: (toolName: string, exec: SessionExecutionState | undefined) => boolean;
   extensionToolPermission: (
     toolName: string,
     profile?: import("@natalia/contracts").PermissionProfile,
@@ -219,7 +224,7 @@ export type RuntimePorts = {
     exec?: SessionExecutionState,
     channel?: "navi" | "nia",
   ) => import("@natalia/tools").RuntimeTool[];
-  effectiveMaxSteps: (exec?: SessionExecutionState) => number;
+  effectiveMaxSteps: (exec: SessionExecutionState | undefined) => number;
   waitIfPaused: (exec?: SessionExecutionState) => Promise<void>;
   chatToolSummary: (
     toolName: string,
@@ -245,7 +250,7 @@ export type RuntimePorts = {
   getRuntimeContextConfig: () => RuntimeContextStatusConfig;
   getSessionID: () => SessionID;
   getProvider: () => StreamingProvider | undefined;
-  createToolPolicyLayer: (exec?: SessionExecutionState) => ToolPolicyHookLayer;
+  createToolPolicyLayer: (exec: SessionExecutionState | undefined) => ToolPolicyHookLayer;
   getPermissionMode: () => "ask" | "auto" | "read_only";
   setPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getSelectedPermissionProfile: () =>

@@ -36,8 +36,6 @@
         "@natalia/session-store": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/transport": "workspace:*",
-        "@natalia/workflow": "workspace:*",
-        "@natalia/workflow-scheduler": "workspace:*",
       },
     },
     "apps/desktop": {
@@ -49,27 +47,6 @@
       "devDependencies": {
         "electron": "^33.0.0",
         "electron-builder": "^25.0.0",
-      },
-    },
-    "apps/tui": {
-      "name": "@natalia/tui",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/capability": "workspace:*",
-        "@natalia/client": "workspace:*",
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/installer": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/session": "workspace:*",
-        "@natalia/testing": "workspace:*",
-        "@natalia/ui-model": "workspace:*",
-        "@natalia/view-store": "workspace:*",
-        "@opentui/core": "0.4.3",
-        "@opentui/keymap": "0.4.3",
-        "@opentui/solid": "0.4.3",
-        "solid-js": "1.9.12",
       },
     },
     "apps/web": {
@@ -118,7 +95,6 @@
         "@natalia/runtime": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/tools": "workspace:*",
-        "@natalia/workflow": "workspace:*",
       },
     },
     "packages/core/tools": {
@@ -154,18 +130,6 @@
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
-      },
-    },
-    "packages/domains/workflow": {
-      "name": "@natalia/workflow",
-      "version": "0.0.0-ts7",
-      "dependencies": {
-        "@natalia/agent": "workspace:*",
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/tools": "workspace:*",
-        "yaml": "2.8.1",
       },
     },
     "packages/framework/agent": {
@@ -225,12 +189,10 @@
         "@natalia/turn-orchestration": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@natalia/work-ledger": "workspace:*",
-        "@natalia/workflow": "workspace:*",
         "@natalia/workspace": "workspace:*",
       },
       "devDependencies": {
         "@natalia/installer": "workspace:*",
-        "@natalia/workflow-scheduler": "workspace:*",
       },
     },
     "packages/framework/collaboration": {
@@ -363,13 +325,6 @@
         "@natalia/session": "workspace:*",
       },
     },
-    "packages/framework/workflow-scheduler": {
-      "name": "@natalia/workflow-scheduler",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/workflow": "workspace:*",
-      },
-    },
     "packages/framework/workspace": {
       "name": "@natalia/workspace",
       "version": "0.0.0-m13",
@@ -479,32 +434,6 @@
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
         "@natalia/tools": "workspace:*",
-      },
-    },
-    "packages/plugins/task-module": {
-      "name": "@natalia/plugin-task-module",
-      "version": "1.0.0",
-      "dependencies": {
-        "@natalia/capability": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/tools": "workspace:*",
-        "@natalia/workflow": "workspace:*",
-      },
-    },
-    "packages/plugins/task-workflow": {
-      "name": "@natalia/plugin-task-workflow",
-      "version": "1.0.0",
-      "dependencies": {
-        "@natalia/agent": "workspace:*",
-        "@natalia/capability": "workspace:*",
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/workflow": "workspace:*",
       },
     },
     "packages/plugins/team": {
@@ -938,9 +867,7 @@
 
     "@natalia/plugin-skills": ["@natalia/plugin-skills@workspace:packages/plugins/skills"],
 
-    "@natalia/plugin-task-module": ["@natalia/plugin-task-module@workspace:packages/plugins/task-module"],
 
-    "@natalia/plugin-task-workflow": ["@natalia/plugin-task-workflow@workspace:packages/plugins/task-workflow"],
 
     "@natalia/plugin-team": ["@natalia/plugin-team@workspace:packages/plugins/team"],
 
@@ -994,7 +921,6 @@
 
     "@natalia/transport": ["@natalia/transport@workspace:packages/hosts/transport"],
 
-    "@natalia/tui": ["@natalia/tui@workspace:apps/tui"],
 
     "@natalia/turn-orchestration": ["@natalia/turn-orchestration@workspace:packages/framework/turn-orchestration"],
 
@@ -1008,9 +934,7 @@
 
     "@natalia/work-ledger": ["@natalia/work-ledger@workspace:packages/domains/work-ledger"],
 
-    "@natalia/workflow": ["@natalia/workflow@workspace:packages/domains/workflow"],
 
-    "@natalia/workflow-scheduler": ["@natalia/workflow-scheduler@workspace:packages/framework/workflow-scheduler"],
 
     "@natalia/workspace": ["@natalia/workspace@workspace:packages/framework/workspace"],
 

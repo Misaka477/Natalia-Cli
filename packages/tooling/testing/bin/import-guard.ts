@@ -28,14 +28,11 @@ const dependencyGuarded = [
   "packages/plugins/mcp",
   "packages/plugins/skills",
   "packages/framework/subagents",
-  "packages/domains/workflow",
   "packages/core/plugin",
   "packages/framework/retry",
   "packages/framework/runtime-status",
   "packages/framework/turn-orchestration",
   "packages/framework/provider-model",
-  "packages/plugins/task-workflow",
-  "packages/framework/workflow-scheduler",
   "packages/domains/work-ledger",
   "packages/framework/checkpoint",
   "packages/framework/collaboration",
@@ -99,7 +96,6 @@ const kernelPackages = [
   "transport",
   "turn-orchestration",
   "work-ledger",
-  "workflow",
   "workspace",
 ];
 const sourceExtensions = /\.(ts|tsx|js|jsx|go|json|toml|ya?ml)$/u;

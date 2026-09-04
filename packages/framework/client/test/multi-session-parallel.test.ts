@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createOfficialRuntimeClient, officialPluginWorkspace } from "./plugin-test-helpers";
 
 test("two sessions submit and finish concurrently without cross-cancel", async () => {
@@ -250,6 +252,154 @@ test("two sessions runtimeStatus resolve independently", async () => {
   expect(statusA).toBeTruthy();
   expect(statusB).toBeTruthy();
   await client.dispose?.();
+});
+
+test("two sessions provider/model and reasoning selections remain isolated", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-provider");
+  await mkdir(join(workspaceRoot, ".natalia"), { recursive: true });
+  const modelConfig = {
+    version: 3,
+    providers: {
+      local: {
+        name: "Local",
+        driver: "openai",
+        enabled: true,
+        connection: { apiKey: "test", baseURL: "http://127.0.0.1:9" },
+      },
+    },
+    catalog: {
+      providers: {
+        local: {
+          models: {
+            alpha: { name: "alpha" },
+            beta: { name: "beta" },
+          },
+        },
+      },
+    },
+    defaultModel: { provider: "local", model: "alpha" },
+  };
+  const globalConfigPath = join(workspaceRoot, ".natalia-test-global.json");
+  await writeFile(globalConfigPath, JSON.stringify(modelConfig));
+  await writeFile(
+    join(workspaceRoot, ".natalia", "config.json"),
+    JSON.stringify(modelConfig),
+  );
+  const client = createOfficialRuntimeClient({
+    workspaceRoot,
+    globalConfigPath,
+    provider: {
+      provider: "scripted",
+      model: "alpha",
+      async *stream() {
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const createdA = await client.sessionNew?.();
+  const createdB = await client.sessionNew?.();
+  const sessionID_A = createdA?.sessionID;
+  const sessionID_B = createdB?.sessionID;
+  await client.selectModel?.("local/beta", undefined, sessionID_A);
+  await client.setReasoningEffort?.("high", sessionID_A);
+  expect(await client.modelSelection?.(sessionID_A)).toMatchObject({
+    modelID: "local/beta",
+  });
+  expect(await client.modelSelection?.(sessionID_B)).toMatchObject({
+    modelID: "local/alpha",
+  });
+  expect(await client.reasoningEffort?.(sessionID_A)).toBe("high");
+  expect(await client.reasoningEffort?.(sessionID_B)).toBeUndefined();
+  await client.dispose?.();
+});
+
+test("fifty sessions run concurrently through a real OpenAI-compatible HTTP provider", async () => {
+  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-http-provider");
+  const requests: Array<{
+    model: string;
+    messages: Array<{ role: string; content?: string }>;
+  }> = [];
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as (typeof requests)[number];
+      requests.push(body);
+      const text =
+        body.messages
+          .filter((message) => message.role === "user")
+          .at(-1)?.content ?? "";
+      return new Response(
+        [
+          `data: ${JSON.stringify({
+            choices: [{ delta: { content: `done:${text}` } }],
+          })}`,
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+  try {
+    await mkdir(join(workspaceRoot, ".natalia"), { recursive: true });
+    const modelConfig = {
+      version: 3,
+      providers: {
+        local: {
+          name: "local",
+          driver: "openai",
+          enabled: true,
+          connection: {
+            apiKey: "local-key",
+            baseURL: server.url.toString(),
+          },
+        },
+      },
+      catalog: {
+        providers: {
+          local: {
+            models: {
+              alpha: { name: "alpha" },
+            },
+          },
+        },
+      },
+      defaultModel: { provider: "local", model: "alpha" },
+    };
+    const globalConfigPath = join(workspaceRoot, ".natalia-test-global.json");
+    await writeFile(globalConfigPath, JSON.stringify(modelConfig));
+    await writeFile(
+      join(workspaceRoot, ".natalia", "config.json"),
+      JSON.stringify(modelConfig),
+    );
+    const client = createOfficialRuntimeClient({
+      workspaceRoot,
+      globalConfigPath,
+      permissionMode: "auto",
+    });
+    client.start(() => undefined);
+    const sessions = [];
+    for (let i = 0; i < 50; i++) {
+      const created = await client.sessionNew?.();
+      if (created?.sessionID) sessions.push(created.sessionID);
+    }
+    const tasks = sessions.map((sessionID, index) =>
+      client.submitAndWait?.({
+        text: `real provider session ${index}`,
+        sessionID,
+      }),
+    );
+    const results = await Promise.all(tasks);
+    expect(results.length).toBe(50);
+    for (const result of results) expect(result?.id).toBeTruthy();
+    expect(requests.length).toBeGreaterThanOrEqual(50);
+    await client.dispose?.();
+  } finally {
+    server.stop(true);
+  }
 });
 
 test("two sessions diagnostics resolve independently", async () => {

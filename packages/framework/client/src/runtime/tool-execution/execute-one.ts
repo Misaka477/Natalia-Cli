@@ -18,6 +18,13 @@ import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool, ToolMaterialization } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { runExecuteStage } from "./execute-run";
+import {
+  clearRepeat,
+  recordRepeat,
+  repeatKey,
+  REPEAT_MAX,
+  REPEAT_WINDOW_MS,
+} from "./repeat-guard";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 
@@ -69,12 +76,15 @@ export function createExecuteOne(
     );
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const toolID = `${turnID}:${call.id}`;
-    const dedupKey = `${call.name}\u0000${call.arguments}`;
+    const dedupKey = repeatKey(
+      tool.name,
+      call.arguments,
+      ctx.ports.getWorkspaceRoot(),
+    );
     const sessionToolCalls = exec?.toolCalls ?? toolCalls;
-    const occurrences = (sessionToolCalls.get(dedupKey) ?? 0) + 1;
-    sessionToolCalls.set(dedupKey, occurrences);
-    if (occurrences > 12 && !WAITING_TOOLS.has(tool.name)) {
-      const message = `blocked repeated tool call after ${occurrences} identical attempts: ${tool.name}`;
+    const repeat = recordRepeat(sessionToolCalls, dedupKey);
+    if (repeat.blocked && !WAITING_TOOLS.has(tool.name)) {
+      const message = `blocked repeated tool call after ${repeat.count} identical attempts within ${Math.round(REPEAT_WINDOW_MS / 1000)}s (max ${REPEAT_MAX}): ${tool.name}`;
       publish({
         type: "tool.update",
         id: toolID,
@@ -252,6 +262,7 @@ export function createExecuteOne(
     if (run.status === "asking")
       return `ERROR: ${run.decision.reason ?? "approval required"}`;
     if (run.status === "blocked") return `ERROR: ${run.feedback}`;
+    clearRepeat(sessionToolCalls, dedupKey);
     return run.result.content;
   }
 }

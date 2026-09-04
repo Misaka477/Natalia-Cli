@@ -60,7 +60,7 @@ export function createPermissions(
   }
 
   function createToolPolicyLayer(
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec: SessionExecutionState | undefined,
   ): ToolPolicyHookLayer {
     const policy =
       ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
@@ -167,7 +167,7 @@ export function createPermissions(
 
   function isToolAllowed(
     toolName: string,
-    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
+    exec: SessionExecutionState | undefined,
   ) {
     const { getSelectedPermissionProfile } = ctx.ports;
     return (

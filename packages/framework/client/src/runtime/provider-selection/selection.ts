@@ -20,28 +20,53 @@ type Surface = Pick<
   | "providerAdd"
   | "providerRemove"
 >;
+async function selectionExec(
+  ctx: RuntimeContext,
+  sessionID?: string,
+) {
+  if (sessionID)
+    return (
+      ctx.ports
+        .getExecutionBySession()
+        .get(sessionID as import("@natalia/contracts").SessionID) ??
+      (await ctx.ports.ensureExecution(
+        sessionID as import("@natalia/contracts").SessionID,
+      ))
+    );
+  return ctx.ports.getActiveExec();
+}
+
 export function createSelectionSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
   return {
-    selectAgent(name) {
+    async selectAgent(name, sessionID?) {
       const agent = ctx.ports.getAgentRegistry()?.select(name);
       if (name && !agent) {
-        ctx.ports.publish({
-          type: "diagnostic",
-          level: "error",
+        const diagnostic = {
+          type: "diagnostic" as const,
+          level: "error" as const,
           message: `agent not found: ${name}`,
-        });
+        };
+        const exec = await selectionExec(ctx, sessionID);
+        if (exec) ctx.ports.publishForSession(exec, diagnostic);
+        else ctx.ports.publish(diagnostic);
         // A diagnostic is not an answer to the caller: a remote UI used to be
         // told the agent was selected and then render the wrong one.
         return { outcome: "rejected", reason: `agent not found: ${name}` };
       }
-      const exec = ctx.ports.getActiveExec();
+      const exec = await selectionExec(ctx, sessionID);
+      const activeExec = ctx.ports.getActiveExec();
+      const isActive = exec === activeExec;
+      const publishSessionEvent = (event: import("@natalia/contracts").RuntimeEvent) => {
+        if (exec) ctx.ports.publishForSession(exec, event);
+        else ctx.ports.publish(event);
+      };
       if (exec?.activeAbort) {
-        ctx.ports.setPendingAgent(agent);
+        if (isActive) ctx.ports.setPendingAgent(agent);
         exec.pendingAgent = agent;
-        ctx.ports.publish({
+        publishSessionEvent({
           type: "agent.selection",
           name: agent?.name,
           pending: true,
@@ -54,11 +79,11 @@ export function createSelectionSurface(
           reason: "a turn is running; the selection applies when it ends",
         };
       }
-      ctx.ports.setSelectedAgent(agent);
+      if (isActive) ctx.ports.setSelectedAgent(agent);
       if (exec) exec.selectedAgent = agent;
       ctx.ports.applyAgentPolicy();
-      ctx.ports.applyAgentProvider();
-      ctx.ports.publish({
+      ctx.ports.applyAgentProvider(exec);
+      publishSessionEvent({
         type: "agent.selection",
         name: agent?.name,
         pending: false,
@@ -85,30 +110,46 @@ export function createSelectionSurface(
     async modelCatalog() {
       return await ctx.ports.clientModelCatalog();
     },
-    async modelSelection() {
+    async modelSelection(sessionID?) {
       await ctx.ports.getReady();
+      const exec = await selectionExec(ctx, sessionID);
+      if (!exec)
+        return {
+          modelID: ctx.ports.selectedModelRefKey(),
+          variant:
+            ctx.ports.getSelectedAgent()?.variant ??
+            ctx.ports.getSelectedModel()?.variant,
+        };
       return {
-        modelID: ctx.ports.selectedModelRefKey(),
+        modelID: ctx.ports.modelRefKeyForSelection(
+          exec.selectedAgent,
+          exec.selectedModel,
+        ),
         variant:
-          ctx.ports.getSelectedAgent()?.variant ??
-          ctx.ports.getSelectedModel()?.variant,
+          exec.selectedAgent?.variant ?? exec.selectedModel?.variant,
       };
     },
-    async selectModel(modelID, variant) {
-      await ctx.ports.selectRuntimeModel(modelID, variant);
+    async selectModel(modelID, variant, sessionID?) {
+      const exec = await selectionExec(ctx, sessionID);
+      await ctx.ports.selectRuntimeModel(modelID, variant, exec);
     },
-    async reasoningEffort() {
+    async reasoningEffort(sessionID?) {
       await ctx.ports.getReady();
-      return ctx.ports.getActiveExec()?.reasoningEffort;
+      const exec = await selectionExec(ctx, sessionID);
+      return exec?.reasoningEffort;
     },
-    async setReasoningEffort(effort) {
+    async setReasoningEffort(effort, sessionID?) {
       await ctx.ports.getReady();
       if (effort && !isRuntimeReasoningEffort(effort))
         throw new Error(`unsupported reasoning effort: ${effort}`);
-      const exec = ctx.ports.getActiveExec();
+      const exec = await selectionExec(ctx, sessionID);
       if (!exec) throw new Error("session execution is unavailable");
       exec.reasoningEffort = effort;
-      ctx.ports.applyAgentProvider();
+      ctx.ports.publishForSession(exec, {
+        type: "model.reasoning.set",
+        reasoningEffort: effort,
+      });
+      ctx.ports.applyAgentProvider(exec);
     },
     async skills() {
       await ctx.ports.getReady();
