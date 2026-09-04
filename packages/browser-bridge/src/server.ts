@@ -172,3 +172,7 @@ export async function startBrowserBridgeServer(
   console.log(`[browser-bridge] listening on ${bridge.url}`);
   return bridge;
 }
+
+if (import.meta.main) {
+  await startBrowserBridgeServer();
+}
