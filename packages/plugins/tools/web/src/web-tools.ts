@@ -402,6 +402,33 @@ function browserScreenshotTool(): RuntimeTool {
   };
 }
 
+function browserOpenTool(): RuntimeTool {
+  return {
+    name: "browser_open",
+    description:
+      "Open a new browser tab (optionally with a URL). This never navigates an existing tab.",
+    requiresApproval: true,
+    timeoutSec: 20,
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const url = optionalString(args.url);
+      if (url) assertNetworkURL(url, context);
+      return JSON.stringify(
+        await browserBridgeCall("open", url ? { url } : {}, context?.sessionID),
+        null,
+        2,
+      );
+    },
+  };
+}
+
 function browserTabsTool(): RuntimeTool {
   return {
     name: "browser_tabs",
@@ -651,6 +678,7 @@ async function firstExecutable(names: string[]) {
 export const webTools: RuntimeTool[] = [
   webFetchTool(),
   webSearchTool(),
+  browserOpenTool(),
   browserTabsTool(),
   browserScanTool(),
   browserExecuteJsTool(),
