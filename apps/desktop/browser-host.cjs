@@ -685,6 +685,24 @@ function createBrowserHost(options) {
       const newTabs = [...tabs.values()]
         .filter((item) => !beforeTabIds.has(item.id))
         .map((item) => ({ id: item.id, url: item.view.webContents.getURL() || item.url }));
+      let topChange = "";
+      if (beforeText !== afterText) {
+        const beforeLines = beforeText.split("\n");
+        const afterLines = afterText.split("\n");
+        const limit = Math.min(beforeLines.length, afterLines.length, 200);
+        for (let i = 0; i < limit; i += 1) {
+          if (beforeLines[i] !== afterLines[i]) {
+            topChange = `line ${i + 1}: ${String(afterLines[i]).slice(0, 120)}`;
+            break;
+          }
+        }
+        if (!topChange) {
+          topChange =
+            beforeLines.length !== afterLines.length
+              ? `line count changed ${beforeLines.length} -> ${afterLines.length}`
+              : "content changed";
+        }
+      }
       return {
         result,
         tabId: tab.id,
@@ -692,6 +710,7 @@ function createBrowserHost(options) {
           changed: beforeText !== afterText,
           beforeLength: beforeText.length,
           afterLength: afterText.length,
+          topChange,
         },
         newTabs,
       };
