@@ -5,7 +5,48 @@ const crypto = require("crypto");
 
 const MAX_TABS = 8;
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
-const MUTATING_ACTIONS = new Set(["navigate", "click", "input"]);
+const MUTATING_ACTIONS = new Set(["navigate", "click", "input", "execute_js"]);
+
+const SCAN_JS = String.raw`(function (opt) {
+  const textOnly = !!opt.textOnly;
+  const maxlen = Number(opt.maxlen) || 35000;
+  const SKIP = new Set(["SCRIPT","STYLE","NOSCRIPT","META","LINK","TEMPLATE","SVG"]);
+  function clean(src, dst) {
+    const out = dst.cloneNode(false);
+    if (src.tagName === "INPUT" && src.value !== undefined) out.setAttribute("value", src.value);
+    if (src.tagName === "TEXTAREA" && src.value !== undefined) out.textContent = src.value;
+    if (src.tagName === "SELECT") out.setAttribute("data-selected", src.value || "");
+    if (src.tagName === "INPUT" && src.checked) out.setAttribute("checked", "");
+    for (const child of src.childNodes) {
+      if (child.nodeType === 3) {
+        out.appendChild(document.createTextNode(child.textContent || ""));
+      } else if (child.nodeType === 1) {
+        if (SKIP.has(child.tagName)) continue;
+        if (child.getAttribute("aria-hidden") === "true") continue;
+        const r = child.getBoundingClientRect();
+        const s = window.getComputedStyle(child);
+        if (r.width <= 0 || r.height <= 0 || s.display === "none" || s.visibility === "hidden" || (Number(s.opacity) === 0)) continue;
+        const childClone = clean(child, child.cloneNode(false));
+        const isInteractive = ["INPUT","TEXTAREA","SELECT","BUTTON","A"].includes(child.tagName) || child.getAttribute("role") === "button";
+        if (childClone.childNodes.length || isInteractive) out.appendChild(childClone);
+      }
+    }
+    return out;
+  }
+  const cleaned = clean(document.body, document.createElement("body"));
+  const html = cleaned.outerHTML;
+  const text = document.body.innerText || "";
+  const out = {
+    title: document.title,
+    url: location.href,
+    text: text,
+    html: html,
+    truncated: false
+  };
+  if (text.length > maxlen) { out.text = text.slice(0, maxlen); out.truncated = true; }
+  if (html.length > maxlen) { out.html = html.slice(0, maxlen); out.truncated = true; }
+  return out;
+})(__OPTIONS__)`;
 
 function browserHistory(contents) {
   return contents.navigationHistory ?? contents;
@@ -510,6 +551,42 @@ function createBrowserHost(options) {
     return state();
   }
 
+
+  async function executeJS(tabId, script) {
+    const tab = getTab(tabId);
+    const result = await tab.view.webContents.executeJavaScript(script);
+    sendStatus();
+    return result;
+  }
+
+  async function scan(tabId, options = {}) {
+    const tab = getTab(tabId);
+    const script = SCAN_JS.replace(
+      "__OPTIONS__",
+      JSON.stringify({
+        textOnly: Boolean(options?.textOnly),
+        maxlen: Number(options?.maxlen) || 35000,
+      }),
+    );
+    const result = await tab.view.webContents.executeJavaScript(script);
+    return {
+      tabId: tab.id,
+      url: result.url,
+      title: result.title,
+      text: result.text,
+      html: result.html,
+      truncated: result.truncated,
+      textOnly: Boolean(options?.textOnly),
+    };
+  }
+
+  function listTabs() {
+    return {
+      activeId,
+      tabs: [...tabs.values()].map(publicTab),
+    };
+  }
+
   async function handleBridge(action, input) {
     const tabId = input.sessionID || input.tabId;
     if (action === "open") {
@@ -533,6 +610,7 @@ function createBrowserHost(options) {
       sendStatus();
       return { ok: true, tabId: tab.id, sessionID: tab.id, url: input.url };
     }
+    if (action === "tabs") return listTabs();
     const tab = getTab(tabId);
     if (action === "navigate") {
       await authorizeModel(tab, "navigate", input);
@@ -541,23 +619,37 @@ function createBrowserHost(options) {
         attach(tab);
       }
       await tab.view.webContents.loadURL(String(input.url || ""));
+      sendStatus();
       return { ok: true, tabId: tab.id, url: input.url };
     }
     if (action === "read") {
       assertNotPaused(tab, "read");
       return { text: await readDom(tab.id) };
     }
+    if (action === "scan") {
+      assertNotPaused(tab, "read");
+      return await scan(tab.id, input);
+    }
+    if (action === "execute_js") {
+      await authorizeModel(tab, "execute_js", input);
+      const result = await executeJS(tab.id, String(input.script || ""));
+      return { result, tabId: tab.id };
+    }
     if (action === "click") {
       await authorizeModel(tab, "click", input);
-      return { result: await click({ tabId: tab.id, x: input.x, y: input.y }) };
+      const result = await click({ tabId: tab.id, x: input.x, y: input.y });
+      sendStatus();
+      return { result, tabId: tab.id };
     }
     if (action === "input") {
       await authorizeModel(tab, "input", input);
-      return { result: await input({ tabId: tab.id, text: input.text }) };
+      const result = await input({ tabId: tab.id, text: input.text });
+      sendStatus();
+      return { result, tabId: tab.id };
     }
     if (action === "screenshot") {
       assertNotPaused(tab, "screenshot");
-      return { data: await screenshot(tab.id) };
+      return { data: await screenshot(tab.id), tabId: tab.id };
     }
     throw new Error(`unknown browser action ${action}`);
   }
@@ -589,6 +681,9 @@ function createBrowserHost(options) {
     setOwner,
     setApprovalMode,
     setSecureInput,
+    executeJS,
+    scan,
+    listTabs,
     respondApproval,
     handleBridge,
   };

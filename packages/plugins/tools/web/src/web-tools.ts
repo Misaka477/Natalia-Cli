@@ -6,7 +6,7 @@
  * It knows nothing about the runtime or the capability kernel.
  */
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { isWindows, shellQuote } from "@natalia/platform";
 import {
@@ -169,11 +169,51 @@ function selectWebSearchSource(input: {
   };
 }
 
+
+function sharedBrowserBase(): string | undefined {
+  return process.env.NATALIA_BROWSER_BRIDGE_URL || undefined;
+}
+
+function sharedBrowserAvailable(): boolean {
+  return Boolean(sharedBrowserBase());
+}
+
+async function browserBridgeCall(
+  action: string,
+  input: Record<string, unknown> = {},
+): Promise<unknown> {
+  const base = sharedBrowserBase();
+  if (!base)
+    throw new Error(
+      "shared browser bridge is not available; run Natalia Desktop to enable the shared browser",
+    );
+  const response = await fetch(`${base.replace(/\/$/, "")}/browser/${action}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const text = await response.text();
+  let body: unknown = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // keep raw text
+  }
+  if (!response.ok) {
+    const message =
+      typeof body === "object" && body && "error" in body
+        ? String((body as { error?: unknown }).error)
+        : `browser bridge failed: HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return body;
+}
+
 function browserVisitTool(): RuntimeTool {
   return {
     name: "browser_visit",
     description:
-      "Visit an HTTP(S) page through the TS runtime fetch-based browser adapter and return document metadata/text preview.",
+      "Visit an HTTP(S) page and return document metadata/text preview. Uses the shared browser when available; otherwise falls back to fetch.",
     requiresApproval: false,
     timeoutSec: 30,
     parameters: {
@@ -190,6 +230,40 @@ function browserVisitTool(): RuntimeTool {
       if (!/^https?:\/\//iu.test(url))
         throw new Error("browser_visit requires http(s) URL");
       assertNetworkURL(url, context);
+
+      if (sharedBrowserAvailable()) {
+        const opened = (await browserBridgeCall("open", { url })) as {
+          tabId?: string;
+          ok?: boolean;
+        };
+        const tabId = opened.tabId;
+        if (!tabId)
+          throw new Error("shared browser opened a tab but returned no id");
+        const scanned = (await browserBridgeCall("scan", {
+          tabId,
+          textOnly: true,
+          maxlen: numberOr(args.maxBytes, 12000),
+        })) as {
+          url?: string;
+          title?: string;
+          text?: string;
+        };
+        return JSON.stringify(
+          {
+            url: scanned.url ?? url,
+            status: 200,
+            title: scanned.title ?? "",
+            textPreview: (scanned.text ?? "").slice(
+              0,
+              numberOr(args.maxBytes, 12000),
+            ),
+            via: "shared-browser",
+          },
+          null,
+          2,
+        );
+      }
+
       const response = await fetch(url, {
         headers: {
           "user-agent":
@@ -224,7 +298,7 @@ function browserScreenshotTool(): RuntimeTool {
   return {
     name: "browser_screenshot",
     description:
-      "Capture a real page screenshot through a Chrome/Chromium binary when available; otherwise emit an explicit TS diagnostic.",
+      "Capture a real screenshot from the shared browser when available; otherwise fall back to a headless Chrome/Chromium binary.",
     requiresApproval: true,
     timeoutSec: 60,
     parameters: {
@@ -248,6 +322,28 @@ function browserScreenshotTool(): RuntimeTool {
         requireString(args.path, "path"),
       );
       await mkdir(dirname(output), { recursive: true });
+      assertNetworkURL(url, context);
+
+      if (sharedBrowserAvailable()) {
+        const opened = (await browserBridgeCall("open", { url })) as {
+          tabId?: string;
+        };
+        const tabId = opened.tabId;
+        if (!tabId) throw new Error("shared browser opened a tab but returned no id");
+        const result = (await browserBridgeCall("screenshot", {
+          tabId,
+        })) as { data?: string };
+        const data = String(result.data ?? "");
+        const base64 = data.replace(/^data:image\/[^;]+;base64,/u, "");
+        if (!base64)
+          throw new Error("shared browser screenshot returned no image data");
+        await writeFile(output, Buffer.from(base64, "base64"));
+        return JSON.stringify({
+          path: relative(context.workspaceRoot, output),
+          via: "shared-browser",
+        });
+      }
+
       const chrome =
         context.settings?.browserBinary ??
         process.env.NATALIA_CHROME_BIN ??
@@ -260,9 +356,8 @@ function browserScreenshotTool(): RuntimeTool {
         ]));
       if (!chrome)
         throw new Error(
-          "browser_screenshot requires Chrome/Chromium; set NATALIA_CHROME_BIN to enable the TS native browser adapter",
+          "shared browser bridge is unavailable and browser_screenshot fallback requires Chrome/Chromium; run Natalia Desktop to use the self-contained shared browser",
         );
-      assertNetworkURL(url, context);
       const profile = context.settings?.browserPersistentProfile
         ? context.settings.browserProfileDir
           ? ` --user-data-dir=${shellQuote(workspacePath(context.workspaceRoot, context.settings.browserProfileDir))}`
@@ -280,6 +375,178 @@ function browserScreenshotTool(): RuntimeTool {
         60,
       );
       return JSON.stringify({ path: relative(context.workspaceRoot, output) });
+    },
+  };
+}
+
+function browserTabsTool(): RuntimeTool {
+  return {
+    name: "browser_tabs",
+    description:
+      "List tabs in the shared Natalia browser. Requires the shared browser bridge (Desktop or a future BrowserDaemon).",
+    requiresApproval: false,
+    timeoutSec: 10,
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+    async execute() {
+      return JSON.stringify(await browserBridgeCall("tabs"), null, 2);
+    },
+  };
+}
+
+function browserScanTool(): RuntimeTool {
+  return {
+    name: "browser_scan",
+    description:
+      "Scan a shared browser tab and return simplified page content (text-only by default). Requires the shared browser bridge.",
+    requiresApproval: false,
+    timeoutSec: 20,
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        textOnly: { type: "boolean" },
+        maxlen: { type: "number" },
+      },
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const args = requireObject(input);
+      const tabId = optionalString(args.tabId);
+      return JSON.stringify(
+        await browserBridgeCall("scan", {
+          tabId,
+          textOnly: args.textOnly === false ? false : true,
+          maxlen: numberOr(args.maxlen, 35000),
+        }),
+        null,
+        2,
+      );
+    },
+  };
+}
+
+function browserExecuteJsTool(): RuntimeTool {
+  return {
+    name: "browser_execute_js",
+    description:
+      "Execute JavaScript in a shared browser tab. Requires the shared browser bridge and is subject to BrowserHost approval/owner/secure-input policy.",
+    requiresApproval: false,
+    timeoutSec: 30,
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        script: { type: "string" },
+      },
+      required: ["script"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const args = requireObject(input);
+      const tabId = optionalString(args.tabId);
+      const script = requireString(args.script, "script");
+      return JSON.stringify(
+        await browserBridgeCall("execute_js", { tabId, script }),
+        null,
+        2,
+      );
+    },
+  };
+}
+
+function browserNavigateTool(): RuntimeTool {
+  return {
+    name: "browser_navigate",
+    description:
+      "Navigate the shared browser to a URL. Requires the shared browser bridge and is subject to BrowserHost approval policy.",
+    requiresApproval: false,
+    timeoutSec: 20,
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        url: { type: "string" },
+      },
+      required: ["url"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const url = requireString(args.url, "url");
+      if (!/^https?:\/\//iu.test(url))
+        throw new Error("browser_navigate requires http(s) URL");
+      assertNetworkURL(url, context);
+      const tabId = optionalString(args.tabId);
+      const result = tabId
+        ? await browserBridgeCall("navigate", { tabId, url })
+        : await browserBridgeCall("open", { url });
+      return JSON.stringify(result, null, 2);
+    },
+  };
+}
+
+function browserClickTool(): RuntimeTool {
+  return {
+    name: "browser_click",
+    description:
+      "Click at x/y coordinates in a shared browser tab. Requires the shared browser bridge and is subject to BrowserHost approval policy.",
+    requiresApproval: false,
+    timeoutSec: 20,
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        x: { type: "number" },
+        y: { type: "number" },
+      },
+      required: ["x", "y"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const args = requireObject(input);
+      const tabId = optionalString(args.tabId);
+      const x = Number(args.x);
+      const y = Number(args.y);
+      if (!Number.isInteger(x) || !Number.isInteger(y))
+        throw new Error("browser_click x/y must be integers");
+      return JSON.stringify(
+        await browserBridgeCall("click", { tabId, x, y }),
+        null,
+        2,
+      );
+    },
+  };
+}
+
+function browserInputTool(): RuntimeTool {
+  return {
+    name: "browser_input",
+    description:
+      "Insert text into the active element of a shared browser tab. Requires the shared browser bridge and is subject to BrowserHost approval policy.",
+    requiresApproval: false,
+    timeoutSec: 20,
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        text: { type: "string" },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const args = requireObject(input);
+      const tabId = optionalString(args.tabId);
+      const text = requireString(args.text, "text");
+      return JSON.stringify(
+        await browserBridgeCall("input", { tabId, text }),
+        null,
+        2,
+      );
     },
   };
 }
@@ -357,6 +624,12 @@ async function firstExecutable(names: string[]) {
 export const webTools: RuntimeTool[] = [
   webFetchTool(),
   webSearchTool(),
+  browserTabsTool(),
+  browserScanTool(),
+  browserExecuteJsTool(),
+  browserNavigateTool(),
+  browserClickTool(),
+  browserInputTool(),
   browserVisitTool(),
   browserScreenshotTool(),
 ];

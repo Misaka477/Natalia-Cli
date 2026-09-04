@@ -84,6 +84,7 @@ async function ensureRuntime() {
     ...process.env,
     NATALIA_CONFIG: path.join(nataliaDir, "global-config.json"),
     NATALIA_WORKSPACES_FILE: path.join(nataliaDir, "workspaces.json"),
+    NATALIA_BROWSER_BRIDGE_URL: "http://127.0.0.1:8788",
   };
   console.log("[desktop] starting runtime", bun, entry, "serve", String(port));
   runtimeProcess = spawn(bun, [entry, "serve", String(port)], {
@@ -293,8 +294,11 @@ async function handleBrowserBridge(req, res) {
     const input = await readJsonBody(req);
     const routes = {
       "/browser/open": "open",
+      "/browser/tabs": "tabs",
       "/browser/navigate": "navigate",
       "/browser/read": "read",
+      "/browser/scan": "scan",
+      "/browser/execute_js": "execute_js",
       "/browser/click": "click",
       "/browser/input": "input",
       "/browser/screenshot": "screenshot",
