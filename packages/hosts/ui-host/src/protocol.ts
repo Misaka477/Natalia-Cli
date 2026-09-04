@@ -15,7 +15,9 @@ export type UiPluginLifecycle = {
 export type UiPanelDefinition = {
   id: string;
   title: string;
-  region?: "main" | "side" | "bottom";
+  region?: "main" | "side" | "bottom" | "topbar";
+  /** Optional grouping label for topbar panels. */
+  group?: string;
   /**
    * Optional dynamic panel renderer. When present, the host can mount this
    * panel into a container supplied by another (host) UI plugin.

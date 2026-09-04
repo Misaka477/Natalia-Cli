@@ -392,6 +392,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [stashOpen, setStashOpen] = createSignal(false);
   const [sandboxOpen, setSandboxOpen] = createSignal(false);
   const [governanceOpen, setGovernanceOpen] = createSignal(false);
+  const [topbarPanel, setTopbarPanel] = createSignal<{
+    pluginId: string;
+    panelId: string;
+  } | null>(null);
+  const [moreOpen, setMoreOpen] = createSignal(false);
+  const [viewOpen, setViewOpen] = createSignal(false);
+  let topbarPanelRef: HTMLDivElement | undefined;
 
   let projectionFramePending = false;
   onCleanup(
@@ -1795,6 +1802,39 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
   }
 
+  const topbarPanels = () => {
+    panelRevision();
+    return (
+      props.ctx.host
+        ?.listPanels()
+        .filter((item) => item.panel.region === "topbar") ?? []
+    );
+  };
+
+  const groupedTopbarPanels = () => {
+    const groups = new Map<string, ReturnType<typeof topbarPanels>>();
+    for (const item of topbarPanels()) {
+      const group = item.panel.group ?? "更多";
+      const list = groups.get(group) ?? [];
+      list.push(item);
+      groups.set(group, list);
+    }
+    return [...groups.entries()];
+  };
+
+  function mountTopbarPanel(panel: ReturnType<typeof topbarPanels>[number]) {
+    setTopbarPanel({ pluginId: panel.pluginId, panelId: panel.panel.id });
+    requestAnimationFrame(() => {
+      if (topbarPanelRef && props.ctx.host) {
+        void props.ctx.host.mountPanel(
+          panel.pluginId,
+          panel.panel.id,
+          topbarPanelRef,
+        );
+      }
+    });
+  }
+
   onMount(() => {
     const updateLayout = () => {
       const width = window.innerWidth;
@@ -1860,29 +1900,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           <button
             type="button"
             class="neu-topbar-btn"
-            data-active={leftVisible()}
-            onClick={() => setLeftVisible((value) => !value)}
+            data-active={viewOpen()}
+            onClick={() => setViewOpen((value) => !value)}
           >
-            左栏
+            视图
           </button>
-          <button
-            type="button"
-            class="neu-topbar-btn"
-            data-active={rightVisible()}
-            onClick={() => setRightVisible((value) => !value)}
-          >
-            右栏
-          </button>
-          <Show when={layoutMode() === "tiny"}>
-            <button
-              type="button"
-              class="neu-topbar-btn"
-              data-active={naviOpen()}
-              onClick={() => setNaviOpen((value) => !value)}
-            >
-              Navi
-            </button>
-          </Show>
           <button
             type="button"
             class="neu-topbar-btn"
@@ -1892,54 +1914,160 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           </button>
           <button
             type="button"
-            class="neu-topbar-btn"
-            onClick={() => setStatusOpen(true)}
-          >
-            状态
-          </button>
-          <button
-            type="button"
-            class="neu-topbar-btn"
-            onClick={() => setHelpOpen(true)}
-          >
-            帮助
-          </button>
-          <button
-            type="button"
-            class="neu-topbar-btn"
-            onClick={() => setStashOpen(true)}
-          >
-            暂存
-          </button>
-          <button
-            type="button"
-            class="neu-topbar-btn"
-            onClick={() => setSandboxOpen(true)}
-          >
-            沙箱
-          </button>
-          <button
-            type="button"
-            class="neu-topbar-btn"
-            onClick={() => setGovernanceOpen(true)}
-          >
-            治理
-          </button>
-          <button
-            type="button"
-            class="neu-topbar-btn"
-            onClick={() => setPluginManagerOpen(true)}
-          >
-            插件
-          </button>
-          <button
-            type="button"
             class="neu-topbar-btn neu-topbar-btn-primary"
             onClick={() => setSettingsOpen(true)}
           >
             设置
           </button>
+          <button
+            type="button"
+            class="neu-topbar-btn"
+            data-active={moreOpen()}
+            onClick={() => setMoreOpen((value) => !value)}
+          >
+            更多
+          </button>
         </div>
+        <Show when={topbarPanel()}>
+          <div class="neu-topbar-panel-dropdown">
+            <div
+              class="neu-topbar-panel-content"
+              ref={topbarPanelRef}
+            />
+            <button
+              type="button"
+              class="neu-topbar-panel-close"
+              onClick={() => setTopbarPanel(null)}
+            >
+              关闭
+            </button>
+          </div>
+        </Show>
+        <Show when={viewOpen()}>
+          <div class="neu-topbar-view-dropdown">
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              data-active={leftVisible()}
+              onClick={() => {
+                setLeftVisible((value) => !value);
+                setViewOpen(false);
+              }}
+            >
+              左栏
+            </button>
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              data-active={rightVisible()}
+              onClick={() => {
+                setRightVisible((value) => !value);
+                setViewOpen(false);
+              }}
+            >
+              右栏
+            </button>
+            <Show when={layoutMode() === "tiny"}>
+              <button
+                type="button"
+                class="neu-topbar-more-item"
+                data-active={naviOpen()}
+                onClick={() => {
+                  setNaviOpen((value) => !value);
+                  setViewOpen(false);
+                }}
+              >
+                Navi
+              </button>
+            </Show>
+          </div>
+        </Show>
+        <Show when={moreOpen()}>
+          <div class="neu-topbar-more-dropdown">
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              onClick={() => {
+                setStatusOpen(true);
+                setMoreOpen(false);
+              }}
+            >
+              状态
+            </button>
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              onClick={() => {
+                setHelpOpen(true);
+                setMoreOpen(false);
+              }}
+            >
+              帮助
+            </button>
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              onClick={() => {
+                setStashOpen(true);
+                setMoreOpen(false);
+              }}
+            >
+              暂存
+            </button>
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              onClick={() => {
+                setSandboxOpen(true);
+                setMoreOpen(false);
+              }}
+            >
+              沙箱
+            </button>
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              onClick={() => {
+                setGovernanceOpen(true);
+                setMoreOpen(false);
+              }}
+            >
+              治理
+            </button>
+            <button
+              type="button"
+              class="neu-topbar-more-item"
+              onClick={() => {
+                setPluginManagerOpen(true);
+                setMoreOpen(false);
+              }}
+            >
+              插件
+            </button>
+            <div class="neu-topbar-more-separator" />
+            <For each={groupedTopbarPanels()}>
+              {([group, panels]) => (
+                <div class="neu-topbar-more-group">
+                  <span class="neu-topbar-group-label">{group}</span>
+                  <For each={panels}>
+                    {(panel) => (
+                      <button
+                        type="button"
+                        class="neu-topbar-more-item"
+                        onClick={() => {
+                          mountTopbarPanel(panel);
+                          setMoreOpen(false);
+                        }}
+                      >
+                        {panel.panel.title}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
       </header>
       <div class="neu-app">
       {/* Left session tree */}
