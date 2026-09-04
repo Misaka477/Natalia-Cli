@@ -161,6 +161,7 @@ function createBrowserHost(options) {
       secureInput: tab.secureInput,
       error: tab.error ?? null,
       active: tab.id === activeId,
+      sessionID: tab.sessionID,
     };
   }
 
@@ -389,7 +390,9 @@ function createBrowserHost(options) {
   async function navigate(payload) {
     const url = payload?.url;
     if (!url) throw new Error("missing url");
-    const tab = payload?.create ? createTab(url) : getTab(payload?.tabId);
+    const tab = payload?.create
+      ? createTab(url, undefined, payload?.sessionID)
+      : getTab(payload?.tabId);
     tab.url = url;
     if (payload?.create || payload?.activate !== false) {
       activeId = tab.id;

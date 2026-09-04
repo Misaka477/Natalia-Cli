@@ -2604,7 +2604,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 />
               </Show>
               <Show when={rightTab() === "browser" && browserPanel()}>
-                <BrowserPanel state={state()} />
+                <BrowserPanel state={state()} sessionID={selectedSessionID()} />
               </Show>
             </div>
           </aside>

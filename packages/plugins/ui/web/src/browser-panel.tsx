@@ -20,6 +20,7 @@ type BrowserTab = {
   secureInput?: boolean;
   error?: string | null;
   active?: boolean;
+  sessionID?: string;
 };
 
 type BrowserStatus = BrowserTab & {
@@ -44,7 +45,7 @@ function ownerLabel(owner: BrowserOwner) {
   return "共享";
 }
 
-export function BrowserPanel(_props: { state: AppState }) {
+export function BrowserPanel(props: { state: AppState; sessionID?: string }) {
   const [url, setUrl] = createSignal("");
   const [current, setCurrent] = createSignal("");
   const [loading, setLoading] = createSignal(false);
@@ -74,7 +75,16 @@ export function BrowserPanel(_props: { state: AppState }) {
     else if (typeof payload.error === "string") setError(payload.error);
     if (payload.owner) setOwner(payload.owner);
     if (typeof payload.secureInput === "boolean") setSecureInput(payload.secureInput);
-    if (Array.isArray(payload.tabs)) setTabs(payload.tabs);
+    if (Array.isArray(payload.tabs)) {
+      const sessionID = props.sessionID;
+      setTabs(
+        sessionID
+          ? payload.tabs.filter(
+              (tab) => !tab.sessionID || tab.sessionID === sessionID,
+            )
+          : payload.tabs,
+      );
+    }
     if (typeof payload.id === "string") setActiveId(payload.id);
   }
 
@@ -110,7 +120,7 @@ export function BrowserPanel(_props: { state: AppState }) {
     const rect = browserRect();
     if (rect) {
       void desktop
-        .invoke("browser_show", { rect })
+        .invoke("browser_show", { rect, sessionID: props.sessionID })
         .then((status) => applyStatus((status as BrowserStatus) ?? {}))
         .catch((err) => electron?.log("[browser-panel] show failed", err));
     }
@@ -141,7 +151,11 @@ export function BrowserPanel(_props: { state: AppState }) {
     setError(null);
     if (desktop) {
       void desktop
-        .invoke("browser_navigate", { url: normalized, tabId: activeId() || undefined })
+        .invoke("browser_navigate", {
+          url: normalized,
+          tabId: activeId() || undefined,
+          sessionID: props.sessionID,
+        })
         .catch((err) => {
           setLoading(false);
           setError(err instanceof Error ? err.message : String(err));
@@ -153,7 +167,11 @@ export function BrowserPanel(_props: { state: AppState }) {
   function invokeStatus(command: string, args?: Record<string, unknown>) {
     if (!desktop) return;
     void desktop
-      .invoke<BrowserStatus>(command, { tabId: activeId() || undefined, ...args })
+      .invoke<BrowserStatus>(command, {
+        tabId: activeId() || undefined,
+        ...args,
+        sessionID: props.sessionID,
+      })
       .then(applyStatus)
       .catch((err) => electron?.log(`[browser-panel] ${command} failed`, err));
   }
