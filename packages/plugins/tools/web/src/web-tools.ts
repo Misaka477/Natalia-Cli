@@ -181,16 +181,18 @@ function sharedBrowserAvailable(): boolean {
 async function browserBridgeCall(
   action: string,
   input: Record<string, unknown> = {},
+  sessionID?: string,
 ): Promise<unknown> {
   const base = sharedBrowserBase();
   if (!base)
     throw new Error(
       "shared browser bridge is not available; run Natalia Desktop to enable the shared browser",
     );
+  const payload = sessionID ? { ...input, sessionID } : input;
   const response = await fetch(`${base.replace(/\/$/, "")}/browser/${action}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(payload),
   });
   const text = await response.text();
   let body: unknown = text;
@@ -232,7 +234,7 @@ function browserVisitTool(): RuntimeTool {
       assertNetworkURL(url, context);
 
       if (sharedBrowserAvailable()) {
-        const opened = (await browserBridgeCall("open", { url })) as {
+        const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
           tabId?: string;
           ok?: boolean;
         };
@@ -243,7 +245,7 @@ function browserVisitTool(): RuntimeTool {
           tabId,
           textOnly: true,
           maxlen: numberOr(args.maxBytes, 12000),
-        })) as {
+        }, context.sessionID)) as {
           url?: string;
           title?: string;
           text?: string;
@@ -325,14 +327,14 @@ function browserScreenshotTool(): RuntimeTool {
       assertNetworkURL(url, context);
 
       if (sharedBrowserAvailable()) {
-        const opened = (await browserBridgeCall("open", { url })) as {
+        const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
           tabId?: string;
         };
         const tabId = opened.tabId;
         if (!tabId) throw new Error("shared browser opened a tab but returned no id");
         const result = (await browserBridgeCall("screenshot", {
           tabId,
-        })) as { data?: string };
+        }, context.sessionID)) as { data?: string };
         const data = String(result.data ?? "");
         const base64 = data.replace(/^data:image\/[^;]+;base64,/u, "");
         if (!base64)
@@ -391,8 +393,8 @@ function browserTabsTool(): RuntimeTool {
       properties: {},
       additionalProperties: false,
     },
-    async execute() {
-      return JSON.stringify(await browserBridgeCall("tabs"), null, 2);
+    async execute(_input, context) {
+      return JSON.stringify(await browserBridgeCall("tabs", {}, context?.sessionID), null, 2);
     },
   };
 }
@@ -413,7 +415,7 @@ function browserScanTool(): RuntimeTool {
       },
       additionalProperties: false,
     },
-    async execute(input) {
+    async execute(input, context) {
       const args = requireObject(input);
       const tabId = optionalString(args.tabId);
       return JSON.stringify(
@@ -421,7 +423,7 @@ function browserScanTool(): RuntimeTool {
           tabId,
           textOnly: args.textOnly === false ? false : true,
           maxlen: numberOr(args.maxlen, 35000),
-        }),
+        }, context?.sessionID),
         null,
         2,
       );
@@ -445,12 +447,12 @@ function browserExecuteJsTool(): RuntimeTool {
       required: ["script"],
       additionalProperties: false,
     },
-    async execute(input) {
+    async execute(input, context) {
       const args = requireObject(input);
       const tabId = optionalString(args.tabId);
       const script = requireString(args.script, "script");
       return JSON.stringify(
-        await browserBridgeCall("execute_js", { tabId, script }),
+        await browserBridgeCall("execute_js", { tabId, script }, context?.sessionID),
         null,
         2,
       );
@@ -482,8 +484,8 @@ function browserNavigateTool(): RuntimeTool {
       assertNetworkURL(url, context);
       const tabId = optionalString(args.tabId);
       const result = tabId
-        ? await browserBridgeCall("navigate", { tabId, url })
-        : await browserBridgeCall("open", { url });
+        ? await browserBridgeCall("navigate", { tabId, url }, context.sessionID)
+        : await browserBridgeCall("open", { url }, context.sessionID);
       return JSON.stringify(result, null, 2);
     },
   };
@@ -506,7 +508,7 @@ function browserClickTool(): RuntimeTool {
       required: ["x", "y"],
       additionalProperties: false,
     },
-    async execute(input) {
+    async execute(input, context) {
       const args = requireObject(input);
       const tabId = optionalString(args.tabId);
       const x = Number(args.x);
@@ -514,7 +516,7 @@ function browserClickTool(): RuntimeTool {
       if (!Number.isInteger(x) || !Number.isInteger(y))
         throw new Error("browser_click x/y must be integers");
       return JSON.stringify(
-        await browserBridgeCall("click", { tabId, x, y }),
+        await browserBridgeCall("click", { tabId, x, y }, context?.sessionID),
         null,
         2,
       );
@@ -538,12 +540,12 @@ function browserInputTool(): RuntimeTool {
       required: ["text"],
       additionalProperties: false,
     },
-    async execute(input) {
+    async execute(input, context) {
       const args = requireObject(input);
       const tabId = optionalString(args.tabId);
       const text = requireString(args.text, "text");
       return JSON.stringify(
-        await browserBridgeCall("input", { tabId, text }),
+        await browserBridgeCall("input", { tabId, text }, context?.sessionID),
         null,
         2,
       );

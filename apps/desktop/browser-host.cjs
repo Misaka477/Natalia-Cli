@@ -244,7 +244,7 @@ function createBrowserHost(options) {
     });
   }
 
-  function createTab(initialUrl = "about:blank", id) {
+  function createTab(initialUrl = "about:blank", id, sessionID) {
     if (tabs.size >= MAX_TABS) throw new Error(`browser already has ${MAX_TABS} tabs`);
     const tab = {
       id: id || `tab_${crypto.randomUUID()}`,
@@ -255,6 +255,7 @@ function createBrowserHost(options) {
       sessionAllow: new Set(),
       attached: false,
       error: null,
+      sessionID: sessionID || "__default__",
       view: new BrowserView({
         webPreferences: {
           session: browserSession(),
@@ -586,15 +587,19 @@ function createBrowserHost(options) {
     };
   }
 
-  function listTabs() {
+  function listTabs(sessionID) {
+    const owned = sessionID
+      ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID)
+      : [...tabs.values()];
+    const active = owned.find((tab) => tab.id === activeId);
     return {
-      activeId,
-      tabs: [...tabs.values()].map(publicTab),
+      activeId: active?.id,
+      tabs: owned.map(publicTab),
     };
   }
 
   async function handleBridge(action, input) {
-    const tabId = input.sessionID || input.tabId;
+    const tabId = input.tabId;
     if (action === "open") {
       const policy = activeId
         ? getTab(activeId)
@@ -606,7 +611,7 @@ function createBrowserHost(options) {
             sessionAllow: new Set(),
           };
       assertNotPaused(policy, "navigate");
-      const tab = createTab(String(input.url || "about:blank"));
+      const tab = createTab(String(input.url || "about:blank"), undefined, input.sessionID);
       tab.owner = policy.owner;
       tab.approvalMode = policy.approvalMode;
       tab.sessionAllow = new Set(policy.sessionAllow);
@@ -614,9 +619,9 @@ function createBrowserHost(options) {
       if (visible) attach(tab);
       persist();
       sendStatus();
-      return { ok: true, tabId: tab.id, sessionID: tab.id, url: input.url };
+      return { ok: true, tabId: tab.id, sessionID: input.sessionID, url: input.url };
     }
-    if (action === "tabs") return listTabs();
+    if (action === "tabs") return listTabs(input.sessionID);
     const tab = getTab(tabId);
     if (action === "navigate") {
       assertNotPaused(tab, "navigate");
