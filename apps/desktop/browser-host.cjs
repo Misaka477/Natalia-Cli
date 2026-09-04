@@ -74,6 +74,7 @@ function createBrowserHost(options) {
   const tabs = new Map();
   const pendingApprovals = new Map();
   let activeId;
+  const activeBySession = new Map();
   let lastRect = { x: 0, y: 0, width: 0, height: 0 };
   let sessionHandlersBound = false;
   let visible = false;
@@ -160,13 +161,17 @@ function createBrowserHost(options) {
       approvalMode: tab.approvalMode,
       secureInput: tab.secureInput,
       error: tab.error ?? null,
-      active: tab.id === activeId,
+      active: tab.id === activeIdFor(tab.sessionID),
       sessionID: tab.sessionID,
     };
   }
 
-  function state(extra = {}) {
-    const active = activeId ? tabs.get(activeId) : undefined;
+  function state(sessionID, extra = {}) {
+    const owned = sessionID
+      ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID)
+      : [...tabs.values()];
+    const activeIdValue = activeIdFor(sessionID);
+    const active = activeIdValue ? tabs.get(activeIdValue) : undefined;
     const snapshot = active ? publicTab(active) : {
       id: "",
       url: "",
@@ -183,8 +188,7 @@ function createBrowserHost(options) {
     return {
       ...snapshot,
       attached: visible,
-      tabs: [...tabs.values()].map(publicTab),
-      pendingApproval: pendingApprovals.get(activeId) ? pendingPublic(pendingApprovals.get(activeId)) : null,
+      tabs: owned.map(publicTab),
       ...extra,
     };
   }
@@ -287,15 +291,15 @@ function createBrowserHost(options) {
     return tab;
   }
 
-  function activate(id, rect) {
+  function activate(id, rect, sessionID) {
     const tab = getTab(id);
-    activeId = tab.id;
+    setActiveForSession(sessionID || tab.sessionID, tab.id);
     if (rect) setBounds(rect);
     if (visible) attach(tab);
     persist();
     sendUrl(tab.view.webContents.getURL() || tab.url);
     sendStatus();
-    return state();
+    return state(sessionID || tab.sessionID);
   }
 
   function setBounds(rect) {
@@ -310,14 +314,22 @@ function createBrowserHost(options) {
     if (tab?.attached) tab.view.setBounds(lastRect);
   }
 
-  function show(rect) {
+  function show(rect, sessionID) {
     if (tabs.size === 0) createTab();
-    if (!activeId) activeId = [...tabs.keys()][0];
+    const key = sessionID || "__default__";
+    let nextId = activeBySession.get(key) || activeId;
+    if (!nextId || !tabs.has(nextId)) {
+      const owned = sessionID
+        ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID)
+        : [...tabs.values()];
+      nextId = owned[0]?.id;
+    }
+    if (!nextId) nextId = [...tabs.keys()][0];
     visible = true;
-    activate(activeId, rect);
-    const tab = getTab(activeId);
+    activate(nextId, rect, sessionID);
+    const tab = getTab(nextId);
     tab.view.webContents.focus();
-    return state();
+    return state(sessionID);
   }
 
   function hide() {
@@ -395,7 +407,7 @@ function createBrowserHost(options) {
       : getTab(payload?.tabId);
     tab.url = url;
     if (payload?.create || payload?.activate !== false) {
-      activeId = tab.id;
+      setActiveForSession(payload?.sessionID || tab.sessionID, tab.id);
       if (visible) attach(tab);
     }
     persist();
@@ -486,6 +498,16 @@ function createBrowserHost(options) {
     if (action === "click") return `点击 (${input.x}, ${input.y})`;
     if (action === "input") return `输入 ${String(input.text || "").slice(0, 80)}`;
     return action;
+  }
+
+  function activeIdFor(sessionID) {
+    const key = sessionID || "__default__";
+    return activeBySession.get(key) || activeId;
+  }
+
+  function setActiveForSession(sessionID, id) {
+    activeBySession.set(sessionID || "__default__", id);
+    activeId = id;
   }
 
   function assertNotPaused(tab, action) {
@@ -594,7 +616,7 @@ function createBrowserHost(options) {
     const owned = sessionID
       ? [...tabs.values()].filter((tab) => tab.sessionID === sessionID)
       : [...tabs.values()];
-    const active = owned.find((tab) => tab.id === activeId);
+    const active = owned.find((tab) => tab.id === activeIdFor(sessionID));
     return {
       activeId: active?.id,
       tabs: owned.map(publicTab),
@@ -618,7 +640,7 @@ function createBrowserHost(options) {
       tab.owner = policy.owner;
       tab.approvalMode = policy.approvalMode;
       tab.sessionAllow = new Set(policy.sessionAllow);
-      activeId = tab.id;
+      setActiveForSession(input.sessionID, tab.id);
       if (visible) attach(tab);
       persist();
       sendStatus();
@@ -629,7 +651,7 @@ function createBrowserHost(options) {
     if (action === "navigate") {
       assertNotPaused(tab, "navigate");
       if (visible) {
-        activeId = tab.id;
+        setActiveForSession(input.sessionID || tab.sessionID, tab.id);
         attach(tab);
       }
       await tab.view.webContents.loadURL(String(input.url || ""));

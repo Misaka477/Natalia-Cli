@@ -242,14 +242,14 @@ ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
   return { subscribed: true };
 });
 
-ipcMain.handle("browser_show", (_event, payload) => browserHost.show(payload?.rect));
+ipcMain.handle("browser_show", (_event, payload) => browserHost.show(payload?.rect, payload?.sessionID));
 ipcMain.handle("browser_move", (_event, payload) => browserHost.move(payload?.rect));
 ipcMain.handle("browser_hide", () => browserHost.hide());
 ipcMain.handle("browser_destroy", () => {
   browserHost.destroy();
   return { ok: true };
 });
-ipcMain.handle("browser_status", () => browserHost.state());
+ipcMain.handle("browser_status", (_event, payload) => browserHost.state(payload?.sessionID));
 ipcMain.handle("browser_claim_human", (_event, payload) => browserHost.setOwner("human", payload?.tabId));
 ipcMain.handle("browser_release_model", (_event, payload) => browserHost.setOwner("model", payload?.tabId));
 ipcMain.handle("browser_share", (_event, payload) => browserHost.setOwner("shared", payload?.tabId));
@@ -259,7 +259,7 @@ ipcMain.handle("browser_set_approval_mode", (_event, payload) => browserHost.set
 ipcMain.handle("browser_respond_approval", (_event, payload) => browserHost.respondApproval(payload));
 ipcMain.handle("browser_create_tab", (_event, payload) => browserHost.createTab(payload?.url, undefined, payload?.sessionID));
 ipcMain.handle("browser_close_tab", (_event, payload) => browserHost.closeTab(payload?.tabId));
-ipcMain.handle("browser_activate_tab", (_event, payload) => browserHost.activate(payload?.tabId, payload?.rect));
+ipcMain.handle("browser_activate_tab", (_event, payload) => browserHost.activate(payload?.tabId, payload?.rect, payload?.sessionID));
 ipcMain.handle("browser_navigate", (_event, payload) => browserHost.navigate(payload));
 ipcMain.handle("browser_read_dom", (_event, payload) => browserHost.readDom(payload?.tabId));
 ipcMain.handle("browser_click", (_event, payload) => browserHost.click(payload));
