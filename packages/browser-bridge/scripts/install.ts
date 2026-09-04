@@ -90,6 +90,39 @@ function findBrowser(): string | undefined {
   return undefined;
 }
 
+function runningBrowserProcesses(): string[] {
+  try {
+    const out = execSync("ps -eo args", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .toLowerCase();
+    const aliases: Array<[string[], string]> = [
+      [["chrome", "google-chrome", "chromium"], "chrome"],
+      [["msedge", "microsoft-edge", "microsoft-edge-stable"], "edge"],
+      [["brave", "brave-browser"], "brave"],
+      [["opera"], "opera"],
+      [["vivaldi"], "vivaldi"],
+    ];
+    return browserCandidates()
+      .map((candidate) => {
+        const name = candidate.split(/[\\/]/).pop()?.toLowerCase() || "";
+        const processNames = aliases
+          .filter(([names]) => names.includes(name))
+          .flatMap(([, processName]) => [processName, name]);
+        return { candidate, processNames };
+      })
+      .filter(({ processNames }) => processNames.some((processName) => out.includes(processName)))
+      .map(({ candidate }) => candidate);
+  } catch {
+    return [];
+  }
+}
+
+function extensionPageFor(browser: string): string {
+  const name = browser.toLowerCase();
+  if (name.includes("edge")) return "edge://extensions";
+  return "chrome://extensions";
+}
+
 function isBrowserRunning() {
   try {
     const out = process.platform === "darwin"
@@ -109,13 +142,15 @@ async function main() {
   if (!isUp(BRIDGE_URL)) startBridgeServer();
   else console.log(`[natalia-browser-bridge] bridge already running at ${BRIDGE_URL}`);
 
-  const browser = findBrowser();
+  const running = runningBrowserProcesses();
+  const browser = running[0] || findBrowser();
   if (!browser) {
     console.error("No supported Chromium browser found. Please install Chrome, Edge, Brave, Opera, Vivaldi or Arc.");
     process.exit(1);
   }
 
-  console.log(`[natalia-browser-bridge] browser: ${browser}`);
+  if (running[0]) console.log(`[natalia-browser-bridge] detected running browser: ${browser}`);
+  else console.log(`[natalia-browser-bridge] browser: ${browser}`);
   console.log(`[natalia-browser-bridge] extension dir: ${EXT_DIR}`);
 
   if (!isBrowserRunning()) {
@@ -133,7 +168,11 @@ async function main() {
     console.log(`  then load unpacked folder: ${EXT_DIR}`);
     if (process.platform === "linux") {
       try {
-        spawn("xdg-open", ["chrome://extensions"], { stdio: "ignore", detached: true }).unref();
+        spawn("xdg-open", [extensionPageFor(browser)], { stdio: "ignore", detached: true }).unref();
+      } catch {}
+    } else if (process.platform === "darwin") {
+      try {
+        spawn("open", [extensionPageFor(browser)], { stdio: "ignore", detached: true }).unref();
       } catch {}
     }
   }
