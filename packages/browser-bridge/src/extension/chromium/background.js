@@ -3,6 +3,12 @@
 // against the user's existing Chrome/Edge browser.
 
 const BRIDGE_URL = "ws://127.0.0.1:18765";
+function normalizeTabId(tabId) {
+  if (tabId == null || tabId === "") return undefined;
+  const id = Number(tabId);
+  return Number.isInteger(id) ? id : undefined;
+}
+
 let socket = null;
 
 function connect() {
@@ -37,7 +43,8 @@ function respond(message, result, error) {
 }
 
 async function activeTab(tabId) {
-  if (tabId) return tabId;
+  const normalized = normalizeTabId(tabId);
+  if (normalized) return normalized;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("no active browser tab");
   return tab.id;
