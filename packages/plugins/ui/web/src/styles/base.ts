@@ -793,7 +793,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   background: var(--neu-bg-light);
   border-radius: var(--neu-radius);
   box-shadow: 3px 3px 8px var(--neu-shadow-dark), -3px -3px 8px var(--neu-shadow-light);
-  padding: 16px;
+  padding: 16px 16px 14px;
   overflow: hidden;
   min-width: 0;
 }
@@ -1040,7 +1040,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .nia-flat-pane .neu-pane-content {
   background: transparent;
   box-shadow: none;
-  padding: 0 12px 12px;
+  padding: 0 12px 0;
 }
 .nia-transcript-wrap {
   position: relative;

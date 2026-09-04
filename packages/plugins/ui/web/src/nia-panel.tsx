@@ -243,18 +243,18 @@ export function NiaPanel(props: {
             </button>
           </Show>
         </div>
-        <Show when={active()}>
-          <div class="neu-activity-bar" data-running={true}>
-            <span class="neu-activity-pulse" />
-            <span class="neu-activity-label">
-              {active()?.phase === "using_tool"
+        <div class="neu-activity-bar" data-running={Boolean(active())}>
+          <span class="neu-activity-pulse" />
+          <span class="neu-activity-label">
+            {active()
+              ? active()?.phase === "using_tool"
                 ? `使用 ${active()?.toolName ?? ""}`
                 : active()?.phase === "thinking"
                   ? "思考中"
-                  : "生成中"}
-            </span>
-          </div>
-        </Show>
+                  : "生成中"
+              : "idle"}
+          </span>
+        </div>
         <div class="neu-main-toolbar">
           <NeuSelect
             value={modelID()}
