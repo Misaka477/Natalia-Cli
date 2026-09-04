@@ -627,6 +627,27 @@ export function SettingsPanel(props: {
                             </button>
                           );
                         }
+                        if (item.label === "GPU 加速") {
+                          return (
+                            <button
+                              type="button"
+                              class="neu-settings-item neu-settings-item-button"
+                              onClick={() => {
+                                const next = !gpuAcceleration();
+                                setGpuAcceleration(next);
+                                props.preferences?.set("gpuAcceleration", next);
+                                const electron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
+                                void electron?.invoke("desktop_set_setting", { key: "gpuEnabled", value: next });
+                              }}
+                            >
+                              <div class="neu-settings-item-main">
+                                <span class="neu-settings-item-label">{item.label}</span>
+                                <span class="neu-settings-item-description">{item.description}</span>
+                              </div>
+                              <span class="neu-settings-item-value">{value}</span>
+                            </button>
+                          );
+                        }
                         if (editableActions[item.label] && props.onUpdateConfig) {
                           return (
                             <button
