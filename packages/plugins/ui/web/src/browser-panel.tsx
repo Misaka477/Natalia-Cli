@@ -80,7 +80,10 @@ export function BrowserPanel(props: { state: AppState; sessionID?: string }) {
       setTabs(
         sessionID
           ? payload.tabs.filter(
-              (tab) => !tab.sessionID || tab.sessionID === sessionID,
+              (tab) =>
+                !tab.sessionID ||
+                tab.sessionID === "__default__" ||
+                tab.sessionID === sessionID,
             )
           : payload.tabs,
       );
