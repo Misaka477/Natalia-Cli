@@ -440,8 +440,29 @@ function createBrowserHost(options) {
 
   async function screenshot(tabId) {
     const tab = getTab(tabId);
+    const window = getMainWindow();
+    const wasAttached = tab.attached;
+    if (!tab.attached && window) {
+      try {
+        window.addBrowserView(tab.view);
+        tab.attached = true;
+        if (lastRect.width && lastRect.height) tab.view.setBounds(lastRect);
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      } catch {
+        // fall through to capturePage anyway
+      }
+    }
     const image = await tab.view.webContents.capturePage();
-    return image.toDataURL();
+    const data = image.toDataURL();
+    if (!wasAttached && !visible && window) {
+      try {
+        window.removeBrowserView(tab.view);
+        tab.attached = false;
+      } catch {
+        // already detached
+      }
+    }
+    return data;
   }
 
   function goBack(tabId) {
