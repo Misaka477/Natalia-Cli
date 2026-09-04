@@ -81,6 +81,12 @@ async function handle(message) {
         result = { ok: true, tabId: tab.id, url: tab.url };
         break;
       }
+      case "close": {
+        const id = normalizeTabId(payload.tabId) || await activeTab();
+        await browser.tabs.remove(id);
+        result = { ok: true, tabId: id };
+        break;
+      }
       case "navigate": {
         const id = normalizeTabId(payload.tabId) || await activeTab();
         const targetUrl = new URL(String(payload.url || "")).href;

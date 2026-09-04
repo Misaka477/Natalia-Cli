@@ -44,6 +44,7 @@ export function createBrowserBridgeServer(
   }>();
   const BROWSER_ACTIONS = new Set([
     "open",
+    "close",
     "tabs",
     "navigate",
     "read",

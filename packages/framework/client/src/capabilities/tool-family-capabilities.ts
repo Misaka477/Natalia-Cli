@@ -45,6 +45,7 @@ export function runtimeToolNames(): string[] {
     "browser_tabs",
     "browser_scan",
     "browser_open",
+    "browser_close",
     "browser_execute_js",
     "browser_navigate",
     "browser_click",

@@ -429,6 +429,32 @@ function browserOpenTool(): RuntimeTool {
   };
 }
 
+function browserCloseTool(): RuntimeTool {
+  return {
+    name: "browser_close",
+    description:
+      "Close a browser tab by id. tabId is optional; when omitted the active tab is closed.",
+    requiresApproval: true,
+    timeoutSec: 20,
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: ["string", "number"] },
+      },
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const tabId = optionalTabId(args.tabId);
+      return JSON.stringify(
+        await browserBridgeCall("close", tabId ? { tabId } : {}, context?.sessionID),
+        null,
+        2,
+      );
+    },
+  };
+}
+
 function browserTabsTool(): RuntimeTool {
   return {
     name: "browser_tabs",
@@ -679,6 +705,7 @@ export const webTools: RuntimeTool[] = [
   webFetchTool(),
   webSearchTool(),
   browserOpenTool(),
+  browserCloseTool(),
   browserTabsTool(),
   browserScanTool(),
   browserExecuteJsTool(),
