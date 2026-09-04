@@ -605,7 +605,7 @@ function createBrowserHost(options) {
             secureInput: false,
             sessionAllow: new Set(),
           };
-      await authorizeModel(policy, "navigate", { url: input.url });
+      assertNotPaused(policy, "navigate");
       const tab = createTab(String(input.url || "about:blank"));
       tab.owner = policy.owner;
       tab.approvalMode = policy.approvalMode;
@@ -619,7 +619,7 @@ function createBrowserHost(options) {
     if (action === "tabs") return listTabs();
     const tab = getTab(tabId);
     if (action === "navigate") {
-      await authorizeModel(tab, "navigate", input);
+      assertNotPaused(tab, "navigate");
       if (visible) {
         activeId = tab.id;
         attach(tab);
@@ -644,7 +644,7 @@ function createBrowserHost(options) {
       } catch {
         beforeText = "";
       }
-      await authorizeModel(tab, "execute_js", input);
+      assertNotPaused(tab, "execute_js");
       const result = await executeJS(tab.id, String(input.script || ""));
       let afterText = "";
       try {
@@ -667,13 +667,13 @@ function createBrowserHost(options) {
       };
     }
     if (action === "click") {
-      await authorizeModel(tab, "click", input);
+      assertNotPaused(tab, "click");
       const result = await click({ tabId: tab.id, x: input.x, y: input.y });
       sendStatus();
       return { result, tabId: tab.id };
     }
     if (action === "input") {
-      await authorizeModel(tab, "input", input);
+      assertNotPaused(tab, "input");
       const result = await input({ tabId: tab.id, text: input.text });
       sendStatus();
       return { result, tabId: tab.id };

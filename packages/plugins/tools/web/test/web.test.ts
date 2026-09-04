@@ -201,7 +201,7 @@ test("shared browser tools delegate to the desktop browser bridge", async () => 
     },
   });
   const saved = process.env.NATALIA_BROWSER_BRIDGE_URL;
-  process.env.NATALIA_BROWSER_BRIDGE_URL = server.url;
+  process.env.NATALIA_BROWSER_BRIDGE_URL = server.url.toString();
   const root = await mkdtemp(join(tmpdir(), "natalia-web-bridge-test-"));
   try {
     const family = webToolFamily();

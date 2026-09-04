@@ -214,7 +214,7 @@ function browserVisitTool(): RuntimeTool {
     name: "browser_visit",
     description:
       "Visit an HTTP(S) page and return document metadata/text preview. Uses the shared browser when available; otherwise falls back to fetch.",
-    requiresApproval: false,
+    requiresApproval: true,
     timeoutSec: 30,
     parameters: {
       type: "object",
@@ -433,8 +433,8 @@ function browserExecuteJsTool(): RuntimeTool {
   return {
     name: "browser_execute_js",
     description:
-      "Execute JavaScript in a shared browser tab. Requires the shared browser bridge and is subject to BrowserHost approval/owner/secure-input policy.",
-    requiresApproval: false,
+      "Execute JavaScript in a shared browser tab. Requires the shared browser bridge and is subject to tool approval policy.",
+    requiresApproval: true,
     timeoutSec: 30,
     parameters: {
       type: "object",
@@ -462,8 +462,8 @@ function browserNavigateTool(): RuntimeTool {
   return {
     name: "browser_navigate",
     description:
-      "Navigate the shared browser to a URL. Requires the shared browser bridge and is subject to BrowserHost approval policy.",
-    requiresApproval: false,
+      "Navigate the shared browser to a URL. Requires the shared browser bridge and is subject to tool approval policy.",
+    requiresApproval: true,
     timeoutSec: 20,
     parameters: {
       type: "object",
@@ -493,8 +493,8 @@ function browserClickTool(): RuntimeTool {
   return {
     name: "browser_click",
     description:
-      "Click at x/y coordinates in a shared browser tab. Requires the shared browser bridge and is subject to BrowserHost approval policy.",
-    requiresApproval: false,
+      "Click at x/y coordinates in a shared browser tab. Requires the shared browser bridge and is subject to tool approval policy.",
+    requiresApproval: true,
     timeoutSec: 20,
     parameters: {
       type: "object",
@@ -526,8 +526,8 @@ function browserInputTool(): RuntimeTool {
   return {
     name: "browser_input",
     description:
-      "Insert text into the active element of a shared browser tab. Requires the shared browser bridge and is subject to BrowserHost approval policy.",
-    requiresApproval: false,
+      "Insert text into the active element of a shared browser tab. Requires the shared browser bridge and is subject to tool approval policy.",
+    requiresApproval: true,
     timeoutSec: 20,
     parameters: {
       type: "object",

@@ -8,7 +8,6 @@ type ElectronGlobal = {
 };
 
 type BrowserOwner = "model" | "human" | "shared";
-type ApprovalMode = "ask" | "off";
 
 type BrowserTab = {
   id: string;
@@ -18,22 +17,13 @@ type BrowserTab = {
   canGoBack?: boolean;
   canGoForward?: boolean;
   owner?: BrowserOwner;
-  approvalMode?: ApprovalMode;
   secureInput?: boolean;
   error?: string | null;
   active?: boolean;
 };
 
-type BrowserApproval = {
-  id: string;
-  tabId: string;
-  action: string;
-  summary: string;
-};
-
 type BrowserStatus = BrowserTab & {
   tabs?: BrowserTab[];
-  pendingApproval?: BrowserApproval | null;
   attached?: boolean;
 };
 
@@ -63,10 +53,8 @@ export function BrowserPanel(_props: { state: AppState }) {
   const [error, setError] = createSignal<string | null>(null);
   const [owner, setOwner] = createSignal<BrowserOwner>("shared");
   const [secureInput, setSecureInput] = createSignal(false);
-  const [approvalMode, setApprovalMode] = createSignal<ApprovalMode>("ask");
   const [tabs, setTabs] = createSignal<BrowserTab[]>([]);
   const [activeId, setActiveId] = createSignal("");
-  const [pending, setPending] = createSignal<BrowserApproval | null>(null);
   let host: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let urlUnlisten: (() => void) | undefined;
@@ -86,10 +74,8 @@ export function BrowserPanel(_props: { state: AppState }) {
     else if (typeof payload.error === "string") setError(payload.error);
     if (payload.owner) setOwner(payload.owner);
     if (typeof payload.secureInput === "boolean") setSecureInput(payload.secureInput);
-    if (payload.approvalMode) setApprovalMode(payload.approvalMode);
     if (Array.isArray(payload.tabs)) setTabs(payload.tabs);
     if (typeof payload.id === "string") setActiveId(payload.id);
-    setPending(payload.pendingApproval ?? null);
   }
 
   function browserRect(): BrowserRect | undefined {
@@ -202,16 +188,6 @@ export function BrowserPanel(_props: { state: AppState }) {
     invokeStatus("browser_close_tab", { tabId: id });
   }
 
-  function respondApproval(decision: "once" | "session" | "reject") {
-    const currentPending = pending();
-    if (!currentPending) return;
-    invokeStatus("browser_respond_approval", {
-      id: currentPending.id,
-      tabId: currentPending.tabId,
-      decision,
-    });
-  }
-
   return (
     <div class="browser-pane">
       <div class="browser-tabs">
@@ -262,15 +238,6 @@ export function BrowserPanel(_props: { state: AppState }) {
         <Show when={owner() !== "shared"}>
           <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => invokeStatus("browser_share")} title="共享控制">共享</button>
         </Show>
-        <button
-          type="button"
-          class="browser-nav-btn browser-owner-btn"
-          data-active={approvalMode() === "ask"}
-          onClick={() => invokeStatus("browser_set_approval_mode", { mode: approvalMode() === "ask" ? "off" : "ask" })}
-          title={approvalMode() === "ask" ? "模型写入需审批" : "模型写入免审批"}
-        >
-          {approvalMode() === "ask" ? "需审批" : "免审批"}
-        </button>
         <form class="browser-url-form" onSubmit={(event) => {
           event.preventDefault();
           load(url());
@@ -299,17 +266,6 @@ export function BrowserPanel(_props: { state: AppState }) {
       <Show when={owner() === "human" || secureInput()}>
         <div class="browser-pause-hint">
           {secureInput() ? "安全输入中，模型读写已暂停" : "人工控制中，模型写入已暂停"}
-        </div>
-      </Show>
-      <Show when={pending()}>
-        <div class="browser-approval">
-          <div class="browser-approval-title">模型想操作浏览器</div>
-          <div class="browser-approval-summary">{pending()?.summary}</div>
-          <div class="browser-approval-actions">
-            <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => respondApproval("once")}>允许一次</button>
-            <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => respondApproval("session")}>本次会话允许</button>
-            <button type="button" class="browser-nav-btn browser-owner-btn" onClick={() => respondApproval("reject")}>拒绝</button>
-          </div>
         </div>
       </Show>
       <div class="browser-webview-host" ref={host}>
