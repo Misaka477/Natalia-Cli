@@ -5,6 +5,7 @@ import solid from "vite-plugin-solid";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const workspace = resolve(root, "../..");
+const uiKitSrc = resolve(workspace, "packages/plugins/ui/kit/src");
 const pluginSrc = resolve(workspace, "packages/plugins/ui/web/src");
 const fileEditorSrc = resolve(workspace, "packages/plugins/ui/file-editor/src");
 const solidJs = resolve(root, "node_modules/solid-js");
@@ -17,7 +18,11 @@ function solidJsxSource(): Plugin {
     transform(code, id) {
       const file = id.split("?")[0] ?? id;
       if (!file.endsWith(".tsx") && !file.endsWith(".jsx")) return;
-      if (!file.startsWith(pluginSrc) && !file.startsWith(resolve(root, "src")))
+      if (
+        !file.startsWith(uiKitSrc) &&
+        !file.startsWith(pluginSrc) &&
+        !file.startsWith(resolve(root, "src"))
+      )
         return;
       if (code.includes("@jsxImportSource")) return;
       return { code: pragma + code, map: null };
@@ -31,6 +36,7 @@ export default defineConfig({
     solidJsxSource(),
     solid({
       include: [
+        `${uiKitSrc}/**/*.{js,ts,jsx,tsx}`,
         `${pluginSrc}/**/*.{js,ts,jsx,tsx}`,
         `${fileEditorSrc}/**/*.{js,ts,jsx,tsx}`,
         `${root}/src/**/*.{js,ts,jsx,tsx}`,

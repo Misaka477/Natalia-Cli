@@ -1,6 +1,7 @@
-import { createSignal, For, Show, onMount } from "solid-js";
+import { createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import type { UiTransport } from "@natalia/ui-host";
 import type { RuntimeClient } from "@natalia/contracts";
+import { ContextMenu, type ContextMenuItem } from "@natalia/ui-kit";
 import { Compartment } from "@codemirror/state";
 import { EditorView, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { basicSetup } from "codemirror";
@@ -32,12 +33,22 @@ type FileNode = {
   children?: FileNode[];
 };
 
+type VisibleRow = {
+  node: FileNode;
+  rowPath: string;
+  depth: number;
+};
+
 const initialTree: FileNode[] = [];
 
 const initialContents: Record<string, string> = {};
 
-function buildTree(entries: Array<{ path: string; type: "file" | "directory" }>): FileNode[] {
+function buildTree(
+  entries: Array<{ path: string; type: "file" | "directory" }>,
+  nodeMap: Map<string, FileNode>,
+): FileNode[] {
   const root: FileNode = { name: ".", path: ".", type: "dir", children: [] };
+  const resetDirectories = new Set<FileNode>();
   for (const entry of entries) {
     const parts = entry.path.replace(/^\.\//u, "").split("/").filter(Boolean);
     if (!parts.length) continue;
@@ -48,13 +59,45 @@ function buildTree(entries: Array<{ path: string; type: "file" | "directory" }>)
       const isFile = index === parts.length - 1 && entry.type === "file";
       let child = node.children?.find((candidate) => candidate.path === path);
       if (!child) {
-        child = { name: part, path, type: isFile ? "file" : "dir", children: isFile ? undefined : [] };
+        child = getOrCreateNode(nodeMap, path, part, isFile ? "file" : "dir");
         node.children?.push(child);
+      }
+      child.name = part;
+      child.type = isFile ? "file" : "dir";
+      if (child.type === "dir") {
+        if (!resetDirectories.has(child)) {
+          child.children = [];
+          resetDirectories.add(child);
+        }
+      } else {
+        child.children = undefined;
       }
       node = child;
     }
   }
   return root.children ?? [];
+}
+
+function getOrCreateNode(
+  nodeMap: Map<string, FileNode>,
+  path: string,
+  name: string,
+  type: "file" | "dir",
+): FileNode {
+  const existing = nodeMap.get(path);
+  if (existing) {
+    existing.name = name;
+    existing.type = type;
+    return existing;
+  }
+  const node: FileNode = {
+    name,
+    path,
+    type,
+    ...(type === "dir" ? { children: [] } : {}),
+  };
+  nodeMap.set(path, node);
+  return node;
 }
 
 const neuLightTheme = EditorView.theme(
@@ -131,7 +174,45 @@ export function FileEditor(props: {
   const [fileWidth, setFileWidth] = createSignal(140);
   const [tree, setTree] = createSignal<FileNode[]>(initialTree);
   const [entries, setEntries] = createSignal<Array<{ path: string; type: "file" | "directory" }>>([]);
+  const nodeMap = new Map<string, FileNode>();
+  const rowCache = new Map<string, VisibleRow>();
+
+  const visibleRows = createMemo<VisibleRow[]>(() => {
+    const rows: VisibleRow[] = [];
+    const visit = (nodes: FileNode[], depth: number) => {
+      for (const node of nodes) {
+        const rowPath = node.type === "dir" ? `${node.path}/` : node.path;
+        let row = rowCache.get(rowPath);
+        if (!row) {
+          row = { node, rowPath, depth };
+          rowCache.set(rowPath, row);
+        } else {
+          row.node = node;
+          row.depth = depth;
+        }
+        rows.push(row);
+        if (
+          node.type === "dir" &&
+          expanded().has(node.path) &&
+          node.children
+        ) {
+          visit(node.children, depth + 1);
+        }
+      }
+    };
+    visit(tree(), 0);
+    return rows;
+  });
   const [loadedDirs, setLoadedDirs] = createSignal<Set<string>>(new Set());
+  const [dialog, setDialog] = createSignal<
+    { mode: "new-file" | "new-folder" | "rename"; path?: string } | null
+  >(null);
+  const [dialogValue, setDialogValue] = createSignal("");
+  const [contextMenu, setContextMenu] = createSignal<{
+    x: number;
+    y: number;
+    path: string;
+  } | null>(null);
   let cmContainer: HTMLDivElement | undefined;
   let cmView: EditorView | undefined;
   const languageCompartment = new Compartment();
@@ -168,7 +249,7 @@ export function FileEditor(props: {
     void props.runtime?.workspaceList?.().then((page) => {
       if (page?.entries?.length) {
         setEntries(page.entries);
-        setTree(buildTree(page.entries));
+        setTree(buildTree(page.entries, nodeMap));
         if (!selectedPath()) {
           const firstFile = page.entries.find(
             (entry) => entry.type === "file" && !entry.path.endsWith("/"),
@@ -176,6 +257,18 @@ export function FileEditor(props: {
           if (firstFile) selectFile(firstFile.path);
         }
       }
+    });
+
+    const timer = setInterval(() => {
+      void refreshTree();
+    }, 2000);
+    const onFocus = () => {
+      void refreshTree();
+    };
+    window.addEventListener("focus", onFocus);
+    onCleanup(() => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
     });
   });
 
@@ -199,7 +292,7 @@ export function FileEditor(props: {
           for (const entry of page.entries) merged.set(entry.path, entry);
           const nextEntries = [...merged.values()];
           setEntries(nextEntries);
-          setTree(buildTree(nextEntries));
+          setTree(buildTree(nextEntries, nodeMap));
         }
       } catch {
         // Keep the directory expanded even when listing fails; the tree will
@@ -322,33 +415,278 @@ export function FileEditor(props: {
     }
   }
 
-  function renderTree(items: FileNode[], depth: number) {
+  function sameEntries(
+    left: Array<{ path: string; type: "file" | "directory" }>,
+    right: Array<{ path: string; type: "file" | "directory" }>,
+  ) {
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index++) {
+      if (
+        left[index]!.path !== right[index]!.path ||
+        left[index]!.type !== right[index]!.type
+      )
+        return false;
+    }
+    return true;
+  }
+
+  async function refreshTree() {
+    try {
+      const page = await props.runtime?.workspaceList?.();
+      if (page) {
+        const currentRootEntries = entries().filter(
+          (entry) => !entry.path.includes("/"),
+        );
+        if (!sameEntries(page.entries, currentRootEntries)) {
+          setEntries(page.entries);
+          setTree(buildTree(page.entries, nodeMap));
+        }
+      }
+      const expandedDirs = [...expanded()];
+      for (const directory of expandedDirs) {
+        if (directory === ".") continue;
+        const childPage = await props.runtime?.workspaceList?.({ path: directory });
+        if (!childPage) continue;
+        const merged = new Map(entries().map((entry) => [entry.path, entry]));
+        for (const entry of childPage.entries) merged.set(entry.path, entry);
+        const nextEntries = [...merged.values()];
+        if (!sameEntries(nextEntries, entries())) {
+          setEntries(nextEntries);
+          setTree(buildTree(nextEntries, nodeMap));
+        }
+      }
+    } catch {
+      // A transient listing failure should not break the file editor.
+    }
+  }
+
+  function currentDirectory(): string {
+    const path = selectedPath();
+    if (!path) return "";
+    if (path.endsWith("/")) return path.replace(/\/$/u, "");
+    if (path.includes("/")) return path.split("/").slice(0, -1).join("/");
+    return "";
+  }
+
+  function normalizeName(value: string) {
+    return value.trim().replace(/^\/+|\/+$/gu, "");
+  }
+
+  function openNewFile() {
+    setDialogValue("");
+    setDialog({ mode: "new-file" });
+  }
+
+  function openNewFolder() {
+    setDialogValue("");
+    setDialog({ mode: "new-folder" });
+  }
+
+  function openRename(path: string) {
+    const name = path.endsWith("/")
+      ? path.slice(0, -1).split("/").at(-1) ?? path
+      : path.split("/").at(-1) ?? path;
+    setDialogValue(name);
+    setDialog({ mode: "rename", path });
+  }
+
+  async function submitDialog() {
+    const current = dialog();
+    const value = normalizeName(dialogValue());
+    if (!current || !value) return;
+    const dir = currentDirectory();
+    try {
+      if (current.mode === "new-file") {
+        const nextPath = dir ? `${dir}/${value}` : value;
+        await props.runtime?.workspaceCreate?.({
+          path: nextPath,
+          content: "",
+        });
+        setSelectedPath(nextPath);
+        await refreshTree();
+        selectFile(nextPath);
+      } else if (current.mode === "new-folder") {
+        const nextPath = dir ? `${dir}/${value}` : value;
+        await props.runtime?.workspaceCreate?.({
+          path: nextPath,
+          directory: true,
+        });
+        setSelectedPath(nextPath);
+        await refreshTree();
+      } else if (current.mode === "rename" && current.path) {
+        const oldPath = current.path;
+        const parent = oldPath.endsWith("/")
+          ? oldPath.slice(0, -1).split("/").slice(0, -1).join("/")
+          : oldPath.includes("/")
+            ? oldPath.split("/").slice(0, -1).join("/")
+            : "";
+        const nextPath = parent ? `${parent}/${value}` : value;
+        await props.runtime?.workspaceRename?.({
+          path: oldPath,
+          newPath: nextPath,
+        });
+        setSelectedPath(nextPath);
+        await refreshTree();
+        if (!nextPath.endsWith("/")) selectFile(nextPath);
+      }
+      setDialog(null);
+    } catch (error) {
+      props.runtime?.diagnostic?.(
+        `操作失败：${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+    }
+  }
+
+  async function deleteSelected() {
+    const path = selectedPath();
+    if (!path) return;
+    if (!window.confirm(`确定删除 ${path}？文件将移入系统回收站。`)) return;
+    try {
+      const result = await props.runtime?.workspaceDelete?.({ path });
+      if (!result?.deleted) {
+        props.runtime?.diagnostic?.("删除失败：未收到删除确认", "error");
+        return;
+      }
+      setSelectedPath("");
+      await refreshTree();
+      props.runtime?.diagnostic?.(`已移入回收站：${path}`, "info");
+    } catch (error) {
+      props.runtime?.diagnostic?.(
+        `删除失败：${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+    }
+  }
+
+  async function deletePath(path: string) {
+    if (!window.confirm(`确定删除 ${path}？文件将移入系统回收站。`)) return;
+    try {
+      const result = await props.runtime?.workspaceDelete?.({ path });
+      if (!result?.deleted) {
+        props.runtime?.diagnostic?.("删除失败：未收到删除确认", "error");
+        return;
+      }
+      if (selectedPath() === path) setSelectedPath("");
+      await refreshTree();
+      props.runtime?.diagnostic?.(`已移入回收站：${path}`, "info");
+    } catch (error) {
+      props.runtime?.diagnostic?.(
+        `删除失败：${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+    }
+  }
+
+  function selectEntry(path: string) {
+    setSelectedPath(path);
+    if (!path.endsWith("/")) selectFile(path.replace(/\/$/u, ""));
+  }
+
+  function openContextMenu(event: MouseEvent, path: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ x: event.clientX, y: event.clientY, path });
+  }
+
+  function closeContextMenu() {
+    setContextMenu(null);
+  }
+
+  function contextDirectory(path: string): string {
+    return path.endsWith("/") ? path.replace(/\/$/u, "") : currentDirectory();
+  }
+
+  function selectContextDirectory(path: string) {
+    const dir = path.endsWith("/")
+      ? path.replace(/\/$/u, "")
+      : path.includes("/")
+        ? path.split("/").slice(0, -1).join("/")
+        : "";
+    setSelectedPath(dir ? `${dir}/` : "");
+  }
+
+  function buildContextMenu(path: string): ContextMenuItem[] {
+    return [
+      {
+        type: "item",
+        label: "新建文件",
+        onClick() {
+          selectContextDirectory(path);
+          openNewFile();
+        },
+      },
+      {
+        type: "item",
+        label: "新建文件夹",
+        onClick() {
+          selectContextDirectory(path);
+          openNewFolder();
+        },
+      },
+      { type: "separator" },
+      {
+        type: "item",
+        label: "重命名",
+        onClick() {
+          openRename(path);
+        },
+      },
+      {
+        type: "item",
+        label: "删除",
+        danger: true,
+        onClick() {
+          void deletePath(path);
+        },
+      },
+    ];
+  }
+
+  function renderTree(nodes: FileNode[], depth: number) {
     return (
-      <For each={items}>
-        {(item) => (
-          <div>
-            {item.type === "dir" ? (
-              <>
-                <button
-                  type="button"
-                  class="file-tree-item"
-                  style={{ "padding-left": `${depth * 16 + 8}px` }}
-                  onClick={() => void toggle(item.path)}
-                >
-                  <svg
-                    class="file-tree-chevron"
-                    data-expanded={expanded().has(item.path)}
-                    viewBox="0 0 16 16"
-                    fill="none"
+      <For each={nodes}>
+        {(node) => {
+          const rowPath = node.type === "dir" ? `${node.path}/` : node.path;
+          return (
+            <div
+              class="file-tree-row"
+              data-active={selectedPath() === rowPath}
+              onContextMenu={(event) => openContextMenu(event, rowPath)}
+            >
+              <button
+                type="button"
+                class="file-tree-item"
+                style={{ "padding-left": `${depth * 16 + 6}px` }}
+                onClick={() => selectEntry(rowPath)}
+              >
+                {node.type === "dir" ? (
+                  <span
+                    class="file-tree-chevron-slot"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void toggle(node.path);
+                    }}
                   >
-                    <path
-                      d="M6 4L10 8L6 12"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
+                    <svg
+                      class="file-tree-chevron"
+                      data-expanded={expanded().has(node.path)}
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M6 4L10 8L6 12"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                ) : (
+                  <span class="file-tree-chevron-slot" />
+                )}
+                {node.type === "dir" ? (
                   <svg class="file-tree-icon" viewBox="0 0 16 16" fill="none">
                     <path
                       d="M2 4C2 2.89543 2.89543 2 4 2H7.5L9.5 4H12C13.1046 4 14 4.89543 14 6V12C14 13.1046 13.1046 14 12 14H4C2.89543 14 2 13.1046 2 12V4Z"
@@ -356,49 +694,38 @@ export function FileEditor(props: {
                       stroke-width="1.2"
                     />
                   </svg>
-                  <span class="file-tree-name">{item.name}</span>
-                </button>
-                <Show when={expanded().has(item.path)}>
-                  {item.children ? renderTree(item.children, depth + 1) : null}
-                </Show>
-              </>
-            ) : (
-              <button
-                type="button"
-                class="file-tree-item file-tree-file"
-                data-active={selectedPath() === item.path}
-                style={{ "padding-left": `${depth * 16 + 24}px` }}
-                onClick={() => selectFile(item.path)}
-              >
-                <svg
-                  class="file-tree-icon file-tree-file-icon"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                >
-                  <path
-                    d="M4 2C4 1.44772 4.44772 1 5 1H10L12 3V14C12 14.5523 11.5523 15 11 15H5C4.44772 15 4 14.5523 4 14V2Z"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                  />
-                  <path
-                    d="M10 1V3H12"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                    stroke-linecap="round"
-                  />
-                </svg>
-                <span class="file-tree-name">{item.name}</span>
-                {item.status && (
+                ) : (
+                  <svg class="file-tree-icon file-tree-file-icon" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M4 2C4 1.44772 4.44772 1 5 1H10L12 3V14C12 14.5523 11.5523 15 11 15H5C4.44772 15 4 14.5523 4 14V2Z"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                    />
+                    <path
+                      d="M10 1V3H12"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                )}
+                <span class="file-tree-name">{node.name}</span>
+                {node.status && (
                   <span
-                    class={`file-tree-status ${item.status === "M" ? "status-modified" : "status-added"}`}
+                    class={`file-tree-status ${node.status === "M" ? "status-modified" : "status-added"}`}
                   >
-                    {item.status}
+                    {node.status}
                   </span>
                 )}
               </button>
-            )}
-          </div>
-        )}
+              {node.type === "dir" ? (
+                <Show when={expanded().has(node.path)}>
+                  {node.children ? renderTree(node.children, depth + 1) : null}
+                </Show>
+              ) : null}
+            </div>
+          );
+        }}
       </For>
     );
   }
@@ -413,6 +740,38 @@ export function FileEditor(props: {
     <div class="neu-file-pane">
       <div class="neu-file-header">
         <span>资源管理器</span>
+        <div class="neu-file-actions">
+          <button
+            type="button"
+            class="neu-file-action"
+            onClick={openNewFile}
+          >
+            新建文件
+          </button>
+          <button
+            type="button"
+            class="neu-file-action"
+            onClick={openNewFolder}
+          >
+            新建文件夹
+          </button>
+          <button
+            type="button"
+            class="neu-file-action"
+            disabled={!selectedPath()}
+            onClick={() => openRename(selectedPath())}
+          >
+            重命名
+          </button>
+          <button
+            type="button"
+            class="neu-file-action neu-file-action-danger"
+            disabled={!selectedPath()}
+            onClick={() => void deleteSelected()}
+          >
+            删除
+          </button>
+        </div>
       </div>
       <div class="neu-file-body">
         <div class="file-tree neu-file-tree" style={{ width: `${fileWidth()}px` }}>
@@ -511,6 +870,59 @@ export function FileEditor(props: {
           </div>
         </div>
       </div>
+      <Show when={dialog()}>
+        <div
+          class="neu-file-dialog-backdrop"
+          onClick={() => setDialog(null)}
+        >
+          <div
+            class="neu-file-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div class="neu-file-dialog-title">
+              {dialog()?.mode === "new-file"
+                ? "新建文件"
+                : dialog()?.mode === "new-folder"
+                  ? "新建文件夹"
+                  : "重命名"}
+            </div>
+            <input
+              class="neu-file-dialog-input"
+              value={dialogValue()}
+              onInput={(event) => setDialogValue(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void submitDialog();
+                if (event.key === "Escape") setDialog(null);
+              }}
+              autofocus
+            />
+            <div class="neu-file-dialog-actions">
+              <button
+                type="button"
+                class="neu-file-dialog-button"
+                onClick={() => setDialog(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="neu-file-dialog-button neu-file-dialog-primary"
+                onClick={() => void submitDialog()}
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+      <Show when={contextMenu()}>
+        <ContextMenu
+          x={contextMenu()!.x}
+          y={contextMenu()!.y}
+          items={buildContextMenu(contextMenu()!.path)}
+          onClose={closeContextMenu}
+        />
+      </Show>
     </div>
   );
 }

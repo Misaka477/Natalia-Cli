@@ -4,11 +4,14 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
 export {
+  createWorkspaceFile,
+  deleteWorkspaceFile,
   findWorkspaceFiles,
   globWorkspaceFiles,
   invalidateWorkspaceFiles,
   listWorkspaceFiles,
   readWorkspaceFile,
+  renameWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
   writeWorkspaceFile,

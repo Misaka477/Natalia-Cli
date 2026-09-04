@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import fuzzysort from "fuzzysort";
@@ -491,6 +491,96 @@ export async function writeWorkspaceFile(input: {
   return { written: true };
 }
 
+export async function createWorkspaceFile(input: {
+  workspaceRoot: string;
+  path: string;
+  content?: string;
+  encoding?: "utf8" | "base64";
+  directory?: boolean;
+}): Promise<{ created: boolean }> {
+  const root = await realpath(input.workspaceRoot);
+  const path = resolveRawWorkspacePath(root, input.path);
+  if (input.directory) {
+    await mkdir(path, { recursive: true });
+    invalidateWorkspaceFiles(root);
+    return { created: true };
+  }
+  await mkdir(dirname(path), { recursive: true });
+  const bytes =
+    input.encoding === "base64"
+      ? Buffer.from(input.content ?? "", "base64")
+      : Buffer.from(input.content ?? "", "utf8");
+  await writeFile(path, bytes, { mode: 0o600 });
+  invalidateWorkspaceFiles(root);
+  return { created: true };
+}
+
+export async function renameWorkspaceFile(input: {
+  workspaceRoot: string;
+  path: string;
+  newPath: string;
+}): Promise<{ renamed: boolean }> {
+  const root = await realpath(input.workspaceRoot);
+  const source = await resolveWorkspacePath(root, input.path);
+  const destination = resolveRawWorkspacePath(root, input.newPath);
+  if (source === destination)
+    throw new RuntimeRefusal("workspace rename source and destination are identical");
+  await mkdir(dirname(destination), { recursive: true });
+  await rename(source, destination);
+  invalidateWorkspaceFiles(root);
+  return { renamed: true };
+}
+
+export async function deleteWorkspaceFile(input: {
+  workspaceRoot: string;
+  path: string;
+}): Promise<{ deleted: boolean; trash: boolean }> {
+  const root = await realpath(input.workspaceRoot);
+  const path = await resolveWorkspacePath(root, input.path);
+  await moveToTrash(path);
+  invalidateWorkspaceFiles(root);
+  return { deleted: true, trash: true };
+}
+
+function resolveRawWorkspacePath(root: string, input: string) {
+  if (!input || input.startsWith("/") || input.split(/[\\/]/u).includes(".."))
+    throw new RuntimeRefusal("workspace path must remain inside workspace");
+  const path = resolve(root, input);
+  if (!contains(root, path))
+    throw new RuntimeRefusal("workspace path must remain inside workspace");
+  return path;
+}
+
+async function moveToTrash(path: string): Promise<void> {
+  if (process.platform === "win32") {
+    const quoted = path.replace(/'/gu, "''");
+    const script = `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${quoted}','OnlyErrorDialogs','SendToRecycleBin')`;
+    await runTrashCommand("powershell.exe", ["-NoProfile", "-Command", script]);
+    return;
+  }
+  if (process.platform === "darwin") {
+    const quoted = path.replace(/'/gu, "'\''");
+    const script = `tell application "Finder" to delete POSIX file '${quoted}'`;
+    await runTrashCommand("osascript", ["-e", script]);
+    return;
+  }
+  // Linux: prefer GLib's gio, fall back to trash-put.
+  try {
+    await runTrashCommand("gio", ["trash", path]);
+  } catch {
+    await runTrashCommand("trash-put", [path]);
+  }
+}
+
+async function runTrashCommand(command: string, args: string[]) {
+  const child = Bun.spawn([command, ...args], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  const code = await child.exited;
+  if (code !== 0)
+    throw new RuntimeRefusal(`failed to move to trash: ${command}`);
+}
 async function resolveWorkspacePath(root: string, input: string) {
   // Refusals, not failures: the caller asked for something policy does not allow,
   // which a remote consumer must be able to tell apart from a broken runtime. The

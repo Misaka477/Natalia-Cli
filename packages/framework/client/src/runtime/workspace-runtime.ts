@@ -1,8 +1,11 @@
 import {
+  createWorkspaceFile,
+  deleteWorkspaceFile,
   findWorkspaceFiles,
   globWorkspaceFiles,
   listWorkspaceFiles,
   readWorkspaceFile,
+  renameWorkspaceFile,
   searchWorkspaceFiles,
   writeWorkspaceFile,
 } from "@natalia/platform";
@@ -18,6 +21,9 @@ type WorkspaceRuntime = Pick<
   | "workspaceRead"
   | "workspaceGlob"
   | "workspaceWrite"
+  | "workspaceCreate"
+  | "workspaceRename"
+  | "workspaceDelete"
   | "workspaceWriteConflicts"
   | "workspaceGitDiff"
   | "gitRefs"
@@ -63,6 +69,27 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
     async workspaceWrite(input) {
       await ctx.ports.getReady();
       return await writeWorkspaceFile({
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        ...input,
+      });
+    },
+    async workspaceCreate(input) {
+      await ctx.ports.getReady();
+      return await createWorkspaceFile({
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        ...input,
+      });
+    },
+    async workspaceRename(input) {
+      await ctx.ports.getReady();
+      return await renameWorkspaceFile({
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        ...input,
+      });
+    },
+    async workspaceDelete(input) {
+      await ctx.ports.getReady();
+      return await deleteWorkspaceFile({
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });

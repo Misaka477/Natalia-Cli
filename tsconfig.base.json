@@ -31,6 +31,7 @@
       "@natalia/example-ui-plugin": [
         "packages/examples/ui-plugin/src/index.ts"
       ],
+      "@natalia/ui-kit": ["packages/plugins/ui/kit/src/index.ts"],
       "@natalia/plugin-web-ui": [
         "packages/plugins/ui/web/src/index.ts"
       ],

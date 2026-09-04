@@ -59,6 +59,9 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   workspaceRead: "workspace.read",
   workspaceGlob: "workspace.glob",
   workspaceWrite: "workspace.write",
+  workspaceCreate: "workspace.create",
+  workspaceRename: "workspace.rename",
+  workspaceDelete: "workspace.delete",
   workspaceWriteConflicts: "workspace.writeConflicts",
   workspaceRoots: "workspace.roots",
   workspaceAdd: "workspace.add",
@@ -876,6 +879,15 @@ export function createWebRuntimeClient(
     },
     async workspaceWrite(input) {
       return (await call("workspace.write", { ...input })) as never;
+    },
+    async workspaceCreate(input) {
+      return (await call("workspace.create", { ...input })) as never;
+    },
+    async workspaceRename(input) {
+      return (await call("workspace.rename", { ...input })) as never;
+    },
+    async workspaceDelete(input) {
+      return (await call("workspace.delete", { ...input })) as never;
     },
     async configGet() {
       return (await call<ConfigV3>("config.get")) as never;

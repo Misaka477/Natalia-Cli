@@ -54,6 +54,9 @@ export const WORKER_ROUTE_MEMBERS = {
   "workspace.read": "workspaceRead",
   "workspace.glob": "workspaceGlob",
   "workspace.write": "workspaceWrite",
+  "workspace.create": "workspaceCreate",
+  "workspace.rename": "workspaceRename",
+  "workspace.delete": "workspaceDelete",
   "workspace.writeConflicts": "workspaceWriteConflicts",
   "mcp.catalog": "mcpCatalog",
   "mcp.prompt": "getMcpPrompt",
@@ -167,6 +170,9 @@ type WorkerRequest = {
     | "workspace.read"
     | "workspace.glob"
     | "workspace.write"
+    | "workspace.create"
+    | "workspace.rename"
+    | "workspace.delete"
     | "workspace.writeConflicts"
     | "mcp.catalog"
     | "mcp.prompt"
@@ -465,6 +471,21 @@ export function createWorkerRuntimeClient(
     async workspaceWrite(input) {
       return (await request("workspace.write", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["workspaceWrite"]>>
+      >;
+    },
+    async workspaceCreate(input) {
+      return (await request("workspace.create", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceCreate"]>>
+      >;
+    },
+    async workspaceRename(input) {
+      return (await request("workspace.rename", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceRename"]>>
+      >;
+    },
+    async workspaceDelete(input) {
+      return (await request("workspace.delete", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceDelete"]>>
       >;
     },
     async workspaceWriteConflicts() {
@@ -1032,6 +1053,12 @@ export async function handleWorkerRequest(
     return await client.workspaceGlob?.(request.value as never);
   if (request.method === "workspace.write")
     return await client.workspaceWrite?.(request.value as never);
+  if (request.method === "workspace.create")
+    return await client.workspaceCreate?.(request.value as never);
+  if (request.method === "workspace.rename")
+    return await client.workspaceRename?.(request.value as never);
+  if (request.method === "workspace.delete")
+    return await client.workspaceDelete?.(request.value as never);
   if (request.method === "workspace.writeConflicts")
     return await client.workspaceWriteConflicts?.();
   if (request.method === "mcp.catalog") return await client.mcpCatalog?.();

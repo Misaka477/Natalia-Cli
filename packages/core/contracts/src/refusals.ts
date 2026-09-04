@@ -166,6 +166,21 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "written",
     note: "a file write succeeds or reports a refusal; the value carries the outcome",
   },
+  workspaceCreate: {
+    refusal: "value",
+    expressedBy: "created",
+    note: "a file or directory creation succeeds or reports a refusal; the value carries the outcome",
+  },
+  workspaceRename: {
+    refusal: "value",
+    expressedBy: "renamed",
+    note: "a rename succeeds or reports a refusal; the value carries the outcome",
+  },
+  workspaceDelete: {
+    refusal: "value",
+    expressedBy: "deleted",
+    note: "a delete moves to the system trash or reports a refusal; the value carries the outcome",
+  },
   workspaceWriteConflicts: { refusal: "none", note: "pure local lock-state read" },
   workspaceGlob: {
     refusal: "error",

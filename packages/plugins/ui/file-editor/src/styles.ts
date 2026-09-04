@@ -1,3 +1,5 @@
+import { contextMenuStyles } from "@natalia/ui-kit";
+
 /**
  * Styles owned by the file editor UI plugin.
  *
@@ -7,7 +9,39 @@
 export const fileEditorStyles = `
 /* ===== File tree + editor ===== */
 .neu-file-pane { flex: 1; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
-.neu-file-header { display: none; }
+.neu-file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 8px;
+  font-size: 13px;
+  color: var(--neu-text);
+}
+.neu-file-actions {
+  display: flex;
+  gap: 6px;
+}
+.neu-file-action {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-file-action:hover:not(:disabled) {
+  color: var(--neu-accent);
+}
+.neu-file-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.neu-file-action-danger {
+  color: var(--neu-error);
+}
 .neu-file-body { flex: 1; display: flex; min-height: 0; overflow: hidden; gap: 10px; }
 .neu-file-tree {
   flex: 0 0 auto;
@@ -164,4 +198,140 @@ export const fileEditorStyles = `
 }
 .neu-markdown-body strong { color: var(--neu-text); }
 .neu-markdown-body em { color: var(--neu-muted); }
-`;
+
+/* VSCode-like file tree rows */
+.file-tree-row {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: max-content;
+  border-radius: 10px;
+}
+.file-tree-row[data-active="true"] {
+  background: var(--neu-bg-light);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.file-tree-row .file-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: max-content;
+  background: transparent;
+  border: none;
+}
+.file-tree-row[data-active="true"] .file-tree-item {
+  background: transparent;
+  box-shadow: none;
+}
+.file-tree-chevron-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--neu-muted);
+  cursor: default;
+}
+.file-tree-row .file-tree-chevron-slot {
+  cursor: pointer;
+}
+.file-tree-chevron-slot:empty {
+  visibility: hidden;
+}
+
+/* Custom dialog */
+.neu-file-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+.neu-file-dialog {
+  width: min(420px, 90vw);
+  background: var(--neu-bg-light);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 8px 8px 20px var(--neu-shadow-dark), -8px -8px 20px var(--neu-shadow-light);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.neu-file-dialog-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--neu-text);
+}
+.neu-file-dialog-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 13px;
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-file-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.neu-file-dialog-button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--neu-bg);
+  color: var(--neu-text);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-file-dialog-primary {
+  background: var(--neu-accent);
+  color: var(--neu-on-accent);
+}
+
+/* Context menu */
+.neu-file-context-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+}
+.neu-file-context-menu {
+  position: fixed;
+  min-width: 140px;
+  background: var(--neu-bg-light);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 4px 4px 12px var(--neu-shadow-dark), -4px -4px 12px var(--neu-shadow-light);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.neu-file-context-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--neu-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.neu-file-context-item:hover {
+  background: var(--neu-bg);
+  color: var(--neu-accent);
+}
+.neu-file-context-danger {
+  color: var(--neu-error);
+}
+` + contextMenuStyles;

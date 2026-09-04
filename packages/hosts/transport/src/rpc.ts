@@ -139,6 +139,9 @@ export const RPC_ROUTE_MEMBERS = {
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
   "workspace.write": "workspaceWrite",
+  "workspace.create": "workspaceCreate",
+  "workspace.rename": "workspaceRename",
+  "workspace.delete": "workspaceDelete",
   "workspace.writeConflicts": "workspaceWriteConflicts",
   "workspace.glob": "workspaceGlob",
   "workspace.roots": "workspaceRoots",
@@ -875,6 +878,66 @@ export async function handleRPCMessage(
           path,
           content,
           ...(encoding ? { encoding: encoding as "utf8" | "base64" } : {}),
+        }),
+      };
+    }
+    if (body.method === "workspace.create") {
+      optionsGuard(client, "workspaceCreate");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("workspace.create.params must be an object");
+      const path = (params as { path?: unknown }).path;
+      if (typeof path !== "string")
+        throw invalidParams("workspace.create.params.path must be a string");
+      const content = (params as { content?: unknown }).content;
+      if (content !== undefined && typeof content !== "string")
+        throw invalidParams("workspace.create.params.content must be a string");
+      const directory = (params as { directory?: unknown }).directory;
+      if (directory !== undefined && typeof directory !== "boolean")
+        throw invalidParams("workspace.create.params.directory must be a boolean");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceCreate?.({
+          path,
+          ...(typeof content === "string" ? { content } : {}),
+          ...(typeof directory === "boolean" ? { directory } : {}),
+        }),
+      };
+    }
+    if (body.method === "workspace.rename") {
+      optionsGuard(client, "workspaceRename");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("workspace.rename.params must be an object");
+      const path = (params as { path?: unknown }).path;
+      const newPath = (params as { newPath?: unknown }).newPath;
+      if (typeof path !== "string")
+        throw invalidParams("workspace.rename.params.path must be a string");
+      if (typeof newPath !== "string")
+        throw invalidParams("workspace.rename.params.newPath must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceRename?.({
+          path,
+          newPath,
+        }),
+      };
+    }
+    if (body.method === "workspace.delete") {
+      optionsGuard(client, "workspaceDelete");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("workspace.delete.params must be an object");
+      const path = (params as { path?: unknown }).path;
+      if (typeof path !== "string")
+        throw invalidParams("workspace.delete.params.path must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceDelete?.({
+          path,
         }),
       };
     }

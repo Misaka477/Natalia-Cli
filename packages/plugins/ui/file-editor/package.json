@@ -32,6 +32,7 @@
     "@codemirror/lint": "^6.8.1",
     "@codemirror/commands": "^6.6.0",
     "@codemirror/legacy-modes": "^6.4.0",
-    "@lezer/highlight": "^1.2.0"
+    "@lezer/highlight": "^1.2.0",
+    "@natalia/ui-kit": "workspace:*"
   }
 }

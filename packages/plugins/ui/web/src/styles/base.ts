@@ -829,7 +829,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 }
 .neu-secondary-content {
   position: relative;
-  z-index: 0;
+  z-index: 2;
   flex: 1;
   min-height: 0;
   overflow: hidden;

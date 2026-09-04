@@ -1918,6 +1918,22 @@ export type RuntimeClient = {
     content: string;
     encoding?: "utf8" | "base64";
   }): Promise<{ written: boolean }>;
+  /** Creates a new file or directory inside the active workspace. */
+  workspaceCreate?(input: {
+    path: string;
+    content?: string;
+    encoding?: "utf8" | "base64";
+    directory?: boolean;
+  }): Promise<{ created: boolean }>;
+  /** Renames a file or directory inside the active workspace. */
+  workspaceRename?(input: {
+    path: string;
+    newPath: string;
+  }): Promise<{ renamed: boolean }>;
+  /** Moves a file or directory to the system trash/recycle bin. */
+  workspaceDelete?(input: {
+    path: string;
+  }): Promise<{ deleted: boolean; trash: boolean }>;
   /**
    * Returns the current workspace write-lock activity: which sessions are
    * currently writing (or waiting to write) which paths. Read-only.
