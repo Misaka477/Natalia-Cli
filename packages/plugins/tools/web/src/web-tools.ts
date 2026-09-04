@@ -478,7 +478,7 @@ function browserNavigateTool(): RuntimeTool {
   return {
     name: "browser_navigate",
     description:
-      "Navigate the browser to a URL. tabId is optional; when omitted the active tab is used. Returns requestedUrl and currentUrl.",
+      "Navigate the browser to a URL. tabId is optional; when omitted the current active tab is navigated (no new tab is created). Returns requestedUrl and currentUrl.",
     requiresApproval: true,
     timeoutSec: 20,
     parameters: {
@@ -497,9 +497,11 @@ function browserNavigateTool(): RuntimeTool {
         throw new Error("browser_navigate requires http(s) URL");
       assertNetworkURL(url, context);
       const tabId = optionalTabId(args.tabId);
-      const result = tabId
-        ? await browserBridgeCall("navigate", { tabId, url }, context.sessionID)
-        : await browserBridgeCall("open", { url }, context.sessionID);
+      const result = await browserBridgeCall(
+        "navigate",
+        { ...(tabId ? { tabId } : {}), url },
+        context.sessionID,
+      );
       return JSON.stringify(result, null, 2);
     },
   };
