@@ -45,7 +45,12 @@ function respond(message, result, error) {
 async function activeTab(tabId) {
   const normalized = normalizeTabId(tabId);
   if (normalized) return normalized;
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  let [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab) [tab] = await chrome.tabs.query({ active: true });
+  if (!tab) {
+    const all = await chrome.tabs.query({});
+    tab = all.find((item) => item.active) || all[0];
+  }
   if (!tab?.id) throw new Error("no active browser tab");
   return tab.id;
 }
@@ -116,7 +121,9 @@ async function handle(message) {
     switch (action) {
       case "tabs": {
         const tabs = await chrome.tabs.query({});
-        const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        let [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (!active) [active] = await chrome.tabs.query({ active: true });
+        if (!active) active = tabs.find((tab) => tab.active) || tabs[0];
         result = {
           activeId: active?.id,
           tabs: tabs.map((tab) => ({
