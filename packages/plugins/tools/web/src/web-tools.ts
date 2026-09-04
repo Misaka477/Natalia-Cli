@@ -178,6 +178,20 @@ function sharedBrowserAvailable(): boolean {
   return Boolean(sharedBrowserBase());
 }
 
+function optionalTabId(value: unknown): string | number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "number") return Number.isInteger(value) ? value : value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") return undefined;
+    const asNumber = Number(trimmed);
+    if (Number.isInteger(asNumber) && String(asNumber) === trimmed)
+      return asNumber;
+    return trimmed;
+  }
+  return value as string;
+}
+
 async function browserBridgeCall(
   action: string,
   input: Record<string, unknown> = {},
@@ -403,7 +417,7 @@ function browserScanTool(): RuntimeTool {
   return {
     name: "browser_scan",
     description:
-      "Scan a shared browser tab and return simplified page content (text-only by default). Requires the shared browser bridge.",
+      "Scan a browser tab and return simplified page content (text-only by default). tabId is optional; when omitted the active tab is used.",
     requiresApproval: false,
     timeoutSec: 20,
     parameters: {
@@ -417,7 +431,7 @@ function browserScanTool(): RuntimeTool {
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const tabId = optionalString(args.tabId);
+      const tabId = optionalTabId(args.tabId);
       return JSON.stringify(
         await browserBridgeCall("scan", {
           tabId,
@@ -435,7 +449,7 @@ function browserExecuteJsTool(): RuntimeTool {
   return {
     name: "browser_execute_js",
     description:
-      "Execute JavaScript in a shared browser tab. Requires the shared browser bridge and is subject to tool approval policy.",
+      "Execute JavaScript in a browser tab. tabId is optional; when omitted the active tab is used. Returns the JS result and page diff when available.",
     requiresApproval: true,
     timeoutSec: 30,
     parameters: {
@@ -449,7 +463,7 @@ function browserExecuteJsTool(): RuntimeTool {
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const tabId = optionalString(args.tabId);
+      const tabId = optionalTabId(args.tabId);
       const script = requireString(args.script, "script");
       return JSON.stringify(
         await browserBridgeCall("execute_js", { tabId, script }, context?.sessionID),
@@ -464,7 +478,7 @@ function browserNavigateTool(): RuntimeTool {
   return {
     name: "browser_navigate",
     description:
-      "Navigate the shared browser to a URL. Requires the shared browser bridge and is subject to tool approval policy.",
+      "Navigate the browser to a URL. tabId is optional; when omitted the active tab is used. Returns requestedUrl and currentUrl.",
     requiresApproval: true,
     timeoutSec: 20,
     parameters: {
@@ -482,7 +496,7 @@ function browserNavigateTool(): RuntimeTool {
       if (!/^https?:\/\//iu.test(url))
         throw new Error("browser_navigate requires http(s) URL");
       assertNetworkURL(url, context);
-      const tabId = optionalString(args.tabId);
+      const tabId = optionalTabId(args.tabId);
       const result = tabId
         ? await browserBridgeCall("navigate", { tabId, url }, context.sessionID)
         : await browserBridgeCall("open", { url }, context.sessionID);
@@ -495,7 +509,7 @@ function browserClickTool(): RuntimeTool {
   return {
     name: "browser_click",
     description:
-      "Click at x/y coordinates in a shared browser tab. Requires the shared browser bridge and is subject to tool approval policy.",
+      "Click at x/y coordinates in a browser tab. tabId is optional; when omitted the active tab is used.",
     requiresApproval: true,
     timeoutSec: 20,
     parameters: {
@@ -510,7 +524,7 @@ function browserClickTool(): RuntimeTool {
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const tabId = optionalString(args.tabId);
+      const tabId = optionalTabId(args.tabId);
       const x = Number(args.x);
       const y = Number(args.y);
       if (!Number.isInteger(x) || !Number.isInteger(y))
@@ -528,7 +542,7 @@ function browserInputTool(): RuntimeTool {
   return {
     name: "browser_input",
     description:
-      "Insert text into the active element of a shared browser tab. Requires the shared browser bridge and is subject to tool approval policy.",
+      "Insert text into the active element of a browser tab. tabId is optional; when omitted the active tab is used.",
     requiresApproval: true,
     timeoutSec: 20,
     parameters: {
@@ -542,7 +556,7 @@ function browserInputTool(): RuntimeTool {
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const tabId = optionalString(args.tabId);
+      const tabId = optionalTabId(args.tabId);
       const text = requireString(args.text, "text");
       return JSON.stringify(
         await browserBridgeCall("input", { tabId, text }, context?.sessionID),
