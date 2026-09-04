@@ -40,7 +40,6 @@ export function runtimeToolNames(): string[] {
     "apply_patch",
     "web_fetch",
     "web_search",
-    "browser_visit",
     "browser_screenshot",
     "browser_tabs",
     "browser_scan",

@@ -200,7 +200,7 @@ async function browserBridgeCall(
   const base = sharedBrowserBase();
   if (!base)
     throw new Error(
-      "shared browser bridge is not available; run Natalia Desktop to enable the shared browser",
+      "browser bridge is not available. Start it with: bun packages/browser-bridge/src/server.ts. If the extension is not installed, run: bun packages/browser-bridge/scripts/install.ts",
     );
   const payload = sessionID ? { ...input, sessionID } : input;
   const response = await fetch(`${base.replace(/\/$/, "")}/browser/${action}`, {
@@ -223,91 +223,6 @@ async function browserBridgeCall(
     throw new Error(message);
   }
   return body;
-}
-
-function browserVisitTool(): RuntimeTool {
-  return {
-    name: "browser_visit",
-    description:
-      "Visit an HTTP(S) page and return document metadata/text preview. Uses the shared browser when available; otherwise falls back to fetch.",
-    requiresApproval: true,
-    timeoutSec: 30,
-    parameters: {
-      type: "object",
-      properties: { url: { type: "string" }, maxBytes: { type: "number" } },
-      required: ["url"],
-      additionalProperties: false,
-    },
-    async execute(input, context) {
-      if (context.settings?.browserEnabled === false)
-        throw new Error("browser tools are disabled by runtime configuration");
-      const args = requireObject(input);
-      const url = requireString(args.url, "url");
-      if (!/^https?:\/\//iu.test(url))
-        throw new Error("browser_visit requires http(s) URL");
-      assertNetworkURL(url, context);
-
-      if (sharedBrowserAvailable()) {
-        const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
-          tabId?: string;
-          ok?: boolean;
-        };
-        const tabId = opened.tabId;
-        if (!tabId)
-          throw new Error("shared browser opened a tab but returned no id");
-        const scanned = (await browserBridgeCall("scan", {
-          tabId,
-          textOnly: true,
-          maxlen: numberOr(args.maxBytes, 12000),
-        }, context.sessionID)) as {
-          url?: string;
-          title?: string;
-          text?: string;
-        };
-        return JSON.stringify(
-          {
-            url: scanned.url ?? url,
-            status: 200,
-            title: scanned.title ?? "",
-            textPreview: (scanned.text ?? "").slice(
-              0,
-              numberOr(args.maxBytes, 12000),
-            ),
-            via: "shared-browser",
-          },
-          null,
-          2,
-        );
-      }
-
-      const response = await fetch(url, {
-        headers: {
-          "user-agent":
-            context.settings?.browserUserAgent || "Natalia-TS7-Browser/0.1",
-          ...context.settings?.browserHeaders,
-        },
-        signal: context.signal,
-      });
-      const html = await response.text();
-      return JSON.stringify(
-        {
-          url: response.url,
-          status: response.status,
-          title: html.match(/<title[^>]*>([\s\S]*?)<\/title>/iu)?.[1]?.trim(),
-          textPreview: html
-            .replace(/<script[\s\S]*?<\/script>/giu, " ")
-            .replace(/<style[\s\S]*?<\/style>/giu, " ")
-            .replace(/<[^>]+>/gu, " ")
-            .replace(/\s+/gu, " ")
-            .trim()
-            .slice(0, numberOr(args.maxBytes, 12000)),
-          contentType: response.headers.get("content-type") ?? "unknown",
-        },
-        null,
-        2,
-      );
-    },
-  };
 }
 
 function browserScreenshotTool(): RuntimeTool {
@@ -712,7 +627,6 @@ export const webTools: RuntimeTool[] = [
   browserNavigateTool(),
   browserClickTool(),
   browserInputTool(),
-  browserVisitTool(),
   browserScreenshotTool(),
 ];
 

@@ -56,58 +56,6 @@ test("web_fetch finalizes fetched content by stripping script blocks", () => {
   expect(finalized).toContain("<p>hello</p>");
 });
 
-test("browser_visit enforces the network policy and honours browser settings", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tool-web-browser-"));
-  let browserHeaders: Headers | undefined;
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      browserHeaders = request.headers;
-      return new Response("<title>TS Browser</title><main>browser-ok</main>");
-    },
-  });
-  const tool = webToolFamily().tools.find(
-    (candidate) => candidate.name === "browser_visit",
-  )!;
-  try {
-    expect(
-      await tool.execute(
-        { url: server.url.toString() },
-        {
-          workspaceRoot: root,
-          settings: {
-            allowLocalhost: true,
-            allowedSchemes: ["http"],
-            browserUserAgent: "Natalia browser test",
-            browserHeaders: { "x-natalia-test": "enabled" },
-          },
-        },
-      ),
-    ).toContain("browser-ok");
-    expect(browserHeaders?.get("user-agent")).toBe("Natalia browser test");
-    expect(browserHeaders?.get("x-natalia-test")).toBe("enabled");
-    await expect(
-      tool.execute(
-        { url: server.url.toString() },
-        { workspaceRoot: root, settings: { allowLocalhost: false } },
-      ),
-    ).rejects.toThrow("localhost network access is not allowed");
-    await expect(
-      tool.execute(
-        { url: server.url.toString() },
-        { workspaceRoot: root, settings: { allowedSchemes: ["https"] } },
-      ),
-    ).rejects.toThrow("network scheme is not allowed");
-    await expect(
-      tool.execute(
-        { url: server.url.toString() },
-        { workspaceRoot: root, settings: { browserEnabled: false } },
-      ),
-    ).rejects.toThrow("browser tools are disabled");
-  } finally {
-    server.stop(true);
-  }
-});
 
 test("web_search uses a native configured endpoint without proxying Go", async () => {
   const saved = process.env.NATALIA_WEB_SEARCH_URL;
@@ -241,12 +189,6 @@ test("shared browser tools delegate to the desktop browser bridge", async () => 
       { workspaceRoot: root } as never,
     )) as string;
     expect(input).toContain("ok");
-
-    const visited = (await family.tools.find((tool) => tool.name === "browser_visit")!.execute(
-      { url: "https://example.org", maxBytes: 200 },
-      { workspaceRoot: root, settings: { allowedSchemes: ["https"], allowedHosts: ["example.org"] } } as never,
-    )) as string;
-    expect(visited).toContain("shared-browser");
 
     const screenshotPath = join(root, "shot.png");
     const shot = (await family.tools.find((tool) => tool.name === "browser_screenshot")!.execute(
