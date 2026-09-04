@@ -232,8 +232,8 @@ async function handle(message) {
           tabId: active,
           diff: {
             changed,
-            beforeLength: beforeText.length,
-            afterLength: afterText.length,
+            beforeLength: beforeText.length + before.title.length + before.url.length,
+            afterLength: afterText.length + after.title.length + after.url.length,
             topChange,
           },
           newTabs,
