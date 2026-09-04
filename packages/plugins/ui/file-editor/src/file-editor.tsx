@@ -216,48 +216,8 @@ export function FileEditor(props: {
   } | null>(null);
   let cmContainer: HTMLDivElement | undefined;
   let cmView: EditorView | undefined;
-  let tabsRef: HTMLDivElement | undefined;
-  let tabsThumbRef: HTMLDivElement | undefined;
-  let tabsScrollbarRef: HTMLDivElement | undefined;
   const languageCompartment = new Compartment();
-
-  function updateTabsThumb() {
-    const el = tabsRef;
-    const thumb = tabsThumbRef;
-    const bar = tabsScrollbarRef;
-    if (!el || !thumb || !bar) return;
-    const maxScroll = el.scrollWidth - el.clientWidth;
-    const barWidth = bar.clientWidth;
-    if (maxScroll <= 0) {
-      thumb.style.display = "none";
-      return;
-    }
-    thumb.style.display = "block";
-    const thumbWidth = Math.max(30, (barWidth / el.scrollWidth) * barWidth);
-    thumb.style.width = `${thumbWidth}px`;
-    const maxThumbLeft = barWidth - thumbWidth;
-    thumb.style.left = `${(el.scrollLeft / maxScroll) * maxThumbLeft}px`;
-  }
-
-  function startTabsDrag(event: PointerEvent) {
-    const el = tabsRef;
-    if (!el) return;
-    event.preventDefault();
-    const startLeft = event.clientX;
-    const startScroll = el.scrollLeft;
-    const move = (next: PointerEvent) => {
-      el.scrollLeft = startScroll + (next.clientX - startLeft);
-      updateTabsThumb();
-    };
-    const finish = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", finish);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", finish);
-  }
   onMount(() => {
-    requestAnimationFrame(() => updateTabsThumb());
     cmView = new EditorView({
       doc: selectedContent(),
       extensions: [
@@ -790,16 +750,13 @@ export function FileEditor(props: {
         </div>
         <div class="neu-file-tabs-scroll">
           <div
-            class="neu-file-tabs-scrollbar"
-            ref={tabsScrollbarRef}
-            onPointerDown={startTabsDrag}
-          >
-            <div class="neu-file-tabs-thumb" ref={tabsThumbRef} />
-          </div>
-          <div
             class="neu-file-editor-tabs"
-            ref={tabsRef}
-            onScroll={updateTabsThumb}
+            onWheel={(event) => {
+              if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                event.currentTarget.scrollLeft += event.deltaY;
+                event.preventDefault();
+              }
+            }}
           >
             <Show when={selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")}>
               <button

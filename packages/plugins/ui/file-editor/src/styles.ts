@@ -14,7 +14,7 @@ export const fileEditorStyles = `
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 22px 6px 8px;
+  padding: 14px 6px 8px;
   font-size: 13px;
   color: var(--neu-text);
 }
@@ -62,26 +62,6 @@ export const fileEditorStyles = `
   border-radius: 16px;
   padding: 6px 8px;
   box-shadow: 3px 3px 8px var(--neu-shadow-dark), -3px -3px 8px var(--neu-shadow-light);
-}
-.neu-file-tabs-scrollbar {
-  position: relative;
-  flex-shrink: 0;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--neu-bg-light);
-  box-shadow: inset 1px 1px 2px var(--neu-shadow-dark), inset -1px -1px 2px var(--neu-shadow-light);
-  margin: 0 6px;
-}
-.neu-file-tabs-thumb {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  width: 30px;
-  border-radius: 3px;
-  background: var(--neu-accent);
-  display: none;
-  cursor: grab;
 }
 .neu-top-row .neu-file-editor-tabs {
   flex: 1;
@@ -147,16 +127,19 @@ export const fileEditorStyles = `
 .neu-file-editor-tab {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 12px;
-  background: var(--neu-bg);
-  border-radius: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--neu-text);
   font-size: 12px;
-  box-shadow: 4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light);
 }
 .neu-file-editor-tab[data-active="true"] {
+  position: relative;
+  z-index: 1;
   background: var(--neu-bg-light);
   color: var(--neu-accent);
-  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+  border-color: var(--neu-hairline-accent);
+  box-shadow: none;
 }
 .neu-file-editor-tab[data-active="true"] .neu-file-editor-tab-label {
   color: var(--neu-accent);
@@ -164,6 +147,9 @@ export const fileEditorStyles = `
 }
 .neu-file-editor-tab[data-active="true"] .neu-tab-dirty {
   background: var(--neu-accent);
+}
+.neu-file-editor-tab:hover {
+  background: var(--neu-bg-light);
 }
 .neu-file-editor-tab-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .neu-file-editor-tab .neu-tab-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--neu-accent); }
