@@ -34,7 +34,13 @@ const SCAN_JS = String.raw`(function (opt) {
     return out;
   }
   const cleaned = clean(document.body, document.createElement("body"));
-  const html = cleaned.outerHTML;
+  let html = cleaned.outerHTML;
+  if (!cleaned.textContent || !cleaned.textContent.trim()) {
+    const raw = document.createElement("div");
+    raw.innerHTML = document.body.innerHTML;
+    raw.querySelectorAll("script,style,noscript,link,meta,template,svg").forEach((el) => el.remove());
+    html = raw.innerHTML;
+  }
   const text = document.body.innerText || "";
   const out = {
     title: document.title,
