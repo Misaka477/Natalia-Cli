@@ -656,7 +656,9 @@ export function SettingsPanel(props: {
                                 <span class="neu-settings-item-label">{item.label}</span>
                                 <span class="neu-settings-item-description">{item.description}</span>
                               </div>
-                              <span class="neu-settings-item-value">{value}</span>
+                              <span class="neu-settings-item-value">
+                                {gpuAcceleration() ? "开启" : "关闭"}
+                              </span>
                             </button>
                           );
                         }
