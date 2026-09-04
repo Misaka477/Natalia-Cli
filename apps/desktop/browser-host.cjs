@@ -315,6 +315,7 @@ function createBrowserHost(options) {
   }
 
   function show(rect, sessionID) {
+    rect = rect || lastRect;
     if (tabs.size === 0) createTab();
     const key = sessionID || "__default__";
     let nextId = activeBySession.get(key) || activeId;

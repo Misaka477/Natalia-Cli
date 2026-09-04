@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, createEffect, For, Show } from "solid-js";
 import type { AppState } from "@natalia/view-store";
 import type { ConfigV3, MCPServerConfig, RuntimeSkillCatalogEntry } from "@natalia/contracts";
 import { ExtensionSettingsContent } from "./extension-settings";
@@ -159,6 +159,18 @@ export function SettingsPanel(props: {
   const [toolDetails, setToolDetails] = createSignal(props.preferences?.get<string>("toolDetails") ?? "expanded");
   const [uiWriteScope, setUiWriteScope] = createSignal(props.preferences?.get<string>("uiWriteScope") ?? "project");
   const [gpuAcceleration, setGpuAcceleration] = createSignal<boolean>(props.preferences?.get<boolean>("gpuAcceleration") ?? false);
+
+  const desktopElectron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
+  createEffect((previousOpen?: boolean) => {
+    const open = props.open;
+    if (open && previousOpen !== true) {
+      void desktopElectron?.invoke("browser_hide");
+    }
+    if (!open && previousOpen === true) {
+      void desktopElectron?.invoke("browser_show");
+    }
+    return open;
+  });
   const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(props.preferences?.get<string>("runtimeWriteScope") ?? "global");
   const current = () => categories.find((category) => category.id === activeCategory())!;
 
