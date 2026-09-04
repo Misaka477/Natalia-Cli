@@ -161,6 +161,17 @@ export function SettingsPanel(props: {
   const [gpuAcceleration, setGpuAcceleration] = createSignal<boolean>(props.preferences?.get<boolean>("gpuAcceleration") ?? false);
 
   const desktopElectron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
+  createEffect(() => {
+    if (props.open) {
+      void desktopElectron
+        ?.invoke<{ gpuEnabled?: boolean }>("desktop_get_setting", "gpuEnabled")
+        .then((value) => {
+          if (typeof value?.gpuEnabled === "boolean")
+            setGpuAcceleration(value.gpuEnabled);
+        })
+        .catch(() => undefined);
+    }
+  });
   createEffect((previousOpen?: boolean) => {
     const open = props.open;
     if (open && previousOpen !== true) {
