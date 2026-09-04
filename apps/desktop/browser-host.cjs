@@ -790,9 +790,9 @@ function createBrowserHost(options) {
       return { ok: true };
     },
     destroy: destroyAll,
-    createTab: (url) => {
-      const tab = createTab(url);
-      return activate(tab.id);
+    createTab: (url, sessionID) => {
+      const tab = createTab(url, undefined, sessionID);
+      return activate(tab.id, undefined, sessionID);
     },
     closeTab,
     activate,
