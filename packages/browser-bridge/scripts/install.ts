@@ -124,17 +124,7 @@ function extensionPageFor(browser: string): string {
 }
 
 function isBrowserRunning() {
-  try {
-    const out = process.platform === "darwin"
-      ? "pgrep -x 'Google Chrome|Microsoft Edge|Brave Browser|Vivaldi' || true"
-      : process.platform === "win32"
-        ? "tasklist | findstr /I \"chrome.exe msedge.exe brave.exe vivaldi.exe\""
-        : "pgrep -f 'google-chrome|chromium|microsoft-edge|brave-browser|opera|vivaldi' || true";
-    execSync(out, { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
+  return runningBrowserProcesses().length > 0;
 }
 
 async function main() {
@@ -163,8 +153,9 @@ async function main() {
     console.log("Done. The extension should auto-connect.");
   } else {
     console.log("[natalia-browser-bridge] browser is already running.");
-    console.log("Open the extensions page and load the folder manually:");
-    console.log("  chrome://extensions  (or edge://extensions)");
+    const page = extensionPageFor(browser);
+    console.log(`Open the extensions page and load the folder manually:`);
+    console.log(`  ${page}`);
     console.log(`  then load unpacked folder: ${EXT_DIR}`);
     if (process.platform === "linux") {
       try {
