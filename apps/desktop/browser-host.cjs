@@ -449,11 +449,36 @@ function createBrowserHost(options) {
         if (lastRect.width && lastRect.height) tab.view.setBounds(lastRect);
         await new Promise((resolve) => setTimeout(resolve, 80));
       } catch {
-        // fall through to capturePage anyway
+        // fall through to capture below
       }
     }
-    const image = await tab.view.webContents.capturePage();
-    const data = image.toDataURL();
+
+    let data = "";
+    try {
+      const contents = tab.view.webContents;
+      if (!contents.debugger.isAttached()) contents.debugger.attach("1.3");
+      try {
+        const result = await contents.debugger.sendCommand("Page.captureScreenshot", {
+          format: "png",
+          fromSurface: true,
+        });
+        if (result?.data) data = `data:image/png;base64,${result.data}`;
+      } finally {
+        if (contents.debugger.isAttached()) contents.debugger.detach();
+      }
+    } catch {
+      // fall back to Electron capturePage
+    }
+
+    if (!data) {
+      try {
+        const image = await tab.view.webContents.capturePage();
+        data = image.toDataURL();
+      } catch {
+        data = "";
+      }
+    }
+
     if (!wasAttached && !visible && window) {
       try {
         window.removeBrowserView(tab.view);
