@@ -1,16 +1,16 @@
 {
   "apiVersion": 2,
-  "id": "natalia-browser",
+  "id": "natalia-tool-browser",
   "version": "1.0.0",
   "name": "Browser",
   "description": "Interactive browser session shared by humans and the model.",
   "entry": "index.js",
   "scope": "session",
-  "provides": ["browser.session"],
+  "provides": [],
   "requires": [],
   "optionalRequires": [],
   "conflicts": [],
   "dependencies": [],
   "hooks": {},
-  "integrationPoints": ["tools", "services"]
+  "integrationPoints": ["tools"]
 }

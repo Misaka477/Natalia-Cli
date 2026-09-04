@@ -487,29 +487,3 @@ export function browserToolFamily(): ToolFamily {
     tools: browserTools,
   };
 }
-
-export const BROWSER_PLUGIN_ID = "natalia-tool-browser";
-
-export function createBrowserPlugin() {
-  return {
-    manifest: {
-      apiVersion: 2,
-      id: BROWSER_PLUGIN_ID,
-      version: "1.0.0",
-      name: "Browser Tools",
-      description: "Control the user's existing browser through the Natalia Browser Bridge extension.",
-      entry: "index.js",
-      scope: "session",
-      provides: [],
-      requires: [],
-      optionalRequires: [],
-      conflicts: [],
-      dependencies: [],
-      hooks: {},
-      integrationPoints: ["tools"],
-    },
-    setup(api: { tools: { register(tool: RuntimeTool): void } }) {
-      for (const tool of browserTools) api.tools.register(tool);
-    },
-  };
-}
