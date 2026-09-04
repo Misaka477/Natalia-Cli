@@ -1,6 +1,6 @@
 import type { UiPlugin } from "@natalia/ui-host";
 import { createFileEditorPlugin } from "@natalia/plugin-file-editor";
-import { createTerminalPlugin, createBrowserPlugin } from "@natalia/plugin-web-ui";
+import { createTerminalPlugin } from "@natalia/plugin-web-ui";
 
 export type UiPluginRegistryEntry = {
   id: string;
@@ -21,11 +21,5 @@ export const UI_PLUGIN_REGISTRY: UiPluginRegistryEntry[] = [
     name: "Terminal",
     version: "1.0.0",
     create: createTerminalPlugin,
-  },
-  {
-    id: "natalia.ui.browser",
-    name: "Browser",
-    version: "1.0.0",
-    create: createBrowserPlugin,
   },
 ];

@@ -172,16 +172,6 @@ export function SettingsPanel(props: {
         .catch(() => undefined);
     }
   });
-  createEffect((previousOpen?: boolean) => {
-    const open = props.open;
-    if (open && previousOpen !== true) {
-      void desktopElectron?.invoke("browser_hide");
-    }
-    if (!open && previousOpen === true) {
-      void desktopElectron?.invoke("browser_show");
-    }
-    return open;
-  });
   const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(props.preferences?.get<string>("runtimeWriteScope") ?? "global");
   const current = () => categories.find((category) => category.id === activeCategory())!;
 

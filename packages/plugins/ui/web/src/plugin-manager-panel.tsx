@@ -1,7 +1,6 @@
 import { createSignal, For, Show, onMount } from "solid-js";
 import type { RuntimeClient, PluginStatus } from "@natalia/contracts";
 import type { UiPlugin, UiPluginContext } from "@natalia/ui-host";
-import { BROWSER_PLUGIN_ID } from "./browser-plugin";
 
 type ElectronGlobal = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
@@ -9,13 +8,6 @@ type ElectronGlobal = {
 
 function getElectronGlobal(): ElectronGlobal | undefined {
   return (globalThis as { electron?: ElectronGlobal }).electron;
-}
-
-async function destroyBrowserViewIfNeeded(pluginId: string) {
-  if (pluginId !== BROWSER_PLUGIN_ID) return;
-  const electron = getElectronGlobal();
-  if (!electron) return;
-  await electron.invoke("browser_destroy").catch(() => undefined);
 }
 
 type UiPluginView = {
@@ -66,7 +58,6 @@ export function PluginManagerPanel(props: {
 
   async function disableUi(pluginId: string) {
     try {
-      await destroyBrowserViewIfNeeded(pluginId);
       await props.ctx.host?.unload(pluginId);
       await refresh();
     } catch (cause) {
@@ -160,7 +151,6 @@ export function PluginManagerPanel(props: {
 
   async function unloadUi(pluginId: string) {
     try {
-      await destroyBrowserViewIfNeeded(pluginId);
       await props.ctx.host?.unload?.(pluginId);
       await refresh();
     } catch (cause) {

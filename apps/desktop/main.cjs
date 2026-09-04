@@ -4,8 +4,6 @@ const fs = require("fs");
 const net = require("net");
 const path = require("path");
 const WebSocket = require("ws");
-const http = require("http");
-const { createBrowserHost } = require("./browser-host.cjs");
 
 // GPU acceleration is opt-in through Desktop settings. On Wayland/niri the
 // GPU compositor path is noisy and can stall rendering, so the default is off
@@ -49,10 +47,6 @@ let runtimeOwned = false;
 
 let mainWindow;
 const terminalSubscriptions = new Map();
-const browserHost = createBrowserHost({
-  getMainWindow: () => mainWindow,
-  persistFile: () => path.join(app.getPath("userData"), "browser-tabs.json"),
-});
 
 function runtimeFetch(pathname, options = {}) {
   if (!runtimeURL) throw new Error("runtime URL is not ready");
@@ -118,7 +112,6 @@ async function ensureRuntime() {
     ...process.env,
     NATALIA_CONFIG: path.join(nataliaDir, "global-config.json"),
     NATALIA_WORKSPACES_FILE: path.join(nataliaDir, "workspaces.json"),
-    NATALIA_BROWSER_BRIDGE_URL: "http://127.0.0.1:8788",
   };
   console.log("[desktop] starting runtime", bun, entry, "serve", String(port));
   runtimeProcess = spawn(bun, [entry, "serve", String(port)], {
@@ -221,7 +214,6 @@ function createMainWindow() {
   mainWindow.loadFile(webDist);
 
   mainWindow.on("closed", () => {
-    browserHost.destroy();
     mainWindow = undefined;
   });
 }
@@ -276,32 +268,6 @@ ipcMain.handle("terminal_output_subscribe", (_event, payload) => {
   return { subscribed: true };
 });
 
-ipcMain.handle("browser_show", (_event, payload) => browserHost.show(payload?.rect, payload?.sessionID));
-ipcMain.handle("browser_move", (_event, payload) => browserHost.move(payload?.rect));
-ipcMain.handle("browser_hide", () => browserHost.hide());
-ipcMain.handle("browser_destroy", () => {
-  browserHost.destroy();
-  return { ok: true };
-});
-ipcMain.handle("browser_status", (_event, payload) => browserHost.state(payload?.sessionID));
-ipcMain.handle("browser_claim_human", (_event, payload) => browserHost.setOwner("human", payload?.tabId));
-ipcMain.handle("browser_release_model", (_event, payload) => browserHost.setOwner("model", payload?.tabId));
-ipcMain.handle("browser_share", (_event, payload) => browserHost.setOwner("shared", payload?.tabId));
-ipcMain.handle("browser_begin_secure_input", (_event, payload) => browserHost.setSecureInput(true, payload?.tabId));
-ipcMain.handle("browser_end_secure_input", (_event, payload) => browserHost.setSecureInput(false, payload?.tabId));
-ipcMain.handle("browser_set_approval_mode", (_event, payload) => browserHost.setApprovalMode(payload?.mode, payload?.tabId));
-ipcMain.handle("browser_respond_approval", (_event, payload) => browserHost.respondApproval(payload));
-ipcMain.handle("browser_create_tab", (_event, payload) => browserHost.createTab(payload?.url, undefined, payload?.sessionID));
-ipcMain.handle("browser_close_tab", (_event, payload) => browserHost.closeTab(payload?.tabId));
-ipcMain.handle("browser_activate_tab", (_event, payload) => browserHost.activate(payload?.tabId, payload?.rect, payload?.sessionID));
-ipcMain.handle("browser_navigate", (_event, payload) => browserHost.navigate(payload));
-ipcMain.handle("browser_read_dom", (_event, payload) => browserHost.readDom(payload?.tabId));
-ipcMain.handle("browser_click", (_event, payload) => browserHost.click(payload));
-ipcMain.handle("browser_input", (_event, payload) => browserHost.input(payload));
-ipcMain.handle("browser_screenshot", (_event, payload) => browserHost.screenshot(payload?.tabId));
-ipcMain.handle("browser_go_back", (_event, payload) => browserHost.goBack(payload?.tabId));
-ipcMain.handle("browser_go_forward", (_event, payload) => browserHost.goForward(payload?.tabId));
-ipcMain.handle("browser_reload", (_event, payload) => browserHost.reload(payload?.tabId));
 
 ipcMain.handle("desktop_get_setting", (_event, key) => {
   const settings = readDesktopSettings();
@@ -315,69 +281,6 @@ ipcMain.handle("desktop_set_setting", (_event, payload) => {
   return { ok: true };
 });
 
-function readJsonBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => { body += chunk; });
-    req.on("end", () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch (error) {
-        reject(error);
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-async function handleBrowserBridge(req, res) {
-  res.setHeader("Content-Type", "application/json");
-  const send = (status, payload) => {
-    res.statusCode = status;
-    res.end(JSON.stringify(payload));
-  };
-  try {
-    const input = await readJsonBody(req);
-    const routes = {
-      "/browser/open": "open",
-      "/browser/tabs": "tabs",
-      "/browser/navigate": "navigate",
-      "/browser/read": "read",
-      "/browser/scan": "scan",
-      "/browser/execute_js": "execute_js",
-      "/browser/click": "click",
-      "/browser/input": "input",
-      "/browser/screenshot": "screenshot",
-    };
-    const action = req.method === "POST" ? routes[req.url] : undefined;
-    if (!action) {
-      send(404, { error: `unknown bridge route ${req.method} ${req.url}` });
-      return;
-    }
-    console.log("[desktop] bridge", req.url, action);
-    const result = await browserHost.handleBridge(action, input);
-    send(200, result);
-  } catch (error) {
-    send(500, { error: error instanceof Error ? error.message : String(error) });
-  }
-}
-
-function startBrowserBridge() {
-  const server = http.createServer((req, res) => {
-    void handleBrowserBridge(req, res);
-  });
-  server.on("error", (error) => {
-    if (error.code === "EADDRINUSE") {
-      console.warn("[desktop] browser bridge port 8788 already in use; skipping bridge (another instance may be running)");
-    } else {
-      console.error("[desktop] browser bridge error", error);
-    }
-  });
-  server.listen(8788, "127.0.0.1", () => {
-    console.log("[desktop] browser bridge listening on http://127.0.0.1:8788");
-  });
-}
-
 // Electron/Chromium works best on niri with explicit Wayland text-input-v3.
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("ozone-platform", "wayland");
@@ -387,7 +290,6 @@ if (process.platform === "linux") {
 app.whenReady().then(async () => {
   app.userAgentFallback =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-  browserHost.restore();
   try {
     await ensureRuntime();
   } catch (error) {
@@ -395,7 +297,6 @@ app.whenReady().then(async () => {
   }
   createMainWindow();
   void streamRuntimeEvents();
-  startBrowserBridge();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });

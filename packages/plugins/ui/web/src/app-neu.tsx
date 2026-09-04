@@ -15,7 +15,6 @@ import { PluginManagerPanel } from "./plugin-manager-panel";
 import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { AgentPanel } from "./agent-panel";
-import { BrowserPanel } from "./browser-panel";
 import { TodoPanel } from "./todo-panel";
 import { PlanPanel } from "./plan-panel";
 import { NiaPanel } from "./nia-panel";
@@ -33,7 +32,7 @@ import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
-type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "browser" | "agent" | "todo";
+type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "agent" | "todo";
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -1777,13 +1776,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       .find((item) => item.panel.id === "terminal");
   };
 
-  const browserPanel = () => {
-    panelRevision();
-    return props.ctx.host
-      ?.listPanels()
-      .find((item) => item.panel.id === "browser");
-  };
-
   const rightTabs = () => {
     panelRevision();
     const tabs: { id: RightTab; label: string }[] = [
@@ -1794,7 +1786,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       { id: "agent", label: "协同" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
-      ...(browserPanel() ? [{ id: "browser" as RightTab, label: "浏览器" }] : []),
     ];
     return tabs;
   };
@@ -2602,9 +2593,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     if (element) mountFilePanel(element);
                   }}
                 />
-              </Show>
-              <Show when={rightTab() === "browser" && browserPanel()}>
-                <BrowserPanel state={state()} sessionID={selectedSessionID()} />
               </Show>
             </div>
           </aside>
