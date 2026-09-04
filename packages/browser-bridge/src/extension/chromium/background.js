@@ -133,9 +133,22 @@ async function handle(message) {
         break;
       }
       case "navigate": {
-        const id = payload.tabId ? Number(payload.tabId) : await activeTab();
-        const tab = await chrome.tabs.update(id, { url: payload.url });
-        result = { ok: true, tabId: tab.id, url: tab.url };
+        const id = normalizeTabId(payload.tabId) || await activeTab();
+        const targetUrl = new URL(String(payload.url || "")).href;
+        await chrome.tabs.update(id, { url: targetUrl });
+        let tab = await chrome.tabs.get(id);
+        for (let i = 0; i < 50; i += 1) {
+          if (tab.status !== "loading" && tab.url === targetUrl) break;
+          if (tab.url && tab.url !== "about:blank" && tab.url === targetUrl) break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          tab = await chrome.tabs.get(id);
+        }
+        result = {
+          ok: true,
+          tabId: tab.id,
+          url: tab.url,
+          targetUrl,
+        };
         break;
       }
       case "scan": {
