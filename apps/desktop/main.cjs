@@ -7,14 +7,42 @@ const WebSocket = require("ws");
 const http = require("http");
 const { createBrowserHost } = require("./browser-host.cjs");
 
-// On Wayland/niri the GPU compositor path is noisy and can stall rendering.
-// Disable hardware acceleration; Electron still renders and screenshots fine.
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch("enable-unsafe-swiftshader");
+// GPU acceleration is opt-in through Desktop settings. On Wayland/niri the
+// GPU compositor path is noisy and can stall rendering, so the default is off
+// with software WebGL allowed. Restart is required to change this setting.
+const desktopSettings = readDesktopSettings();
+if (desktopSettings.gpuEnabled === true) {
+  // Keep hardware acceleration enabled; user opted in.
+} else {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
+}
 
 
 const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
 const WORKSPACE_ROOT = path.resolve(__dirname, "../..");
+
+const DESKTOP_SETTINGS_FILE = () => path.join(app.getPath("userData"), "desktop-settings.json");
+
+function readDesktopSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(DESKTOP_SETTINGS_FILE(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeDesktopSettings(patch) {
+  const current = readDesktopSettings();
+  const next = { ...current, ...patch };
+  try {
+    fs.mkdirSync(path.dirname(DESKTOP_SETTINGS_FILE()), { recursive: true });
+    fs.writeFileSync(DESKTOP_SETTINGS_FILE(), JSON.stringify(next));
+  } catch (error) {
+    console.error("[desktop] failed to persist desktop settings", error);
+  }
+  return next;
+}
 let runtimeURL = process.env.NATALIA_RUNTIME_URL || "";
 let runtimeProcess;
 let runtimeOwned = false;
@@ -274,6 +302,18 @@ ipcMain.handle("browser_screenshot", (_event, payload) => browserHost.screenshot
 ipcMain.handle("browser_go_back", (_event, payload) => browserHost.goBack(payload?.tabId));
 ipcMain.handle("browser_go_forward", (_event, payload) => browserHost.goForward(payload?.tabId));
 ipcMain.handle("browser_reload", (_event, payload) => browserHost.reload(payload?.tabId));
+
+ipcMain.handle("desktop_get_setting", (_event, key) => {
+  const settings = readDesktopSettings();
+  return typeof key === "string" ? settings[key] : settings;
+});
+ipcMain.handle("desktop_set_setting", (_event, payload) => {
+  const key = payload?.key;
+  const value = payload?.value;
+  if (typeof key !== "string" || !key) throw new Error("desktop setting key is required");
+  writeDesktopSettings({ [key]: value });
+  return { ok: true };
+});
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {

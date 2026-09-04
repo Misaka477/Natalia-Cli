@@ -97,6 +97,7 @@ const categories: Category[] = [
       { label: "Density", description: "界面信息密度", value: "comfortable" },
       { label: "Diff Style", description: "diff 展示风格", value: "auto" },
       { label: "Tool Details", description: "工具卡默认展开状态", value: "expanded" },
+      { label: "GPU 加速", description: "启用/关闭硬件加速（需重启 Desktop 生效）", value: "关闭" },
       { label: "Keybinds", description: "快捷键覆盖", value: "12 个" },
     ],
   },
@@ -157,6 +158,7 @@ export function SettingsPanel(props: {
   const [diffStyle, setDiffStyle] = createSignal(props.preferences?.get<string>("diffStyle") ?? "auto");
   const [toolDetails, setToolDetails] = createSignal(props.preferences?.get<string>("toolDetails") ?? "expanded");
   const [uiWriteScope, setUiWriteScope] = createSignal(props.preferences?.get<string>("uiWriteScope") ?? "project");
+  const [gpuAcceleration, setGpuAcceleration] = createSignal<boolean>(props.preferences?.get<boolean>("gpuAcceleration") ?? false);
   const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(props.preferences?.get<string>("runtimeWriteScope") ?? "global");
   const current = () => categories.find((category) => category.id === activeCategory())!;
 
@@ -407,6 +409,13 @@ export function SettingsPanel(props: {
     "Tool Details": () => {
       cyclePreference("toolDetails", toolDetails(), ["expanded", "collapsed"], setToolDetails);
     },
+    "GPU 加速": () => {
+      const next = !gpuAcceleration();
+      setGpuAcceleration(next);
+      props.preferences?.set("gpuAcceleration", next);
+      const electron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
+      void electron?.invoke("desktop_set_setting", { key: "gpuEnabled", value: next });
+    },
     "Keybinds": () => {
       window.alert("当前版本快捷键覆盖请通过 TUI 快捷键配置。");
     },
@@ -479,6 +488,7 @@ export function SettingsPanel(props: {
       case "Density": return density();
       case "Diff Style": return diffStyle();
       case "Tool Details": return toolDetails();
+      case "GPU 加速": return gpuAcceleration() ? "开启" : "关闭";
       case "界面偏好保存范围": return uiWriteScope();
       case "运行时配置保存范围": return runtimeWriteScope();
       case "Keybinds": return "默认";
