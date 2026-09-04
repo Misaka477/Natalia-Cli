@@ -186,14 +186,11 @@ async function main() {
     console.log(`Open the extensions page and load the folder manually:`);
     console.log(`  ${page}`);
     console.log(`  then load unpacked folder: ${EXT_DIR}`);
-    if (process.platform === "linux") {
-      try {
-        spawn("xdg-open", [extensionPageFor(browser)], { stdio: "ignore", detached: true }).unref();
-      } catch {}
-    } else if (process.platform === "darwin") {
-      try {
-        spawn("open", [extensionPageFor(browser)], { stdio: "ignore", detached: true }).unref();
-      } catch {}
+    try {
+      spawn(browser, [extensionPageFor(browser)], { stdio: "ignore", detached: true }).unref();
+      console.log(`Opened ${extensionPageFor(browser)} in the detected browser.`);
+    } catch {
+      console.error("Could not open the extensions page automatically.");
     }
   }
 }
