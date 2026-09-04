@@ -631,9 +631,34 @@ function createBrowserHost(options) {
       return await scan(tab.id, input);
     }
     if (action === "execute_js") {
+      const beforeTabIds = new Set([...tabs.values()].map((item) => item.id));
+      let beforeText = "";
+      try {
+        beforeText = (await scan(tab.id, { textOnly: true, maxlen: 12000 })).text;
+      } catch {
+        beforeText = "";
+      }
       await authorizeModel(tab, "execute_js", input);
       const result = await executeJS(tab.id, String(input.script || ""));
-      return { result, tabId: tab.id };
+      let afterText = "";
+      try {
+        afterText = (await scan(tab.id, { textOnly: true, maxlen: 12000 })).text;
+      } catch {
+        afterText = "";
+      }
+      const newTabs = [...tabs.values()]
+        .filter((item) => !beforeTabIds.has(item.id))
+        .map((item) => ({ id: item.id, url: item.view.webContents.getURL() || item.url }));
+      return {
+        result,
+        tabId: tab.id,
+        diff: {
+          changed: beforeText !== afterText,
+          beforeLength: beforeText.length,
+          afterLength: afterText.length,
+        },
+        newTabs,
+      };
     }
     if (action === "click") {
       await authorizeModel(tab, "click", input);
