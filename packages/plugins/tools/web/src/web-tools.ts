@@ -325,29 +325,32 @@ function browserScreenshotTool(): RuntimeTool {
         width: { type: "number" },
         height: { type: "number" },
       },
-      required: ["url", "path"],
+      required: ["path"],
       additionalProperties: false,
     },
     async execute(input, context) {
       if (context.settings?.browserEnabled === false)
         throw new Error("browser tools are disabled by runtime configuration");
       const args = requireObject(input);
-      const url = requireString(args.url, "url");
+      const url = optionalString(args.url);
       const output = workspacePath(
         context.workspaceRoot,
         requireString(args.path, "path"),
       );
       await mkdir(dirname(output), { recursive: true });
-      assertNetworkURL(url, context);
+      if (url) assertNetworkURL(url, context);
 
       if (sharedBrowserAvailable()) {
-        const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
-          tabId?: string;
-        };
-        const tabId = opened.tabId;
-        if (!tabId) throw new Error("shared browser opened a tab but returned no id");
+        let tabId: string | number | undefined;
+        if (url) {
+          const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
+            tabId?: string | number;
+          };
+          tabId = opened.tabId;
+          if (!tabId) throw new Error("shared browser opened a tab but returned no id");
+        }
         const result = (await browserBridgeCall("screenshot", {
-          tabId,
+          ...(tabId ? { tabId } : {}),
         }, context.sessionID)) as { data?: string };
         const data = String(result.data ?? "");
         const base64 = data.replace(/^data:image\/[^;]+;base64,/u, "");
@@ -360,6 +363,10 @@ function browserScreenshotTool(): RuntimeTool {
         });
       }
 
+      if (!url)
+        throw new Error(
+          "browser_screenshot without the shared browser bridge requires a url",
+        );
       const chrome =
         context.settings?.browserBinary ??
         process.env.NATALIA_CHROME_BIN ??
@@ -423,9 +430,10 @@ function browserScanTool(): RuntimeTool {
     parameters: {
       type: "object",
       properties: {
-        tabId: { type: "string" },
+        tabId: { type: ["string", "number"] },
         textOnly: { type: "boolean" },
         maxlen: { type: "number" },
+        offset: { type: "number" },
       },
       additionalProperties: false,
     },
@@ -437,6 +445,7 @@ function browserScanTool(): RuntimeTool {
           tabId,
           textOnly: args.textOnly === false ? false : true,
           maxlen: numberOr(args.maxlen, 35000),
+          offset: numberOr(args.offset, 0),
         }, context?.sessionID),
         null,
         2,
