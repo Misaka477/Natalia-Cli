@@ -8,7 +8,7 @@
  *   the folder to load.
  */
 import { spawn, execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname; // packages/browser-bridge
@@ -85,8 +85,26 @@ function browserCandidates(): string[] {
   return candidates;
 }
 
+function realBrowserPath(candidate: string): string {
+  try {
+    return realpathSync(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
+function isChromiumReal(candidate: string): boolean {
+  const real = realBrowserPath(candidate).toLowerCase();
+  return !/firefox|safari/i.test(real);
+}
+
 function findBrowser(): string | undefined {
-  for (const candidate of browserCandidates()) if (existsSync(candidate)) return candidate;
+  for (const candidate of browserCandidates()) {
+    if (!existsSync(candidate)) continue;
+    const real = realBrowserPath(candidate);
+    if (/firefox|safari/i.test(real)) continue;
+    return real;
+  }
   return undefined;
 }
 
@@ -104,13 +122,17 @@ function runningBrowserProcesses(): string[] {
     ];
     return browserCandidates()
       .map((candidate) => {
-        const name = candidate.split(/[\\/]/).pop()?.toLowerCase() || "";
+        const real = realBrowserPath(candidate);
+        const name = real.split(/[\\/]/).pop()?.toLowerCase() || "";
         const processNames = aliases
           .filter(([names]) => names.includes(name))
           .flatMap(([, processName]) => [processName, name]);
-        return { candidate, processNames };
+        return { candidate: real, processNames };
       })
-      .filter(({ processNames }) => processNames.some((processName) => out.includes(processName)))
+      .filter(({ candidate, processNames }) =>
+        !/firefox|safari/i.test(candidate) &&
+        processNames.some((processName) => out.includes(processName)),
+      )
       .map(({ candidate }) => candidate);
   } catch {
     return [];
