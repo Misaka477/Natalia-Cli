@@ -64,6 +64,11 @@ export function createBrowserBridgeServer(
     port,
     async fetch(request, server) {
       const url = new URL(request.url);
+      if (
+        request.headers.get("upgrade")?.toLowerCase() === "websocket"
+      ) {
+        if (server.upgrade(request, { data: { extension: true } })) return undefined;
+      }
       if (request.method === "GET" && url.pathname === "/healthz") {
         return Response.json({
           ok: true,
