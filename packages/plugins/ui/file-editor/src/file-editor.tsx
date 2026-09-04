@@ -325,6 +325,16 @@ export function FileEditor(props: {
         selectFile(next);
       } else {
         setSelectedPath("");
+        setPreview(false);
+        if (cmView) {
+          cmView.dispatch({
+            changes: {
+              from: 0,
+              to: cmView.state.doc.length,
+              insert: "",
+            },
+          });
+        }
       }
     }
   }
@@ -613,7 +623,7 @@ export function FileEditor(props: {
   }
 
   function buildContextMenu(path: string): ContextMenuItem[] {
-    return [
+    const items: ContextMenuItem[] = [
       {
         type: "item",
         label: "新建文件",
@@ -630,23 +640,28 @@ export function FileEditor(props: {
           openNewFolder();
         },
       },
-      { type: "separator" },
-      {
-        type: "item",
-        label: "重命名",
-        onClick() {
-          openRename(path);
-        },
-      },
-      {
-        type: "item",
-        label: "删除",
-        danger: true,
-        onClick() {
-          void deletePath(path);
-        },
-      },
     ];
+    if (path) {
+      items.push(
+        { type: "separator" },
+        {
+          type: "item",
+          label: "重命名",
+          onClick() {
+            openRename(path);
+          },
+        },
+        {
+          type: "item",
+          label: "删除",
+          danger: true,
+          onClick() {
+            void deletePath(path);
+          },
+        },
+      );
+    }
+    return items;
   }
 
   function renderTree(nodes: FileNode[], depth: number) {
@@ -748,6 +763,7 @@ export function FileEditor(props: {
         <div class="neu-file-header">
           <span>资源管理器</span>
         </div>
+        <Show when={openTabs().length}>
         <div class="neu-file-tabs-scroll">
           <div
             class="neu-file-editor-tabs"
@@ -826,10 +842,14 @@ export function FileEditor(props: {
             </For>
           </div>
         </div>
+        </Show>
       </div>
       <div class="neu-file-body">
         <div class="neu-file-tree-shell" style={{ width: `${fileWidth()}px` }}>
-          <div class="file-tree neu-file-tree">
+          <div
+            class="file-tree neu-file-tree"
+            onContextMenu={(event) => openContextMenu(event, "")}
+          >
             {renderTree(tree(), 0)}
           </div>
         </div>
@@ -840,6 +860,7 @@ export function FileEditor(props: {
           onPointerDown={startFileResize}
         />
         <div class="neu-file-editor">
+          <Show when={openTabs().length}>
           <div class="neu-file-breadcrumbs">
             <For each={breadcrumbs()}>
               {(part, index) => (
@@ -859,6 +880,7 @@ export function FileEditor(props: {
               )}
             </For>
           </div>
+          </Show>
           <div class="neu-file-editor-area" classList={{ "neu-file-editor-area-preview": preview() && (selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")) }}>
             {preview() && (selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")) ? (
               <div class="neu-markdown-preview" innerHTML={renderMarkdown(selectedContent())} />
