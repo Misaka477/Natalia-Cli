@@ -85,10 +85,13 @@ async function detachDebugger(tabId) {
 async function evaluate(expression, tabId) {
   const id = await attachDebugger(tabId);
   try {
+    const wrapped = /^\s*return\b/u.test(expression)
+      ? `(() => { ${expression} })()`
+      : expression;
     const response = await chrome.debugger.sendCommand(
       { tabId: id },
       "Runtime.evaluate",
-      { expression, returnByValue: true, awaitPromise: true },
+      { expression: wrapped, returnByValue: true, awaitPromise: true },
     );
     if (response.exceptionDetails) {
       throw new Error(response.exceptionDetails.text || "JS evaluation failed");
