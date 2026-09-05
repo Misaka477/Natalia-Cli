@@ -19,6 +19,44 @@ export function createNataliaNeuPlugin(): UiPlugin {
       const style = document.createElement("style");
       style.textContent = nataliaNeuStyles;
       ctx.root.append(style);
+
+      const shellEntry = ctx.host
+        ?.loaded()
+        .find((entry) => (entry as { shellLayout?: unknown }).shellLayout);
+      const shellLayout = shellEntry as
+        | {
+            shellLayout?: {
+              mount(input: {
+                root: HTMLElement;
+                runtime: unknown;
+                host: unknown;
+                projection: unknown;
+                events: unknown;
+                slots: Record<string, HTMLElement | undefined>;
+              }): { dispose?(): unknown } | void;
+            };
+          }
+        | undefined;
+      if (shellLayout?.shellLayout) {
+        const layout = shellLayout.shellLayout.mount({
+          root: ctx.root,
+          runtime: ctx.runtime,
+          host: ctx.host,
+          projection: ctx.projection,
+          events: ctx.events,
+          slots: {},
+        });
+        const disposeLayout = layout && typeof layout === "object" && "dispose" in layout
+          ? () => void (layout as { dispose(): unknown }).dispose()
+          : undefined;
+        unmount = () => {
+          disposeLayout?.();
+          ctx.root.replaceChildren();
+          unmount = undefined;
+        };
+        return { dispose: () => unmount?.() };
+      }
+
       const mountPoint = document.createElement("div");
       mountPoint.style.height = "100%";
       mountPoint.style.width = "100%";

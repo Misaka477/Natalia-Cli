@@ -118,7 +118,12 @@ export type UiPluginContext<TContext = unknown> = {
       container: HTMLElement,
     ): Promise<void>;
     subscribePanels(listener: () => void): () => void;
-    loaded(): Array<{ pluginId: string; name: string; version: string }>;
+    loaded(): Array<{
+      pluginId: string;
+      name: string;
+      version: string;
+      shellLayout?: unknown;
+    }>;
     unload(pluginId: string): Promise<void>;
     load(plugin: UiPlugin): Promise<void>;
   };
@@ -145,6 +150,13 @@ export type UiPlugin<TContext = unknown> = {
   commands?: UiCommandDefinition[];
   events?: UiEventPattern[];
   preferences?: Record<string, unknown>;
+  /**
+   * Optional custom shell layout plugin. When present, the main UI host can
+   * delegate the whole shell rendering to this plugin instead of its default
+   * layout. The concrete type lives in @natalia/ui-kit; this protocol keeps
+   * ui-host free of a Solid/UI-kit dependency.
+   */
+  shellLayout?: unknown;
 };
 
 export function defineUiPlugin<TContext = unknown>(

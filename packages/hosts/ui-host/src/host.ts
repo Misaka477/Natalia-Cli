@@ -174,6 +174,9 @@ export async function createUiPluginHost<TContext = unknown>(
             pluginId: entry.record.plugin.id,
             name: entry.record.plugin.name,
             version: entry.record.plugin.version,
+            ...(entry.record.plugin.shellLayout
+              ? { shellLayout: entry.record.plugin.shellLayout }
+              : {}),
           }));
         },
         unload: async (pluginId) => {

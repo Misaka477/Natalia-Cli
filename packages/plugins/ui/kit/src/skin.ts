@@ -92,6 +92,7 @@ export type UiShellSlots = {
 };
 
 export type UiShellLayoutContext = {
+  root: HTMLElement;
   runtime: unknown;
   host: unknown;
   projection: unknown;
