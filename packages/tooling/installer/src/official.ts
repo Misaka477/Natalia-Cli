@@ -18,6 +18,11 @@ export const OFFICIAL_PLUGIN_PACKAGES = [
     directory: "natalia-local-tools",
   },
   {
+    id: "natalia-file-editor",
+    packageName: "@natalia/plugin-file-editor",
+    directory: "natalia-file-editor",
+  },
+  {
     id: "natalia-browser",
     packageName: "@natalia/plugin-browser",
     directory: "natalia-browser",

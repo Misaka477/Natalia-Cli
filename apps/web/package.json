@@ -15,7 +15,6 @@
     "@natalia/transport": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "solid-js": "1.9.12",
-    "@natalia/plugin-file-editor": "workspace:*",
     "@natalia/plugin-web-ui": "workspace:*"
   },
   "devDependencies": {

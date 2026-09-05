@@ -1,7 +1,7 @@
 import { render } from "solid-js/web";
 import { defineUiPlugin, type UiPlugin } from "@natalia/ui-host";
-import { FileEditor } from "./file-editor";
-import { fileEditorStyles } from "./styles";
+import { FileEditor } from "../file-editor";
+import { fileEditorStyles } from "../styles";
 
 export function createFileEditorPlugin(): UiPlugin {
   return defineUiPlugin({
@@ -36,7 +36,6 @@ export function createFileEditorPlugin(): UiPlugin {
       },
     ],
     mount() {
-      // Panel-only plugin: the host UI renders the panel on demand.
       return undefined;
     },
   });

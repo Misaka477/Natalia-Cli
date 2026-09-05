@@ -38,6 +38,7 @@ type PackageManifest = {
 
 const pluginRoots = [
   "packages/plugins/local-tools",
+  "packages/plugins/ui/file-editor",
   "packages/plugins/browser",
   "packages/plugins/native-terminal",
   "packages/plugins/skills",
@@ -170,8 +171,8 @@ for (const root of pluginRoots) {
     pluginOutputs.push(resolve(packageOutdir, entry));
 }
 
-if (pluginRoots.length !== 14)
-  throw new Error(`expected 14 release plugins, got ${pluginRoots.length}`);
+if (pluginRoots.length !== 15)
+  throw new Error(`expected 15 release plugins, got ${pluginRoots.length}`);
 for (const artifact of [
   "LICENSE",
   "NOTICE",

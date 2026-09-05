@@ -21,9 +21,6 @@
       "path": "../../packages/hosts/transport"
     },
     {
-      "path": "../../packages/plugins/ui/file-editor"
-    },
-    {
       "path": "../../packages/plugins/mcp"
     },
     {

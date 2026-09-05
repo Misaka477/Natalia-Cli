@@ -1,5 +1,4 @@
 import type { UiPlugin } from "@natalia/ui-host";
-import { createFileEditorPlugin } from "@natalia/plugin-file-editor";
 
 export type UiPluginRegistryEntry = {
   id: string;
@@ -10,14 +9,10 @@ export type UiPluginRegistryEntry = {
 
 /**
  * Host-level UI plugins that are not contributed by an installed runtime
- * plugin package. Feature panels contributed by plugins are loaded dynamically
- * through the plugin catalog / /plugins/<id>/ui.js path.
+ * plugin package.
+ *
+ * Feature panels are loaded dynamically through the plugin catalog /
+ * /plugins/<id>/ui.js path. This registry is kept empty until a host-only UI
+ * plugin needs a static registration path.
  */
-export const UI_PLUGIN_REGISTRY: UiPluginRegistryEntry[] = [
-  {
-    id: "natalia.ui.file-editor",
-    name: "File Editor",
-    version: "1.0.0",
-    create: createFileEditorPlugin,
-  },
-];
+export const UI_PLUGIN_REGISTRY: UiPluginRegistryEntry[] = [];
