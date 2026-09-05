@@ -7,3 +7,15 @@ export type {
   MessageAction,
   ToolCall,
 } from "./message";
+
+export {
+  applyUiSkin,
+  defineUiLayoutProfile,
+  defineUiSkin,
+} from "./skin";
+export type {
+  UiLayoutProfile,
+  UiRegionId,
+  UiRegionLayout,
+  UiSkin,
+} from "./skin";
