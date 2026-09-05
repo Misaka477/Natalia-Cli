@@ -5,10 +5,7 @@ import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, createMemo, onCleanup, onMount, For, Show } from "solid-js";
 import { Transcript } from "./components/Transcript";
 import { Composer, type ComposerAttachment } from "./components/Composer";
-import {
-  ReviewPane,
-  TerminalPane,
-} from "./components/RightPanel";
+import { ReviewPane } from "./components/RightPanel";
 import { SettingsPanel } from "./settings-panel";
 import { PluginManagerPanel } from "./plugin-manager-panel";
 import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
@@ -1797,6 +1794,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
   }
 
+  function mountTerminalPanel(container: HTMLDivElement) {
+    const panel = terminalPanel();
+    if (!panel || !props.ctx.host) return;
+    void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
+  }
+
   const topbarPanels = () => {
     panelRevision();
     return (
@@ -2698,15 +2701,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 />
               </Show>
               <Show when={rightTab() === "terminal" && terminalPanel()}>
-                <TerminalPane
-                  runtime={props.ctx.runtime}
-                  sessionID={selectedSessionID()}
-                  runtimeURL={
-                    (props.ctx.extra as { runtimeURL?: string } | undefined)
-                      ?.runtimeURL
-                  }
-                  active={rightTab() === "terminal"}
-                  events={props.ctx.events}
+                <div
+                  class="neu-terminal-host"
+                  style="height:100%;"
+                  ref={(element) => {
+                    if (element) mountTerminalPanel(element);
+                  }}
                 />
               </Show>
               <Show when={rightTab() === "files" && filePanel()}>

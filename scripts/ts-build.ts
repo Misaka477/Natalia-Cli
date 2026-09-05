@@ -93,7 +93,7 @@ for (const root of pluginRoots) {
       outdir: join(packageOutdir, "ui"),
       target: "browser",
       format: "esm",
-      naming: "plugin.js",
+      naming: "plugin.[ext]",
       packages: "bundle",
     });
     if (!uiBuild.success) {
