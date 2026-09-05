@@ -8,6 +8,7 @@ import {
 } from "@natalia/client";
 import { createRecordedFetch } from "@natalia/transport";
 import { createHttpTransportHost } from "./transport-host";
+import { createPluginUiResolver } from "./plugin-ui";
 import { promptArguments } from "./index";
 import { valueAfter, waitSignal, withoutOption } from "./command-helpers";
 import { pluginStoreRoot } from "./official-plugins";
@@ -40,6 +41,7 @@ export async function handleRuntimeCommand(argv: string[]) {
       port,
       token: process.env.NATALIA_TRANSPORT_TOKEN,
       terminalWrite: true,
+      pluginUiResolver: createPluginUiResolver(pluginStoreRoot()),
     });
     console.log(
       JSON.stringify({
@@ -150,6 +152,7 @@ export async function handleRuntimeCommand(argv: string[]) {
     const transport = createHttpTransportHost({
       client,
       port: Number(argv[2] ?? "8787"),
+      pluginUiResolver: createPluginUiResolver(pluginStoreRoot()),
     });
     globalThis.fetch = createRecordedFetch({
       mode: "record",

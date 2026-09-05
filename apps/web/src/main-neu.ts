@@ -7,6 +7,7 @@ import {
 } from "@natalia/ui-host";
 import { createWebRuntimeClient } from "./runtime-rpc";
 import { createLocalPreferenceStore } from "./local-preferences";
+import { loadPluginUiBundles } from "./plugin-ui-loader";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
@@ -37,6 +38,10 @@ const host = await createUiPluginHost({
 for (const entry of UI_PLUGIN_REGISTRY) {
   await host.load(entry.create());
 }
+
+// Load renderer-side UI bundles contributed by installed/enabled plugins.
+// This is the unified path for official and third-party feature UI.
+await loadPluginUiBundles(host, runtime, runtimeURL, injected?.token);
 
 // Load the Neumorphism dark UI plugin
 await host.load(createNataliaNeuPlugin());

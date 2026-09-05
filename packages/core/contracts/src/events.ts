@@ -1368,6 +1368,35 @@ export type ContributedCommandExecution = {
   sessionID?: string;
 };
 
+/** Panel metadata a plugin can declare for its renderer-side UI. */
+export type UiPanelMeta = {
+  id: string;
+  title: string;
+  region?: "main" | "side" | "bottom" | "topbar" | "settings";
+  group?: string;
+  icon?: string;
+  order?: number;
+  description?: string;
+  requires?: string[];
+};
+
+/** Renderer-side UI declaration carried by a plugin manifest / catalog entry. */
+export type PluginUiManifest = {
+  entry: string;
+  panels?: UiPanelMeta[];
+};
+
+/** A plugin as seen through the runtime's plugin catalog. */
+export type PluginCatalogEntry = {
+  id: string;
+  name: string | null;
+  version: string;
+  enabled: boolean;
+  installed: boolean;
+  packageName: string | null;
+  ui?: PluginUiManifest;
+};
+
 /** Host-owned runtime ports exposed to a mounted UI adapter. */
 export type UiAdapterMountInput = {
   runtime: RuntimeClient;
@@ -2272,14 +2301,7 @@ export type RuntimeClient = {
     pluginID: string;
     enabled: boolean;
   }): Promise<{ pluginID: string; enabled: boolean }>;
-  pluginCatalog?(): Promise<Array<{
-    id: string;
-    name: string | null;
-    version: string;
-    enabled: boolean;
-    installed: boolean;
-    packageName: string | null;
-  }>>;
+  pluginCatalog?(): Promise<PluginCatalogEntry[]>;
   /**
    * Unattended work, read-only.
    *

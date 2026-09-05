@@ -2,6 +2,7 @@ export { nataliaLockSchema } from "@natalia/contracts";
 export type { NataliaLock } from "@natalia/contracts";
 export {
   loadNataliaLock,
+  packageDirectory,
   pluginClosurePaths,
   saveNataliaLock,
   type PackageManagerRun,

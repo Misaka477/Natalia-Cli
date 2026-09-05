@@ -1,5 +1,5 @@
 import { resolveConfig } from "@natalia/config";
-import type { PluginPackageSource } from "@natalia/contracts";
+import type { PluginPackageSource, PluginUiManifest } from "@natalia/contracts";
 import { discoverPluginManifests } from "@natalia/plugin";
 import {
   loadNataliaLock,
@@ -16,6 +16,7 @@ export type PluginCatalogRow = {
   installed: boolean;
   source: PluginPackageSource;
   packageName: string | null;
+  ui?: PluginUiManifest;
 };
 
 export async function listInstalledPlugins(input: {
@@ -45,6 +46,7 @@ export async function listInstalledPlugins(input: {
       installed: true,
       source: entry.metadata.source,
       packageName: entry.packageName,
+      ui: manifest?.apiVersion === 2 ? manifest.ui : undefined,
     });
   }
   return rows.sort((left, right) => left.id.localeCompare(right.id));

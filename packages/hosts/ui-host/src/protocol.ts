@@ -4,6 +4,7 @@ import type {
   RuntimeEvent,
   RuntimeProjectedMessage,
   RuntimeSubagentView,
+  UiPanelMeta,
 } from "@natalia/contracts";
 import type * as ViewStore from "@natalia/view-store";
 import type { AppState } from "@natalia/view-store";
@@ -12,12 +13,7 @@ export type UiPluginLifecycle = {
   dispose(): void | Promise<void>;
 };
 
-export type UiPanelDefinition = {
-  id: string;
-  title: string;
-  region?: "main" | "side" | "bottom" | "topbar" | "settings";
-  /** Optional grouping label for topbar panels. */
-  group?: string;
+export type UiPanelDefinition = UiPanelMeta & {
   /**
    * Optional dynamic panel renderer. When present, the host can mount this
    * panel into a container supplied by another (host) UI plugin.

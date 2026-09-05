@@ -100,6 +100,20 @@ export type RuntimeHttpServerOptions = {
   startTask?: (
     request: TaskDeliveryRequest,
   ) => TaskExecutionHandle | Promise<TaskExecutionHandle>;
+  /**
+   * Resolves a named plugin's renderer-side UI bundle. The transport stays
+   * agnostic about how the bundle is stored; the host owns plugin-store paths
+   * and can enforce enabled/installed checks there.
+   */
+  pluginUiResolver?: (
+    pluginId: string,
+  ) => Promise<
+    | {
+        body: Uint8Array;
+        contentType?: string;
+      }
+    | undefined
+  >;
 };
 
 export type RuntimeHttpServer = {
@@ -446,6 +460,36 @@ export function createRuntimeHttpServer(
           { status: 422 },
         );
       }
+    }
+    if (
+      url.pathname.startsWith("/plugins/") &&
+      url.pathname.endsWith("/ui.js")
+    ) {
+      const corsHeaders = {
+        "access-control-allow-origin": "*",
+        "access-control-allow-headers": "authorization, content-type",
+        "access-control-allow-methods": "GET, OPTIONS",
+      };
+      if (request.method === "OPTIONS")
+        return new Response(null, { status: 204, headers: corsHeaders });
+      if (request.method !== "GET")
+        return Response.json({ error: "method not allowed" }, { status: 405 });
+      if (!options.pluginUiResolver)
+        return Response.json({ error: "plugin ui not enabled" }, { status: 404 });
+      const parts = url.pathname.split("/").filter(Boolean);
+      const pluginId = parts[1] ? decodeURIComponent(parts[1]) : "";
+      if (!/^[a-z0-9][a-z0-9._-]*$/u.test(pluginId))
+        return Response.json({ error: "invalid plugin id" }, { status: 400 });
+      const bundle = await options.pluginUiResolver(pluginId);
+      if (!bundle)
+        return Response.json({ error: "plugin ui not found" }, { status: 404 });
+      return new Response(bundle.body, {
+        headers: {
+          ...corsHeaders,
+          "content-type": bundle.contentType ?? "application/javascript",
+          "cache-control": "no-cache",
+        },
+      });
     }
     if (url.pathname === "/events" && options.events === false)
       return Response.json({ error: "event stream disabled" }, { status: 404 });

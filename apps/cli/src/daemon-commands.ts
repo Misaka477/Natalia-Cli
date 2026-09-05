@@ -21,6 +21,7 @@ import {
   stopRuntimeDaemon,
 } from "@natalia/transport/host";
 import { createHttpTransportHost } from "./transport-host";
+import { createPluginUiResolver } from "./plugin-ui";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import {
@@ -80,6 +81,7 @@ export async function handleDaemonCommands(argv: string[]) {
         client,
         port,
         token,
+        pluginUiResolver: createPluginUiResolver(pluginStoreRoot()),
       });
       const { server } = transport;
       try {

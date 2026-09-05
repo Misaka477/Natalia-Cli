@@ -46,6 +46,24 @@ export const pluginDependencySchema = z.object({
 
 export const pluginLifecycleHooksSchema = z.object({}).strict().default({});
 
+export const uiPanelMetaSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  region: z
+    .enum(["main", "side", "bottom", "topbar", "settings"])
+    .optional(),
+  group: z.string().optional(),
+  icon: z.string().optional(),
+  order: z.number().int().nonnegative().optional(),
+  description: z.string().optional(),
+  requires: z.array(z.string()).optional(),
+});
+
+export const pluginUiManifestSchema = z.object({
+  entry: z.string().min(1),
+  panels: z.array(uiPanelMetaSchema).optional(),
+});
+
 export const pluginManifestV2Schema = z.object({
   apiVersion: z.literal(PLUGIN_API_VERSION),
   id: pluginIDSchema,
@@ -61,6 +79,7 @@ export const pluginManifestV2Schema = z.object({
   dependencies: z.array(pluginDependencySchema).default([]),
   hooks: pluginLifecycleHooksSchema,
   integrationPoints: z.array(pluginIntegrationPointSchema).default([]),
+  ui: pluginUiManifestSchema.optional(),
 });
 
 export const pluginManifestSchema = z.discriminatedUnion("apiVersion", [
@@ -74,6 +93,7 @@ export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginIntegrationPoint = z.infer<
   typeof pluginIntegrationPointSchema
 >;
+export type PluginUiManifestFromSchema = z.infer<typeof pluginUiManifestSchema>;
 
 export type { PluginPackageSource } from "@natalia/contracts";
 
