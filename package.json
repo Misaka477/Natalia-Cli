@@ -36,7 +36,8 @@
     "licenses:generate": "npx bun scripts/generate-third-party-licenses.ts",
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports",
     "cleanup:test-tmp": "bun scripts/cleanup-test-tmp.ts",
-    "docs:api-reference": "API_REFERENCE_WRITE=1 bun run packages/hosts/transport/test/api-reference.test.ts"
+    "docs:api-reference": "API_REFERENCE_WRITE=1 bun run packages/hosts/transport/test/api-reference.test.ts",
+    "refresh:plugin-store": "bun scripts/refresh-plugin-store.ts"
   },
   "dependencies": {
     "zod": "3.25.76"
