@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "solid-js": "1.9.12"
+    "solid-js": "1.9.12",
+    "marked": "17.0.1"
   }
 }

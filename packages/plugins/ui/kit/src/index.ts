@@ -1,2 +1,9 @@
 export { ContextMenu, contextMenuStyles } from "./context-menu";
 export type { ContextMenuItem, ContextMenuProps } from "./context-menu";
+export { Transcript, MessageRow } from "./transcript";
+export type {
+  Attachment,
+  Message,
+  MessageAction,
+  ToolCall,
+} from "./message";

@@ -6,7 +6,10 @@
     "jsxImportSource": "solid-js",
     "rootDir": "../../../.."
   },
-  "include": ["src", "test"],
+  "include": [
+    "src",
+    "test"
+  ],
   "references": [
     {
       "path": "../../../../packages/core/contracts"
@@ -16,6 +19,9 @@
     },
     {
       "path": "../../../../packages/hosts/view-store"
+    },
+    {
+      "path": "../../../../packages/plugins/ui/kit"
     }
   ]
 }

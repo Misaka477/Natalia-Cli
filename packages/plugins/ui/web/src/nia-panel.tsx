@@ -12,7 +12,7 @@ import type {
   RuntimeModelCatalogEntry,
 } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
-import { Transcript } from "./components/Transcript";
+import { Transcript } from "@natalia/ui-kit";
 import { Composer } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
 import type { Message } from "./types";

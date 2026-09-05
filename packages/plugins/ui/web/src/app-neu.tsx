@@ -3,7 +3,7 @@ import { selectPrimaryActivity } from "@natalia/view-store";
 import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ChatModelProfile, ConfigV3, RuntimeClient, WorkspaceSummary } from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
 import { createSignal, createEffect, createMemo, onCleanup, onMount, For, Show } from "solid-js";
-import { Transcript } from "./components/Transcript";
+import { Transcript } from "@natalia/ui-kit";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { ReviewPane } from "./components/RightPanel";
 import { SettingsPanel } from "./settings-panel";

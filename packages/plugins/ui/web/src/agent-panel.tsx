@@ -13,7 +13,7 @@ import type {
   RuntimeTeamPR,
 } from "@natalia/contracts";
 import type { AppState, SubagentView } from "@natalia/view-store";
-import { Transcript } from "./components/Transcript";
+import { Transcript } from "@natalia/ui-kit";
 import type { Message } from "./types";
 
 function subagentToolCallsFromText(

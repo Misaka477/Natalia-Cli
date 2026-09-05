@@ -1,6 +1,6 @@
 import { For, Show, createSignal, onMount } from "solid-js";
 import { marked } from "marked";
-import type { Attachment, Message } from "../types";
+import type { Attachment, Message } from "./message";
 
 declare global {
   interface Window {
