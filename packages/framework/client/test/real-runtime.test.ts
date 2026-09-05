@@ -4199,24 +4199,28 @@ test("runtime agent selection applies only at the next provider turn boundary", 
   client.start((event) => events.push(event));
   const first = client.submit("first");
   while (!release) await Bun.sleep(1);
-  client.selectAgent?.("second");
-  expect(events).toContainEqual({
-    type: "agent.selection",
-    name: "second",
-    pending: true,
-    sessionID: "ses_agent_boundary",
-  });
+  await client.selectAgent?.("second");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "agent.selection",
+      name: "second",
+      pending: true,
+      sessionID: "ses_agent_boundary",
+    }),
+  );
   release();
   await first;
   await client.submitAndWait!("second");
   expect(String(requests[0]?.messages[0]?.content)).toContain("first system");
   expect(String(requests[1]?.messages[0]?.content)).toContain("second system");
-  expect(events).toContainEqual({
-    type: "agent.selection",
-    name: "second",
-    pending: false,
-    sessionID: "ses_agent_boundary",
-  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "agent.selection",
+      name: "second",
+      pending: false,
+      sessionID: "ses_agent_boundary",
+    }),
+  );
 });
 
 test("committed agent selection restores when a session runtime is reopened", async () => {

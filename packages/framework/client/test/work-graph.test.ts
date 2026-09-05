@@ -68,11 +68,12 @@ test("a real turn with a tool call produces a connected graph", async () => {
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submit("read the notes");
+  const submitted = await client.submitAndWait!("read the notes");
 
   const nodes = projectedWorkGraphNodes(events);
   const edges = projectedWorkGraphEdges(events);
@@ -184,11 +185,12 @@ test("a failed tool call is recorded as a fact too", async () => {
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submit("read a missing file");
+  const submitted = await client.submitAndWait!("read a missing file");
 
   const tool = projectedWorkGraphNodes(events).find(
     (node) => node.nodeID === toolCallNodeID(submitted.id, "call_1"),
@@ -232,11 +234,12 @@ test("the graph carries no arguments, output, prompt or error text", async () =>
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("read SECRETPROMPT now");
+  await client.submitAndWait!("read SECRETPROMPT now");
 
   const graph = JSON.stringify([
     ...projectedWorkGraphNodes(events),
@@ -283,6 +286,7 @@ test("an approval decision is recorded and attributed to the user", async () => 
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
@@ -291,7 +295,7 @@ test("an approval decision is recorded and attributed to the user", async () => 
     if (event.type === "approval.request")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
-  const submitted = await client.submit("write the file");
+  const submitted = await client.submitAndWait!("write the file");
 
   const approvalRequest = events.find(
     (event) => event.type === "approval.request",
@@ -359,6 +363,7 @@ test("a rejected approval links to a rejected tool-call fact", async () => {
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
@@ -367,7 +372,7 @@ test("a rejected approval links to a rejected tool-call fact", async () => {
     if (event.type === "approval.request")
       client.respondApproval({ requestID: event.id, decision: "reject" });
   });
-  const submitted = await client.submit("do not approve this");
+  const submitted = await client.submitAndWait!("do not approve this");
 
   const toolID = toolCallNodeID(submitted.id, "call_1");
   const tool = projectedWorkGraphNodes(events).find(
@@ -423,11 +428,12 @@ test("read-only policy records the tool call as rejected", async () => {
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submit("try a write in read-only mode");
+  const submitted = await client.submitAndWait!("try a write in read-only mode");
 
   const tool = projectedWorkGraphNodes(events).find(
     (node) => node.nodeID === toolCallNodeID(submitted.id, "call_1"),
@@ -471,11 +477,12 @@ test("the episode id rides along as the graph's correlation field", async () => 
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("read it");
+  await client.submitAndWait!("read it");
 
   const nodes = projectedWorkGraphNodes(events);
   const edges = projectedWorkGraphEdges(events);
@@ -520,11 +527,12 @@ test("every emitted fact validates against the canonical WG1 schema", async () =
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("read it");
+  await client.submitAndWait!("read it");
 
   const nodes = projectedWorkGraphNodes(events);
   const edges = projectedWorkGraphEdges(events);
@@ -581,11 +589,12 @@ test("a workspace change is attributable to the call and turn that made it", asy
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submit("write the notes");
+  const submitted = await client.submitAndWait!("write the notes");
 
   const nodes = projectedWorkGraphNodes(events);
   const change = nodes.find((node) => node.kind === "workspace_change");
@@ -666,7 +675,7 @@ test("a sandbox merge records only successfully landed paths", async () => {
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submit("merge the sandbox");
+  const submitted = await client.submitAndWait!("merge the sandbox");
   const change = projectedWorkGraphNodes(events).find(
     (node) => node.kind === "workspace_change",
   );
@@ -700,7 +709,7 @@ test("a successful checkpoint records a safe checkpoint fact", async () => {
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("checkpoint the workspace");
+  await client.submitAndWait!("checkpoint the workspace");
   const checkpoint = projectedWorkGraphNodes(events).find(
     (node) => node.kind === "checkpoint",
   );
@@ -784,11 +793,12 @@ test("a write that failed records no workspace change", async () => {
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("write outside the workspace");
+  await client.submitAndWait!("write outside the workspace");
 
   const nodes = projectedWorkGraphNodes(events);
   expect(nodes.some((node) => node.kind === "workspace_change")).toBe(false);
@@ -834,11 +844,12 @@ test("a write that throws during execution records no workspace change", async (
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submit("write onto a directory");
+  const submitted = await client.submitAndWait!("write onto a directory");
 
   const nodes = projectedWorkGraphNodes(events);
   const tool = nodes.find(
@@ -880,11 +891,12 @@ test("a read records no workspace change", async () => {
             },
           ],
         };
+        yield { type: "done" as const };
       },
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("read it");
+  await client.submitAndWait!("read it");
   expect(
     projectedWorkGraphNodes(events).some(
       (node) => node.kind === "workspace_change",
