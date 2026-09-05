@@ -136,7 +136,40 @@ The host then exposes the panel through `host.listPanels()` and mounts it with
 `host.mountPanel()`. Disabling or uninstalling the runtime plugin removes its
 panels automatically.
 
+
+### Skins, layout profiles and shell layout plugins
+
+The UI is designed so one skin file controls the entire visual identity. A skin is a
+`UiSkin` object from `@natalia/ui-kit`:
+
+```ts
+export const neo = defineUiSkin({
+  id: "neo",
+  name: "Neo",
+  tokens: {
+    "--neu-bg": "#0a0a14",
+    "--neu-accent": "#22d3ee",
+    "--neu-text": "#e0f2fe",
+  },
+  layout: {
+    regions: {
+      left: { width: 220, visible: true },
+      right: { order: ["diff", "plan", "terminal"], visible: true },
+    },
+  },
+});
+```
+
+All component CSS, including plugin UI CSS, should reference these CSS custom
+properties. Applying a skin updates the root variables and `data-theme`.
+
+A `UiLayoutProfile` can rearrange common shell regions: left/right visibility,
+width, panel order and default tab. For completely new shell structures, a UI
+plugin may implement `shellLayout`; the main UI then delegates the whole root
+rendering to that plugin.
+
 ### Checkpoints and message-level restore
+
 
 Build restore UI around preview, never around a direct workspace mutation:
 
@@ -338,7 +371,38 @@ export function createFeatureUiPlugin() {
 host 通过 `host.listPanels()` 暴露面板，并通过 `host.mountPanel()` 挂载。
 禁用或卸载运行时插件后，对应面板会自动移除。
 
+
+### 皮肤、布局配置与 Shell 布局插件
+
+UI 设计为“一个皮肤文件控制整套视觉”。皮肤是 `@natalia/ui-kit` 的 `UiSkin`：
+
+```ts
+export const neo = defineUiSkin({
+  id: "neo",
+  name: "Neo",
+  tokens: {
+    "--neu-bg": "#0a0a14",
+    "--neu-accent": "#22d3ee",
+    "--neu-text": "#e0f2fe",
+  },
+  layout: {
+    regions: {
+      left: { width: 220, visible: true },
+      right: { order: ["diff", "plan", "terminal"], visible: true },
+    },
+  },
+});
+```
+
+所有组件 CSS（包括插件 UI CSS）都应引用这些 CSS 自定义属性。应用皮肤会更新根节点变量
+与 `data-theme`。
+
+`UiLayoutProfile` 可以调整常见 Shell 区域：左右栏显隐、宽度、面板顺序、默认 tab。
+若要完全自定义 Shell 结构，UI 插件可以实现 `shellLayout`，主 UI 会把整个根节点渲染
+委托给该插件。
+
 ### Checkpoint 与消息级 restore
+
 
 restore UI 必须围绕 preview 构建，不能直接修改 workspace：
 
