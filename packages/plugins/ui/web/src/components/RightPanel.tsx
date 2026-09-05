@@ -205,11 +205,12 @@ export function ReviewPane(props: {
       const git = await props.runtime?.workspaceGitDiff?.({
         from: gitFrom(),
         to: gitTo(),
+        includePatch: false,
       });
       if (git && git.length) {
         const mapped = git.map(toDiffItem);
         setGitChanges(mapped);
-        if (mapped.length) setGitSelected(mapped[0]!.path);
+        if (mapped.length) await selectGitFile(mapped[0]!.path);
         return;
       }
     } catch {
@@ -219,6 +220,27 @@ export function ReviewPane(props: {
     const mapped = workspace.map(toDiffItem);
     setGitChanges(mapped);
     if (mapped.length) setGitSelected(mapped[0]!.path);
+  }
+
+  async function selectGitFile(path: string) {
+    setGitSelected(path);
+    try {
+      const detail = await props.runtime?.workspaceGitDiff?.({
+        from: gitFrom(),
+        to: gitTo(),
+        path,
+        includePatch: true,
+      });
+      const file = detail?.[0];
+      if (file) {
+        const updated = toDiffItem(file);
+        setGitChanges((prev) =>
+          prev.map((change) => (change.path === path ? updated : change)),
+        );
+      }
+    } catch {
+      // keep the list-only row; patch can be loaded by clicking again
+    }
   }
 
   async function loadSandboxDiff(id: string) {
@@ -588,7 +610,7 @@ export function ReviewPane(props: {
                       data-active={selectedForTab() === change.path}
                       onClick={() =>
                         tab() === "git"
-                          ? setGitSelected(change.path)
+                          ? void selectGitFile(change.path)
                           : tab() === "sandbox"
                             ? setSandboxSelected(change.path)
                             : setCheckpointSelected(change.path)

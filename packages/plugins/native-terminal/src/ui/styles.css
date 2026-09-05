@@ -128,7 +128,7 @@
   padding: 8px;
   border-radius: 10px;
   overflow: hidden;
-  background: #1b1e24;
+  background: #1e1e20;
 }
 .web-terminal .xterm { height: 100%; border-radius: 10px; overflow: hidden; }
 .web-terminal .xterm-viewport { overflow-y: auto !important; border-radius: 10px; }

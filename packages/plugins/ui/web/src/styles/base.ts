@@ -279,9 +279,10 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   gap: 8px;
   padding: 10px 12px;
   margin: 4px 0 6px;
-  background: var(--neu-bg);
+  background: var(--neu-bg-light);
   border-radius: var(--neu-radius-sm);
   box-shadow: none;
+  color: var(--neu-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -579,14 +580,14 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   max-width: 70%;
   padding: 10px 14px;
   border-radius: 16px;
-  background: var(--neu-bg);
-  box-shadow: none;
+  background: var(--neu-assistant-bubble, var(--neu-bg-light));
+  border: 1px solid var(--neu-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 .neu-pane .natalia-message[data-role="user"] {
   align-self: flex-end;
   background: var(--neu-user-bubble);
-  box-shadow: none;
-  border: none;
+  border-color: var(--neu-user-bubble-border, var(--neu-border));
   color: var(--neu-user-bubble-text);
 }
 .neu-pane .natalia-message[data-role="user"] .natalia-message-author,
@@ -639,7 +640,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--neu-accent);
+  color: var(--neu-thinking, var(--neu-accent));
   font-style: normal;
 }
 .neu-pane .natalia-thinking-text { color: var(--neu-muted); }
@@ -1214,7 +1215,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 8px 10px;
   background: transparent; border: none;
-  border-radius: 10px; color: var(--neu-muted);
+  border-radius: 10px; color: var(--neu-text);
   font-family: var(--neu-font-mono); font-size: 11px; text-align: left; cursor: pointer;
 }
 .review-file-row:hover { background: var(--neu-bg-light); }
@@ -1231,17 +1232,17 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   border-radius: 12px;
   background: var(--neu-bg);
   box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
-  font-family: var(--neu-font-mono); font-size: 11px; color: var(--neu-muted);
+  font-family: var(--neu-font-mono); font-size: 11px; color: var(--neu-text);
 }
 .review-diff-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .review-diff-actions { display: flex; gap: 2px; }
 .review-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: transparent; border: none; color: var(--neu-muted); cursor: pointer; border-radius: 8px; }
 .review-icon-btn:hover { background: var(--neu-bg-light); color: var(--neu-text); }
-.review-diff-content { flex: 1; overflow-y: auto; overflow-x: auto; font-family: var(--neu-font-mono); font-size: 11px; line-height: 1.65; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); padding: 12px 0 14px; }
+.review-diff-content { flex: 1; overflow-y: auto; overflow-x: auto; font-family: var(--neu-font-mono); font-size: 11px; line-height: 1.65; background: var(--neu-bg-light); color: var(--neu-text); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); padding: 12px 0 14px; }
 .review-diff-line { display: flex; min-width: 0; }
 .review-diff-pos { width: 32px; flex-shrink: 0; text-align: right; padding-right: 6px; user-select: none; color: var(--neu-muted); }
 .review-diff-sign { width: 16px; flex-shrink: 0; text-align: center; user-select: none; }
-.review-diff-text { flex: 1; white-space: pre; padding-right: 10px; }
+.review-diff-text { flex: 1; white-space: pre; padding-right: 10px; color: var(--neu-text); }
 .review-diff-line.is-header { background: transparent; }
 .review-diff-line.is-header .review-diff-text {
   color: var(--neu-muted);
@@ -3866,7 +3867,12 @@ button.neu-settings-item.neu-settings-item-button:active {
 .natalia-message-text table { border-collapse: collapse; margin: 8px 0; width: 100%; }
 .natalia-message-text th, .natalia-message-text td { border: 1px solid var(--neu-border); padding: 6px 8px; text-align: left; }
 .natalia-message-text pre { background: var(--neu-bg); border-radius: 8px; padding: 10px; overflow-x: auto; }
-.natalia-message-text code { background: var(--neu-bg); border-radius: 4px; padding: 1px 4px; }
+.natalia-message-text code {
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  color: var(--neu-code-text, var(--neu-text));
+}
 .natalia-message-text pre code { background: transparent; padding: 0; }
 .natalia-message-text ul, .natalia-message-text ol { padding-left: 20px; }
 .natalia-message-text blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--neu-accent); color: var(--neu-muted); }

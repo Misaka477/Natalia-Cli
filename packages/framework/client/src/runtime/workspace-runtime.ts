@@ -102,6 +102,7 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
       from?: string;
       to?: string;
       path?: string;
+      includePatch?: boolean;
     }) {
       await ctx.ports.getReady();
       return await collectWorkspaceGitDiff(ctx.ports.getWorkspaceRoot(), input);
@@ -162,7 +163,12 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
 
 export async function collectWorkspaceGitDiff(
   workspaceRoot: string,
-  input?: { from?: string; to?: string; path?: string },
+  input?: {
+    from?: string;
+    to?: string;
+    path?: string;
+    includePatch?: boolean;
+  },
 ): Promise<RuntimeWorkspaceDiffChange[]> {
   const from = input?.from ?? "HEAD";
   const to = input?.to ?? "WORKTREE";
@@ -183,15 +189,17 @@ export async function collectWorkspaceGitDiff(
       const operation = parsed.operation;
       const oldPath = parsed.oldPath;
       let patch = "";
-      try {
-        patch =
-          operation === "added" && parsed.untracked
-            ? await gitDiffUntracked(workspaceRoot, path)
-            : await gitDiffTracked(workspaceRoot, from, path, oldPath);
-      } catch {
-        patch = "";
+      if (input?.includePatch !== false) {
+        try {
+          patch =
+            operation === "added" && parsed.untracked
+              ? await gitDiffUntracked(workspaceRoot, path)
+              : await gitDiffTracked(workspaceRoot, from, path, oldPath);
+        } catch {
+          patch = "";
+        }
       }
-      const counts = countPatch(patch);
+      const counts = patch ? countPatch(patch) : { additions: 0, deletions: 0 };
       changes.push({
         path,
         operation,

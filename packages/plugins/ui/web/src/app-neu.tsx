@@ -292,7 +292,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [state, setState] = createSignal(
     cloneState(props.ctx.projection.getState()),
   );
-  const [rightTab, setRightTab] = createSignal<RightTab>("diff");
+  const [rightTab, setRightTab] = createSignal<RightTab>("plan");
   const [leftWidth, setLeftWidth] = createSignal(240);
   const [rightWidth, setRightWidth] = createSignal(
     typeof window === "undefined"

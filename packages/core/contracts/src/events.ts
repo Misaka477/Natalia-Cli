@@ -1843,6 +1843,7 @@ export type RuntimeClient = {
     from?: string;
     to?: string;
     path?: string;
+    includePatch?: boolean;
   }): Promise<RuntimeWorkspaceDiffChange[]>;
   /**
    * Lists git refs (branches, tags and worktrees) for the Git diff tab.

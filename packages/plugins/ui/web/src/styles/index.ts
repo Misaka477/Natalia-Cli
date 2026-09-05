@@ -1,26 +1,24 @@
 import { applyUiSkin } from "@natalia/ui-kit";
 import { nataliaNeuBaseStyles } from "./base";
-import { nataliaNeuThemeDark } from "./theme-dark";
 import { nataliaNeuThemeLight } from "./theme-light";
-import { nataliaNeuThemeLime } from "./theme-lime";
+import { nataliaNeuThemeDark } from "./theme-dark";
 import { NATALIA_SKINS, NEU_THEME_MODES, type NeuThemeMode } from "../skins";
 
 export { nataliaNeuBaseStyles } from "./base";
-export { nataliaNeuThemeDark } from "./theme-dark";
 export { nataliaNeuThemeLight } from "./theme-light";
-export { nataliaNeuThemeLime } from "./theme-lime";
+export { nataliaNeuThemeDark } from "./theme-dark";
 
 export { NATALIA_SKINS, NEU_THEME_MODES } from "../skins";
 
 export const nataliaNeuThemeStyles =
-  nataliaNeuThemeLight + nataliaNeuThemeDark + nataliaNeuThemeLime;
+  nataliaNeuThemeLight + nataliaNeuThemeDark;
 
 export const nataliaNeuStyles = nataliaNeuThemeStyles + nataliaNeuBaseStyles;
 
 export function resolveNeuThemeMode(
   value: string | undefined | null,
 ): NeuThemeMode {
-  return value === "dark" || value === "lime" ? value : "light";
+  return value === "dark" ? "dark" : "light";
 }
 
 export function applyNeuTheme(

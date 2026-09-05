@@ -157,7 +157,7 @@ export function WebTerminal(props: WebTerminalProps) {
     // background made the terminal bottomless black and hard to read.
     // The terminal pane deliberately keeps a black background so full-screen
     // TUIs remain readable regardless of the surrounding light UI theme.
-    const background = "#1b1e24";
+    const background = "#1e1e20";
 
     return {
       background,

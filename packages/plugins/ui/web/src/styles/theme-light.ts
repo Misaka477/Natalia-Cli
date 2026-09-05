@@ -13,7 +13,9 @@ export const nataliaNeuThemeLight = `
   --neu-success: #6ba89f;
   --neu-error: #c9776b;
   --neu-warning: #b79549;
+  --neu-assistant-bubble: #f2f3ed;
   --neu-user-bubble: #b9d5cf;
+  --neu-user-bubble-border: #b9d5cf;
   --neu-user-bubble-text: #16201d;
   --neu-border: rgba(48, 48, 46, 0.12);
   --neu-hairline: rgba(0, 0, 0, 0.06);
