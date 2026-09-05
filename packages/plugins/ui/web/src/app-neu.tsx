@@ -8,7 +8,6 @@ import { Composer, type ComposerAttachment } from "./components/Composer";
 import {
   ReviewPane,
   TerminalPane,
-  BrowserPane,
 } from "./components/RightPanel";
 import { SettingsPanel } from "./settings-panel";
 import { PluginManagerPanel } from "./plugin-manager-panel";
