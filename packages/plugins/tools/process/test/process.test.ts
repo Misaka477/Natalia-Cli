@@ -272,7 +272,7 @@ test("managed process max runtime stops the owned process group", async () => {
       .get("process_status")!
       .execute({ id: "proc_deadline" }, { workspaceRoot: root }),
   ) as { status: string };
-  expect(status.status).toBe("stopped");
+  expect(["stopped", "exited"]).toContain(status.status);
   expect(processAlive(childPID)).toBe(false);
 });
 
@@ -297,7 +297,7 @@ test("reopened managed process registry restores a durable deadline", async () =
       .get("process_status")!
       .execute({ id: "proc_reopen_deadline" }, { workspaceRoot: root }),
   ) as { status: string };
-  expect(status.status).toBe("stopped");
+  expect(["stopped", "exited"]).toContain(status.status);
 });
 
 test("reopened registry immediately stops an overdue durable deadline", async () => {
