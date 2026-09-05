@@ -1,4 +1,4 @@
-import type { RuntimeClient } from "@natalia/contracts";
+import type { PluginCatalogEntry, RuntimeClient } from "@natalia/contracts";
 import type { UiPlugin, UiPluginHost } from "@natalia/ui-host";
 
 type UiPluginFactory = () => UiPlugin;
@@ -6,6 +6,9 @@ type UiModule = {
   createUiPlugin?: UiPluginFactory;
   default?: UiPluginFactory;
 };
+
+/** Maps loaded UI plugin ids back to the runtime plugin they came from. */
+const uiSourceByPluginId = new Map<string, string>();
 
 /**
  * Loads every enabled/installed plugin's renderer-side UI bundle through the
@@ -27,27 +30,82 @@ export async function loadPluginUiBundles(
   const catalog = (await runtime.pluginCatalog?.()) ?? [];
   for (const plugin of catalog) {
     if (!plugin.enabled || !plugin.installed || !plugin.ui?.entry) continue;
+    await loadOnePluginUi(host, runtimeURL, plugin, token);
+  }
+}
+
+/**
+ * Reconciles the UI host with the current plugin catalog:
+ *
+ * - loads UI for newly enabled plugins
+ * - unloads UI for disabled/removed plugins
+ *
+ * Runtime plugins, whether they carry UI or not, remain fully managed by the
+ * plugin manager through pluginInstall/Uninstall/SetEnabled; this function only
+ * keeps the renderer-side panels in sync with that catalog.
+ */
+export async function syncPluginUiBundles(
+  host: UiPluginHost,
+  runtime: RuntimeClient,
+  runtimeURL: string,
+  token?: string,
+): Promise<void> {
+  const catalog = (await runtime.pluginCatalog?.()) ?? [];
+  const enabled = new Set(
+    catalog
+      .filter((plugin) => plugin.enabled && plugin.installed && plugin.ui?.entry)
+      .map((plugin) => plugin.id),
+  );
+
+  for (const [uiPluginId, runtimePluginId] of [...uiSourceByPluginId]) {
+    if (enabled.has(runtimePluginId)) continue;
     try {
-      const moduleUrl = new URL(
-        `/plugins/${encodeURIComponent(plugin.id)}/ui.js`,
-        runtimeURL,
-      ).href;
-      const mod = await importPluginUiModule(moduleUrl, token);
-      const factory = mod.createUiPlugin ?? mod.default;
-      if (typeof factory !== "function") {
-        console.warn(`[plugin-ui] ${plugin.id} does not export createUiPlugin`);
-        continue;
-      }
-      const uiPlugin = factory();
-      await host.load(uiPlugin);
-      console.info(`[plugin-ui] loaded ${plugin.id}@${plugin.version}`);
+      await host.unload(uiPluginId);
     } catch (error) {
       console.warn(
-        `[plugin-ui] failed to load ${plugin.id}: ${
+        `[plugin-ui] failed to unload ${uiPluginId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
     }
+    uiSourceByPluginId.delete(uiPluginId);
+  }
+
+  for (const plugin of catalog) {
+    if (!enabled.has(plugin.id)) continue;
+    if ([...uiSourceByPluginId.values()].includes(plugin.id)) continue;
+    await loadOnePluginUi(host, runtimeURL, plugin, token);
+  }
+}
+
+async function loadOnePluginUi(
+  host: UiPluginHost,
+  runtimeURL: string,
+  plugin: PluginCatalogEntry,
+  token?: string,
+): Promise<void> {
+  if (!plugin.ui?.entry) return;
+  try {
+    const moduleUrl = new URL(
+      `/plugins/${encodeURIComponent(plugin.id)}/ui.js`,
+      runtimeURL,
+    ).href;
+    const mod = await importPluginUiModule(moduleUrl, token);
+    const factory = mod.createUiPlugin ?? mod.default;
+    if (typeof factory !== "function") {
+      console.warn(`[plugin-ui] ${plugin.id} does not export createUiPlugin`);
+      return;
+    }
+    const uiPlugin = factory();
+    await host.load(uiPlugin);
+    uiSourceByPluginId.set(uiPlugin.id, plugin.id);
+    console.info(`[plugin-ui] loaded ${plugin.id}@${plugin.version}`);
+  } catch (error) {
+    console.warn(
+      `[plugin-ui] failed to load ${plugin.id}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 }
 

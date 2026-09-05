@@ -7,7 +7,10 @@ import {
 } from "@natalia/ui-host";
 import { createWebRuntimeClient } from "./runtime-rpc";
 import { createLocalPreferenceStore } from "./local-preferences";
-import { loadPluginUiBundles } from "./plugin-ui-loader";
+import {
+  loadPluginUiBundles,
+  syncPluginUiBundles,
+} from "./plugin-ui-loader";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
@@ -30,7 +33,13 @@ const host = await createUiPluginHost({
   runtime,
   transport: createWebTransport(),
   logger: createConsoleLogger("ui-web-shell"),
-  extra: { uiPluginRegistry: UI_PLUGIN_REGISTRY, runtimeURL, token: injected?.token },
+  extra: {
+    uiPluginRegistry: UI_PLUGIN_REGISTRY,
+    runtimeURL,
+    token: injected?.token,
+    syncPluginUiBundles: () =>
+      syncPluginUiBundles(host, runtime, runtimeURL, injected?.token),
+  },
   preferences: createLocalPreferenceStore(),
 });
 

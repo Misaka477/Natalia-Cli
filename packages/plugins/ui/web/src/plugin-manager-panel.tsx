@@ -45,6 +45,12 @@ export function PluginManagerPanel(props: {
   const uiRegistry = (): UiRegistryEntry[] =>
     ((props.ctx.extra as { uiPluginRegistry?: UiRegistryEntry[] } | undefined)
       ?.uiPluginRegistry ?? []);
+  const syncPluginUis = () =>
+    (
+      props.ctx.extra as
+        | { syncPluginUiBundles?: () => Promise<void> }
+        | undefined
+    )?.syncPluginUiBundles?.();
   const [enabledMap, setEnabledMap] = createSignal<Record<string, boolean>>({});
 
   async function enableUi(entry: UiRegistryEntry) {
@@ -102,6 +108,7 @@ export function PluginManagerPanel(props: {
       await props.ctx.runtime.pluginInstall?.({ spec });
       setInstallSpec("");
       await refresh();
+      await syncPluginUis();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -115,6 +122,7 @@ export function PluginManagerPanel(props: {
     try {
       await props.ctx.runtime.pluginUninstall?.({ pluginID: id });
       await refresh();
+      await syncPluginUis();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -126,6 +134,7 @@ export function PluginManagerPanel(props: {
     try {
       await props.ctx.runtime.pluginSetEnabled?.({ pluginID: id, enabled });
       await refresh();
+      await syncPluginUis();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -135,6 +144,7 @@ export function PluginManagerPanel(props: {
     try {
       await props.ctx.runtime.pluginUnload?.(id);
       await refresh();
+      await syncPluginUis();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
