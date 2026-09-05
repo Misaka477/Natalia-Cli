@@ -15,7 +15,7 @@ export type UiPluginLifecycle = {
 export type UiPanelDefinition = {
   id: string;
   title: string;
-  region?: "main" | "side" | "bottom" | "topbar";
+  region?: "main" | "side" | "bottom" | "topbar" | "settings";
   /** Optional grouping label for topbar panels. */
   group?: string;
   /**

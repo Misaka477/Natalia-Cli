@@ -35,6 +35,9 @@
       "@natalia/plugin-web-ui": [
         "packages/plugins/ui/web/src/index.ts"
       ],
+      "@natalia/plugin-ui-extensions": [
+        "packages/plugins/ui/extensions/src/index.ts"
+      ],
       "@natalia/plugin-file-editor": [
         "packages/plugins/ui/file-editor/src/index.ts"
       ],

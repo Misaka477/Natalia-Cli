@@ -1,7 +1,6 @@
-import { createSignal, createEffect, For, Show } from "solid-js";
+import { createSignal, createEffect, For, Show, onCleanup, onMount } from "solid-js";
 import type { AppState } from "@natalia/view-store";
-import type { ConfigV3, MCPServerConfig, RuntimeSkillCatalogEntry } from "@natalia/contracts";
-import { ExtensionSettingsContent } from "./extension-settings";
+import type { ConfigV3 } from "@natalia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
 
 const BUILTIN_PERMISSION_PROFILES = ["ask", "auto", "read_only"];
@@ -24,7 +23,7 @@ const TOOL_FAMILIES = [
   "agent_*",
 ];
 
-type CategoryId = "model" | "security" | "runtime" | "extensions" | "interface" | "storage";
+type CategoryId = "model" | "security" | "runtime" | "interface" | "storage" | "plugin";
 
 type SettingItem = {
   label: string;
@@ -38,18 +37,6 @@ type Category = {
   items: SettingItem[];
 };
 
-type ExtensionRow = {
-  name: string;
-  description: string;
-  enabled: boolean;
-};
-
-type ExtensionSection = {
-  id: "mcp" | "skills";
-  title: string;
-  addLabel: string;
-  rows: ExtensionRow[];
-};
 
 const categories: Category[] = [
   {
@@ -85,11 +72,6 @@ const categories: Category[] = [
     ],
   },
   {
-    id: "extensions",
-    label: "扩展",
-    items: [],
-  },
-  {
     id: "interface",
     label: "界面与服务",
     items: [
@@ -111,20 +93,6 @@ const categories: Category[] = [
   },
 ];
 
-const initialExtensionSections: ExtensionSection[] = [
-  {
-    id: "mcp",
-    title: "MCP",
-    addLabel: "添加 MCP",
-    rows: [],
-  },
-  {
-    id: "skills",
-    title: "Skills",
-    addLabel: "添加技能",
-    rows: [],
-  },
-];
 
 export function SettingsPanel(props: {
   open: boolean;
@@ -139,21 +107,10 @@ export function SettingsPanel(props: {
     set<T>(key: string, value: T): void;
   };
   registeredTools?: string[];
-  skills?: RuntimeSkillCatalogEntry[];
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
-  onAddMcp?: (input: { name: string; config: MCPServerConfig }) => unknown;
-  onRemoveMcp?: (name: string) => unknown;
+  host?: import("@natalia/ui-host").UiPluginContext["host"];
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
-  const [sections, setSections] = createSignal<ExtensionSection[]>(
-    initialExtensionSections.map((section) => ({
-      ...section,
-      rows: section.rows.map((row) => ({ ...row })),
-    })),
-  );
-  const [addingTo, setAddingTo] = createSignal<string | null>(null);
-  const [newName, setNewName] = createSignal("");
-  const [newDesc, setNewDesc] = createSignal("");
   const [density, setDensity] = createSignal(props.preferences?.get<string>("density") ?? "comfortable");
   const [diffStyle, setDiffStyle] = createSignal(props.preferences?.get<string>("diffStyle") ?? "auto");
   const [toolDetails, setToolDetails] = createSignal(props.preferences?.get<string>("toolDetails") ?? "expanded");
@@ -161,6 +118,38 @@ export function SettingsPanel(props: {
   const [gpuAcceleration, setGpuAcceleration] = createSignal<boolean>(props.preferences?.get<boolean>("gpuAcceleration") ?? false);
 
   const desktopElectron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
+  const [settingsPanel, setSettingsPanel] = createSignal<{
+    pluginId: string;
+    panelId: string;
+  } | null>(null);
+  let settingsPanelRef: HTMLDivElement | undefined;
+  const [panelRevision, setPanelRevision] = createSignal(0);
+  onMount(() => {
+    const unsubscribe = props.host?.subscribePanels(() =>
+      setPanelRevision((revision) => revision + 1),
+    );
+    onCleanup(() => unsubscribe?.());
+  });
+  const settingsPanels = () => {
+    panelRevision();
+    return (
+      props.host?.listPanels().filter((item) => item.panel.region === "settings") ?? []
+    );
+  };
+  const groupedSettingsPanels = () => {
+    const groups = new Map<string, ReturnType<typeof settingsPanels>>();
+    for (const item of settingsPanels()) {
+      const group = item.panel.group ?? "插件设置";
+      const list = groups.get(group) ?? [];
+      list.push(item);
+      groups.set(group, list);
+    }
+    return [...groups.entries()];
+  };
+  const categoriesWithPlugins = (): Category[] =>
+    settingsPanels().length
+      ? [...categories, { id: "plugin" as CategoryId, label: "插件配置", items: [] as Category["items"] }]
+      : categories;
   createEffect(() => {
     if (props.open) {
       void desktopElectron
@@ -173,65 +162,9 @@ export function SettingsPanel(props: {
     }
   });
   const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(props.preferences?.get<string>("runtimeWriteScope") ?? "global");
-  const current = () => categories.find((category) => category.id === activeCategory())!;
-
-  function toggleRow(sectionId: string, index: number) {
-    setSections((prev) =>
-      prev.map((section) =>
-        section.id === sectionId
-          ? {
-              ...section,
-              rows: section.rows.map((row, i) =>
-                i === index ? { ...row, enabled: !row.enabled } : row,
-              ),
-            }
-          : section,
-      ),
-    );
-  }
-
-  function removeRow(sectionId: string, index: number) {
-    setSections((prev) =>
-      prev.map((section) =>
-        section.id === sectionId
-          ? {
-              ...section,
-              rows: section.rows.filter((_, i) => i !== index),
-            }
-          : section,
-      ),
-    );
-  }
-
-  function addRow(sectionId: string) {
-    const name = newName().trim();
-    const description = newDesc().trim();
-    if (!name) return;
-    setSections((prev) =>
-      prev.map((section) =>
-        section.id === sectionId
-          ? {
-              ...section,
-              rows: [...section.rows, { name, description, enabled: false }],
-            }
-          : section,
-      ),
-    );
-    setAddingTo(null);
-    setNewName("");
-    setNewDesc("");
-  }
-
-  function startAdd(sectionId: string) {
-    setAddingTo(sectionId);
-    setNewName("");
-    setNewDesc("");
-  }
-
-  const extensionRows = (sectionId: string) =>
-    sections().find((section) => section.id === sectionId)?.rows ?? [];
-  const extensionAddLabel = (sectionId: string) =>
-    sections().find((section) => section.id === sectionId)?.addLabel ?? "添加";
+  const current = () =>
+    categoriesWithPlugins().find((category) => category.id === activeCategory()) ??
+    categoriesWithPlugins()[0]!;
 
   function modelLabel(config: ConfigV3): string {
     const model = config.defaultModel;
@@ -528,13 +461,27 @@ export function SettingsPanel(props: {
           </div>
           <div class="neu-settings-body">
             <nav class="neu-settings-categories">
-              <For each={categories}>
+              <For each={categoriesWithPlugins()}>
                 {(category) => (
                   <button
                     type="button"
                     class="neu-settings-category"
                     data-active={activeCategory() === category.id}
-                    onClick={() => setActiveCategory(category.id)}
+                    onClick={() => {
+                      setActiveCategory(category.id);
+                      if (category.id === "plugin" && settingsPanel() && props.host) {
+                        const selected = settingsPanel()!;
+                        requestAnimationFrame(() => {
+                          if (settingsPanelRef && props.host) {
+                            void props.host.mountPanel(
+                              selected.pluginId,
+                              selected.panelId,
+                              settingsPanelRef,
+                            );
+                          }
+                        });
+                      }
+                    }}
                   >
                     {category.label}
                   </button>
@@ -542,9 +489,61 @@ export function SettingsPanel(props: {
               </For>
             </nav>
             <section class="neu-settings-content">
-              <Show
-                when={current().id === "extensions"}
-                fallback={
+              <Show when={current().id === "plugin"}>
+                <div class="neu-settings-content-title">插件配置</div>
+                <For each={groupedSettingsPanels()}>
+                  {([group, panels]) => (
+                    <>
+                      <Show when={group}>
+                        <div class="neu-settings-content-title">{group}</div>
+                      </Show>
+                      <For each={panels}>
+                        {(panel) => (
+                          <div class="neu-settings-plugin-panel">
+                            <button
+                              type="button"
+                              class="neu-settings-item neu-settings-item-button"
+                              data-active={
+                                settingsPanel()?.pluginId === panel.pluginId &&
+                                settingsPanel()?.panelId === panel.panel.id
+                              }
+                              onClick={() => {
+                                setSettingsPanel({
+                                  pluginId: panel.pluginId,
+                                  panelId: panel.panel.id,
+                                });
+                                requestAnimationFrame(() => {
+                                  if (settingsPanelRef && props.host) {
+                                    void props.host.mountPanel(
+                                      panel.pluginId,
+                                      panel.panel.id,
+                                      settingsPanelRef,
+                                    );
+                                  }
+                                });
+                              }}
+                            >
+                              <div class="neu-settings-item-main">
+                                <span class="neu-settings-item-label">{panel.panel.title}</span>
+                                <span class="neu-settings-item-description">{panel.panel.group ?? "插件设置"}</span>
+                              </div>
+                            </button>
+                            <Show
+                              when={
+                                settingsPanel()?.pluginId === panel.pluginId &&
+                                settingsPanel()?.panelId === panel.panel.id
+                              }
+                            >
+                              <div ref={settingsPanelRef} class="neu-settings-item neu-plugin-panel-body" />
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </>
+                  )}
+                </For>
+              </Show>
+              <Show when={current().id !== "plugin"}>
                   <>
                     <div class="neu-settings-content-title">{current().label}</div>
                     <For each={current().items}>
@@ -679,9 +678,6 @@ export function SettingsPanel(props: {
                       }}
                     </For>
                   </>
-                }
-              >
-                <ExtensionSettingsContent mcp={props.state?.mcp} skills={props.skills} onAddMcp={props.onAddMcp} onRemoveMcp={props.onRemoveMcp} />
               </Show>
             </section>
           </div>

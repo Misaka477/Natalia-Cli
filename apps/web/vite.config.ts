@@ -5,6 +5,7 @@ import solid from "vite-plugin-solid";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const workspace = resolve(root, "../..");
+const extensionsSrc = resolve(workspace, "packages/plugins/ui/extensions/src");
 const uiKitSrc = resolve(workspace, "packages/plugins/ui/kit/src");
 const pluginSrc = resolve(workspace, "packages/plugins/ui/web/src");
 const fileEditorSrc = resolve(workspace, "packages/plugins/ui/file-editor/src");
@@ -19,6 +20,7 @@ function solidJsxSource(): Plugin {
       const file = id.split("?")[0] ?? id;
       if (!file.endsWith(".tsx") && !file.endsWith(".jsx")) return;
       if (
+        !file.startsWith(extensionsSrc) &&
         !file.startsWith(uiKitSrc) &&
         !file.startsWith(pluginSrc) &&
         !file.startsWith(resolve(root, "src"))
@@ -36,6 +38,7 @@ export default defineConfig({
     solidJsxSource(),
     solid({
       include: [
+        `${extensionsSrc}/**/*.{js,ts,jsx,tsx}`,
         `${uiKitSrc}/**/*.{js,ts,jsx,tsx}`,
         `${pluginSrc}/**/*.{js,ts,jsx,tsx}`,
         `${fileEditorSrc}/**/*.{js,ts,jsx,tsx}`,
@@ -51,6 +54,7 @@ export default defineConfig({
       "solid-js/jsx-dev-runtime": resolve(solidJs, "dist/solid.js"),
       "solid-js": solidJs,
       "@natalia/transport": resolve(workspace, "packages/hosts/transport/src/rpc-client.ts"),
+      "@natalia/plugin-ui-extensions": resolve(workspace, "packages/plugins/ui/extensions/src/index.ts"),
     },
   },
   esbuild: { jsx: "automatic", jsxImportSource: "solid-js" },

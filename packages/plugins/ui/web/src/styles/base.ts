@@ -2089,6 +2089,25 @@ button.neu-settings-item.neu-settings-item-button {
 button.neu-settings-item.neu-settings-item-button:active {
   box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
 }
+.neu-settings-plugin-panel {
+  margin-bottom: 8px;
+}
+.neu-settings-plugin-panel .neu-settings-item {
+  margin-bottom: 0;
+}
+.neu-settings-plugin-panel button.neu-settings-item[data-active="true"] {
+  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+}
+.neu-settings-plugin-panel button.neu-settings-item[data-active="true"] .neu-settings-item-label {
+  color: var(--neu-accent);
+}
+.neu-plugin-panel-body {
+  display: block;
+  margin-top: 8px;
+  margin-left: 14px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
 
 /* ===== Bulk session select ===== */
 .neu-bulk-bar {

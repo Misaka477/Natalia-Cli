@@ -1,4 +1,5 @@
 import {
+  cp,
   mkdir,
   readdir,
   readFile,
@@ -7,7 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { profileShellCommand } from "@natalia/platform";
 import type { RuntimeTool, ToolExecutionContext } from "@natalia/tools";
 import type {
@@ -42,6 +43,18 @@ export class SkillRegistry implements SkillService {
     return [...this.skills.values()].sort((a, b) =>
       a.qualifiedName.localeCompare(b.qualifiedName),
     );
+  }
+
+  async reload(input: {
+    workspaceRoot: string;
+    userRoot?: string;
+    remoteURLs?: string[];
+    cacheRoot?: string;
+    fetch?: typeof fetch;
+  }) {
+    const next = await discoverSkills(input);
+    this.skills = next.skills;
+    this.selected = next.selected;
   }
 
   authorizeTool(skill: Skill, tool: string, policy: SkillPolicy) {
@@ -373,6 +386,43 @@ export async function pullRemoteSkills(input: {
     }
   }
   return roots;
+}
+
+export async function installSkill(input: {
+  source: string;
+  targetRoot: string;
+  fetch?: typeof fetch;
+}): Promise<{ installed: number; names: string[] }> {
+  const targetRoot = input.targetRoot;
+  await mkdir(targetRoot, { recursive: true, mode: 0o700 });
+  const installed: string[] = [];
+
+  if (/^https?:\/\//u.test(input.source)) {
+    const cacheRoot = join(targetRoot, ".cache");
+    const roots = await pullRemoteSkills({
+      url: input.source,
+      cacheRoot,
+      fetch: input.fetch,
+    });
+    for (const root of roots) {
+      const name = basename(root);
+      await cp(root, join(targetRoot, name), {
+        recursive: true,
+        force: false,
+      });
+      installed.push(name);
+    }
+  } else {
+    const source = resolve(input.source);
+    const name = basename(source).replace(/\.skillo$/u, "");
+    await cp(source, join(targetRoot, name), {
+      recursive: true,
+      force: false,
+    });
+    installed.push(name);
+  }
+
+  return { installed: installed.length, names: installed };
 }
 
 function cacheKey(url: string) {

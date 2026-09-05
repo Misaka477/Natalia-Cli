@@ -1,5 +1,9 @@
 import type { UiPlugin } from "@natalia/ui-host";
 import { createFileEditorPlugin } from "@natalia/plugin-file-editor";
+import {
+  createMcpSettingsUiPlugin,
+  createSkillsSettingsUiPlugin,
+} from "@natalia/plugin-ui-extensions";
 import { createTerminalPlugin } from "@natalia/plugin-web-ui";
 
 export type UiPluginRegistryEntry = {
@@ -21,5 +25,17 @@ export const UI_PLUGIN_REGISTRY: UiPluginRegistryEntry[] = [
     name: "Terminal",
     version: "1.0.0",
     create: createTerminalPlugin,
+  },
+  {
+    id: "natalia.ui.mcp-settings",
+    name: "MCP Settings UI",
+    version: "1.0.0",
+    create: createMcpSettingsUiPlugin,
+  },
+  {
+    id: "natalia.ui.skills-settings",
+    name: "Skills Settings UI",
+    version: "1.0.0",
+    create: createSkillsSettingsUiPlugin,
   },
 ];

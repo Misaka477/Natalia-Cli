@@ -1,8 +1,14 @@
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import { createSkillLoadTool, discoverSkills, type Skill } from "./skills";
+import {
+  createSkillLoadTool,
+  discoverSkills,
+  installSkill,
+  type Skill,
+} from "./skills";
 import type { ToolExecutionContext } from "@natalia/tools";
 import { SKILL_SERVICE } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
+import { join } from "node:path";
 
 export const SKILLS_PLUGIN_ID = "natalia-skills";
 export const SKILLS_REGISTRY_SERVICE = SKILL_SERVICE;
@@ -60,6 +66,24 @@ export function createSkillsPlugin(input: {
                 .map((skill) => `${skill.qualifiedName}: ${skill.description}`)
                 .join("\n")
             : "no native skills discovered";
+        },
+      });
+      api.commands.register({
+        name: "skill-install",
+        title: "Install skill",
+        async run(invocation) {
+          const source = invocation?.args.join(" ").trim();
+          if (!source) throw new Error("/skill-install requires a local path or URL");
+          const result = await installSkill({
+            source,
+            targetRoot: join(input.workspaceRoot, ".natalia", "skills"),
+          });
+          await skills.reload({
+            workspaceRoot: input.workspaceRoot,
+            ...(input.userRoot ? { userRoot: input.userRoot } : {}),
+            ...(input.remoteURLs ? { remoteURLs: input.remoteURLs } : {}),
+          });
+          return `installed skill${result.installed === 1 ? "" : "s"}: ${result.names.join(", ")}`;
         },
       });
       api.commands.register({
