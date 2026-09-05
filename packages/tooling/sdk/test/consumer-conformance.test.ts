@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
-import { join, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { failureKind } from "@natalia/contracts";
@@ -56,6 +56,7 @@ async function withRuntime<T>(
   const events: RuntimeEvent[] = [];
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
+    pluginStoreRoot: resolve("dist", "ts", "plugin-store"),
     sessionID: "ses_consumer",
     permissionMode: "auto",
     provider: {
@@ -597,6 +598,7 @@ test("a read-only integration renders the session and cannot write a byte", asyn
   const events: RuntimeEvent[] = [];
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
+    pluginStoreRoot: resolve("dist", "ts", "plugin-store"),
     sessionID: "ses_consumer",
     permissionMode: "auto",
     provider: {
