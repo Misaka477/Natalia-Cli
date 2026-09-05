@@ -7,6 +7,11 @@ import { Transcript } from "./components/Transcript";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { ReviewPane } from "./components/RightPanel";
 import { SettingsPanel } from "./settings-panel";
+import {
+  createUiPanelRequirementContext,
+  uiPanelRequirementsSatisfied,
+  type UiPanelRequirementContext,
+} from "./ui-requirements";
 import { PluginManagerPanel } from "./plugin-manager-panel";
 import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
 import { SessionActionsPanel } from "./session-actions-panel";
@@ -307,6 +312,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
   const [workspaces, setWorkspaces] = createSignal<WorkspaceSummary[]>([]);
   const [registeredTools, setRegisteredTools] = createSignal<string[]>([]);
+  const [panelRequirementContext, setPanelRequirementContext] =
+    createSignal<UiPanelRequirementContext | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [pluginManagerOpen, setPluginManagerOpen] = createSignal(false);
   const [themeMode, setThemeMode] = createSignal(
@@ -1293,6 +1300,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       });
     });
 
+    void createUiPanelRequirementContext(props.ctx.runtime).then(setPanelRequirementContext);
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
     void props.ctx.runtime.registeredTools?.().then((tools) => {
       if (tools) setRegisteredTools(tools.map((tool) => tool.name));
@@ -1760,25 +1768,38 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     props.ctx.preferences.set("themeMode", next);
   }
 
+  function panelVisible(panel: { requires?: import("@natalia/contracts").UiPanelRequirement[] }) {
+    const context = panelRequirementContext();
+    if (!context) return true;
+    return uiPanelRequirementsSatisfied(context, panel.requires);
+  }
+
   const filePanel = () => {
     panelRevision();
     return props.ctx.host
       ?.listPanels()
-      .find((item) => item.panel.id === "files");
+      .find(
+        (item) => item.panel.id === "files" && panelVisible(item.panel),
+      );
   };
 
   const terminalPanel = () => {
     panelRevision();
-    return interactiveTerminalAvailable() && props.ctx.host
-      ?.listPanels()
-      .find((item) => item.panel.id === "terminal");
+    return (
+      interactiveTerminalAvailable() &&
+      props.ctx.host
+        ?.listPanels()
+        .find(
+          (item) => item.panel.id === "terminal" && panelVisible(item.panel),
+        )
+    );
   };
 
   const todoPanel = () => {
     panelRevision();
     return props.ctx.host
       ?.listPanels()
-      .find((item) => item.panel.id === "todo");
+      .find((item) => item.panel.id === "todo" && panelVisible(item.panel));
   };
 
   const rightTabs = () => {
@@ -1817,7 +1838,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return (
       props.ctx.host
         ?.listPanels()
-        .filter((item) => item.panel.region === "topbar") ?? []
+        .filter((item) => item.panel.region === "topbar" && panelVisible(item.panel)) ?? []
     );
   };
 

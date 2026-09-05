@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, relative, resolve, sep } from "node:path";
 import {
   listInstalledPlugins,
   packageDirectory,
@@ -13,7 +13,7 @@ import {
  * and third-party plugins go through exactly the same path.
  */
 export function createPluginUiResolver(pluginStoreRoot: string) {
-  return async (pluginId: string) => {
+  return async (pluginId: string, asset: "js" | "css" = "js") => {
     const rows = await listInstalledPlugins({
       pluginStoreRoot,
       workspaceRoot: process.cwd(),
@@ -25,7 +25,14 @@ export function createPluginUiResolver(pluginStoreRoot: string) {
     const packageDir = resolve(
       packageDirectory(resolve(pluginStoreRoot), row.packageName),
     );
-    const entry = resolve(packageDir, row.ui.entry);
+    const entry =
+      asset === "css"
+        ? resolve(
+            packageDir,
+            dirname(row.ui.entry),
+            `${basename(row.ui.entry, extname(row.ui.entry))}.css`,
+          )
+        : resolve(packageDir, row.ui.entry);
     const rel = relative(packageDir, entry);
     if (
       rel === ".." ||
@@ -34,7 +41,12 @@ export function createPluginUiResolver(pluginStoreRoot: string) {
       /^[a-zA-Z]:/u.test(rel)
     )
       return undefined;
-    const body = await readFile(entry);
-    return { body: new Uint8Array(body) };
+    try {
+      const body = await readFile(entry);
+      return { body: new Uint8Array(body) };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
   };
 }

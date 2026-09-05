@@ -99,10 +99,44 @@ async function loadOnePluginUi(
     const uiPlugin = factory();
     await host.load(uiPlugin);
     uiSourceByPluginId.set(uiPlugin.id, plugin.id);
+    await loadPluginUiCss(runtimeURL, plugin.id, token);
     console.info(`[plugin-ui] loaded ${plugin.id}@${plugin.version}`);
   } catch (error) {
     console.warn(
       `[plugin-ui] failed to load ${plugin.id}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+async function loadPluginUiCss(
+  runtimeURL: string,
+  pluginId: string,
+  token?: string,
+): Promise<void> {
+  try {
+    const url = new URL(
+      `/plugins/${encodeURIComponent(pluginId)}/ui.css`,
+      runtimeURL,
+    ).href;
+    const headers = token ? { authorization: `Bearer ${token}` } : undefined;
+    const response = await fetch(url, { headers });
+    if (!response.ok) return; // CSS is optional; missing assets are normal.
+    const css = await response.text();
+    const existing = document.querySelector<HTMLStyleElement>(
+      `style[data-natalia-plugin-ui-css="${pluginId}"]`,
+    );
+    if (existing) existing.textContent = css;
+    else {
+      const style = document.createElement("style");
+      style.setAttribute("data-natalia-plugin-ui-css", pluginId);
+      style.textContent = css;
+      document.head.append(style);
+    }
+  } catch (error) {
+    console.warn(
+      `[plugin-ui] failed to load css for ${pluginId}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
