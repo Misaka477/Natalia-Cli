@@ -29,3 +29,5 @@ export type {
   UiShellSlotId,
   UiShellSlots,
 } from "./skin";
+
+export { cssVar } from "./css-vars";

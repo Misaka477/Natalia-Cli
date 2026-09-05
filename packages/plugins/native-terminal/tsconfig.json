@@ -28,6 +28,9 @@
     },
     {
       "path": "../../hosts/ui-host"
+    },
+    {
+      "path": "../ui/kit"
     }
   ]
 }

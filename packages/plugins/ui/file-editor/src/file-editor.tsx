@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import type { UiTransport } from "@natalia/ui-host";
 import type { RuntimeClient } from "@natalia/contracts";
-import { ContextMenu, type ContextMenuItem } from "@natalia/ui-kit";
+import { ContextMenu, cssVar, type ContextMenuItem } from "@natalia/ui-kit";
 import { Compartment } from "@codemirror/state";
 import { EditorView, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { basicSetup } from "codemirror";
@@ -116,13 +116,13 @@ const neuLightTheme = EditorView.theme(
       border: "none",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(143,183,176,0.08)",
+      backgroundColor: cssVar("--neu-accent-soft", "rgba(143,183,176,0.08)"),
     },
     ".cm-activeLineGutter": {
-      backgroundColor: "rgba(143,183,176,0.08)",
+      backgroundColor: cssVar("--neu-accent-soft", "rgba(143,183,176,0.08)"),
     },
     ".cm-selectionBackground": {
-      backgroundColor: "rgba(143,183,176,0.22) !important",
+      backgroundColor: cssVar("--neu-accent-soft", "rgba(143,183,176,0.22)") + " !important",
     },
     ".cm-cursor": {
       borderLeftColor: "var(--neu-accent)",
@@ -133,12 +133,12 @@ const neuLightTheme = EditorView.theme(
 
 const neuLightHighlight = HighlightStyle.define([
   { tag: tags.comment, color: "var(--neu-muted)", fontStyle: "italic" },
-  { tag: [tags.keyword, tags.operatorKeyword], color: "#b85e9c", fontWeight: "600" },
-  { tag: [tags.string, tags.special(tags.string)], color: "#2e8b57" },
-  { tag: [tags.number, tags.bool, tags.null], color: "#b06e2c" },
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#2a7ab0" },
-  { tag: [tags.className, tags.typeName], color: "#7a4bb5" },
-  { tag: [tags.propertyName, tags.attributeName], color: "#2a7ab0" },
+  { tag: [tags.keyword, tags.operatorKeyword], color: cssVar("--neu-code-keyword", "#b85e9c"), fontWeight: "600" },
+  { tag: [tags.string, tags.special(tags.string)], color: cssVar("--neu-code-string", "#2e8b57") },
+  { tag: [tags.number, tags.bool, tags.null], color: cssVar("--neu-code-number", "#b06e2c") },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: cssVar("--neu-code-function", "#2a7ab0") },
+  { tag: [tags.className, tags.typeName], color: cssVar("--neu-code-class", "#7a4bb5") },
+  { tag: [tags.propertyName, tags.attributeName], color: cssVar("--neu-code-function", "#2a7ab0") },
   { tag: [tags.definition(tags.variableName), tags.variableName], color: "var(--neu-text)" },
 ]);
 

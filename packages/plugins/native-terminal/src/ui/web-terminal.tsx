@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Terminal } from "@xterm/xterm";
+import { cssVar } from "@natalia/ui-kit";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -96,10 +97,10 @@ export function WebTerminal(props: WebTerminalProps) {
     // TUIs like htop/btop often rely on white/default colors; a light terminal
     // background makes those invisible.
     return {
-      background: "#1b1e24",
-      foreground: "#e6e8eb",
-      cursor: "#5fd4b8",
-      selectionBackground: "#7de8d0",
+      background: cssVar("--neu-bg-dark", "#1b1e24"),
+      foreground: cssVar("--neu-text", "#e6e8eb"),
+      cursor: cssVar("--neu-accent", "#5fd4b8"),
+      selectionBackground: cssVar("--neu-accent-soft", "#7de8d0"),
     };
   }
 
