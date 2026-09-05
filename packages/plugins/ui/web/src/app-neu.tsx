@@ -47,7 +47,7 @@ function sessionTurnID(messageID: string) {
 function rightPanelMaxWidth(): number {
   if (typeof window === "undefined") return MAX_RIGHT_WIDTH;
   // On small/compact layouts the right panel is the most space-hungry
-  // surface (terminal/browser/diff), so allow it to take up to 2/3 width.
+  // surface (terminal/diff), so allow it to take up to 2/3 width.
   return Math.max(MIN_RIGHT_WIDTH, Math.floor(window.innerWidth * 2 / 3));
 }
 

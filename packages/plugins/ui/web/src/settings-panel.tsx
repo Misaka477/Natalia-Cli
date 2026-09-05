@@ -22,8 +22,6 @@ const TOOL_FAMILIES = [
   "edit_file",
   "web_fetch",
   "web_search",
-  "browser_visit",
-  "browser_screenshot",
   "skill_load",
   "agent_*",
 ];
