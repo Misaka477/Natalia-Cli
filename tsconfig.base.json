@@ -35,9 +35,6 @@
       "@natalia/plugin-web-ui": [
         "packages/plugins/ui/web/src/index.ts"
       ],
-      "@natalia/plugin-ui-extensions": [
-        "packages/plugins/ui/extensions/src/index.ts"
-      ],
       "@natalia/plugin-file-editor": [
         "packages/plugins/ui/file-editor/src/index.ts"
       ],
@@ -52,6 +49,7 @@
       ],
       "@natalia/plugin-browser": ["packages/plugins/browser/src/index.ts"],
       "@natalia/plugin-mcp": ["packages/plugins/mcp/src/index.ts"],
+      "@natalia/plugin-mcp/ui": ["packages/plugins/mcp/src/ui/plugin.tsx"],
       "@natalia/object-store": ["packages/hosts/object-store/src/index.ts"],
       "@natalia/plugin-native-terminal": [
         "packages/plugins/native-terminal/src/index.ts"
@@ -96,6 +94,7 @@
       "@natalia/plugin-tool-todo": ["packages/plugins/tools/todo/src/index.ts"],
       "@natalia/sandbox": ["packages/framework/sandbox/src/index.ts"],
       "@natalia/plugin-skills": ["packages/plugins/skills/src/index.ts"],
+      "@natalia/plugin-skills/ui": ["packages/plugins/skills/src/ui/plugin.tsx"],
       "@natalia/subagents": ["packages/framework/subagents/src/index.ts"],
       "@natalia/plugin-team": ["packages/plugins/team/src/index.ts"],
       "@natalia/tool-policy": ["packages/framework/tool-policy/src/index.ts"],

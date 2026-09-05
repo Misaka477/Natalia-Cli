@@ -16,8 +16,7 @@
     "@natalia/ui-host": "workspace:*",
     "solid-js": "1.9.12",
     "@natalia/plugin-file-editor": "workspace:*",
-    "@natalia/plugin-web-ui": "workspace:*",
-    "@natalia/plugin-ui-extensions": "workspace:*"
+    "@natalia/plugin-web-ui": "workspace:*"
   },
   "devDependencies": {
     "vite": "7.1.5",

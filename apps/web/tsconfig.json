@@ -24,7 +24,10 @@
       "path": "../../packages/plugins/ui/file-editor"
     },
     {
-      "path": "../../packages/plugins/ui/extensions"
+      "path": "../../packages/plugins/mcp"
+    },
+    {
+      "path": "../../packages/plugins/skills"
     }
   ]
 }

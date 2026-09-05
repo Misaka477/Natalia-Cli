@@ -5,7 +5,8 @@ import solid from "vite-plugin-solid";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const workspace = resolve(root, "../..");
-const extensionsSrc = resolve(workspace, "packages/plugins/ui/extensions/src");
+const mcpUiSrc = resolve(workspace, "packages/plugins/mcp/src/ui");
+const skillsUiSrc = resolve(workspace, "packages/plugins/skills/src/ui");
 const uiKitSrc = resolve(workspace, "packages/plugins/ui/kit/src");
 const pluginSrc = resolve(workspace, "packages/plugins/ui/web/src");
 const fileEditorSrc = resolve(workspace, "packages/plugins/ui/file-editor/src");
@@ -20,7 +21,8 @@ function solidJsxSource(): Plugin {
       const file = id.split("?")[0] ?? id;
       if (!file.endsWith(".tsx") && !file.endsWith(".jsx")) return;
       if (
-        !file.startsWith(extensionsSrc) &&
+        !file.startsWith(mcpUiSrc) &&
+        !file.startsWith(skillsUiSrc) &&
         !file.startsWith(uiKitSrc) &&
         !file.startsWith(pluginSrc) &&
         !file.startsWith(resolve(root, "src"))
@@ -38,7 +40,8 @@ export default defineConfig({
     solidJsxSource(),
     solid({
       include: [
-        `${extensionsSrc}/**/*.{js,ts,jsx,tsx}`,
+        `${mcpUiSrc}/**/*.{js,ts,jsx,tsx}`,
+        `${skillsUiSrc}/**/*.{js,ts,jsx,tsx}`,
         `${uiKitSrc}/**/*.{js,ts,jsx,tsx}`,
         `${pluginSrc}/**/*.{js,ts,jsx,tsx}`,
         `${fileEditorSrc}/**/*.{js,ts,jsx,tsx}`,
@@ -54,7 +57,8 @@ export default defineConfig({
       "solid-js/jsx-dev-runtime": resolve(solidJs, "dist/solid.js"),
       "solid-js": solidJs,
       "@natalia/transport": resolve(workspace, "packages/hosts/transport/src/rpc-client.ts"),
-      "@natalia/plugin-ui-extensions": resolve(workspace, "packages/plugins/ui/extensions/src/index.ts"),
+      "@natalia/plugin-mcp/ui": mcpUiSrc,
+      "@natalia/plugin-skills/ui": skillsUiSrc,
     },
   },
   esbuild: { jsx: "automatic", jsxImportSource: "solid-js" },

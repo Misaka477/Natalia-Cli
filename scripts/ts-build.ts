@@ -85,6 +85,27 @@ for (const root of pluginRoots) {
   }
 
   const releaseFiles = [manifest.entry, "natalia.plugin.json", "LICENSE"];
+  const releaseManifest: PluginManifest = { ...manifest };
+  if (manifest.ui) {
+    const uiEntry = "ui/plugin.js";
+    const uiBuild = await Bun.build({
+      entrypoints: [join(root, manifest.ui.entry)],
+      outdir: join(packageOutdir, "ui"),
+      target: "browser",
+      format: "esm",
+      naming: "plugin.js",
+      packages: "bundle",
+    });
+    if (!uiBuild.success) {
+      for (const log of uiBuild.logs) console.error(log);
+      throw new Error(`${root}: plugin UI release build failed`);
+    }
+    releaseManifest.ui = {
+      ...manifest.ui,
+      entry: uiEntry,
+    };
+    releaseFiles.push(uiEntry);
+  }
   if (manifest.id === "natalia-tool-terminal") {
     const worker = await Bun.build({
       entrypoints: [join(root, "src/wezterm-command-worker.ts")],
@@ -117,7 +138,10 @@ for (const root of pluginRoots) {
     version: manifest.version,
     type: "module",
     license: sourcePackage.license ?? "Apache-2.0",
-    exports: { ".": `./${manifest.entry}` },
+    exports: {
+      ".": `./${manifest.entry}`,
+      ...(manifest.ui ? { "./ui": `./${releaseManifest.ui!.entry}` } : {}),
+    },
     files: releaseFiles,
   };
   await Bun.write(
@@ -126,7 +150,7 @@ for (const root of pluginRoots) {
   );
   await Bun.write(
     join(packageOutdir, "natalia.plugin.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
+    `${JSON.stringify(releaseManifest, null, 2)}\n`,
   );
   await Bun.write(join(packageOutdir, "LICENSE"), Bun.file(resolve("LICENSE")));
 
