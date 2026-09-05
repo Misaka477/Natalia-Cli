@@ -946,6 +946,13 @@ export default definePlugin({
   setup(api) { api.commands.register({ name: "hello", title: "Hello", run() {} }); },
 });`,
   );
+  await writeFile(
+    join(root, "global.json"),
+    JSON.stringify({
+      version: 3,
+      plugins: { paths: [join(root, ".natalia", "plugins")] },
+    }),
+  );
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
     globalConfigPath: join(root, "global.json"),

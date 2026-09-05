@@ -47,9 +47,10 @@ function desiredEntry(
         resolve(path, ".."),
         manifest.entry,
       );
+      const moduleURL = pathToFileURL(modulePath).href;
       const specifier = cacheBust
-        ? `${modulePath}?reload=${cacheBust}`
-        : pathToFileURL(modulePath).href;
+        ? `${moduleURL}?reload=${cacheBust}`
+        : moduleURL;
       const module = (await import(specifier)) as { default?: unknown };
       const candidate = (
         typeof module.default === "function"
