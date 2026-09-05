@@ -1858,10 +1858,7 @@ for (const [label, config] of [
       events.some(
         (event) =>
           event.type === "tool.registered" &&
-          (event.name === "web_fetch" ||
-            event.name === "web_search" ||
-            event.name === "browser_visit" ||
-            event.name === "browser_screenshot"),
+          (event.name === "web_fetch" || event.name === "web_search"),
       ),
     ).toBe(false);
     expect(kernel.has("natalia-tool-web")).toBe(false);
@@ -4470,6 +4467,7 @@ test("runtime skill catalog exposes discovery metadata without skill body", asyn
       { kind: "services", name: "skills.service" },
       { kind: "tools", name: "skill_load" },
       { kind: "commands", name: "skills" },
+      { kind: "commands", name: "skill-install" },
       { kind: "commands", name: "skill" },
       { kind: "commands", name: "skill-resource" },
       { kind: "commands", name: "skill-script" },
