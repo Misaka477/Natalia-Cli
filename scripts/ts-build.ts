@@ -70,7 +70,13 @@ for (const root of pluginRoots) {
   if (manifest.entry !== "index.js")
     throw new Error(`${root}: release plugin entry must be index.js`);
 
-  const packageOutdir = join(pluginsOutdir, manifest.id);
+  // Browser's plugin manifest id is accepted as natalia-tool-browser by the
+  // runtime, but the official plugin store directory/installer id is
+  // natalia-browser. Keep the on-disk directory aligned with the official
+  // plugin catalog so existing tests and plugin-store layouts stay stable.
+  const outputDir =
+    manifest.id === "natalia-tool-browser" ? "natalia-browser" : manifest.id;
+  const packageOutdir = join(pluginsOutdir, outputDir);
   await mkdir(packageOutdir, { recursive: true });
   const build = await Bun.build({
     entrypoints: [join(root, "src/index.ts")],

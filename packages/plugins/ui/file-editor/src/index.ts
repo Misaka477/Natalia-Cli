@@ -17,6 +17,16 @@ export const FILE_EDITOR_PLUGIN_MANIFEST: PluginManifest = {
   dependencies: [],
   hooks: {},
   integrationPoints: [],
+  ui: {
+    entry: "ui/plugin.js",
+    panels: [
+      {
+        id: "files",
+        title: "文件",
+        region: "side",
+      },
+    ],
+  },
 };
 
 export default definePlugin({

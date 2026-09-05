@@ -28,6 +28,17 @@ export const SKILLS_PLUGIN_MANIFEST: PluginManifest = {
   dependencies: [],
   hooks: {},
   integrationPoints: ["tools", "commands", "services"],
+  ui: {
+    entry: "ui/plugin.js",
+    panels: [
+      {
+        id: "skills-settings",
+        title: "Skills",
+        region: "settings",
+        group: "扩展",
+      },
+    ],
+  },
 };
 
 export function createSkillsPlugin(input: {

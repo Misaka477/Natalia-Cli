@@ -170,6 +170,16 @@ export const TODO_PLUGIN_MANIFEST: PluginManifest = {
   dependencies: [],
   hooks: {},
   integrationPoints: ["tools"],
+  ui: {
+    entry: "ui/plugin.js",
+    panels: [
+      {
+        id: "todo",
+        title: "待办",
+        region: "side",
+      },
+    ],
+  },
 };
 
 export function createTodoPlugin(): Plugin {

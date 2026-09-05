@@ -28,6 +28,17 @@ export const MCP_PLUGIN_MANIFEST: PluginManifest = {
   dependencies: [],
   hooks: {},
   integrationPoints: ["tools", "services"],
+  ui: {
+    entry: "ui/plugin.js",
+    panels: [
+      {
+        id: "mcp-settings",
+        title: "MCP",
+        region: "settings",
+        group: "扩展",
+      },
+    ],
+  },
 };
 
 export function createMcpPlugin(input: {

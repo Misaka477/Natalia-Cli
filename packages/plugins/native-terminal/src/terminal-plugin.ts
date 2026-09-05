@@ -26,6 +26,16 @@ export const TERMINAL_PLUGIN_MANIFEST: PluginManifest = {
   dependencies: [],
   hooks: {},
   integrationPoints: ["tools", "services"],
+  ui: {
+    entry: "ui/plugin.js",
+    panels: [
+      {
+        id: "terminal",
+        title: "终端",
+        region: "side",
+      },
+    ],
+  },
 };
 
 /**
