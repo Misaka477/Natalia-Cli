@@ -1389,6 +1389,7 @@ export type UiPanelMeta = {
 /** Renderer-side UI declaration carried by a plugin manifest / catalog entry. */
 export type PluginUiManifest = {
   entry: string;
+  css?: string;
   panels?: UiPanelMeta[];
 };
 
@@ -1686,6 +1687,14 @@ export function runtimeEventDurability(
     case "chat.turn.finished":
     case "projections.updated":
     case "task.selection":
+    // Synthetic runtime declarations are re-published on every boot. Storing
+    // them in the session DB only multiplies startup writes and bloats the
+    // session history; they are reconstructible and do not need durability.
+    case "capability.loaded":
+    case "capability.unloaded":
+    case "capability.failed":
+    case "tool.registered":
+    case "plugin.update":
       return "live";
     case "tool.update":
       return ["succeeded", "failed", "rejected", "cancelled"].includes(

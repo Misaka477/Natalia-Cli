@@ -570,7 +570,7 @@ export interface WorkspaceFilesController {
 /** Backend-neutral terminal port. Native registry classes never cross this boundary. */
 export interface TerminalController {
   init(): Promise<void>;
-  list(): Promise<RuntimeNativeTerminalSession[]>;
+  list(sessionID?: string): Promise<RuntimeNativeTerminalSession[]>;
   reconcile(): Promise<RuntimeNativeTerminalSession[]>;
   read(
     id: string,

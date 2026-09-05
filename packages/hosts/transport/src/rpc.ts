@@ -1718,7 +1718,14 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalResize?.({ id, rows, cols }),
+        result: await client.nativeTerminalResize?.({
+          id,
+          rows,
+          cols,
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
+        }),
       };
     }
     // --- P0-C: intelligence queries and capability records ---

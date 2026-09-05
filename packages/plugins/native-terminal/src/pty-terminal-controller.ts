@@ -562,8 +562,12 @@ export function createPtyTerminalController(
     initialized = true;
   }
 
-  async function list() {
-    return [...sessions.values()].filter(sessionVisible).map(publicSession);
+  async function list(sessionID?: string) {
+    return [...sessions.values()]
+      .filter((session) =>
+        sessionID ? session.sessionID === sessionID : sessionVisible(session),
+      )
+      .map(publicSession);
   }
 
   async function reconcile() {

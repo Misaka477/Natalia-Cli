@@ -74,10 +74,7 @@ export function createNativeTerminalSurface(
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
-      const all = (await terminal?.list()) ?? [];
-      if (!sessionID) return all;
-      const owned = terminalIDsFor(sessionExec(ctx, sessionID));
-      return all.filter((item) => owned.has(item.id));
+      return (await terminal?.list(sessionID)) ?? [];
     },
     async nativeTerminalRead(id, sessionID?: string) {
       await ctx.ports.getReady();

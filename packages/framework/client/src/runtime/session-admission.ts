@@ -34,7 +34,6 @@ export function createSessionAdmission(
     input: SubmitInput & { internal?: boolean },
     forSessionID?: SessionID,
   ) {
-    console.log("[trace] submitInput start", input.text);
     const {
       getReady,
       isDisposed,

@@ -303,10 +303,15 @@ export function createWebRuntimeClient(
     method: string,
     params?: Record<string, unknown>,
   ): Promise<T> => {
-    if (electron) {
+    if (electron && !options.url) {
+      const callStart = performance.now();
       return electron.invoke<T>("runtime_call", {
         method,
         params: params ?? {},
+      }).finally(() => {
+        console.log(
+          `[perf] ipc ${method} ${(performance.now() - callStart).toFixed(1)}ms`,
+        );
       });
     }
     return callRuntimeRPC<T>({
@@ -325,7 +330,9 @@ export function createWebRuntimeClient(
     };
     global.__nataliaStartupStart ??= performance.now();
     const timings = (global.__nataliaStartupTimings ??= {});
-    timings[phase] = performance.now() - global.__nataliaStartupStart;
+    const elapsed = performance.now() - global.__nataliaStartupStart;
+    timings[phase] = elapsed;
+    console.log(`[startup] ${phase} +${elapsed.toFixed(1)}ms`);
   }
 
   const starts: Array<(event: RuntimeEvent) => void> = [];
@@ -532,6 +539,9 @@ export function createWebRuntimeClient(
     if (electron) {
       electron.on<RuntimeEvent>("natalia-runtime-event", (event) => {
           emitLive(event);
+      });
+      electron.on<RuntimeEvent[]>("natalia-runtime-events", (events) => {
+          for (const event of events) emitLive(event);
       });
       await restoreRecentSession();
       return;

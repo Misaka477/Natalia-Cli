@@ -5,7 +5,23 @@ type UiPluginFactory = () => UiPlugin;
 type UiModule = {
   createUiPlugin?: UiPluginFactory;
   default?: UiPluginFactory;
+  [key: string]: unknown;
 };
+
+function resolveUiPluginFactory(mod: UiModule): UiPluginFactory | undefined {
+  if (typeof mod.createUiPlugin === "function") return mod.createUiPlugin;
+  if (typeof mod.default === "function") return mod.default;
+  for (const [name, value] of Object.entries(mod)) {
+    if (name === "default" || name === "createUiPlugin") continue;
+    if (typeof value !== "function") continue;
+    // Official and scaffolded UI panel plugins historically export
+    // create<Name>Plugin / create<Name>UiPlugin rather than createUiPlugin.
+    if (/^create[A-Za-z0-9_]*(?:Ui)?Plugin$/u.test(name)) {
+      return value as UiPluginFactory;
+    }
+  }
+  return undefined;
+}
 
 /** Maps loaded UI plugin ids back to the runtime plugin they came from. */
 const uiSourceByPluginId = new Map<string, string>();
@@ -91,16 +107,22 @@ async function loadOnePluginUi(
       runtimeURL,
     ).href;
     const mod = await importPluginUiModule(moduleUrl, token);
-    const factory = mod.createUiPlugin ?? mod.default;
-    if (typeof factory !== "function") {
-      console.warn(`[plugin-ui] ${plugin.id} does not export createUiPlugin`);
+    const factory = resolveUiPluginFactory(mod);
+    if (!factory) {
+      console.warn(
+        `[plugin-ui] ${plugin.id} does not export createUiPlugin/create*Plugin`,
+      );
       return;
     }
+    const pluginStart = performance.now();
     const uiPlugin = factory();
     await host.load(uiPlugin);
     uiSourceByPluginId.set(uiPlugin.id, plugin.id);
-    await loadPluginUiCss(runtimeURL, plugin.id, token);
-    console.info(`[plugin-ui] loaded ${plugin.id}@${plugin.version}`);
+    if (plugin.id === "natalia-tool-terminal" || plugin.ui?.css)
+      await loadPluginUiCss(runtimeURL, plugin.id, token);
+    console.info(
+      `[plugin-ui] loaded ${plugin.id}@${plugin.version} +${(performance.now() - pluginStart).toFixed(1)}ms`,
+    );
   } catch (error) {
     console.warn(
       `[plugin-ui] failed to load ${plugin.id}: ${

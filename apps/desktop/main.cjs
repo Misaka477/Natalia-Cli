@@ -1,9 +1,19 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
+const http = require("http");
 const net = require("net");
 const path = require("path");
 const WebSocket = require("ws");
+
+// Local runtime requests must never go through the user's HTTP proxy. A
+// system/HTTP proxy can add multi-second delays to every 127.0.0.1 RPC and is
+// the main reason startup RPCs took ~7s while the runtime itself answered in
+// a few hundred ms.
+app.commandLine.appendSwitch("proxy-bypass-list", "127.0.0.1,localhost");
+process.env.NO_PROXY = [process.env.NO_PROXY, "127.0.0.1,localhost"]
+  .filter(Boolean)
+  .join(",");
 
 // GPU acceleration is opt-in through Desktop settings. On Wayland/niri the
 // GPU compositor path is noisy and can stall rendering, so the default is off
@@ -92,10 +102,11 @@ function runtimeCommand() {
 }
 
 async function ensureRuntime() {
+  const runtimeStart = Date.now();
   if (runtimeURL) {
     try {
       await waitForRuntime(runtimeURL, 8);
-      console.log("[desktop] using existing runtime", runtimeURL);
+      console.log("[desktop] using existing runtime", runtimeURL, `${Date.now() - runtimeStart}ms`);
       return runtimeURL;
     } catch {
       if (process.env.NATALIA_RUNTIME_URL) {
@@ -125,7 +136,7 @@ async function ensureRuntime() {
     if (runtimeOwned) runtimeProcess = undefined;
   });
   await waitForRuntime(runtimeURL);
-  console.log("[desktop] runtime ready", runtimeURL);
+  console.log("[desktop] runtime ready", runtimeURL, `${Date.now() - runtimeStart}ms`);
   return runtimeURL;
 }
 
@@ -142,21 +153,79 @@ function stopOwnedRuntime() {
   }
 }
 
-async function runtimeCall(method, params) {
-  const response = await runtimeFetch("/rpc", {
-    method: "POST",
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: params ?? {} }),
+function runtimeCall(method, params) {
+  const callStart = Date.now();
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method,
+      params: params ?? {},
+    });
+    const url = new URL(runtimeURL);
+    const headers = {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(payload),
+    };
+    if (TOKEN) headers.authorization = `Bearer ${TOKEN}`;
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: "/rpc",
+        method: "POST",
+        headers,
+      },
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          const elapsed = Date.now() - callStart;
+          console.log(`[desktop] runtime_call ${String(method)} ${elapsed}ms`);
+          try {
+            const parsed = JSON.parse(body);
+            if (res.statusCode !== 200 || parsed.error) {
+              const message =
+                parsed.error?.message ||
+                parsed.error ||
+                `runtime RPC failed: ${res.statusCode}`;
+              reject(new Error(message));
+              return;
+            }
+            resolve(parsed.result);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
   });
-  const body = await response.json();
-  if (!response.ok || body.error) {
-    const message = body.error?.message || body.error || `runtime RPC failed: ${response.status}`;
-    throw new Error(message);
-  }
-  return body.result;
 }
 
+const runtimeEventBatch = [];
+let runtimeEventFlushTimer;
 function sendRuntimeEvent(event) {
-  mainWindow?.webContents.send("natalia-runtime-event", event);
+  runtimeEventBatch.push(event);
+  if (runtimeEventBatch.length >= 100) {
+    clearTimeout(runtimeEventFlushTimer);
+    runtimeEventFlushTimer = undefined;
+    flushRuntimeEvents();
+    return;
+  }
+  if (runtimeEventFlushTimer) return;
+  runtimeEventFlushTimer = setTimeout(flushRuntimeEvents, 16);
+}
+function flushRuntimeEvents() {
+  runtimeEventFlushTimer = undefined;
+  if (!runtimeEventBatch.length) return;
+  const events = runtimeEventBatch.splice(0);
+  mainWindow?.webContents.send("natalia-runtime-events", events);
 }
 
 async function streamRuntimeEvents() {
@@ -295,6 +364,10 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error("[desktop] failed to start runtime", error);
   }
+  // Warm the workspace runtime before the renderer requests data. The first
+  // RPC triggers a ~1-2s initialize; starting it here overlaps with window
+  // creation and removes most of that wait from the visible startup path.
+  void runtimeCall("plugin.catalog", {}).catch(() => undefined);
   createMainWindow();
   void streamRuntimeEvents();
   app.on("activate", () => {

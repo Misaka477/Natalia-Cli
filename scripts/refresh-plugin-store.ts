@@ -13,6 +13,7 @@ await mkdir(storeRoot, { recursive: true });
 await mkdir(join(storeRoot, "node_modules", "@natalia"), { recursive: true });
 
 const lockPlugins: Record<string, unknown> = {};
+const storeDependencies: Record<string, string> = {};
 for (const packageDir of await readdirSorted(pluginsRoot)) {
   const abs = join(pluginsRoot, packageDir);
   const manifest = JSON.parse(
@@ -21,6 +22,7 @@ for (const packageDir of await readdirSorted(pluginsRoot)) {
   const packageJSON = JSON.parse(
     await readFile(join(abs, "package.json"), "utf8"),
   ) as { name: string };
+  storeDependencies[packageJSON.name] = `file:../plugins/${packageDir}`;
   const target = join(storeRoot, "node_modules", ...packageJSON.name.split("/"));
   await mkdir(join(target), { recursive: true });
   await cp(abs, target, { recursive: true });
@@ -37,8 +39,20 @@ for (const packageDir of await readdirSorted(pluginsRoot)) {
   };
 }
 await writeFile(
+  join(storeRoot, "package.json"),
+  `${JSON.stringify({ dependencies: storeDependencies }, null, 2)}\n`,
+);
+await writeFile(
   join(storeRoot, "natalia.lock"),
   `${JSON.stringify({ version: 1, plugins: lockPlugins }, null, 2)}\n`,
+);
+// Official plugin initialization skips the npm install path when this marker
+// exists. The refresh script already produces the full plugin closure, so the
+// marker must be recreated here; otherwise the next runtime start sees an
+// uninitialized store and tries to npm-install every plugin again.
+await writeFile(
+  join(storeRoot, "official-plugins-initialized-v1"),
+  "initialized\n",
 );
 console.log(`[refresh-plugin-store] rebuilt ${storeRoot}`);
 

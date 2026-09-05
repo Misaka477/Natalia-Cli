@@ -581,7 +581,14 @@ export function createRuntimeHttpServer(
     const rpcJsonResponse = (payload: unknown, status = 200) => {
       const acceptsGzip =
         request.headers.get("accept-encoding")?.includes("gzip") ?? false;
+      const serializeStart = performance.now();
       const json = JSON.stringify(payload);
+      const methodName = (body as { method?: unknown })?.method ?? "unknown";
+      if (json.length > 100000) {
+        console.warn(
+          `[perf] rpc serialize ${String(methodName)} ${json.length} bytes ${(performance.now() - serializeStart).toFixed(1)}ms`,
+        );
+      }
       if (acceptsGzip)
         return new Response(gzipSync(json), {
           status,
@@ -618,11 +625,6 @@ export function createRuntimeHttpServer(
     // scope"): the gate answers only for callers who would otherwise get
     // through.
     const method = (body as { method?: unknown })?.method;
-    console.log(
-      "[web-server] rpc",
-      String(method ?? "unknown"),
-      (body as { params?: unknown })?.params,
-    );
     if (
       typeof method === "string" &&
       (method === "nativeTerminal.start" ||
@@ -652,11 +654,6 @@ export function createRuntimeHttpServer(
       options.client,
       request.signal,
       authorization,
-    );
-    console.log(
-      "[web-server] rpc result",
-      String(method ?? "unknown"),
-      result?.error ?? "ok",
     );
     if (result.error) return rpcJsonResponse(result, 400);
     return rpcJsonResponse(result);

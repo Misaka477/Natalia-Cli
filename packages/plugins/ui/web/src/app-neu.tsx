@@ -540,7 +540,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     };
     global.__nataliaStartupStart ??= performance.now();
     const timings = (global.__nataliaStartupTimings ??= {});
-    timings[phase] = performance.now() - global.__nataliaStartupStart;
+    const elapsed = performance.now() - global.__nataliaStartupStart;
+    timings[phase] = elapsed;
+    console.log(`[startup] ${phase} +${elapsed.toFixed(1)}ms`);
   }
 
   function logStartupSummary() {
@@ -901,7 +903,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   async function hydrateRecentMessages(options?: { replace?: boolean }) {
+    const hydrateStart = performance.now();
     const page = await props.ctx.runtime.messages?.({ limit: 100 });
+    console.warn(
+      `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
+    );
     if (!page?.data.length) {
       props.ctx.projection.hydrateMessages?.([], "older", options);
       historyCursor = undefined;
@@ -915,6 +921,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
     historyCursor = page.cursor.next;
     newerHistoryCursor = undefined;
+    console.warn(
+      `[perf] messages hydrate total ${(performance.now() - hydrateStart).toFixed(1)}ms`,
+    );
   }
 
   async function refreshTranscript() {
@@ -1159,10 +1168,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // full-log replay. The page is newest-last on the wire; reverse it so the
       // projection's older-merge keeps transcript order.
       await hydrateRecentMessages();
-      console.warn("[session-ui] main.messages", {
-        sessionID: state().sessionID,
-        projectedMessages: props.ctx.projection.getState().messages.length,
-      });
       markStartup("main.messages");
       // Chat and subagents are secondary surfaces. Hydrate them in the
       // background so the primary transcript paints first and does not wait
@@ -1229,9 +1234,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       if (isStaleLoad()) return;
       void (async () => {
         if (isStaleLoad()) return;
-        await refreshSessions();
-        if (isStaleLoad()) return;
-        await hydrateRecentMessagesOnLoad();
+        await Promise.all([
+          refreshSessions(),
+          hydrateRecentMessagesOnLoad(),
+        ]);
         if (isStaleLoad()) return;
         // Session loading finished; take one projection snapshot instead of
         // cloning once per raw event.
@@ -1240,6 +1246,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
         markStartup("first.paint");
         logStartupSummary();
+        void loadSecondaryStartupData();
         const scrollToBottom = () => {
           if (transcriptEl()) {
             const el = transcriptEl()!;
@@ -1315,6 +1322,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       });
     });
 
+    // Non-critical startup queries are deferred until the primary transcript
+    // has painted. Running them before session.messages competes for the
+    // desktop main-process event loop and makes first paint wait longer.
+  });
+
+  function loadSecondaryStartupData() {
     void createUiPanelRequirementContext(props.ctx.runtime).then(setPanelRequirementContext);
     void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
     void props.ctx.runtime.registeredTools?.().then((tools) => {
@@ -1328,7 +1341,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         plugins.some((plugin) => plugin.id === "natalia-tool-terminal"),
       );
     }).catch(() => setInteractiveTerminalAvailable(false));
-  });
+  }
 
 
   const modelOptions = () =>

@@ -1,5 +1,7 @@
 import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { build as viteBuild } from "vite";
+import solid from "vite-plugin-solid";
 
 const target =
   process.env.NATALIA_BUILD_TARGET ?? `${process.platform}-${process.arch}`;
@@ -95,23 +97,40 @@ for (const root of pluginRoots) {
   const releaseManifest: PluginManifest = { ...manifest };
   if (manifest.ui) {
     const uiEntry = "ui/plugin.js";
-    const uiBuild = await Bun.build({
-      entrypoints: [join(root, manifest.ui.entry)],
-      outdir: join(packageOutdir, "ui"),
-      target: "browser",
-      format: "esm",
-      naming: "plugin.[ext]",
-      packages: "bundle",
+    const uiOutdir = join(packageOutdir, "ui");
+    await viteBuild({
+      root: process.cwd(),
+      configFile: false,
+      logLevel: "error",
+      plugins: [solid()],
+      build: {
+        emptyOutDir: true,
+        outDir: uiOutdir,
+        cssCodeSplit: false,
+        lib: {
+          entry: resolve(process.cwd(), root, manifest.ui.entry),
+          formats: ["es"],
+          fileName: () => "plugin.js",
+        },
+        target: "esnext",
+        minify: false,
+        rollupOptions: {
+          output: {
+            assetFileNames: "plugin.[ext]",
+          },
+        },
+      },
     });
-    if (!uiBuild.success) {
-      for (const log of uiBuild.logs) console.error(log);
-      throw new Error(`${root}: plugin UI release build failed`);
-    }
     releaseManifest.ui = {
       ...manifest.ui,
       entry: uiEntry,
+      ...((await Bun.file(join(uiOutdir, "plugin.css")).exists())
+        ? { css: "ui/plugin.css" }
+        : {}),
     };
     releaseFiles.push(uiEntry);
+    const uiCss = join(uiOutdir, "plugin.css");
+    if (await Bun.file(uiCss).exists()) releaseFiles.push("ui/plugin.css");
   }
   if (manifest.id === "natalia-tool-terminal") {
     const worker = await Bun.build({

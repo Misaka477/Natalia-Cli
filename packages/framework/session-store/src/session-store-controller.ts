@@ -260,9 +260,14 @@ export function createSessionStoreController(input: {
   }
 
   async function appendEvent(session: SessionRecord, event: RuntimeEvent) {
-    console.warn("[session-write] appendEvent", session.id, event.type);
-    if (sqliteStore) await sqliteStore.appendEventAsync(session.id, event);
-    else await sessionStore.save(session);
+    if (sqliteStore) {
+      // Queue the event and let the SQLite store flush in batches (20ms or
+      // 100 events). Awaiting a flush per event makes initialization spend
+      // seconds writing hundreds of synthetic capability/tool events one by
+      // one; batching is safe because the store still flushes before dispose
+      // and on durable barriers.
+      sqliteStore.enqueueEvent(session.id, event);
+    } else await sessionStore.save(session);
   }
 
   async function appendEvents(session: SessionRecord, events: RuntimeEvent[]) {

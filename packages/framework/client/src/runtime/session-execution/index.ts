@@ -139,7 +139,6 @@ export function createSessionExecution(
   async function ensureExecution(
     sessionID: SessionID,
   ): Promise<SessionExecutionState> {
-    console.log("[trace] ensureExecution", sessionID);
     const {
       getProviderSource,
       getProvider,
@@ -240,7 +239,6 @@ export function createSessionExecution(
     };
     executionBySession.set(sessionID, exec);
     pruneIdleSessionExecutions(ctx);
-    console.log("[trace] ensureExecution done", sessionID, "provider", exec.provider?.provider ?? exec.provider?.model ?? "none");
     applyAgentProvider(exec);
     await refreshExecutionContextConfig(exec);
     return exec;

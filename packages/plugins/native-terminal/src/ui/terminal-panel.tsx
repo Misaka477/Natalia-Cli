@@ -53,7 +53,7 @@ export function TerminalPane(props: {
 
   async function loadTabs(sessionID: string) {
     const token = ++loadToken;
-    const listed = (await props.runtime?.nativeTerminalList?.()) ?? [];
+    const listed = (await props.runtime?.nativeTerminalList?.(sessionID)) ?? [];
     if (token !== loadToken) return;
     setSessions(listed);
     const running = listed.filter(
@@ -128,7 +128,7 @@ export function TerminalPane(props: {
   });
 
   async function refreshSessions() {
-    const listed = (await props.runtime?.nativeTerminalList?.()) ?? [];
+    const listed = (await props.runtime?.nativeTerminalList?.(sessionID)) ?? [];
     setSessions(listed);
   }
 
@@ -136,7 +136,7 @@ export function TerminalPane(props: {
     const id = activeID();
     if (!id) return;
     try {
-      await props.runtime?.nativeTerminalClaimHumanInput?.(id);
+      await props.runtime?.nativeTerminalClaimHumanInput?.(id, props.sessionID);
       await refreshSessions();
     } catch {
       // optional method may not exist; leave current state
@@ -147,7 +147,7 @@ export function TerminalPane(props: {
     const id = activeID();
     if (!id) return;
     try {
-      await props.runtime?.nativeTerminalReleaseHumanControl?.(id);
+      await props.runtime?.nativeTerminalReleaseHumanControl?.(id, props.sessionID);
       await refreshSessions();
     } catch {
       // optional method may not exist; leave current state
@@ -160,9 +160,9 @@ export function TerminalPane(props: {
     try {
       const session = sessions().find((item) => item.id === id);
       if (session?.secureInput)
-        await props.runtime?.nativeTerminalEndSecureInput?.(id);
+        await props.runtime?.nativeTerminalEndSecureInput?.(id, props.sessionID);
       else
-        await props.runtime?.nativeTerminalBeginSecureInput?.(id);
+        await props.runtime?.nativeTerminalBeginSecureInput?.(id, props.sessionID);
       await refreshSessions();
     } catch {
       // optional method may not exist; leave current state
@@ -219,7 +219,7 @@ export function TerminalPane(props: {
     }
     setLimitError();
     try {
-      await props.runtime?.nativeTerminalStop?.(id);
+      await props.runtime?.nativeTerminalStop?.(id, props.sessionID);
     } catch {
       // already exited
     }
@@ -241,7 +241,7 @@ export function TerminalPane(props: {
       const replaced = next.find((item) => item.id === tab.id)!;
       setActiveID(replaced.cells[0]);
     }
-    void props.runtime?.nativeTerminalStop?.(cellID).catch(() => undefined);
+    void props.runtime?.nativeTerminalStop?.(cellID, props.sessionID).catch(() => undefined);
   }
 
   return (

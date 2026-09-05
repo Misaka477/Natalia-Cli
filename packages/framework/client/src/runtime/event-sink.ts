@@ -43,7 +43,6 @@ export function createEventSink(
     exec: SessionExecutionState | undefined,
     event: RuntimeEvent,
   ) {
-    console.log("[trace] event-sink publish", event.type, (event as {id?:string}).id ?? "");
     const {
       getSink,
       getSessionPersistence,
@@ -148,15 +147,9 @@ export function createEventSink(
       if (!sessionStoreController)
         throw new Error("session store unavailable (natalia-session-store)");
       if (!sessionStoreController.status().initialized) {
-        if (event.type !== "plugin.update" && event.type !== "projections.updated")
-          console.warn(
-            "[session-write] skipped uninitialized store",
-            event.type,
-            exec.session.id,
-          );
         return;
       }
-      const sessionSnapshot = structuredClone(exec.session);
+      const sessionSnapshot = { ...exec.session };
       const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
         exec.session.id,
       );

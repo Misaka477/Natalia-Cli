@@ -3,8 +3,6 @@ import { Terminal } from "@xterm/xterm";
 import { cssVar } from "@natalia/ui-kit";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { CanvasAddon } from "@xterm/addon-canvas";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
@@ -83,50 +81,133 @@ export function WebTerminal(props: WebTerminalProps) {
   let searchAddon: SearchAddon | undefined;
   let socket: WebSocket | undefined;
   let ipcUnlisten: (() => void) | undefined;
-  let resizeObserver: ResizeObserver | undefined;
   let windowResizeHandler: (() => void) | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   let lastError: string | undefined;
   let fatal = false;
+  let sessionReady = false;
+  let lastResizeKey = "";
+  let lastInputSentAt: number | undefined;
+  let lastEchoLogged = false;
   const electron = getElectronGlobal();
   const desktop = electron;
 
-  function theme() {
-    // Keep a dark terminal palette regardless of the app/UI theme. Full-screen
-    // TUIs like htop/btop often rely on white/default colors; a light terminal
-    // background makes those invisible.
+  function fitSafely() {
+    if (!host || !fit) return;
+    if (host.clientWidth <= 0 || host.clientHeight <= 0) return;
+    try {
+      fit.fit();
+    } catch {
+      // xterm can throw if the pane is hidden or its host is mid-layout.
+    }
+  }
+
+  function validResize(rows: number, cols: number) {
+    return (
+      Number.isInteger(rows) &&
+      Number.isInteger(cols) &&
+      rows >= 1 &&
+      rows <= 500 &&
+      cols >= 1 &&
+      cols <= 500
+    );
+  }
+
+  function clampResize(rows: number, cols: number) {
     return {
-      background: cssVar("--neu-bg-dark", "#1b1e24"),
-      foreground: cssVar("--neu-text", "#e6e8eb"),
+      rows: Math.max(1, Math.min(500, Math.floor(rows))),
+      cols: Math.max(1, Math.min(500, Math.floor(cols))),
+    };
+  }
+
+  function sendResize(rows: number, cols: number, source: string) {
+    if (closed || !sessionReady || !validResize(rows, cols)) {
+      if (!closed) {
+        console.warn("[web-terminal] ignore invalid resize", {
+          source,
+          rows,
+          cols,
+        });
+      }
+      return;
+    }
+    const resizeKey = `${props.terminalID}:${rows}:${cols}`;
+    if (resizeKey === lastResizeKey) return;
+    lastResizeKey = resizeKey;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "resize", rows, cols }));
+      return;
+    }
+    if (desktop) {
+      void callRuntime(desktop, "nativeTerminal.resize", {
+        id: props.terminalID,
+        rows,
+        cols,
+        sessionID: props.sessionID,
+      }).catch((error) => {
+        console.error("[web-terminal] resize failed", error);
+      });
+    }
+  }
+
+  function theme() {
+    // Follow the active UiSkin instead of forcing a dark terminal pane. The
+    // app defaults to the light Neumorphism theme; keeping a hardcoded dark
+    // background made the terminal bottomless black and hard to read.
+    // The terminal pane deliberately keeps a black background so full-screen
+    // TUIs remain readable regardless of the surrounding light UI theme.
+    const background = "#1b1e24";
+
+    return {
+      background,
+      foreground: "#e5e5e5",
       cursor: cssVar("--neu-accent", "#5fd4b8"),
       selectionBackground: cssVar("--neu-accent-soft", "#7de8d0"),
+      // Standard xterm 16-color palette. Keeps terminal apps that rely on
+      // conventional ANSI colors (ls, vim, htop, tmux) looking normal while
+      // staying readable on the dark #1b1e24 terminal background.
+      black: "#000000",
+      red: "#cd0000",
+      green: "#00cd00",
+      yellow: "#cdcd00",
+      blue: "#0000ee",
+      magenta: "#cd00cd",
+      cyan: "#00cdcd",
+      white: "#e5e5e5",
+      brightBlack: "#7f7f7f",
+      brightRed: "#ff0000",
+      brightGreen: "#00ff00",
+      brightYellow: "#ffff00",
+      brightBlue: "#5c5cff",
+      brightMagenta: "#ff00ff",
+      brightCyan: "#00ffff",
+      brightWhite: "#ffffff",
     };
   }
 
   function scheduleReconnect() {
     if (closed || fatal) return;
-    console.log("[web-terminal] schedule reconnect", {
-      sessionID: props.sessionID,
-      terminalID: props.terminalID,
-    });
     if (reconnectTimer) clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connect, 1500);
   }
 
   function handleServerMessage(message: ServerMessage) {
     if (closed) return;
-    console.log("[web-terminal] ipc message", {
-      type: message.type,
-      id: message.id,
-      bytes: message.type === "output" ? message.data.length : undefined,
-      textLength: message.type === "restore" ? message.text.length : undefined,
-    });
     if (message.type === "restore") {
       term?.clear();
       if (message.text) term?.write(message.text);
     }
-    if (message.type === "output") term?.write(message.data);
+    if (message.type === "output") {
+      if (lastInputSentAt !== undefined && !lastEchoLogged) {
+        lastEchoLogged = true;
+        console.warn(
+          `[terminal] echo delay ${(performance.now() - lastInputSentAt).toFixed(1)}ms`,
+        );
+        lastInputSentAt = undefined;
+      }
+      term?.write(message.data);
+    }
     if (message.type === "error") {
       if (message.message === lastError) return;
       lastError = message.message;
@@ -137,14 +218,17 @@ export function WebTerminal(props: WebTerminalProps) {
     if (message.type === "ready") {
       lastError = undefined;
       if (term && fit) {
-        fit.fit();
-        void callRuntime(desktop!, "nativeTerminal.resize", {
-          id: props.terminalID,
-          rows: term.rows,
-          cols: term.cols,
-        }).catch((error) => {
-          console.error("[web-terminal] resize failed", error);
-        });
+        fitSafely();
+        const { rows, cols } = clampResize(term.rows, term.cols);
+        if (validResize(rows, cols))
+          void callRuntime(desktop!, "nativeTerminal.resize", {
+            id: props.terminalID,
+            rows,
+            cols,
+            sessionID: props.sessionID,
+          }).catch((error) => {
+            console.error("[web-terminal] resize failed", error);
+          });
       }
     }
   }
@@ -162,12 +246,6 @@ export function WebTerminal(props: WebTerminalProps) {
     ipcUnlisten = undefined;
     previous?.();
 
-    console.log("[web-terminal] ipcConnect start", {
-      sessionID: props.sessionID,
-      terminalID: props.terminalID,
-      command: props.command,
-    });
-
     try {
       ipcUnlisten = electron.on<{ id: string; message: ServerMessage }>(
         "natalia-terminal-output",
@@ -176,7 +254,6 @@ export function WebTerminal(props: WebTerminalProps) {
           handleServerMessage(event.message);
         },
       );
-      console.log("[web-terminal] ipc event listener ready");
       if (closed) return;
 
       const listed =
@@ -184,15 +261,10 @@ export function WebTerminal(props: WebTerminalProps) {
           id: string;
           status: string;
           sessionID?: string;
-        }>>(desktop, "nativeTerminal.list")) ?? [];
+        }>>(desktop, "nativeTerminal.list", { sessionID: props.sessionID })) ?? [];
       if (closed) return;
       let session = listed.find((item) => item.id === props.terminalID);
       if (!session || (session.sessionID && session.sessionID !== props.sessionID)) {
-        console.log("[web-terminal] nativeTerminal.start", {
-          terminalID: props.terminalID,
-          sessionID: props.sessionID,
-          command: props.command || "bash",
-        });
         session =
           (await callRuntime<{ id: string; status: string } | undefined>(
             desktop,
@@ -203,9 +275,7 @@ export function WebTerminal(props: WebTerminalProps) {
               sessionID: props.sessionID,
             },
           )) ?? undefined;
-        console.log("[web-terminal] nativeTerminal.start result", session);
       } else {
-        console.log("[web-terminal] reuse existing terminal", session);
       }
       if (!session) {
         fatal = true;
@@ -216,12 +286,9 @@ export function WebTerminal(props: WebTerminalProps) {
         console.error("[web-terminal] native terminal start returned no session");
         return;
       }
+      sessionReady = true;
 
       if (closed) return;
-      console.log("[web-terminal] call terminal_output_subscribe", {
-        sessionId: props.sessionID,
-        terminalId: props.terminalID,
-      });
       const subscribeResult =
         (await desktop!.invoke<{ subscribed?: boolean; reused?: boolean }>(
           "terminal_output_subscribe",
@@ -230,38 +297,14 @@ export function WebTerminal(props: WebTerminalProps) {
             terminalId: props.terminalID,
           },
         )) ?? {};
-      console.log("[web-terminal] terminal_output_subscribe ok", subscribeResult);
       if (closed) return;
 
-      // Reused subscriptions do not receive a fresh `restore` message, so pull
-      // the current screen once through nativeTerminal.read and write it back.
-      // Fresh subscriptions still get the raw restore from the bridge.
       if (subscribeResult.reused) {
-        console.log("[web-terminal] reused subscription, reading current screen");
-        const read = await callRuntime<{ text: string } | undefined>(
-          desktop,
-          "nativeTerminal.read",
-          { id: props.terminalID },
-        );
-        if (closed) return;
-        try {
-          term?.clear();
-        } catch {
-          // xterm may not be ready yet
-        }
-        if (read?.text) term?.write(read.text);
-        if (term && fit) {
-          try {
-            fit.fit();
-            await callRuntime(desktop, "nativeTerminal.resize", {
-              id: props.terminalID,
-              rows: term.rows,
-              cols: term.cols,
-            });
-          } catch {
-            // fit can throw while restoring
-          }
-        }
+        // The terminal WebSocket bridge replays the current PTY buffer through
+        // `subscribeOutput` on every new WebSocket connection. Do not also
+        // write nativeTerminal.read here: the plain-text snapshot would be
+        // duplicated next to the ANSI-colored live replay and produce a grey
+        // uncolored duplicate of the prompt.
       }
 
       // The terminal WebSocket bridge will send a `restore` message with the
@@ -271,19 +314,18 @@ export function WebTerminal(props: WebTerminalProps) {
       console.log("[web-terminal] waiting for restore from terminal bridge");
       if (term && fit) {
         try {
-          fit.fit();
-          await callRuntime(desktop, "nativeTerminal.resize", {
-            id: props.terminalID,
-            rows: term.rows,
-            cols: term.cols,
-          });
+          fitSafely();
+          const { rows, cols } = clampResize(term.rows, term.cols);
+          if (validResize(rows, cols))
+            await callRuntime(desktop, "nativeTerminal.resize", {
+              id: props.terminalID,
+              rows,
+              cols,
+              sessionID: props.sessionID,
+            });
         } catch {
           // fit can throw while restoring
         }
-        console.log("[web-terminal] initial resize ok", {
-          rows: term.rows,
-          cols: term.cols,
-        });
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
@@ -305,7 +347,7 @@ export function WebTerminal(props: WebTerminalProps) {
       (!props.runtimeURL && !desktop)
     )
       return;
-    if (desktop) {
+    if (desktop && !props.runtimeURL) {
       console.log("[web-terminal] using desktop IPC transport");
       void ipcConnect();
       return;
@@ -331,6 +373,13 @@ export function WebTerminal(props: WebTerminalProps) {
       } catch {
         return;
       }
+      if (lastInputSentAt !== undefined && !lastEchoLogged) {
+        lastEchoLogged = true;
+        console.warn(
+          `[terminal] echo delay ${(performance.now() - lastInputSentAt).toFixed(1)}ms`,
+        );
+        lastInputSentAt = undefined;
+      }
       if (message.type === "restore") {
         term?.clear();
         if (message.text) term?.write(message.text);
@@ -346,19 +395,22 @@ export function WebTerminal(props: WebTerminalProps) {
       if (message.type === "ready") {
         lastError = undefined;
         if (term && fit && ws.readyState === WebSocket.OPEN) {
-          fit.fit();
-          ws.send(
-            JSON.stringify({
-              type: "resize",
-              rows: term.rows,
-              cols: term.cols,
-            }),
-          );
+          fitSafely();
+          const { rows, cols } = clampResize(term.rows, term.cols);
+          if (validResize(rows, cols))
+            ws.send(
+              JSON.stringify({
+                type: "resize",
+                rows,
+                cols,
+              }),
+            );
         }
       }
     };
     ws.onopen = () => {
       lastError = undefined;
+      sessionReady = true;
       // The server replays the full PTY buffer through the output subscription
       // immediately after opening; clear before that arrives so reconnect does
       // not append a duplicate screen.
@@ -432,74 +484,38 @@ export function WebTerminal(props: WebTerminalProps) {
     const unicode11 = new Unicode11Addon();
     term.loadAddon(unicode11);
     term.unicode.activeVersion = "11";
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      try {
-        term.loadAddon(new CanvasAddon());
-      } catch {
-        // Keep the DOM renderer as a final fallback.
-      }
-    }
+    // Use the DOM renderer. On this desktop hardware acceleration is off by
+    // default, and both WebGL and Canvas renderers under software rendering
+    // make xterm input feel laggy.
     searchAddon = new SearchAddon();
     term.loadAddon(searchAddon);
     term.open(host);
-    fit.fit();
+    fitSafely();
     term.onData((data) => {
       if (closed) return;
+      if (socket?.readyState === WebSocket.OPEN) {
+        lastInputSentAt = performance.now();
+        lastEchoLogged = false;
+        socket.send(JSON.stringify({ type: "input", data }));
+        return;
+      }
       if (desktop) {
-        console.log("[web-terminal] write through IPC", {
-          terminalID: props.terminalID,
-          bytes: data.length,
-        });
         void callRuntime(desktop, "nativeTerminal.write", {
           id: props.terminalID,
           input: data,
+          sessionID: props.sessionID,
         }).catch((error) => {
           console.error("[web-terminal] write failed", error);
         });
-        return;
       }
-      if (socket?.readyState === WebSocket.OPEN)
-        socket.send(JSON.stringify({ type: "input", data }));
     });
     term.onResize(({ cols, rows }) => {
       if (closed) return;
-      if (desktop) {
-        console.log("[web-terminal] resize through IPC", {
-          terminalID: props.terminalID,
-          rows,
-          cols,
-        });
-        void callRuntime(desktop, "nativeTerminal.resize", {
-          id: props.terminalID,
-          rows,
-          cols,
-        }).catch((error) => {
-          console.error("[web-terminal] resize failed", error);
-        });
-        return;
-      }
-      if (socket?.readyState === WebSocket.OPEN)
-        socket.send(JSON.stringify({ type: "resize", rows, cols }));
+      sendResize(rows, cols, "xterm-onResize");
     });
-    resizeObserver = new ResizeObserver(() => {
-      if (!props.active) return;
-      try {
-        fit?.fit();
-      } catch {
-        // xterm can throw if the pane is hidden
-      }
-    });
-    resizeObserver.observe(host);
-
     windowResizeHandler = () => {
       if (!props.active) return;
-      try {
-        fit?.fit();
-      } catch {
-        // xterm can throw if the pane is hidden
-      }
+      fitSafely();
     };
     window.addEventListener("resize", windowResizeHandler);
     props.registerApi?.(api);
@@ -518,13 +534,7 @@ export function WebTerminal(props: WebTerminalProps) {
   });
 
   createEffect(() => {
-    if (props.active) {
-      try {
-        fit?.fit();
-      } catch {
-        // xterm can throw if the pane is hidden
-      }
-    }
+    if (props.active) fitSafely();
   });
 
   let fontSize = 12;
@@ -532,11 +542,7 @@ export function WebTerminal(props: WebTerminalProps) {
   function changeFontSize(delta: number) {
     fontSize = Math.max(8, Math.min(24, fontSize + delta));
     if (term) term.options.fontSize = fontSize;
-    try {
-      fit?.fit();
-    } catch {
-      // ignore when hidden
-    }
+    fitSafely();
   }
 
   async function copySelection() {
@@ -587,7 +593,6 @@ export function WebTerminal(props: WebTerminalProps) {
     props.registerApi?.(undefined);
     if (reconnectTimer) clearTimeout(reconnectTimer);
     ipcUnlisten?.();
-    resizeObserver?.disconnect();
     if (windowResizeHandler) window.removeEventListener("resize", windowResizeHandler);
     socket?.close();
     try {

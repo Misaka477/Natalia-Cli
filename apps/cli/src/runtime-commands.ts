@@ -36,6 +36,7 @@ export async function handleRuntimeCommand(argv: string[]) {
     });
     await manager.load();
     const client = createWorkspaceRuntimeClient(manager);
+    const serveStart = performance.now();
     const transport = createHttpTransportHost({
       client,
       port,
@@ -43,6 +44,9 @@ export async function handleRuntimeCommand(argv: string[]) {
       terminalWrite: true,
       pluginUiResolver: createPluginUiResolver(pluginStoreRoot()),
     });
+    console.log(
+      `[perf] runtime serve ready +${(performance.now() - serveStart).toFixed(1)}ms`,
+    );
     console.log(
       JSON.stringify({
         url: transport.server.url,

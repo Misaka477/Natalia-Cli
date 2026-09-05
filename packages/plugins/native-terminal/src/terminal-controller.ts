@@ -252,7 +252,7 @@ export function createTerminalController(input: {
     return (await requireTerminal().reconcile()).map(publicSession);
   }
 
-  async function list() {
+  async function list(_sessionID?: string) {
     return nativeTerminal ? await reconcile() : [];
   }
 

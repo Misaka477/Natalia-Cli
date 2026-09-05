@@ -145,6 +145,7 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
           await client.nativeTerminalWrite?.({
             id: terminalID,
             input: body.data,
+            sessionID: ws.data.sessionID,
           });
           return;
         }
@@ -160,11 +161,12 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
             id: terminalID,
             rows: body.rows,
             cols: body.cols,
+            sessionID: ws.data.sessionID,
           });
           return;
         }
         if (body.type === "close") {
-          await client.nativeTerminalStop?.(terminalID);
+          await client.nativeTerminalStop?.(terminalID, ws.data.sessionID);
           ws.data.unsubscribe?.();
           send(ws, { type: "exit", id: terminalID });
           ws.close(1000, "closed");
