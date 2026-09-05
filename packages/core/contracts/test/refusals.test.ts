@@ -72,6 +72,9 @@ test("the members whose refusal must be a value are named, and each names its fi
     "sessionNew",
     "setChatModelProfile",
     "updateConfig",
+    "workspaceCreate",
+    "workspaceDelete",
+    "workspaceRename",
     "workspaceWrite",
   ]);
   for (const [member, semantics] of Object.entries(
