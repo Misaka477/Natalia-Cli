@@ -2959,6 +2959,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         config={config()}
         preferences={props.ctx.preferences}
         registeredTools={registeredTools()}
+        runtime={props.ctx.runtime}
         onUpdateConfig={async (patch) => {
           await props.ctx.runtime.updateConfig?.({
             patch,

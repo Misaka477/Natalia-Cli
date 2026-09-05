@@ -1368,6 +1368,12 @@ export type ContributedCommandExecution = {
   sessionID?: string;
 };
 
+/** A panel visibility requirement. */
+export type UiPanelRequirement =
+  | { type: "plugin"; id: string }
+  | { type: "capability"; id: string }
+  | { type: "method"; name: string };
+
 /** Panel metadata a plugin can declare for its renderer-side UI. */
 export type UiPanelMeta = {
   id: string;
@@ -1377,7 +1383,7 @@ export type UiPanelMeta = {
   icon?: string;
   order?: number;
   description?: string;
-  requires?: string[];
+  requires?: UiPanelRequirement[];
 };
 
 /** Renderer-side UI declaration carried by a plugin manifest / catalog entry. */

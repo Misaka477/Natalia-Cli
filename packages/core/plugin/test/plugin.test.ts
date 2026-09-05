@@ -280,7 +280,10 @@ test("v2 manifests accept renderer-side UI metadata", () => {
           title: "Settings",
           region: "settings",
           group: "扩展",
-          requires: ["natalia-ui"],
+          requires: [
+            { type: "plugin", id: "natalia-ui" },
+            { type: "capability", id: "settings" },
+          ],
         },
       ],
     },
@@ -295,7 +298,10 @@ test("v2 manifests accept renderer-side UI metadata", () => {
           title: "Settings",
           region: "settings",
           group: "扩展",
-          requires: ["natalia-ui"],
+          requires: [
+            { type: "plugin", id: "natalia-ui" },
+            { type: "capability", id: "settings" },
+          ],
         },
       ],
     },

@@ -1,6 +1,11 @@
 import { createSignal, createEffect, For, Show, onCleanup, onMount } from "solid-js";
 import type { AppState } from "@natalia/view-store";
-import type { ConfigV3 } from "@natalia/contracts";
+import {
+  describeRuntimeCapabilities,
+  type ConfigV3,
+  type RuntimeClient,
+  type UiPanelRequirement,
+} from "@natalia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
 
 const BUILTIN_PERMISSION_PROFILES = ["ask", "auto", "read_only"];
@@ -108,6 +113,7 @@ export function SettingsPanel(props: {
   };
   registeredTools?: string[];
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
+  runtime?: RuntimeClient;
   host?: import("@natalia/ui-host").UiPluginContext["host"];
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
@@ -124,16 +130,55 @@ export function SettingsPanel(props: {
   } | null>(null);
   let settingsPanelRef: HTMLDivElement | undefined;
   const [panelRevision, setPanelRevision] = createSignal(0);
+  const [availablePluginIds, setAvailablePluginIds] = createSignal<Set<string>>(
+    new Set(),
+  );
+  const [availableCapabilities, setAvailableCapabilities] = createSignal<Set<string>>(
+    new Set(),
+  );
   onMount(() => {
     const unsubscribe = props.host?.subscribePanels(() =>
       setPanelRevision((revision) => revision + 1),
     );
     onCleanup(() => unsubscribe?.());
+    const runtime = props.runtime;
+    if (!runtime) return;
+    void (async () => {
+      const [plugins, report] = await Promise.all([
+        runtime.plugins?.(),
+        Promise.resolve(describeRuntimeCapabilities(runtime)),
+      ]);
+      setAvailablePluginIds(
+        new Set((plugins ?? []).map((plugin) => plugin.id)),
+      );
+      setAvailableCapabilities(
+        new Set(
+          report.groups.filter((group) => group.available).map((group) => group.name),
+        ),
+      );
+    })();
   });
+  function panelSatisfies(requirements?: UiPanelRequirement[]) {
+    if (!requirements?.length) return true;
+    return requirements.every((requirement) => {
+      if (requirement.type === "plugin")
+        return availablePluginIds().has(requirement.id);
+      if (requirement.type === "capability")
+        return availableCapabilities().has(requirement.id);
+      if (requirement.type === "method")
+        return typeof (props.runtime as unknown as Record<string, unknown>)[
+          requirement.name
+        ] === "function";
+      return false;
+    });
+  }
   const settingsPanels = () => {
     panelRevision();
     return (
-      props.host?.listPanels().filter((item) => item.panel.region === "settings") ?? []
+      props.host?.listPanels().filter((item) =>
+        item.panel.region === "settings" &&
+        panelSatisfies(item.panel.requires),
+      ) ?? []
     );
   };
   const groupedSettingsPanels = () => {

@@ -46,6 +46,12 @@ export const pluginDependencySchema = z.object({
 
 export const pluginLifecycleHooksSchema = z.object({}).strict().default({});
 
+export const uiPanelRequirementSchema = z.union([
+  z.object({ type: z.literal("plugin"), id: z.string().min(1) }),
+  z.object({ type: z.literal("capability"), id: z.string().min(1) }),
+  z.object({ type: z.literal("method"), name: z.string().min(1) }),
+]);
+
 export const uiPanelMetaSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -56,7 +62,7 @@ export const uiPanelMetaSchema = z.object({
   icon: z.string().optional(),
   order: z.number().int().nonnegative().optional(),
   description: z.string().optional(),
-  requires: z.array(z.string()).optional(),
+  requires: z.array(uiPanelRequirementSchema).optional(),
 });
 
 export const pluginUiManifestSchema = z.object({
