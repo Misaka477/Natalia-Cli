@@ -300,6 +300,56 @@ test("plugin create writes tool and UI adapter templates", async () => {
   ).toBeDefined();
 });
 
+
+test("plugin create writes a UI panel plugin package", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-plugin-create-ui-panel-"),
+  );
+  const directory = join(root, "demo-panel");
+  const result = runCli(
+    root,
+    "plugin",
+    "create",
+    directory,
+    "--id",
+    "demo.panel",
+    "--package",
+    "@demo/natalia-ui-panel",
+    "--template",
+    "ui-panel",
+  );
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(text(result.stdout))).toMatchObject({
+    created: true,
+    template: "ui-panel",
+  });
+  const manifest = JSON.parse(
+    await readFile(join(directory, "natalia.plugin.json"), "utf8"),
+  );
+  expect(manifest).toMatchObject({
+    id: "demo.panel",
+    integrationPoints: [],
+    scope: "process",
+    ui: {
+      entry: "src/ui/plugin.js",
+      panels: [
+        {
+          id: "demo-panel",
+          title: "Demo Panel",
+          region: "side",
+        },
+      ],
+    },
+  });
+  expect(
+    JSON.parse(await readFile(join(directory, "package.json"), "utf8"))
+      .dependencies["@natalia/ui-host"],
+  ).toBeDefined();
+  expect(
+    await readFile(join(directory, "src/ui/plugin.js"), "utf8"),
+  ).toContain("defineUiPlugin");
+});
+
 test("plugin create writes TypeScript source with a JavaScript install entry", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-create-ts-"));
   const directory = join(root, "demo-ts");

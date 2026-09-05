@@ -140,7 +140,7 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
   let workspaceSeen = false;
   let pluginID: string | undefined;
   let packageName: string | undefined;
-  let template: "command" | "tool" | "ui" | undefined;
+  let template: "command" | "tool" | "ui" | "ui-panel" | undefined;
   let language: "js" | "ts" | undefined;
   for (let index = 2; index < argv.length; index += 1) {
     const value = argv[index]!;
@@ -175,9 +175,14 @@ export function parsePluginMaintenanceArgs(argv: readonly string[]) {
         packageName = option;
       } else if (value === "--template") {
         if (template) throw new Error("--template may only be specified once");
-        if (option !== "command" && option !== "tool" && option !== "ui")
+        if (
+          option !== "command" &&
+          option !== "tool" &&
+          option !== "ui" &&
+          option !== "ui-panel"
+        )
           throw new Error(
-            "plugin create --template must be command, tool, or ui",
+            "plugin create --template must be command, tool, ui, or ui-panel",
           );
         template = option;
       } else {

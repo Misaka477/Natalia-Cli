@@ -6,7 +6,7 @@ import cliPackage from "../package.json" with { type: "json" };
 const pluginIDPattern = /^[a-z0-9][a-z0-9._-]*$/u;
 const packageNamePattern =
   /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u;
-const templates = ["command", "tool", "ui"] as const;
+const templates = ["command", "tool", "ui", "ui-panel"] as const;
 const languages = ["js", "ts"] as const;
 
 export type PluginScaffoldTemplate = (typeof templates)[number];
@@ -42,14 +42,17 @@ export async function createPluginScaffold(input: {
   const integrationPoints =
     template === "ui"
       ? (["adapters"] as const)
-      : template === "tool"
-        ? (["tools"] as const)
-        : (["commands"] as const);
+      : template === "ui-panel"
+        ? ([] as const)
+        : template === "tool"
+          ? (["tools"] as const)
+          : (["commands"] as const);
   const dependencies: Record<string, string> = {
     "@natalia/plugin": cliPackage.version,
   };
-  if (template === "ui")
+  if (template === "ui" || template === "ui-panel")
     dependencies["@natalia/contracts"] = cliPackage.version;
+  if (template === "ui-panel") dependencies["@natalia/ui-host"] = cliPackage.version;
   const manifest = {
     apiVersion: PLUGIN_API_VERSION,
     id: input.pluginID,
@@ -58,11 +61,13 @@ export async function createPluginScaffold(input: {
     description:
       template === "ui"
         ? "A Natalia UI adapter plugin."
-        : template === "tool"
-          ? "A Natalia tool plugin."
-          : "A Natalia plugin.",
+        : template === "ui-panel"
+          ? "A Natalia UI panel plugin."
+          : template === "tool"
+            ? "A Natalia tool plugin."
+            : "A Natalia plugin.",
     entry: "src/index.js",
-    scope: template === "ui" ? "process" : "workspace",
+    scope: template === "ui" || template === "ui-panel" ? "process" : "workspace",
     provides: [],
     requires: [],
     optionalRequires: [],
@@ -70,7 +75,22 @@ export async function createPluginScaffold(input: {
     dependencies: [],
     hooks: {},
     integrationPoints,
+    ...(template === "ui-panel"
+      ? {
+          ui: {
+            entry: "src/ui/plugin.js",
+            panels: [
+              {
+                id: input.pluginID.replaceAll(".", "-"),
+                title: title(input.pluginID),
+                region: "side" as const,
+              },
+            ],
+          },
+        }
+      : {}),
   } as const;
+  const uiPanelID = `ui.${input.pluginID.replaceAll(".", "-")}`;
   const packageJSON = {
     name: packageName,
     version: manifest.version,
@@ -78,9 +98,21 @@ export async function createPluginScaffold(input: {
     license: "Apache-2.0",
     files:
       language === "ts"
-        ? ["src/index.js", "src/index.ts", "natalia.plugin.json"]
+        ? [
+            "src/index.js",
+            "src/index.ts",
+            ...(template === "ui-panel"
+              ? ["src/ui/plugin.js", "src/ui/plugin.tsx"]
+              : []),
+            "natalia.plugin.json",
+          ]
         : ["src", "natalia.plugin.json"],
-    exports: { ".": `./${manifest.entry}` },
+    exports: {
+      ".": `./${manifest.entry}`,
+      ...(template === "ui-panel"
+        ? { "./ui": "./src/ui/plugin.js" }
+        : {}),
+    },
     dependencies,
   };
   const sourceInput = {
@@ -89,9 +121,11 @@ export async function createPluginScaffold(input: {
     commandName,
     toolName,
     kind,
+    uiPanelID,
   };
 
   await mkdir(resolve(directory, "src"), { recursive: true });
+  if (template === "ui-panel") await mkdir(resolve(directory, "src/ui"), { recursive: true });
   const writes = [
     writeJSON(resolve(directory, "package.json"), packageJSON),
     writeJSON(resolve(directory, "natalia.plugin.json"), manifest),
@@ -101,7 +135,15 @@ export async function createPluginScaffold(input: {
       "utf8",
     ),
   ];
-  if (language === "ts")
+  if (template === "ui-panel")
+    writes.push(
+      writeFile(
+        resolve(directory, "src/ui/plugin.js"),
+        pluginUiSource(sourceInput, "js"),
+        "utf8",
+      ),
+    );
+  if (language === "ts") {
     writes.push(
       writeFile(
         resolve(directory, "src/index.ts"),
@@ -109,6 +151,15 @@ export async function createPluginScaffold(input: {
         "utf8",
       ),
     );
+    if (template === "ui-panel")
+      writes.push(
+        writeFile(
+          resolve(directory, "src/ui/plugin.tsx"),
+          pluginUiSource(sourceInput, "ts"),
+          "utf8",
+        ),
+      );
+  }
   await Promise.all(writes);
   return {
     created: true as const,
@@ -152,6 +203,61 @@ function toolNameFor(pluginID: string) {
   return leaf.replaceAll("-", "_");
 }
 
+function pluginUiSource(
+  input: {
+    template: PluginScaffoldTemplate;
+    uiPanelID: string;
+  },
+  language: PluginScaffoldLanguage,
+) {
+  if (language === "ts") {
+    return `import { defineUiPlugin } from "@natalia/ui-host";
+
+export function create${input.uiPanelID.split(".").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}UiPlugin() {
+  return defineUiPlugin({
+    id: ${JSON.stringify(input.uiPanelID)},
+    name: "Panel UI",
+    version: "1.0.0",
+    panels: [
+      {
+        id: "panel",
+        title: "Panel",
+        region: "side",
+        mount(_ctx, container) {
+          container.replaceChildren();
+          container.textContent = "Hello from UI panel!";
+        },
+      },
+    ],
+    mount() {},
+  });
+}
+`;
+  }
+  return `import { defineUiPlugin } from "@natalia/ui-host";
+
+export function create${input.uiPanelID.split(".").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}UiPlugin() {
+  return defineUiPlugin({
+    id: ${JSON.stringify(input.uiPanelID)},
+    name: "Panel UI",
+    version: "1.0.0",
+    panels: [
+      {
+        id: "panel",
+        title: "Panel",
+        region: "side",
+        mount(_ctx, container) {
+          container.replaceChildren();
+          container.textContent = "Hello from UI panel!";
+        },
+      },
+    ],
+    mount() {},
+  });
+}
+`;
+}
+
 function pluginSource(
   input: {
     manifest: object;
@@ -159,10 +265,22 @@ function pluginSource(
     commandName: string;
     toolName: string;
     kind: string;
+    uiPanelID: string;
   },
   language: PluginScaffoldLanguage,
 ) {
   const manifest = JSON.stringify(input.manifest, null, 2);
+  if (input.template === "ui-panel") {
+    return `import { definePlugin } from "@natalia/plugin";
+
+export default definePlugin({
+  manifest: ${manifest},
+  setup() {
+    // UI-only plugin: runtime entry is intentionally empty.
+  },
+});
+`;
+  }
   if (input.template === "ui") {
     const header =
       language === "ts"
