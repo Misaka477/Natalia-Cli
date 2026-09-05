@@ -744,6 +744,7 @@ test("an external UI takes over approvals and answers questions", async () => {
   let planCalls = 0;
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
+    pluginStoreRoot: resolve("dist", "ts", "plugin-store"),
     globalConfigPath: join(root, "global.json"),
     sessionID: "ses_approval",
     provider: {
