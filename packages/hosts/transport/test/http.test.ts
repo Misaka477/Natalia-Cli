@@ -682,3 +682,42 @@ test("stopping the HTTP host cancels active workflow executions", async () => {
   expect(cancelled).toBe("HTTP runtime server stopped");
 });
 
+
+test("HTTP host serves plugin UI bundles through the plugin UI route", async () => {
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    token: "ui-token",
+    pluginUiResolver: async (pluginId) =>
+      pluginId === "feature.plugin"
+        ? { body: new TextEncoder().encode("export const ok = true;") }
+        : undefined,
+  });
+  try {
+    const response = await fetch(
+      `${server.url}/plugins/feature.plugin/ui.js`,
+      {
+        headers: {
+          authorization: "Bearer ui-token",
+          accept: "application/javascript",
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await response.text()).toBe("export const ok = true;");
+    const missing = await fetch(
+      `${server.url}/plugins/missing.plugin/ui.js`,
+      {
+        headers: { authorization: "Bearer ui-token" },
+      },
+    );
+    expect(missing.status).toBe(404);
+    const bad = await fetch(`${server.url}/plugins/%2e%2e/ui.js`, {
+      headers: { authorization: "Bearer ui-token" },
+    });
+    // The URL normalizes the traversal away; the route treats it as unknown.
+    expect(bad.status).toBe(404);
+  } finally {
+    server.stop(true);
+  }
+});

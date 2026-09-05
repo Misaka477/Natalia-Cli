@@ -265,6 +265,43 @@ test("plugin manifest v2 keeps v1 compatibility and applies defaults", () => {
   ).toMatchObject({ apiVersion: 1, capabilities: [], scope: "session" });
 });
 
+test("v2 manifests accept renderer-side UI metadata", () => {
+  const parsed = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "ui.plugin",
+    version: "1.0.0",
+    name: "UI Plugin",
+    integrationPoints: ["tools"],
+    ui: {
+      entry: "src/ui/plugin.js",
+      panels: [
+        {
+          id: "settings",
+          title: "Settings",
+          region: "settings",
+          group: "扩展",
+          requires: ["natalia-ui"],
+        },
+      ],
+    },
+  });
+  expect(parsed).toMatchObject({
+    apiVersion: 2,
+    ui: {
+      entry: "src/ui/plugin.js",
+      panels: [
+        {
+          id: "settings",
+          title: "Settings",
+          region: "settings",
+          group: "扩展",
+          requires: ["natalia-ui"],
+        },
+      ],
+    },
+  });
+});
+
 test("plugin dependency resolver orders required dependencies", () => {
   const provider = pluginManifestSchema.parse({
     apiVersion: 2,
