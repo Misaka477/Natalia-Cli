@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { PluginPackageConfig } from "@natalia/contracts";
 import {
+  discoverPluginManifests,
   resolveInstalledPluginEntries,
   validatePluginPath,
   type DesiredPluginEntry,
@@ -10,16 +11,20 @@ import {
 } from "@natalia/plugin";
 
 export async function discoverDesiredPluginEntries(input: {
-  pluginStoreRoot: string;
+  pluginStoreRoot?: string;
+  workspaceRoot?: string;
+  paths?: string[];
   packages?: Record<string, PluginPackageConfig>;
   enabled?: Record<string, boolean>;
   declaredIDs: string[];
   onError(id: string, error: unknown): void;
 }): Promise<DesiredPluginEntry[]> {
-  const installed = await resolveInstalledPluginEntries({
-    pluginStoreRoot: input.pluginStoreRoot,
-    enabled: input.enabled,
-  });
+  const installed = input.pluginStoreRoot
+    ? await resolveInstalledPluginEntries({
+        pluginStoreRoot: input.pluginStoreRoot,
+        enabled: input.enabled,
+      })
+    : { entries: [], errors: [] };
   for (const failure of installed.errors)
     input.onError(failure.id, failure.error);
 
@@ -28,7 +33,21 @@ export async function discoverDesiredPluginEntries(input: {
     if (ids.has(id)) throw new Error(`duplicate plugin id: ${id}`);
     ids.add(id);
   }
-  return installed.entries.map((entry) => desiredEntry(entry, input));
+
+  const pathEntries: PluginManifestEntry[] = [];
+  for (const rawPath of input.paths ?? []) {
+    const root = resolve(input.workspaceRoot ?? process.cwd(), rawPath);
+    for (const item of await discoverPluginManifests(root, { nodeModules: false })) {
+      if (input.enabled?.[item.manifest.id] === false) continue;
+      if (ids.has(item.manifest.id))
+        throw new Error(`duplicate plugin id: ${item.manifest.id}`);
+      ids.add(item.manifest.id);
+      pathEntries.push({ manifest: item.manifest, path: item.path });
+    }
+  }
+
+  const entries = installed.entries.map((entry) => desiredEntry(entry, input));
+  return [...entries, ...pathEntries.map((entry) => desiredEntry(entry, input))];
 }
 
 function desiredEntry(

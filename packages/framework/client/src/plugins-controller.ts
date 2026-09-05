@@ -87,15 +87,15 @@ export function createPluginsController(input: {
     const current = getController();
     const inputGeneration = ++hostInputGeneration;
     await current.reconcileDesired(async () => {
-      const users = input.pluginStoreRoot
-        ? await (input.discoverDesiredEntries ?? discoverDesiredPluginEntries)({
-            pluginStoreRoot: input.pluginStoreRoot,
-            packages: snapshot.packages ?? {},
-            enabled: snapshot.enabled,
-            declaredIDs: injectedEntries.map((entry) => entry.id),
-            onError: publishLoadError,
-          })
-        : [];
+      const users = await (input.discoverDesiredEntries ?? discoverDesiredPluginEntries)({
+          pluginStoreRoot: input.pluginStoreRoot,
+          workspaceRoot: input.workspaceRoot,
+          paths: snapshot.paths ?? [],
+          packages: snapshot.packages ?? {},
+          enabled: snapshot.enabled,
+          declaredIDs: injectedEntries.map((entry) => entry.id),
+          onError: publishLoadError,
+        });
       const entries = [...injectedEntries, ...users].map((entry) =>
         entry.manifest?.requires.some((name) => HOST_INPUT_SERVICES.has(name))
           ? {
