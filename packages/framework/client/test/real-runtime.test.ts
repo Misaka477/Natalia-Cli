@@ -1362,15 +1362,16 @@ test("sandbox subsystem composes directly and releases on dispose", async () => 
     workspaceRoot: root,
     sessionID: "ses_sandbox_config_reload",
     capabilityRegistry: kernel,
-    provider: scriptedProvider("ready"),
+    permissionMode: "auto",
+    provider: singleToolProvider("sandbox_create", { id: "reload_box" }),
   });
   client.start(() => undefined);
+  await client.submitAndWait!("create sandbox");
   await client.runtimeStatus?.();
 
   expect(kernel.service(SANDBOX_SERVICE)).toBeDefined();
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
   const first = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
-  await first.create("reload_box");
   const resource = await first.startResource(
     "reload_box",
     "sleep 30",
@@ -7483,13 +7484,12 @@ test("promoting framework sources emits restart_required", async () => {
     sessionID: "ses_e5_restart",
     capabilityRegistry: kernel,
     permissionMode: "auto",
-    provider: scriptedProvider("ready"),
+    provider: singleToolProvider("sandbox_create", { id: "box" }),
   });
   client.start((event) => events.push(event));
-  await client.submitAndWait!("hello");
+  await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
-  await sandboxes.create("box");
   await sandboxes.write("box", "packages/framework/restart.ts", "export {}\n");
   await client.sandboxMerge!("box");
   expect(events).toContainEqual(
@@ -7518,13 +7518,12 @@ test("promote records evidence when validation passes", async () => {
     sessionID: "ses_e5_promote_pass",
     capabilityRegistry: kernel,
     permissionMode: "auto",
-    provider: scriptedProvider("ready"),
+    provider: singleToolProvider("sandbox_create", { id: "box" }),
   });
   client.start((event) => events.push(event));
-  await client.submitAndWait!("hello");
+  await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
-  await sandboxes.create("box");
   await sandboxes.write("box", "promoted.txt", "landed");
   const changes = await client.sandboxMerge!("box");
   expect(changes).toContainEqual(
@@ -7570,13 +7569,12 @@ test("failed validation records failed evidence and does not promote", async () 
     sessionID: "ses_e5_promote_fail",
     capabilityRegistry: kernel,
     permissionMode: "auto",
-    provider: scriptedProvider("ready"),
+    provider: singleToolProvider("sandbox_create", { id: "box" }),
   });
   client.start(() => undefined);
-  await client.submitAndWait!("hello");
+  await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
-  await sandboxes.create("box");
   await sandboxes.write("box", "blocked.txt", "should-not-land");
   await expect(client.sandboxMerge!("box")).rejects.toThrow(
     /failed validation/u,
@@ -7616,13 +7614,12 @@ test("evidence summary is secret-safe", async () => {
     sessionID: "ses_e5_promote_secret",
     capabilityRegistry: kernel,
     permissionMode: "auto",
-    provider: scriptedProvider("ready"),
+    provider: singleToolProvider("sandbox_create", { id: "box" }),
   });
   client.start(() => undefined);
-  await client.submitAndWait!("hello");
+  await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
-  await sandboxes.create("box");
   await sandboxes.write("box", "ok.txt", "ok");
   await client.sandboxMerge!("box");
   const records = await client.evidenceRecords!();

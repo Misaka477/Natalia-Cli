@@ -429,8 +429,9 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     ]),
   );
   const events = sdk.events({ since: 4 });
+  const firstEvent = events[Symbol.asyncIterator]().next();
   await sdk.prompt("event prompt");
-  const first = await events[Symbol.asyncIterator]().next();
+  const first = await firstEvent;
   expect(first.value).toMatchObject({
     type: "turn.submitted",
     text: "event prompt",
