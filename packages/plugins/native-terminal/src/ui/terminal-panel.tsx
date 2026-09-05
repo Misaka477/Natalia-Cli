@@ -5,6 +5,7 @@ import type {
   RuntimeNativeTerminalSession,
 } from "@natalia/contracts";
 import { WebTerminal, type WebTerminalApi } from "./web-terminal";
+import "./styles.css";
 
 const MAX_TERMINALS_PER_SESSION = 8;
 

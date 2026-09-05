@@ -7,6 +7,7 @@ export const nataliaLightSkin: UiSkin = defineUiSkin({
   tokens: {
     "--neu-bg": "#e8e9e1",
     "--neu-bg-light": "#f2f3ed",
+    "--neu-bg-dark": "#1b1e24",
     "--neu-shadow-dark": "rgba(48, 48, 46, 0.18)",
     "--neu-shadow-light": "rgba(255, 255, 255, 0.7)",
     "--neu-accent": "#8fb7b0",
@@ -34,6 +35,7 @@ export const nataliaDarkSkin: UiSkin = defineUiSkin({
   tokens: {
     "--neu-bg": "#121418",
     "--neu-bg-light": "#1b1e24",
+    "--neu-bg-dark": "#1b1e24",
     "--neu-shadow-dark": "rgba(0, 0, 0, 0.55)",
     "--neu-shadow-light": "rgba(255, 255, 255, 0.04)",
     "--neu-accent": "#5fd4b8",
@@ -61,6 +63,7 @@ export const nataliaLimeSkin: UiSkin = defineUiSkin({
   tokens: {
     "--neu-bg": "#222222",
     "--neu-bg-light": "#2a2a2a",
+    "--neu-bg-dark": "#1b1e24",
     "--neu-shadow-dark": "rgba(0, 0, 0, 0.6)",
     "--neu-shadow-light": "rgba(255, 255, 255, 0.04)",
     "--neu-accent": "#bff000",

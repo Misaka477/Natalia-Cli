@@ -218,7 +218,7 @@ export const fileEditorStyles = `
   font-family: var(--neu-font-mono); font-size: 12px; line-height: 1.6;
   white-space: pre; tab-size: 2; overflow: auto;
 }
-.neu-file-textarea::selection { background: rgba(143,183,176,0.2); }
+.neu-file-textarea::selection { background: color-mix(in srgb, var(--neu-accent) 20%, transparent); }
 
 /* Markdown preview */
 .neu-markdown-preview {
@@ -321,7 +321,7 @@ export const fileEditorStyles = `
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--neu-overlay);
 }
 .neu-file-dialog {
   width: min(420px, 90vw);
