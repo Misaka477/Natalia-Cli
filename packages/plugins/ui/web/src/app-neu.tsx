@@ -13,7 +13,7 @@ import {
   type UiPanelRequirementContext,
 } from "./ui-requirements";
 import { PluginManagerPanel } from "./plugin-manager-panel";
-import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
+import { applyNeuTheme, NATALIA_SKINS, NEU_THEME_MODES } from "./styles";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { AgentPanel } from "./agent-panel";
 import { PlanPanel } from "./plan-panel";
@@ -319,6 +319,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [themeMode, setThemeMode] = createSignal(
     props.ctx.preferences.get<string>("themeMode") ?? "light",
   );
+  const layoutProfile = () => NATALIA_SKINS[themeMode()]?.layout;
+
+  createEffect(() => {
+    const layout = layoutProfile();
+    const left = layout?.regions?.left;
+    const right = layout?.regions?.right;
+    if (left?.width) setLeftWidth(left.width);
+    if (right?.width) setRightWidth(right.width);
+    if (left?.visible !== undefined) setLeftVisible(left.visible);
+    if (right?.visible !== undefined) setRightVisible(right.visible);
+    if (right?.order?.[0]) {
+      const first = right.order[0] as RightTab;
+      if (rightTabs().some((tab) => tab.id === first)) setRightTab(first);
+    }
+  });
   const [sessionMenuOpen, setSessionMenuOpen] = createSignal(false);
   const [showArchived, setShowArchived] = createSignal(false);
   const [sessionSearchOpen, setSessionSearchOpen] = createSignal(false);
@@ -1813,6 +1828,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
     ];
+    const layout = layoutProfile();
+    const order = layout?.regions?.right?.order;
+    if (order?.length) {
+      tabs.sort((a, b) => {
+        const ai = order.indexOf(a.id);
+        const bi = order.indexOf(b.id);
+        return (ai === -1 ? order.length : ai) - (bi === -1 ? order.length : bi);
+      });
+    }
     return tabs;
   };
   function mountFilePanel(container: HTMLDivElement) {
