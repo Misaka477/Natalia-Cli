@@ -39,8 +39,9 @@ export async function discoverDesiredPluginEntries(input: {
     const root = resolve(input.workspaceRoot ?? process.cwd(), rawPath);
     for (const item of await discoverPluginManifests(root, { nodeModules: false })) {
       if (input.enabled?.[item.manifest.id] === false) continue;
-      if (ids.has(item.manifest.id))
-        throw new Error(`duplicate plugin id: ${item.manifest.id}`);
+      // Installed/declared entries are authoritative; a path that points at the
+      // same source package must not turn into a duplicate-id failure.
+      if (ids.has(item.manifest.id)) continue;
       ids.add(item.manifest.id);
       pathEntries.push({ manifest: item.manifest, path: item.path });
     }

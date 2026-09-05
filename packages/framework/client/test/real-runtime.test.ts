@@ -825,6 +825,7 @@ test("failed config reload restores runtime config and plugin settings", async (
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    pluginStoreRoot: `${root}-plugin-store`,
     sessionID: "ses_config_rollback",
     capabilityRegistry: kernel,
     provider: scriptedProvider("ready"),
@@ -891,6 +892,7 @@ test("user plugin config reload reconciles its lifecycle", async () => {
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    pluginStoreRoot: `${root}-plugin-store`,
     sessionID: "ses_plugin_config_reload",
     provider: scriptedProvider("ready"),
     capabilityRegistry: kernel,
