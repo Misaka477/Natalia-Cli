@@ -73,3 +73,49 @@ export function applyUiSkin(
 export function defineUiLayoutProfile(profile: UiLayoutProfile): UiLayoutProfile {
   return profile;
 }
+
+/**
+ * Third-layer protocol: a completely custom shell layout can be supplied as an
+ * independent plugin. This is for scenarios that cannot be expressed through
+ * `UiLayoutProfile` alone (new navigation model, nested panes, custom drawers,
+ * etc.). The protocol is intentionally minimal today; concrete host integration
+ * will follow.
+ */
+export type UiShellSlotId = "top" | "left" | "main" | "right" | "bottom";
+
+export type UiShellSlots = {
+  top?: HTMLElement;
+  left?: HTMLElement;
+  main?: HTMLElement;
+  right?: HTMLElement;
+  bottom?: HTMLElement;
+};
+
+export type UiShellLayoutContext = {
+  runtime: unknown;
+  host: unknown;
+  projection: unknown;
+  events: unknown;
+  slots: UiShellSlots;
+};
+
+export type UiShellLayoutPlugin = {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  /**
+   * Mounts the custom shell layout. It receives the shared runtime/host ports
+   * and DOM slots that the main shell normally owns. Returning a dispose is
+   * required for unload.
+   */
+  mount(
+    context: UiShellLayoutContext,
+  ): { dispose(): void | Promise<void> } | void;
+};
+
+export function defineUiShellLayoutPlugin(
+  plugin: UiShellLayoutPlugin,
+): UiShellLayoutPlugin {
+  return plugin;
+}

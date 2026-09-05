@@ -19,3 +19,13 @@ export type {
   UiRegionLayout,
   UiSkin,
 } from "./skin";
+
+export {
+  defineUiShellLayoutPlugin,
+} from "./skin";
+export type {
+  UiShellLayoutContext,
+  UiShellLayoutPlugin,
+  UiShellSlotId,
+  UiShellSlots,
+} from "./skin";
