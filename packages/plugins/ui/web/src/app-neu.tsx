@@ -11,7 +11,6 @@ import { PluginManagerPanel } from "./plugin-manager-panel";
 import { applyNeuTheme, NEU_THEME_MODES } from "./styles";
 import { SessionActionsPanel } from "./session-actions-panel";
 import { AgentPanel } from "./agent-panel";
-import { TodoPanel } from "./todo-panel";
 import { PlanPanel } from "./plan-panel";
 import { NiaPanel } from "./nia-panel";
 import { WorkspacePanel } from "./workspace-panel";
@@ -1775,13 +1774,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       .find((item) => item.panel.id === "terminal");
   };
 
+  const todoPanel = () => {
+    panelRevision();
+    return props.ctx.host
+      ?.listPanels()
+      .find((item) => item.panel.id === "todo");
+  };
+
   const rightTabs = () => {
     panelRevision();
     const tabs: { id: RightTab; label: string }[] = [
       { id: "diff", label: "审阅 / Diff" },
       { id: "plan", label: "计划" },
       { id: "nia", label: "Nia" },
-      { id: "todo", label: "待办" },
+      ...(todoPanel() ? [{ id: "todo" as RightTab, label: "待办" }] : []),
       { id: "agent", label: "协同" },
       ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
@@ -1796,6 +1802,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   function mountTerminalPanel(container: HTMLDivElement) {
     const panel = terminalPanel();
+    if (!panel || !props.ctx.host) return;
+    void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
+  }
+
+  function mountTodoPanel(container: HTMLDivElement) {
+    const panel = todoPanel();
     if (!panel || !props.ctx.host) return;
     void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
   }
@@ -2690,8 +2702,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   sessionID={selectedSessionID() || state().sessionID}
                 />
               </Show>
-              <Show when={rightTab() === "todo"}>
-                <TodoPanel state={state()} />
+              <Show when={rightTab() === "todo" && todoPanel()}>
+                <div
+                  class="neu-todo-host"
+                  style="height:100%;"
+                  ref={(element) => {
+                    if (element) mountTodoPanel(element);
+                  }}
+                />
               </Show>
               <Show when={rightTab() === "agent"}>
                 <AgentPanel

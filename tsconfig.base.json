@@ -92,6 +92,7 @@
         "packages/plugins/tools/process/src/index.ts"
       ],
       "@natalia/plugin-tool-todo": ["packages/plugins/tools/todo/src/index.ts"],
+      "@natalia/plugin-tool-todo/ui": ["packages/plugins/tools/todo/src/ui/plugin.tsx"],
       "@natalia/sandbox": ["packages/framework/sandbox/src/index.ts"],
       "@natalia/plugin-skills": ["packages/plugins/skills/src/index.ts"],
       "@natalia/plugin-skills/ui": ["packages/plugins/skills/src/ui/plugin.tsx"],
