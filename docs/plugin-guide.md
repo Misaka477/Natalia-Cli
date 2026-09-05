@@ -323,6 +323,38 @@ string. `context` includes `workspaceRoot`, optional `sessionID` and
 requires `name`, `title`, and `run(invocation?)`; invocation contains `raw`,
 `args`, `workspaceRoot`, optional `sessionID`, and optional `signal`.
 
+
+### Renderer-side UI manifests
+
+The v2 manifest may declare a renderer-side UI entry that web/desktop loads
+through the same dynamic plugin catalog path used for every plugin:
+
+```json
+{
+  "apiVersion": 2,
+  "id": "yourco.feature",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "ui": {
+    "entry": "ui/plugin.js",
+    "panels": [
+      {
+        "id": "feature-settings",
+        "title": "Feature",
+        "region": "settings",
+        "group": "扩展"
+      }
+    ]
+  }
+}
+```
+
+The UI entry is a browser module that exports `createUiPlugin()` returning a
+`UiPlugin` from `@natalia/ui-host`. It is served from the plugin store as
+`GET /plugins/<pluginId>/ui.js` and loaded by the shell's dynamic UI loader.
+There is no separate official/third-party registration path: every plugin with
+`ui.entry` is discovered from the same `pluginCatalog`.
+
 ### Configuration
 
 Zod schemas implement Standard Schema and can be used directly. Validation must
@@ -1065,6 +1097,37 @@ registry 还会按注册顺序的逆序调用尚未执行的 disposer。
 `workspaceRoot`、可选 `sessionID`、`AbortSignal`，以及当前 runtime 可用的 host service。
 命令必须包含 `name`、`title` 和 `run(invocation?)`；invocation 包含 `raw`、`args`、
 `workspaceRoot`、可选 `sessionID` 和可选 `signal`。
+
+
+### Renderer UI 清单
+
+v2 manifest 可以声明供 web/desktop 使用的 renderer UI 入口，并通过统一的
+动态插件 catalog 加载：
+
+```json
+{
+  "apiVersion": 2,
+  "id": "yourco.feature",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "ui": {
+    "entry": "ui/plugin.js",
+    "panels": [
+      {
+        "id": "feature-settings",
+        "title": "Feature",
+        "region": "settings",
+        "group": "扩展"
+      }
+    ]
+  }
+}
+```
+
+UI 入口是一个浏览器模块，导出 `createUiPlugin()` 并返回 `@natalia/ui-host`
+的 `UiPlugin`。运行时通过 `GET /plugins/<pluginId>/ui.js` 从 plugin store
+提供该模块，shell 用统一动态加载器加载。官方包和第三方包没有不同注册路径；
+只要 manifest 声明了 `ui.entry`，就会从同一份 `pluginCatalog` 被发现。
 
 ### 配置
 

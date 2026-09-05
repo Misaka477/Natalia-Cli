@@ -102,6 +102,40 @@ registry, or transport implementation. It only uses these public ports and
 public `@natalia/contracts` types. This lets a web, desktop, or custom
 renderer use the same runtime without sharing current UI state or components.
 
+
+### Dynamic panel registration
+
+Web/desktop shells use a separate renderer-facing panel protocol for feature
+panels. A plugin package can declare `ui.entry` in its manifest; the shell
+discovers it from the same `pluginCatalog` used for official and third-party
+plugins and loads it through `GET /plugins/<pluginId>/ui.js`. The UI module
+exports `createUiPlugin()`:
+
+```js
+import { defineUiPlugin } from "@natalia/ui-host";
+
+export function createFeatureUiPlugin() {
+  return defineUiPlugin({
+    id: "yourco.ui.feature",
+    panels: [
+      {
+        id: "feature-settings",
+        title: "Feature",
+        region: "settings",
+        group: "扩展",
+        mount(ctx, container) {
+          // render the feature's settings UI
+        },
+      },
+    ],
+  });
+}
+```
+
+The host then exposes the panel through `host.listPanels()` and mounts it with
+`host.mountPanel()`. Disabling or uninstalling the runtime plugin removes its
+panels automatically.
+
 ### Checkpoints and message-level restore
 
 Build restore UI around preview, never around a direct workspace mutation:
@@ -272,6 +306,37 @@ host 注入三个公共端口：
 UI package 不应导入内部 UI host、checkpoint controller、registry 或 transport 实现，只能
 使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web、desktop 或自定义
 renderer 都可使用同一 runtime，而不依赖当前 UI 的 state 或组件。
+
+
+### 动态面板注册
+
+Web/Desktop 对功能面板使用独立的 renderer 面板协议。插件包可以在 manifest
+里声明 `ui.entry`；shell 从同一份 `pluginCatalog` 发现官方/第三方插件，并通过
+`GET /plugins/<pluginId>/ui.js` 加载。UI 模块导出 `createUiPlugin()`：
+
+```js
+import { defineUiPlugin } from "@natalia/ui-host";
+
+export function createFeatureUiPlugin() {
+  return defineUiPlugin({
+    id: "yourco.ui.feature",
+    panels: [
+      {
+        id: "feature-settings",
+        title: "Feature",
+        region: "settings",
+        group: "扩展",
+        mount(ctx, container) {
+          // 渲染功能设置 UI
+        },
+      },
+    ],
+  });
+}
+```
+
+host 通过 `host.listPanels()` 暴露面板，并通过 `host.mountPanel()` 挂载。
+禁用或卸载运行时插件后，对应面板会自动移除。
 
 ### Checkpoint 与消息级 restore
 
