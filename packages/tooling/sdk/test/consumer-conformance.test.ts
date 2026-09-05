@@ -741,7 +741,7 @@ test("an external UI takes over approvals and answers questions", async () => {
   // when the answer took effect, and a `policy.decision` event when a
   // rejection is delivered back to the model.
   const root = await mkdtemp(join(tmpdir(), "natalia-approval-consumer-"));
-  let planCalls = 0;
+  let writeCalls = 0;
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
     pluginStoreRoot: resolve("dist", "ts", "plugin-store"),
@@ -761,22 +761,23 @@ test("an external UI takes over approvals and answers questions", async () => {
         }
         const answered = request.messages.at(-1)?.role === "tool";
         if (!answered) {
-          planCalls++;
+          writeCalls++;
           yield {
             type: "tool_call" as const,
             calls: [
               {
-                id: `call_plan_${planCalls}`,
-                name: "plan",
+                id: `call_write_${writeCalls}`,
+                name: "write_file",
                 arguments: JSON.stringify({
-                  items: [{ id: "step_1", text: "first step" }],
+                  path: "notes.md",
+                  content: "hello",
                 }),
               },
             ],
           };
           return;
         }
-        yield { type: "content" as const, text: "The plan is made." };
+        yield { type: "content" as const, text: "The note is written." };
         yield { type: "done" as const };
       },
     },
@@ -793,7 +794,7 @@ test("an external UI takes over approvals and answers questions", async () => {
     const approvedEvents = await collectEventsWhileTriggering(
       sdk,
       () => {
-        approvedTurn = sdk.prompt("make a plan");
+        approvedTurn = sdk.prompt("write notes.md");
       },
       (event) => event.type === "approval.request",
     );
@@ -801,7 +802,7 @@ test("an external UI takes over approvals and answers questions", async () => {
       (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
         event.type === "approval.request",
     )!;
-    expect(request.title).toContain("plan");
+    expect(request.title).toContain("write_file");
     expect(typeof request.id).toBe("string");
 
     const outcome = await sdk.respondApproval({
@@ -832,7 +833,7 @@ test("an external UI takes over approvals and answers questions", async () => {
     // policy.decision event, that the call was refused — a rejection is an
     // answer, not a silent drop.
     let rejectedTurn: Promise<SubmittedTurn> | undefined;
-    rejectedTurn = sdk.prompt("make another plan");
+    rejectedTurn = sdk.prompt("write another note");
     const pendingDeadline = Date.now() + CONSUMER_EVENT_TIMEOUT_MS;
     let secondRequest:
       | Extract<RuntimeEvent, { type: "approval.request" }>
