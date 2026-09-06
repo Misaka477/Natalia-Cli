@@ -1,13 +1,15 @@
 import {
   For,
   Show,
+  createEffect,
   createMemo,
   createSignal,
   onMount,
   onCleanup,
 } from "solid-js";
 import type { StructuredDiffResult } from "@natalia/diff-wasm";
-import { highlightLine } from "./syntax";
+import { highlightLine, type SyntaxPart } from "./syntax";
+import { highlightInWorker } from "./syntax-client";
 
 export type SplitRow = {
   type: "context" | "add" | "delete" | "modify" | "empty";
@@ -168,6 +170,41 @@ export function SplitDiffView(props: {
   let container: HTMLDivElement | undefined;
   const [scrollTop, setScrollTop] = createSignal(0);
   const [viewportHeight, setViewportHeight] = createSignal(0);
+  const [syntaxCache, setSyntaxCache] = createSignal<
+    Map<string, { oldSyntax?: SyntaxPart[]; newSyntax?: SyntaxPart[] }>
+  >(new Map());
+
+  const rowKey = (row: SplitRow) =>
+    `${row.oldNo ?? ""}:${row.newNo ?? ""}:${row.oldText}:${row.newText}`;
+
+  createEffect(() => {
+    const rows = visible();
+    const cache = syntaxCache();
+    const missing = rows
+      .filter((row) => !row.oldSyntax && !row.newSyntax)
+      .map((row) => ({ row, key: rowKey(row) }))
+      .filter(({ row, key }) => !cache.has(key) && row.oldText.length > 0);
+    if (!missing.length) return;
+    void Promise.all(
+      missing.map(({ row, key }) =>
+        Promise.all([
+          highlightInWorker(row.oldText, props.language),
+          row.newText === row.oldText
+            ? Promise.resolve(undefined)
+            : highlightInWorker(row.newText, props.language),
+        ]).then(([oldSyntax, newSyntax]) => {
+          setSyntaxCache((prev) => {
+            const next = new Map(prev);
+            next.set(key, {
+              oldSyntax,
+              newSyntax: newSyntax ?? oldSyntax,
+            });
+            return next;
+          });
+        }),
+      ),
+    );
+  });
 
   const total = () => props.rows.length;
   const start = () =>
@@ -214,7 +251,7 @@ export function SplitDiffView(props: {
                 each={renderSegments(
                   row.oldText,
                   row.oldHighlights,
-                  row.oldSyntax,
+                  row.oldSyntax ?? syntaxCache().get(rowKey(row))?.oldSyntax,
                   props.language,
                 )}
               >
@@ -233,7 +270,7 @@ export function SplitDiffView(props: {
                 each={renderSegments(
                   row.newText,
                   row.newHighlights,
-                  row.newSyntax,
+                  row.newSyntax ?? syntaxCache().get(rowKey(row))?.newSyntax,
                   props.language,
                 )}
               >

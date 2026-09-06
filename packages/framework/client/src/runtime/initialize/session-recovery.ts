@@ -10,6 +10,7 @@ import type {
   TerminalController,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
+import { projectSessionInWorker } from "../session-project-client";
 
 export async function recoverSession(
   ctx: RuntimeContext,
@@ -124,7 +125,9 @@ export async function recoverSession(
         : `previous process stopped during ${interrupted.filter((event) => event.type === "turn.finished").length} active turn(s); unresolved interactive requests were rejected because incomplete provider work cannot be replayed`,
     });
   }
-  const projection = scope.projectSession(scope.session);
+  const projection =
+    (await projectSessionInWorker(scope.session).catch(() => undefined)) ??
+    scope.projectSession(scope.session);
   const initialDiagnostics =
     scope.runtimeDiagnosticsBySession.get(scope.session.id) ?? [];
   for (const event of sqliteRecovery?.diagnostics ?? [])

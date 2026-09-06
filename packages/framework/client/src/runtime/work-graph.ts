@@ -10,12 +10,32 @@ type WorkGraphRuntime = Pick<
   "workGraphNodes" | "workGraphEdges"
 >;
 
+async function graphProjectionWithFallback(
+  name: "workGraphNodes" | "workGraphEdges",
+  events: import("@natalia/contracts").RuntimeEvent[],
+) {
+  try {
+    const { runSessionProjectionInWorker } = await import(
+      "./session-project-client"
+    );
+    return await runSessionProjectionInWorker(name, events);
+  } catch {
+    return name === "workGraphNodes"
+      ? projectedWorkGraphNodes(events)
+      : projectedWorkGraphEdges(events);
+  }
+}
+
 export function createWorkGraphRuntime(ctx: RuntimeContext): WorkGraphRuntime {
   return {
     async workGraphNodes() {
       const session = ctx.ports.getSession();
       if (!session) return [];
-      return projectedWorkGraphNodes(session.events).map((record) => ({
+      const nodes = (await graphProjectionWithFallback(
+        "workGraphNodes",
+        session.events,
+      )) as ReturnType<typeof projectedWorkGraphNodes>;
+      return nodes.map((record) => ({
         nodeID: record.nodeID,
         kind: record.kind,
         summary: record.summary,
@@ -29,7 +49,11 @@ export function createWorkGraphRuntime(ctx: RuntimeContext): WorkGraphRuntime {
     async workGraphEdges() {
       const session = ctx.ports.getSession();
       if (!session) return [];
-      return projectedWorkGraphEdges(session.events).map((record) => ({
+      const edges = (await graphProjectionWithFallback(
+        "workGraphEdges",
+        session.events,
+      )) as ReturnType<typeof projectedWorkGraphEdges>;
+      return edges.map((record) => ({
         sourceID: record.sourceID,
         targetID: record.targetID,
         kind: record.kind,

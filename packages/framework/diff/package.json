@@ -6,7 +6,8 @@
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./runtime/diff-parse-client": "./src/runtime/diff-parse-client.ts"
   },
   "dependencies": {
     "@natalia/contracts": "workspace:*",

@@ -1,12 +1,14 @@
 import {
   For,
   Show,
+  createEffect,
   createMemo,
   createSignal,
   onMount,
   onCleanup,
 } from "solid-js";
-import { highlightLine } from "./syntax";
+import { highlightLine, type SyntaxPart } from "./syntax";
+import { highlightInWorker } from "./syntax-client";
 
 export type DiffRow = {
   type: string;
@@ -18,7 +20,11 @@ export type DiffRow = {
   syntax?: Array<{ text: string; cls: string }>;
 };
 
-function highlightedText(line: DiffRow, language?: string) {
+function highlightedText(
+  line: DiffRow,
+  language?: string,
+  precomputed?: SyntaxPart[],
+) {
   const parts: Array<{
     text: string;
     highlight: boolean;
@@ -26,7 +32,7 @@ function highlightedText(line: DiffRow, language?: string) {
     cls: string;
   }> = [];
   if (!line.highlights?.length) {
-    for (const part of line.syntax ?? highlightLine(line.text, language))
+    for (const part of line.syntax ?? precomputed ?? highlightLine(line.text, language))
       parts.push({ ...part, highlight: false, kind: "" });
     return parts;
   }
@@ -109,6 +115,37 @@ export function UnifiedDiffView(props: {
   const [collapsedHunks, setCollapsedHunks] = createSignal<Set<number>>(
     new Set(),
   );
+  const [syntaxCache, setSyntaxCache] = createSignal<Map<string, SyntaxPart[]>>(
+    new Map(),
+  );
+
+  const rowKey = (row: DiffRow) =>
+    `${row.oldNo ?? ""}:${row.newNo ?? ""}:${row.text}`;
+
+  createEffect(() => {
+    const rows = visible();
+    const cache = syntaxCache();
+    const missing = rows
+      .map((item) => ({ item, key: rowKey(item.row) }))
+      .filter(
+        ({ item, key }) =>
+          !item.row.syntax && !cache.has(key) && item.row.text.length > 0,
+      );
+    if (!missing.length) return;
+    void Promise.all(
+      missing.map(({ item, key }) =>
+        highlightInWorker(item.row.text, props.language)
+          .then((parts) => {
+            setSyntaxCache((prev) => {
+              const next = new Map(prev);
+              next.set(key, parts);
+              return next;
+            });
+          })
+          .catch(() => undefined),
+      ),
+    );
+  });
 
   type RenderedRow = { row: DiffRow; hunkIndex: number };
   const displayRows = createMemo<RenderedRow[]>(() => {
@@ -269,7 +306,7 @@ export function UnifiedDiffView(props: {
                 {isHunk && collapsedHunks().has(hunkIndex) ? "+" : row.sign}
               </span>
               <span class="review-diff-text">
-                <For each={highlightedText(row, props.language)}>
+                <For each={highlightedText(row, props.language, syntaxCache().get(rowKey(row)))}>
                   {(part) =>
                     part.highlight ? (
                       <span

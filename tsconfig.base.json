@@ -13,6 +13,7 @@
     "paths": {
       "@natalia/agent": ["packages/framework/agent/src/index.ts"],
       "@natalia/framework-diff": ["packages/framework/diff/src/index.ts"],
+      "@natalia/framework-diff/runtime/diff-parse-client": ["packages/framework/diff/src/runtime/diff-parse-client.ts"],
       "@natalia/attachments": ["packages/framework/attachments/src/index.ts"],
       "@natalia/capability": ["packages/core/capability/src/index.ts"],
       "@natalia/checkpoint": ["packages/framework/checkpoint/src/index.ts"],

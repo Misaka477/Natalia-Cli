@@ -7,6 +7,10 @@ import {
 } from "@natalia/runtime-services";
 import {
   projectedCanonicalTools,
+  projectedWorkGraphNodes,
+  projectedWorkGraphEdges,
+  projectedMailboxMessages,
+  projectedCollabMessages,
   projectedCompletions,
   projectedConstitutionRules,
   projectedDecisionRecords,
@@ -55,6 +59,66 @@ type Surface = Pick<
   | "requestOverride"
   | "approveOverride"
 >;
+async function projectedCanonicalToolsWithFallback(
+  events: import("@natalia/contracts").RuntimeEvent[],
+) {
+  try {
+    const { projectedCanonicalToolsInWorker } = await import(
+      "../session-project-client"
+    );
+    const result = await projectedCanonicalToolsInWorker(events) as Array<{
+      name: string;
+      owner: string;
+      scope: string;
+      recovery: string;
+      precedence: number;
+      requiresApproval: boolean;
+    }>;
+    return result;
+  } catch {
+    return projectedCanonicalTools(events);
+  }
+}
+
+async function runSessionProjectionWithFallback(
+  name:
+    | "planDocs"
+    | "evidenceRecords"
+    | "constitutionRules"
+    | "decisionRecords"
+    | "workGraphNodes"
+    | "workGraphEdges"
+    | "mailboxMessages"
+    | "collabMessages",
+  events: import("@natalia/contracts").RuntimeEvent[],
+) {
+  try {
+    const { runSessionProjectionInWorker } = await import(
+      "../session-project-client"
+    );
+    return await runSessionProjectionInWorker(name, events);
+  } catch {
+    switch (name) {
+      case "planDocs":
+        return projectedPlanDocs(events);
+      case "evidenceRecords":
+        return projectedEvidenceRecords(events);
+      case "constitutionRules":
+        return projectedConstitutionRules(events);
+      case "decisionRecords":
+        return projectedDecisionRecords(events);
+      case "workGraphNodes":
+        return projectedWorkGraphNodes(events);
+      case "workGraphEdges":
+        return projectedWorkGraphEdges(events);
+      case "mailboxMessages":
+        return projectedMailboxMessages(events);
+      case "collabMessages":
+        return projectedCollabMessages(events);
+    }
+  }
+}
+
 export function createIntelligenceSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
@@ -146,10 +210,11 @@ export function createIntelligenceSurface(
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
-      return projectedConstitutionRules([
-        ...instance.events,
-        ...session.events,
-      ]).map((r) => ({
+      const rules = (await runSessionProjectionWithFallback(
+        "constitutionRules",
+        [...instance.events, ...session.events],
+      )) as ReturnType<typeof projectedConstitutionRules>;
+      return rules.map((r) => ({
         ruleID: r.ruleID,
         statement: r.statement,
         scope: r.scope,
@@ -165,10 +230,11 @@ export function createIntelligenceSurface(
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
-      return projectedDecisionRecords([
-        ...instance.events,
-        ...session.events,
-      ]).map((r) => ({
+      const decisions = (await runSessionProjectionWithFallback(
+        "decisionRecords",
+        [...instance.events, ...session.events],
+      )) as ReturnType<typeof projectedDecisionRecords>;
+      return decisions.map((r) => ({
         decision: r.decision,
         rationale: r.rationale ?? [],
         alternatives: r.alternatives ?? [],
@@ -230,12 +296,19 @@ export function createIntelligenceSurface(
       // lifecycle of the plan whose task it belongs to (a projection policy —
       // the journal keeps the recorded status; the query answers what it means
       // now).
-      const plans = projectedPlanDocs(session.events);
+      const plans = (await runSessionProjectionWithFallback(
+        "planDocs",
+        session.events,
+      )) as ReturnType<typeof projectedPlanDocs>;
       const planStateForTask = new Map<string, string>();
       for (const plan of plans) {
         planStateForTask.set(plan.planID, plan.status);
       }
-      return projectedEvidenceRecords(session.events).map((r) => ({
+      const evidence = (await runSessionProjectionWithFallback(
+        "evidenceRecords",
+        session.events,
+      )) as ReturnType<typeof projectedEvidenceRecords>;
+      return evidence.map((r) => ({
         taskID: r.taskID,
         objective: r.objective,
         status: r.status,
@@ -557,7 +630,7 @@ export function createIntelligenceSurface(
     async registeredTools(sessionID?: string) {
       const session = await intelligenceSession(sessionID);
       const projected = session
-        ? projectedCanonicalTools(session.events).map((t) => ({
+        ? (await projectedCanonicalToolsWithFallback(session.events)).map((t) => ({
             name: t.name,
             owner: t.owner,
             scope: t.scope,

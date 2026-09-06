@@ -32,12 +32,27 @@ async function mailboxExec(ctx: RuntimeContext, sessionID?: string) {
     );
   return ctx.ports.getActiveExec();
 }
+async function mailboxesWithWorkerFallback(
+  events: import("@natalia/contracts").RuntimeEvent[],
+) {
+  try {
+    const { runSessionProjectionInWorker } = await import(
+      "../session-project-client"
+    );
+    const result = await runSessionProjectionInWorker("mailboxMessages", events);
+    return result as ReturnType<typeof projectedMailboxMessages>;
+  } catch {
+    return projectedMailboxMessages(events);
+  }
+}
+
 export function createMailboxSurface(ctx: RuntimeContext): Surface {
   return {
     async mailboxList(sessionID?: string) {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec) return [];
-      return projectedMailboxMessages(exec.session.events).map((m) => ({
+      const messages = await mailboxesWithWorkerFallback(exec.session.events);
+      return messages.map((m) => ({
         messageID: m.messageID,
         source: m.source,
         priority: m.priority,
@@ -67,7 +82,8 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { delivered: false as const };
-      const message = projectedMailboxMessages(exec.session.events).find(
+      const messages = await mailboxesWithWorkerFallback(exec.session.events);
+      const message = messages.find(
         (m) => m.messageID === messageID && m.status === "queued",
       );
       if (!message) return { delivered: false as const };
@@ -86,7 +102,8 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { acknowledged: false as const };
-      const message = projectedMailboxMessages(exec.session.events).find(
+      const messages = await mailboxesWithWorkerFallback(exec.session.events);
+      const message = messages.find(
         (m) => m.messageID === messageID && m.status === "delivered",
       );
       if (!message) return { acknowledged: false as const };
@@ -105,7 +122,8 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { deferred: false as const };
-      const message = projectedMailboxMessages(exec.session.events).find(
+      const messages = await mailboxesWithWorkerFallback(exec.session.events);
+      const message = messages.find(
         (m) => m.messageID === messageID && m.status === "queued",
       );
       if (!message) return { deferred: false as const };
@@ -130,7 +148,8 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { superseded: false as const };
-      const message = projectedMailboxMessages(exec.session.events).find(
+      const messages = await mailboxesWithWorkerFallback(exec.session.events);
+      const message = messages.find(
         (m) => m.messageID === messageID && m.status === "queued",
       );
       if (!message) return { superseded: false as const };

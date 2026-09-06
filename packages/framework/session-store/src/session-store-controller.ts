@@ -321,9 +321,15 @@ export function createSessionStoreController(input: {
     fallback: SessionRecord,
     options: { limit?: number; order?: "asc" | "desc"; cursor?: string } = {},
   ): Promise<RuntimeMessagePage> {
-    return sqliteStore
-      ? sqliteStore.loadMessagePage(id, options)
-      : projectSessionMessages(fallback, options);
+    if (sqliteStore) return sqliteStore.loadMessagePage(id, options);
+    try {
+      const { projectSessionMessagesInWorker } = await import(
+        "./session-messages-worker-client"
+      );
+      return await projectSessionMessagesInWorker(fallback, options);
+    } catch {
+      return projectSessionMessages(fallback, options);
+    }
   }
 
   async function flush(id?: SessionID) {

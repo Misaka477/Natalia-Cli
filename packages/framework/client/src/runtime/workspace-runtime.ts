@@ -858,6 +858,24 @@ async function readWorkspaceContent(
   return buffer?.toString("utf8");
 }
 
+async function structuredForPatch(patch: string): Promise<{
+  counts: { additions: number; deletions: number };
+  structured: ReturnType<typeof patchToStructured>;
+}> {
+  try {
+    const { parsePatchInWorker } = await import(
+      "@natalia/framework-diff/runtime/diff-parse-client"
+    );
+    const result = await parsePatchInWorker(patch);
+    return result;
+  } catch {
+    return {
+      counts: countPatch(patch),
+      structured: patchToStructuredCached(patch),
+    };
+  }
+}
+
 export async function collectWorkspaceGitDiff(
   workspaceRoot: string,
   input?: {
@@ -937,8 +955,11 @@ export async function collectWorkspaceGitDiff(
             after = afterBuffer.toString("utf8");
         }
       }
-      const counts = patch ? countPatch(patch) : { additions: 0, deletions: 0 };
-      const structured = patch ? patchToStructuredCached(patch) : undefined;
+      const patchResult = patch
+        ? await structuredForPatch(patch)
+        : undefined;
+      const counts = patchResult?.counts ?? { additions: 0, deletions: 0 };
+      const structured = patchResult?.structured;
       changes.push({
         path,
         operation,
