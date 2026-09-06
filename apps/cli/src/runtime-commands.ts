@@ -15,6 +15,7 @@ import { pluginStoreRoot } from "./official-plugins";
 
 export async function handleRuntimeCommand(argv: string[]) {
   const command = argv[0];
+  const commandStart = performance.now();
   if (command === "serve" || command === "--serve") {
     const port = parseServePort(argv);
     const globalConfigPath =
@@ -35,6 +36,9 @@ export async function handleRuntimeCommand(argv: string[]) {
       useSqliteStore: true,
     });
     await manager.load();
+    console.log(
+      `[perf] runtime manager loaded +${(performance.now() - commandStart).toFixed(1)}ms`,
+    );
     const client = createWorkspaceRuntimeClient(manager);
     const serveStart = performance.now();
     const transport = createHttpTransportHost({
@@ -46,6 +50,9 @@ export async function handleRuntimeCommand(argv: string[]) {
     });
     console.log(
       `[perf] runtime serve ready +${(performance.now() - serveStart).toFixed(1)}ms`,
+    );
+    console.log(
+      `[perf] runtime serve ready total +${(performance.now() - commandStart).toFixed(1)}ms`,
     );
     console.log(
       JSON.stringify({

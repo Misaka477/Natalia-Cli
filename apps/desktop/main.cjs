@@ -6,6 +6,9 @@ const net = require("net");
 const path = require("path");
 const WebSocket = require("ws");
 
+const DESKTOP_START = performance.now();
+console.log("[perf] desktop main start");
+
 // Local runtime requests must never go through the user's HTTP proxy. A
 // system/HTTP proxy can add multi-second delays to every 127.0.0.1 RPC and is
 // the main reason startup RPCs took ~7s while the runtime itself answered in
@@ -287,6 +290,11 @@ function createMainWindow() {
 
   const webDist = path.resolve(__dirname, "../../apps/web/dist/index.html");
   mainWindow.loadFile(webDist);
+  mainWindow.webContents.on("did-finish-load", () => {
+    console.log(
+      `[perf] desktop renderer did-finish-load +${(performance.now() - DESKTOP_START).toFixed(1)}ms`,
+    );
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = undefined;
@@ -363,6 +371,7 @@ if (process.platform === "linux") {
 }
 
 app.whenReady().then(async () => {
+  console.log(`[perf] desktop app ready +${(performance.now() - DESKTOP_START).toFixed(1)}ms`);
   app.userAgentFallback =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
   try {
@@ -370,11 +379,13 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error("[desktop] failed to start runtime", error);
   }
+  console.log(`[perf] desktop runtime ready +${(performance.now() - DESKTOP_START).toFixed(1)}ms`);
   // Warm the workspace runtime before the renderer requests data. The first
   // RPC triggers a ~1-2s initialize; starting it here overlaps with window
   // creation and removes most of that wait from the visible startup path.
   void runtimeCall("plugin.catalog", {}).catch(() => undefined);
   createMainWindow();
+  console.log(`[perf] desktop window created +${(performance.now() - DESKTOP_START).toFixed(1)}ms`);
   void streamRuntimeEvents();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

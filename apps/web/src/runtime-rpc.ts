@@ -308,8 +308,14 @@ export function createWebRuntimeClient(
     method: string,
     params?: Record<string, unknown>,
   ): Promise<T> => {
+    const callStart = performance.now();
+    const startupBase = (
+      globalThis as unknown as { __nataliaStartupStart?: number }
+    ).__nataliaStartupStart ?? callStart;
+    console.warn(
+      `[perf] rpc start ${method} +${(callStart - startupBase).toFixed(1)}ms`,
+    );
     if (electron && !options.url) {
-      const callStart = performance.now();
       return electron
         .invoke<T>("runtime_call", {
           method,
@@ -321,7 +327,6 @@ export function createWebRuntimeClient(
           );
         });
     }
-    const callStart = performance.now();
     return callRuntimeRPC<T>({
       url: options.url,
       token: options.token,

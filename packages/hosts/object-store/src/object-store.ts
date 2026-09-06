@@ -33,6 +33,13 @@ import {
   type NativeIndexEntry,
 } from "./native-index";
 
+function objectStoreWorkerDisabled(): boolean {
+  return (
+    (globalThis as unknown as { __NATALIA_OBJECT_STORE_NO_WORKER?: boolean })
+      .__NATALIA_OBJECT_STORE_NO_WORKER === true
+  );
+}
+
 export class ObjectStore {
   private readonly lru = new Map<string, Buffer>();
   private lruBytes = 0;
@@ -376,6 +383,22 @@ export class ObjectStore {
     unreachableObjects: number;
     bytes: number;
   }> {
+    const workerResult = await this.tryMaintenance<{
+      unreachableObjects: number;
+      bytes: number;
+    }>({
+      op: "collectGarbage",
+      root: this.root,
+      reachable: [...reachable],
+    });
+    if (workerResult) {
+      this.packsLoaded = false;
+      this.packs.clear();
+      this.lru.clear();
+      this.lruBytes = 0;
+      await this.loadPackIndexes();
+      return workerResult;
+    }
     await this.loadPackIndexes();
     const allIds = new Set<string>(await this.list());
     const extendedReachable = new Set(reachable);
@@ -549,6 +572,24 @@ export class ObjectStore {
     await this.loadPackIndexes();
   }
 
+  private async tryMaintenance<T>(
+    request: { op: "compact"; root: string } | {
+      op: "collectGarbage";
+      root: string;
+      reachable: string[];
+    },
+  ): Promise<T | undefined> {
+    if (objectStoreWorkerDisabled()) return undefined;
+    try {
+      const { runObjectStoreMaintenance } = await import(
+        "./object-store-worker-client"
+      );
+      return await runObjectStoreMaintenance<T>(request);
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Writes a pack file containing loose objects and removes the loose copies.
    * This is the Phase C compaction entry point; random reads still work
@@ -561,6 +602,19 @@ export class ObjectStore {
   }> {
     const looseIds = await this.listLoose();
     if (!looseIds.length) return { packed: 0, bytes: 0, packFile: "" };
+    const workerResult = await this.tryMaintenance<{
+      packed: number;
+      bytes: number;
+      packFile: string;
+    }>({ op: "compact", root: this.root });
+    if (workerResult) {
+      this.packsLoaded = false;
+      this.packs.clear();
+      this.lru.clear();
+      this.lruBytes = 0;
+      await this.loadPackIndexes();
+      return workerResult;
+    }
     const packDir = join(this.root, "packs");
     await mkdir(packDir, { recursive: true, mode: 0o700 });
     const stamp = Date.now().toString(36);

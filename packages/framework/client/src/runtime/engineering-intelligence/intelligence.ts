@@ -556,15 +556,34 @@ export function createIntelligenceSurface(
     },
     async registeredTools(sessionID?: string) {
       const session = await intelligenceSession(sessionID);
-      if (!session) return [];
-      return projectedCanonicalTools(session.events).map((t) => ({
-        name: t.name,
-        owner: t.owner,
-        scope: t.scope,
-        recovery: t.recovery,
-        precedence: t.precedence,
-        requiresApproval: t.requiresApproval,
+      const projected = session
+        ? projectedCanonicalTools(session.events).map((t) => ({
+            name: t.name,
+            owner: t.owner,
+            scope: t.scope,
+            recovery: t.recovery,
+            precedence: t.precedence,
+            requiresApproval: t.requiresApproval,
+          }))
+        : [];
+      // The live tool registry is the authoritative list of currently loaded
+      // tools. Some plugin tools are registered before their projection events
+      // are persisted into the session, so merge them into the reported set.
+      const live = [...ctx.state.tools.values()].map((tool) => ({
+        name: tool.name,
+        owner:
+          ctx.state.capabilityRegistry.ownerOf("tools", tool.name) ?? "kernel",
+        scope: "session" as const,
+        recovery: "none" as const,
+        precedence: 0,
+        requiresApproval: tool.requiresApproval,
       }));
+      const merged = new Map<
+        string,
+        (typeof projected)[number]
+      >();
+      for (const tool of [...live, ...projected]) merged.set(tool.name, tool);
+      return [...merged.values()];
     },
   };
 }

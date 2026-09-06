@@ -12,6 +12,44 @@ import { loadPluginUiBundles, syncPluginUiBundles } from "./plugin-ui-loader";
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
 const startupStart = performance.now();
+((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ??= startupStart);
+console.log(`[perf] renderer boot start +0.0ms`);
+
+// Observability: log every main-thread long task during startup and runtime.
+// This is the primary signal for the "silent gap" / interaction jank issue.
+if (typeof PerformanceObserver !== "undefined") {
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.duration >= 50) {
+          console.warn(
+            `[perf] longtask ${entry.duration.toFixed(1)}ms start +${entry.startTime.toFixed(1)}ms`,
+          );
+        }
+      }
+    });
+    observer.observe({ entryTypes: ["longtask"] });
+  } catch {
+    // longtask API not available; startup/perf logs still work.
+  }
+}
+
+// Heartbeat logs reveal main-thread stalls: if heartbeats stop but the app is
+// still booting, the main thread is likely blocked in synchronous work.
+if (typeof setInterval !== "undefined") {
+  const heartbeat = setInterval(() => {
+    const global = globalThis as unknown as {
+      __nataliaStartupComplete?: boolean;
+    };
+    if (global.__nataliaStartupComplete) {
+      clearInterval(heartbeat);
+      return;
+    }
+    console.warn(
+      `[perf] heartbeat +${(performance.now() - startupStart).toFixed(0)}ms`,
+    );
+  }, 1000);
+}
 
 const electron = (
   globalThis as {
@@ -23,6 +61,9 @@ const electron = (
 const injected = electron?.runtimeInfo
   ? await electron.runtimeInfo()
   : undefined;
+console.log(
+  `[startup] electron runtime info +${(performance.now() - startupStart).toFixed(1)}ms`,
+);
 const runtimeURL =
   injected?.url ||
   (import.meta as { env?: Record<string, string> }).env

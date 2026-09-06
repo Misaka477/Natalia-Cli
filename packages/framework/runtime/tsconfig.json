@@ -28,7 +28,7 @@
       "path": "../../hosts/object-store"
     },
     {
-      "path": "../../../packages/tooling/diff-wasm"
+      "path": "../../../packages/framework/diff-wasm"
     }
   ]
 }

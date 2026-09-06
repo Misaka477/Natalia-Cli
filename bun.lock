@@ -221,6 +221,20 @@
         "@natalia/runtime-services": "workspace:*",
       },
     },
+    "packages/framework/diff": {
+      "name": "@natalia/framework-diff",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/diff-wasm": "workspace:*",
+        "lowlight": "^3.3.0",
+        "solid-js": "1.9.12",
+      },
+    },
+    "packages/framework/diff-wasm": {
+      "name": "@natalia/diff-wasm",
+      "version": "1.0.0",
+    },
     "packages/framework/provider-model": {
       "name": "@natalia/provider-model",
       "version": "0.0.0-m13",
@@ -349,6 +363,9 @@
     "packages/hosts/object-store": {
       "name": "@natalia/object-store",
       "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
     },
     "packages/hosts/platform": {
       "name": "@natalia/platform",
@@ -589,8 +606,10 @@
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/diff-wasm": "workspace:*",
+        "@natalia/framework-diff": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "@natalia/view-store": "workspace:*",
+        "@vscode/tree-sitter-wasm": "*",
         "@xterm/addon-canvas": "^0.7.0",
         "@xterm/addon-fit": "0.10.0",
         "@xterm/addon-search": "^0.16.0",
@@ -598,14 +617,10 @@
         "@xterm/addon-web-links": "0.11.0",
         "@xterm/addon-webgl": "^0.19.0",
         "@xterm/xterm": "5.5.0",
-        "lowlight": "^3.3.0",
         "marked": "17.0.1",
         "solid-js": "1.9.12",
+        "web-tree-sitter": "*",
       },
-    },
-    "packages/tooling/diff-wasm": {
-      "name": "@natalia/diff-wasm",
-      "version": "1.0.0",
     },
     "packages/tooling/installer": {
       "name": "@natalia/installer",
@@ -854,9 +869,11 @@
 
     "@natalia/desktop": ["@natalia/desktop@workspace:apps/desktop"],
 
-    "@natalia/diff-wasm": ["@natalia/diff-wasm@workspace:packages/tooling/diff-wasm"],
+    "@natalia/diff-wasm": ["@natalia/diff-wasm@workspace:packages/framework/diff-wasm"],
 
     "@natalia/example-ui-plugin": ["@natalia/example-ui-plugin@workspace:packages/examples/ui-plugin"],
+
+    "@natalia/framework-diff": ["@natalia/framework-diff@workspace:packages/framework/diff"],
 
     "@natalia/governance-ledger": ["@natalia/governance-ledger@workspace:packages/domains/governance-ledger"],
 

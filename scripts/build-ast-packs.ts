@@ -11,7 +11,7 @@ import { resolve, join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 const repo = resolve(process.cwd());
-const diffWasm = join(repo, "packages/tooling/diff-wasm");
+const diffWasm = join(repo, "packages/framework/diff-wasm");
 const srcLib = join(diffWasm, "src/lib.rs");
 const srcAstDiff = join(diffWasm, "src/ast_diff.rs");
 const outDir = join(diffWasm, "ast");

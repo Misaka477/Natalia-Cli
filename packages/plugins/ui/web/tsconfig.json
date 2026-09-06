@@ -6,7 +6,10 @@
     "jsxImportSource": "solid-js",
     "rootDir": "../../../.."
   },
-  "include": ["src", "test"],
+  "include": [
+    "src",
+    "test"
+  ],
   "references": [
     {
       "path": "../../../../packages/core/contracts"
@@ -21,7 +24,10 @@
       "path": "../../../../packages/plugins/ui/kit"
     },
     {
-      "path": "../../../../packages/tooling/diff-wasm"
+      "path": "../../../../packages/framework/diff-wasm"
+    },
+    {
+      "path": "../../../../packages/framework/diff"
     }
   ]
 }

@@ -17,6 +17,7 @@ import {
   createMemo,
   onCleanup,
   onMount,
+  batch,
   For,
   Show,
 } from "solid-js";
@@ -345,6 +346,10 @@ function SessionTree(props: {
 }
 
 export function AppNeu(props: { ctx: UiPluginContext }) {
+  const appNeuStart = performance.now();
+  console.warn(
+    `[perf] AppNeu component start +${(appNeuStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? appNeuStart)).toFixed(1)}ms`,
+  );
   const [state, setState] = createSignal(
     cloneState(props.ctx.projection.getState()),
   );
@@ -613,9 +618,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   async function refreshWorkspaces() {
     if (workspacesRefreshInFlight) return workspacesRefreshInFlight;
+    const phaseStart = performance.now();
     workspacesRefreshInFlight = (async () => {
       const roots = await props.ctx.runtime.workspaceRoots?.();
-      if (roots) setWorkspaces(roots);
+      console.warn(
+        `[perf] refreshWorkspaces done roots=${roots?.length ?? 0} +${(performance.now() - phaseStart).toFixed(1)}ms`,
+      );
+      if (roots) {
+        const current = workspaces();
+        if (!current || JSON.stringify(current) !== JSON.stringify(roots)) {
+          setWorkspaces(roots);
+        }
+      }
     })().finally(() => {
       workspacesRefreshInFlight = undefined;
     });
@@ -635,6 +649,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function logStartupSummary() {
+    (
+      globalThis as unknown as {
+        __nataliaStartupComplete?: boolean;
+      }
+    ).__nataliaStartupComplete = true;
     console.info("[web-ui] startup complete");
   }
 
@@ -687,11 +706,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }
   }
 
-  function debouncedRefreshWorkspaces(delay = 150) {
+  function debouncedRefreshWorkspaces(delay = 1000) {
     if (workspacesRefreshTimer) clearTimeout(workspacesRefreshTimer);
     workspacesRefreshTimer = setTimeout(() => {
       workspacesRefreshTimer = undefined;
-      void refreshWorkspaces();
+      runIdle(() => void refreshWorkspaces());
     }, delay);
   }
 
@@ -699,24 +718,34 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return new Date(session.lastAccessedAt ?? session.createdAt).getTime();
   }
 
-  function debouncedRefreshSessions(delay = 150) {
+  function debouncedRefreshSessions(delay = 1000) {
     if (sessionsRefreshTimer) clearTimeout(sessionsRefreshTimer);
     sessionsRefreshTimer = setTimeout(() => {
       sessionsRefreshTimer = undefined;
-      void refreshSessions();
+      runIdle(() => void refreshSessions());
     }, delay);
   }
 
   async function refreshSessions() {
     if (sessionsRefreshInFlight) return sessionsRefreshInFlight;
+    const phaseStart = performance.now();
     const token = ++sessionsRefreshToken;
     let operation: Promise<void>;
     operation = (async () => {
       try {
         const sessions = await props.ctx.runtime.sessionList?.();
+        console.warn(
+          `[perf] refreshSessions done count=${sessions?.length ?? 0} +${(performance.now() - phaseStart).toFixed(1)}ms`,
+        );
         if (token !== sessionsRefreshToken) return;
         if (sessions) {
-          setSessionList(sessions);
+          const current = sessionList();
+          if (
+            !current ||
+            JSON.stringify(current) !== JSON.stringify(sessions)
+          ) {
+            setSessionList(sessions);
+          }
           if (!userSelectedSession && sessions.length) {
             const active = state().sessionID;
             const target = active
@@ -1106,21 +1135,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         props.ctx.runtime.reasoningEffort?.(sessionID),
         props.ctx.runtime.chatModelProfile?.("navi", sessionID),
       ]);
+    const appliedStart = performance.now();
     if (token !== perSessionLoadToken) return;
-    if (
-      selectionResult.status === "fulfilled" &&
-      selectionResult.value?.modelID
-    )
-      setModelSelectionSignal(selectionResult.value);
-    if (effortResult.status === "fulfilled" && effortResult.value)
-      setReasoningEffortSignal(effortResult.value);
-    if (
-      profileResult.status === "fulfilled" &&
-      profileResult.value &&
-      (profileResult.value.normal?.modelID ||
-        profileResult.value.expert?.modelID)
-    )
-      setChatProfile(profileResult.value);
+    const selectionValue =
+      selectionResult.status === "fulfilled"
+        ? selectionResult.value
+        : undefined;
+    const effortValue =
+      effortResult.status === "fulfilled" ? effortResult.value : undefined;
+    const profileValue =
+      profileResult.status === "fulfilled" ? profileResult.value : undefined;
+    batch(() => {
+      if (selectionValue?.modelID) setModelSelectionSignal(selectionValue);
+      if (effortValue) setReasoningEffortSignal(effortValue);
+      if (
+        profileValue &&
+        (profileValue.normal?.modelID || profileValue.expert?.modelID)
+      )
+        setChatProfile(profileValue);
+    });
+    console.warn(
+      `[perf] perSessionModelConfig applied selection=${selectionValue?.modelID ?? "-"} reasoning=${effortValue ?? "-"} profile=${profileValue?.normal?.modelID ?? "-"} +${(performance.now() - appliedStart).toFixed(1)}ms`,
+    );
   }
 
   createEffect(() => {
@@ -1129,6 +1165,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   });
 
   onMount(() => {
+    const mountStart = performance.now();
+    console.warn(
+      `[perf] AppNeu onMount +${(mountStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? mountStart)).toFixed(1)}ms`,
+    );
     const handleKeydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
         event.preventDefault();
@@ -1263,6 +1303,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
 
     const hydrateRecentMessagesOnLoad = async () => {
+      const hydrateStart = performance.now();
+      console.warn(`[perf] hydrateRecentMessagesOnLoad start +${(hydrateStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? hydrateStart)).toFixed(1)}ms`);
       // Message-first startup: the latest projected page replaces the old
       // full-log replay. The page is newest-last on the wire; reverse it so the
       // projection's older-merge keeps transcript order.
@@ -1292,31 +1334,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         ) {
           if (naviChat) props.ctx.projection.hydrateChatMessages?.(naviChat);
           if (niaChat) props.ctx.projection.hydrateChatMessages?.(niaChat);
+          console.warn(`[perf] secondary chat applied +${(performance.now() - chatStart).toFixed(1)}ms`);
         }
-        const subagentsStart = performance.now();
-        const subagents = await props.ctx.runtime.subagents?.();
-        console.warn(
-          `[perf] secondary subagents ${(performance.now() - subagentsStart).toFixed(1)}ms`,
-        );
-        if (
-          subagents &&
-          loadToken ===
-            (globalThis as unknown as { __nataliaSessionLoadToken?: number })
-              .__nataliaSessionLoadToken
-        )
-          props.ctx.projection.hydrateSubagents?.(subagents);
-        const subagentHistoryStart = performance.now();
-        const subagentHistory = await props.ctx.runtime.subagentHistory?.();
-        console.warn(
-          `[perf] secondary subagentHistory ${(performance.now() - subagentHistoryStart).toFixed(1)}ms`,
-        );
-        if (
-          subagentHistory &&
-          loadToken ===
-            (globalThis as unknown as { __nataliaSessionLoadToken?: number })
-              .__nataliaSessionLoadToken
-        )
-          props.ctx.projection.hydrateSubagentHistory?.(subagentHistory);
         markStartup("secondary.loaded");
         const timings = (
           globalThis as unknown as {
@@ -1327,10 +1346,49 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           console.warn("[startup] complete", timings);
           console.table(timings);
         }
+        // Sub-agent data is not part of the primary Natalia/Navi/Nia view.
+        // Load it slightly later on idle so it never delays first paint or the
+        // main-agent chat surfaces.
+        void new Promise<void>((resolve) => {
+          if (typeof requestIdleCallback !== "undefined") {
+            requestIdleCallback(() => resolve(), { timeout: 3000 });
+          } else {
+            setTimeout(resolve, 1500);
+          }
+        }).then(async () => {
+          const subagentsStart = performance.now();
+          const subagents = await props.ctx.runtime.subagents?.();
+          console.warn(
+            `[perf] background subagents ${(performance.now() - subagentsStart).toFixed(1)}ms`,
+          );
+          if (
+            subagents &&
+            loadToken ===
+              (globalThis as unknown as { __nataliaSessionLoadToken?: number })
+                .__nataliaSessionLoadToken
+          )
+            props.ctx.projection.hydrateSubagents?.(subagents);
+          const subagentHistoryStart = performance.now();
+          const subagentHistory = await props.ctx.runtime.subagentHistory?.();
+          console.warn(
+            `[perf] background subagentHistory ${(performance.now() - subagentHistoryStart).toFixed(1)}ms`,
+          );
+          if (
+            subagentHistory &&
+            loadToken ===
+              (globalThis as unknown as { __nataliaSessionLoadToken?: number })
+                .__nataliaSessionLoadToken
+          )
+            props.ctx.projection.hydrateSubagentHistory?.(subagentHistory);
+        });
       })();
     };
 
     const openUnresolvedInteractives = (event: Event) => {
+      const openStart = performance.now();
+      console.warn(
+        `[perf] openUnresolvedInteractives start +${(openStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? openStart)).toFixed(1)}ms`,
+      );
       const detail = (
         event as CustomEvent<{ token?: number; sessionID?: string }>
       ).detail;
@@ -1350,8 +1408,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         // Session loading finished; take one projection snapshot instead of
         // cloning once per raw event.
         const projected = cloneState(props.ctx.projection.getState());
+        const cloneStart = performance.now();
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+        console.warn(
+          `[perf] openUnresolvedInteractives hydrate/state clone +${(performance.now() - cloneStart).toFixed(1)}ms`,
+        );
         markStartup("first.paint");
         logStartupSummary();
         void loadSecondaryStartupData();
@@ -1377,6 +1439,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         };
         settleToBottom();
         setTimeout(scrollToBottom, 250);
+        const interactiveStart = performance.now();
         const interactive = await props.ctx.runtime.pendingInteractive?.();
         if (isStaleLoad()) return;
         const approvals = interactive?.approvals ?? [];
@@ -1389,6 +1452,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setCurrentQuestion(questions[0]);
           setQuestionOpen(true);
         }
+        console.warn(
+          `[perf] pendingInteractive applied approvals=${approvals.length} questions=${questions.length} +${(performance.now() - interactiveStart).toFixed(1)}ms`,
+        );
+        console.warn(
+          `[perf] openUnresolvedInteractives done +${(performance.now() - openStart).toFixed(1)}ms`,
+        );
         historyReplayDone = true;
       })();
     };
@@ -1435,29 +1504,59 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // desktop main-process event loop and makes first paint wait longer.
   });
 
+  function runIdle(callback: () => void) {
+    const idle = (
+      globalThis as unknown as {
+        requestIdleCallback?: (
+          cb: () => void,
+          opts?: { timeout?: number },
+        ) => number;
+      }
+    ).requestIdleCallback;
+    if (idle) {
+      idle(callback, { timeout: 1000 });
+    } else {
+      setTimeout(callback, 0);
+    }
+  }
+
   function loadSecondaryStartupData() {
-    void createUiPanelRequirementContext(props.ctx.runtime).then(
-      setPanelRequirementContext,
-    );
-    void props.ctx.runtime
-      .modelCatalog?.()
-      .then((catalog) => setModelCatalog(catalog));
-    void props.ctx.runtime.registeredTools?.().then((tools) => {
-      if (tools) setRegisteredTools(tools.map((tool) => tool.name));
-    });
-    void refreshSessions();
-    void refreshWorkspaces();
-    void props.ctx.runtime
-      .configGet?.()
-      .then((nextConfig) => setConfig(nextConfig));
-    void props.ctx.runtime
-      .plugins?.()
-      .then((plugins) => {
-        setInteractiveTerminalAvailable(
-          plugins.some((plugin) => plugin.id === "natalia-tool-terminal"),
+    const secondaryStart = performance.now();
+    console.warn(`[perf] loadSecondaryStartupData start +${(secondaryStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? secondaryStart)).toFixed(1)}ms`);
+    runIdle(() => {
+      void Promise.all([
+        createUiPanelRequirementContext(props.ctx.runtime).catch(() => undefined),
+        props.ctx.runtime.modelCatalog?.().catch(() => undefined),
+        props.ctx.runtime.registeredTools?.().catch(() => undefined),
+        props.ctx.runtime.configGet?.().catch(() => undefined),
+        props.ctx.runtime.plugins?.().catch(() => undefined),
+      ]).then(([requirementContext, catalog, tools, nextConfig, plugins]) => {
+        const appliedAt = performance.now();
+        batch(() => {
+          if (requirementContext) setPanelRequirementContext(requirementContext);
+          if (catalog) setModelCatalog(catalog);
+          if (tools) setRegisteredTools(tools.map((tool) => tool.name));
+          if (nextConfig) setConfig(nextConfig);
+          setInteractiveTerminalAvailable(
+            Boolean(
+              plugins?.some((plugin) => plugin.id === "natalia-tool-terminal"),
+            ),
+          );
+        });
+        console.warn(
+          `[perf] secondary all applied catalog=${catalog?.length ?? 0} tools=${tools?.length ?? 0} plugins=${plugins?.length ?? 0} +${(performance.now() - appliedAt).toFixed(1)}ms`,
         );
-      })
-      .catch(() => setInteractiveTerminalAvailable(false));
+      });
+    });
+    runIdle(() => {
+      void debouncedRefreshSessions();
+    });
+    runIdle(() => {
+      void debouncedRefreshWorkspaces();
+    });
+    console.warn(
+      `[perf] loadSecondaryStartupData scheduled +${(performance.now() - secondaryStart).toFixed(1)}ms`,
+    );
   }
 
   const modelOptions = () =>

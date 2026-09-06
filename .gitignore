@@ -83,3 +83,8 @@ Thumbs.db
 /packages/tooling/diff-wasm/ast/
 /packages/tooling/diff-wasm/ast-build/
 /packages/tooling/diff-wasm/text-build/
+/packages/framework/diff-wasm/ast/
+/packages/framework/diff-wasm/ast-build/
+/packages/framework/diff-wasm/text-build/
+/packages/framework/diff-wasm/src/natalia_diff_wasm.wasm
+/packages/hosts/object-store/native-index/target/

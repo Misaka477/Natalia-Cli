@@ -2,8 +2,8 @@ import {
   diffWasm,
   diffWasmBinary,
   diffWasmStructured,
-} from "../packages/tooling/diff-wasm/src/index.ts";
-import { diffWasmAst } from "../packages/tooling/diff-wasm/src/ast.ts";
+} from "../packages/framework/diff-wasm/src/index.ts";
+import { diffWasmAst } from "../packages/framework/diff-wasm/src/ast.ts";
 
 function makeLines(count: number) {
   const line =

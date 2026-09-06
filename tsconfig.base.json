@@ -12,6 +12,7 @@
     "baseUrl": ".",
     "paths": {
       "@natalia/agent": ["packages/framework/agent/src/index.ts"],
+      "@natalia/framework-diff": ["packages/framework/diff/src/index.ts"],
       "@natalia/attachments": ["packages/framework/attachments/src/index.ts"],
       "@natalia/capability": ["packages/core/capability/src/index.ts"],
       "@natalia/checkpoint": ["packages/framework/checkpoint/src/index.ts"],
@@ -36,7 +37,7 @@
       "@natalia/plugin-file-editor": [
         "packages/plugins/ui/file-editor/src/index.ts"
       ],
-      "@natalia/diff-wasm": ["packages/tooling/diff-wasm/src/index.ts"],
+      "@natalia/diff-wasm": ["packages/framework/diff-wasm/src/index.ts"],
       "@natalia/ui-host": ["packages/hosts/ui-host/src/index.ts"],
       "@natalia/view-store": ["packages/hosts/view-store/src/index.ts"],
       "@natalia/installer": ["packages/tooling/installer/src/index.ts"],

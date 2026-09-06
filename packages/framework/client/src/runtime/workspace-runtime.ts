@@ -84,6 +84,30 @@ async function appendWorkspaceMutation(
   }
 }
 
+async function astDiffWithWorkerFallback(
+  oldText: string,
+  newText: string,
+  language: string,
+) {
+  try {
+    const { astDiffInWorker } = await import("./runtime-ast-client");
+    return await astDiffInWorker(oldText, newText, language);
+  } catch {
+    const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
+    return diffWasmAst(oldText, newText, language);
+  }
+}
+
+async function astIndexWithWorkerFallback(source: string, language: string) {
+  try {
+    const { astIndexInWorker } = await import("./runtime-ast-client");
+    return await astIndexInWorker(source, language);
+  } catch {
+    const { indexWasmAst } = await import("@natalia/diff-wasm/ast");
+    return indexWasmAst(source, language);
+  }
+}
+
 export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
   return {
     async workspaceFiles(input) {
@@ -211,8 +235,11 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
       language: string;
     }) {
       await ctx.ports.getReady();
-      const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
-      return diffWasmAst(input.oldText, input.newText, input.language);
+      return await astDiffWithWorkerFallback(
+        input.oldText,
+        input.newText,
+        input.language,
+      );
     },
     async astDiffBatch(input: {
       files: Array<{
@@ -298,7 +325,6 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
       };
     }) {
       await ctx.ports.getReady();
-      const { indexWasmAst } = await import("@natalia/diff-wasm/ast");
       const astIndexStore = new ObjectStore(
         resolve(ctx.ports.getWorkspaceRoot(), ".natalia", "objects"),
       );
@@ -329,7 +355,10 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
             if (cached) {
               indexed = { language: file.language, nodes: cached.nodes };
             } else {
-              indexed = await indexWasmAst(file.source, file.language);
+              indexed = await astIndexWithWorkerFallback(
+                file.source,
+                file.language,
+              );
               await astIndexStore.putMeta(cacheKey, { nodes: indexed.nodes });
             }
             let nodes = indexed.nodes;
@@ -771,24 +800,62 @@ function byteOffsetToUtf16(source: string, byteOffset: number): number {
   return utf16;
 }
 
+function isProbablyBinary(data: Uint8Array): boolean {
+  const sample = data.subarray(0, 8192);
+  return sample.includes(0);
+}
+
+async function gitShowContentBuffer(
+  workspaceRoot: string,
+  ref: string,
+  path: string,
+): Promise<Buffer | undefined> {
+  try {
+    const process = Bun.spawn(["git", "show", `${ref}:${path}`], {
+      cwd: workspaceRoot,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(process.stdout).arrayBuffer(),
+      new Response(process.stderr).arrayBuffer(),
+    ]);
+    const exitCode = await process.exited;
+    if (exitCode !== 0) return undefined;
+    void stderr;
+    return Buffer.from(stdout);
+  } catch {
+    return undefined;
+  }
+}
+
 async function gitShowContent(
   workspaceRoot: string,
   ref: string,
   path: string,
 ): Promise<string | undefined> {
-  const result = await gitCapture(workspaceRoot, ["show", `${ref}:${path}`]);
-  return result.exitCode === 0 ? result.stdout : undefined;
+  const buffer = await gitShowContentBuffer(workspaceRoot, ref, path);
+  return buffer?.toString("utf8");
+}
+
+async function readWorkspaceContentBuffer(
+  workspaceRoot: string,
+  path: string,
+): Promise<Buffer | undefined> {
+  try {
+    return await readFile(resolve(workspaceRoot, path));
+  } catch {
+    return undefined;
+  }
 }
 
 async function readWorkspaceContent(
   workspaceRoot: string,
   path: string,
 ): Promise<string | undefined> {
-  try {
-    return await readFile(resolve(workspaceRoot, path), "utf8");
-  } catch {
-    return undefined;
-  }
+  const buffer = await readWorkspaceContentBuffer(workspaceRoot, path);
+  return buffer?.toString("utf8");
 }
 
 export async function collectWorkspaceGitDiff(
@@ -845,11 +912,29 @@ export async function collectWorkspaceGitDiff(
       let after: string | undefined;
       if (input?.includeContent) {
         if (operation === "deleted") {
-          before = await gitShowContent(workspaceRoot, from, oldPath ?? path);
+          const buffer = await gitShowContentBuffer(
+            workspaceRoot,
+            from,
+            oldPath ?? path,
+          );
+          if (buffer && !isProbablyBinary(buffer))
+            before = buffer.toString("utf8");
         } else {
-          if (!(operation === "added" && parsed.untracked))
-            before = await gitShowContent(workspaceRoot, from, oldPath ?? path);
-          after = await readWorkspaceContent(workspaceRoot, path);
+          if (!(operation === "added" && parsed.untracked)) {
+            const buffer = await gitShowContentBuffer(
+              workspaceRoot,
+              from,
+              oldPath ?? path,
+            );
+            if (buffer && !isProbablyBinary(buffer))
+              before = buffer.toString("utf8");
+          }
+          const afterBuffer = await readWorkspaceContentBuffer(
+            workspaceRoot,
+            path,
+          );
+          if (afterBuffer && !isProbablyBinary(afterBuffer))
+            after = afterBuffer.toString("utf8");
         }
       }
       const counts = patch ? countPatch(patch) : { additions: 0, deletions: 0 };
@@ -880,8 +965,20 @@ export async function collectWorkspaceGitDiff(
   const changes = diffToChanges(rawDiff.stdout);
   if (input?.includeContent) {
     for (const change of changes) {
-      change.before = await gitShowContent(workspaceRoot, from, change.path);
-      change.after = await gitShowContent(workspaceRoot, to, change.path);
+      const beforeBuffer = await gitShowContentBuffer(
+        workspaceRoot,
+        from,
+        change.path,
+      );
+      const afterBuffer = await gitShowContentBuffer(
+        workspaceRoot,
+        to,
+        change.path,
+      );
+      if (beforeBuffer && !isProbablyBinary(beforeBuffer))
+        change.before = beforeBuffer.toString("utf8");
+      if (afterBuffer && !isProbablyBinary(afterBuffer))
+        change.after = afterBuffer.toString("utf8");
     }
   }
   return changes;

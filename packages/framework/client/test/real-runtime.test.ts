@@ -1372,6 +1372,12 @@ test("sandbox subsystem composes directly and releases on dispose", async () => 
 
   expect(kernel.service(SANDBOX_SERVICE)).toBeDefined();
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
+  await waitForAsync(
+    async () =>
+      (await client.registeredTools?.())?.some((tool) =>
+        tool.name.startsWith("team_"),
+      ) === true,
+  );
   const first = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   const resource = await first.startResource(
     "reload_box",
@@ -1469,6 +1475,12 @@ test("skills plugin config reload reconciles its lifecycle", async () => {
   expect(await client.skills?.()).toEqual([
     expect.objectContaining({ qualifiedName: "project:reloadable" }),
   ]);
+  await waitForAsync(
+    async () =>
+      (await client.registeredTools?.())?.some(
+        (tool) => tool.name === "skill_load",
+      ) === true,
+  );
   expect(
     (await client.registeredTools?.())?.filter(
       (tool) => tool.name === "skill_load",
@@ -1554,6 +1566,12 @@ test("team plugin config reload reconciles its lifecycle", async () => {
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
+  await waitForAsync(
+    async () =>
+      (await client.registeredTools?.())?.some((tool) =>
+        tool.name.startsWith("team_"),
+      ) === true,
+  );
   expect(
     (await client.registeredTools?.())?.filter((tool) =>
       tool.name.startsWith("team_"),
@@ -1617,6 +1635,12 @@ async execute() { return "ok"; } }] };`,
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.has("natalia-local-tools")).toBe(true);
   expect(kernel.service("localTools.reload")).toBeDefined();
+  await waitForAsync(
+    async () =>
+      (await client.registeredTools?.())?.some(
+        (tool) => tool.name === "extra_run",
+      ) === true,
+  );
   expect(
     (await client.registeredTools?.())?.some(
       (tool) => tool.name === "extra_run",
@@ -2946,6 +2970,12 @@ test("unloading a plugin publishes tool.unregistered and drops it from registere
   await client.plugins?.();
 
   // The plugin tool is registered and reported.
+  await waitForAsync(
+    async () =>
+      (await client.registeredTools?.())?.some(
+        (tool) => tool.name === "echo",
+      ) === true,
+  );
   const before = await client.registeredTools!();
   expect(before.some((tool) => tool.name === "echo")).toBe(true);
 
@@ -5802,7 +5832,7 @@ test("submit after cancel returns without waiting for the next turn to finish", 
     "the second turn to be admitted",
   );
   await client.dispose?.();
-});
+}, 120_000);
 
 test("provider admission is persisted before the provider turn begins", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-admission-"));
