@@ -14,6 +14,10 @@ import {
 } from "@natalia/session";
 import { runtimeEventDurability } from "@natalia/contracts";
 import {
+  createCollabSnapshotScheduler,
+  isCollabSnapshotRelevantEvent,
+} from "./collaboration/collab-snapshot";
+import {
   SESSION_STORE_CONTROLLER_SERVICE,
   type SessionStoreController,
 } from "@natalia/runtime-services";
@@ -30,6 +34,16 @@ export function createEventSink(
   ctx: RuntimeContext,
   options: RealRuntimeClientOptions,
 ) {
+  const collabSnapshotScheduler = createCollabSnapshotScheduler(ctx);
+  ctx.ports.scheduleCollabSnapshot = collabSnapshotScheduler.schedule;
+
+  function planDocsFor(exec: SessionExecutionState | undefined) {
+    const snapshot = exec?.collabSnapshot;
+    if (snapshot && snapshot.eventCount === (exec?.session.events.length ?? -1))
+      return snapshot.planDocs;
+    return projectedPlanDocs(exec?.session.events ?? []);
+  }
+
   return {
     publish,
     publishForSession,
@@ -140,6 +154,9 @@ export function createEventSink(
       runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(exec.session, event);
+      if (isCollabSnapshotRelevantEvent(event)) {
+        collabSnapshotScheduler.schedule(exec);
+      }
       const sessionStoreController =
         ctx.ports.resolveService<SessionStoreController>(
           SESSION_STORE_CONTROLLER_SERVICE,
@@ -299,7 +316,7 @@ export function createEventSink(
           /全部完成|全部通过|没有缺口|已完成|audit_passed|no gaps|all done/iu.test(
             last.text,
           );
-        const active = projectedPlanDocs(exec.session.events).filter(
+        const active = planDocsFor(exec).filter(
           (plan) =>
             plan.status === "handed_off" ||
             plan.status === "executing" ||
@@ -333,7 +350,7 @@ export function createEventSink(
       // executed plan to awaiting_audit. planDocUpdateStatus itself wakes Nia,
       // so this never depends on the model remembering to call a status tool.
       if (exec?.session) {
-        const activePlans = projectedPlanDocs(exec.session.events).filter(
+        const activePlans = planDocsFor(exec).filter(
           (plan) =>
             plan.status === "handed_off" ||
             plan.status === "executing" ||

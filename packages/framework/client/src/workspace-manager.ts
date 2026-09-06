@@ -26,6 +26,7 @@ export type WorkspaceManagerOptions = Pick<
   | "useSqliteStore"
   | "sessionDir"
   | "checkpointDir"
+  | "contextWindowCachePath"
 >;
 
 export type WorkspaceRuntime = {
@@ -264,6 +265,7 @@ export function createWorkspaceManager(
       pluginStoreRoot: options.pluginStoreRoot,
       globalConfigPath: options.globalConfigPath,
       useSqliteStore: options.useSqliteStore,
+      contextWindowCachePath: options.contextWindowCachePath,
     });
     const settings = await readSettings(root);
     const ws: WorkspaceRuntime = {

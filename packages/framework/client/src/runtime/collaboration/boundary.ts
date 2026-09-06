@@ -20,6 +20,13 @@ import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
 export function createCollaborationBoundary(ctx: RuntimeContext) {
+  function planDocsFor(exec?: SessionExecutionState) {
+    const snapshot = exec?.collabSnapshot;
+    if (snapshot && snapshot.eventCount === (exec?.session.events.length ?? -1))
+      return snapshot.planDocs;
+    return projectedPlanDocs(exec?.session.events ?? []);
+  }
+
   return {
     settleMailboxAtBoundary,
     acknowledgeDeliveredMailboxAtBoundary,
@@ -184,7 +191,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         );
       }
       if (confirmed.length) {
-        const activePlan = projectedPlanDocs(target.session.events).find(
+        const activePlan = planDocsFor(target).find(
           (plan) =>
             plan.status === "executing" ||
             plan.status === "awaiting_audit" ||

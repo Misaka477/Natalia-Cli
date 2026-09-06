@@ -25,6 +25,13 @@ import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
 export function createMailboxPlans(ctx: RuntimeContext) {
+  function planDocsFor(exec: SessionExecutionState | undefined) {
+    const snapshot = exec?.collabSnapshot;
+    if (snapshot && snapshot.eventCount === (exec?.session.events.length ?? -1))
+      return snapshot.planDocs;
+    return projectedPlanDocs(exec?.session.events ?? []);
+  }
+
   return {
     createCollabChatTool,
     enqueueMailboxMessage,
@@ -199,7 +206,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           queued: false as const,
           reason: "next_plan_handoff requires relatedPlanID",
         };
-      const plan = projectedPlanDocs(owner.session.events).find(
+      const plan = planDocsFor(owner).find(
         (candidate) => candidate.planID === planID,
       );
       if (!plan)

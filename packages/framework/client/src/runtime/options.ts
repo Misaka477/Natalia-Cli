@@ -20,6 +20,8 @@ export type RealRuntimeClientOptions = {
   sessionDir?: string;
   checkpointDir?: string;
   useSqliteStore?: boolean;
+  /** Persistent cache for provider context-window resolution. Avoids remote model-metadata probing on every cold start. */
+  contextWindowCachePath?: string;
   provider?: StreamingProvider;
   tools?: ToolRegistry;
   permissionProfile?: string;

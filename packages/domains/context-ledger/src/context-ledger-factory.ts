@@ -9,12 +9,19 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
   return {
     create: () => new ContextLedger(),
     restore(context, events) {
+      const restoreStart = performance.now();
+      let addMs = 0;
+      const add = (entry: Parameters<ContextLedger["add"]>[0]) => {
+        const addStart = performance.now();
+        context.add(entry);
+        addMs += performance.now() - addStart;
+      };
       const assistantByID = new Map<string, string>();
       const recordedCalls = new Set<string>();
       const recordedResults = new Set<string>();
       for (const event of events) {
         if (event.type === "turn.submitted") {
-          context.add({
+          add({
             id: `${event.id}:user`,
             role: "user",
             content: event.text,
@@ -42,7 +49,7 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
             event.status === "awaiting_approval")
         ) {
           recordedCalls.add(event.callID);
-          context.add({
+          add({
             id: `restore:${event.id}:call`,
             role: "tool_call",
             content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
@@ -64,7 +71,7 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           // provider still sees the call/result pair.
           if (!recordedCalls.has(event.callID)) {
             recordedCalls.add(event.callID);
-            context.add({
+            add({
               id: `restore:${event.id}:call`,
               role: "tool_call",
               content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
@@ -72,7 +79,7 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
             });
           }
           recordedResults.add(event.callID);
-          context.add({
+          add({
             id: `restore:${event.id}:result`,
             role: "tool_result",
             content:
@@ -87,7 +94,7 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
         if (event.type === "turn.finished") {
           const content = assistantByID.get(event.id);
           if (content?.trim()) {
-            context.add({
+            add({
               id: `${event.id}:assistant`,
               role: "assistant",
               content,
@@ -96,6 +103,9 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           }
         }
       }
+      console.warn(
+        `[perf] contextLedgerFactory.restore events=${events.length} entries=${context.snapshot().entries.length} add=${addMs.toFixed(1)}ms total=${(performance.now() - restoreStart).toFixed(1)}ms`,
+      );
     },
   };
 }

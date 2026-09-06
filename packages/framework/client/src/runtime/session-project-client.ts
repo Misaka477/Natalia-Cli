@@ -1,8 +1,5 @@
 import type { SessionProjection } from "@natalia/session";
-import type {
-  RuntimeEvent,
-  RuntimeMessagePage,
-} from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeMessagePage } from "@natalia/contracts";
 import type {
   SessionProjectWorkerRequest,
   SessionProjectWorkerResponse,
@@ -23,6 +20,14 @@ type SessionProjectTask =
       events: RuntimeEvent[];
     }
   | {
+      op: "recoveryPrepare";
+      events: RuntimeEvent[];
+    }
+  | {
+      op: "collabSnapshot";
+      events: RuntimeEvent[];
+    }
+  | {
       op: "projection";
       name:
         | "planDocs"
@@ -35,6 +40,15 @@ type SessionProjectTask =
         | "collabMessages";
       events: RuntimeEvent[];
     };
+
+export type RecoveryContextPlan = {
+  latestContextCheckpoint?: Extract<
+    RuntimeEvent,
+    { type: "context.checkpoint" }
+  >;
+  checkpointHasSummary: boolean;
+  restoreEvents: RuntimeEvent[];
+};
 
 let worker: Worker | undefined;
 let nextID = 1;
@@ -70,9 +84,7 @@ function ensureWorker(): Worker {
   return worker;
 }
 
-async function run<T>(
-  request: SessionProjectTask,
-): Promise<T> {
+async function run<T>(request: SessionProjectTask): Promise<T> {
   const id = nextID++;
   const instance = ensureWorker();
   return new Promise<T>((resolve, reject) => {
@@ -101,6 +113,21 @@ export function projectedCanonicalToolsInWorker(
   events: RuntimeEvent[],
 ): Promise<unknown> {
   return run<unknown>({ op: "canonicalTools", events });
+}
+
+export function prepareSessionRecoveryContextInWorker(
+  events: RuntimeEvent[],
+): Promise<RecoveryContextPlan> {
+  return run<RecoveryContextPlan>({ op: "recoveryPrepare", events });
+}
+
+export function computeCollabSnapshotInWorker(
+  events: RuntimeEvent[],
+): Promise<import("./session-execution-state").CollabSnapshot> {
+  return run<import("./session-execution-state").CollabSnapshot>({
+    op: "collabSnapshot",
+    events,
+  });
 }
 
 export function runSessionProjectionInWorker(

@@ -34,6 +34,11 @@ export async function handleRuntimeCommand(argv: string[]) {
       // The web server is the long-lived API surface for a workspace; persist
       // sessions into the same per-workspace SQLite store used by the TUI.
       useSqliteStore: true,
+      contextWindowCachePath: resolve(
+        process.cwd(),
+        ".natalia",
+        "context-window-cache.json",
+      ),
     });
     await manager.load();
     console.log(

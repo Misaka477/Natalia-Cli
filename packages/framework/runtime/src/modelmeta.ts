@@ -1,3 +1,6 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
 export type ContextWindowSource =
   | "config"
   | "provider_metadata"
@@ -24,6 +27,7 @@ export type ContextWindowResolution = {
   expiresAt: string;
   ttlMs: number;
   diagnostic: string;
+  maxOutputTokens?: number;
 };
 
 export type ModelMetadataProvider = {
@@ -61,6 +65,19 @@ type CacheEntry = ContextWindowResolution;
 
 export class ContextWindowResolver {
   private cache = new Map<string, CacheEntry>();
+  private diskCache = new Map<string, CacheEntry>();
+  private diskLoaded = false;
+  private diskWriteQueue = Promise.resolve();
+  private readonly cacheFile?: string;
+
+  constructor(options: { cacheFile?: string } = {}) {
+    this.cacheFile = options.cacheFile;
+    configureModelsDevCatalogCache(
+      options.cacheFile
+        ? join(dirname(options.cacheFile), "models-dev-catalog.json")
+        : undefined,
+    );
+  }
 
   async resolve(input: ResolveContextInput): Promise<ContextWindowResolution> {
     const now = input.now ?? new Date();
@@ -80,9 +97,17 @@ export class ContextWindowResolver {
     const cached = this.cache.get(cacheKey);
     if (cached && Date.parse(cached.expiresAt) > now.getTime()) return cached;
 
+    if (this.cacheFile && !this.diskLoaded) await this.loadDiskCache();
+    const diskCached = this.diskCache.get(cacheKey);
+    if (diskCached && Date.parse(diskCached.expiresAt) > now.getTime()) {
+      this.cache.set(cacheKey, diskCached);
+      return diskCached;
+    }
+
     const fromModels = await this.fromProviderMetadata(input, now, ttlMs);
     if (fromModels) {
       this.cache.set(cacheKey, fromModels);
+      await this.persist(cacheKey, fromModels);
       return fromModels;
     }
 
@@ -98,8 +123,10 @@ export class ContextWindowResolver {
         now,
         ttlMs,
         "provider model detail context window",
+        detail?.maxOutputTokens,
       );
       this.cache.set(cacheKey, result);
+      await this.persist(cacheKey, result);
       return result;
     }
 
@@ -113,8 +140,10 @@ export class ContextWindowResolver {
           now,
           ttlMs,
           "Models.dev model catalog context window",
+          catalog.maxOutputTokens,
         );
         this.cache.set(cacheKey, result);
+        await this.persist(cacheKey, result);
         return result;
       }
     }
@@ -143,6 +172,40 @@ export class ContextWindowResolver {
     );
     this.cache.set(cacheKey, fallback);
     return fallback;
+  }
+
+  private async loadDiskCache() {
+    this.diskLoaded = true;
+    if (!this.cacheFile) return;
+    try {
+      const raw = await readFile(this.cacheFile, "utf8");
+      const parsed = JSON.parse(raw) as {
+        entries?: Record<string, CacheEntry>;
+      };
+      for (const [key, value] of Object.entries(parsed.entries ?? {}))
+        this.diskCache.set(key, value);
+    } catch {
+      // Cache is best-effort; a missing/corrupt file only costs one probe later.
+    }
+  }
+
+  private async persist(cacheKey: string, value: CacheEntry) {
+    if (!this.cacheFile) return;
+    this.diskCache.set(cacheKey, value);
+    const snapshot = Object.fromEntries(this.diskCache.entries());
+    this.diskWriteQueue = this.diskWriteQueue
+      .then(async () => {
+        await mkdir(dirname(this.cacheFile!), { recursive: true, mode: 0o700 });
+        await writeFile(
+          this.cacheFile!,
+          `${JSON.stringify({ version: 1, entries: snapshot }, null, 2)}\n`,
+          { mode: 0o600 },
+        );
+      })
+      .catch(() => {
+        // Never let cache write failures break model resolution.
+      });
+    await this.diskWriteQueue;
   }
 
   cacheKey(
@@ -178,6 +241,7 @@ export class ContextWindowResolver {
       now,
       ttlMs,
       "provider /models metadata context window",
+      item?.maxOutputTokens,
     );
   }
 }
@@ -220,6 +284,11 @@ let modelsDevCache:
   | { expiresAt: number; value: Record<string, ModelsDevProvider> }
   | undefined;
 let modelsDevPending: Promise<Record<string, ModelsDevProvider>> | undefined;
+let modelsDevCacheFile: string | undefined;
+
+function configureModelsDevCatalogCache(cacheFile: string | undefined) {
+  modelsDevCacheFile = cacheFile;
+}
 
 type ModelsDevProvider = {
   name?: string;
@@ -282,6 +351,21 @@ async function loadModelsDevCatalog(fetchImpl: typeof fetch) {
   const now = Date.now();
   if (modelsDevCache && modelsDevCache.expiresAt > now)
     return modelsDevCache.value;
+  if (modelsDevCacheFile) {
+    try {
+      const raw = await readFile(modelsDevCacheFile, "utf8");
+      const parsed = JSON.parse(raw) as {
+        expiresAt: number;
+        value: Record<string, ModelsDevProvider>;
+      };
+      if (parsed.expiresAt > now) {
+        modelsDevCache = parsed;
+        return parsed.value;
+      }
+    } catch {
+      // Corrupt/missing catalog cache costs one network fetch.
+    }
+  }
   if (!modelsDevPending) {
     modelsDevPending = fetchImpl("https://models.dev/api.json", {
       signal: AbortSignal.timeout(3_000),
@@ -293,8 +377,27 @@ async function loadModelsDevCatalog(fetchImpl: typeof fetch) {
           );
         return (await response.json()) as Record<string, ModelsDevProvider>;
       })
-      .then((value) => {
-        modelsDevCache = { expiresAt: Date.now() + 24 * 60 * 60 * 1000, value };
+      .then(async (value) => {
+        const next = {
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+          value,
+        };
+        modelsDevCache = next;
+        if (modelsDevCacheFile) {
+          try {
+            await mkdir(dirname(modelsDevCacheFile), {
+              recursive: true,
+              mode: 0o700,
+            });
+            await writeFile(
+              modelsDevCacheFile,
+              `${JSON.stringify(next, null, 2)}\n`,
+              { mode: 0o600 },
+            );
+          } catch {
+            // Catalog cache write failure must not break model resolution.
+          }
+        }
         return value;
       })
       .catch(() => {
@@ -320,6 +423,7 @@ function resolution(
   now: Date,
   ttlMs: number,
   diagnostic: string,
+  maxOutputTokens?: number,
 ): ContextWindowResolution {
   return {
     tokens,
@@ -329,5 +433,6 @@ function resolution(
     expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
     ttlMs,
     diagnostic,
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
   };
 }

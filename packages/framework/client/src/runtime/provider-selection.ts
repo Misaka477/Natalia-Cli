@@ -13,6 +13,7 @@ import {
 } from "@natalia/config";
 import { modelRefKey, parseModelRef, type ModelRef } from "@natalia/contracts";
 import {
+  knownModelOutputLimit,
   modelsDevModelLimits,
   providerForModel,
   resolveReservedOutputTokens,
@@ -45,11 +46,17 @@ async function resolveContextStatusConfig(
   selectedRef?: string,
 ) {
   if (!selectedRef && !config.defaultModel) return defaultContextStatusConfig();
+  const resolveStart = performance.now();
+  const mark = (name: string) =>
+    console.warn(
+      `[perf] resolveContextStatusConfig.${name} model=${selectedRef ?? config.defaultModel} +${(performance.now() - resolveStart).toFixed(1)}ms`,
+    );
   const effective = resolveEffectiveModel(
     config,
     selectedRef ?? config.defaultModel!,
   );
   if (!effective) return defaultContextStatusConfig();
+  mark("effective");
   const executingModel = provider?.model ?? effective.ref.model;
   const selectionMatchesProvider = executingModel === effective.ref.model;
   const executingProvider = selectionMatchesProvider
@@ -58,6 +65,7 @@ async function resolveContextStatusConfig(
   const providerConfig = config.providers[executingProvider];
   const canProbeExecutingProvider =
     selectionMatchesProvider || !!providerConfig;
+  mark("config");
   const contextWindow = await resolver.resolve({
     provider: executingProvider,
     model: executingModel,
@@ -74,18 +82,17 @@ async function resolveContextStatusConfig(
         : undefined,
     useModelsDevCatalog: config.context.autoDetectWindow,
   });
+  mark("resolver");
   const catalog = config.context.autoDetectWindow
     ? await modelsDevModelLimits(executingProvider, executingModel)
     : undefined;
-  const providerMetadata =
-    catalog ||
-    !canProbeExecutingProvider ||
-    !shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
-      ? undefined
-      : await provider?.listModels?.().catch(() => undefined);
-  const discoveredOutput = providerMetadata?.find(
-    (model) => model.id === executingModel,
-  )?.maxOutputTokens;
+  mark("modelsDev");
+  mark("modelsDev2");
+  const discoveredOutput =
+    contextWindow.maxOutputTokens ??
+    catalog?.maxOutputTokens ??
+    knownModelOutputLimit(executingModel);
+  mark("discoveredOutput");
   const reserved = resolveReservedOutputTokens({
     configuredReserved: config.context.reservedOutputTokens,
     explicitMaxOutputTokens: selectionMatchesProvider
@@ -95,6 +102,7 @@ async function resolveContextStatusConfig(
     catalogOutputLimit: catalog?.maxOutputTokens,
     contextWindow: contextWindow.tokens,
   });
+  mark("reserved");
   return {
     max: contextWindow.tokens,
     thresholdPercent: config.context.compactionThresholdPercent,

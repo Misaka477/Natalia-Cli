@@ -13,6 +13,13 @@ import type {
 } from "@natalia/runtime-services";
 import type { RuntimeContextStatusConfig } from "./status-config";
 
+export type CollabSnapshot = {
+  collabMessages: import("@natalia/session").ProjectedCollabMessage[];
+  planDocs: import("@natalia/session").ProjectedPlanDoc[];
+  revision: number;
+  eventCount: number;
+};
+
 type PermissionProfile = import("@natalia/contracts").PermissionProfile;
 
 export type SessionExecutionState = {
@@ -42,6 +49,7 @@ export type SessionExecutionState = {
     import("@natalia/contracts").ChatModelProfile
   >;
   advisorPending?: boolean;
+  collabSnapshot?: CollabSnapshot;
   injectedMailboxIDs: Set<string>;
   pendingChatUserMessages: Array<{ messageID: string; text: string }>;
 };

@@ -34,6 +34,26 @@ export function createChatPrompt(ctx: RuntimeContext) {
     chatSystemPrompt,
   };
 
+  function collabMessagesFor(
+    exec: SessionExecutionState | undefined,
+    events: RuntimeEvent[],
+  ): ReturnType<typeof projectedCollabMessages> {
+    const snapshot = exec?.collabSnapshot;
+    if (snapshot && snapshot.eventCount === events.length)
+      return snapshot.collabMessages;
+    return projectedCollabMessages(events);
+  }
+
+  function planDocsFor(
+    exec: SessionExecutionState | undefined,
+    events: RuntimeEvent[],
+  ): ReturnType<typeof projectedPlanDocs> {
+    const snapshot = exec?.collabSnapshot;
+    if (snapshot && snapshot.eventCount === events.length)
+      return snapshot.planDocs;
+    return projectedPlanDocs(events);
+  }
+
   function recentMainAgentActivity(
     events: RuntimeEvent[],
     snapshot?: Extract<RuntimeEvent, { type: "session.snapshot" }>,
@@ -124,7 +144,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     const snapshot = exec
       ? currentSessionSnapshot(exec, `snapshot:nia:${chatSession.id}`)
       : undefined;
-    const plans = projectedPlanDocs(chatSession.events);
+    const plans = planDocsFor(exec, chatSession.events);
     const activePlan = plans.find(
       (plan) =>
         plan.status === "executing" ||
@@ -170,7 +190,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
             .join("\n")}`
         : "Pending mailbox intents: none",
       ...(() => {
-        const collab = projectedCollabMessages(chatSession.events);
+        const collab = collabMessagesFor(exec, chatSession.events);
         const nataliaChats = collab.filter(
           (message) =>
             message.kind === "chat" &&
@@ -224,7 +244,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     const snapshot = exec
       ? currentSessionSnapshot(exec, `snapshot:live:${chatSession.id}`)
       : latestSessionSnapshot(chatSession.events);
-    const plans = projectedPlanDocs(chatSession.events);
+    const plans = planDocsFor(exec, chatSession.events);
     const activePlan = plans.find(
       (plan) =>
         plan.status === "executing" ||
@@ -242,7 +262,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     const rules = projectedConstitutionRules(chatSession.events);
     const activity = recentMainAgentActivity(chatSession.events, snapshot);
     const recentTools = recentToolActivity(chatSession.events);
-    const collab = projectedCollabMessages(chatSession.events);
+    const collab = collabMessagesFor(exec, chatSession.events);
     const nataliaQuestions = collab.filter(
       (message) => message.kind === "question" && message.status === "pending",
     );

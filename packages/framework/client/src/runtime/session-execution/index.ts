@@ -139,6 +139,12 @@ export function createSessionExecution(
   async function ensureExecution(
     sessionID: SessionID,
   ): Promise<SessionExecutionState> {
+    const start = performance.now();
+    const mark = (name: string) =>
+      console.warn(
+        `[perf] ensureExecution.${name} session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
+      );
+    console.warn(`[perf] ensureExecution start session=${sessionID}`);
     const {
       getProviderSource,
       getProvider,
@@ -151,7 +157,12 @@ export function createSessionExecution(
     } = ctx.ports;
     const { executionBySession } = ctx.state;
     const existing = executionBySession.get(sessionID);
-    if (existing) return existing;
+    if (existing) {
+      console.warn(
+        `[perf] ensureExecution hit session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
+      );
+      return existing;
+    }
     const sessionStore = ctx.ports.resolveService<SessionStoreController>(
       SESSION_STORE_CONTROLLER_SERVICE,
     );
@@ -163,10 +174,13 @@ export function createSessionExecution(
     if (!contextLedgerFactory)
       throw new Error("context ledger unavailable (natalia-context-ledger)");
     const stored = await sessionStore.load(sessionID);
+    mark("load");
     const loaded = stored.session;
     const recovery = stored.recovery;
     const execContext = contextLedgerFactory.create();
+    mark("createLedger");
     const projection = projectSession(loaded);
+    mark("project");
     const epoch = stored.contextEpoch;
     const latestContextCheckpoint = [...projection.replayableEvents]
       .reverse()
@@ -182,12 +196,14 @@ export function createSessionExecution(
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
     else if (checkpointHasSummary && latestContextCheckpoint)
       execContext.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
+    mark("checkpointRestore");
     const restoreEvents = epoch
       ? sessionStore.contextEventsAfter(sessionID, epoch)!
       : checkpointHasSummary && latestContextCheckpoint
         ? projection.replayableEvents.slice(checkpointIndex + 1)
         : projection.replayableEvents;
     contextLedgerFactory.restore(execContext, restoreEvents);
+    mark("restore");
     console.warn("[context-restore] ensureExecution", {
       sessionID,
       replayableEvents: projection.replayableEvents.length,
@@ -237,7 +253,15 @@ export function createSessionExecution(
     executionBySession.set(sessionID, exec);
     pruneIdleSessionExecutions(ctx);
     applyAgentProvider(exec);
+    mark("apply");
+    // Warm the collaboration snapshot cache for attached/background sessions
+    // without making the user wait for the worker.
+    ctx.ports.scheduleCollabSnapshot?.(exec);
     await refreshExecutionContextConfig(exec);
+    mark("refresh");
+    console.warn(
+      `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
+    );
     return exec;
   }
 }

@@ -211,6 +211,12 @@ export function createSessionStoreController(input: {
     contextEpoch?: StoredContextEpoch;
     recovery?: SessionStoreRecoveryView;
   }> {
+    const loadStart = performance.now();
+    const mark = (name: string) =>
+      console.warn(
+        `[perf] sessionStore.load.${name} id=${id} +${(performance.now() - loadStart).toFixed(1)}ms`,
+      );
+    console.warn(`[perf] sessionStore.load start id=${id}`);
     const store = sqliteStore;
     const legacy =
       options.create && !store
@@ -218,6 +224,7 @@ export function createSessionStoreController(input: {
         : await sessionStore.load(id);
     if (!store) {
       if (!legacy) throw new Error(`session not found: ${id}`);
+      mark("jsonStore");
       return { session: legacy };
     }
 
@@ -227,15 +234,24 @@ export function createSessionStoreController(input: {
       durable = store.get(id);
     }
     if (!durable) throw new Error(`session not found: ${id}`);
+    mark("get");
     const contextEpoch = store.loadContextEpoch(id);
+    mark("contextEpoch");
     const indexedRecovery = options.indexedRecovery && Boolean(contextEpoch);
     let events = indexedRecovery ? [] : store.loadEvents(id);
+    mark("events");
     if (!events.length && !indexedRecovery && legacy?.events.length) {
       store.replace(legacy);
       durable = store.get(id)!;
       events = store.loadEvents(id);
+      mark("eventsReplace");
     }
     const inbox = store.loadInbox(id);
+    mark("inbox");
+    const recovery = indexedRecovery
+      ? store.loadRecoveryProjection(id)
+      : undefined;
+    if (recovery) mark("recoveryProjection");
     return {
       session: {
         ...(legacy ?? createSessionRecord(id, options.title ?? "New session")),
@@ -248,9 +264,7 @@ export function createSessionStoreController(input: {
         inbox: inbox.length ? inbox : legacy?.inbox,
       },
       contextEpoch,
-      ...(indexedRecovery
-        ? { recovery: store.loadRecoveryProjection(id) }
-        : {}),
+      ...(recovery ? { recovery } : {}),
     };
   }
 

@@ -176,3 +176,5 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
     scheduleRuntimeStatusSnapshot: ctx.ports.scheduleRuntimeStatusSnapshot,
   };
 }
+
+export type InitializeScope = ReturnType<typeof createInitializeRuntime>;

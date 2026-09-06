@@ -20,6 +20,11 @@ export async function finalizeInitialize(
   }: Awaited<ReturnType<typeof import("./session-recovery").recoverSession>>,
 ) {
   const scope = createInitializeRuntime(ctx);
+  const start = performance.now();
+  const mark = (name: string) =>
+    console.warn(
+      `[perf] finalizeInitialize.${name} +${(performance.now() - start).toFixed(1)}ms`,
+    );
   const governanceLedgerController =
     scope.resolveService<GovernanceLedgerController>(
       scope.GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
@@ -35,6 +40,11 @@ export async function finalizeInitialize(
     throw new Error("work ledger unavailable (natalia-work-ledger)");
   const session = scope.session;
   if (!session) throw new Error("session initialization did not complete");
+  // Warm the collaboration snapshot in the background so the first
+  // providerRunnerInput/chat-prompt read does not run the full event
+  // projection synchronously on the runtime thread.
+  if (scope.activeExec) ctx.ports.scheduleCollabSnapshot?.(scope.activeExec);
+  mark("pre");
   scope.publish({
     type: "session.created",
     sessionID: scope.sessionID,
@@ -42,6 +52,7 @@ export async function finalizeInitialize(
   });
   if (scope.replayMode === "all")
     for (const event of session.events) scope.sink?.(event);
+  mark("replay");
   if (sqliteRecovery)
     scope.interactive.restoreRecoveredInteractiveState(
       sqliteRecovery.approvals.filter(
@@ -60,6 +71,7 @@ export async function finalizeInitialize(
       ),
     );
   else scope.interactive.restoreInteractiveState(session.events);
+  mark("interactive");
   if (scope.replayMode === "none") {
     const pending = sqliteRecovery
       ? {
@@ -82,8 +94,10 @@ export async function finalizeInitialize(
     for (const request of pending.approvals) scope.sink?.(request);
     for (const request of pending.questions) scope.sink?.(request);
   }
+  mark("pendingInteractive");
   if (scope.activeExec)
     await scope.initializeCheckpointController(scope.activeExec);
+  mark("checkpoint");
   // The exec is the turn's view of agent/model state; the closures were the
   // source of truth during init, so mirror them before any turn can run.
   if (scope.activeExec) {
@@ -94,7 +108,9 @@ export async function finalizeInitialize(
     scope.activeExec.permissionProfile = scope.selectedPermissionProfile;
     scope.applyAgentProvider(scope.activeExec);
   }
+  mark("exec");
   scope.publish({ type: "session.ready", sessionID: scope.sessionID });
+  mark("ready");
   const governanceRoot = resolveGovernanceRoot(ctx.state.pluginStoreRoot);
   const instance = loadInstanceGovernance(governanceRoot);
   if (instance.degraded)
@@ -144,6 +160,7 @@ export async function finalizeInitialize(
       }),
     );
   }
+  mark("governance");
   // Overrides are visible, not silent: a plugin that replaced a built-in
   // tool shows up in diagnostics so nobody discovers it by surprise.
   for (const override of scope.capabilityRegistry.overrides())
@@ -152,6 +169,7 @@ export async function finalizeInitialize(
       level: "warning",
       message: `capability "${override.winner}" (precedence ${override.winnerPrecedence}) replaced "${override.loser}" (precedence ${override.loserPrecedence}) for ${override.kind} "${override.name}"`,
     });
+  mark("overrides");
   scope.publishRuntimeCapabilities();
   scope.publishRegisteredTools();
   scope.publish(
@@ -159,5 +177,7 @@ export async function finalizeInitialize(
       scope.runtimeContext.status(scope.runtimeContextConfig),
     ),
   );
+  mark("tools");
   scope.publish(await scope.runtimeStatusSnapshot());
+  mark("statusSnapshot");
 }

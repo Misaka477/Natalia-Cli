@@ -1,5 +1,6 @@
 import { parentPort } from "node:worker_threads";
 import {
+  modelVisibleEvents,
   projectSession,
   projectSessionMessages,
   projectedCanonicalTools,
@@ -33,6 +34,16 @@ export type SessionProjectWorkerRequest =
     }
   | {
       id: number;
+      op: "recoveryPrepare";
+      events: import("@natalia/contracts").RuntimeEvent[];
+    }
+  | {
+      id: number;
+      op: "collabSnapshot";
+      events: import("@natalia/contracts").RuntimeEvent[];
+    }
+  | {
+      id: number;
       op: "projection";
       name:
         | "planDocs"
@@ -50,6 +61,36 @@ export type SessionProjectWorkerResponse =
   | { id: number; ok: true; result: unknown }
   | { id: number; ok: false; error: string };
 
+function prepareRecoveryContext(
+  events: import("@natalia/contracts").RuntimeEvent[],
+) {
+  let latestContextCheckpoint:
+    | Extract<
+        import("@natalia/contracts").RuntimeEvent,
+        { type: "context.checkpoint" }
+      >
+    | undefined;
+  let checkpointHasSummary = false;
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+    if (event?.type === "context.checkpoint") {
+      latestContextCheckpoint = event;
+      checkpointHasSummary = event.snapshot.entries.some(
+        (entry) => entry.role === "summary",
+      );
+      break;
+    }
+  }
+  return {
+    latestContextCheckpoint,
+    checkpointHasSummary,
+    restoreEvents:
+      checkpointHasSummary && latestContextCheckpoint
+        ? modelVisibleEvents(events)
+        : events,
+  };
+}
+
 const port = parentPort;
 if (!port) throw new Error("session-project worker requires parentPort");
 
@@ -62,6 +103,15 @@ port.on("message", (request: SessionProjectWorkerRequest) => {
       result = projectSessionMessages(request.session, request.options);
     } else if (request.op === "canonicalTools") {
       result = projectedCanonicalTools(request.events);
+    } else if (request.op === "recoveryPrepare") {
+      result = prepareRecoveryContext(request.events);
+    } else if (request.op === "collabSnapshot") {
+      result = {
+        collabMessages: projectedCollabMessages(request.events),
+        planDocs: projectedPlanDocs(request.events),
+        revision: 0,
+        eventCount: request.events.length,
+      };
     } else {
       switch (request.name) {
         case "planDocs":

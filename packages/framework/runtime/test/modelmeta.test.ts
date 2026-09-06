@@ -98,6 +98,39 @@ test("resolver uses provider metadata, detail, catalog, fallback and isolated ca
   );
 });
 
+test("resolver persists provider metadata results across instances", async () => {
+  const { mkdtemp } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "natalia-context-window-cache-"));
+  const cacheFile = join(dir, "context-window-cache.json");
+  let calls = 0;
+  const input = {
+    provider: "openai",
+    model: "model-persist",
+    baseURL: "https://one.example/v1",
+    apiKey: "key-persist",
+    providerAdapter: {
+      listModels: async () => {
+        calls++;
+        return [{ id: "model-persist", contextWindow: 77777 }];
+      },
+    },
+  };
+
+  const first = new ContextWindowResolver({ cacheFile });
+  const firstResult = await first.resolve(input);
+  expect(firstResult.source).toBe("provider_metadata");
+  expect(firstResult.tokens).toBe(77777);
+  expect(calls).toBe(1);
+
+  const second = new ContextWindowResolver({ cacheFile });
+  const secondResult = await second.resolve(input);
+  expect(secondResult.source).toBe("provider_metadata");
+  expect(secondResult.tokens).toBe(77777);
+  expect(calls).toBe(1);
+});
+
 test("provider request omits generic max token fields unless explicit or required", () => {
   const omitted = buildProviderRequest({
     model: "x",

@@ -20,6 +20,7 @@ export type RuntimePortsExtra = {
     id: string,
     kind: "approval" | "question",
   ) => boolean;
+  scheduleCollabSnapshot?: (exec: SessionExecutionState) => void;
   setLastSubmitted: (
     turn: import("@natalia/contracts").SubmittedTurn | undefined,
   ) => void;

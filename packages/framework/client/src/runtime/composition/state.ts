@@ -55,7 +55,9 @@ export function createCompositionContext(
     sessionPersistence: Promise.resolve(),
     sessionPersistenceBySession: new Map(),
     nativeRuntimeID: randomUUID(),
-    contextWindowResolver: new ContextWindowResolver(),
+    contextWindowResolver: new ContextWindowResolver({
+      cacheFile: options.contextWindowCachePath,
+    }),
     runtimeContextConfig: defaultContextStatusConfig(),
     providerConcurrencyLimiter: new ProviderConcurrencyLimiter({}),
     terminalStatusByID: new Map<string, string>(),

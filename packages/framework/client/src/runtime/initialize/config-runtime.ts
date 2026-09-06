@@ -15,11 +15,18 @@ export async function configureRuntime(
   { runtimeConfig, tsConfig }: InitializeCatalogResult,
 ) {
   const scope = createInitializeRuntime(ctx);
+  const start = performance.now();
+  const mark = (name: string) =>
+    console.warn(
+      `[perf] configureRuntime.${name} +${(performance.now() - start).toFixed(1)}ms`,
+    );
   ctx.state.frameworkServices = await scope.wireFrameworkServices(ctx, options);
+  mark("wireFrameworkServices");
   await scope.mountPlugins({
     controller: scope.pluginsController,
     config: tsConfig.config.plugins,
   });
+  mark("mountPlugins");
   const resolvedSessionStore = scope.resolveService<SessionStoreController>(
     scope.SESSION_STORE_CONTROLLER_SERVICE,
   );
@@ -62,6 +69,7 @@ export async function configureRuntime(
     scope.selectedPermissionProfile.commandRules.mode !== "none"
   )
     await scope.ensureBashCommandParser();
+  mark("runtimeSettings");
   scope.agentRegistry = scope.agentsFromConfig(tsConfig.config);
   scope.selectedAgent = scope.agentRegistry.default();
   if (Object.keys(tsConfig.config.agents).length && !scope.selectedAgent)
@@ -99,11 +107,14 @@ export async function configureRuntime(
       });
     }
   }
+  mark("agentProvider");
   scope.runtimeContextConfig = await scope.resolveContextStatusConfig(
     tsConfig.config,
     scope.provider,
     scope.contextWindowResolver,
     scope.modelRefKeyForSelection(scope.selectedAgent, scope.selectedModel),
   );
+  mark("contextStatus");
   scope.applyAgentPolicy();
+  mark("done");
 }

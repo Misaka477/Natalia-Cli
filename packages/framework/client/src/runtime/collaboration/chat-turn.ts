@@ -36,6 +36,15 @@ function promptData(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+function collabMessagesForExec(
+  exec: SessionExecutionState,
+): ReturnType<typeof projectedCollabMessages> {
+  const snapshot = exec.collabSnapshot;
+  if (snapshot && snapshot.eventCount === exec.session.events.length)
+    return snapshot.collabMessages;
+  return projectedCollabMessages(exec.session.events);
+}
+
 export function createChatTurn(ctx: RuntimeContext) {
   return {
     runChatTurnBody,
@@ -167,7 +176,7 @@ export function createChatTurn(ctx: RuntimeContext) {
         });
       };
       const requiredNataliaReply = () => {
-        const messages = projectedCollabMessages(input.exec.session.events);
+        const messages = collabMessagesForExec(input.exec);
         const question = messages.find(
           (message) =>
             message.kind === "question" &&

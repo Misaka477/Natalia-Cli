@@ -25,11 +25,12 @@ export function createSubagentRuntime(
   return {
     async subagents(sessionID?: string): Promise<RuntimeSubagentView[]> {
       await ctx.ports.getReady();
+      const start = performance.now();
       const subagents =
         ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
       if (!subagents?.enabled()) return [];
       const ownerSessionID = sessionID ?? ctx.ports.getActiveExec()?.session.id;
-      return subagents
+      const result = subagents
         .list()
         .filter(
           (record) =>
@@ -38,19 +39,28 @@ export function createSubagentRuntime(
             record.parentSessionID === ownerSessionID,
         )
         .map((record) => toSubagentView(record, subagents));
+      console.warn(
+        `[perf] subagents done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
+      );
+      return result;
     },
     async subagentHistory(
       sessionID?: SessionID,
     ): Promise<RuntimeSubagentView[]> {
       await ctx.ports.getReady();
+      const start = performance.now();
       const exec = sessionID
         ? ctx.ports.getExecutionBySession().get(sessionID)
         : ctx.ports.getActiveExec();
       const events = exec?.session.events ?? [];
-      return events.filter(
+      const result = events.filter(
         (event): event is Extract<RuntimeEvent, { type: "subagent.update" }> =>
           event.type === "subagent.update",
       );
+      console.warn(
+        `[perf] subagentHistory done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
+      );
+      return result;
     },
   };
 }

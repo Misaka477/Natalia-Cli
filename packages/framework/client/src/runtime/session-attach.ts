@@ -26,6 +26,8 @@ export function createSessionAttach(ctx: RuntimeContext) {
   };
 
   async function attachSession(id: string) {
+    const start = performance.now();
+    console.warn(`[perf] attachSession start target=${id}`);
     const {
       getReady,
       getSessionID,
@@ -76,7 +78,12 @@ export function createSessionAttach(ctx: RuntimeContext) {
     if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
     const sessionID = getSessionID();
     const nextID = id as SessionID;
-    if (nextID === sessionID) return { sessionID: nextID };
+    if (nextID === sessionID) {
+      console.warn(
+        `[perf] attachSession same target=${id} +${(performance.now() - start).toFixed(1)}ms`,
+      );
+      return { sessionID: nextID };
+    }
 
     // A replacement runtime can open the old session as soon as attach returns.
     await getSessionPersistence();
@@ -151,6 +158,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
         context: exec.context,
         permissionMode: exec.permissionMode,
       }),
+    );
+    console.warn(
+      `[perf] attachSession done target=${id} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
     );
     return { sessionID: exec.session.id };
   }

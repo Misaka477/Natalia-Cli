@@ -23,8 +23,26 @@ import {
   type RetryService,
   type StatusSnapshotController,
 } from "@natalia/runtime-services";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext, SessionExecutionState } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
+
+function collabMessagesForExec(
+  exec: SessionExecutionState,
+): ReturnType<typeof projectedCollabMessages> {
+  const snapshot = exec.collabSnapshot;
+  if (snapshot && snapshot.eventCount === exec.session.events.length)
+    return snapshot.collabMessages;
+  return projectedCollabMessages(exec.session.events);
+}
+
+function planDocsForExec(
+  exec: SessionExecutionState,
+): ReturnType<typeof projectedPlanDocs> {
+  const snapshot = exec.collabSnapshot;
+  if (snapshot && snapshot.eventCount === exec.session.events.length)
+    return snapshot.planDocs;
+  return projectedPlanDocs(exec.session.events);
+}
 
 export function createTurnRunner(
   ctx: RuntimeContext,
@@ -138,7 +156,7 @@ export function createTurnRunner(
       skillsList,
       skillService,
       naviSuggestions: () =>
-        projectedCollabMessages(exec.session.events)
+        collabMessagesForExec(exec)
           .filter(
             (message): message is typeof message & { kind: "suggestion" } =>
               message.kind === "suggestion" && message.status === "pending",
@@ -149,14 +167,14 @@ export function createTurnRunner(
             priority: message.priority ?? "normal",
           })),
       naviAnswers: () =>
-        projectedCollabMessages(exec.session.events)
+        collabMessagesForExec(exec)
           .filter((message) => message.kind === "answer")
           .map((message) => ({
             questionID: message.questionID ?? "",
             answer: message.text,
           })),
       naviChats: () =>
-        projectedCollabMessages(exec.session.events).flatMap((message) =>
+        collabMessagesForExec(exec).flatMap((message) =>
           message.kind === "chat" &&
           (message.from === "main_agent" || message.to === "main_agent") &&
           (message.from === "live_chat" || message.to === "live_chat")
@@ -175,13 +193,13 @@ export function createTurnRunner(
             : [],
         ),
       naviIntro: () =>
-        projectedCollabMessages(exec.session.events).some(
+        collabMessagesForExec(exec).some(
           (message) =>
             (message.from === "main_agent" || message.to === "main_agent") &&
             (message.from === "live_chat" || message.to === "live_chat"),
         ),
       niaChats: () =>
-        projectedCollabMessages(exec.session.events).flatMap((message) =>
+        collabMessagesForExec(exec).flatMap((message) =>
           message.kind === "chat" &&
           (message.from === "nia" || message.to === "nia")
             ? [
@@ -199,11 +217,11 @@ export function createTurnRunner(
             : [],
         ),
       niaIntro: () =>
-        projectedCollabMessages(exec.session.events).some(
+        collabMessagesForExec(exec).some(
           (message) => message.from === "nia" || message.to === "nia",
         ),
       activePlan: () => {
-        const plan = projectedPlanDocs(exec.session.events).find(
+        const plan = planDocsForExec(exec).find(
           (candidate) =>
             candidate.status === "executing" ||
             candidate.status === "awaiting_audit" ||
