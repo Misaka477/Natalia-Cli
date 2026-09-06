@@ -139,6 +139,43 @@ export type CheckpointChangeKind =
   | "mode"
   | "symlink";
 
+export type RuntimeDiffLineType = "context" | "add" | "delete" | "hunk";
+
+export type RuntimeStructuredDiffWordRange = {
+  start: number;
+  end: number;
+  kind: "added" | "deleted";
+};
+
+export type RuntimeStructuredDiffLine = {
+  type: RuntimeDiffLineType;
+  text: string;
+  oldLineNumber: number | null;
+  newLineNumber: number | null;
+  wordRanges?: RuntimeStructuredDiffWordRange[];
+};
+
+export type RuntimeStructuredDiffHunk = {
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  lines: RuntimeStructuredDiffLine[];
+};
+
+export type RuntimeStructuredDiff = {
+  hunks: RuntimeStructuredDiffHunk[];
+  additions: number;
+  deletions: number;
+};
+
+export type RuntimeAstNode = {
+  nodeKind: string;
+  text: string;
+  start: number;
+  end: number;
+};
+
 export type CheckpointResourcePolicy = {
   kind:
     | "subagent"
@@ -168,6 +205,7 @@ export type CheckpointPreview = {
     after?: string;
     additions?: number;
     deletions?: number;
+    structured?: RuntimeStructuredDiff;
   }>;
   context: {
     truncateMessages: number;
@@ -230,6 +268,7 @@ export type RuntimeSandboxChange = {
   after?: string;
   additions?: number;
   deletions?: number;
+  structured?: RuntimeStructuredDiff;
 };
 
 export type RuntimeWorkspaceDiffChange = {
@@ -242,6 +281,7 @@ export type RuntimeWorkspaceDiffChange = {
   before?: string;
   after?: string;
   mode?: string;
+  structured?: RuntimeStructuredDiff;
 };
 
 export type RuntimeTeamPR = {
@@ -343,7 +383,12 @@ export type CollaborationMessage =
     });
 
 type RuntimeEventData =
-  | { type: "session.created"; sessionID: SessionID; title: string; workspaceID?: string }
+  | {
+      type: "session.created";
+      sessionID: SessionID;
+      title: string;
+      workspaceID?: string;
+    }
   | { type: "session.title.updated"; sessionID: SessionID; title: string }
   | { type: "session.ready"; sessionID: SessionID }
   | {
@@ -1218,7 +1263,6 @@ type RuntimeEventData =
       type: "settings.updated";
       scope: "global" | "project";
     }
-
   | {
       type: "workspace.added";
       workspace: WorkspaceSummary;
@@ -1237,8 +1281,7 @@ type RuntimeEventData =
       type: "workspace.status";
       workspace: WorkspaceSummary;
       workspaceID: string;
-    }
-;
+    };
 
 /**
  * An episode groups all events emitted by one isolated execution without
@@ -1833,7 +1876,9 @@ export type RuntimeClient = {
    * `confirmedWorkspaceChanges`, this covers changes from every source,
    * including manual edits and edits made before the runtime noticed them.
    */
-  workspaceDiff?(): Promise<RuntimeWorkspaceDiffChange[]>;
+  workspaceDiff?(input?: {
+    includePatch?: boolean;
+  }): Promise<RuntimeWorkspaceDiffChange[]>;
   /**
    * Returns the git-backed workspace diff (`git status` + `git diff`). This is
    * the real VCS view and is only available inside a git repository; non-git
@@ -1844,11 +1889,194 @@ export type RuntimeClient = {
     to?: string;
     path?: string;
     includePatch?: boolean;
+    includeContent?: boolean;
+    ignoreWhitespace?: boolean;
   }): Promise<RuntimeWorkspaceDiffChange[]>;
   /**
    * Lists git refs (branches, tags and worktrees) for the Git diff tab.
    */
   gitRefs?(): Promise<RuntimeGitRef[]>;
+  /**
+   * Computes a structural AST diff in the runtime. The runtime owns the
+   * tree-sitter grammars; renderer only receives AstChange summaries.
+   */
+  astDiff?(input: {
+    oldText: string;
+    newText: string;
+    language: string;
+  }): Promise<{
+    language: string;
+    changes: Array<{
+      kind: "modified" | "added" | "removed" | "moved";
+      nodeKind: string;
+      oldStart: number;
+      oldEnd: number;
+      newStart: number;
+      newEnd: number;
+    }>;
+  }>;
+  /**
+   * Computes structural AST diffs for many files in one runtime-side request.
+   * Each file is processed independently so a parse failure in one file does
+   * not discard the rest of the batch.
+   */
+  astDiffBatch?(input: {
+    files: Array<{
+      path?: string;
+      oldText: string;
+      newText: string;
+      language: string;
+    }>;
+    options?: {
+      maxChangesPerFile?: number;
+    };
+  }): Promise<{
+    files: Array<{
+      path?: string;
+      language: string;
+      changes: Array<{
+        kind: "modified" | "added" | "removed" | "moved";
+        nodeKind: string;
+        oldStart: number;
+        oldEnd: number;
+        newStart: number;
+        newEnd: number;
+      }>;
+      error?: string;
+    }>;
+  }>;
+  /**
+   * Refactor-preview surface for IDE-style operations. The runtime does not
+   * apply the refactor; it structurally validates/reports what a supplied
+   * old/new file set would change. Transformations are produced by callers
+   * (agent/tool/IDE) and submitted here for a safe AST-level preview.
+   */
+  astRefactorPreview?(input: {
+    operation: "rename" | "extract" | "inline" | "move" | "custom";
+    files: Array<{
+      path?: string;
+      oldText: string;
+      newText: string;
+      language: string;
+    }>;
+  }): Promise<{
+    operation: string;
+    files: Array<{
+      path?: string;
+      language: string;
+      changes: Array<{
+        kind: "modified" | "added" | "removed" | "moved";
+        nodeKind: string;
+        oldStart: number;
+        oldEnd: number;
+        newStart: number;
+        newEnd: number;
+      }>;
+      error?: string;
+    }>;
+  }>;
+  /**
+   * IDE-grade structural service. `index` parses one or more files and returns
+   * symbol/structural nodes; `query` runs the same index and filters nodes by
+   * node kind or text. This is the foundation for refactoring, cross-file
+   * analysis and agent planning. It is a pure read surface.
+   */
+  astService?(input: {
+    operation: "index" | "query";
+    files: Array<{
+      path?: string;
+      source: string;
+      language: string;
+    }>;
+    query?: {
+      nodeKind?: string;
+      textIncludes?: string;
+    };
+  }): Promise<{
+    operation: string;
+    files: Array<{
+      path?: string;
+      language: string;
+      nodes: RuntimeAstNode[];
+      error?: string;
+    }>;
+    matches?: Array<{
+      path?: string;
+      language: string;
+      nodes: RuntimeAstNode[];
+    }>;
+  }>;
+  /**
+   * Refactor plan generation. It uses AST query/index to find every structure
+   * that would participate in a refactor and returns a non-writing plan. The
+   * plan can be sent to `astRefactorPreview` for final review.
+   */
+  astRefactorPlan?(input: {
+    operation: "rename" | "extract" | "inline" | "move" | "custom";
+    files: Array<{
+      path?: string;
+      source: string;
+      language: string;
+    }>;
+    rename?: {
+      from: string;
+      to: string;
+    };
+    query?: {
+      nodeKind?: string;
+      textIncludes?: string;
+    };
+  }): Promise<{
+    operation: string;
+    targets: Array<{
+      path?: string;
+      language: string;
+      nodeKind: string;
+      text: string;
+      start: number;
+      end: number;
+      suggestedText?: string;
+    }>;
+    files: Array<{
+      path?: string;
+      language: string;
+      error?: string;
+    }>;
+  }>;
+  /**
+   * Applies a refactor plan. This is the Phase 3 write surface: it performs
+   * AST-range edits and writes files. It must only run after a reviewed plan;
+   * `dryRun` returns the would-be edits without touching disk.
+   */
+  astApplyRefactor?(input: {
+    operation: "rename" | "extract" | "inline" | "move" | "custom";
+    files: Array<{
+      path?: string;
+      source: string;
+      language: string;
+    }>;
+    rename?: {
+      from: string;
+      to: string;
+    };
+    dryRun?: boolean;
+  }): Promise<{
+    operation: string;
+    applied: Array<{
+      path?: string;
+      language: string;
+      replacements: Array<{
+        start: number;
+        end: number;
+        from: string;
+        to: string;
+      }>;
+      before?: string;
+      after?: string;
+      error?: string;
+    }>;
+  }>;
+
   /**
    * Lists the current session's sandboxed sub-agent PRs for read-only display.
    * Merging/approval remains model-driven through `team_review`; this surface
@@ -1908,7 +2136,10 @@ export type RuntimeClient = {
    * made the RPC reply claim `paused: true` in every case, including when the
    * runtime had done nothing at all.
    */
-  pause?(reason?: string, sessionID?: string): PauseOutcome | Promise<PauseOutcome>;
+  pause?(
+    reason?: string,
+    sessionID?: string,
+  ): PauseOutcome | Promise<PauseOutcome>;
   /** Resumes a paused turn. Refusal is a value, as with `pause`. */
   resume?(sessionID?: string): ResumeOutcome | Promise<ResumeOutcome>;
   /**
@@ -1995,14 +2226,14 @@ export type RuntimeClient = {
   /** Lists all workspace roots managed by this runtime host. */
   workspaceRoots?(): Promise<WorkspaceSummary[]>;
   /** Adds a workspace root to the runtime host. */
-  workspaceAdd?(input: {
-    path: string;
-  }): Promise<WorkspaceSummary>;
+  workspaceAdd?(input: { path: string }): Promise<WorkspaceSummary>;
   /** Removes a workspace root from the runtime host. */
   workspaceRemove?(workspaceID: string): Promise<{ removed: boolean }>;
   /** Makes a workspace root the active target for runtime operations. */
   workspaceActivate?(workspaceID: string): Promise<WorkspaceSummary>;
-  workspacePermissionGet?(workspaceID: string): Promise<WorkspacePermissionSettings>;
+  workspacePermissionGet?(
+    workspaceID: string,
+  ): Promise<WorkspacePermissionSettings>;
   workspacePermissionSet?(
     workspaceID: string,
     settings: WorkspacePermissionSettings,
@@ -2017,8 +2248,13 @@ export type RuntimeClient = {
     path?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
-  nativeTerminalList?(sessionID?: string): Promise<RuntimeNativeTerminalSession[]>;
-  nativeTerminalRead?(id: string, sessionID?: string): Promise<{ id: string; text: string }>;
+  nativeTerminalList?(
+    sessionID?: string,
+  ): Promise<RuntimeNativeTerminalSession[]>;
+  nativeTerminalRead?(
+    id: string,
+    sessionID?: string,
+  ): Promise<{ id: string; text: string }>;
   nativeTerminalOpenHub?(): Promise<{ muxWindowID: number }>;
   nativeTerminalClaimHumanInput?(
     id: string,
@@ -2090,7 +2326,13 @@ export type RuntimeClient = {
     sessionID?: string;
   }): Promise<RuntimeNativeTerminalSession>;
   checkpointList?(sessionID?: string): Promise<RuntimeCheckpoint[]>;
-  checkpointPreview?(id: string, sessionID?: string): Promise<CheckpointPreview>;
+  checkpointPreview?(
+    id: string,
+    sessionID?: string,
+    options?: {
+      includePatch?: boolean;
+    },
+  ): Promise<CheckpointPreview>;
   checkpointRollback?(input: {
     id: string;
     dryRun?: boolean;
@@ -2102,16 +2344,31 @@ export type RuntimeClient = {
     sessionID?: string;
   }): Promise<RuntimeCheckpoint>;
   sandboxList?(sessionID?: string): Promise<RuntimeSandbox[]>;
-  sandboxDiff?(id: string, sessionID?: string): Promise<RuntimeSandboxChange[]>;
-  sandboxResources?(id: string, sessionID?: string): Promise<RuntimeSandboxResource[]>;
+  sandboxDiff?(
+    id: string,
+    sessionID?: string,
+    options?: {
+      includePatch?: boolean;
+    },
+  ): Promise<RuntimeSandboxChange[]>;
+  sandboxResources?(
+    id: string,
+    sessionID?: string,
+  ): Promise<RuntimeSandboxResource[]>;
   sandboxResourceOutput?(input: {
     id: string;
     resourceID: string;
     maxBytes?: number;
     sessionID?: string;
   }): Promise<string>;
-  sandboxMerge?(id: string, sessionID?: string): Promise<RuntimeSandboxChange[]>;
-  sandboxDelete?(id: string, sessionID?: string): Promise<{
+  sandboxMerge?(
+    id: string,
+    sessionID?: string,
+  ): Promise<RuntimeSandboxChange[]>;
+  sandboxDelete?(
+    id: string,
+    sessionID?: string,
+  ): Promise<{
     pendingChanges: RuntimeSandboxChange[];
     runningResources: string[];
   }>;
@@ -2334,7 +2591,10 @@ export type RuntimeClient = {
   commandCatalog?(): Promise<ContributedCommand[]>;
   commandExecute?(input: ContributedCommandExecution): Promise<void>;
   runtimeStatus?(sessionID?: string): Promise<RuntimeStatusSnapshot>;
-  diagnostics?(limit?: number, sessionID?: string): Promise<RuntimeDiagnostic[]>;
+  diagnostics?(
+    limit?: number,
+    sessionID?: string,
+  ): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;
@@ -2379,14 +2639,17 @@ export type RuntimeClient = {
    * and rationale may reach the journal — safe prose only, never tool output,
    * file content or secrets.
    */
-  recordDecision?(input: {
-    decision: string;
-    rationale?: string[];
-    alternatives?: { option: string; rejectedReason?: string }[];
-    consequences?: string[];
-    linkedPlans?: string[];
-    linkedConstraints?: string[];
-  }, sessionID?: string): Promise<{ recorded: boolean }>;
+  recordDecision?(
+    input: {
+      decision: string;
+      rationale?: string[];
+      alternatives?: { option: string; rejectedReason?: string }[];
+      consequences?: string[];
+      linkedPlans?: string[];
+      linkedConstraints?: string[];
+    },
+    sessionID?: string,
+  ): Promise<{ recorded: boolean }>;
   /** The durable mailbox of Live Work Chat intents, projected from the journal. */
   mailboxList?(sessionID?: string): Promise<
     Array<{
@@ -2419,9 +2682,15 @@ export type RuntimeClient = {
     sessionID?: string;
   }): Promise<{ queued: boolean; messageID?: string }>;
   /** Marks a queued mailbox message delivered at a safe boundary. */
-  mailboxDeliver?(messageID: string, sessionID?: string): Promise<{ delivered: boolean }>;
+  mailboxDeliver?(
+    messageID: string,
+    sessionID?: string,
+  ): Promise<{ delivered: boolean }>;
   /** Acknowledges a delivered mailbox message. */
-  mailboxAcknowledge?(messageID: string, sessionID?: string): Promise<{ acknowledged: boolean }>;
+  mailboxAcknowledge?(
+    messageID: string,
+    sessionID?: string,
+  ): Promise<{ acknowledged: boolean }>;
   /** Defers a mailbox message, with a safe reason. */
   mailboxDefer?(
     messageID: string,
@@ -2480,9 +2749,15 @@ export type RuntimeClient = {
     sessionID?: string;
   }): Promise<{ marked: boolean; planID: string }>;
   /** Deletes a plan registry record (does not delete the Markdown file). */
-  planDocDelete?(planID: string, sessionID?: string): Promise<{ deleted: boolean }>;
+  planDocDelete?(
+    planID: string,
+    sessionID?: string,
+  ): Promise<{ deleted: boolean }>;
   /** Reads the current lifecycle status of a marked plan. */
-  planDocStatus?(planID: string, sessionID?: string): Promise<{ status: string }>;
+  planDocStatus?(
+    planID: string,
+    sessionID?: string,
+  ): Promise<{ status: string }>;
   /** Updates a plan document lifecycle status (e.g. awaiting_audit, audit_passed). */
   planDocUpdateStatus?(input: {
     planID: string;
@@ -2517,13 +2792,16 @@ export type RuntimeClient = {
    * summary and duration reach the journal — the raw output is redacted and
    * truncated before recording.
    */
-  recordValidation?(input: {
-    taskID: string;
-    objective: string;
-    command: string;
-    timeoutSec?: number;
-    knownGaps?: string[];
-  }, sessionID?: string): Promise<{
+  recordValidation?(
+    input: {
+      taskID: string;
+      objective: string;
+      command: string;
+      timeoutSec?: number;
+      knownGaps?: string[];
+    },
+    sessionID?: string,
+  ): Promise<{
     recorded: boolean;
     result?: "passed" | "failed";
     safeSummary?: string;
@@ -2554,23 +2832,26 @@ export type RuntimeClient = {
    * really done, what evidence is missing". changeSummary is safe prose — never
    * a diff or file content.
    */
-  recordCompletion?(input: {
-    taskID: string;
-    objective: string;
-    changeSummary: string;
-    behaviorImpact?: string;
-    validations?: Array<{
-      command: string;
-      result: "passed" | "failed" | "skipped";
-      safeSummary: string;
-    }>;
-    humanValidation?: string;
-    knownGaps?: string[];
-    externalSideEffects?: string[];
-    rollbackState?: "clean" | "available" | "none" | "needs_promotion";
-    evidenceIDs?: string[];
-    changePaths?: string[];
-  }, sessionID?: string): Promise<{ recorded: boolean; completionID?: string }>;
+  recordCompletion?(
+    input: {
+      taskID: string;
+      objective: string;
+      changeSummary: string;
+      behaviorImpact?: string;
+      validations?: Array<{
+        command: string;
+        result: "passed" | "failed" | "skipped";
+        safeSummary: string;
+      }>;
+      humanValidation?: string;
+      knownGaps?: string[];
+      externalSideEffects?: string[];
+      rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+      evidenceIDs?: string[];
+      changePaths?: string[];
+    },
+    sessionID?: string,
+  ): Promise<{ recorded: boolean; completionID?: string }>;
   sessionSnapshot?(sessionID?: string): Promise<
     | {
         agentStatus: string;
@@ -2600,34 +2881,43 @@ export type RuntimeClient = {
    * of drift findings and has no write power — a finding only escalates to an
    * approval/Chat/mailbox prompt, never a cancellation.
    */
-  evaluateDrift?(input: {
-    objective: string;
-    currentActivity: string;
-    applicableConstraints?: string[];
-    changes?: Array<{
-      path?: string;
-      action?: string;
-      target?: string;
-      summary?: string;
-    }>;
-    evidenceRefs?: string[];
-  }, sessionID?: string): Promise<{ opened: number }>;
+  evaluateDrift?(
+    input: {
+      objective: string;
+      currentActivity: string;
+      applicableConstraints?: string[];
+      changes?: Array<{
+        path?: string;
+        action?: string;
+        target?: string;
+        summary?: string;
+      }>;
+      evidenceRefs?: string[];
+    },
+    sessionID?: string,
+  ): Promise<{ opened: number }>;
   /**
    * Acknowledge a drift finding (P7 D3): the Main Agent explains it, the user
    * dismisses it, or the work corrects it. Only an open finding can transition.
    */
-  acknowledgeDriftFinding?(input: {
-    findingID: string;
-    status: "explained" | "dismissed" | "corrected";
-    rationale?: string;
-  }, sessionID?: string): Promise<{ acknowledged: boolean }>;
-  requestOverride?(input: {
-    ruleID: string;
-    reason: string;
-    paths?: string[];
-    taskID?: string;
-    expiresAt?: string;
-  }, sessionID?: string): Promise<{ requested: boolean; requestID?: string; reason?: string }>;
+  acknowledgeDriftFinding?(
+    input: {
+      findingID: string;
+      status: "explained" | "dismissed" | "corrected";
+      rationale?: string;
+    },
+    sessionID?: string,
+  ): Promise<{ acknowledged: boolean }>;
+  requestOverride?(
+    input: {
+      ruleID: string;
+      reason: string;
+      paths?: string[];
+      taskID?: string;
+      expiresAt?: string;
+    },
+    sessionID?: string,
+  ): Promise<{ requested: boolean; requestID?: string; reason?: string }>;
   approveOverride?(input: {
     requestID: string;
     decision: "once" | "reject";
@@ -2661,14 +2951,27 @@ export type RuntimeClient = {
     channel?: ChatChannel;
     sessionID?: string;
   }): Promise<{ messageID: string }>;
-  chatAbort?(channel?: ChatChannel, sessionID?: string): Promise<{ aborted: boolean }>;
-  chatModelProfile?(channel?: ChatChannel, sessionID?: string): Promise<ChatModelProfile>;
-  setChatModelProfile?(profile: ChatModelProfile, channel?: ChatChannel, sessionID?: string): Promise<{ saved: boolean }>;
+  chatAbort?(
+    channel?: ChatChannel,
+    sessionID?: string,
+  ): Promise<{ aborted: boolean }>;
+  chatModelProfile?(
+    channel?: ChatChannel,
+    sessionID?: string,
+  ): Promise<ChatModelProfile>;
+  setChatModelProfile?(
+    profile: ChatModelProfile,
+    channel?: ChatChannel,
+    sessionID?: string,
+  ): Promise<{ saved: boolean }>;
   /**
    * The durable Chat conversation, oldest first. `chat.rollback` truncates it
    * at a message boundary, so the projection returns the effective history.
    */
-  chatMessages?(channel?: ChatChannel, sessionID?: string): Promise<ChatMessageRow[]>;
+  chatMessages?(
+    channel?: ChatChannel,
+    sessionID?: string,
+  ): Promise<ChatMessageRow[]>;
   /**
    * Current subagent views for the active session. The runtime keeps subagent
    * records in its own persistent registry, so this is a lazy read surface; it
@@ -2680,9 +2983,13 @@ export type RuntimeClient = {
    * Rolls the Chat conversation back to a message boundary — the only rollback
    * the Chat may issue, and it never touches workspace/checkpoint state.
    */
-  chatRollback?(input: {
-    toMessageID: string;
-  }, channel?: ChatChannel, sessionID?: string): Promise<{ rolledBackTo: string; removed: number }>;
+  chatRollback?(
+    input: {
+      toMessageID: string;
+    },
+    channel?: ChatChannel,
+    sessionID?: string,
+  ): Promise<{ rolledBackTo: string; removed: number }>;
 };
 
 export type ChatModelProfile = {

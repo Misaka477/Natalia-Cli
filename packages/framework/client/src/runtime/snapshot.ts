@@ -178,9 +178,7 @@ export function createSnapshot(ctx: RuntimeContext) {
       );
     ctx.ports.setSessionPersistenceForSession(exec.session.id, next);
     setSessionPersistence(
-      Promise.allSettled([getSessionPersistence(), next]).then(
-        () => undefined,
-      ),
+      Promise.allSettled([getSessionPersistence(), next]).then(() => undefined),
     );
     await next;
   }

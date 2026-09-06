@@ -136,10 +136,7 @@ function todoPath(workspaceRoot: string, sessionID: string) {
   );
 }
 
-export const todoTools: RuntimeTool[] = [
-  todoReadTool(),
-  todoWriteTool(),
-];
+export const todoTools: RuntimeTool[] = [todoReadTool(), todoWriteTool()];
 
 /**
  * Session scope: each session owns a separate durable list inside the workspace.

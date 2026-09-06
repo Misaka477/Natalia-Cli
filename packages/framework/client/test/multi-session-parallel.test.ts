@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createOfficialRuntimeClient, officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  createOfficialRuntimeClient,
+  officialPluginWorkspace,
+} from "./plugin-test-helpers";
 
 test("two sessions submit and finish concurrently without cross-cancel", async () => {
   const workspaceRoot = await officialPluginWorkspace("multi-session-parallel");
@@ -34,7 +37,9 @@ test("two sessions submit and finish concurrently without cross-cancel", async (
 });
 
 test("ten sessions submit and finish concurrently without cross-cancel", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-10");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-10",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -65,7 +70,9 @@ test("ten sessions submit and finish concurrently without cross-cancel", async (
 });
 
 test("twenty sessions submit and finish concurrently without cross-cancel", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-20");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-20",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -96,7 +103,9 @@ test("twenty sessions submit and finish concurrently without cross-cancel", asyn
 });
 
 test("fifty sessions submit and finish concurrently without cross-cancel", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-50");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-50",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -127,7 +136,9 @@ test("fifty sessions submit and finish concurrently without cross-cancel", async
 });
 
 test("hundred sessions submit and finish concurrently without cross-cancel", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-100");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-100",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -158,7 +169,9 @@ test("hundred sessions submit and finish concurrently without cross-cancel", asy
 });
 
 test("two sessions chat concurrently without cross-channel mixing", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-chat");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-chat",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -195,7 +208,9 @@ test("two sessions chat concurrently without cross-channel mixing", async () => 
 });
 
 test("two sessions mailbox messages do not leak across sessions", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-mailbox");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-mailbox",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -230,7 +245,9 @@ test("two sessions mailbox messages do not leak across sessions", async () => {
 });
 
 test("two sessions runtimeStatus resolve independently", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-status");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-status",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -255,7 +272,9 @@ test("two sessions runtimeStatus resolve independently", async () => {
 });
 
 test("two sessions provider/model and reasoning selections remain isolated", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-provider");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-provider",
+  );
   await mkdir(join(workspaceRoot, ".natalia"), { recursive: true });
   const modelConfig = {
     version: 3,
@@ -316,7 +335,9 @@ test("two sessions provider/model and reasoning selections remain isolated", asy
 });
 
 test("fifty sessions run concurrently through a real OpenAI-compatible HTTP provider", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-http-provider");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-http-provider",
+  );
   const requests: Array<{
     model: string;
     messages: Array<{ role: string; content?: string }>;
@@ -327,9 +348,8 @@ test("fifty sessions run concurrently through a real OpenAI-compatible HTTP prov
       const body = (await request.json()) as (typeof requests)[number];
       requests.push(body);
       const text =
-        body.messages
-          .filter((message) => message.role === "user")
-          .at(-1)?.content ?? "";
+        body.messages.filter((message) => message.role === "user").at(-1)
+          ?.content ?? "";
       return new Response(
         [
           `data: ${JSON.stringify({
@@ -403,7 +423,9 @@ test("fifty sessions run concurrently through a real OpenAI-compatible HTTP prov
 });
 
 test("two sessions diagnostics resolve independently", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-diag");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-diag",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -426,7 +448,9 @@ test("two sessions diagnostics resolve independently", async () => {
 });
 
 test("two hundred sessions submit and finish concurrently without cross-cancel", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-200");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-200",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -457,7 +481,9 @@ test("two hundred sessions submit and finish concurrently without cross-cancel",
 });
 
 test("five hundred sessions submit and finish concurrently without cross-cancel", async () => {
-  const workspaceRoot = await officialPluginWorkspace("multi-session-parallel-500");
+  const workspaceRoot = await officialPluginWorkspace(
+    "multi-session-parallel-500",
+  );
   const client = createOfficialRuntimeClient({
     workspaceRoot,
     provider: {
@@ -486,5 +512,3 @@ test("five hundred sessions submit and finish concurrently without cross-cancel"
   for (const result of results) expect(result?.id).toBeTruthy();
   await client.dispose?.();
 });
-
-

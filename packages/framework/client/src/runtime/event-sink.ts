@@ -247,7 +247,9 @@ export function createEventSink(
           candidate.toolName === "collab_chat",
       );
       const auditReportEvent = exec.session.events.find(
-        (candidate): candidate is Extract<RuntimeEvent, { type: "chat.tool.used" }> =>
+        (
+          candidate,
+        ): candidate is Extract<RuntimeEvent, { type: "chat.tool.used" }> =>
           candidate.type === "chat.tool.used" &&
           candidate.messageID === event.messageID &&
           candidate.toolName === "audit_report",

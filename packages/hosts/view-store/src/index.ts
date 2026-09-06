@@ -356,7 +356,6 @@ export function hydrateChatMessages(
   return changed;
 }
 
-
 /**
  * Hydrates the current subagent registry into the projected subagent tree.
  * Existing live entries win over this lazy snapshot so a newer subagent.update

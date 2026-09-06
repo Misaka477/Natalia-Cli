@@ -58,7 +58,7 @@ function emptyManager(): WorkspaceManager {
 
 test("workspace proxy throws when native terminal is used without an active workspace", async () => {
   const client = createWorkspaceRuntimeClient(emptyManager());
-  await expect(client.nativeTerminalStart?.({ command: "bash" })).rejects.toThrow(
-    "no active workspace",
-  );
+  await expect(
+    client.nativeTerminalStart?.({ command: "bash" }),
+  ).rejects.toThrow("no active workspace");
 });

@@ -130,16 +130,14 @@ export function createToolPublish(
     toolName: string,
     status: string,
   ) {
-    const { executionForTurn, publishForSession } =
-      ctx.ports;
+    const { executionForTurn, publishForSession } = ctx.ports;
     const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
       WORK_LEDGER_CONTROLLER_SERVICE,
     );
     if (!workLedgerController)
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     const exec = executionForTurn(turnID);
-    if (!exec)
-      throw new Error(`no execution state for turn ${turnID}`);
+    if (!exec) throw new Error(`no execution state for turn ${turnID}`);
     const ownerSessionID = exec.session.id;
     publishForSession(
       exec,

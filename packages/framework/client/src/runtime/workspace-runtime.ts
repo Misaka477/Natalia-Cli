@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { ObjectStore } from "@natalia/object-store";
 import {
   createWorkspaceFile,
   deleteWorkspaceFile,
@@ -10,7 +14,11 @@ import {
   writeWorkspaceFile,
 } from "@natalia/platform";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import type { RuntimeGitRef, RuntimeWorkspaceDiffChange } from "@natalia/contracts";
+import type {
+  RuntimeAstNode,
+  RuntimeGitRef,
+  RuntimeWorkspaceDiffChange,
+} from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 
 type WorkspaceRuntime = Pick<
@@ -27,7 +35,54 @@ type WorkspaceRuntime = Pick<
   | "workspaceWriteConflicts"
   | "workspaceGitDiff"
   | "gitRefs"
+  | "astDiff"
+  | "astDiffBatch"
+  | "astRefactorPreview"
+  | "astService"
+  | "astRefactorPlan"
+  | "astApplyRefactor"
 >;
+
+type MutationRecord = {
+  id: string;
+  at: string;
+  workspaceRoot: string;
+  sessionID?: string;
+  path: string;
+  oldPath?: string;
+  operation: "add" | "modify" | "delete" | "rename";
+  origin:
+    | "tool"
+    | "sandbox_merge"
+    | "checkpoint_rollback"
+    | "refactor"
+    | "external"
+    | "unknown";
+};
+
+async function appendWorkspaceMutation(
+  ctx: RuntimeContext,
+  record: MutationRecord,
+) {
+  try {
+    const logPath = resolve(
+      ctx.ports.getWorkspaceRoot(),
+      ".natalia",
+      "workspace-mutations.json",
+    );
+    await mkdir(dirname(logPath), { recursive: true });
+    let rows: MutationRecord[] = [];
+    try {
+      rows = JSON.parse(await readFile(logPath, "utf8")) as MutationRecord[];
+    } catch {
+      rows = [];
+    }
+    rows.push(record);
+    await writeFile(logPath, JSON.stringify(rows, null, 2));
+  } catch {
+    // Mutation log is best-effort; never block workspace writes.
+  }
+}
 
 export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
   return {
@@ -68,31 +123,72 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
     },
     async workspaceWrite(input) {
       await ctx.ports.getReady();
-      return await writeWorkspaceFile({
+      const result = await writeWorkspaceFile({
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });
+      void appendWorkspaceMutation(ctx, {
+        id: `mut_${Date.now().toString(36)}`,
+        at: new Date().toISOString(),
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        sessionID: ctx.ports.getSessionID(),
+        path: input.path,
+        operation: "modify",
+        origin: "tool",
+      });
+      return result;
     },
     async workspaceCreate(input) {
       await ctx.ports.getReady();
-      return await createWorkspaceFile({
+      const result = await createWorkspaceFile({
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });
+      void appendWorkspaceMutation(ctx, {
+        id: `mut_${Date.now().toString(36)}`,
+        at: new Date().toISOString(),
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        sessionID: ctx.ports.getSessionID(),
+        path: input.path,
+        operation: "add",
+        origin: "tool",
+      });
+      return result;
     },
     async workspaceRename(input) {
       await ctx.ports.getReady();
-      return await renameWorkspaceFile({
+      const result = await renameWorkspaceFile({
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });
+      void appendWorkspaceMutation(ctx, {
+        id: `mut_${Date.now().toString(36)}`,
+        at: new Date().toISOString(),
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        sessionID: ctx.ports.getSessionID(),
+        path: input.newPath,
+        oldPath: input.path,
+        operation: "rename",
+        origin: "tool",
+      });
+      return result;
     },
     async workspaceDelete(input) {
       await ctx.ports.getReady();
-      return await deleteWorkspaceFile({
+      const result = await deleteWorkspaceFile({
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });
+      void appendWorkspaceMutation(ctx, {
+        id: `mut_${Date.now().toString(36)}`,
+        at: new Date().toISOString(),
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        sessionID: ctx.ports.getSessionID(),
+        path: input.path,
+        operation: "delete",
+        origin: "tool",
+      });
+      return result;
     },
     async workspaceWriteConflicts() {
       await ctx.ports.getReady();
@@ -103,10 +199,371 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
       to?: string;
       path?: string;
       includePatch?: boolean;
+      includeContent?: boolean;
+      ignoreWhitespace?: boolean;
     }) {
       await ctx.ports.getReady();
       return await collectWorkspaceGitDiff(ctx.ports.getWorkspaceRoot(), input);
     },
+    async astDiff(input: {
+      oldText: string;
+      newText: string;
+      language: string;
+    }) {
+      await ctx.ports.getReady();
+      const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
+      return diffWasmAst(input.oldText, input.newText, input.language);
+    },
+    async astDiffBatch(input: {
+      files: Array<{
+        path?: string;
+        oldText: string;
+        newText: string;
+        language: string;
+      }>;
+      options?: {
+        maxChangesPerFile?: number;
+      };
+    }) {
+      await ctx.ports.getReady();
+      const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
+      const files = input.files.slice(0, 50);
+      const results: Array<{
+        path?: string;
+        language: string;
+        changes: Array<{
+          kind: "modified" | "added" | "removed" | "moved";
+          nodeKind: string;
+          oldStart: number;
+          oldEnd: number;
+          newStart: number;
+          newEnd: number;
+        }>;
+        error?: string;
+      }> = [];
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < files.length) {
+          const file = files[cursor++]!;
+          try {
+            const result = await diffWasmAst(
+              file.oldText,
+              file.newText,
+              file.language,
+            );
+            results.push({
+              path: file.path,
+              language: result.language,
+              changes: input.options?.maxChangesPerFile
+                ? result.changes.slice(0, input.options.maxChangesPerFile)
+                : result.changes,
+            });
+          } catch (error) {
+            results.push({
+              path: file.path,
+              language: file.language,
+              changes: [],
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(4, files.length) }, () => worker()),
+      );
+      return { files: results };
+    },
+    async astRefactorPreview(input: {
+      operation: "rename" | "extract" | "inline" | "move" | "custom";
+      files: Array<{
+        path?: string;
+        oldText: string;
+        newText: string;
+        language: string;
+      }>;
+    }) {
+      const result = await this.astDiffBatch!({ files: input.files });
+      return { operation: input.operation, files: result.files };
+    },
+    async astService(input: {
+      operation: "index" | "query";
+      files: Array<{
+        path?: string;
+        source: string;
+        language: string;
+      }>;
+      query?: {
+        nodeKind?: string;
+        textIncludes?: string;
+      };
+    }) {
+      await ctx.ports.getReady();
+      const { indexWasmAst } = await import("@natalia/diff-wasm/ast");
+      const astIndexStore = new ObjectStore(
+        resolve(ctx.ports.getWorkspaceRoot(), ".natalia", "objects"),
+      );
+      const files = input.files.slice(0, 50);
+      const results: Array<{
+        path?: string;
+        language: string;
+        nodes: RuntimeAstNode[];
+        error?: string;
+      }> = [];
+      const matches: Array<{
+        path?: string;
+        language: string;
+        nodes: RuntimeAstNode[];
+      }> = [];
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < files.length) {
+          const file = files[cursor++]!;
+          try {
+            const cacheKey = `ast-index:${file.language}:${createHash("sha256")
+              .update(file.source)
+              .digest("hex")}`;
+            const cached = await astIndexStore.getMeta<{
+              nodes: RuntimeAstNode[];
+            }>(cacheKey);
+            let indexed: { language: string; nodes: RuntimeAstNode[] };
+            if (cached) {
+              indexed = { language: file.language, nodes: cached.nodes };
+            } else {
+              indexed = await indexWasmAst(file.source, file.language);
+              await astIndexStore.putMeta(cacheKey, { nodes: indexed.nodes });
+            }
+            let nodes = indexed.nodes;
+            if (input.operation === "query" && input.query) {
+              const lower = input.query.textIncludes?.toLowerCase();
+              nodes = nodes.filter((node) => {
+                if (
+                  input.query!.nodeKind &&
+                  node.nodeKind !== input.query!.nodeKind
+                )
+                  return false;
+                if (lower && !node.text.toLowerCase().includes(lower))
+                  return false;
+                return true;
+              });
+            }
+            results.push({
+              path: file.path,
+              language: indexed.language,
+              nodes,
+            });
+            if (input.operation === "query" && nodes.length)
+              matches.push({
+                path: file.path,
+                language: indexed.language,
+                nodes,
+              });
+          } catch (error) {
+            results.push({
+              path: file.path,
+              language: file.language,
+              nodes: [],
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(4, files.length) }, () => worker()),
+      );
+      return {
+        operation: input.operation,
+        files: results,
+        ...(matches.length ? { matches } : {}),
+      };
+    },
+    async astRefactorPlan(input: {
+      operation: "rename" | "extract" | "inline" | "move" | "custom";
+      files: Array<{
+        path?: string;
+        source: string;
+        language: string;
+      }>;
+      rename?: {
+        from: string;
+        to: string;
+      };
+      query?: {
+        nodeKind?: string;
+        textIncludes?: string;
+      };
+    }) {
+      await ctx.ports.getReady();
+      const indexed = await this.astService!({
+        operation: "index",
+        files: input.files,
+      });
+      const targets: Array<{
+        path?: string;
+        language: string;
+        nodeKind: string;
+        text: string;
+        start: number;
+        end: number;
+        suggestedText?: string;
+      }> = [];
+      const fileErrors: Array<{
+        path?: string;
+        language: string;
+        error?: string;
+      }> = [];
+      for (const file of indexed.files) {
+        if (file.error) {
+          fileErrors.push({
+            path: file.path,
+            language: file.language,
+            error: file.error,
+          });
+          continue;
+        }
+        for (const node of file.nodes) {
+          if (input.rename) {
+            if (node.text !== input.rename.from) continue;
+            targets.push({
+              path: file.path,
+              language: file.language,
+              nodeKind: node.nodeKind,
+              text: node.text,
+              start: node.start,
+              end: node.end,
+              suggestedText: input.rename.to,
+            });
+          } else if (input.query) {
+            if (input.query.nodeKind && node.nodeKind !== input.query.nodeKind)
+              continue;
+            if (
+              input.query.textIncludes &&
+              !node.text
+                .toLowerCase()
+                .includes(input.query.textIncludes.toLowerCase())
+            )
+              continue;
+            targets.push({
+              path: file.path,
+              language: file.language,
+              nodeKind: node.nodeKind,
+              text: node.text,
+              start: node.start,
+              end: node.end,
+            });
+          } else {
+            targets.push({
+              path: file.path,
+              language: file.language,
+              nodeKind: node.nodeKind,
+              text: node.text,
+              start: node.start,
+              end: node.end,
+            });
+          }
+        }
+      }
+      return {
+        operation: input.operation,
+        targets: targets.slice(0, 2000),
+        files: fileErrors,
+      };
+    },
+    async astApplyRefactor(input: {
+      operation: "rename" | "extract" | "inline" | "move" | "custom";
+      files: Array<{
+        path?: string;
+        source: string;
+        language: string;
+      }>;
+      rename?: {
+        from: string;
+        to: string;
+      };
+      dryRun?: boolean;
+    }) {
+      await ctx.ports.getReady();
+      const { SUPPORTED_AST_LANGUAGES } = await import(
+        "@natalia/diff-wasm/ast"
+      );
+      const supported = new Set<string>(SUPPORTED_AST_LANGUAGES);
+      const plan = await this.astRefactorPlan!({
+        operation: input.operation,
+        files: input.files,
+        ...(input.rename ? { rename: input.rename } : {}),
+      });
+      const applied: Array<{
+        path?: string;
+        language: string;
+        replacements: Array<{
+          start: number;
+          end: number;
+          from: string;
+          to: string;
+        }>;
+        before?: string;
+        after?: string;
+        error?: string;
+      }> = [];
+      for (const file of input.files) {
+        if (!supported.has(file.language)) {
+          applied.push({
+            path: file.path,
+            language: file.language,
+            replacements: [],
+            error: `unsupported_ast_language: ${file.language}`,
+          });
+          continue;
+        }
+        const replacements = plan.targets
+          .filter((target) => target.path === file.path)
+          .map((target) => ({
+            start: byteOffsetToUtf16(file.source, target.start),
+            end: byteOffsetToUtf16(file.source, target.end),
+            from: target.text,
+            to: target.suggestedText ?? target.text,
+          }));
+        if (!replacements.length) {
+          applied.push({
+            path: file.path,
+            language: file.language,
+            replacements: [],
+            before: file.source,
+            after: file.source,
+          });
+          continue;
+        }
+        const sorted = [...replacements].sort((a, b) => b.start - a.start);
+        let after = file.source;
+        for (const replacement of sorted) {
+          after =
+            after.slice(0, replacement.start) +
+            replacement.to +
+            after.slice(replacement.end);
+        }
+        if (!input.dryRun && file.path) {
+          const absPath = resolve(ctx.ports.getWorkspaceRoot(), file.path);
+          await writeFile(absPath, after, "utf8");
+          void appendWorkspaceMutation(ctx, {
+            id: `mut_${Date.now().toString(36)}`,
+            at: new Date().toISOString(),
+            workspaceRoot: ctx.ports.getWorkspaceRoot(),
+            sessionID: ctx.ports.getSessionID(),
+            path: file.path,
+            operation: "modify",
+            origin: "refactor",
+          });
+        }
+        applied.push({
+          path: file.path,
+          language: file.language,
+          replacements,
+          before: file.source,
+          after,
+        });
+      }
+      return { operation: input.operation, applied };
+    },
+
     async gitRefs() {
       await ctx.ports.getReady();
       const workspaceRoot = ctx.ports.getWorkspaceRoot();
@@ -123,7 +580,10 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
         "HEAD",
       ]);
       const currentBranch = currentBranchRaw.stdout.trim();
-      for (const name of branches.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
+      for (const name of branches.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)) {
         if (seen.has(name)) continue;
         seen.add(name);
         refs.push({
@@ -132,13 +592,18 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
           current: name === currentBranch,
         });
       }
-      for (const name of tags.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
+      for (const name of tags.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)) {
         if (seen.has(name)) continue;
         seen.add(name);
         refs.push({ name, kind: "tag" });
       }
       for (const record of worktrees.stdout.split("\n\n")) {
-        const pathLine = record.split("\n").find((line) => line.startsWith("worktree "));
+        const pathLine = record
+          .split("\n")
+          .find((line) => line.startsWith("worktree "));
         if (!pathLine) continue;
         const path = pathLine.slice("worktree ".length).trim();
         const branchLine = record
@@ -161,6 +626,171 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
   };
 }
 
+const gitStructuredCache = new Map<
+  string,
+  ReturnType<typeof patchToStructured>
+>();
+
+function patchToStructuredCached(
+  patch: string,
+): ReturnType<typeof patchToStructured> {
+  const cached = gitStructuredCache.get(patch);
+  if (cached) return cached;
+  const result = patchToStructured(patch);
+  gitStructuredCache.set(patch, result);
+  return result;
+}
+
+function patchToStructured(patch: string): {
+  hunks: Array<{
+    oldStart: number;
+    oldCount: number;
+    newStart: number;
+    newCount: number;
+    lines: Array<{
+      type: "context" | "add" | "delete" | "hunk";
+      text: string;
+      oldLineNumber: number | null;
+      newLineNumber: number | null;
+    }>;
+  }>;
+  additions: number;
+  deletions: number;
+} {
+  const hunks: Array<{
+    oldStart: number;
+    oldCount: number;
+    newStart: number;
+    newCount: number;
+    lines: Array<{
+      type: "context" | "add" | "delete" | "hunk";
+      text: string;
+      oldLineNumber: number | null;
+      newLineNumber: number | null;
+    }>;
+  }> = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let additions = 0;
+  let deletions = 0;
+  let inHunk = false;
+  let current:
+    | {
+        oldStart: number;
+        oldCount: number;
+        newStart: number;
+        newCount: number;
+        lines: Array<{
+          type: "context" | "add" | "delete" | "hunk";
+          text: string;
+          oldLineNumber: number | null;
+          newLineNumber: number | null;
+        }>;
+      }
+    | undefined;
+  for (const raw of patch.split("\n")) {
+    if (raw.startsWith("diff --git")) {
+      inHunk = false;
+      current = undefined;
+      continue;
+    }
+    if (raw.startsWith("@@")) {
+      const match = raw.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/u);
+      if (match) {
+        const oldStart = Number(match[1]);
+        const oldCount = Number(match[2] ?? 1);
+        const newStart = Number(match[3]);
+        const newCount = Number(match[4] ?? 1);
+        oldLine = oldStart;
+        newLine = newStart;
+        inHunk = true;
+        current = {
+          oldStart,
+          oldCount,
+          newStart,
+          newCount,
+          lines: [],
+        };
+        hunks.push(current);
+      }
+      continue;
+    }
+    if (!inHunk || !current) continue;
+    if (raw.startsWith("---") || raw.startsWith("+++") || raw.startsWith("\\"))
+      continue;
+    if (raw.startsWith("+")) {
+      const text = raw.slice(1);
+      current.lines.push({
+        type: "add",
+        text,
+        oldLineNumber: null,
+        newLineNumber: newLine++,
+      });
+      additions++;
+      continue;
+    }
+    if (raw.startsWith("-")) {
+      const text = raw.slice(1);
+      current.lines.push({
+        type: "delete",
+        text,
+        oldLineNumber: oldLine++,
+        newLineNumber: null,
+      });
+      deletions++;
+      continue;
+    }
+    if (raw.startsWith(" ")) {
+      const text = raw.slice(1);
+      current.lines.push({
+        type: "context",
+        text,
+        oldLineNumber: oldLine++,
+        newLineNumber: newLine++,
+      });
+      continue;
+    }
+  }
+  return { hunks, additions, deletions };
+}
+
+function byteOffsetToUtf16(source: string, byteOffset: number): number {
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  let utf16 = 0;
+  let index = 0;
+  while (index < source.length && bytes < byteOffset) {
+    const codePoint = source.codePointAt(index)!;
+    const char = String.fromCodePoint(codePoint);
+    const charBytes = encoder.encode(char).length;
+    if (bytes + charBytes > byteOffset) break;
+    bytes += charBytes;
+    utf16 += char.length;
+    index += char.length;
+  }
+  return utf16;
+}
+
+async function gitShowContent(
+  workspaceRoot: string,
+  ref: string,
+  path: string,
+): Promise<string | undefined> {
+  const result = await gitCapture(workspaceRoot, ["show", `${ref}:${path}`]);
+  return result.exitCode === 0 ? result.stdout : undefined;
+}
+
+async function readWorkspaceContent(
+  workspaceRoot: string,
+  path: string,
+): Promise<string | undefined> {
+  try {
+    return await readFile(resolve(workspaceRoot, path), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 export async function collectWorkspaceGitDiff(
   workspaceRoot: string,
   input?: {
@@ -168,6 +798,8 @@ export async function collectWorkspaceGitDiff(
     to?: string;
     path?: string;
     includePatch?: boolean;
+    includeContent?: boolean;
+    ignoreWhitespace?: boolean;
   },
 ): Promise<RuntimeWorkspaceDiffChange[]> {
   const from = input?.from ?? "HEAD";
@@ -193,13 +825,35 @@ export async function collectWorkspaceGitDiff(
         try {
           patch =
             operation === "added" && parsed.untracked
-              ? await gitDiffUntracked(workspaceRoot, path)
-              : await gitDiffTracked(workspaceRoot, from, path, oldPath);
+              ? await gitDiffUntracked(
+                  workspaceRoot,
+                  path,
+                  input?.ignoreWhitespace,
+                )
+              : await gitDiffTracked(
+                  workspaceRoot,
+                  from,
+                  path,
+                  oldPath,
+                  input?.ignoreWhitespace,
+                );
         } catch {
           patch = "";
         }
       }
+      let before: string | undefined;
+      let after: string | undefined;
+      if (input?.includeContent) {
+        if (operation === "deleted") {
+          before = await gitShowContent(workspaceRoot, from, oldPath ?? path);
+        } else {
+          if (!(operation === "added" && parsed.untracked))
+            before = await gitShowContent(workspaceRoot, from, oldPath ?? path);
+          after = await readWorkspaceContent(workspaceRoot, path);
+        }
+      }
       const counts = patch ? countPatch(patch) : { additions: 0, deletions: 0 };
+      const structured = patch ? patchToStructuredCached(patch) : undefined;
       changes.push({
         path,
         operation,
@@ -207,6 +861,9 @@ export async function collectWorkspaceGitDiff(
         additions: counts.additions,
         deletions: counts.deletions,
         ...(patch ? { patch } : {}),
+        ...(structured ? { structured } : {}),
+        ...(before !== undefined ? { before } : {}),
+        ...(after !== undefined ? { after } : {}),
       });
     }
     return changes;
@@ -215,11 +872,19 @@ export async function collectWorkspaceGitDiff(
     "diff",
     "--unified=3",
     "--no-color",
+    ...(input?.ignoreWhitespace ? ["-w"] : []),
     `${from}..${to}`,
     ...(input?.path ? ["--", input.path] : []),
   ]);
   if (rawDiff.exitCode !== 0 && !rawDiff.stdout.trim()) return [];
-  return diffToChanges(rawDiff.stdout);
+  const changes = diffToChanges(rawDiff.stdout);
+  if (input?.includeContent) {
+    for (const change of changes) {
+      change.before = await gitShowContent(workspaceRoot, from, change.path);
+      change.after = await gitShowContent(workspaceRoot, to, change.path);
+    }
+  }
+  return changes;
 }
 
 function unquoteGitPath(value: string): string {
@@ -232,12 +897,14 @@ function unquoteGitPath(value: string): string {
   }
 }
 
-export function parseStatusLine(line: string): {
-  path: string;
-  operation: "added" | "modified" | "deleted" | "renamed";
-  oldPath?: string;
-  untracked: boolean;
-} | undefined {
+export function parseStatusLine(line: string):
+  | {
+      path: string;
+      operation: "added" | "modified" | "deleted" | "renamed";
+      oldPath?: string;
+      untracked: boolean;
+    }
+  | undefined {
   if (line.startsWith("?? ")) {
     return {
       path: unquoteGitPath(line.slice(3)),
@@ -291,10 +958,21 @@ async function gitDiffTracked(
   from: string,
   path: string,
   oldPath?: string,
+  ignoreWhitespace?: boolean,
 ): Promise<string> {
+  const whitespace = ignoreWhitespace ? ["-w"] : [];
   const args = oldPath
-    ? ["diff", "--unified=3", "--no-color", from, "--", oldPath, path]
-    : ["diff", "--unified=3", "--no-color", from, "--", path];
+    ? [
+        "diff",
+        "--unified=3",
+        "--no-color",
+        ...whitespace,
+        from,
+        "--",
+        oldPath,
+        path,
+      ]
+    : ["diff", "--unified=3", "--no-color", ...whitespace, from, "--", path];
   const result = await gitCapture(cwd, args);
   return result.stdout;
 }
@@ -302,12 +980,15 @@ async function gitDiffTracked(
 async function gitDiffUntracked(
   cwd: string,
   path: string,
+  ignoreWhitespace?: boolean,
 ): Promise<string> {
+  const whitespace = ignoreWhitespace ? ["-w"] : [];
   const result = await gitCapture(cwd, [
     "diff",
     "--no-index",
     "--unified=3",
     "--no-color",
+    ...whitespace,
     "--",
     "/dev/null",
     path,
@@ -325,12 +1006,15 @@ function diffToChanges(rawDiff: string): RuntimeWorkspaceDiffChange[] {
     if (!match) continue;
     const path = match[2]!;
     const counts = countPatch(section);
+    const patch = section.trim() ? section.trimEnd() + "\n" : undefined;
+    const structured = patch ? patchToStructuredCached(patch) : undefined;
     changes.push({
       path,
       operation: "modified",
       additions: counts.additions,
       deletions: counts.deletions,
-      ...(section.trim() ? { patch: section.trimEnd() + "\n" } : {}),
+      ...(patch ? { patch } : {}),
+      ...(structured ? { structured } : {}),
     });
   }
   return changes;

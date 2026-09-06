@@ -104,7 +104,10 @@ export function createSessionsSurface(
       }
       const result = await requireSessionStore().messageRollback(id, turnID);
       await rebuildContextAfterMessageRollback(id);
-      return { ...result, ...(safetyCheckpointID ? { safetyCheckpointID } : {}) };
+      return {
+        ...result,
+        ...(safetyCheckpointID ? { safetyCheckpointID } : {}),
+      };
     },
     async sessionDelete(id) {
       await ctx.ports.getReady();

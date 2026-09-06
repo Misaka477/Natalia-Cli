@@ -46,9 +46,10 @@ export function createNataliaNeuPlugin(): UiPlugin {
           events: ctx.events,
           slots: {},
         });
-        const disposeLayout = layout && typeof layout === "object" && "dispose" in layout
-          ? () => void (layout as { dispose(): unknown }).dispose()
-          : undefined;
+        const disposeLayout =
+          layout && typeof layout === "object" && "dispose" in layout
+            ? () => void (layout as { dispose(): unknown }).dispose()
+            : undefined;
         unmount = () => {
           disposeLayout?.();
           ctx.root.replaceChildren();

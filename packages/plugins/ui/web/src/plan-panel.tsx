@@ -39,9 +39,7 @@ function isActivePlanStatus(status: string): boolean {
 }
 
 function MarkdownPreview(props: { content: string }) {
-  const html = createMemo(
-    () => marked.parse(props.content ?? "") as string,
-  );
+  const html = createMemo(() => marked.parse(props.content ?? "") as string);
   return <div class="plan-panel-preview markdown-body" innerHTML={html()} />;
 }
 
@@ -61,10 +59,11 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
   const activePlan = createMemo(() =>
     plans().find((plan) => isActivePlanStatus(plan.status)),
   );
-  const selected = createMemo(() =>
-    plans().find((plan) => plan.planID === selectedID()) ??
-    activePlan() ??
-    plans()[0],
+  const selected = createMemo(
+    () =>
+      plans().find((plan) => plan.planID === selectedID()) ??
+      activePlan() ??
+      plans()[0],
   );
 
   function rememberSelected(planID?: string) {
@@ -85,19 +84,20 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
           createdBy: plan.createdBy,
         })),
       );
-      const next =
-        (() => {
-          try {
-            const stored = localStorage.getItem("natalia.selectedPlanID");
-            return (
-              list.find((plan) => plan.planID === stored) ??
-              list.find((plan) => isActivePlanStatus(plan.status)) ??
-              list[0]
-            );
-          } catch {
-            return list.find((plan) => isActivePlanStatus(plan.status)) ?? list[0];
-          }
-        })();
+      const next = (() => {
+        try {
+          const stored = localStorage.getItem("natalia.selectedPlanID");
+          return (
+            list.find((plan) => plan.planID === stored) ??
+            list.find((plan) => isActivePlanStatus(plan.status)) ??
+            list[0]
+          );
+        } catch {
+          return (
+            list.find((plan) => isActivePlanStatus(plan.status)) ?? list[0]
+          );
+        }
+      })();
       if (next) {
         setSelectedID(next.planID);
         rememberSelected(next.planID);
@@ -118,7 +118,9 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
       : selected();
     if (!plan) return;
     try {
-      const result = await props.runtime?.planDocRead?.({ planID: plan.planID });
+      const result = await props.runtime?.planDocRead?.({
+        planID: plan.planID,
+      });
       setDraft(result?.content ?? "");
       setError("");
     } catch (cause) {
@@ -267,7 +269,8 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
           <div class="review-empty-icon">📄</div>
           <div class="review-empty-title">暂无计划文档</div>
           <div class="review-empty-desc">
-            可手动新建计划文档，或先用 Navi 写入 .natalia/plans/ 下的 Markdown 文件，再在这里标记为 Plan。
+            可手动新建计划文档，或先用 Navi 写入 .natalia/plans/ 下的 Markdown
+            文件，再在这里标记为 Plan。
           </div>
         </div>
       </Show>
@@ -296,7 +299,10 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
             </For>
           </div>
           <div class="agent-stream">
-            <Show when={selected()} fallback={<div class="agent-empty">先选择或标记一个 Plan</div>}>
+            <Show
+              when={selected()}
+              fallback={<div class="agent-empty">先选择或标记一个 Plan</div>}
+            >
               <div class="agent-stream-header">
                 <div class="agent-stream-title">{selected()!.title}</div>
                 <div class="agent-stream-meta">
@@ -328,7 +334,9 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
                   disabled={activePlan()?.planID === selected()!.planID}
                   onClick={() => void setActivePlan()}
                 >
-                  {activePlan()?.planID === selected()!.planID ? "活跃中" : "设为当前活跃"}
+                  {activePlan()?.planID === selected()!.planID
+                    ? "活跃中"
+                    : "设为当前活跃"}
                 </button>
                 <button
                   type="button"

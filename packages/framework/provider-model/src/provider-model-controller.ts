@@ -86,10 +86,8 @@ export function createProviderModelController(
       });
       throw cause;
     } finally {
-      if (chatTasks.get(key) === task)
-        chatTasks.delete(key);
-      if (chatAborts.get(key) === abort)
-        chatAborts.delete(key);
+      if (chatTasks.get(key) === task) chatTasks.delete(key);
+      if (chatAborts.get(key) === abort) chatAborts.delete(key);
     }
   }
 
@@ -105,8 +103,7 @@ export function createProviderModelController(
           await input.chat.wake(sessionID);
       }
     })().finally(() => {
-      if (chatWakeTasks.get(key) === task)
-        chatWakeTasks.delete(key);
+      if (chatWakeTasks.get(key) === task) chatWakeTasks.delete(key);
       if (chatWakePending.has(key) && !disposed)
         requestChatWake(sessionID, channel);
     });

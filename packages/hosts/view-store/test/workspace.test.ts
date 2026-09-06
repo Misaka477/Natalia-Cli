@@ -47,8 +47,12 @@ test("workspace.added and workspace.activated drive navigation state", () => {
   } satisfies RuntimeEvent);
 
   expect(state.activeWorkspaceID).toBe("ws_b");
-  expect(state.workspaces.find((entry) => entry.workspaceID === "ws_a")?.status).toBe("idle");
-  expect(state.workspaces.find((entry) => entry.workspaceID === "ws_b")?.status).toBe("active");
+  expect(
+    state.workspaces.find((entry) => entry.workspaceID === "ws_a")?.status,
+  ).toBe("idle");
+  expect(
+    state.workspaces.find((entry) => entry.workspaceID === "ws_b")?.status,
+  ).toBe("active");
 });
 
 test("workspace.removed removes sessions from that workspace", () => {

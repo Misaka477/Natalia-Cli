@@ -162,11 +162,7 @@ function selectWebSearchSource(input: {
   };
 }
 
-
-export const webTools: RuntimeTool[] = [
-  webFetchTool(),
-  webSearchTool(),
-];
+export const webTools: RuntimeTool[] = [webFetchTool(), webSearchTool()];
 
 /**
  * Session scope: these tools are only meaningful while the session using them

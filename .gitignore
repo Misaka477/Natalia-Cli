@@ -78,3 +78,8 @@ Thumbs.db
 # Tauri desktop build output
 /apps/tauri/src-tauri/target/
 /apps/tauri/src-tauri/gen/
+
+# Generated diff-wasm AST packs and scratch build trees
+/packages/tooling/diff-wasm/ast/
+/packages/tooling/diff-wasm/ast-build/
+/packages/tooling/diff-wasm/text-build/

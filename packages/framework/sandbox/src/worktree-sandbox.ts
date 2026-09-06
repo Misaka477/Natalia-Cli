@@ -15,7 +15,7 @@
  * fall back to the directory-copy manager; container/VM isolation is a later,
  * threat-model-driven step.
  */
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import {
@@ -27,6 +27,7 @@ import {
   riskTierForChanges,
   type SandboxRiskTier,
 } from "./governance";
+import { unifiedPatchToStructured } from "./diff";
 
 export type WorktreePromotion = {
   sandboxID: string;
@@ -79,7 +80,10 @@ async function gitRaw(cwd: string, args: string[]): Promise<string> {
   return stdout;
 }
 
-function extractPatchForPath(rawDiff: string, path: string): string | undefined {
+function extractPatchForPath(
+  rawDiff: string,
+  path: string,
+): string | undefined {
   const sections = rawDiff.split(/(?=^diff --git )/m);
   for (const section of sections) {
     if (section.includes(`b/${path}`) || section.includes(`a/${path}`))
@@ -161,11 +165,7 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
   override async previewMerge(id: string): Promise<SandboxChange[]> {
     const base = await this.baseFor(id);
     const root = resolve(this["baseRoot"], id);
-    const names = await git(root, [
-      "diff",
-      "--name-status",
-      base,
-    ]);
+    const names = await git(root, ["diff", "--name-status", base]);
     const rawDiff = await gitRaw(root, [
       "diff",
       "--unified=3",
@@ -173,32 +173,59 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
       base,
     ]).catch(() => "");
     const changes: SandboxChange[] = [];
+    const readBase = async (path: string): Promise<string | undefined> => {
+      try {
+        return await gitRaw(root, ["show", `${base}:${path}`]);
+      } catch {
+        return undefined;
+      }
+    };
+    const readWorktree = async (path: string): Promise<string | undefined> => {
+      try {
+        return await readFile(resolve(root, path), "utf8");
+      } catch {
+        return undefined;
+      }
+    };
     for (const line of names.split("\n").filter(Boolean)) {
       const [kind, path, oldPath] = line.split("\t");
       const patch = extractPatchForPath(rawDiff, path);
       if (kind === "D") {
+        const before = await readBase(path);
         changes.push({
           kind: "delete" as SandboxDiffKind,
           path,
+          ...(before ? { before } : {}),
           ...(patch ? { patch } : {}),
+          ...(patch ? { structured: unifiedPatchToStructured(patch) } : {}),
           ...patchCounts(patch ?? ""),
         });
         continue;
       }
       if (kind === "R") {
+        const before = oldPath ? await readBase(oldPath) : await readBase(path);
+        const after = await readWorktree(path);
         changes.push({
           kind: "rename" as SandboxDiffKind,
           path,
           oldPath,
+          ...(before ? { before } : {}),
+          ...(after ? { after } : {}),
           ...(patch ? { patch } : {}),
+          ...(patch ? { structured: unifiedPatchToStructured(patch) } : {}),
           ...patchCounts(patch ?? ""),
         });
         continue;
       }
+      const before = kind === "A" ? undefined : await readBase(path);
+      const after = await readWorktree(path);
       changes.push({
         kind: (kind === "M" ? "modify" : "add") as SandboxDiffKind,
         path,
+        ...(before ? { before } : {}),
+        ...(after ? { after } : {}),
         ...(patch ? { patch } : {}),
+        ...(patch ? { structured: unifiedPatchToStructured(patch) } : {}),
         ...patchCounts(patch ?? ""),
       });
     }

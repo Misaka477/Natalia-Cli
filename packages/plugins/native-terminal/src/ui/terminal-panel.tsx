@@ -24,23 +24,27 @@ function tabTitle(index: number) {
   return `终端 ${index + 1}`;
 }
 
-export function TerminalPane(props: {
-  runtime?: RuntimeClient;
-  sessionID?: string;
-  runtimeURL?: string;
-  token?: string;
-  active?: boolean;
-  events?: {
-    subscribe(listener: (event: RuntimeEvent) => void): () => void;
-  };
-} = {}) {
+export function TerminalPane(
+  props: {
+    runtime?: RuntimeClient;
+    sessionID?: string;
+    runtimeURL?: string;
+    token?: string;
+    active?: boolean;
+    events?: {
+      subscribe(listener: (event: RuntimeEvent) => void): () => void;
+    };
+  } = {},
+) {
   const [tabs, setTabs] = createSignal<TerminalTab[]>([]);
   const [activeID, setActiveID] = createSignal<string>();
   const desktop =
     typeof window !== "undefined" &&
     Boolean((window as { electron?: unknown }).electron);
   const [limitError, setLimitError] = createSignal<string>();
-  const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>([]);
+  const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>(
+    [],
+  );
   const [shellProfile, setShellProfile] = createSignal("bash");
   const [searchQuery, setSearchQuery] = createSignal("");
   const terminalApis = new Map<string, WebTerminalApi>();
@@ -79,9 +83,7 @@ export function TerminalPane(props: {
     setTabs(next);
     const current = activeID();
     setActiveID(
-      current && next.some((tab) => tab.id === current)
-        ? current
-        : next[0]?.id,
+      current && next.some((tab) => tab.id === current) ? current : next[0]?.id,
     );
     setLimitError();
   }
@@ -114,8 +116,7 @@ export function TerminalPane(props: {
         (event.type === "terminal.timeline" &&
           (event.action === "started" || event.action === "exit"));
       if (!relevant) return;
-      if (sessionID && event.sessionID && event.sessionID !== sessionID)
-        return;
+      if (sessionID && event.sessionID && event.sessionID !== sessionID) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         if (sessionID) void loadTabs(sessionID);
@@ -128,7 +129,8 @@ export function TerminalPane(props: {
   });
 
   async function refreshSessions() {
-    const listed = (await props.runtime?.nativeTerminalList?.(sessionID)) ?? [];
+    const listed =
+      (await props.runtime?.nativeTerminalList?.(props.sessionID)) ?? [];
     setSessions(listed);
   }
 
@@ -147,7 +149,10 @@ export function TerminalPane(props: {
     const id = activeID();
     if (!id) return;
     try {
-      await props.runtime?.nativeTerminalReleaseHumanControl?.(id, props.sessionID);
+      await props.runtime?.nativeTerminalReleaseHumanControl?.(
+        id,
+        props.sessionID,
+      );
       await refreshSessions();
     } catch {
       // optional method may not exist; leave current state
@@ -160,9 +165,15 @@ export function TerminalPane(props: {
     try {
       const session = sessions().find((item) => item.id === id);
       if (session?.secureInput)
-        await props.runtime?.nativeTerminalEndSecureInput?.(id, props.sessionID);
+        await props.runtime?.nativeTerminalEndSecureInput?.(
+          id,
+          props.sessionID,
+        );
       else
-        await props.runtime?.nativeTerminalBeginSecureInput?.(id, props.sessionID);
+        await props.runtime?.nativeTerminalBeginSecureInput?.(
+          id,
+          props.sessionID,
+        );
       await refreshSessions();
     } catch {
       // optional method may not exist; leave current state
@@ -208,13 +219,21 @@ export function TerminalPane(props: {
     if (!remaining.length) {
       const nextID = newTerminalID();
       remaining = [
-        { id: nextID, title: tabTitle(0), cells: [nextID], layout: "horizontal" },
+        {
+          id: nextID,
+          title: tabTitle(0),
+          cells: [nextID],
+          layout: "horizontal",
+        },
       ];
       setTabs(remaining);
       setActiveID(nextID);
     } else {
       setTabs(retitle(remaining));
-      if (activeID() === id || !remaining.some((tab) => tab.cells.includes(activeID() ?? "")))
+      if (
+        activeID() === id ||
+        !remaining.some((tab) => tab.cells.includes(activeID() ?? ""))
+      )
         setActiveID(remaining[0]?.cells[0]);
     }
     setLimitError();
@@ -241,7 +260,9 @@ export function TerminalPane(props: {
       const replaced = next.find((item) => item.id === tab.id)!;
       setActiveID(replaced.cells[0]);
     }
-    void props.runtime?.nativeTerminalStop?.(cellID, props.sessionID).catch(() => undefined);
+    void props.runtime
+      ?.nativeTerminalStop?.(cellID, props.sessionID)
+      .catch(() => undefined);
   }
 
   return (
@@ -267,10 +288,24 @@ export function TerminalPane(props: {
             <option value="sh">sh</option>
             <option value="pwsh">pwsh</option>
           </select>
-          <span class="terminal-owner-badge" data-owner={sessions().find((item) => item.id === activeID())?.inputOwner ?? "model"}>
-            {sessions().find((item) => item.id === activeID())?.inputOwner === "human" ? "人工控制" : "模型控制"}
+          <span
+            class="terminal-owner-badge"
+            data-owner={
+              sessions().find((item) => item.id === activeID())?.inputOwner ??
+              "model"
+            }
+          >
+            {sessions().find((item) => item.id === activeID())?.inputOwner ===
+            "human"
+              ? "人工控制"
+              : "模型控制"}
           </span>
-          <Show when={sessions().find((item) => item.id === activeID())?.inputOwner === "model"}>
+          <Show
+            when={
+              sessions().find((item) => item.id === activeID())?.inputOwner ===
+              "model"
+            }
+          >
             <button
               type="button"
               class="terminal-toolbar-btn"
@@ -280,7 +315,12 @@ export function TerminalPane(props: {
               接管
             </button>
           </Show>
-          <Show when={sessions().find((item) => item.id === activeID())?.inputOwner === "human"}>
+          <Show
+            when={
+              sessions().find((item) => item.id === activeID())?.inputOwner ===
+              "human"
+            }
+          >
             <button
               type="button"
               class="terminal-toolbar-btn"
@@ -293,9 +333,15 @@ export function TerminalPane(props: {
               type="button"
               class="terminal-toolbar-btn"
               onClick={() => void toggleSecureInput()}
-              title={sessions().find((item) => item.id === activeID())?.secureInput ? "结束安全输入" : "开始安全输入"}
+              title={
+                sessions().find((item) => item.id === activeID())?.secureInput
+                  ? "结束安全输入"
+                  : "开始安全输入"
+              }
             >
-              {sessions().find((item) => item.id === activeID())?.secureInput ? "结束安全输入" : "安全输入"}
+              {sessions().find((item) => item.id === activeID())?.secureInput
+                ? "结束安全输入"
+                : "安全输入"}
             </button>
           </Show>
           <input
@@ -311,14 +357,70 @@ export function TerminalPane(props: {
               }
             }}
           />
-          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.findNext(searchQuery())} title="下一个匹配">↓</button>
-          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.findPrevious(searchQuery())} title="上一个匹配">↑</button>
-          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.reset()} title="刷新/重连当前终端">刷新</button>
-          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.clear()} title="清空">清空</button>
-          <button type="button" class="terminal-toolbar-btn" onClick={() => void activeApi()?.copy()} title="复制">复制</button>
-          <button type="button" class="terminal-toolbar-btn" onClick={() => void activeApi()?.paste()} title="粘贴">粘贴</button>
-          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.zoomOut()} title="缩小字体">A-</button>
-          <button type="button" class="terminal-toolbar-btn" onClick={() => activeApi()?.zoomIn()} title="放大字体">A+</button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => activeApi()?.findNext(searchQuery())}
+            title="下一个匹配"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => activeApi()?.findPrevious(searchQuery())}
+            title="上一个匹配"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => activeApi()?.reset()}
+            title="刷新/重连当前终端"
+          >
+            刷新
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => activeApi()?.clear()}
+            title="清空"
+          >
+            清空
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => void activeApi()?.copy()}
+            title="复制"
+          >
+            复制
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => void activeApi()?.paste()}
+            title="粘贴"
+          >
+            粘贴
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => activeApi()?.zoomOut()}
+            title="缩小字体"
+          >
+            A-
+          </button>
+          <button
+            type="button"
+            class="terminal-toolbar-btn"
+            onClick={() => activeApi()?.zoomIn()}
+            title="放大字体"
+          >
+            A+
+          </button>
           <button
             type="button"
             class="terminal-toolbar-btn"
@@ -342,7 +444,9 @@ export function TerminalPane(props: {
               <button
                 type="button"
                 class="terminal-tab"
-                data-active={activeID() === tab.id || tab.cells.includes(activeID() ?? "")}
+                data-active={
+                  activeID() === tab.id || tab.cells.includes(activeID() ?? "")
+                }
                 onClick={() => setActiveID(tab.cells[0])}
               >
                 <span class="terminal-tab-label">{tab.title}</span>
@@ -380,13 +484,16 @@ export function TerminalPane(props: {
                 class="terminal-xterm-host"
                 data-active={tab.cells.includes(activeID() ?? "")}
                 style={{
-                  display: tab.cells.includes(activeID() ?? "") ? "flex" : "none",
+                  display: tab.cells.includes(activeID() ?? "")
+                    ? "flex"
+                    : "none",
                 }}
               >
                 <div
                   class="terminal-split-stack"
                   style={{
-                    "flex-direction": tab.layout === "vertical" ? "row" : "column",
+                    "flex-direction":
+                      tab.layout === "vertical" ? "row" : "column",
                   }}
                 >
                   <For each={tab.cells}>

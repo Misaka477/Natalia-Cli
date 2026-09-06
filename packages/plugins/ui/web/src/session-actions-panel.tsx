@@ -1,14 +1,14 @@
 import { Show, onCleanup, onMount, For } from "solid-js";
 
-type ActionId =
-  | "pin"
-  | "snapshot"
-  | "rollback"
-  | "delete";
+type ActionId = "pin" | "snapshot" | "rollback" | "delete";
 
 const actions: Array<{ id: ActionId; label: string; description: string }> = [
   { id: "pin", label: "固定/取消固定", description: "切换会话置顶状态" },
-  { id: "snapshot", label: "创建快照", description: "保存当前会话状态，方便回滚" },
+  {
+    id: "snapshot",
+    label: "创建快照",
+    description: "保存当前会话状态，方便回滚",
+  },
   { id: "rollback", label: "回滚到快照", description: "恢复到最近一次快照" },
   { id: "delete", label: "删除会话", description: "删除当前会话及其附件" },
 ];
@@ -33,7 +33,10 @@ export function SessionActionsPanel(props: {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-session-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-session-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">会话操作</span>
             <button
@@ -69,7 +72,9 @@ export function SessionActionsPanel(props: {
                   }}
                 >
                   <span class="neu-session-action-label">{action.label}</span>
-                  <span class="neu-session-action-description">{action.description}</span>
+                  <span class="neu-session-action-description">
+                    {action.description}
+                  </span>
                 </button>
               )}
             </For>

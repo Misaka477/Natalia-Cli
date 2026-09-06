@@ -10,7 +10,8 @@
     "./host": "./src/host.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*"
+    "@natalia/contracts": "workspace:*",
+    "@natalia/diff-wasm": "workspace:*"
   },
   "devDependencies": {
     "@natalia/client": "workspace:*"

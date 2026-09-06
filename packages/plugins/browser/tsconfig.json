@@ -4,9 +4,7 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": [
-    "src"
-  ],
+  "include": ["src"],
   "references": [
     {
       "path": "../../core/plugin"

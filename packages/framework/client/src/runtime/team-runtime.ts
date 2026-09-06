@@ -1,4 +1,7 @@
-import type { RuntimeTeamPR, RuntimeWorkspaceDiffChange } from "@natalia/contracts";
+import type {
+  RuntimeTeamPR,
+  RuntimeWorkspaceDiffChange,
+} from "@natalia/contracts";
 import {
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
@@ -18,8 +21,7 @@ export function createTeamRuntime(ctx: RuntimeContext) {
     const subagents =
       ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
     const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
-    const ownerSessionID =
-      sessionID ?? ctx.ports.getActiveExec()?.session.id;
+    const ownerSessionID = sessionID ?? ctx.ports.getActiveExec()?.session.id;
     if (!subagents?.enabled()) return [];
     const prs: RuntimeTeamPR[] = [];
     for (const record of subagents.list()) {
@@ -35,9 +37,11 @@ export function createTeamRuntime(ctx: RuntimeContext) {
       const buildCommand =
         ctx.ports.getTsRuntimeConfig()?.sandbox.promoteCommand;
       const buildEvidence = buildCommand
-        ? await sandboxes
-            ?.validate(record.id, buildCommand)
-            .catch(() => ({ ok: false, exitCode: -1, output: "validate failed" }))
+        ? await sandboxes?.validate(record.id, buildCommand).catch(() => ({
+            ok: false,
+            exitCode: -1,
+            output: "validate failed",
+          }))
         : undefined;
       prs.push({
         id: record.id,
@@ -75,6 +79,7 @@ export function createTeamRuntime(ctx: RuntimeContext) {
       additions: change.additions ?? 0,
       deletions: change.deletions ?? 0,
       ...(change.patch ? { patch: change.patch } : {}),
+      ...(change.structured ? { structured: change.structured } : {}),
       ...(change.before ? { before: change.before } : {}),
       ...(change.after ? { after: change.after } : {}),
       ...(change.mode ? { mode: change.mode } : {}),

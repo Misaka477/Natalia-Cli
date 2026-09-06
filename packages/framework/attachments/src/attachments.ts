@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
 import { modelVisibleEvents, type SessionRecord } from "@natalia/session";

@@ -16,6 +16,8 @@ import {
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
 import type { EpisodeID } from "@natalia/contracts";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   appendInstanceEvent,
   loadInstanceGovernance,
@@ -80,9 +82,9 @@ export function createIntelligenceSurface(
       ? (ctx.ports
           .getExecutionBySession()
           .get(sessionID as import("@natalia/contracts").SessionID) ??
-        (await ctx.ports.ensureExecution(
-          sessionID as import("@natalia/contracts").SessionID,
-        )))
+          (await ctx.ports.ensureExecution(
+            sessionID as import("@natalia/contracts").SessionID,
+          )))
       : ctx.ports.getActiveExec();
   }
   async function intelligenceSession(sessionID?: string) {
@@ -92,8 +94,51 @@ export function createIntelligenceSurface(
     async confirmedWorkspaceChanges(sessionID?: string) {
       await ctx.ports.getReady();
       const exec = await intelligenceExec(sessionID);
-      if (!exec) return [];
-      return ctx.ports.reconcileWorkspaceObservation(exec);
+      const reconciled = exec
+        ? await ctx.ports.reconcileWorkspaceObservation(exec)
+        : [];
+      // Merge best-effort workspace mutation log so newly recorded tool writes
+      // are visible even when observation data has not been reconciled yet.
+      try {
+        const logPath = resolve(
+          ctx.ports.getWorkspaceRoot(),
+          ".natalia",
+          "workspace-mutations.json",
+        );
+        const rows = JSON.parse(await readFile(logPath, "utf8")) as Array<{
+          sessionID?: string;
+          path: string;
+          operation: "add" | "modify" | "delete" | "rename";
+        }>;
+        const seen = new Set(reconciled.map((change) => change.path));
+        const merged = [...reconciled];
+        for (const row of rows) {
+          if (sessionID && row.sessionID !== sessionID) continue;
+          if (seen.has(row.path)) continue;
+          seen.add(row.path);
+          merged.push({
+            id: `mutation:${row.path}`,
+            workspaceRoot: ctx.ports.getWorkspaceRoot(),
+            path: row.path,
+            operation:
+              row.operation === "add"
+                ? "added"
+                : row.operation === "delete"
+                  ? "deleted"
+                  : row.operation === "rename"
+                    ? "renamed"
+                    : "modified",
+            origin: "tool",
+            attribution: row.sessionID ? "attributed" : "unattributed",
+            correlation: row.sessionID ? { sessionID: row.sessionID } : {},
+            health: "healthy",
+            at: new Date().toISOString(),
+          });
+        }
+        return merged;
+      } catch {
+        return reconciled;
+      }
     },
     async constitutionRules(sessionID?: string) {
       const session = await intelligenceSession(sessionID);
@@ -140,17 +185,20 @@ export function createIntelligenceSurface(
      * constructor in `constitution-ledger.ts` keeps the secret-safe boundary:
      * decision text and rationale are prose, never tool output or file content.
      */
-    async recordDecision(input: {
-      decision: string;
-      rationale?: string[];
-      alternatives?: {
-        option: string;
-        rejectedReason?: string;
-      }[];
-      consequences?: string[];
-      linkedPlans?: string[];
-      linkedConstraints?: string[];
-    }, sessionID?: string) {
+    async recordDecision(
+      input: {
+        decision: string;
+        rationale?: string[];
+        alternatives?: {
+          option: string;
+          rejectedReason?: string;
+        }[];
+        consequences?: string[];
+        linkedPlans?: string[];
+        linkedConstraints?: string[];
+      },
+      sessionID?: string,
+    ) {
       const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { recorded: false as const };
       const event = requireGovernanceLedger().recordDecision({
@@ -187,23 +235,21 @@ export function createIntelligenceSurface(
       for (const plan of plans) {
         planStateForTask.set(plan.planID, plan.status);
       }
-      return projectedEvidenceRecords(session.events).map(
-        (r) => ({
-          taskID: r.taskID,
-          objective: r.objective,
-          status: r.status,
-          effectiveStatus:
-            r.taskID && planStateForTask.has(r.taskID)
-              ? requireGovernanceLedger().evidenceStatusForPlanState(
-                  planStateForTask.get(r.taskID)! as PlanLifecycleState,
-                  r.status,
-                )
-              : r.status,
-          changes: r.changes ?? [],
-          validations: r.validations ?? [],
-          knownGaps: r.knownGaps ?? [],
-        }),
-      );
+      return projectedEvidenceRecords(session.events).map((r) => ({
+        taskID: r.taskID,
+        objective: r.objective,
+        status: r.status,
+        effectiveStatus:
+          r.taskID && planStateForTask.has(r.taskID)
+            ? requireGovernanceLedger().evidenceStatusForPlanState(
+                planStateForTask.get(r.taskID)! as PlanLifecycleState,
+                r.status,
+              )
+            : r.status,
+        changes: r.changes ?? [],
+        validations: r.validations ?? [],
+        knownGaps: r.knownGaps ?? [],
+      }));
     },
     async completions(sessionID?: string) {
       const session = await intelligenceSession(sessionID);
@@ -231,13 +277,16 @@ export function createIntelligenceSurface(
      * bounded output and a timeout, and only the command, outcome, bounded safe
      * summary and duration reach the journal. Raw output never does.
      */
-    async recordValidation(input: {
-      taskID: string;
-      objective: string;
-      command: string;
-      timeoutSec?: number;
-      knownGaps?: string[];
-    }, sessionID?: string) {
+    async recordValidation(
+      input: {
+        taskID: string;
+        objective: string;
+        command: string;
+        timeoutSec?: number;
+        knownGaps?: string[];
+      },
+      sessionID?: string,
+    ) {
       const owner = await intelligenceExec(sessionID);
       if (!owner) return { recorded: false as const };
       if (
@@ -290,23 +339,26 @@ export function createIntelligenceSurface(
      * prose — changeSummary is a summary, never a diff or file content — and a
      * `validated_by` Work Graph edge connects each completed change to the card.
      */
-    async recordCompletion(input: {
-      taskID: string;
-      objective: string;
-      changeSummary: string;
-      behaviorImpact?: string;
-      validations?: Array<{
-        command: string;
-        result: "passed" | "failed" | "skipped";
-        safeSummary: string;
-      }>;
-      humanValidation?: string;
-      knownGaps?: string[];
-      externalSideEffects?: string[];
-      rollbackState?: "clean" | "available" | "none" | "needs_promotion";
-      evidenceIDs?: string[];
-      changePaths?: string[];
-    }, sessionID?: string) {
+    async recordCompletion(
+      input: {
+        taskID: string;
+        objective: string;
+        changeSummary: string;
+        behaviorImpact?: string;
+        validations?: Array<{
+          command: string;
+          result: "passed" | "failed" | "skipped";
+          safeSummary: string;
+        }>;
+        humanValidation?: string;
+        knownGaps?: string[];
+        externalSideEffects?: string[];
+        rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+        evidenceIDs?: string[];
+        changePaths?: string[];
+      },
+      sessionID?: string,
+    ) {
       const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { recorded: false as const };
       if (
@@ -358,17 +410,15 @@ export function createIntelligenceSurface(
     async driftFindings(sessionID?: string) {
       const session = await intelligenceSession(sessionID);
       if (!session) return [];
-      return projectedDriftFindings(session.events).map(
-        (f) => ({
-          findingID: f.findingID,
-          severity: f.severity,
-          confidence: f.confidence,
-          originalObjective: f.originalObjective,
-          currentActivity: f.currentActivity,
-          evidence: f.evidence,
-          status: f.status,
-        }),
-      );
+      return projectedDriftFindings(session.events).map((f) => ({
+        findingID: f.findingID,
+        severity: f.severity,
+        confidence: f.confidence,
+        originalObjective: f.originalObjective,
+        currentActivity: f.currentActivity,
+        evidence: f.evidence,
+        status: f.status,
+      }));
     },
     /**
      * Run the DriftEvaluator against safe signals and publish any findings it
@@ -377,18 +427,21 @@ export function createIntelligenceSurface(
      * escalates to an approval/Chat/mailbox prompt, never a cancellation.
      * Already-open findings are not reopened.
      */
-    async evaluateDrift(input: {
-      objective: string;
-      currentActivity: string;
-      applicableConstraints?: string[];
-      changes?: Array<{
-        path?: string;
-        action?: string;
-        target?: string;
-        summary?: string;
-      }>;
-      evidenceRefs?: string[];
-    }, sessionID?: string) {
+    async evaluateDrift(
+      input: {
+        objective: string;
+        currentActivity: string;
+        applicableConstraints?: string[];
+        changes?: Array<{
+          path?: string;
+          action?: string;
+          target?: string;
+          summary?: string;
+        }>;
+        evidenceRefs?: string[];
+      },
+      sessionID?: string,
+    ) {
       const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { opened: 0 as const };
       if (!input.objective.trim() || !input.currentActivity.trim())
@@ -410,17 +463,18 @@ export function createIntelligenceSurface(
      * Acknowledge a drift finding (P7 D3): the Main Agent explains it, the user
      * dismisses it, or the work corrects it. Only an open finding can transition.
      */
-    async acknowledgeDriftFinding(input: {
-      findingID: string;
-      status: "explained" | "dismissed" | "corrected";
-      rationale?: string;
-    }, sessionID?: string) {
+    async acknowledgeDriftFinding(
+      input: {
+        findingID: string;
+        status: "explained" | "dismissed" | "corrected";
+        rationale?: string;
+      },
+      sessionID?: string,
+    ) {
       const exec = await intelligenceExec(sessionID);
       if (!exec?.session) return { acknowledged: false as const };
       if (!input.findingID.trim()) return { acknowledged: false as const };
-      const finding = projectedDriftFindings(
-        exec.session.events,
-      ).find(
+      const finding = projectedDriftFindings(exec.session.events).find(
         (candidate) =>
           candidate.findingID === input.findingID &&
           candidate.status === "open",
@@ -437,13 +491,16 @@ export function createIntelligenceSurface(
       );
       return { acknowledged: true as const };
     },
-    async requestOverride(input: {
-      ruleID: string;
-      reason: string;
-      paths?: string[];
-      taskID?: string;
-      expiresAt?: string;
-    }, sessionID?: string) {
+    async requestOverride(
+      input: {
+        ruleID: string;
+        reason: string;
+        paths?: string[];
+        taskID?: string;
+        expiresAt?: string;
+      },
+      sessionID?: string,
+    ) {
       await ctx.ports.getReady();
       const exec = await intelligenceExec(sessionID);
       const session = exec?.session;
@@ -500,16 +557,14 @@ export function createIntelligenceSurface(
     async registeredTools(sessionID?: string) {
       const session = await intelligenceSession(sessionID);
       if (!session) return [];
-      return projectedCanonicalTools(session.events).map(
-        (t) => ({
-          name: t.name,
-          owner: t.owner,
-          scope: t.scope,
-          recovery: t.recovery,
-          precedence: t.precedence,
-          requiresApproval: t.requiresApproval,
-        }),
-      );
+      return projectedCanonicalTools(session.events).map((t) => ({
+        name: t.name,
+        owner: t.owner,
+        scope: t.scope,
+        recovery: t.recovery,
+        precedence: t.precedence,
+        requiresApproval: t.requiresApproval,
+      }));
     },
   };
 }

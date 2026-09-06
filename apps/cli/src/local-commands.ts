@@ -5,11 +5,7 @@ import {
   CapabilityHost,
   type RuntimeServiceClient,
 } from "@natalia/client";
-import type {
-  EpisodeID,
-  RuntimeEvent,
-  SessionID,
-} from "@natalia/contracts";
+import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
 import { resolveConfig } from "@natalia/config";
 import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";

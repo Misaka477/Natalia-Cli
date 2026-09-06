@@ -179,7 +179,9 @@ function loadNodePty(): typeof import("node-pty") {
   let lastError: unknown;
   for (const candidate of candidates) {
     try {
-      const pty = createRequire(candidate)("node-pty") as typeof import("node-pty");
+      const pty = createRequire(candidate)(
+        "node-pty",
+      ) as typeof import("node-pty");
       if (typeof pty.spawn !== "function")
         throw new Error("node-pty spawn is missing");
       return pty;
@@ -288,7 +290,9 @@ function spawnWithPythonPty(options: PtySpawnOptions): PtyProcess {
   }
 
   const childEvents = child as unknown as NodeJS.EventEmitter & {
-    stdout?: { on(event: "data", listener: (chunk: Buffer | string) => void): unknown };
+    stdout?: {
+      on(event: "data", listener: (chunk: Buffer | string) => void): unknown;
+    };
   };
   childEvents.stdout?.on("data", (chunk) => {
     consume(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
@@ -403,8 +407,7 @@ export function createPtyTerminalController(
 
   function get(id: string): PtySession {
     const session = sessions.get(id);
-    if (!session)
-      throw new Error(`native terminal session not found: ${id}`);
+    if (!session) throw new Error(`native terminal session not found: ${id}`);
     return session;
   }
 

@@ -92,9 +92,7 @@ export function QuestionPanel(props: {
             <For each={props.request?.questions ?? []}>
               {(question, index) => (
                 <div class="neu-question-item">
-                  <div class="neu-question-header">
-                    {question.header}
-                  </div>
+                  <div class="neu-question-header">{question.header}</div>
                   <div class="neu-permission-command">
                     <div class="neu-permission-label">问题</div>
                     <div class="neu-permission-command-text">

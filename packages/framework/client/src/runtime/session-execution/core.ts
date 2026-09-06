@@ -46,8 +46,7 @@ export function createCoreSurface(
       });
     },
     async submitAndWait(input) {
-      const normalized =
-        typeof input === "string" ? { text: input } : input;
+      const normalized = typeof input === "string" ? { text: input } : input;
       const submitted = await ctx.ports.submitInput(normalized);
       const exec = ctx.ports
         .getExecutionBySession()
@@ -60,13 +59,13 @@ export function createCoreSurface(
       return submitted;
     },
     cancel(reason = "user cancel", sessionID) {
-      const cancelledSessionID = (
-        sessionID ?? ctx.ports.getSessionID()
-      ) as SessionID;
+      const cancelledSessionID = (sessionID ??
+        ctx.ports.getSessionID()) as SessionID;
       const coordinator = sessionRunCoordinator(cancelledSessionID);
       const cancelledExec =
-        ctx.ports.getExecutionBySession().get(cancelledSessionID as SessionID) ??
-        ctx.ports.getActiveExec();
+        ctx.ports
+          .getExecutionBySession()
+          .get(cancelledSessionID as SessionID) ?? ctx.ports.getActiveExec();
       const runningTurnID = cancelledExec?.activeTurnID;
       const pendingTurnID = runningTurnID
         ? undefined
@@ -163,9 +162,8 @@ export function createCoreSurface(
     activeAtSubmit: boolean,
     explicitSessionID?: string,
   ) {
-    const sessionID = (
-      explicitSessionID ?? ctx.ports.getSessionID()
-    ) as SessionID;
+    const sessionID = (explicitSessionID ??
+      ctx.ports.getSessionID()) as SessionID;
     let submittedIndex = -1;
     let started = false;
     while (!ctx.ports.isDisposed()) {
@@ -199,7 +197,9 @@ export function createCoreSurface(
         // submitted turn to actually start and then leave the active slot.
         if (
           exec?.activeTurnID === id ||
-          events.some((event) => event.type === "turn.started" && event.id === id)
+          events.some(
+            (event) => event.type === "turn.started" && event.id === id,
+          )
         )
           started = true;
         if (started && exec?.activeTurnID !== id) return;
@@ -208,15 +208,19 @@ export function createCoreSurface(
         // settle the session without a terminal event carrying the caller's
         // submitted turn id. For an idle submission the first settlement after
         // this submission is the work it woke.
-        if (events.slice(submittedIndex + 1).some((event) => event.type === "turn.finished"))
+        if (
+          events
+            .slice(submittedIndex + 1)
+            .some((event) => event.type === "turn.finished")
+        )
           return;
         // A cancellation can be published before the provider/tool actually
         // settles. Wait for the in-flight turn to leave the active slot before
         // treating `turn.cancelled` as complete; a turn cancelled before it
         // started has no active id and settles immediately.
-        const cancelled = events.slice(submittedIndex + 1).some(
-          (event) => event.type === "turn.cancelled",
-        );
+        const cancelled = events
+          .slice(submittedIndex + 1)
+          .some((event) => event.type === "turn.cancelled");
         if (cancelled && !exec?.activeTurnID) return;
         if (cancelled && exec?.activeTurnID && exec.activeTurnID !== id) return;
       }

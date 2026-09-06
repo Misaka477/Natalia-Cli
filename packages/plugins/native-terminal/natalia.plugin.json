@@ -6,20 +6,13 @@
   "description": "Native terminal panes and interactive programs.",
   "entry": "index.js",
   "scope": "session",
-  "provides": [
-    "terminal.controller"
-  ],
-  "requires": [
-    "terminal.input"
-  ],
+  "provides": ["terminal.controller"],
+  "requires": ["terminal.input"],
   "optionalRequires": [],
   "conflicts": [],
   "dependencies": [],
   "hooks": {},
-  "integrationPoints": [
-    "tools",
-    "services"
-  ],
+  "integrationPoints": ["tools", "services"],
   "ui": {
     "entry": "src/ui/plugin.tsx",
     "panels": [

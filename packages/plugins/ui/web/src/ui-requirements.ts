@@ -21,7 +21,9 @@ export async function createUiPanelRequirementContext(
     runtime,
     pluginIds: new Set((plugins ?? []).map((plugin) => plugin.id)),
     capabilities: new Set(
-      report.groups.filter((group) => group.available).map((group) => group.name),
+      report.groups
+        .filter((group) => group.available)
+        .map((group) => group.name),
     ),
   };
 }

@@ -37,7 +37,9 @@ export async function discoverDesiredPluginEntries(input: {
   const pathEntries: PluginManifestEntry[] = [];
   for (const rawPath of input.paths ?? []) {
     const root = resolve(input.workspaceRoot ?? process.cwd(), rawPath);
-    for (const item of await discoverPluginManifests(root, { nodeModules: false })) {
+    for (const item of await discoverPluginManifests(root, {
+      nodeModules: false,
+    })) {
       if (input.enabled?.[item.manifest.id] === false) continue;
       // Installed/declared entries are authoritative; a path that points at the
       // same source package must not turn into a duplicate-id failure.
@@ -48,7 +50,10 @@ export async function discoverDesiredPluginEntries(input: {
   }
 
   const entries = installed.entries.map((entry) => desiredEntry(entry, input));
-  return [...entries, ...pathEntries.map((entry) => desiredEntry(entry, input))];
+  return [
+    ...entries,
+    ...pathEntries.map((entry) => desiredEntry(entry, input)),
+  ];
 }
 
 function desiredEntry(
@@ -73,9 +78,7 @@ function desiredEntry(
         : moduleURL;
       const module = (await import(specifier)) as { default?: unknown };
       const candidate = (
-        typeof module.default === "function"
-          ? module.default()
-          : module.default
+        typeof module.default === "function" ? module.default() : module.default
       ) as Partial<Plugin> | undefined;
       if (!candidate?.setup || typeof candidate.setup !== "function")
         throw new Error(`plugin module has no setup function: ${manifest.id}`);

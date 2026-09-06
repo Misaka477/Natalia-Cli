@@ -388,5 +388,3 @@ function planActivityID(id: string) {
 function compactionActivityID(id: string) {
   return `compaction:${id}`;
 }
-
-

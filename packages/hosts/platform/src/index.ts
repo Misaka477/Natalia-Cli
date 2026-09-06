@@ -246,14 +246,20 @@ export async function startDetachedProcess(input: {
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
   const launcherEvents = launcher as unknown as NodeJS.EventEmitter & {
-    stdout?: NodeJS.ReadableStream & { on(event: "data", listener: (chunk: Buffer) => void): unknown };
-    stderr?: NodeJS.ReadableStream & { on(event: "data", listener: (chunk: Buffer) => void): unknown };
+    stdout?: NodeJS.ReadableStream & {
+      on(event: "data", listener: (chunk: Buffer) => void): unknown;
+    };
+    stderr?: NodeJS.ReadableStream & {
+      on(event: "data", listener: (chunk: Buffer) => void): unknown;
+    };
   };
   launcherEvents.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
   launcherEvents.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
   const exitCode = await new Promise<number>((resolvePromise, reject) => {
     launcherEvents.on("error", reject);
-    launcherEvents.on("close", (code: number | null) => resolvePromise(code ?? -1));
+    launcherEvents.on("close", (code: number | null) =>
+      resolvePromise(code ?? -1),
+    );
   });
   const pid = Number(Buffer.concat(stdout).toString("utf8").trim());
   if (exitCode !== 0 || !Number.isFinite(pid))

@@ -166,8 +166,14 @@ export function applyConversationEvent(
       state.status = "ready";
       return true;
     case "turn.submitted":
-      if (state.sessionID && event.sessionID && state.sessionID !== event.sessionID) return false;
-      if (!state.sessionID && event.sessionID) state.sessionID = event.sessionID;
+      if (
+        state.sessionID &&
+        event.sessionID &&
+        state.sessionID !== event.sessionID
+      )
+        return false;
+      if (!state.sessionID && event.sessionID)
+        state.sessionID = event.sessionID;
       if (event.delivery !== "queue") state.activeTurn = event.id;
       if (!event.internal) state.lastSubmission = event;
       state.lastStopReason = undefined;
@@ -179,7 +185,9 @@ export function applyConversationEvent(
         text: userText(event),
         pendingText: "",
         status: event.delivery === "queue" ? "queued" : undefined,
-        ...(event.attachments?.length ? { attachments: event.attachments } : {}),
+        ...(event.attachments?.length
+          ? { attachments: event.attachments }
+          : {}),
       });
       return true;
     case "turn.started":
@@ -470,7 +478,13 @@ function appendStream(
   stream.retrySkip = applied.retrySkip;
   if (!applied.text && applied.retrySkip) {
     // The whole chunk was text we already have; nothing to render yet.
-    writeStreamBlock(target, input.id, input.role, input.reasoningVisible, input.channel);
+    writeStreamBlock(
+      target,
+      input.id,
+      input.role,
+      input.reasoningVisible,
+      input.channel,
+    );
     return;
   }
   stream.tail += applied.text;
@@ -510,7 +524,13 @@ function appendStream(
       stream.segmentIndex += 1;
       stream.committed = "";
       stream.tail = carried;
-      writeStreamBlock(target, input.id, input.role, input.reasoningVisible, input.channel);
+      writeStreamBlock(
+        target,
+        input.id,
+        input.role,
+        input.reasoningVisible,
+        input.channel,
+      );
       return;
     }
   }
@@ -651,10 +671,7 @@ function userText(
   return `${event.text}\n\nAttachments: ${attachments}`;
 }
 
-function chatSurface(
-  state: AppState,
-  channel: "navi" | "nia",
-): StreamTarget {
+function chatSurface(state: AppState, channel: "navi" | "nia"): StreamTarget {
   return channel === "nia"
     ? {
         messages: state.niaMessages,
@@ -668,14 +685,10 @@ function chatSurface(
       };
 }
 
-
 function chatChannelOf(event: RuntimeEvent): "navi" | "nia" {
   // audit_report is Nia-only. Even if a legacy/malformed event omits the
   // channel, it must never land in Navi's stream.
-  if (
-    event.type === "chat.tool.used" &&
-    event.toolName === "audit_report"
-  )
+  if (event.type === "chat.tool.used" && event.toolName === "audit_report")
     return "nia";
   return (event as { channel?: "navi" | "nia" }).channel ?? "navi";
 }
@@ -743,9 +756,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       flushStream(target, key);
       const stream = target.streams[key];
       const currentID = stream ? segmentID(key, stream.segmentIndex) : key;
-      const current = target.messages.find(
-        (block) => block.id === currentID,
-      );
+      const current = target.messages.find((block) => block.id === currentID);
       // Live streaming has already filled the segment; durable replay is the
       // case where this is the only place the text can come from.
       const alreadyRendered = Boolean(
@@ -762,11 +773,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
     }
     case "chat.message.delta": {
       const target = chatSurface(state, channel);
-      prepareStreamPhase(
-        target,
-        `chat:${event.messageID}`,
-        "assistant",
-      );
+      prepareStreamPhase(target, `chat:${event.messageID}`, "assistant");
       appendStream(target, {
         id: `chat:${event.messageID}:assistant`,
         role: "assistant",
@@ -777,11 +784,7 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
     }
     case "chat.thinking.delta": {
       const target = chatSurface(state, channel);
-      prepareStreamPhase(
-        target,
-        `chat:${event.messageID}`,
-        "thinking",
-      );
+      prepareStreamPhase(target, `chat:${event.messageID}`, "thinking");
       appendStream(target, {
         id: `chat:${event.messageID}:thinking`,
         role: "thinking",

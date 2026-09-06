@@ -10,7 +10,14 @@
  * Read-only: this module only writes `.natalia/plans/` plan documents and the
  * index. It never touches project source, shell, sandbox or checkpoints.
  */
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
@@ -54,8 +61,14 @@ export type PlanDocRuntime = {
     title?: string;
     sessionID?: string;
   }): Promise<{ marked: boolean; planID: string }>;
-  planDocDelete(planID: string, sessionID?: string): Promise<{ deleted: boolean }>;
-  planDocStatus(planID: string, sessionID?: string): Promise<{ status: string }>;
+  planDocDelete(
+    planID: string,
+    sessionID?: string,
+  ): Promise<{ deleted: boolean }>;
+  planDocStatus(
+    planID: string,
+    sessionID?: string,
+  ): Promise<{ status: string }>;
   planDocUpdateStatus(input: {
     planID: string;
     status: string;
@@ -115,7 +128,8 @@ function ensurePlanPath(ctx: RuntimeContext, inputPath: string) {
     throw new Error(`plan document path is outside ${PLAN_DIR}: ${inputPath}`);
   if (isAbsolute(inputPath)) {
     const normalized = normalizeSlashes(relative(planRoot(ctx), resolved));
-    if (normalized.startsWith("..")) throw new Error("plan path escapes .natalia/plans");
+    if (normalized.startsWith(".."))
+      throw new Error("plan path escapes .natalia/plans");
   }
   return resolved;
 }
@@ -186,7 +200,9 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       return {
         ...(record ? { planID: record.planID } : {}),
         ...(record ? { title: record.title } : {}),
-        documentPath: record ? record.documentPath : normalizeSlashes(input.path ?? ""),
+        documentPath: record
+          ? record.documentPath
+          : normalizeSlashes(input.path ?? ""),
         content,
       };
     },
@@ -299,6 +315,5 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       }
       return { updated: true };
     },
-
   };
 }

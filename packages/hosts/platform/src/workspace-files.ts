@@ -1,4 +1,12 @@
-import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import fuzzysort from "fuzzysort";
@@ -524,7 +532,9 @@ export async function renameWorkspaceFile(input: {
   const source = await resolveWorkspacePath(root, input.path);
   const destination = resolveRawWorkspacePath(root, input.newPath);
   if (source === destination)
-    throw new RuntimeRefusal("workspace rename source and destination are identical");
+    throw new RuntimeRefusal(
+      "workspace rename source and destination are identical",
+    );
   await mkdir(dirname(destination), { recursive: true });
   await rename(source, destination);
   invalidateWorkspaceFiles(root);
@@ -603,7 +613,10 @@ async function resolveWorkspacePath(root: string, input: string) {
     throw new RuntimeRefusal("workspace path must remain inside workspace");
   const catalog = await workspaceCatalog(root);
   const info = await stat(real).catch(() => undefined);
-  if (info && isIgnored(relative(root, real), info.isDirectory(), catalog.ignoreRules))
+  if (
+    info &&
+    isIgnored(relative(root, real), info.isDirectory(), catalog.ignoreRules)
+  )
     throw new RuntimeRefusal("workspace path is ignored by filesystem policy");
   return real;
 }

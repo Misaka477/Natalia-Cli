@@ -25,8 +25,7 @@ export type DerivedPermissionSettings =
 function permissionsFromMode(
   mode: ConfigV3["agentModes"][string],
 ): PermissionProfile["permissions"] {
-  const allow =
-    mode?.permissions?.tools?.allow ?? mode?.allowedTools ?? [];
+  const allow = mode?.permissions?.tools?.allow ?? mode?.allowedTools ?? [];
   const exclude =
     mode?.permissions?.tools?.exclude ?? mode?.excludedTools ?? [];
   const permissions = mode?.permissions
@@ -40,9 +39,10 @@ function permissionsFromMode(
   return permissions;
 }
 
-function extensionsFromMode(
-  mode: ConfigV3["agentModes"][string],
-): { skills: boolean; mcp: boolean } {
+function extensionsFromMode(mode: ConfigV3["agentModes"][string]): {
+  skills: boolean;
+  mcp: boolean;
+} {
   return {
     skills: mode?.skills !== false && mode?.extensions?.skills !== false,
     mcp: mode?.extensions?.mcp !== false,
@@ -64,7 +64,9 @@ export function derivePermissionSettings(input: {
     ...(permissionsFromMode(agentMode)
       ? { permissions: permissionsFromMode(agentMode) }
       : {}),
-    ...(agentMode?.commandRules ? { commandRules: agentMode.commandRules } : {}),
+    ...(agentMode?.commandRules
+      ? { commandRules: agentMode.commandRules }
+      : {}),
     ...(agentMode?.interactivePrograms
       ? { interactivePrograms: agentMode.interactivePrograms }
       : {}),

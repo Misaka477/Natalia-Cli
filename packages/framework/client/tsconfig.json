@@ -4,10 +4,7 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": [
-    "src",
-    "test"
-  ],
+  "include": ["src", "test"],
   "references": [
     {
       "path": "../agent"

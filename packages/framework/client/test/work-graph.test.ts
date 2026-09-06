@@ -433,7 +433,9 @@ test("read-only policy records the tool call as rejected", async () => {
     },
   });
   client.start((event) => events.push(event));
-  const submitted = await client.submitAndWait!("try a write in read-only mode");
+  const submitted = await client.submitAndWait!(
+    "try a write in read-only mode",
+  );
 
   const tool = projectedWorkGraphNodes(events).find(
     (node) => node.nodeID === toolCallNodeID(submitted.id, "call_1"),

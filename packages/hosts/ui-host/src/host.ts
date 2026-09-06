@@ -150,15 +150,18 @@ export async function createUiPluginHost<TContext = unknown>(
           const entry = mounted.get(pluginId);
           if (!entry) throw new Error(`ui plugin not loaded: ${pluginId}`);
           const panel = entry.record.panels.find((item) => item.id === panelId);
-          if (!panel) throw new Error(`ui panel not found: ${pluginId}:${panelId}`);
-          if (!panel.mount) throw new Error(`ui panel has no mount: ${pluginId}:${panelId}`);
+          if (!panel)
+            throw new Error(`ui panel not found: ${pluginId}:${panelId}`);
+          if (!panel.mount)
+            throw new Error(`ui panel has no mount: ${pluginId}:${panelId}`);
           const key = `${pluginId}:${panelId}`;
           const existing = mountedPanels.get(key);
           existing?.dispose?.();
           existing?.lifecycle?.dispose?.();
-          const dispose = (await panel.mount(ctxFor(entry.record.plugin), container)) as
-            | (() => void)
-            | undefined;
+          const dispose = (await panel.mount(
+            ctxFor(entry.record.plugin),
+            container,
+          )) as (() => void) | undefined;
           mountedPanels.set(key, {
             ...(dispose ? { dispose } : {}),
           });
@@ -244,14 +247,16 @@ export async function createUiPluginHost<TContext = unknown>(
       if (!entry) throw new Error(`ui plugin not loaded: ${pluginId}`);
       const panel = entry.record.panels.find((item) => item.id === panelId);
       if (!panel) throw new Error(`ui panel not found: ${pluginId}:${panelId}`);
-      if (!panel.mount) throw new Error(`ui panel has no mount: ${pluginId}:${panelId}`);
+      if (!panel.mount)
+        throw new Error(`ui panel has no mount: ${pluginId}:${panelId}`);
       const key = `${pluginId}:${panelId}`;
       const existing = mountedPanels.get(key);
       existing?.dispose?.();
       existing?.lifecycle?.dispose?.();
-      const dispose = (await panel.mount(ctxFor(entry.record.plugin), container)) as
-        | (() => void)
-        | undefined;
+      const dispose = (await panel.mount(
+        ctxFor(entry.record.plugin),
+        container,
+      )) as (() => void) | undefined;
       mountedPanels.set(key, {
         ...(dispose ? { dispose } : {}),
       });

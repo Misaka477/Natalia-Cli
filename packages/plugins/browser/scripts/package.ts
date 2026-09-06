@@ -5,7 +5,15 @@
  *   packages/plugins/browser/dist/natalia-browser-bridge-chromium.zip
  *   packages/plugins/browser/dist/natalia-browser-bridge-firefox.zip
  */
-import { mkdir, readdir, rm, writeFile, copyFile, readFile, stat } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  rm,
+  writeFile,
+  copyFile,
+  readFile,
+  stat,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -24,7 +32,10 @@ async function copyDir(src: string, dest: string) {
 }
 
 async function zip(src: string, out: string) {
-  const result = spawnSync("zip", ["-qr", out, "."], { cwd: src, stdio: "inherit" });
+  const result = spawnSync("zip", ["-qr", out, "."], {
+    cwd: src,
+    stdio: "inherit",
+  });
   if (result.status !== 0) throw new Error(`zip failed: ${result.status}`);
 }
 

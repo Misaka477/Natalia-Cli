@@ -20,10 +20,7 @@ type Surface = Pick<
   | "providerAdd"
   | "providerRemove"
 >;
-async function selectionExec(
-  ctx: RuntimeContext,
-  sessionID?: string,
-) {
+async function selectionExec(ctx: RuntimeContext, sessionID?: string) {
   if (sessionID)
     return (
       ctx.ports
@@ -59,7 +56,9 @@ export function createSelectionSurface(
       const exec = await selectionExec(ctx, sessionID);
       const activeExec = ctx.ports.getActiveExec();
       const isActive = exec === activeExec;
-      const publishSessionEvent = (event: import("@natalia/contracts").RuntimeEvent) => {
+      const publishSessionEvent = (
+        event: import("@natalia/contracts").RuntimeEvent,
+      ) => {
         if (exec) ctx.ports.publishForSession(exec, event);
         else ctx.ports.publish(event);
       };
@@ -125,8 +124,7 @@ export function createSelectionSurface(
           exec.selectedAgent,
           exec.selectedModel,
         ),
-        variant:
-          exec.selectedAgent?.variant ?? exec.selectedModel?.variant,
+        variant: exec.selectedAgent?.variant ?? exec.selectedModel?.variant,
       };
     },
     async selectModel(modelID, variant, sessionID?) {
@@ -230,9 +228,10 @@ export function createSelectionSurface(
       // workspace runtime. In read-only workspaces getReady may fail on
       // checkpoint storage, but provider settings must still be writable.
       const config = ctx.ports.getTsRuntimeConfig();
-      const sourceName = input.previousName && input.previousName !== input.name
-        ? input.previousName
-        : input.name;
+      const sourceName =
+        input.previousName && input.previousName !== input.name
+          ? input.previousName
+          : input.name;
       const current = config?.providers?.[sourceName];
       const provider = {
         ...current,
@@ -246,9 +245,7 @@ export function createSelectionSurface(
         },
         requestDefaults: {
           ...(current?.requestDefaults ?? {}),
-          ...(input.headers
-            ? { headers: input.headers }
-            : {}),
+          ...(input.headers ? { headers: input.headers } : {}),
         },
       };
       const models = input.models?.length
@@ -274,10 +271,14 @@ export function createSelectionSurface(
       if (sourceName !== input.name) providerPatch[sourceName] = undefined;
 
       const catalogProviderPatch: Record<string, unknown> = {};
-      if (sourceName !== input.name) catalogProviderPatch[sourceName] = undefined;
+      if (sourceName !== input.name)
+        catalogProviderPatch[sourceName] = undefined;
       if (models) {
         catalogProviderPatch[input.name] = { models };
-      } else if (sourceName !== input.name && config?.catalog?.providers?.[sourceName]) {
+      } else if (
+        sourceName !== input.name &&
+        config?.catalog?.providers?.[sourceName]
+      ) {
         catalogProviderPatch[input.name] = config.catalog.providers[sourceName];
       }
 
@@ -286,7 +287,12 @@ export function createSelectionSurface(
           ? Object.fromEntries(
               Object.entries(config.modelOverrides).flatMap(([key, value]) => {
                 if (key.startsWith(`${sourceName}/`))
-                  return [[`${input.name}/${key.slice(sourceName.length + 1)}`, value]];
+                  return [
+                    [
+                      `${input.name}/${key.slice(sourceName.length + 1)}`,
+                      value,
+                    ],
+                  ];
                 return [[key, value]];
               }),
             )

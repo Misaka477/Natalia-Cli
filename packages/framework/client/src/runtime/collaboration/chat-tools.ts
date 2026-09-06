@@ -281,9 +281,12 @@ export function createChatTools(ctx: RuntimeContext) {
           additionalProperties: false,
         },
         async execute(parsed) {
-          const args = parsed as { path?: string; offset?: number; limit?: number };
-          if (typeof args.path !== "string")
-            return "read_file requires path";
+          const args = parsed as {
+            path?: string;
+            offset?: number;
+            limit?: number;
+          };
+          if (typeof args.path !== "string") return "read_file requires path";
           try {
             const result = await readWorkspaceFile({
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
@@ -315,9 +318,12 @@ export function createChatTools(ctx: RuntimeContext) {
           additionalProperties: false,
         },
         async execute(parsed) {
-          const args = parsed as { pattern?: string; path?: string; limit?: number };
-          if (typeof args.pattern !== "string")
-            return "glob requires pattern";
+          const args = parsed as {
+            pattern?: string;
+            path?: string;
+            limit?: number;
+          };
+          if (typeof args.pattern !== "string") return "glob requires pattern";
           try {
             const result = await globWorkspaceFiles({
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
@@ -349,9 +355,12 @@ export function createChatTools(ctx: RuntimeContext) {
           additionalProperties: false,
         },
         async execute(parsed) {
-          const args = parsed as { query?: string; include?: string; limit?: number };
-          if (typeof args.query !== "string")
-            return "grep requires query";
+          const args = parsed as {
+            query?: string;
+            include?: string;
+            limit?: number;
+          };
+          if (typeof args.query !== "string") return "grep requires query";
           try {
             const result = await searchWorkspaceFiles({
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
@@ -430,7 +439,11 @@ export function createChatTools(ctx: RuntimeContext) {
           additionalProperties: false,
         },
         async execute(parsed) {
-          const args = parsed as { path?: string; content?: string; title?: string };
+          const args = parsed as {
+            path?: string;
+            content?: string;
+            title?: string;
+          };
           if (typeof args.path !== "string" || typeof args.content !== "string")
             return "plan_doc_write requires path and content";
           try {
@@ -480,7 +493,14 @@ export function createChatTools(ctx: RuntimeContext) {
       });
     }
     if (channel === "nia") {
-      console.log("[nia-chat-tools] channel", channel, "exec", Boolean(exec), "visible", visible.map((tool) => tool.name));
+      console.log(
+        "[nia-chat-tools] channel",
+        channel,
+        "exec",
+        Boolean(exec),
+        "visible",
+        visible.map((tool) => tool.name),
+      );
       // The Navi channel may have already registered collab_chat with sender
       // live_chat. Nia must never reuse that tool: it would send Nia's audit
       // as if it came from Navi. Remove any existing bind and install the
@@ -490,7 +510,9 @@ export function createChatTools(ctx: RuntimeContext) {
       );
       if (existingCollabIndex !== -1) {
         visible.splice(existingCollabIndex, 1);
-        console.log("[nia-chat-tools] removed existing collab_chat before binding sender=nia");
+        console.log(
+          "[nia-chat-tools] removed existing collab_chat before binding sender=nia",
+        );
       }
       console.log("[nia-chat-tools] creating collab_chat sender=nia");
       visible.push(ctx.ports.createCollabChatTool("nia", exec));
@@ -503,16 +525,21 @@ export function createChatTools(ctx: RuntimeContext) {
           parameters: {
             type: "object",
             properties: {
-              planID: { type: "string", description: "The exact planID being audited." },
+              planID: {
+                type: "string",
+                description: "The exact planID being audited.",
+              },
               verdict: {
                 type: "string",
                 enum: ["passed", "gaps"],
-                description: "passed when the plan is fully verified; gaps when there are open audit findings.",
+                description:
+                  "passed when the plan is fully verified; gaps when there are open audit findings.",
               },
               gaps: {
                 type: "array",
                 items: { type: "string" },
-                description: "Optional concrete gap descriptions when verdict is gaps.",
+                description:
+                  "Optional concrete gap descriptions when verdict is gaps.",
               },
             },
             required: ["planID", "verdict"],
@@ -529,7 +556,8 @@ export function createChatTools(ctx: RuntimeContext) {
               (args.verdict !== "passed" && args.verdict !== "gaps")
             )
               return "audit_report requires planID and verdict passed|gaps";
-            const status = args.verdict === "passed" ? "completed" : "audit_gaps";
+            const status =
+              args.verdict === "passed" ? "completed" : "audit_gaps";
             const result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
               planID: args.planID,
               status,

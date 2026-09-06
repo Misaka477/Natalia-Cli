@@ -22,10 +22,13 @@ export function NeuSelect(props: {
       if (rootEl && !rootEl.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", handlePointerDown);
-    onCleanup(() => document.removeEventListener("pointerdown", handlePointerDown));
+    onCleanup(() =>
+      document.removeEventListener("pointerdown", handlePointerDown),
+    );
   });
 
-  const selected = () => props.options.find((option) => option.value === props.value);
+  const selected = () =>
+    props.options.find((option) => option.value === props.value);
 
   return (
     <div ref={rootEl} class={`neu-select ${props.class ?? ""}`.trim()}>
@@ -35,7 +38,9 @@ export function NeuSelect(props: {
         disabled={props.disabled}
         onClick={() => setOpen((value) => !value)}
       >
-        <span class="neu-select-value">{selected()?.label ?? props.placeholder ?? props.value}</span>
+        <span class="neu-select-value">
+          {selected()?.label ?? props.placeholder ?? props.value}
+        </span>
         <svg
           class="neu-select-chevron"
           data-open={open()}
@@ -52,7 +57,9 @@ export function NeuSelect(props: {
         </svg>
       </button>
       <Show when={open()}>
-        <div class={`neu-select-menu${props.menuPosition === "top" ? " neu-select-menu-top" : ""}`}>
+        <div
+          class={`neu-select-menu${props.menuPosition === "top" ? " neu-select-menu-top" : ""}`}
+        >
           <For each={props.options}>
             {(option) => (
               <button

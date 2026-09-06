@@ -14,7 +14,11 @@ import {
   requireString,
   workspacePath,
 } from "@natalia/tools";
-import type { RuntimeTool, ToolExecutionContext, ToolFamily } from "@natalia/tools";
+import type {
+  RuntimeTool,
+  ToolExecutionContext,
+  ToolFamily,
+} from "@natalia/tools";
 import { getBrowserBridgeLifecycle } from "./browser-bridge-lifecycle";
 
 export const BROWSER_BRIDGE_EXTENSION_MISSING_ERROR =
@@ -112,15 +116,24 @@ function browserScreenshotTool(): RuntimeTool {
 
       let tabId: string | number | undefined;
       if (url) {
-        const opened = (await browserBridgeCall("open", { url }, context.sessionID)) as {
+        const opened = (await browserBridgeCall(
+          "open",
+          { url },
+          context.sessionID,
+        )) as {
           tabId?: string | number;
         };
         tabId = opened.tabId;
-        if (!tabId) throw new Error("shared browser opened a tab but returned no id");
+        if (!tabId)
+          throw new Error("shared browser opened a tab but returned no id");
       }
-      const result = (await browserBridgeCall("screenshot", {
-        ...(tabId ? { tabId } : {}),
-      }, context.sessionID)) as { data?: string };
+      const result = (await browserBridgeCall(
+        "screenshot",
+        {
+          ...(tabId ? { tabId } : {}),
+        },
+        context.sessionID,
+      )) as { data?: string };
       const data = String(result.data ?? "");
       const base64 = data.replace(/^data:image\/[^;]+;base64,/u, "");
       if (!base64)
@@ -179,7 +192,11 @@ function browserCloseTool(): RuntimeTool {
       const args = requireObject(input);
       const tabId = optionalTabId(args.tabId);
       return JSON.stringify(
-        await browserBridgeCall("close", tabId ? { tabId } : {}, context?.sessionID),
+        await browserBridgeCall(
+          "close",
+          tabId ? { tabId } : {},
+          context?.sessionID,
+        ),
         null,
         2,
       );
@@ -200,7 +217,11 @@ function browserTabsTool(): RuntimeTool {
       additionalProperties: false,
     },
     async execute(_input, context) {
-      return JSON.stringify(await browserBridgeCall("tabs", {}, context?.sessionID), null, 2);
+      return JSON.stringify(
+        await browserBridgeCall("tabs", {}, context?.sessionID),
+        null,
+        2,
+      );
     },
   };
 }
@@ -226,12 +247,16 @@ function browserScanTool(): RuntimeTool {
       const args = requireObject(input);
       const tabId = optionalTabId(args.tabId);
       return JSON.stringify(
-        await browserBridgeCall("scan", {
-          tabId,
-          textOnly: args.textOnly === false ? false : true,
-          maxlen: numberOr(args.maxlen, 35000),
-          offset: numberOr(args.offset, 0),
-        }, context?.sessionID),
+        await browserBridgeCall(
+          "scan",
+          {
+            tabId,
+            textOnly: args.textOnly === false ? false : true,
+            maxlen: numberOr(args.maxlen, 35000),
+            offset: numberOr(args.offset, 0),
+          },
+          context?.sessionID,
+        ),
         null,
         2,
       );
@@ -260,7 +285,11 @@ function browserExecuteJsTool(): RuntimeTool {
       const tabId = optionalTabId(args.tabId);
       const script = requireString(args.script, "script");
       return JSON.stringify(
-        await browserBridgeCall("execute_js", { tabId, script }, context?.sessionID),
+        await browserBridgeCall(
+          "execute_js",
+          { tabId, script },
+          context?.sessionID,
+        ),
         null,
         2,
       );
@@ -380,7 +409,8 @@ export function browserToolFamily(): ToolFamily {
     id: "browser",
     name: "Browser Tools",
     version: "1.0.0",
-    description: "Control the user's existing browser through the Natalia Browser Bridge extension.",
+    description:
+      "Control the user's existing browser through the Natalia Browser Bridge extension.",
     scope: "session",
     tools: browserTools,
   };

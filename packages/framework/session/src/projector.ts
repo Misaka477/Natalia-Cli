@@ -89,18 +89,16 @@ export function reasoningEffortFromEvents(
   events: RuntimeEvent[],
 ): import("@natalia/contracts").RuntimeReasoningEffort | undefined {
   for (const event of [...events].reverse())
-    if (event.type === "model.reasoning.set")
-      return event.reasoningEffort;
+    if (event.type === "model.reasoning.set") return event.reasoningEffort;
   return undefined;
 }
 
 export function chatModelProfileFromEvents(
   events: RuntimeEvent[],
 ): Record<string, import("@natalia/contracts").ChatModelProfile> | undefined {
-  let profile: Record<
-    string,
-    import("@natalia/contracts").ChatModelProfile
-  > | undefined;
+  let profile:
+    | Record<string, import("@natalia/contracts").ChatModelProfile>
+    | undefined;
   for (const event of events) {
     if (event.type === "chat.model.profile") {
       profile = profile ?? {};
@@ -564,9 +562,8 @@ export function projectedCompletions(events: RuntimeEvent[]) {
 }
 
 export function projectedDecisionRecords(events: RuntimeEvent[]) {
-  const records: Array<
-    Extract<RuntimeEvent, { type: "decision.recorded" }>
-  > = [];
+  const records: Array<Extract<RuntimeEvent, { type: "decision.recorded" }>> =
+    [];
   const seen = new Set<string>();
   for (const event of events) {
     if (event.type !== "decision.recorded") continue;

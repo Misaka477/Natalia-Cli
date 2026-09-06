@@ -37,21 +37,19 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
     async mailboxList(sessionID?: string) {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec) return [];
-      return projectedMailboxMessages(exec.session.events).map(
-        (m) => ({
-          messageID: m.messageID,
-          source: m.source,
-          priority: m.priority,
-          intent: m.intent,
-          text: m.text,
-          safeSummary: m.safeSummary,
-          ...(m.relatedPlanID ? { relatedPlanID: m.relatedPlanID } : {}),
-          deliveryPolicy: m.deliveryPolicy,
-          createdAt: m.createdAt,
-          status: m.status,
-          ...(m.reason ? { reason: m.reason } : {}),
-        }),
-      );
+      return projectedMailboxMessages(exec.session.events).map((m) => ({
+        messageID: m.messageID,
+        source: m.source,
+        priority: m.priority,
+        intent: m.intent,
+        text: m.text,
+        safeSummary: m.safeSummary,
+        ...(m.relatedPlanID ? { relatedPlanID: m.relatedPlanID } : {}),
+        deliveryPolicy: m.deliveryPolicy,
+        createdAt: m.createdAt,
+        status: m.status,
+        ...(m.reason ? { reason: m.reason } : {}),
+      }));
     },
     async mailboxSend(input: {
       source?: "user_via_live_chat" | "system";
@@ -69,9 +67,9 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { delivered: false as const };
-      const message = projectedMailboxMessages(
-        exec.session.events,
-      ).find((m) => m.messageID === messageID && m.status === "queued");
+      const message = projectedMailboxMessages(exec.session.events).find(
+        (m) => m.messageID === messageID && m.status === "queued",
+      );
       if (!message) return { delivered: false as const };
       ctx.ports.publishForSession(
         exec,
@@ -88,9 +86,9 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { acknowledged: false as const };
-      const message = projectedMailboxMessages(
-        exec.session.events,
-      ).find((m) => m.messageID === messageID && m.status === "delivered");
+      const message = projectedMailboxMessages(exec.session.events).find(
+        (m) => m.messageID === messageID && m.status === "delivered",
+      );
       if (!message) return { acknowledged: false as const };
       ctx.ports.publishForSession(
         exec,
@@ -107,9 +105,9 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { deferred: false as const };
-      const message = projectedMailboxMessages(
-        exec.session.events,
-      ).find((m) => m.messageID === messageID && m.status === "queued");
+      const message = projectedMailboxMessages(exec.session.events).find(
+        (m) => m.messageID === messageID && m.status === "queued",
+      );
       if (!message) return { deferred: false as const };
       ctx.ports.publishForSession(
         exec,
@@ -124,13 +122,17 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       );
       return { deferred: true as const };
     },
-    async mailboxSupersede(messageID: string, reason?: string, sessionID?: string) {
+    async mailboxSupersede(
+      messageID: string,
+      reason?: string,
+      sessionID?: string,
+    ) {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { superseded: false as const };
-      const message = projectedMailboxMessages(
-        exec.session.events,
-      ).find((m) => m.messageID === messageID && m.status === "queued");
+      const message = projectedMailboxMessages(exec.session.events).find(
+        (m) => m.messageID === messageID && m.status === "queued",
+      );
       if (!message) return { superseded: false as const };
       ctx.ports.publishForSession(
         exec,

@@ -1,4 +1,11 @@
-import { createSignal, createEffect, For, Show, onCleanup, onMount } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  For,
+  Show,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type { AppState } from "@natalia/view-store";
 import {
   describeRuntimeCapabilities,
@@ -26,7 +33,13 @@ const TOOL_FAMILIES = [
   "agent_*",
 ];
 
-type CategoryId = "model" | "security" | "runtime" | "interface" | "storage" | "plugin";
+type CategoryId =
+  | "model"
+  | "security"
+  | "runtime"
+  | "interface"
+  | "storage"
+  | "plugin";
 
 type SettingItem = {
   label: string;
@@ -40,38 +53,81 @@ type Category = {
   items: SettingItem[];
 };
 
-
 const categories: Category[] = [
   {
     id: "model",
     label: "模型与 Agent",
     items: [
-      { label: "Providers & Models", description: "配置 provider 并导入模型", value: "3 个 provider" },
-      { label: "Default Model", description: "默认使用的模型", value: "Opus 4" },
-      { label: "默认 Agent", description: "当前 agent / 默认使用的 agent", value: "默认" },
-      { label: "自定义 Agent Mode", description: "创建、编辑并选择自定义 agent 运行模式", value: "code" },
-      { label: "子 Agent 并发数", description: "团队子 agent 最大并发数", value: "3" },
+      {
+        label: "Providers & Models",
+        description: "配置 provider 并导入模型",
+        value: "3 个 provider",
+      },
+      {
+        label: "Default Model",
+        description: "默认使用的模型",
+        value: "Opus 4",
+      },
+      {
+        label: "默认 Agent",
+        description: "当前 agent / 默认使用的 agent",
+        value: "默认",
+      },
+      {
+        label: "自定义 Agent Mode",
+        description: "创建、编辑并选择自定义 agent 运行模式",
+        value: "code",
+      },
+      {
+        label: "子 Agent 并发数",
+        description: "团队子 agent 最大并发数",
+        value: "3",
+      },
     ],
   },
   {
     id: "security",
     label: "权限与安全",
     items: [
-      { label: "Permission Profile", description: "选择、新增、编辑权限配置", value: "ask" },
-      { label: "Web & Network", description: "搜索、浏览器、网络规则", value: "已配置" },
+      {
+        label: "Permission Profile",
+        description: "选择、新增、编辑权限配置",
+        value: "ask",
+      },
+      {
+        label: "Web & Network",
+        description: "搜索、浏览器、网络规则",
+        value: "已配置",
+      },
     ],
   },
   {
     id: "runtime",
     label: "运行时与上下文",
     items: [
-      { label: "Max Steps", description: "单轮最大执行步数", value: "unlimited" },
+      {
+        label: "Max Steps",
+        description: "单轮最大执行步数",
+        value: "unlimited",
+      },
       { label: "Max Retry", description: "单步最大重试次数", value: "3" },
       { label: "Request Timeout", description: "模型请求超时", value: "120s" },
       { label: "Compaction", description: "上下文压缩", value: "开启" },
-      { label: "Compaction Threshold", description: "压缩触发阈值", value: "85%" },
-      { label: "Checkpoint 目录", description: "额外 checkpoint 目录", value: "2 个" },
-      { label: "Terminal Window Mode", description: "终端窗口模式", value: "auto" },
+      {
+        label: "Compaction Threshold",
+        description: "压缩触发阈值",
+        value: "85%",
+      },
+      {
+        label: "Checkpoint 目录",
+        description: "额外 checkpoint 目录",
+        value: "2 个",
+      },
+      {
+        label: "Terminal Window Mode",
+        description: "终端窗口模式",
+        value: "auto",
+      },
     ],
   },
   {
@@ -81,8 +137,16 @@ const categories: Category[] = [
       { label: "Theme Mode", description: "切换浅色 / 深色", value: "浅色" },
       { label: "Density", description: "界面信息密度", value: "comfortable" },
       { label: "Diff Style", description: "diff 展示风格", value: "auto" },
-      { label: "Tool Details", description: "工具卡默认展开状态", value: "expanded" },
-      { label: "GPU 加速", description: "启用/关闭硬件加速（需重启 Desktop 生效）", value: "关闭" },
+      {
+        label: "Tool Details",
+        description: "工具卡默认展开状态",
+        value: "expanded",
+      },
+      {
+        label: "GPU 加速",
+        description: "启用/关闭硬件加速（需重启 Desktop 生效）",
+        value: "关闭",
+      },
       { label: "Keybinds", description: "快捷键覆盖", value: "12 个" },
     ],
   },
@@ -90,12 +154,19 @@ const categories: Category[] = [
     id: "storage",
     label: "配置保存范围",
     items: [
-      { label: "界面偏好保存范围", description: "主题 / 密度 / 快捷键保存位置", value: "项目" },
-      { label: "运行时配置保存范围", description: "模型 / 权限 / 运行时设置保存位置", value: "全局" },
+      {
+        label: "界面偏好保存范围",
+        description: "主题 / 密度 / 快捷键保存位置",
+        value: "项目",
+      },
+      {
+        label: "运行时配置保存范围",
+        description: "模型 / 权限 / 运行时设置保存位置",
+        value: "全局",
+      },
     ],
   },
 ];
-
 
 export function SettingsPanel(props: {
   open: boolean;
@@ -115,13 +186,27 @@ export function SettingsPanel(props: {
   host?: import("@natalia/ui-host").UiPluginContext["host"];
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
-  const [density, setDensity] = createSignal(props.preferences?.get<string>("density") ?? "comfortable");
-  const [diffStyle, setDiffStyle] = createSignal(props.preferences?.get<string>("diffStyle") ?? "auto");
-  const [toolDetails, setToolDetails] = createSignal(props.preferences?.get<string>("toolDetails") ?? "expanded");
-  const [uiWriteScope, setUiWriteScope] = createSignal(props.preferences?.get<string>("uiWriteScope") ?? "project");
-  const [gpuAcceleration, setGpuAcceleration] = createSignal<boolean>(props.preferences?.get<boolean>("gpuAcceleration") ?? false);
+  const [density, setDensity] = createSignal(
+    props.preferences?.get<string>("density") ?? "comfortable",
+  );
+  const [diffStyle, setDiffStyle] = createSignal(
+    props.preferences?.get<string>("diffStyle") ?? "auto",
+  );
+  const [toolDetails, setToolDetails] = createSignal(
+    props.preferences?.get<string>("toolDetails") ?? "expanded",
+  );
+  const [uiWriteScope, setUiWriteScope] = createSignal(
+    props.preferences?.get<string>("uiWriteScope") ?? "project",
+  );
+  const [gpuAcceleration, setGpuAcceleration] = createSignal<boolean>(
+    props.preferences?.get<boolean>("gpuAcceleration") ?? false,
+  );
 
-  const desktopElectron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
+  const desktopElectron = (
+    globalThis as {
+      electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> };
+    }
+  ).electron;
   const [settingsPanel, setSettingsPanel] = createSignal<{
     pluginId: string;
     panelId: string;
@@ -131,9 +216,9 @@ export function SettingsPanel(props: {
   const [availablePluginIds, setAvailablePluginIds] = createSignal<Set<string>>(
     new Set(),
   );
-  const [availableCapabilities, setAvailableCapabilities] = createSignal<Set<string>>(
-    new Set(),
-  );
+  const [availableCapabilities, setAvailableCapabilities] = createSignal<
+    Set<string>
+  >(new Set());
   onMount(() => {
     const unsubscribe = props.host?.subscribePanels(() =>
       setPanelRevision((revision) => revision + 1),
@@ -151,7 +236,9 @@ export function SettingsPanel(props: {
       );
       setAvailableCapabilities(
         new Set(
-          report.groups.filter((group) => group.available).map((group) => group.name),
+          report.groups
+            .filter((group) => group.available)
+            .map((group) => group.name),
         ),
       );
     })();
@@ -164,19 +251,24 @@ export function SettingsPanel(props: {
       if (requirement.type === "capability")
         return availableCapabilities().has(requirement.id);
       if (requirement.type === "method")
-        return typeof (props.runtime as unknown as Record<string, unknown>)[
-          requirement.name
-        ] === "function";
+        return (
+          typeof (props.runtime as unknown as Record<string, unknown>)[
+            requirement.name
+          ] === "function"
+        );
       return false;
     });
   }
   const settingsPanels = () => {
     panelRevision();
     return (
-      props.host?.listPanels().filter((item) =>
-        item.panel.region === "settings" &&
-        panelSatisfies(item.panel.requires),
-      ) ?? []
+      props.host
+        ?.listPanels()
+        .filter(
+          (item) =>
+            item.panel.region === "settings" &&
+            panelSatisfies(item.panel.requires),
+        ) ?? []
     );
   };
   const groupedSettingsPanels = () => {
@@ -191,7 +283,14 @@ export function SettingsPanel(props: {
   };
   const categoriesWithPlugins = (): Category[] =>
     settingsPanels().length
-      ? [...categories, { id: "plugin" as CategoryId, label: "插件配置", items: [] as Category["items"] }]
+      ? [
+          ...categories,
+          {
+            id: "plugin" as CategoryId,
+            label: "插件配置",
+            items: [] as Category["items"],
+          },
+        ]
       : categories;
   createEffect(() => {
     if (props.open) {
@@ -204,10 +303,13 @@ export function SettingsPanel(props: {
         .catch(() => undefined);
     }
   });
-  const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(props.preferences?.get<string>("runtimeWriteScope") ?? "global");
+  const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(
+    props.preferences?.get<string>("runtimeWriteScope") ?? "global",
+  );
   const current = () =>
-    categoriesWithPlugins().find((category) => category.id === activeCategory()) ??
-    categoriesWithPlugins()[0]!;
+    categoriesWithPlugins().find(
+      (category) => category.id === activeCategory(),
+    ) ?? categoriesWithPlugins()[0]!;
 
   function modelLabel(config: ConfigV3): string {
     const model = config.defaultModel;
@@ -227,7 +329,9 @@ export function SettingsPanel(props: {
     setter(next);
   }
 
-  const [editFieldLabel, setEditFieldLabel] = createSignal<string | undefined>();
+  const [editFieldLabel, setEditFieldLabel] = createSignal<
+    string | undefined
+  >();
   const [editFieldValue, setEditFieldValue] = createSignal("");
   let editFieldAction: ((value: string) => void) | undefined;
   const [modeEditorOpen, setModeEditorOpen] = createSignal(false);
@@ -245,13 +349,17 @@ export function SettingsPanel(props: {
   const [permissionDescription, setPermissionDescription] = createSignal("");
   const [permissionApproval, setPermissionApproval] = createSignal("ask");
   const [permissionAllowedTools, setPermissionAllowedTools] = createSignal("");
-  const [permissionExcludedTools, setPermissionExcludedTools] = createSignal("");
-  const [permissionCommandMode, setPermissionCommandMode] = createSignal("none");
+  const [permissionExcludedTools, setPermissionExcludedTools] =
+    createSignal("");
+  const [permissionCommandMode, setPermissionCommandMode] =
+    createSignal("none");
   const [permissionCommandRules, setPermissionCommandRules] = createSignal("");
   const [permissionSkills, setPermissionSkills] = createSignal(true);
   const [permissionMcp, setPermissionMcp] = createSignal(true);
-  const [permissionInteractiveAny, setPermissionInteractiveAny] = createSignal(false);
-  const [permissionInteractiveAllow, setPermissionInteractiveAllow] = createSignal("");
+  const [permissionInteractiveAny, setPermissionInteractiveAny] =
+    createSignal(false);
+  const [permissionInteractiveAllow, setPermissionInteractiveAllow] =
+    createSignal("");
 
   function openEdit(
     label: string,
@@ -262,7 +370,6 @@ export function SettingsPanel(props: {
     setEditFieldValue(current);
     editFieldAction = apply;
   }
-
 
   function openPermissionEditorFor(name: string) {
     const config = props.config;
@@ -276,8 +383,14 @@ export function SettingsPanel(props: {
     setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
     setPermissionSkills(profile?.skills !== false);
     setPermissionMcp(true);
-    setPermissionInteractiveAny(Boolean(profile?.interactivePrograms?.allowAny));
-    setPermissionInteractiveAllow((profile?.interactivePrograms?.allow ?? []).map((entry) => entry.command).join(", "));
+    setPermissionInteractiveAny(
+      Boolean(profile?.interactivePrograms?.allowAny),
+    );
+    setPermissionInteractiveAllow(
+      (profile?.interactivePrograms?.allow ?? [])
+        .map((entry) => entry.command)
+        .join(", "),
+    );
     setPermissionEditorOpen(true);
   }
 
@@ -322,7 +435,9 @@ export function SettingsPanel(props: {
       openEdit("子 Agent 最大并发数", current, (raw) => {
         const value = Number(raw);
         if (Number.isInteger(value) && value >= 1 && value <= 32)
-          props.onUpdateConfig?.({ team: { ...props.config?.team, maxConcurrent: value } });
+          props.onUpdateConfig?.({
+            team: { ...props.config?.team, maxConcurrent: value },
+          });
       });
     },
     "Permission Profile": () => {
@@ -354,76 +469,131 @@ export function SettingsPanel(props: {
       openEdit("单步最大重试次数", current, (raw) => {
         const value = Number(raw);
         if (Number.isInteger(value) && value > 0)
-          props.onUpdateConfig?.({ runtime: { ...props.config?.runtime, maxAttemptsPerStep: value } });
+          props.onUpdateConfig?.({
+            runtime: { ...props.config?.runtime, maxAttemptsPerStep: value },
+          });
       });
     },
     "Request Timeout": () => {
-      const current = String(props.config?.runtime?.timeouts?.requestSec ?? 120);
+      const current = String(
+        props.config?.runtime?.timeouts?.requestSec ?? 120,
+      );
       openEdit("请求超时（秒）", current, (raw) => {
         const value = Number(raw);
         if (Number.isInteger(value) && value > 0)
           props.onUpdateConfig?.({
             runtime: {
               ...props.config?.runtime,
-              timeouts: { ...props.config?.runtime?.timeouts, requestSec: value },
+              timeouts: {
+                ...props.config?.runtime?.timeouts,
+                requestSec: value,
+              },
             },
           });
       });
     },
     "Compaction Threshold": () => {
-      const current = String(props.config?.context?.compactionThresholdPercent ?? 85);
+      const current = String(
+        props.config?.context?.compactionThresholdPercent ?? 85,
+      );
       openEdit("Compaction 阈值（%）", current, (raw) => {
         const value = Number(raw);
         if (Number.isInteger(value) && value > 0 && value <= 100)
-          props.onUpdateConfig?.({ context: { ...props.config?.context, compactionThresholdPercent: value } });
+          props.onUpdateConfig?.({
+            context: {
+              ...props.config?.context,
+              compactionThresholdPercent: value,
+            },
+          });
       });
     },
     "Checkpoint 目录": () => {
-      const current = (props.config?.checkpoint?.additionalDirs ?? []).join(",");
+      const current = (props.config?.checkpoint?.additionalDirs ?? []).join(
+        ",",
+      );
       openEdit("额外 checkpoint 目录（逗号分隔）", current, (raw) => {
         props.onUpdateConfig?.({
           checkpoint: {
             ...props.config?.checkpoint,
-            additionalDirs: raw.split(",").map((entry) => entry.trim()).filter(Boolean),
+            additionalDirs: raw
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean),
           },
         });
       });
     },
-    "Density": () => {
-      cyclePreference("density", density(), ["comfortable", "compact"], setDensity);
+    Density: () => {
+      cyclePreference(
+        "density",
+        density(),
+        ["comfortable", "compact"],
+        setDensity,
+      );
     },
     "Diff Style": () => {
-      cyclePreference("diffStyle", diffStyle(), ["auto", "unified", "split"], setDiffStyle);
+      cyclePreference(
+        "diffStyle",
+        diffStyle(),
+        ["auto", "unified", "split"],
+        setDiffStyle,
+      );
     },
     "Tool Details": () => {
-      cyclePreference("toolDetails", toolDetails(), ["expanded", "collapsed"], setToolDetails);
+      cyclePreference(
+        "toolDetails",
+        toolDetails(),
+        ["expanded", "collapsed"],
+        setToolDetails,
+      );
     },
     "GPU 加速": () => {
       const next = !gpuAcceleration();
       setGpuAcceleration(next);
       props.preferences?.set("gpuAcceleration", next);
-      const electron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
-      void electron?.invoke("desktop_set_setting", { key: "gpuEnabled", value: next });
+      const electron = (
+        globalThis as {
+          electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> };
+        }
+      ).electron;
+      void electron?.invoke("desktop_set_setting", {
+        key: "gpuEnabled",
+        value: next,
+      });
     },
-    "Keybinds": () => {
+    Keybinds: () => {
       window.alert("当前版本快捷键覆盖请通过 TUI 快捷键配置。");
     },
-    "界面偏好保存范围": () => {
-      cyclePreference("uiWriteScope", uiWriteScope(), ["project", "global"], setUiWriteScope);
+    界面偏好保存范围: () => {
+      cyclePreference(
+        "uiWriteScope",
+        uiWriteScope(),
+        ["project", "global"],
+        setUiWriteScope,
+      );
     },
-    "运行时配置保存范围": () => {
-      cyclePreference("runtimeWriteScope", runtimeWriteScope(), ["project", "global"], setRuntimeWriteScope);
+    运行时配置保存范围: () => {
+      cyclePreference(
+        "runtimeWriteScope",
+        runtimeWriteScope(),
+        ["project", "global"],
+        setRuntimeWriteScope,
+      );
     },
   };
-
 
   const modeModelOptions = () => {
     const config = props.config;
     if (!config) return [];
     const options: Array<{ value: string; label: string }> = [];
-    for (const [providerID, provider] of Object.entries(config.catalog?.providers ?? {})) {
+    for (const [providerID, provider] of Object.entries(
+      config.catalog?.providers ?? {},
+    )) {
       for (const modelID of Object.keys(provider?.models ?? {})) {
-        options.push({ value: `${providerID}/${modelID}`, label: `${providerID}/${modelID}` });
+        options.push({
+          value: `${providerID}/${modelID}`,
+          label: `${providerID}/${modelID}`,
+        });
       }
     }
     return options;
@@ -431,13 +601,22 @@ export function SettingsPanel(props: {
 
   const modePermissionOptions = () => [
     { value: "", label: "默认" },
-    ...Object.keys(props.config?.agentModes ?? {}).map((name) => ({ value: name, label: name })),
+    ...Object.keys(props.config?.agentModes ?? {}).map((name) => ({
+      value: name,
+      label: name,
+    })),
   ];
 
   const modeToolOptions = () => {
     const current = new Set([
-      ...modeAllowedTools().split(",").map((item) => item.trim()).filter(Boolean),
-      ...modeExcludedTools().split(",").map((item) => item.trim()).filter(Boolean),
+      ...modeAllowedTools()
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+      ...modeExcludedTools()
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
     ]);
     return [...new Set([...TOOL_FAMILIES, ...current])].sort();
   };
@@ -449,7 +628,10 @@ export function SettingsPanel(props: {
     value: string,
     setter: (next: string) => void,
   ) {
-    const items = current.split(",").map((item) => item.trim()).filter(Boolean);
+    const items = current
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
     const next = items.includes(value)
       ? items.filter((item) => item !== value)
       : [...items, value];
@@ -460,27 +642,50 @@ export function SettingsPanel(props: {
     const config = props.config;
     if (!config) return undefined;
     switch (label) {
-      case "Providers & Models": return `${Object.keys(config.providers ?? {}).length} 个 provider`;
-      case "Default Model": return modelLabel(config);
-      case "默认 Agent": return (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认";
-      case "自定义 Agent Mode": return config.defaultAgentMode || "code";
-      case "子 Agent 并发数": return String(config.team?.maxConcurrent ?? 4);
-      case "Permission Profile": return config.defaultAgentMode ?? "ask";
-      case "Web & Network": return config.webSearch?.endpoint ? "已配置" : "默认";
-      case "Max Steps": return String(config.runtime?.maxStepsPerTurn ?? "unlimited");
-      case "Max Retry": return String(config.runtime?.maxAttemptsPerStep ?? 3);
-      case "Request Timeout": return `${config.runtime?.timeouts?.requestSec ?? 120}s`;
-      case "Compaction": return config.context?.compactionEnabled ? "开启" : "关闭";
-      case "Compaction Threshold": return `${config.context?.compactionThresholdPercent ?? 85}%`;
-      case "Checkpoint 目录": return `${(config.checkpoint?.additionalDirs ?? []).length} 个`;
-      case "Terminal Window Mode": return String(config.runtime?.terminal?.windowMode ?? "auto");
-      case "Density": return density();
-      case "Diff Style": return diffStyle();
-      case "Tool Details": return toolDetails();
-      case "GPU 加速": return gpuAcceleration() ? "开启" : "关闭";
-      case "界面偏好保存范围": return uiWriteScope();
-      case "运行时配置保存范围": return runtimeWriteScope();
-      case "Keybinds": return "默认";
+      case "Providers & Models":
+        return `${Object.keys(config.providers ?? {}).length} 个 provider`;
+      case "Default Model":
+        return modelLabel(config);
+      case "默认 Agent":
+        return (
+          (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认"
+        );
+      case "自定义 Agent Mode":
+        return config.defaultAgentMode || "code";
+      case "子 Agent 并发数":
+        return String(config.team?.maxConcurrent ?? 4);
+      case "Permission Profile":
+        return config.defaultAgentMode ?? "ask";
+      case "Web & Network":
+        return config.webSearch?.endpoint ? "已配置" : "默认";
+      case "Max Steps":
+        return String(config.runtime?.maxStepsPerTurn ?? "unlimited");
+      case "Max Retry":
+        return String(config.runtime?.maxAttemptsPerStep ?? 3);
+      case "Request Timeout":
+        return `${config.runtime?.timeouts?.requestSec ?? 120}s`;
+      case "Compaction":
+        return config.context?.compactionEnabled ? "开启" : "关闭";
+      case "Compaction Threshold":
+        return `${config.context?.compactionThresholdPercent ?? 85}%`;
+      case "Checkpoint 目录":
+        return `${(config.checkpoint?.additionalDirs ?? []).length} 个`;
+      case "Terminal Window Mode":
+        return String(config.runtime?.terminal?.windowMode ?? "auto");
+      case "Density":
+        return density();
+      case "Diff Style":
+        return diffStyle();
+      case "Tool Details":
+        return toolDetails();
+      case "GPU 加速":
+        return gpuAcceleration() ? "开启" : "关闭";
+      case "界面偏好保存范围":
+        return uiWriteScope();
+      case "运行时配置保存范围":
+        return runtimeWriteScope();
+      case "Keybinds":
+        return "默认";
     }
     return undefined;
   }
@@ -488,10 +693,18 @@ export function SettingsPanel(props: {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-settings-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-settings-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">设置</span>
-            <button type="button" class="neu-settings-close" onClick={props.onClose} aria-label="关闭设置">
+            <button
+              type="button"
+              class="neu-settings-close"
+              onClick={props.onClose}
+              aria-label="关闭设置"
+            >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path
                   d="M3 3l10 10M13 3L3 13"
@@ -512,7 +725,11 @@ export function SettingsPanel(props: {
                     data-active={activeCategory() === category.id}
                     onClick={() => {
                       setActiveCategory(category.id);
-                      if (category.id === "plugin" && settingsPanel() && props.host) {
+                      if (
+                        category.id === "plugin" &&
+                        settingsPanel() &&
+                        props.host
+                      ) {
                         const selected = settingsPanel()!;
                         requestAnimationFrame(() => {
                           if (settingsPanelRef && props.host) {
@@ -567,8 +784,12 @@ export function SettingsPanel(props: {
                               }}
                             >
                               <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{panel.panel.title}</span>
-                                <span class="neu-settings-item-description">{panel.panel.group ?? "插件设置"}</span>
+                                <span class="neu-settings-item-label">
+                                  {panel.panel.title}
+                                </span>
+                                <span class="neu-settings-item-description">
+                                  {panel.panel.group ?? "插件设置"}
+                                </span>
                               </div>
                             </button>
                             <Show
@@ -577,7 +798,10 @@ export function SettingsPanel(props: {
                                 settingsPanel()?.panelId === panel.panel.id
                               }
                             >
-                              <div ref={settingsPanelRef} class="neu-settings-item neu-plugin-panel-body" />
+                              <div
+                                ref={settingsPanelRef}
+                                class="neu-settings-item neu-plugin-panel-body"
+                              />
                             </Show>
                           </div>
                         )}
@@ -587,195 +811,317 @@ export function SettingsPanel(props: {
                 </For>
               </Show>
               <Show when={current().id !== "plugin"}>
-                  <>
-                    <div class="neu-settings-content-title">{current().label}</div>
-                    <For each={current().items}>
-                      {(item) => {
-                        const value = runtimeValue(item.label) ?? item.value;
-                        if (item.label === "Providers & Models" && props.onOpenModels) {
-                          return (
-                            <button
-                              type="button"
-                              class="neu-settings-item neu-settings-item-button"
-                              onClick={() => props.onOpenModels?.()}
-                            >
-                              <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{item.label}</span>
-                                <span class="neu-settings-item-description">{item.description}</span>
-                              </div>
-                              <span class="neu-settings-item-value">{item.value}</span>
-                            </button>
-                          );
-                        }
-                        if (item.label === "Theme Mode" && props.onCycleThemeMode) {
-                          return (
-                            <button
-                              type="button"
-                              class="neu-settings-item neu-settings-item-button"
-                              onClick={() => props.onCycleThemeMode?.()}
-                            >
-                              <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{item.label}</span>
-                                <span class="neu-settings-item-description">{item.description}</span>
-                              </div>
-                              <span class="neu-settings-item-value">
-                                {props.themeMode === "dark" ? "深色" : "浅色"}
-                              </span>
-                            </button>
-                          );
-                        }
-                        if (item.label === "Compaction" && props.onUpdateConfig && props.config) {
-                          return (
-                            <button
-                              type="button"
-                              class="neu-settings-item neu-settings-item-button"
-                              onClick={() => {
-                                const next = !props.config?.context?.compactionEnabled;
-                                props.onUpdateConfig?.({
-                                  context: { ...props.config?.context, compactionEnabled: next },
-                                });
-                              }}
-                            >
-                              <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{item.label}</span>
-                                <span class="neu-settings-item-description">{item.description}</span>
-                              </div>
-                              <span class="neu-settings-item-value">{value}</span>
-                            </button>
-                          );
-                        }
-                        if (item.label === "Terminal Window Mode" && props.onUpdateConfig && props.config) {
-                          return (
-                            <button
-                              type="button"
-                              class="neu-settings-item neu-settings-item-button"
-                              onClick={() => {
-                                const modes = ["auto", "windowless", "window"] as const;
-                                const current = props.config?.runtime?.terminal?.windowMode ?? "auto";
-                                const index = modes.indexOf(current as (typeof modes)[number]);
-                                const next = modes[(index + 1) % modes.length];
-                                props.onUpdateConfig?.({
-                                  runtime: {
-                                    ...props.config?.runtime,
-                                    terminal: { windowMode: next },
-                                  },
-                                });
-                              }}
-                            >
-                              <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{item.label}</span>
-                                <span class="neu-settings-item-description">{item.description}</span>
-                              </div>
-                              <span class="neu-settings-item-value">{value}</span>
-                            </button>
-                          );
-                        }
-                        if (item.label === "GPU 加速") {
-                          return (
-                            <button
-                              type="button"
-                              class="neu-settings-item neu-settings-item-button"
-                              onClick={() => {
-                                const next = !gpuAcceleration();
-                                console.log("[settings] GPU 加速 toggle", next);
-                                setGpuAcceleration(next);
-                                props.preferences?.set("gpuAcceleration", next);
-                                const electron = (globalThis as { electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> } }).electron;
-                                void electron?.invoke("desktop_set_setting", { key: "gpuEnabled", value: next });
-                              }}
-                            >
-                              <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{item.label}</span>
-                                <span class="neu-settings-item-description">{item.description}</span>
-                              </div>
-                              <span class="neu-settings-item-value">
-                                {gpuAcceleration() ? "开启" : "关闭"}
-                              </span>
-                            </button>
-                          );
-                        }
-                        if (editableActions[item.label] && props.onUpdateConfig) {
-                          return (
-                            <button
-                              type="button"
-                              class="neu-settings-item neu-settings-item-button"
-                              onClick={editableActions[item.label]}
-                            >
-                              <div class="neu-settings-item-main">
-                                <span class="neu-settings-item-label">{item.label}</span>
-                                <span class="neu-settings-item-description">{item.description}</span>
-                              </div>
-                              <span class="neu-settings-item-value">{value}</span>
-                            </button>
-                          );
-                        }
+                <>
+                  <div class="neu-settings-content-title">
+                    {current().label}
+                  </div>
+                  <For each={current().items}>
+                    {(item) => {
+                      const value = runtimeValue(item.label) ?? item.value;
+                      if (
+                        item.label === "Providers & Models" &&
+                        props.onOpenModels
+                      ) {
                         return (
-                          <div class="neu-settings-item">
+                          <button
+                            type="button"
+                            class="neu-settings-item neu-settings-item-button"
+                            onClick={() => props.onOpenModels?.()}
+                          >
                             <div class="neu-settings-item-main">
-                              <span class="neu-settings-item-label">{item.label}</span>
-                              <span class="neu-settings-item-description">{item.description}</span>
+                              <span class="neu-settings-item-label">
+                                {item.label}
+                              </span>
+                              <span class="neu-settings-item-description">
+                                {item.description}
+                              </span>
+                            </div>
+                            <span class="neu-settings-item-value">
+                              {item.value}
+                            </span>
+                          </button>
+                        );
+                      }
+                      if (
+                        item.label === "Theme Mode" &&
+                        props.onCycleThemeMode
+                      ) {
+                        return (
+                          <button
+                            type="button"
+                            class="neu-settings-item neu-settings-item-button"
+                            onClick={() => props.onCycleThemeMode?.()}
+                          >
+                            <div class="neu-settings-item-main">
+                              <span class="neu-settings-item-label">
+                                {item.label}
+                              </span>
+                              <span class="neu-settings-item-description">
+                                {item.description}
+                              </span>
+                            </div>
+                            <span class="neu-settings-item-value">
+                              {props.themeMode === "dark" ? "深色" : "浅色"}
+                            </span>
+                          </button>
+                        );
+                      }
+                      if (
+                        item.label === "Compaction" &&
+                        props.onUpdateConfig &&
+                        props.config
+                      ) {
+                        return (
+                          <button
+                            type="button"
+                            class="neu-settings-item neu-settings-item-button"
+                            onClick={() => {
+                              const next =
+                                !props.config?.context?.compactionEnabled;
+                              props.onUpdateConfig?.({
+                                context: {
+                                  ...props.config?.context,
+                                  compactionEnabled: next,
+                                },
+                              });
+                            }}
+                          >
+                            <div class="neu-settings-item-main">
+                              <span class="neu-settings-item-label">
+                                {item.label}
+                              </span>
+                              <span class="neu-settings-item-description">
+                                {item.description}
+                              </span>
                             </div>
                             <span class="neu-settings-item-value">{value}</span>
-                          </div>
+                          </button>
                         );
-                      }}
-                    </For>
-                  </>
+                      }
+                      if (
+                        item.label === "Terminal Window Mode" &&
+                        props.onUpdateConfig &&
+                        props.config
+                      ) {
+                        return (
+                          <button
+                            type="button"
+                            class="neu-settings-item neu-settings-item-button"
+                            onClick={() => {
+                              const modes = [
+                                "auto",
+                                "windowless",
+                                "window",
+                              ] as const;
+                              const current =
+                                props.config?.runtime?.terminal?.windowMode ??
+                                "auto";
+                              const index = modes.indexOf(
+                                current as (typeof modes)[number],
+                              );
+                              const next = modes[(index + 1) % modes.length];
+                              props.onUpdateConfig?.({
+                                runtime: {
+                                  ...props.config?.runtime,
+                                  terminal: { windowMode: next },
+                                },
+                              });
+                            }}
+                          >
+                            <div class="neu-settings-item-main">
+                              <span class="neu-settings-item-label">
+                                {item.label}
+                              </span>
+                              <span class="neu-settings-item-description">
+                                {item.description}
+                              </span>
+                            </div>
+                            <span class="neu-settings-item-value">{value}</span>
+                          </button>
+                        );
+                      }
+                      if (item.label === "GPU 加速") {
+                        return (
+                          <button
+                            type="button"
+                            class="neu-settings-item neu-settings-item-button"
+                            onClick={() => {
+                              const next = !gpuAcceleration();
+                              console.log("[settings] GPU 加速 toggle", next);
+                              setGpuAcceleration(next);
+                              props.preferences?.set("gpuAcceleration", next);
+                              const electron = (
+                                globalThis as {
+                                  electron?: {
+                                    invoke<T>(
+                                      channel: string,
+                                      args?: unknown,
+                                    ): Promise<T>;
+                                  };
+                                }
+                              ).electron;
+                              void electron?.invoke("desktop_set_setting", {
+                                key: "gpuEnabled",
+                                value: next,
+                              });
+                            }}
+                          >
+                            <div class="neu-settings-item-main">
+                              <span class="neu-settings-item-label">
+                                {item.label}
+                              </span>
+                              <span class="neu-settings-item-description">
+                                {item.description}
+                              </span>
+                            </div>
+                            <span class="neu-settings-item-value">
+                              {gpuAcceleration() ? "开启" : "关闭"}
+                            </span>
+                          </button>
+                        );
+                      }
+                      if (editableActions[item.label] && props.onUpdateConfig) {
+                        return (
+                          <button
+                            type="button"
+                            class="neu-settings-item neu-settings-item-button"
+                            onClick={editableActions[item.label]}
+                          >
+                            <div class="neu-settings-item-main">
+                              <span class="neu-settings-item-label">
+                                {item.label}
+                              </span>
+                              <span class="neu-settings-item-description">
+                                {item.description}
+                              </span>
+                            </div>
+                            <span class="neu-settings-item-value">{value}</span>
+                          </button>
+                        );
+                      }
+                      return (
+                        <div class="neu-settings-item">
+                          <div class="neu-settings-item-main">
+                            <span class="neu-settings-item-label">
+                              {item.label}
+                            </span>
+                            <span class="neu-settings-item-description">
+                              {item.description}
+                            </span>
+                          </div>
+                          <span class="neu-settings-item-value">{value}</span>
+                        </div>
+                      );
+                    }}
+                  </For>
+                </>
               </Show>
             </section>
           </div>
         </div>
       </div>
       <Show when={permissionListOpen()}>
-        <div class="neu-settings-backdrop" onClick={() => setPermissionListOpen(false)}>
-          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-settings-backdrop"
+          onClick={() => setPermissionListOpen(false)}
+        >
+          <div
+            class="neu-settings-window neu-edit-window"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div class="neu-settings-header">
               <span class="neu-settings-title">权限配置</span>
-              <button type="button" class="neu-settings-close" onClick={() => setPermissionListOpen(false)} aria-label="关闭">
+              <button
+                type="button"
+                class="neu-settings-close"
+                onClick={() => setPermissionListOpen(false)}
+                aria-label="关闭"
+              >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  <path
+                    d="M3 3l10 10M13 3L3 13"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  />
                 </svg>
               </button>
             </div>
             <div class="neu-settings-body neu-edit-body">
               <Show
-                when={Object.entries(props.config?.agentModes ?? {})
-                  .filter(([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name))
-                  .length}
-                fallback={<div class="neu-settings-item"><div class="neu-settings-item-main"><span class="neu-settings-item-label">暂无自定义权限配置</span><span class="neu-settings-item-description">点击下方“新增权限配置”创建</span></div></div>}
-              >
-              <For each={Object.entries(props.config?.agentModes ?? {})
-                .filter(([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name))}>
-                {([name, profile]) => (
-                  <div class="neu-permission-row">
-                    <button
-                      type="button"
-                      class="neu-settings-item neu-settings-item-button"
-                      onClick={() => {
-                        props.onUpdateConfig?.({ defaultAgentMode: name, defaultPermission: name });
-                      }}
-                    >
-                      <div class="neu-settings-item-main">
-                        <span class="neu-settings-item-label">
-                          {name}{props.config?.defaultAgentMode === name ? "（默认）" : ""}
-                        </span>
-                        <span class="neu-settings-item-description">{profile.description || profile.approval}</span>
-                      </div>
-                      <span class="neu-settings-item-value">{profile.approval}</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="neu-permission-edit"
-                      onClick={() => { setPermissionListOpen(false); openPermissionEditorFor(name); }}
-                    >
-                      编辑
-                    </button>
+                when={
+                  Object.entries(props.config?.agentModes ?? {}).filter(
+                    ([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name),
+                  ).length
+                }
+                fallback={
+                  <div class="neu-settings-item">
+                    <div class="neu-settings-item-main">
+                      <span class="neu-settings-item-label">
+                        暂无自定义权限配置
+                      </span>
+                      <span class="neu-settings-item-description">
+                        点击下方“新增权限配置”创建
+                      </span>
+                    </div>
                   </div>
-                )}
-              </For>
+                }
+              >
+                <For
+                  each={Object.entries(props.config?.agentModes ?? {}).filter(
+                    ([name]) => !BUILTIN_PERMISSION_PROFILES.includes(name),
+                  )}
+                >
+                  {([name, profile]) => (
+                    <div class="neu-permission-row">
+                      <button
+                        type="button"
+                        class="neu-settings-item neu-settings-item-button"
+                        onClick={() => {
+                          props.onUpdateConfig?.({
+                            defaultAgentMode: name,
+                            defaultPermission: name,
+                          });
+                        }}
+                      >
+                        <div class="neu-settings-item-main">
+                          <span class="neu-settings-item-label">
+                            {name}
+                            {props.config?.defaultAgentMode === name
+                              ? "（默认）"
+                              : ""}
+                          </span>
+                          <span class="neu-settings-item-description">
+                            {profile.description || profile.approval}
+                          </span>
+                        </div>
+                        <span class="neu-settings-item-value">
+                          {profile.approval}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        class="neu-permission-edit"
+                        onClick={() => {
+                          setPermissionListOpen(false);
+                          openPermissionEditorFor(name);
+                        }}
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  )}
+                </For>
               </Show>
               <div class="neu-extension-actions">
-                <button type="button" class="neu-extension-add" onClick={() => { setPermissionListOpen(false); openNewPermissionEditor(); }}>
+                <button
+                  type="button"
+                  class="neu-extension-add"
+                  onClick={() => {
+                    setPermissionListOpen(false);
+                    openNewPermissionEditor();
+                  }}
+                >
                   新增权限配置
                 </button>
               </div>
@@ -784,24 +1130,52 @@ export function SettingsPanel(props: {
         </div>
       </Show>
       <Show when={permissionEditorOpen()}>
-        <div class="neu-settings-backdrop" onClick={() => setPermissionEditorOpen(false)}>
-          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-settings-backdrop"
+          onClick={() => setPermissionEditorOpen(false)}
+        >
+          <div
+            class="neu-settings-window neu-edit-window"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div class="neu-settings-header">
-              <span class="neu-settings-title">权限配置（Permission Profile）</span>
-              <button type="button" class="neu-settings-close" onClick={() => setPermissionEditorOpen(false)} aria-label="关闭">
+              <span class="neu-settings-title">
+                权限配置（Permission Profile）
+              </span>
+              <button
+                type="button"
+                class="neu-settings-close"
+                onClick={() => setPermissionEditorOpen(false)}
+                aria-label="关闭"
+              >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  <path
+                    d="M3 3l10 10M13 3L3 13"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  />
                 </svg>
               </button>
             </div>
             <div class="neu-settings-body neu-edit-body">
               <div class="neu-form-field">
                 <label class="neu-form-label">Profile 名称</label>
-                <input class="neu-form-input" value={permissionName()} onInput={(e) => setPermissionName(e.currentTarget.value)} />
+                <input
+                  class="neu-form-input"
+                  value={permissionName()}
+                  onInput={(e) => setPermissionName(e.currentTarget.value)}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">描述</label>
-                <input class="neu-form-input" value={permissionDescription()} onInput={(e) => setPermissionDescription(e.currentTarget.value)} />
+                <input
+                  class="neu-form-input"
+                  value={permissionDescription()}
+                  onInput={(e) =>
+                    setPermissionDescription(e.currentTarget.value)
+                  }
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Approval Mode</label>
@@ -816,15 +1190,26 @@ export function SettingsPanel(props: {
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Allowed Tools（允许列表，留空不限制）</label>
+                <label class="neu-form-label">
+                  Allowed Tools（允许列表，留空不限制）
+                </label>
                 <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
                       <label class="neu-form-checkbox neu-tool-check">
                         <input
                           type="checkbox"
-                          checked={permissionAllowedTools().split(",").map((item) => item.trim()).includes(tool)}
-                          onChange={() => toggleCsv(permissionAllowedTools(), tool, setPermissionAllowedTools)}
+                          checked={permissionAllowedTools()
+                            .split(",")
+                            .map((item) => item.trim())
+                            .includes(tool)}
+                          onChange={() =>
+                            toggleCsv(
+                              permissionAllowedTools(),
+                              tool,
+                              setPermissionAllowedTools,
+                            )
+                          }
                         />
                         <span>{tool}</span>
                       </label>
@@ -840,8 +1225,17 @@ export function SettingsPanel(props: {
                       <label class="neu-form-checkbox neu-tool-check">
                         <input
                           type="checkbox"
-                          checked={permissionExcludedTools().split(",").map((item) => item.trim()).includes(tool)}
-                          onChange={() => toggleCsv(permissionExcludedTools(), tool, setPermissionExcludedTools)}
+                          checked={permissionExcludedTools()
+                            .split(",")
+                            .map((item) => item.trim())
+                            .includes(tool)}
+                          onChange={() =>
+                            toggleCsv(
+                              permissionExcludedTools(),
+                              tool,
+                              setPermissionExcludedTools,
+                            )
+                          }
                         />
                         <span>{tool}</span>
                       </label>
@@ -863,40 +1257,77 @@ export function SettingsPanel(props: {
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Command Rules（逗号分隔）</label>
-                <input class="neu-form-input" value={permissionCommandRules()} onInput={(e) => setPermissionCommandRules(e.currentTarget.value)} />
+                <input
+                  class="neu-form-input"
+                  value={permissionCommandRules()}
+                  onInput={(e) =>
+                    setPermissionCommandRules(e.currentTarget.value)
+                  }
+                />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Interactive Programs（高风险启动命令）</label>
+                <label class="neu-form-label">
+                  Interactive Programs（高风险启动命令）
+                </label>
                 <div class="neu-checkbox-list">
                   <label class="neu-form-checkbox">
-                    <input type="checkbox" checked={permissionInteractiveAny()} onChange={() => setPermissionInteractiveAny((v) => !v)} />
+                    <input
+                      type="checkbox"
+                      checked={permissionInteractiveAny()}
+                      onChange={() => setPermissionInteractiveAny((v) => !v)}
+                    />
                     <span>allowAny（任意启动命令）</span>
                   </label>
                 </div>
-                <input class="neu-form-input" value={permissionInteractiveAllow()} placeholder="允许的交互程序，逗号分隔" onInput={(e) => setPermissionInteractiveAllow(e.currentTarget.value)} />
+                <input
+                  class="neu-form-input"
+                  value={permissionInteractiveAllow()}
+                  placeholder="允许的交互程序，逗号分隔"
+                  onInput={(e) =>
+                    setPermissionInteractiveAllow(e.currentTarget.value)
+                  }
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Extensions</label>
                 <div class="neu-checkbox-list">
                   <label class="neu-form-checkbox">
-                    <input type="checkbox" checked={permissionSkills()} onChange={() => setPermissionSkills((v) => !v)} />
+                    <input
+                      type="checkbox"
+                      checked={permissionSkills()}
+                      onChange={() => setPermissionSkills((v) => !v)}
+                    />
                     <span>skills</span>
                   </label>
                   <label class="neu-form-checkbox">
-                    <input type="checkbox" checked={permissionMcp()} onChange={() => setPermissionMcp((v) => !v)} />
+                    <input
+                      type="checkbox"
+                      checked={permissionMcp()}
+                      onChange={() => setPermissionMcp((v) => !v)}
+                    />
                     <span>mcp</span>
                   </label>
                 </div>
               </div>
               <div class="neu-form-actions">
-                <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setPermissionEditorOpen(false)}>取消</button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-cancel"
+                  onClick={() => setPermissionEditorOpen(false)}
+                >
+                  取消
+                </button>
                 <button
                   type="button"
                   class="neu-form-btn neu-form-primary"
                   onClick={() => {
                     const name = permissionName().trim();
                     if (!name) return;
-                    const split = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+                    const split = (value: string) =>
+                      value
+                        .split(",")
+                        .map((item) => item.trim())
+                        .filter(Boolean);
                     props.onUpdateConfig?.({
                       permissionProfiles: {
                         ...props.config?.agentModes,
@@ -910,12 +1341,17 @@ export function SettingsPanel(props: {
                             },
                           },
                           commandRules: {
-                            mode: permissionCommandMode() as "none" | "blacklist" | "whitelist",
+                            mode: permissionCommandMode() as
+                              | "none"
+                              | "blacklist"
+                              | "whitelist",
                             rules: split(permissionCommandRules()),
                           },
                           interactivePrograms: {
                             allowAny: permissionInteractiveAny(),
-                            allow: split(permissionInteractiveAllow()).map((command) => ({ command })),
+                            allow: split(permissionInteractiveAllow()).map(
+                              (command) => ({ command }),
+                            ),
                           },
                           extensions: {
                             skills: permissionSkills(),
@@ -933,12 +1369,17 @@ export function SettingsPanel(props: {
                           allowedTools: split(permissionAllowedTools()),
                           excludedTools: split(permissionExcludedTools()),
                           commandRules: {
-                            mode: permissionCommandMode() as "none" | "blacklist" | "whitelist",
+                            mode: permissionCommandMode() as
+                              | "none"
+                              | "blacklist"
+                              | "whitelist",
                             rules: split(permissionCommandRules()),
                           },
                           interactivePrograms: {
                             allowAny: permissionInteractiveAny(),
-                            allow: split(permissionInteractiveAllow()).map((command) => ({ command })),
+                            allow: split(permissionInteractiveAllow()).map(
+                              (command) => ({ command }),
+                            ),
                           },
                           skills: permissionSkills(),
                           mcpServers: [],
@@ -958,8 +1399,14 @@ export function SettingsPanel(props: {
         </div>
       </Show>
       <Show when={modeEditorOpen()}>
-        <div class="neu-settings-backdrop" onClick={() => setModeEditorOpen(false)}>
-          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-settings-backdrop"
+          onClick={() => setModeEditorOpen(false)}
+        >
+          <div
+            class="neu-settings-window neu-edit-window"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div class="neu-settings-header">
               <span class="neu-settings-title">自定义 Agent Mode</span>
               <button
@@ -969,22 +1416,39 @@ export function SettingsPanel(props: {
                 aria-label="关闭"
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  <path
+                    d="M3 3l10 10M13 3L3 13"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  />
                 </svg>
               </button>
             </div>
             <div class="neu-settings-body neu-edit-body">
               <div class="neu-form-field">
                 <label class="neu-form-label">Mode 名称</label>
-                <input class="neu-form-input" value={modeName()} onInput={(e) => setModeName(e.currentTarget.value)} />
+                <input
+                  class="neu-form-input"
+                  value={modeName()}
+                  onInput={(e) => setModeName(e.currentTarget.value)}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">描述</label>
-                <input class="neu-form-input" value={modeDescription()} onInput={(e) => setModeDescription(e.currentTarget.value)} />
+                <input
+                  class="neu-form-input"
+                  value={modeDescription()}
+                  onInput={(e) => setModeDescription(e.currentTarget.value)}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">System Prompt</label>
-                <textarea class="neu-form-input neu-stash-textarea" value={modeSystemPrompt()} onInput={(e) => setModeSystemPrompt(e.currentTarget.value)} />
+                <textarea
+                  class="neu-form-input neu-stash-textarea"
+                  value={modeSystemPrompt()}
+                  onInput={(e) => setModeSystemPrompt(e.currentTarget.value)}
+                />
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Model（可选）</label>
@@ -1003,15 +1467,26 @@ export function SettingsPanel(props: {
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Allowed Tools（允许列表，留空表示不限制）</label>
+                <label class="neu-form-label">
+                  Allowed Tools（允许列表，留空表示不限制）
+                </label>
                 <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
                       <label class="neu-form-checkbox neu-tool-check">
                         <input
                           type="checkbox"
-                          checked={modeAllowedTools().split(",").map((item) => item.trim()).includes(tool)}
-                          onChange={() => toggleCsv(modeAllowedTools(), tool, setModeAllowedTools)}
+                          checked={modeAllowedTools()
+                            .split(",")
+                            .map((item) => item.trim())
+                            .includes(tool)}
+                          onChange={() =>
+                            toggleCsv(
+                              modeAllowedTools(),
+                              tool,
+                              setModeAllowedTools,
+                            )
+                          }
                         />
                         <span>{tool}</span>
                       </label>
@@ -1020,15 +1495,26 @@ export function SettingsPanel(props: {
                 </div>
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">Excluded Tools（黑名单，选中即禁止使用）</label>
+                <label class="neu-form-label">
+                  Excluded Tools（黑名单，选中即禁止使用）
+                </label>
                 <div class="neu-tool-select-grid">
                   <For each={modeToolOptions()}>
                     {(tool) => (
                       <label class="neu-form-checkbox neu-tool-check">
                         <input
                           type="checkbox"
-                          checked={modeExcludedTools().split(",").map((item) => item.trim()).includes(tool)}
-                          onChange={() => toggleCsv(modeExcludedTools(), tool, setModeExcludedTools)}
+                          checked={modeExcludedTools()
+                            .split(",")
+                            .map((item) => item.trim())
+                            .includes(tool)}
+                          onChange={() =>
+                            toggleCsv(
+                              modeExcludedTools(),
+                              tool,
+                              setModeExcludedTools,
+                            )
+                          }
                         />
                         <span>{tool}</span>
                       </label>
@@ -1037,16 +1523,42 @@ export function SettingsPanel(props: {
                 </div>
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label">MCP Servers（从已配置的 MCP 中选择此模式启用的服务，不影响全局配置）</label>
-                <Show when={modeMcpOptions().length} fallback={<div class="neu-settings-item"><div class="neu-settings-item-main"><span class="neu-settings-item-label">暂无已配置的 MCP Server</span><span class="neu-settings-item-description">请先在“MCP”里添加</span></div></div>}>
+                <label class="neu-form-label">
+                  MCP Servers（从已配置的 MCP
+                  中选择此模式启用的服务，不影响全局配置）
+                </label>
+                <Show
+                  when={modeMcpOptions().length}
+                  fallback={
+                    <div class="neu-settings-item">
+                      <div class="neu-settings-item-main">
+                        <span class="neu-settings-item-label">
+                          暂无已配置的 MCP Server
+                        </span>
+                        <span class="neu-settings-item-description">
+                          请先在“MCP”里添加
+                        </span>
+                      </div>
+                    </div>
+                  }
+                >
                   <div class="neu-checkbox-list">
                     <For each={modeMcpOptions()}>
                       {(server) => (
                         <label class="neu-form-checkbox">
                           <input
                             type="checkbox"
-                            checked={modeMcpServers().split(",").map((item) => item.trim()).includes(server)}
-                            onChange={() => toggleCsv(modeMcpServers(), server, setModeMcpServers)}
+                            checked={modeMcpServers()
+                              .split(",")
+                              .map((item) => item.trim())
+                              .includes(server)}
+                            onChange={() =>
+                              toggleCsv(
+                                modeMcpServers(),
+                                server,
+                                setModeMcpServers,
+                              )
+                            }
                           />
                           <span>{server}</span>
                         </label>
@@ -1056,14 +1568,24 @@ export function SettingsPanel(props: {
                 </Show>
               </div>
               <div class="neu-form-actions">
-                <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setModeEditorOpen(false)}>取消</button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-cancel"
+                  onClick={() => setModeEditorOpen(false)}
+                >
+                  取消
+                </button>
                 <button
                   type="button"
                   class="neu-form-btn neu-form-primary"
                   onClick={() => {
                     const name = modeName().trim();
                     if (!name) return;
-                    const split = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+                    const split = (value: string) =>
+                      value
+                        .split(",")
+                        .map((item) => item.trim())
+                        .filter(Boolean);
                     props.onUpdateConfig?.({
                       agentModes: {
                         ...props.config?.agentModes,
@@ -1091,8 +1613,14 @@ export function SettingsPanel(props: {
         </div>
       </Show>
       <Show when={editFieldLabel()}>
-        <div class="neu-settings-backdrop" onClick={() => setEditFieldLabel(undefined)}>
-          <div class="neu-settings-window neu-edit-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-settings-backdrop"
+          onClick={() => setEditFieldLabel(undefined)}
+        >
+          <div
+            class="neu-settings-window neu-edit-window"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div class="neu-settings-header">
               <span class="neu-settings-title">{editFieldLabel()}</span>
               <button
@@ -1102,7 +1630,12 @@ export function SettingsPanel(props: {
                 aria-label="关闭"
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  <path
+                    d="M3 3l10 10M13 3L3 13"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  />
                 </svg>
               </button>
             </div>
@@ -1110,7 +1643,9 @@ export function SettingsPanel(props: {
               <input
                 class="neu-form-input"
                 value={editFieldValue()}
-                onInput={(event) => setEditFieldValue(event.currentTarget.value)}
+                onInput={(event) =>
+                  setEditFieldValue(event.currentTarget.value)
+                }
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     editFieldAction?.(editFieldValue());
@@ -1119,7 +1654,11 @@ export function SettingsPanel(props: {
                 }}
               />
               <div class="neu-form-actions">
-                <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setEditFieldLabel(undefined)}>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-cancel"
+                  onClick={() => setEditFieldLabel(undefined)}
+                >
                   取消
                 </button>
                 <button

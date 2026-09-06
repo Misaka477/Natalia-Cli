@@ -25,7 +25,10 @@ export function WorkspacePanel(props: {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-workspace-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-workspace-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">添加工作区</span>
             <button
@@ -46,7 +49,9 @@ export function WorkspacePanel(props: {
           </div>
           <div class="neu-workspace-body">
             <Show when={props.error || localError()}>
-              <div class="neu-workspace-error">{props.error || localError()}</div>
+              <div class="neu-workspace-error">
+                {props.error || localError()}
+              </div>
             </Show>
             <Show when={props.workspaces?.length}>
               <div class="neu-form-section-title">已添加工作区</div>
@@ -67,14 +72,18 @@ export function WorkspacePanel(props: {
                           type="button"
                           class="neu-form-btn neu-workspace-switch"
                           disabled={workspace.status === "active"}
-                          onClick={() => { void props.onActivate?.(workspace.workspaceID); }}
+                          onClick={() => {
+                            void props.onActivate?.(workspace.workspaceID);
+                          }}
                         >
                           切换
                         </button>
                         <button
                           type="button"
                           class="neu-form-btn neu-workspace-remove"
-                          onClick={() => { void props.onRemove?.(workspace.workspaceID); }}
+                          onClick={() => {
+                            void props.onRemove?.(workspace.workspaceID);
+                          }}
                         >
                           删除
                         </button>
@@ -94,7 +103,14 @@ export function WorkspacePanel(props: {
               <div class="neu-workspace-error">正在添加工作区…</div>
             </Show>
             <div class="neu-form-actions">
-              <button type="button" class="neu-form-btn neu-form-cancel" onClick={props.onClose} disabled={busy()}>取消</button>
+              <button
+                type="button"
+                class="neu-form-btn neu-form-cancel"
+                onClick={props.onClose}
+                disabled={busy()}
+              >
+                取消
+              </button>
               <button
                 type="button"
                 class="neu-form-btn neu-form-primary"
@@ -105,9 +121,14 @@ export function WorkspacePanel(props: {
                   setBusy(true);
                   setLocalError("");
                   const result = props.onAdd?.(trimmed);
-                  if (!result || typeof (result as Promise<void>).then !== "function") {
+                  if (
+                    !result ||
+                    typeof (result as Promise<void>).then !== "function"
+                  ) {
                     setBusy(false);
-                    setLocalError("内部错误：添加请求未返回 Promise，请查看控制台");
+                    setLocalError(
+                      "内部错误：添加请求未返回 Promise，请查看控制台",
+                    );
                     return;
                   }
                   void (result as Promise<void>)

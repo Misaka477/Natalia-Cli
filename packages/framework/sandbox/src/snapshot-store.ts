@@ -22,8 +22,8 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
-import { ObjectStore } from "@natalia/object-store";
-import { diffText, diffTextAsync } from "./diff";
+import { DiffCache, ObjectStore } from "@natalia/object-store";
+import { diffText, diffTextAsync, type TextDiffResult } from "./diff";
 
 export type IndexedFile = {
   objectID: string;
@@ -129,12 +129,13 @@ export class SnapshotStore {
       const baseEntry = base.get(path);
       if (!baseEntry) {
         const content = await this.objectText(candidateEntry.objectID);
-        const text = await diffTextAsync(path, undefined, content);
+        const text = await this.diffTextCached(path, undefined, content);
         changes.push({
           kind: "add" as SandboxDiffKind,
           path,
           ...(content !== undefined ? { after: content } : {}),
           ...(text.patch ? { patch: text.patch } : {}),
+          ...(text.structured ? { structured: text.structured } : {}),
           additions: text.additions,
           deletions: text.deletions,
         });
@@ -143,13 +144,14 @@ export class SnapshotStore {
       if (candidateEntry.objectID !== baseEntry.objectID) {
         const before = await this.objectText(baseEntry.objectID);
         const after = await this.objectText(candidateEntry.objectID);
-        const text = await diffTextAsync(path, before, after);
+        const text = await this.diffTextCached(path, before, after);
         changes.push({
           kind: "modify" as SandboxDiffKind,
           path,
           ...(before !== undefined ? { before } : {}),
           ...(after !== undefined ? { after } : {}),
           ...(text.patch ? { patch: text.patch } : {}),
+          ...(text.structured ? { structured: text.structured } : {}),
           additions: text.additions,
           deletions: text.deletions,
         });
@@ -158,12 +160,13 @@ export class SnapshotStore {
     for (const path of base.keys()) {
       if (!candidateIndex.has(path)) {
         const before = await this.objectText(base.get(path)!.objectID);
-        const text = await diffTextAsync(path, before, undefined);
+        const text = await this.diffTextCached(path, before, undefined);
         changes.push({
           kind: "delete" as SandboxDiffKind,
           path,
           ...(before !== undefined ? { before } : {}),
           ...(text.patch ? { patch: text.patch } : {}),
+          ...(text.structured ? { structured: text.structured } : {}),
           additions: text.additions,
           deletions: text.deletions,
         });
@@ -178,6 +181,31 @@ export class SnapshotStore {
     } catch {
       return undefined;
     }
+  }
+
+  private async diffTextCached(
+    path: string,
+    before: string | undefined,
+    after: string | undefined,
+  ): Promise<TextDiffResult> {
+    const oldText = before ?? "";
+    const newText = after ?? "";
+    const cache = new DiffCache(this.objects, "snapshot-diff");
+    const cached = await cache.get(oldText, newText);
+    if (cached)
+      return {
+        additions: cached.additions,
+        deletions: cached.deletions,
+        structured: cached.structured,
+      };
+    const result = await diffTextAsync(path, before, after);
+    if (result.structured)
+      await cache.set(oldText, newText, {
+        additions: result.additions,
+        deletions: result.deletions,
+        structured: result.structured,
+      });
+    return result;
   }
 
   async saveIndex(id: string, index: SnapshotIndex): Promise<void> {

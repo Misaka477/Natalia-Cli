@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import type { EpisodeID, SandboxDiffKind, SessionID } from "@natalia/contracts";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
@@ -12,6 +14,42 @@ import {
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
+
+async function appendSandboxMutation(
+  ctx: RuntimeContext,
+  sessionID: string,
+  path: string,
+  operation: "add" | "modify" | "delete" | "rename",
+) {
+  try {
+    const logPath = resolve(
+      ctx.ports.getWorkspaceRoot(),
+      ".natalia",
+      "workspace-mutations.json",
+    );
+    await mkdir(dirname(logPath), { recursive: true });
+    let rows: Array<Record<string, unknown>> = [];
+    try {
+      rows = JSON.parse(await readFile(logPath, "utf8")) as Array<
+        Record<string, unknown>
+      >;
+    } catch {
+      rows = [];
+    }
+    rows.push({
+      id: `mut_${Date.now().toString(36)}`,
+      at: new Date().toISOString(),
+      workspaceRoot: ctx.ports.getWorkspaceRoot(),
+      sessionID,
+      path,
+      operation,
+      origin: "sandbox_merge",
+    });
+    await writeFile(logPath, JSON.stringify(rows, null, 2));
+  } catch {
+    // best-effort
+  }
+}
 
 type SandboxRuntime = Pick<
   RuntimeServiceClient,
@@ -58,7 +96,9 @@ export function createSandboxRuntime(
     return owner;
   }
 
-  function sandboxIDsFor(owner: import("./context").SessionExecutionState | undefined) {
+  function sandboxIDsFor(
+    owner: import("./context").SessionExecutionState | undefined,
+  ) {
     if (!owner?.session) return new Set<string>();
     return new Set(
       owner.session.events
@@ -67,9 +107,14 @@ export function createSandboxRuntime(
     );
   }
 
-  function assertSandboxOwned(owner: import("./context").SessionExecutionState, id: string) {
+  function assertSandboxOwned(
+    owner: import("./context").SessionExecutionState,
+    id: string,
+  ) {
     if (!sandboxIDsFor(owner).has(id))
-      throw new Error(`sandbox ${id} does not belong to session ${owner.session.id}`);
+      throw new Error(
+        `sandbox ${id} does not belong to session ${owner.session.id}`,
+      );
   }
 
   function requireGovernanceLedger() {
@@ -93,7 +138,9 @@ export function createSandboxRuntime(
   return {
     async sandboxList(sessionID?: string) {
       await ctx.ports.getReady();
-      const owner = sessionID ? await sessionOwner(sessionID) : ctx.ports.getActiveExec();
+      const owner = sessionID
+        ? await sessionOwner(sessionID)
+        : ctx.ports.getActiveExec();
       const owned = sandboxIDsFor(owner);
       return (await requireSandboxes().list())
         .filter((sandbox) => owned.has(sandbox.id))
@@ -106,11 +153,27 @@ export function createSandboxRuntime(
           envAllowlist: sandbox.envAllowlist,
         }));
     },
-    async sandboxDiff(id, sessionID?: string) {
+    async sandboxDiff(
+      id: string,
+      sessionID?: string,
+      options?: { includePatch?: boolean },
+    ) {
       await ctx.ports.getReady();
       const owner = await sessionOwner(sessionID);
       assertSandboxOwned(owner, id);
-      return await requireSandboxes().previewMerge(id);
+      const changes = await requireSandboxes().previewMerge(id);
+      if (options?.includePatch === false) {
+        return changes.map((change) => ({
+          kind: change.kind,
+          path: change.path,
+          ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+          ...(change.mode ? { mode: change.mode } : {}),
+          additions: 0,
+          deletions: 0,
+          ...(change.structured ? { structured: change.structured } : {}),
+        }));
+      }
+      return changes;
     },
     async sandboxResources(id, sessionID?: string) {
       await ctx.ports.getReady();
@@ -213,6 +276,20 @@ export function createSandboxRuntime(
             await ctx.ports.authorizeSandboxMerge({ id, paths }, owner),
         });
         const changes = promotion.changedFiles;
+        for (const change of changes) {
+          void appendSandboxMutation(
+            ctx,
+            owner.session.id,
+            change.path,
+            change.kind === "add"
+              ? "add"
+              : change.kind === "delete"
+                ? "delete"
+                : change.kind === "rename"
+                  ? "rename"
+                  : "modify",
+          );
+        }
         const operationID = `sandbox_merge:${id}:${randomUUID()}`;
         mutationRegistry()?.register({
           sessionID: owner.session.id,

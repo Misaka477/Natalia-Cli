@@ -207,10 +207,7 @@ export async function recoverSession(
     : checkpointHasSummary && latestContextCheckpoint
       ? scope.modelVisibleEvents(projection.replayableEvents)
       : projection.replayableEvents;
-  contextLedgerFactory.restore(
-    scope.runtimeContext,
-    recoveryRestoreEvents,
-  );
+  contextLedgerFactory.restore(scope.runtimeContext, recoveryRestoreEvents);
   console.warn("[context-restore] session-recovery", {
     sessionID: scope.sessionID,
     replayableEvents: projection.replayableEvents.length,

@@ -1,12 +1,5 @@
-import {
-  createRealRuntimeClient,
-  EGRESS_ADVISORY,
-} from "@natalia/client";
-import type {
-  EpisodeID,
-  RuntimeEvent,
-  SessionID,
-} from "@natalia/contracts";
+import { createRealRuntimeClient, EGRESS_ADVISORY } from "@natalia/client";
+import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
 import { resolveConfig } from "@natalia/config";
 import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";

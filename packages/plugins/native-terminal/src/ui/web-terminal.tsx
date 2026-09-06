@@ -17,7 +17,9 @@ function getElectronGlobal(): ElectronGlobal | undefined {
 }
 
 async function callRuntime<T = unknown>(
-  ipc: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> },
+  ipc: {
+    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  },
   method: string,
   params?: Record<string, unknown>,
 ): Promise<T> {
@@ -234,13 +236,7 @@ export function WebTerminal(props: WebTerminalProps) {
   }
 
   async function ipcConnect() {
-    if (
-      closed ||
-      fatal ||
-      !props.sessionID ||
-      !props.terminalID ||
-      !desktop
-    )
+    if (closed || fatal || !props.sessionID || !props.terminalID || !desktop)
       return;
     const previous = ipcUnlisten;
     ipcUnlisten = undefined;
@@ -257,14 +253,20 @@ export function WebTerminal(props: WebTerminalProps) {
       if (closed) return;
 
       const listed =
-        (await callRuntime<Array<{
-          id: string;
-          status: string;
-          sessionID?: string;
-        }>>(desktop, "nativeTerminal.list", { sessionID: props.sessionID })) ?? [];
+        (await callRuntime<
+          Array<{
+            id: string;
+            status: string;
+            sessionID?: string;
+          }>
+        >(desktop, "nativeTerminal.list", { sessionID: props.sessionID })) ??
+        [];
       if (closed) return;
       let session = listed.find((item) => item.id === props.terminalID);
-      if (!session || (session.sessionID && session.sessionID !== props.sessionID)) {
+      if (
+        !session ||
+        (session.sessionID && session.sessionID !== props.sessionID)
+      ) {
         session =
           (await callRuntime<{ id: string; status: string } | undefined>(
             desktop,
@@ -283,7 +285,9 @@ export function WebTerminal(props: WebTerminalProps) {
           lastError = "native terminal start failed";
           term?.writeln("\r\n[native terminal start failed]");
         }
-        console.error("[web-terminal] native terminal start returned no session");
+        console.error(
+          "[web-terminal] native terminal start returned no session",
+        );
         return;
       }
       sessionReady = true;
@@ -468,9 +472,12 @@ export function WebTerminal(props: WebTerminalProps) {
       }
       if (event.ctrlKey && event.shiftKey && key === "v") {
         event.preventDefault();
-        void navigator.clipboard.readText().then((text) => {
-          if (text) term?.paste(text);
-        }).catch(() => undefined);
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) term?.paste(text);
+          })
+          .catch(() => undefined);
         return false;
       }
       if (event.ctrlKey && !event.shiftKey && key === "w") {
@@ -593,7 +600,8 @@ export function WebTerminal(props: WebTerminalProps) {
     props.registerApi?.(undefined);
     if (reconnectTimer) clearTimeout(reconnectTimer);
     ipcUnlisten?.();
-    if (windowResizeHandler) window.removeEventListener("resize", windowResizeHandler);
+    if (windowResizeHandler)
+      window.removeEventListener("resize", windowResizeHandler);
     socket?.close();
     try {
       term?.dispose();

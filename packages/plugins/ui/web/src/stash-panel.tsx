@@ -1,4 +1,11 @@
-import { createSignal, createEffect, Show, onCleanup, onMount, For } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  Show,
+  onCleanup,
+  onMount,
+  For,
+} from "solid-js";
 
 type StashItem = { id: string; title: string; content: string; time: string };
 
@@ -49,7 +56,15 @@ export function StashPanel(props: { open: boolean; onClose: () => void }) {
     const c = content().trim();
     if (!t || !c) return;
     setItems((prev) => [
-      { id: String(Date.now()), title: t, content: c, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
+      {
+        id: String(Date.now()),
+        title: t,
+        content: c,
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      },
       ...prev,
     ]);
     setTitle("");
@@ -60,7 +75,10 @@ export function StashPanel(props: { open: boolean; onClose: () => void }) {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-stash-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-stash-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">Prompt 暂存</span>
             <button
@@ -88,8 +106,18 @@ export function StashPanel(props: { open: boolean; onClose: () => void }) {
                     <span class="neu-stash-content">{item.content}</span>
                   </div>
                   <span class="neu-stash-time">{item.time}</span>
-                  <button type="button" class="neu-stash-btn">复制</button>
-                  <button type="button" class="neu-stash-btn neu-stash-remove" onClick={() => setItems((prev) => prev.filter((row) => row.id !== item.id))}>
+                  <button type="button" class="neu-stash-btn">
+                    复制
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-stash-btn neu-stash-remove"
+                    onClick={() =>
+                      setItems((prev) =>
+                        prev.filter((row) => row.id !== item.id),
+                      )
+                    }
+                  >
                     删除
                   </button>
                 </div>
@@ -110,13 +138,31 @@ export function StashPanel(props: { open: boolean; onClose: () => void }) {
                   onInput={(event) => setContent(event.currentTarget.value)}
                 />
                 <div class="neu-form-actions">
-                  <button type="button" class="neu-form-btn neu-form-cancel" onClick={() => setAdding(false)}>取消</button>
-                  <button type="button" class="neu-form-btn neu-form-primary" onClick={save}>保存</button>
+                  <button
+                    type="button"
+                    class="neu-form-btn neu-form-cancel"
+                    onClick={() => setAdding(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-form-btn neu-form-primary"
+                    onClick={save}
+                  >
+                    保存
+                  </button>
                 </div>
               </div>
             </Show>
             <div class="neu-extension-actions">
-              <button type="button" class="neu-extension-add" onClick={() => setAdding(true)}>新建暂存</button>
+              <button
+                type="button"
+                class="neu-extension-add"
+                onClick={() => setAdding(true)}
+              >
+                新建暂存
+              </button>
             </div>
           </div>
         </div>

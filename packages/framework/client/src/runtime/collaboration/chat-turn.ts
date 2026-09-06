@@ -136,7 +136,10 @@ export function createChatTurn(ctx: RuntimeContext) {
         }
       }
       const visibleTools = chatTools(input.exec, channel);
-      console.log("[chat-turn] tools", visibleTools.map((tool) => tool.name));
+      console.log(
+        "[chat-turn] tools",
+        visibleTools.map((tool) => tool.name),
+      );
       const toolSchemas = visibleTools.map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -428,7 +431,7 @@ export function createChatTurn(ctx: RuntimeContext) {
           `chat turn reached its step limit without ${unresolvedNataliaReply.action} ${unresolvedNataliaReply.id}`,
         );
       if (
-        ((usedTools || ranFinalOnlyStep) || input.internal) &&
+        (usedTools || ranFinalOnlyStep || input.internal) &&
         !finalResponse.trim()
       ) {
         output += MISSING_FINAL_RESPONSE_FALLBACK;

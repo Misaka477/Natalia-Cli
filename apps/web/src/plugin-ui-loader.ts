@@ -69,7 +69,9 @@ export async function syncPluginUiBundles(
   const catalog = (await runtime.pluginCatalog?.()) ?? [];
   const enabled = new Set(
     catalog
-      .filter((plugin) => plugin.enabled && plugin.installed && plugin.ui?.entry)
+      .filter(
+        (plugin) => plugin.enabled && plugin.installed && plugin.ui?.entry,
+      )
       .map((plugin) => plugin.id),
   );
 

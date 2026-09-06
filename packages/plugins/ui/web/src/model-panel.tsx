@@ -1,5 +1,16 @@
-import { createSignal, createEffect, Show, onCleanup, onMount, For } from "solid-js";
-import type { ConfigV3, RuntimeModelCatalogEntry, RuntimeModelSelection } from "@natalia/contracts";
+import {
+  createSignal,
+  createEffect,
+  Show,
+  onCleanup,
+  onMount,
+  For,
+} from "solid-js";
+import type {
+  ConfigV3,
+  RuntimeModelCatalogEntry,
+  RuntimeModelSelection,
+} from "@natalia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
 
 type ModelView = "tree" | "edit-provider";
@@ -40,11 +51,20 @@ export function ModelPanel(props: {
     label?: string;
     previousName?: string;
     headers?: Record<string, string>;
-    models?: Array<{ id: string; name?: string; reasoning?: boolean; image?: boolean }>;
+    models?: Array<{
+      id: string;
+      name?: string;
+      reasoning?: boolean;
+      image?: boolean;
+    }>;
   }) => unknown;
 }) {
-  const [editingProvider, setEditingProvider] = createSignal<string | undefined>();
-  const [originalProviderName, setOriginalProviderName] = createSignal<string | undefined>();
+  const [editingProvider, setEditingProvider] = createSignal<
+    string | undefined
+  >();
+  const [originalProviderName, setOriginalProviderName] = createSignal<
+    string | undefined
+  >();
   const [view, setView] = createSignal<ModelView>("tree");
   const providers = () => {
     const groups = new Map<string, RuntimeModelCatalogEntry[]>();
@@ -76,7 +96,12 @@ export function ModelPanel(props: {
   const [baseUrl, setBaseUrl] = createSignal("");
   const [apiKey, setApiKey] = createSignal("");
   const [models, setModels] = createSignal<ModelRow[]>([
-    { id: "glm-5.3-flash", name: "glm-5.3-flash", reasoning: true, image: true },
+    {
+      id: "glm-5.3-flash",
+      name: "glm-5.3-flash",
+      reasoning: true,
+      image: true,
+    },
   ]);
   const [headers, setHeaders] = createSignal<HeaderRow[]>([
     { name: "", value: "" },
@@ -92,7 +117,10 @@ export function ModelPanel(props: {
   }
 
   function addModelRow() {
-    setModels((prev) => [...prev, { id: "", name: "", reasoning: true, image: false }]);
+    setModels((prev) => [
+      ...prev,
+      { id: "", name: "", reasoning: true, image: false },
+    ]);
   }
 
   function updateModel(index: number, patch: Partial<ModelRow>) {
@@ -122,7 +150,8 @@ export function ModelPanel(props: {
   function openEditProvider(providerName: string) {
     const provider = props.providers?.[providerName];
     if (!provider) return;
-    const rawModels = props.config?.catalog?.providers?.[providerName]?.models ?? {};
+    const rawModels =
+      props.config?.catalog?.providers?.[providerName]?.models ?? {};
     const rawModelRows = Object.entries(rawModels).map(([id, model]) => ({
       id,
       name: model.name || id,
@@ -144,9 +173,9 @@ export function ModelPanel(props: {
               image: false,
             };
           });
-    const realHeaders = Object.entries(provider.requestDefaults?.headers ?? {}).map(
-      ([name, value]) => ({ name, value: String(value) }),
-    );
+    const realHeaders = Object.entries(
+      provider.requestDefaults?.headers ?? {},
+    ).map(([name, value]) => ({ name, value: String(value) }));
     setEditingProvider(providerName);
     setOriginalProviderName(providerName);
     setProviderName(providerName);
@@ -154,7 +183,11 @@ export function ModelPanel(props: {
     setProviderApi(provider.driver);
     setBaseUrl(provider.connection?.baseURL ?? "");
     setApiKey(provider.connection?.apiKey ?? "");
-    setModels(providerModels.length ? providerModels : [{ id: "", name: "", reasoning: true, image: false }]);
+    setModels(
+      providerModels.length
+        ? providerModels
+        : [{ id: "", name: "", reasoning: true, image: false }],
+    );
     setHeaders(realHeaders.length ? realHeaders : [{ name: "", value: "" }]);
     setView("edit-provider");
   }
@@ -200,8 +233,18 @@ export function ModelPanel(props: {
       headers: Object.keys(headerRecord).length ? headerRecord : undefined,
       models: modelRows.length ? modelRows : undefined,
     };
-    console.log("[provider-form] editingProvider", editingProvider(), "originalProviderName", originalProviderName(), "target", targetID);
-    console.log("[provider-form] submit", JSON.stringify(providerInput, null, 2));
+    console.log(
+      "[provider-form] editingProvider",
+      editingProvider(),
+      "originalProviderName",
+      originalProviderName(),
+      "target",
+      targetID,
+    );
+    console.log(
+      "[provider-form] submit",
+      JSON.stringify(providerInput, null, 2),
+    );
     props.onAddProvider?.(providerInput);
     setEditingProvider(undefined);
     backToTree();
@@ -227,7 +270,10 @@ export function ModelPanel(props: {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-model-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-model-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">
               {view() === "edit-provider" ? "编辑提供商" : "Providers & Models"}
@@ -280,8 +326,13 @@ export function ModelPanel(props: {
                           stroke-linejoin="round"
                         />
                       </svg>
-                      <span class="neu-model-provider-name">{provider.label}</span>
-                      <span class="neu-model-status" data-connected={provider.status === "已连接"}>
+                      <span class="neu-model-provider-name">
+                        {provider.label}
+                      </span>
+                      <span
+                        class="neu-model-status"
+                        data-connected={provider.status === "已连接"}
+                      >
                         {provider.status}
                       </span>
                       <button
@@ -321,7 +372,11 @@ export function ModelPanel(props: {
                 )}
               </For>
               <div class="neu-model-actions">
-                <button type="button" class="neu-model-add" onClick={openAddProvider}>
+                <button
+                  type="button"
+                  class="neu-model-add"
+                  onClick={openAddProvider}
+                >
                   添加 Provider
                 </button>
               </div>
@@ -331,27 +386,37 @@ export function ModelPanel(props: {
           <Show when={view() === "edit-provider"}>
             <div class="neu-form">
               <div class="neu-form-field">
-                <label class="neu-form-label" for="provider-name">提供商 ID</label>
+                <label class="neu-form-label" for="provider-name">
+                  提供商 ID
+                </label>
                 <input
                   id="provider-name"
                   class="neu-form-input"
                   value={providerName()}
                   placeholder="小写字母、数字、连字符或下划线"
-                  onInput={(event) => setProviderName(event.currentTarget.value)}
+                  onInput={(event) =>
+                    setProviderName(event.currentTarget.value)
+                  }
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label" for="provider-label">Provider Name（显示名）</label>
+                <label class="neu-form-label" for="provider-label">
+                  Provider Name（显示名）
+                </label>
                 <input
                   id="provider-label"
                   class="neu-form-input"
                   value={providerLabel()}
                   placeholder="例如 GPT"
-                  onInput={(event) => setProviderLabel(event.currentTarget.value)}
+                  onInput={(event) =>
+                    setProviderLabel(event.currentTarget.value)
+                  }
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label" for="provider-api">Provider API</label>
+                <label class="neu-form-label" for="provider-api">
+                  Provider API
+                </label>
                 <NeuSelect
                   value={providerApi()}
                   options={providerOptions()}
@@ -359,7 +424,9 @@ export function ModelPanel(props: {
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label" for="provider-url">基础 URL</label>
+                <label class="neu-form-label" for="provider-url">
+                  基础 URL
+                </label>
                 <input
                   id="provider-url"
                   class="neu-form-input"
@@ -369,7 +436,9 @@ export function ModelPanel(props: {
                 />
               </div>
               <div class="neu-form-field">
-                <label class="neu-form-label" for="provider-key">API 密钥</label>
+                <label class="neu-form-label" for="provider-key">
+                  API 密钥
+                </label>
                 <input
                   id="provider-key"
                   class="neu-form-input"
@@ -380,7 +449,9 @@ export function ModelPanel(props: {
                 />
               </div>
 
-              <div class="neu-form-section-title">模型（只需填写模型 ID，名称会自动使用 ID）</div>
+              <div class="neu-form-section-title">
+                模型（只需填写模型 ID，名称会自动使用 ID）
+              </div>
               <For each={models()}>
                 {(model, index) => (
                   <div class="neu-model-edit-row">
@@ -388,13 +459,17 @@ export function ModelPanel(props: {
                       class="neu-form-input"
                       value={model.id}
                       placeholder="ID"
-                      onInput={(event) => updateModel(index(), { id: event.currentTarget.value })}
+                      onInput={(event) =>
+                        updateModel(index(), { id: event.currentTarget.value })
+                      }
                     />
                     <label class="neu-form-checkbox">
                       <input
                         type="checkbox"
                         checked={model.reasoning}
-                        onChange={() => updateModel(index(), { reasoning: !model.reasoning })}
+                        onChange={() =>
+                          updateModel(index(), { reasoning: !model.reasoning })
+                        }
                       />
                       <span>推理</span>
                     </label>
@@ -402,17 +477,27 @@ export function ModelPanel(props: {
                       <input
                         type="checkbox"
                         checked={model.image}
-                        onChange={() => updateModel(index(), { image: !model.image })}
+                        onChange={() =>
+                          updateModel(index(), { image: !model.image })
+                        }
                       />
                       <span>图片</span>
                     </label>
-                    <button type="button" class="neu-model-remove" onClick={() => removeModel(index())}>
+                    <button
+                      type="button"
+                      class="neu-model-remove"
+                      onClick={() => removeModel(index())}
+                    >
                       删除
                     </button>
                   </div>
                 )}
               </For>
-              <button type="button" class="neu-model-add neu-model-add-secondary neu-model-add-full" onClick={addModelRow}>
+              <button
+                type="button"
+                class="neu-model-add neu-model-add-secondary neu-model-add-full"
+                onClick={addModelRow}
+              >
                 + 添加模型
               </button>
 
@@ -424,27 +509,59 @@ export function ModelPanel(props: {
                       class="neu-form-input"
                       value={header.name}
                       placeholder="Header Name"
-                      onInput={(event) => updateHeader(index(), { name: event.currentTarget.value })}
+                      onInput={(event) =>
+                        updateHeader(index(), {
+                          name: event.currentTarget.value,
+                        })
+                      }
                     />
                     <input
                       class="neu-form-input"
                       value={header.value}
                       placeholder="Value"
-                      onInput={(event) => updateHeader(index(), { value: event.currentTarget.value })}
+                      onInput={(event) =>
+                        updateHeader(index(), {
+                          value: event.currentTarget.value,
+                        })
+                      }
                     />
-                    <button type="button" class="neu-model-remove" onClick={() => setHeaders((prev) => prev.filter((_, i) => i !== index()))}>
+                    <button
+                      type="button"
+                      class="neu-model-remove"
+                      onClick={() =>
+                        setHeaders((prev) =>
+                          prev.filter((_, i) => i !== index()),
+                        )
+                      }
+                    >
                       删除
                     </button>
                   </div>
                 )}
               </For>
-              <button type="button" class="neu-model-add neu-model-add-secondary neu-model-add-full" onClick={addHeaderRow}>
+              <button
+                type="button"
+                class="neu-model-add neu-model-add-secondary neu-model-add-full"
+                onClick={addHeaderRow}
+              >
                 + 添加请求头
               </button>
 
               <div class="neu-form-actions">
-                <button type="button" class="neu-form-btn neu-form-cancel" onClick={backToTree}>取消</button>
-                <button type="button" class="neu-form-btn neu-form-primary" onClick={submitProvider}>提交</button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-cancel"
+                  onClick={backToTree}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="neu-form-btn neu-form-primary"
+                  onClick={submitProvider}
+                >
+                  提交
+                </button>
               </div>
             </div>
           </Show>

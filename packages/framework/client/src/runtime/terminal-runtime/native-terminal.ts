@@ -34,10 +34,7 @@ function refusalFromRegistry(error: unknown): RuntimeRefusal {
   );
 }
 
-function sessionExec(
-  ctx: RuntimeContext,
-  sessionID?: string,
-) {
+function sessionExec(ctx: RuntimeContext, sessionID?: string) {
   return sessionID
     ? ctx.ports
         .getExecutionBySession()
@@ -61,7 +58,9 @@ function assertTerminalOwned(
   id: string,
 ) {
   if (!terminalIDsFor(exec).has(id))
-    throw new Error(`terminal ${id} does not belong to session ${exec.session.id}`);
+    throw new Error(
+      `terminal ${id} does not belong to session ${exec.session.id}`,
+    );
 }
 
 export function createNativeTerminalSurface(
@@ -178,7 +177,9 @@ export function createNativeTerminalSurface(
       if (!sessionID) throw new RuntimeRefusal("session is not initialized");
       if (
         input.sessionID &&
-        !ctx.ports.getExecutionBySession().get(input.sessionID as import("@natalia/contracts").SessionID)
+        !ctx.ports
+          .getExecutionBySession()
+          .get(input.sessionID as import("@natalia/contracts").SessionID)
       )
         throw new RuntimeRefusal(`session not found: ${input.sessionID}`);
       const terminal = ctx.ports.resolveService<TerminalController>(

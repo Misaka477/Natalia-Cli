@@ -99,7 +99,6 @@ function configFailureReason(error: unknown) {
   return error instanceof Error ? error.message : "parse_error";
 }
 
-
 export function presentGlobalModelConfigKeys(
   patch: ConfigPatch | Record<string, unknown>,
 ): GlobalModelConfigKey[] {

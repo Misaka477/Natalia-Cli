@@ -10,8 +10,7 @@ export { nataliaNeuThemeDark } from "./theme-dark";
 
 export { NATALIA_SKINS, NEU_THEME_MODES } from "../skins";
 
-export const nataliaNeuThemeStyles =
-  nataliaNeuThemeLight + nataliaNeuThemeDark;
+export const nataliaNeuThemeStyles = nataliaNeuThemeLight + nataliaNeuThemeDark;
 
 export const nataliaNeuStyles = nataliaNeuThemeStyles + nataliaNeuBaseStyles;
 

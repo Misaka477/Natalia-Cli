@@ -288,7 +288,8 @@ test("SQLite runtime message pages use the durable turn cursor", async () => {
     useSqliteStore: true,
   });
   client.start(() => undefined);
-  for (const prompt of ["one", "two", "three"]) await client.submitAndWait!(prompt);
+  for (const prompt of ["one", "two", "three"])
+    await client.submitAndWait!(prompt);
 
   const latest = await client.messages?.({ limit: 2 });
   expect(latest?.data.map((message) => message.submitted.text)).toEqual([
@@ -742,9 +743,7 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   );
 
   // By-name resolution: any capability can read the resolved config.
-  const first = kernel.service<{ defaultAgentMode?: string }>(
-    "runtime.config",
-  );
+  const first = kernel.service<{ defaultAgentMode?: string }>("runtime.config");
   expect(first?.defaultAgentMode).toBe("ask");
   expect(kernel.ownerOf("services", "runtime.config")).toBe(
     "natalia-runtime-config",
@@ -4895,7 +4894,10 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
       sessionID: "ses_image_attachment",
     });
     client.start(() => undefined);
-    await client.submitAndWait!({ text: "inspect", attachments: ["image.png"] });
+    await client.submitAndWait!({
+      text: "inspect",
+      attachments: ["image.png"],
+    });
     const history = await client.history?.({ limit: 500 });
     expect(
       history?.events.find((item) => item.event.type === "turn.submitted")
@@ -5794,8 +5796,7 @@ test("submit after cancel returns without waiting for the next turn to finish", 
   await waitFor(
     () =>
       events.some(
-        (event) =>
-          event.type === "turn.submitted" && event.id === second.id,
+        (event) => event.type === "turn.submitted" && event.id === second.id,
       ),
     3000,
     "the second turn to be admitted",
@@ -5920,9 +5921,11 @@ test("queued inputs promote in FIFO order after the active turn becomes idle", a
     "the queued inputs to promote in order",
   );
   expect(requests.filter((text) => text === "first")).toHaveLength(1);
-  expect(
-    requests.filter((text) => text.startsWith("queued")),
-  ).toEqual(["queued one", "queued two", "queued three"]);
+  expect(requests.filter((text) => text.startsWith("queued"))).toEqual([
+    "queued one",
+    "queued two",
+    "queued three",
+  ]);
   const stored = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_queued_promotion.json"),
@@ -6293,7 +6296,8 @@ test("durable history retains full assistant settlement without live fragments",
         ),
       ) as { events: RuntimeEvent[] };
       return persisted.events.some(
-        (event) => event.type === "content.done" && event.text === "hello world",
+        (event) =>
+          event.type === "content.done" && event.text === "hello world",
       );
     } catch {
       return false;
@@ -6861,9 +6865,7 @@ test("two local clients serialize provider turns for one durable session", async
   releaseFirst?.();
   await Promise.all([firstSubmit, secondSubmit]);
   await waitFor(
-    () =>
-      order.includes("second:start") &&
-      order.includes("second:end"),
+    () => order.includes("second:start") && order.includes("second:end"),
     5000,
     "the second local client's provider turn to run",
   );
@@ -7265,7 +7267,8 @@ test("recordDecision writes a durable decision fact", async () => {
   expect(outcome).toEqual({ recorded: true });
   const records = await client.decisionRecords!();
   const recorded = records.find(
-    (record) => record.decision === "workspace isolation is not container/VM security",
+    (record) =>
+      record.decision === "workspace isolation is not container/VM security",
   );
   expect(recorded).toBeDefined();
   expect(recorded).toMatchObject({
@@ -7690,7 +7693,6 @@ test("recordCompletion records a card, its projection and validated_by edges", a
   ).toBe(true);
 });
 
-
 test("mailbox send/list/deliver/acknowledge records a durable lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-"));
   const client = createRealRuntimeClient({
@@ -7798,7 +7800,6 @@ test("mailbox defer and supersede move a queued message out of the way", async (
     acknowledged: false,
   });
 });
-
 
 test("mailbox_cancel drops a queued duplicate before Natalia consumes it", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-mailbox-cancel-"));
@@ -8008,9 +8009,11 @@ test("a mailbox message sent mid-turn injects before the next model step", async
   release();
   await submitting;
   await pollHistoryForFinished(client);
-  expect(userTurns.some((text) => text.includes("[user] please pause after this step"))).toBe(
-    true,
-  );
+  expect(
+    userTurns.some((text) =>
+      text.includes("[user] please pause after this step"),
+    ),
+  ).toBe(true);
 });
 
 test("delivered mailbox intents reach the main agent as ordinary tagged user messages", async () => {
@@ -8055,12 +8058,6 @@ test("delivered mailbox intents reach the main agent as ordinary tagged user mes
   );
   expect((await client.mailboxList!())[0]?.status).toBe("acknowledged");
 });
-
-
-
-
-
-
 
 test("mailbox_acknowledge marks delivered messages acknowledged and stops re-injection", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-ack-tool-"));
@@ -8456,7 +8453,6 @@ test("an external workspace change becomes an isolated external graph node", asy
     ),
   ).toBe(true);
 });
-
 
 test("an external change during a turn is reconciled at turn finish without an explicit call", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-obs-turnend-"));
@@ -10733,7 +10729,8 @@ test("two sessions writing the workspace in parallel both land without corruptio
     await turnA;
     await turnB;
     await waitFor(
-      () => existsSync(join(root, "wa.txt")) && existsSync(join(root, "wb.txt")),
+      () =>
+        existsSync(join(root, "wa.txt")) && existsSync(join(root, "wb.txt")),
       5000,
       "both parallel workspace writes to land",
     );
@@ -10832,11 +10829,10 @@ test("a background turn starting a terminal does not steal focus (I1)", async ()
     // The pane belongs to A; B's view cannot see it (I3), A's can.
     expect(await client.nativeTerminalList?.()).toEqual([]);
     await client.sessionAttach?.("ses_i1_a");
-    await waitForAsync(
-      async () =>
-        ((await client.nativeTerminalList?.()) ?? []).some(
-          (session) => session.id === "i1_bg_pane",
-        ),
+    await waitForAsync(async () =>
+      ((await client.nativeTerminalList?.()) ?? []).some(
+        (session) => session.id === "i1_bg_pane",
+      ),
     );
     const visibleA = (await client.nativeTerminalList?.()) ?? [];
     expect(visibleA.map((session) => session.id)).toContain("i1_bg_pane");
@@ -11237,11 +11233,13 @@ test("/skill-script aborts its child process when the command is cancelled", asy
     void client.submit("/skill-script long");
     await waitFor(
       () =>
-        events.slice(before).some(
-          (event) =>
-            event.type === "content.delta" &&
-            String(event.text).includes('"exitCode"'),
-        ),
+        events
+          .slice(before)
+          .some(
+            (event) =>
+              event.type === "content.delta" &&
+              String(event.text).includes('"exitCode"'),
+          ),
       5000,
       "the cancelled skill script to report its child exit code",
     );
@@ -11559,7 +11557,6 @@ test("chat tool calls surface as conversation actions", async () => {
   );
   await client.dispose?.();
 });
-
 
 test("chat mailbox_send refuses a planless handoff and mailbox_cancel drops queued mail", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-chat-mailbox-guard-"));

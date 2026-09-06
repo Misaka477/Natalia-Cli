@@ -857,7 +857,9 @@ test("fact-domain read queries and mailbox writes route through the channel", as
     agentStatus: "running",
   });
   expect(await client.planDocList!()).toHaveLength(1);
-  expect(await client.planDocStatus!("plan:1")).toEqual({ status: "executing" });
+  expect(await client.planDocStatus!("plan:1")).toEqual({
+    status: "executing",
+  });
   expect(
     await client.mailboxSend!({ intent: "clarification", text: "hi" }),
   ).toEqual({

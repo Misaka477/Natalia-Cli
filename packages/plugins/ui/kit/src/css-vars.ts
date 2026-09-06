@@ -3,11 +3,10 @@
  * surfaces (CodeMirror, xterm, canvas renderers) follow the active UiSkin
  * without hardcoding colors.
  */
-export function cssVar(
-  name: string,
-  fallback = "",
-): string {
+export function cssVar(name: string, fallback = ""): string {
   if (typeof document === "undefined") return fallback;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
   return value || fallback;
 }

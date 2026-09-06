@@ -8,6 +8,7 @@ export type TextDiffResult = {
   additions: number;
   deletions: number;
   patch?: string;
+  structured?: import("@natalia/contracts").RuntimeStructuredDiff;
 };
 
 type DiffLineOp =
@@ -92,6 +93,114 @@ function renderUnifiedPatch(path: string, ops: DiffLineOp[]): string {
   return lines.join("\n") + "\n";
 }
 
+export function unifiedPatchToStructured(
+  patch: string,
+): import("@natalia/contracts").RuntimeStructuredDiff {
+  const hunks: Array<{
+    oldStart: number;
+    oldCount: number;
+    newStart: number;
+    newCount: number;
+    lines: Array<{
+      type: "context" | "add" | "delete" | "hunk";
+      text: string;
+      oldLineNumber: number | null;
+      newLineNumber: number | null;
+    }>;
+  }> = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let additions = 0;
+  let deletions = 0;
+  let inHunk = false;
+  let current: (typeof hunks)[number] | undefined;
+  for (const raw of patch.split("\n")) {
+    if (raw.startsWith("diff --git")) {
+      inHunk = false;
+      current = undefined;
+      continue;
+    }
+    if (raw.startsWith("@@")) {
+      const match = raw.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/u);
+      if (match) {
+        const oldStart = Number(match[1]);
+        const oldCount = Number(match[2] ?? 1);
+        const newStart = Number(match[3]);
+        const newCount = Number(match[4] ?? 1);
+        oldLine = oldStart;
+        newLine = newStart;
+        inHunk = true;
+        current = {
+          oldStart,
+          oldCount,
+          newStart,
+          newCount,
+          lines: [],
+        };
+        hunks.push(current);
+      }
+      continue;
+    }
+    if (!inHunk || !current) continue;
+    if (raw.startsWith("---") || raw.startsWith("+++") || raw.startsWith("\\"))
+      continue;
+    if (raw.startsWith("+")) {
+      current.lines.push({
+        type: "add",
+        text: raw.slice(1),
+        oldLineNumber: null,
+        newLineNumber: newLine++,
+      });
+      additions++;
+    } else if (raw.startsWith("-")) {
+      current.lines.push({
+        type: "delete",
+        text: raw.slice(1),
+        oldLineNumber: oldLine++,
+        newLineNumber: null,
+      });
+      deletions++;
+    } else if (raw.startsWith(" ")) {
+      current.lines.push({
+        type: "context",
+        text: raw.slice(1),
+        oldLineNumber: oldLine++,
+        newLineNumber: newLine++,
+      });
+    }
+  }
+  return { hunks, additions, deletions };
+}
+
+function renderStructuredPatch(diff: {
+  hunks: Array<{
+    oldStart: number;
+    oldCount: number;
+    newStart: number;
+    newCount: number;
+    lines: Array<{
+      type: "context" | "add" | "delete" | "hunk";
+      text: string;
+      oldLineNumber: number | null;
+      newLineNumber: number | null;
+    }>;
+  }>;
+}): string {
+  if (!diff.hunks.length) return "";
+  const lines: string[] = [];
+  for (const hunk of diff.hunks) {
+    lines.push(
+      `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`,
+    );
+    for (const line of hunk.lines) {
+      if (line.type === "add") lines.push(`+${line.text}`);
+      else if (line.type === "delete") lines.push(`-${line.text}`);
+      else lines.push(` ${line.text}`);
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
 function diffLineOps(a: string[], b: string[]): DiffLineOp[] {
   const maxLines = 2000;
   if (a.length > maxLines || b.length > maxLines) {
@@ -134,7 +243,6 @@ function diffLineOps(a: string[], b: string[]): DiffLineOp[] {
   return ops;
 }
 
-
 /**
  * High-quality text diff backed by `git diff --no-index`.
  *
@@ -147,16 +255,17 @@ export async function diffTextAsync(
   newText: string | undefined,
 ): Promise<TextDiffResult> {
   try {
-    const { diffWasm } = await import("@natalia/diff-wasm");
-    const wasm = await diffWasm(oldText ?? "", newText ?? "");
-    if (wasm.patch) {
-      const patch = `--- a/${path}\n+++ b/${path}\n${wasm.patch}`;
-      return {
-        additions: wasm.additions,
-        deletions: wasm.deletions,
-        patch,
-      };
-    }
+    const { diffWasmStructured } = await import("@natalia/diff-wasm");
+    const wasm = await diffWasmStructured(oldText ?? "", newText ?? "");
+    const patch = wasm.hunks.length
+      ? `--- a/${path}\n+++ b/${path}\n${renderStructuredPatch(wasm)}`
+      : undefined;
+    return {
+      additions: wasm.additions,
+      deletions: wasm.deletions,
+      ...(patch ? { patch } : {}),
+      structured: wasm,
+    };
   } catch {
     // Fall back to the pure JS engine when WASM is unavailable.
   }

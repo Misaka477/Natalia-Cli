@@ -36,7 +36,10 @@ test("partial terminal overlay keeps the default pty backend", async () => {
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 3, runtime: { terminal: { windowMode: "window" } } }),
+    JSON.stringify({
+      version: 3,
+      runtime: { terminal: { windowMode: "window" } },
+    }),
   );
   expect(
     (await resolveConfig({ workspaceRoot: root, globalPath })).config.runtime

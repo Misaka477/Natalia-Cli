@@ -186,7 +186,9 @@ for (const root of pluginRoots) {
   const plugin =
     typeof module.default === "function" ? module.default() : module.default;
   if (!plugin || typeof plugin.setup !== "function")
-    throw new Error(`${root}: built entry must default-export a Plugin or factory`);
+    throw new Error(
+      `${root}: built entry must default-export a Plugin or factory`,
+    );
   if (plugin.manifest?.version !== manifest.version)
     throw new Error(`${root}: exported plugin and manifest versions disagree`);
   const emitted = await Bun.file(join(packageOutdir, manifest.entry)).text();

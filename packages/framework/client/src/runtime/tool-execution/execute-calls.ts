@@ -263,8 +263,7 @@ export function createExecuteCalls(
       dataURL: string;
     }> = [];
     const exec = executionBySession.get(turnSession.get(turnID) ?? sessionID);
-    if (!exec)
-      throw new Error(`no execution state for turn ${turnID}`);
+    if (!exec) throw new Error(`no execution state for turn ${turnID}`);
     const attachImage = currentModelImageInput(exec)
       ? async (path: string) => {
           const mediaType = mediaTypeForImage(path);
@@ -333,11 +332,7 @@ export function createExecuteCalls(
           role: "tool",
           toolCallID: call.id,
           toolName: "invalid_tool_call",
-          content: toolResultContent(
-            `ERROR: ${reason}`,
-            call.id,
-            undefined,
-          ),
+          content: toolResultContent(`ERROR: ${reason}`, call.id, undefined),
         });
         execContext.add({
           id: `${turnID}:${call.id}:result`,
@@ -367,10 +362,8 @@ export function createExecuteCalls(
               exec?.permissionMode === "read_only" &&
               registered.requiresApproval
                 ? readOnlyToolMessage(call.name)
-                : (extensionToolPermission(
-                    call.name,
-                    exec?.permissionProfile,
-                  ).diagnostics[0] ??
+                : (extensionToolPermission(call.name, exec?.permissionProfile)
+                    .diagnostics[0] ??
                   "tool is excluded from the runtime catalog by policy"),
           });
         publish({
@@ -395,11 +388,7 @@ export function createExecuteCalls(
           role: "tool",
           toolCallID: call.id,
           toolName: call.name,
-          content: toolResultContent(
-            `ERROR: ${reason}`,
-            call.id,
-            undefined,
-          ),
+          content: toolResultContent(`ERROR: ${reason}`, call.id, undefined),
         });
         execContext.add({
           id: `${turnID}:${call.id}:result`,

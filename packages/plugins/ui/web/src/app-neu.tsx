@@ -1,8 +1,25 @@
 import type { UiPluginContext } from "@natalia/ui-host";
 import { selectPrimaryActivity } from "@natalia/view-store";
-import type { RuntimeEvent, RuntimeModelCatalogEntry, RuntimeModelSelection, RuntimeSessionSummary, ChatModelProfile, ConfigV3, RuntimeClient, WorkspaceSummary } from "@natalia/contracts";
+import type {
+  RuntimeEvent,
+  RuntimeModelCatalogEntry,
+  RuntimeModelSelection,
+  RuntimeSessionSummary,
+  ChatModelProfile,
+  ConfigV3,
+  RuntimeClient,
+  WorkspaceSummary,
+} from "@natalia/contracts";
 import { cloneState } from "@natalia/view-store";
-import { createSignal, createEffect, createMemo, onCleanup, onMount, For, Show } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  createMemo,
+  onCleanup,
+  onMount,
+  For,
+  Show,
+} from "solid-js";
 import { Transcript } from "@natalia/ui-kit";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { ReviewPane } from "./components/RightPanel";
@@ -32,7 +49,14 @@ import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
-type RightTab = "diff" | "plan" | "nia" | "terminal" | "files" | "agent" | "todo";
+type RightTab =
+  | "diff"
+  | "plan"
+  | "nia"
+  | "terminal"
+  | "files"
+  | "agent"
+  | "todo";
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -48,11 +72,17 @@ function rightPanelMaxWidth(): number {
   if (typeof window === "undefined") return MAX_RIGHT_WIDTH;
   // On small/compact layouts the right panel is the most space-hungry
   // surface (terminal/diff), so allow it to take up to 2/3 width.
-  return Math.max(MIN_RIGHT_WIDTH, Math.floor(window.innerWidth * 2 / 3));
+  return Math.max(MIN_RIGHT_WIDTH, Math.floor((window.innerWidth * 2) / 3));
 }
 
 function StatusDot(props: { status: string }) {
-  return <span class="neu-status-dot" data-status={props.status} title={props.status} />;
+  return (
+    <span
+      class="neu-status-dot"
+      data-status={props.status}
+      title={props.status}
+    />
+  );
 }
 
 function TreeRow(props: {
@@ -165,7 +195,9 @@ function SessionTree(props: {
   const [draftName, setDraftName] = createSignal("");
   const groups = createMemo(() => {
     const byWorkspace = new Map<string, RuntimeSessionSummary[]>();
-    const activeID = props.workspaces.find((workspace) => workspace.status === "active")?.workspaceID;
+    const activeID = props.workspaces.find(
+      (workspace) => workspace.status === "active",
+    )?.workspaceID;
     for (const session of props.sessions) {
       const key = session.workspaceID ?? activeID;
       if (!key) continue;
@@ -176,12 +208,20 @@ function SessionTree(props: {
     return props.workspaces.map((workspace) => ({
       workspaceID: workspace.workspaceID,
       workspace: workspace.title,
-      sessions: (byWorkspace.get(workspace.workspaceID) ?? []).map((session) => ({
-        id: session.id,
-        name: session.title,
-        status: session.status ?? (session.cancelled ? "error" : session.resumable ? "idle" : "running"),
-        archived: Boolean(session.archived),
-      })),
+      sessions: (byWorkspace.get(workspace.workspaceID) ?? []).map(
+        (session) => ({
+          id: session.id,
+          name: session.title,
+          status:
+            session.status ??
+            (session.cancelled
+              ? "error"
+              : session.resumable
+                ? "idle"
+                : "running"),
+          archived: Boolean(session.archived),
+        }),
+      ),
     }));
   });
 
@@ -190,7 +230,13 @@ function SessionTree(props: {
       .map((session) => ({
         id: session.id,
         name: session.title,
-        status: session.status ?? (session.cancelled ? "error" : session.resumable ? "idle" : "running"),
+        status:
+          session.status ??
+          (session.cancelled
+            ? "error"
+            : session.resumable
+              ? "idle"
+              : "running"),
         archived: Boolean(session.archived),
       }))
       .filter((session) => session.status === "running"),
@@ -263,16 +309,26 @@ function SessionTree(props: {
                   actionIcon={session.archived ? "↩" : "↓"}
                   bulkMode={props.bulkMode}
                   bulkSelected={props.bulkSelected?.(session.id)}
-                  onBulkToggle={props.onBulkToggle ? () => props.onBulkToggle?.(session.id) : undefined}
+                  onBulkToggle={
+                    props.onBulkToggle
+                      ? () => props.onBulkToggle?.(session.id)
+                      : undefined
+                  }
                   onEdit={() => {
                     setEditingID(session.id);
                     setDraftName(session.name);
                   }}
-                  editValue={editingID() === session.id ? draftName() : undefined}
+                  editValue={
+                    editingID() === session.id ? draftName() : undefined
+                  }
                   onEditChange={setDraftName}
                   onEditCommit={() => {
                     const title = draftName().trim();
-                    if (editingID() === session.id && title && title !== session.name) {
+                    if (
+                      editingID() === session.id &&
+                      title &&
+                      title !== session.name
+                    ) {
                       void props.onRename?.(session.id, title);
                     }
                     setEditingID(null);
@@ -301,19 +357,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   );
   const [leftVisible, setLeftVisible] = createSignal(true);
   const [rightVisible, setRightVisible] = createSignal(true);
-  const [layoutMode, setLayoutMode] = createSignal<"wide" | "compact" | "tiny">("wide");
+  const [layoutMode, setLayoutMode] = createSignal<"wide" | "compact" | "tiny">(
+    "wide",
+  );
   const [naviOpen, setNaviOpen] = createSignal(true);
   const [mainDraft, setMainDraft] = createSignal("");
   const [chatDraft, setChatDraft] = createSignal("");
-  const [mainAttachments, setMainAttachments] = createSignal<ComposerAttachment[]>([]);
-  const [chatAttachments, setChatAttachments] = createSignal<ComposerAttachment[]>([]);
+  const [mainAttachments, setMainAttachments] = createSignal<
+    ComposerAttachment[]
+  >([]);
+  const [chatAttachments, setChatAttachments] = createSignal<
+    ComposerAttachment[]
+  >([]);
   const [selectedSession, setSelectedSession] = createSignal("");
   const [selectedSessionID, setSelectedSessionID] = createSignal("");
-  const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>([]);
+  const [sessionList, setSessionList] = createSignal<RuntimeSessionSummary[]>(
+    [],
+  );
   const [workspaces, setWorkspaces] = createSignal<WorkspaceSummary[]>([]);
   const [registeredTools, setRegisteredTools] = createSignal<string[]>([]);
-  const [panelRequirementContext, setPanelRequirementContext] =
-    createSignal<UiPanelRequirementContext | undefined>(undefined);
+  const [panelRequirementContext, setPanelRequirementContext] = createSignal<
+    UiPanelRequirementContext | undefined
+  >(undefined);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [pluginManagerOpen, setPluginManagerOpen] = createSignal(false);
   const [themeMode, setThemeMode] = createSignal(
@@ -344,19 +409,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
-  const [reviewRequestedTab, setReviewRequestedTab] = createSignal<"git" | "sandbox" | "checkpoint">("git");
-  const [reviewRequestedCheckpointID, setReviewRequestedCheckpointID] = createSignal<string | undefined>();
-  const [pendingRollback, setPendingRollback] = createSignal<{
-    turnID: string;
-    checkpointID?: string;
-    label: string;
-    hiddenAfter?: number;
-  } | undefined>();
-  const [rollbackNotice, setRollbackNotice] = createSignal<{
-    text: string;
-    safetyCheckpointID?: string;
-    restoredCount: number;
-  } | undefined>();
+  const [reviewRequestedTab, setReviewRequestedTab] = createSignal<
+    "git" | "sandbox" | "checkpoint"
+  >("git");
+  const [reviewRequestedCheckpointID, setReviewRequestedCheckpointID] =
+    createSignal<string | undefined>();
+  const [pendingRollback, setPendingRollback] = createSignal<
+    | {
+        turnID: string;
+        checkpointID?: string;
+        label: string;
+        hiddenAfter?: number;
+      }
+    | undefined
+  >();
+  const [rollbackNotice, setRollbackNotice] = createSignal<
+    | {
+        text: string;
+        safetyCheckpointID?: string;
+        restoredCount: number;
+      }
+    | undefined
+  >();
   const [panelRevision, setPanelRevision] = createSignal(0);
   const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
     createSignal(false);
@@ -379,8 +453,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let mainForceScroll = false;
   let chatForceScroll = false;
   const [permissionOpen, setPermissionOpen] = createSignal(false);
-  const [currentApproval, setCurrentApproval] = createSignal<Extract<RuntimeEvent, { type: "approval.request" }> | null>(null);
-  const [currentQuestion, setCurrentQuestion] = createSignal<Extract<RuntimeEvent, { type: "question.request" }> | null>(null);
+  const [currentApproval, setCurrentApproval] = createSignal<Extract<
+    RuntimeEvent,
+    { type: "approval.request" }
+  > | null>(null);
+  const [currentQuestion, setCurrentQuestion] = createSignal<Extract<
+    RuntimeEvent,
+    { type: "question.request" }
+  > | null>(null);
   const [questionOpen, setQuestionOpen] = createSignal(false);
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
@@ -394,14 +474,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [chatShowJumpToBottom, setChatShowJumpToBottom] = createSignal(false);
   const [chatElapsedMs, setChatElapsedMs] = createSignal(0);
   const activeTurnStartedAt = createSignal<number | undefined>(undefined);
-  const [activeTurnStartedAtValue, setActiveTurnStartedAt] = activeTurnStartedAt;
+  const [activeTurnStartedAtValue, setActiveTurnStartedAt] =
+    activeTurnStartedAt;
   const [modelOpen, setModelOpen] = createSignal(false);
-  const [modelCatalog, setModelCatalog] = createSignal<RuntimeModelCatalogEntry[]>([]);
+  const [modelCatalog, setModelCatalog] = createSignal<
+    RuntimeModelCatalogEntry[]
+  >([]);
   const [modelSelectionSignal, setModelSelectionSignal] = createSignal<
     { modelID?: string; variant?: string } | undefined
   >(undefined);
   const [config, setConfig] = createSignal<ConfigV3 | undefined>(undefined);
-  const [reasoningEffort, setReasoningEffortSignal] = createSignal<string>("medium");
+  const [reasoningEffort, setReasoningEffortSignal] =
+    createSignal<string>("medium");
   const [chatProfile, setChatProfile] = createSignal<ChatModelProfile>({});
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
@@ -419,9 +503,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let projectionFramePending = false;
   onCleanup(
     props.ctx.projection.subscribe((next) => {
-      const replaying = (globalThis as unknown as {
-        __nataliaReplayingHistory?: boolean;
-      }).__nataliaReplayingHistory;
+      const replaying = (
+        globalThis as unknown as {
+          __nataliaReplayingHistory?: boolean;
+        }
+      ).__nataliaReplayingHistory;
       // During a full history replay the projection emits one event at a time.
       // Cloning the whole AppState after every raw event is O(n^2) for long
       // sessions, so skip the heavy clones until the replay completes and then
@@ -490,7 +576,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   // element (re)appears.
   createEffect(() => {
     const el = transcriptEl();
-    const content = el?.querySelector<HTMLElement>(".natalia-transcript-content");
+    const content = el?.querySelector<HTMLElement>(
+      ".natalia-transcript-content",
+    );
     if (el) followObserver?.observe(el);
     if (content) followObserver?.observe(content);
     if (el) {
@@ -505,8 +593,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       });
     }
     const chatEl = chatTranscriptEl();
-    const chatContent =
-      chatEl?.querySelector<HTMLElement>(".natalia-transcript-content");
+    const chatContent = chatEl?.querySelector<HTMLElement>(
+      ".natalia-transcript-content",
+    );
     if (chatEl) followObserver?.observe(chatEl);
     if (chatContent) followObserver?.observe(chatContent);
     if (chatEl) {
@@ -577,20 +666,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const dataUrl = String(reader.result ?? "");
         const base64 = dataUrl.split(",")[1];
         if (!base64) return;
-        void props.ctx.runtime.uploadAttachment?.({
-          name: file.name || "clipboard.png",
-          mediaType: file.type || "image/png",
-          data: base64,
-        }).then((attachment) => {
-          setAttachments([
-            ...current,
-            {
-              path: attachment.path,
-              previewUrl: dataUrl,
-              name: attachment.filename,
-            },
-          ]);
-        });
+        void props.ctx.runtime
+          .uploadAttachment?.({
+            name: file.name || "clipboard.png",
+            mediaType: file.type || "image/png",
+            data: base64,
+          })
+          .then((attachment) => {
+            setAttachments([
+              ...current,
+              {
+                path: attachment.path,
+                previewUrl: dataUrl,
+                name: attachment.filename,
+              },
+            ]);
+          });
       };
       reader.readAsDataURL(file);
     }
@@ -629,7 +720,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           if (!userSelectedSession && sessions.length) {
             const active = state().sessionID;
             const target = active
-              ? sessions.find((session) => session.id === active && !session.archived)
+              ? sessions.find(
+                  (session) => session.id === active && !session.archived,
+                )
               : undefined;
             if (target) {
               setSelectedSessionID(target.id);
@@ -646,7 +739,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               const recent = sessions
                 .filter((session) => !session.archived)
                 .sort((a, b) => sessionRecency(b) - sessionRecency(a));
-              const touched = recent.filter((session) => session.lastAccessedAt);
+              const touched = recent.filter(
+                (session) => session.lastAccessedAt,
+              );
               const meaningful = recent.filter(
                 (session) => session.title && session.title !== "New session",
               );
@@ -696,9 +791,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       await refreshWorkspaces();
       await refreshSessions();
     } catch (error: unknown) {
-      setWorkspaceError(
-        error instanceof Error ? error.message : String(error),
-      );
+      setWorkspaceError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -885,7 +978,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             sessionTurnID(candidate.id) === turnID && candidate.role === "user",
         )
       : undefined;
-    const targetIndex = messages.findIndex((candidate) => candidate.id === message.id);
+    const targetIndex = messages.findIndex(
+      (candidate) => candidate.id === message.id,
+    );
     if (userMessage) setMainDraft(userMessage.content);
     setPendingRollback({
       turnID: turnID ?? message.id,
@@ -959,7 +1054,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   async function physicallyDeleteSelectedSession() {
     const targetID = selectedSessionID();
     if (!targetID) return;
-    if (!window.confirm(`确定要彻底删除会话“${selectedSession()}”吗？这会删除会话记录和附件，无法恢复。`)) {
+    if (
+      !window.confirm(
+        `确定要彻底删除会话“${selectedSession()}”吗？这会删除会话记录和附件，无法恢复。`,
+      )
+    ) {
       return;
     }
     try {
@@ -1013,15 +1112,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       selectionResult.value?.modelID
     )
       setModelSelectionSignal(selectionResult.value);
-    if (
-      effortResult.status === "fulfilled" &&
-      effortResult.value
-    )
+    if (effortResult.status === "fulfilled" && effortResult.value)
       setReasoningEffortSignal(effortResult.value);
     if (
       profileResult.status === "fulfilled" &&
       profileResult.value &&
-      (profileResult.value.normal?.modelID || profileResult.value.expert?.modelID)
+      (profileResult.value.normal?.modelID ||
+        profileResult.value.expert?.modelID)
     )
       setChatProfile(profileResult.value);
   }
@@ -1050,9 +1147,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // whenever the multi-workspace runtime publishes a routing event.
     onCleanup(
       props.ctx.events.subscribe((event) => {
-        const replaying = (globalThis as unknown as {
-          __nataliaReplayingHistory?: boolean;
-        }).__nataliaReplayingHistory;
+        const replaying = (
+          globalThis as unknown as {
+            __nataliaReplayingHistory?: boolean;
+          }
+        ).__nataliaReplayingHistory;
         if (replaying) return;
         const currentSession = selectedSessionID() || state().sessionID;
         if (
@@ -1172,25 +1271,33 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // Chat and subagents are secondary surfaces. Hydrate them in the
       // background so the primary transcript paints first and does not wait
       // for extra RPCs before the first visible frame.
-      const loadToken = (globalThis as unknown as {
-        __nataliaSessionLoadToken?: number;
-      }).__nataliaSessionLoadToken;
+      const loadToken = (
+        globalThis as unknown as {
+          __nataliaSessionLoadToken?: number;
+        }
+      ).__nataliaSessionLoadToken;
       void (async () => {
+        const chatStart = performance.now();
         const [naviChat, niaChat] = await Promise.all([
           props.ctx.runtime.chatMessages?.("navi"),
           props.ctx.runtime.chatMessages?.("nia"),
         ]);
+        console.warn(
+          `[perf] secondary chatMessages ${(performance.now() - chatStart).toFixed(1)}ms`,
+        );
         if (
           loadToken ===
-            (globalThis as unknown as { __nataliaSessionLoadToken?: number })
-              .__nataliaSessionLoadToken
+          (globalThis as unknown as { __nataliaSessionLoadToken?: number })
+            .__nataliaSessionLoadToken
         ) {
-          if (naviChat)
-            props.ctx.projection.hydrateChatMessages?.(naviChat);
-          if (niaChat)
-            props.ctx.projection.hydrateChatMessages?.(niaChat);
+          if (naviChat) props.ctx.projection.hydrateChatMessages?.(naviChat);
+          if (niaChat) props.ctx.projection.hydrateChatMessages?.(niaChat);
         }
+        const subagentsStart = performance.now();
         const subagents = await props.ctx.runtime.subagents?.();
+        console.warn(
+          `[perf] secondary subagents ${(performance.now() - subagentsStart).toFixed(1)}ms`,
+        );
         if (
           subagents &&
           loadToken ===
@@ -1198,7 +1305,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               .__nataliaSessionLoadToken
         )
           props.ctx.projection.hydrateSubagents?.(subagents);
+        const subagentHistoryStart = performance.now();
         const subagentHistory = await props.ctx.runtime.subagentHistory?.();
+        console.warn(
+          `[perf] secondary subagentHistory ${(performance.now() - subagentHistoryStart).toFixed(1)}ms`,
+        );
         if (
           subagentHistory &&
           loadToken ===
@@ -1234,10 +1345,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       if (isStaleLoad()) return;
       void (async () => {
         if (isStaleLoad()) return;
-        await Promise.all([
-          refreshSessions(),
-          hydrateRecentMessagesOnLoad(),
-        ]);
+        await Promise.all([refreshSessions(), hydrateRecentMessagesOnLoad()]);
         if (isStaleLoad()) return;
         // Session loading finished; take one projection snapshot instead of
         // cloning once per raw event.
@@ -1328,21 +1436,29 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   });
 
   function loadSecondaryStartupData() {
-    void createUiPanelRequirementContext(props.ctx.runtime).then(setPanelRequirementContext);
-    void props.ctx.runtime.modelCatalog?.().then((catalog) => setModelCatalog(catalog));
+    void createUiPanelRequirementContext(props.ctx.runtime).then(
+      setPanelRequirementContext,
+    );
+    void props.ctx.runtime
+      .modelCatalog?.()
+      .then((catalog) => setModelCatalog(catalog));
     void props.ctx.runtime.registeredTools?.().then((tools) => {
       if (tools) setRegisteredTools(tools.map((tool) => tool.name));
     });
     void refreshSessions();
     void refreshWorkspaces();
-    void props.ctx.runtime.configGet?.().then((nextConfig) => setConfig(nextConfig));
-    void props.ctx.runtime.plugins?.().then((plugins) => {
-      setInteractiveTerminalAvailable(
-        plugins.some((plugin) => plugin.id === "natalia-tool-terminal"),
-      );
-    }).catch(() => setInteractiveTerminalAvailable(false));
+    void props.ctx.runtime
+      .configGet?.()
+      .then((nextConfig) => setConfig(nextConfig));
+    void props.ctx.runtime
+      .plugins?.()
+      .then((plugins) => {
+        setInteractiveTerminalAvailable(
+          plugins.some((plugin) => plugin.id === "natalia-tool-terminal"),
+        );
+      })
+      .catch(() => setInteractiveTerminalAvailable(false));
   }
-
 
   const modelOptions = () =>
     (modelCatalog() ?? []).map((entry) => ({
@@ -1407,9 +1523,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         if (Array.isArray(parsed.answers)) {
           const text = parsed.answers
             .flatMap((answer) =>
-              Array.isArray(answer)
-                ? answer.map(String)
-                : [String(answer)],
+              Array.isArray(answer) ? answer.map(String) : [String(answer)],
             )
             .filter(Boolean)
             .join("; ");
@@ -1449,10 +1563,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const containerRect = el.getBoundingClientRect();
     for (const row of el.querySelectorAll<HTMLElement>("[data-message-id]")) {
       const rect = row.getBoundingClientRect();
-      if (
-        rect.bottom > containerRect.top &&
-        rect.top < containerRect.bottom
-      ) {
+      if (rect.bottom > containerRect.top && rect.top < containerRect.bottom) {
         const id = row.dataset.messageId;
         if (id) return { id, top: rect.top - containerRect.top };
       }
@@ -1472,7 +1583,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     if (!row) return;
     const containerRect = el.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
-    el.scrollTop = el.scrollTop + (rowRect.top - containerRect.top) - anchor.top;
+    el.scrollTop =
+      el.scrollTop + (rowRect.top - containerRect.top) - anchor.top;
     if (ledger === "transcript") transcriptObservedTop = el.scrollTop;
     else chatObservedTop = el.scrollTop;
   }
@@ -1507,7 +1619,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   async function loadNewerHistory() {
-    if (!newerHistoryCursor || loadingNewerHistory || !historyReplayDone) return;
+    if (!newerHistoryCursor || loadingNewerHistory || !historyReplayDone)
+      return;
     loadingNewerHistory = true;
     try {
       const page = await props.ctx.runtime.messages?.({
@@ -1751,7 +1864,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const startWidth = leftWidth();
     const move = (next: PointerEvent) =>
       setLeftWidth(
-        Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + next.clientX - startX)),
+        Math.max(
+          MIN_SIDEBAR_WIDTH,
+          Math.min(MAX_SIDEBAR_WIDTH, startWidth + next.clientX - startX),
+        ),
       );
     const finish = (next: PointerEvent) => {
       target.releasePointerCapture?.(next.pointerId);
@@ -1796,7 +1912,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     props.ctx.preferences.set("themeMode", next);
   }
 
-  function panelVisible(panel: { requires?: import("@natalia/contracts").UiPanelRequirement[] }) {
+  function panelVisible(panel: {
+    requires?: import("@natalia/contracts").UiPanelRequirement[];
+  }) {
     const context = panelRequirementContext();
     if (!context) return true;
     return uiPanelRequirementsSatisfied(context, panel.requires);
@@ -1806,9 +1924,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     panelRevision();
     return props.ctx.host
       ?.listPanels()
-      .find(
-        (item) => item.panel.id === "files" && panelVisible(item.panel),
-      );
+      .find((item) => item.panel.id === "files" && panelVisible(item.panel));
   };
 
   const terminalPanel = () => {
@@ -1838,7 +1954,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       { id: "nia", label: "Nia" },
       ...(todoPanel() ? [{ id: "todo" as RightTab, label: "待办" }] : []),
       { id: "agent", label: "协同" },
-      ...(terminalPanel() ? [{ id: "terminal" as RightTab, label: "终端" }] : []),
+      ...(terminalPanel()
+        ? [{ id: "terminal" as RightTab, label: "终端" }]
+        : []),
       ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
     ];
     const layout = layoutProfile();
@@ -1847,7 +1965,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       tabs.sort((a, b) => {
         const ai = order.indexOf(a.id);
         const bi = order.indexOf(b.id);
-        return (ai === -1 ? order.length : ai) - (bi === -1 ? order.length : bi);
+        return (
+          (ai === -1 ? order.length : ai) - (bi === -1 ? order.length : bi)
+        );
       });
     }
     return tabs;
@@ -1875,7 +1995,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return (
       props.ctx.host
         ?.listPanels()
-        .filter((item) => item.panel.region === "topbar" && panelVisible(item.panel)) ?? []
+        .filter(
+          (item) => item.panel.region === "topbar" && panelVisible(item.panel),
+        ) ?? []
     );
   };
 
@@ -1907,14 +2029,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const updateLayout = () => {
       const width = window.innerWidth;
       const height = window.innerHeight;
-      const screenWidth = window.screen?.availWidth || window.screen?.width || width;
-      const screenHeight = window.screen?.availHeight || window.screen?.height || height;
+      const screenWidth =
+        window.screen?.availWidth || window.screen?.width || width;
+      const screenHeight =
+        window.screen?.availHeight || window.screen?.height || height;
       const area = width * height;
       const quarterArea = screenWidth * screenHeight * 0.25;
       const tiny =
-        width <= 1000 ||
-        height <= screenHeight * 0.5 ||
-        area <= quarterArea;
+        width <= 1000 || height <= screenHeight * 0.5 || area <= quarterArea;
       const mode = tiny ? "tiny" : width <= 1700 ? "compact" : "wide";
       setLayoutMode(mode);
       if (mode !== "wide") {
@@ -1935,7 +2057,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const naviVisible = () =>
     layoutMode() === "wide" ||
     (layoutMode() === "compact" && !leftVisible() && !rightVisible()) ||
-    (layoutMode() === "tiny" && naviOpen() && !leftVisible() && !rightVisible());
+    (layoutMode() === "tiny" &&
+      naviOpen() &&
+      !leftVisible() &&
+      !rightVisible());
 
   let leftSidebarWasVisible = true;
   createEffect(() => {
@@ -1998,10 +2123,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         </div>
         <Show when={topbarPanel()}>
           <div class="neu-topbar-panel-dropdown">
-            <div
-              class="neu-topbar-panel-content"
-              ref={topbarPanelRef}
-            />
+            <div class="neu-topbar-panel-content" ref={topbarPanelRef} />
             <button
               type="button"
               class="neu-topbar-panel-close"
@@ -2138,674 +2260,809 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         </Show>
       </header>
       <div class="neu-app">
-      {/* Left session tree */}
-      {leftVisible() ? (
-        <>
-          <aside class="neu-sidebar" style={{ width: `${leftWidth()}px` }}>
-            <div class="neu-sidebar-header">
-              <span class="neu-sidebar-title">工作区</span>
-              <div class="neu-sidebar-actions">
-                <button
-                  type="button"
-                  class="neu-icon-btn"
-                  title="搜索会话"
-                  data-active={sessionSearchOpen()}
-                  onClick={() => {
-                    setSessionSearchOpen((value) => !value);
-                    setSidebarMenuOpen(false);
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                    <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" />
-                    <path d="M10.3 10.3L13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="neu-icon-btn"
-                  title="更多会话操作"
-                  data-active={sidebarMenuOpen()}
-                  onClick={() => {
-                    setSidebarMenuOpen((value) => !value);
-                    setSessionSearchOpen(false);
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                    <path d="M3 4.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-                    <circle cx="6" cy="4.5" r="1.6" fill="var(--neu-bg-light)" stroke="currentColor" stroke-width="1.3" />
-                    <path d="M3 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-                    <circle cx="10" cy="11.5" r="1.6" fill="var(--neu-bg-light)" stroke="currentColor" stroke-width="1.3" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="neu-icon-btn"
-                  title="批量选择"
-                  data-active={bulkSelectMode()}
-                  onClick={() => {
-                    setSidebarMenuOpen(false);
-                    setSessionSearchOpen(false);
-                    setBulkSelectMode((value) => !value);
-                    setBulkSelected(new Set<string>());
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                    <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.3" />
-                    <path d="M5.2 8.2L7 10L10.8 6.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="neu-icon-btn"
-                  title="新建会话"
-                  onClick={() => {
-                    setSidebarMenuOpen(false);
-                    void createSession();
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <Show when={sessionSearchOpen()}>
-              <input
-                class="neu-session-search"
-                placeholder="搜索会话..."
-                value={sessionQuery()}
-                onInput={(event) => setSessionQuery(event.currentTarget.value)}
-              />
-            </Show>
-            <Show when={bulkSelectMode()}>
-              <div class="neu-bulk-bar">
-                <span class="neu-bulk-count">已选 {bulkSelected().size} 项</span>
-                <div class="neu-bulk-actions">
+        {/* Left session tree */}
+        {leftVisible() ? (
+          <>
+            <aside class="neu-sidebar" style={{ width: `${leftWidth()}px` }}>
+              <div class="neu-sidebar-header">
+                <span class="neu-sidebar-title">工作区</span>
+                <div class="neu-sidebar-actions">
                   <button
                     type="button"
-                    class="neu-bulk-btn"
-                    onClick={() => toggleSelectAllVisible()}
-                  >
-                    全选
-                  </button>
-                  <button
-                    type="button"
-                    class="neu-bulk-btn"
-                    onClick={() => void bulkArchiveSelected()}
-                  >
-                    归档
-                  </button>
-                  <button
-                    type="button"
-                    class="neu-bulk-btn"
-                    onClick={() => void bulkRestoreSelected()}
-                  >
-                    恢复
-                  </button>
-                  <button
-                    type="button"
-                    class="neu-bulk-btn neu-bulk-btn-danger"
-                    onClick={() => void bulkDeleteSelected()}
-                  >
-                    删除
-                  </button>
-                  <button
-                    type="button"
-                    class="neu-bulk-btn"
+                    class="neu-icon-btn"
+                    title="搜索会话"
+                    data-active={sessionSearchOpen()}
                     onClick={() => {
-                      setBulkSelectMode(false);
+                      setSessionSearchOpen((value) => !value);
+                      setSidebarMenuOpen(false);
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                      <circle
+                        cx="7"
+                        cy="7"
+                        r="4.5"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                      />
+                      <path
+                        d="M10.3 10.3L13.5 13.5"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-icon-btn"
+                    title="更多会话操作"
+                    data-active={sidebarMenuOpen()}
+                    onClick={() => {
+                      setSidebarMenuOpen((value) => !value);
+                      setSessionSearchOpen(false);
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M3 4.5h10"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-linecap="round"
+                      />
+                      <circle
+                        cx="6"
+                        cy="4.5"
+                        r="1.6"
+                        fill="var(--neu-bg-light)"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                      />
+                      <path
+                        d="M3 11.5h10"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-linecap="round"
+                      />
+                      <circle
+                        cx="10"
+                        cy="11.5"
+                        r="1.6"
+                        fill="var(--neu-bg-light)"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-icon-btn"
+                    title="批量选择"
+                    data-active={bulkSelectMode()}
+                    onClick={() => {
+                      setSidebarMenuOpen(false);
+                      setSessionSearchOpen(false);
+                      setBulkSelectMode((value) => !value);
                       setBulkSelected(new Set<string>());
                     }}
                   >
-                    取消
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                      <rect
+                        x="2.5"
+                        y="2.5"
+                        width="11"
+                        height="11"
+                        rx="2"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                      />
+                      <path
+                        d="M5.2 8.2L7 10L10.8 6.2"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-icon-btn"
+                    title="新建会话"
+                    onClick={() => {
+                      setSidebarMenuOpen(false);
+                      void createSession();
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M8 3v10M3 8h10"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                      />
+                    </svg>
                   </button>
                 </div>
               </div>
-            </Show>
-            <Show when={sidebarMenuOpen()}>
-              <div class="neu-sidebar-menu">
-                <button
-                  type="button"
-                  class="neu-sidebar-menu-item"
-                  onClick={() => {
-                    setSidebarMenuOpen(false);
-                    setSessionMenuOpen(true);
+              <Show when={sessionSearchOpen()}>
+                <input
+                  class="neu-session-search"
+                  placeholder="搜索会话..."
+                  value={sessionQuery()}
+                  onInput={(event) =>
+                    setSessionQuery(event.currentTarget.value)
+                  }
+                />
+              </Show>
+              <Show when={bulkSelectMode()}>
+                <div class="neu-bulk-bar">
+                  <span class="neu-bulk-count">
+                    已选 {bulkSelected().size} 项
+                  </span>
+                  <div class="neu-bulk-actions">
+                    <button
+                      type="button"
+                      class="neu-bulk-btn"
+                      onClick={() => toggleSelectAllVisible()}
+                    >
+                      全选
+                    </button>
+                    <button
+                      type="button"
+                      class="neu-bulk-btn"
+                      onClick={() => void bulkArchiveSelected()}
+                    >
+                      归档
+                    </button>
+                    <button
+                      type="button"
+                      class="neu-bulk-btn"
+                      onClick={() => void bulkRestoreSelected()}
+                    >
+                      恢复
+                    </button>
+                    <button
+                      type="button"
+                      class="neu-bulk-btn neu-bulk-btn-danger"
+                      onClick={() => void bulkDeleteSelected()}
+                    >
+                      删除
+                    </button>
+                    <button
+                      type="button"
+                      class="neu-bulk-btn"
+                      onClick={() => {
+                        setBulkSelectMode(false);
+                        setBulkSelected(new Set<string>());
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </Show>
+              <Show when={sidebarMenuOpen()}>
+                <div class="neu-sidebar-menu">
+                  <button
+                    type="button"
+                    class="neu-sidebar-menu-item"
+                    onClick={() => {
+                      setSidebarMenuOpen(false);
+                      setSessionMenuOpen(true);
+                    }}
+                  >
+                    会话操作
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-sidebar-menu-item"
+                    onClick={() => {
+                      setSidebarMenuOpen(false);
+                      setWorkspaceOpen(true);
+                    }}
+                  >
+                    工作区管理
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-sidebar-menu-item"
+                    onClick={() => {
+                      setSidebarMenuOpen(false);
+                      setWorkspaceSettingsOpen(true);
+                    }}
+                  >
+                    工作区设置
+                  </button>
+                  <button
+                    type="button"
+                    class="neu-sidebar-menu-item neu-sidebar-menu-toggle"
+                    data-active={showArchived()}
+                    onClick={() => setShowArchived((value) => !value)}
+                  >
+                    显示归档
+                  </button>
+                </div>
+              </Show>
+              <div class="neu-sidebar-content">
+                <SessionTree
+                  selected={selectedSessionID()}
+                  sessions={visibleSessions()}
+                  workspaces={workspaces()}
+                  onRename={(id, title) => {
+                    void props.ctx.runtime
+                      .sessionRename?.(id, title)
+                      .then(() => refreshSessions());
                   }}
-                >
-                  会话操作
-                </button>
-                <button
-                  type="button"
-                  class="neu-sidebar-menu-item"
-                  onClick={() => {
-                    setSidebarMenuOpen(false);
-                    setWorkspaceOpen(true);
-                  }}
-                >
-                  工作区管理
-                </button>
-                <button
-                  type="button"
-                  class="neu-sidebar-menu-item"
-                  onClick={() => {
-                    setSidebarMenuOpen(false);
-                    setWorkspaceSettingsOpen(true);
-                  }}
-                >
-                  工作区设置
-                </button>
-                <button
-                  type="button"
-                  class="neu-sidebar-menu-item neu-sidebar-menu-toggle"
-                  data-active={showArchived()}
-                  onClick={() => setShowArchived((value) => !value)}
-                >
-                  显示归档
-                </button>
-              </div>
-            </Show>
-            <div class="neu-sidebar-content">
-              <SessionTree
-                selected={selectedSessionID()}
-                sessions={visibleSessions()}
-                workspaces={workspaces()}
-                onRename={(id, title) => {
-                  void props.ctx.runtime.sessionRename?.(id, title).then(() => refreshSessions());
-                }}
-                onSelect={(id, name) => {
-                  userSelectedSession = true;
-                  setSelectedSessionID(id);
-                  setSelectedSession(name);
-                  void props.ctx.runtime
-                    .sessionAttach?.(id)
-                    .then(() => {
+                  onSelect={(id, name) => {
+                    userSelectedSession = true;
+                    setSelectedSessionID(id);
+                    setSelectedSession(name);
+                    void props.ctx.runtime.sessionAttach?.(id).then(() => {
                       refreshSessions();
                       void loadPerSessionModelConfig(id);
                     });
-                }}
-                onRemoveWorkspace={(workspaceID) => {
-                  void removeWorkspace(workspaceID);
-                }}
-                onRestore={(sessionID) => {
-                  void restoreSession(sessionID);
-                }}
-                onArchive={(sessionID) => {
-                  void archiveSession(sessionID);
-                }}
-                bulkMode={bulkSelectMode()}
-                bulkSelected={(sessionID) => bulkSelected().has(sessionID)}
-                onBulkToggle={(sessionID) => toggleBulkSelected(sessionID)}
-              />
-            </div>
-          </aside>
-          <div
-            class="neu-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            onPointerDown={startLeftResize}
-          />
-        </>
-      ) : (
-        <button
-          type="button"
-          class="neu-collapsed-rail neu-left-rail"
-          onClick={() => setLeftVisible(true)}
-          title="展开左侧栏（Ctrl+B）"
-        >
-          <span class="neu-rail-dots" />
-        </button>
-      )}
+                  }}
+                  onRemoveWorkspace={(workspaceID) => {
+                    void removeWorkspace(workspaceID);
+                  }}
+                  onRestore={(sessionID) => {
+                    void restoreSession(sessionID);
+                  }}
+                  onArchive={(sessionID) => {
+                    void archiveSession(sessionID);
+                  }}
+                  bulkMode={bulkSelectMode()}
+                  bulkSelected={(sessionID) => bulkSelected().has(sessionID)}
+                  onBulkToggle={(sessionID) => toggleBulkSelected(sessionID)}
+                />
+              </div>
+            </aside>
+            <div
+              class="neu-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              onPointerDown={startLeftResize}
+            />
+          </>
+        ) : (
+          <button
+            type="button"
+            class="neu-collapsed-rail neu-left-rail"
+            onClick={() => setLeftVisible(true)}
+            title="展开左侧栏（Ctrl+B）"
+          >
+            <span class="neu-rail-dots" />
+          </button>
+        )}
 
-      {/* Middle dual agent panes */}
-      <section class="neu-main">
-        <div class="neu-main-panes">
-          <Show when={nataliaVisible()}>
-          <div class="neu-pane">
-            <div class="neu-pane-header">
-              <span class="neu-pane-title">Natalia</span>
-              <span class="neu-pane-status" data-running={state().activeTurn}>
-                {state().activeTurn ? "running" : "idle"}
-              </span>
-            </div>
-            <div class="neu-pane-content">
-              <Show when={selectedSessionID() || state().sessionID || "none"} keyed>
-              <div class="main-transcript-wrap">
-                <Transcript
-                  messages={visibleMainMessages()}
-                  emptyTitle="Natalia 已准备好"
-                  emptyHint="Natalia 会直接处理工作区任务。"
-                  assistantName="Natalia"
-                  assistantInitial="N"
-                  scrollRef={setTranscriptEl}
-                  onScroll={handleTranscriptScroll}
-                  loadAttachmentUrl={loadAttachmentUrl}
-                  onFork={forkSessionAtTurn}
-                  onRollback={rollbackDraftFromMessage}
-                  checkpointIDForMessage={checkpointIDForMessage}
-                />
-                <Show when={showJumpToBottom()}>
-                  <button
-                    type="button"
-                    class="neu-jump-bottom"
-                    onClick={jumpToBottom}
-                    title="跳到底部"
+        {/* Middle dual agent panes */}
+        <section class="neu-main">
+          <div class="neu-main-panes">
+            <Show when={nataliaVisible()}>
+              <div class="neu-pane">
+                <div class="neu-pane-header">
+                  <span class="neu-pane-title">Natalia</span>
+                  <span
+                    class="neu-pane-status"
+                    data-running={state().activeTurn}
                   >
-                    ↓
-                  </button>
-                </Show>
-              </div>
-              </Show>
-              <div class="neu-activity-bar" data-running={state().activeTurn}>
-                <span class="neu-activity-pulse" />
-                <span class="neu-activity-label">
-                  {state().activeTurn
-                    ? `${activityLabel()} · ${formatDuration(turnElapsedMs())}`
-                    : "idle"}
-                </span>
-              </div>
-              <div class="neu-main-toolbar">
-                <NeuSelect
-                  value={modelSelectionSignal()?.modelID ?? ""}
-                  options={modelOptions()}
-                  onChange={(modelID) => {
-                    const sessionID = selectedSessionID() || state().sessionID;
-                    setModelSelectionSignal({ modelID, variant: undefined });
-                    void props.ctx.runtime.selectModel?.(modelID, undefined, sessionID);
-                  }}
-                  placeholder="选择模型"
-                  menuPosition="top"
-                />
-                <NeuSelect
-                  value={reasoningEffort()}
-                  options={[
-                    { value: "minimal", label: "minimal" },
-                    { value: "low", label: "low" },
-                    { value: "medium", label: "medium" },
-                    { value: "high", label: "high" },
-                    { value: "xhigh", label: "xhigh" },
-                  ]}
-                  onChange={(effort) => {
-                    const sessionID = selectedSessionID() || state().sessionID;
-                    setReasoningEffortSignal(effort);
-                    void props.ctx.runtime.setReasoningEffort?.(effort as "minimal" | "low" | "medium" | "high" | "xhigh", sessionID);
-                  }}
-                  placeholder="推理强度"
-                  menuPosition="top"
-                />
-                <NeuSelect
-                  value={config()?.defaultAgentMode ?? "ask"}
-                  options={permissionOptions()}
-                  onChange={(permission) => void changePermission(permission)}
-                  placeholder="选择权限"
-                  menuPosition="top"
-                />
-              </div>
-              <Show when={pendingRollback()}>
-                <div class="neu-rollback-banner">
-                  <span>已准备回滚：{pendingRollback()!.label}</span>
-                  <span class="neu-rollback-hint">发送新消息后生效</span>
-                  <button
-                    type="button"
-                    class="neu-rollback-cancel"
-                    onClick={() => cancelPendingRollback()}
-                  >
-                    取消
-                  </button>
-                </div>
-              </Show>
-              <Show when={!pendingRollback() && rollbackNotice()}>
-                <div class="neu-rollback-banner">
-                  <span>{rollbackNotice()!.text}</span>
-                  <span class="neu-rollback-hint">
-                    发送新消息前可以重做这些更改
+                    {state().activeTurn ? "running" : "idle"}
                   </span>
-                  <Show when={rollbackNotice()!.safetyCheckpointID}>
-                    <button
-                      type="button"
-                      class="neu-rollback-redo"
-                      onClick={() => void redoAppliedRollback()}
-                    >
-                      重做
-                    </button>
-                  </Show>
-                  <button
-                    type="button"
-                    class="neu-rollback-cancel"
-                    onClick={() => setRollbackNotice(undefined)}
-                  >
-                    知道了
-                  </button>
                 </div>
-              </Show>
-              <Composer
-                value={mainDraft()}
-                placeholder="输入消息，使用 @ 提及文件…"
-                busy={Boolean(state().activeTurn)}
-                onInput={setMainDraft}
-                attachments={mainAttachments()}
-                onRemoveAttachment={(path) =>
-                  setMainAttachments(mainAttachments().filter((item) => item.path !== path))
-                }
-                onPaste={(event) => handlePasteAttachments(event, mainAttachments(), setMainAttachments)}
-                onSubmit={() => {
-                  const text = mainDraft();
-                  const paths = mainAttachments().map((item) => item.path);
-                  if (text.trim() || paths.length) {
-                    const rollback = pendingRollback();
-                    const submit = async () => {
-                      try {
-                        if (rollback?.checkpointID) {
-                          const preview =
-                            await props.ctx.runtime.checkpointRollback?.({
-                              id: rollback.checkpointID,
-                            });
-                          await refreshTranscript();
-                          setRollbackNotice({
-                            text: `已还原消息并恢复工作区检查点。`,
-                            safetyCheckpointID: preview?.safetyCheckpointID,
-                            restoredCount: 1,
-                          });
-                        } else if (rollback) {
-                          const sessionID = selectedSessionID() || state().sessionID;
-                          if (sessionID) {
-                            const result =
-                              await props.ctx.runtime.sessionRollbackMessages?.(
-                                sessionID,
-                                rollback.turnID,
-                              );
-                            await refreshTranscript();
-                            if (result) {
+                <div class="neu-pane-content">
+                  <Show
+                    when={selectedSessionID() || state().sessionID || "none"}
+                    keyed
+                  >
+                    <div class="main-transcript-wrap">
+                      <Transcript
+                        messages={visibleMainMessages()}
+                        emptyTitle="Natalia 已准备好"
+                        emptyHint="Natalia 会直接处理工作区任务。"
+                        assistantName="Natalia"
+                        assistantInitial="N"
+                        scrollRef={setTranscriptEl}
+                        onScroll={handleTranscriptScroll}
+                        loadAttachmentUrl={loadAttachmentUrl}
+                        onFork={forkSessionAtTurn}
+                        onRollback={rollbackDraftFromMessage}
+                        checkpointIDForMessage={checkpointIDForMessage}
+                      />
+                      <Show when={showJumpToBottom()}>
+                        <button
+                          type="button"
+                          class="neu-jump-bottom"
+                          onClick={jumpToBottom}
+                          title="跳到底部"
+                        >
+                          ↓
+                        </button>
+                      </Show>
+                    </div>
+                  </Show>
+                  <div
+                    class="neu-activity-bar"
+                    data-running={state().activeTurn}
+                  >
+                    <span class="neu-activity-pulse" />
+                    <span class="neu-activity-label">
+                      {state().activeTurn
+                        ? `${activityLabel()} · ${formatDuration(turnElapsedMs())}`
+                        : "idle"}
+                    </span>
+                  </div>
+                  <div class="neu-main-toolbar">
+                    <NeuSelect
+                      value={modelSelectionSignal()?.modelID ?? ""}
+                      options={modelOptions()}
+                      onChange={(modelID) => {
+                        const sessionID =
+                          selectedSessionID() || state().sessionID;
+                        setModelSelectionSignal({
+                          modelID,
+                          variant: undefined,
+                        });
+                        void props.ctx.runtime.selectModel?.(
+                          modelID,
+                          undefined,
+                          sessionID,
+                        );
+                      }}
+                      placeholder="选择模型"
+                      menuPosition="top"
+                    />
+                    <NeuSelect
+                      value={reasoningEffort()}
+                      options={[
+                        { value: "minimal", label: "minimal" },
+                        { value: "low", label: "low" },
+                        { value: "medium", label: "medium" },
+                        { value: "high", label: "high" },
+                        { value: "xhigh", label: "xhigh" },
+                      ]}
+                      onChange={(effort) => {
+                        const sessionID =
+                          selectedSessionID() || state().sessionID;
+                        setReasoningEffortSignal(effort);
+                        void props.ctx.runtime.setReasoningEffort?.(
+                          effort as
+                            | "minimal"
+                            | "low"
+                            | "medium"
+                            | "high"
+                            | "xhigh",
+                          sessionID,
+                        );
+                      }}
+                      placeholder="推理强度"
+                      menuPosition="top"
+                    />
+                    <NeuSelect
+                      value={config()?.defaultAgentMode ?? "ask"}
+                      options={permissionOptions()}
+                      onChange={(permission) =>
+                        void changePermission(permission)
+                      }
+                      placeholder="选择权限"
+                      menuPosition="top"
+                    />
+                  </div>
+                  <Show when={pendingRollback()}>
+                    <div class="neu-rollback-banner">
+                      <span>已准备回滚：{pendingRollback()!.label}</span>
+                      <span class="neu-rollback-hint">发送新消息后生效</span>
+                      <button
+                        type="button"
+                        class="neu-rollback-cancel"
+                        onClick={() => cancelPendingRollback()}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </Show>
+                  <Show when={!pendingRollback() && rollbackNotice()}>
+                    <div class="neu-rollback-banner">
+                      <span>{rollbackNotice()!.text}</span>
+                      <span class="neu-rollback-hint">
+                        发送新消息前可以重做这些更改
+                      </span>
+                      <Show when={rollbackNotice()!.safetyCheckpointID}>
+                        <button
+                          type="button"
+                          class="neu-rollback-redo"
+                          onClick={() => void redoAppliedRollback()}
+                        >
+                          重做
+                        </button>
+                      </Show>
+                      <button
+                        type="button"
+                        class="neu-rollback-cancel"
+                        onClick={() => setRollbackNotice(undefined)}
+                      >
+                        知道了
+                      </button>
+                    </div>
+                  </Show>
+                  <Composer
+                    value={mainDraft()}
+                    placeholder="输入消息，使用 @ 提及文件…"
+                    busy={Boolean(state().activeTurn)}
+                    onInput={setMainDraft}
+                    attachments={mainAttachments()}
+                    onRemoveAttachment={(path) =>
+                      setMainAttachments(
+                        mainAttachments().filter((item) => item.path !== path),
+                      )
+                    }
+                    onPaste={(event) =>
+                      handlePasteAttachments(
+                        event,
+                        mainAttachments(),
+                        setMainAttachments,
+                      )
+                    }
+                    onSubmit={() => {
+                      const text = mainDraft();
+                      const paths = mainAttachments().map((item) => item.path);
+                      if (text.trim() || paths.length) {
+                        const rollback = pendingRollback();
+                        const submit = async () => {
+                          try {
+                            if (rollback?.checkpointID) {
+                              const preview =
+                                await props.ctx.runtime.checkpointRollback?.({
+                                  id: rollback.checkpointID,
+                                });
+                              await refreshTranscript();
                               setRollbackNotice({
-                                text: result.safetyCheckpointID
-                                  ? `已还原 1 条消息，并创建了安全后悔点。`
-                                  : `已还原 1 条消息。没有可用的文件检查点，因此未恢复工作区更改。`,
-                                safetyCheckpointID: result.safetyCheckpointID,
+                                text: `已还原消息并恢复工作区检查点。`,
+                                safetyCheckpointID: preview?.safetyCheckpointID,
                                 restoredCount: 1,
                               });
+                            } else if (rollback) {
+                              const sessionID =
+                                selectedSessionID() || state().sessionID;
+                              if (sessionID) {
+                                const result =
+                                  await props.ctx.runtime.sessionRollbackMessages?.(
+                                    sessionID,
+                                    rollback.turnID,
+                                  );
+                                await refreshTranscript();
+                                if (result) {
+                                  setRollbackNotice({
+                                    text: result.safetyCheckpointID
+                                      ? `已还原 1 条消息，并创建了安全后悔点。`
+                                      : `已还原 1 条消息。没有可用的文件检查点，因此未恢复工作区更改。`,
+                                    safetyCheckpointID:
+                                      result.safetyCheckpointID,
+                                    restoredCount: 1,
+                                  });
+                                }
+                              }
+                            } else {
+                              setRollbackNotice(undefined);
                             }
+                            console.log("[web-plugin] send", text);
+                            if (paths.length && props.ctx.runtime.submitInput) {
+                              props.ctx.runtime.submitInput?.({
+                                text,
+                                attachments: paths,
+                              });
+                            } else {
+                              props.ctx.runtime.submit?.(text);
+                            }
+                          } finally {
+                            setMainDraft("");
+                            setMainAttachments([]);
+                            setPendingRollback(undefined);
                           }
-                        } else {
-                          setRollbackNotice(undefined);
-                        }
-                        console.log("[web-plugin] send", text);
-                        if (paths.length && props.ctx.runtime.submitInput) {
-                          props.ctx.runtime.submitInput?.({ text, attachments: paths });
-                        } else {
-                          props.ctx.runtime.submit?.(text);
-                        }
-                      } finally {
-                        setMainDraft("");
-                        setMainAttachments([]);
-                        setPendingRollback(undefined);
+                        };
+                        void submit();
                       }
-                    };
-                    void submit();
-                  }
-                }}
-                onStop={() => props.ctx.runtime.cancel?.()}
-              />
-            </div>
-          </div>
-          </Show>
+                    }}
+                    onStop={() => props.ctx.runtime.cancel?.()}
+                  />
+                </div>
+              </div>
+            </Show>
 
-          <Show when={layoutMode() !== "tiny"}>
-          <div class="neu-pane-divider" />
-          </Show>
+            <Show when={layoutMode() !== "tiny"}>
+              <div class="neu-pane-divider" />
+            </Show>
 
-          <Show when={naviVisible()}>
-          <div class="neu-pane">
-            <div class="neu-pane-header">
-              <span class="neu-pane-title">Navi</span>
-              <span class="neu-pane-status" data-running={naviChatActivity()}>
-                {naviChatActivity() ? "running" : "idle"}
-              </span>
-            </div>
-            <div class="neu-pane-content">
-              <Show when={selectedSessionID() || state().sessionID || "none"} keyed>
-              <div class="chat-transcript-wrap">
-                <Transcript
-                  messages={chatMessages()}
-                  emptyTitle="向 Navi 提问"
-                  emptyHint="Navi 用于规划和审查，不直接操作工作区。"
-                  assistantName="Navi"
-                  assistantInitial="V"
-                  scrollRef={setChatTranscriptEl}
-                  onScroll={handleChatTranscriptScroll}
-                  loadAttachmentUrl={loadAttachmentUrl}
-                />
-                <Show when={chatShowJumpToBottom()}>
-                  <button
-                    type="button"
-                    class="neu-jump-bottom"
-                    onClick={jumpChatToBottom}
-                    title="跳到底部"
+            <Show when={naviVisible()}>
+              <div class="neu-pane">
+                <div class="neu-pane-header">
+                  <span class="neu-pane-title">Navi</span>
+                  <span
+                    class="neu-pane-status"
+                    data-running={naviChatActivity()}
                   >
-                    ↓
-                  </button>
+                    {naviChatActivity() ? "running" : "idle"}
+                  </span>
+                </div>
+                <div class="neu-pane-content">
+                  <Show
+                    when={selectedSessionID() || state().sessionID || "none"}
+                    keyed
+                  >
+                    <div class="chat-transcript-wrap">
+                      <Transcript
+                        messages={chatMessages()}
+                        emptyTitle="向 Navi 提问"
+                        emptyHint="Navi 用于规划和审查，不直接操作工作区。"
+                        assistantName="Navi"
+                        assistantInitial="V"
+                        scrollRef={setChatTranscriptEl}
+                        onScroll={handleChatTranscriptScroll}
+                        loadAttachmentUrl={loadAttachmentUrl}
+                      />
+                      <Show when={chatShowJumpToBottom()}>
+                        <button
+                          type="button"
+                          class="neu-jump-bottom"
+                          onClick={jumpChatToBottom}
+                          title="跳到底部"
+                        >
+                          ↓
+                        </button>
+                      </Show>
+                    </div>
+                  </Show>
+                  <div
+                    class="neu-activity-bar"
+                    data-running={Boolean(naviChatActivity())}
+                  >
+                    <span class="neu-activity-pulse" />
+                    <span class="neu-activity-label">
+                      {naviChatActivity()
+                        ? `${chatActivityLabel()} · ${formatDuration(chatElapsedMs())}`
+                        : "idle"}
+                    </span>
+                  </div>
+                  <div class="neu-main-toolbar">
+                    <NeuSelect
+                      value={chatProfile().normal?.modelID ?? ""}
+                      options={modelOptions()}
+                      onChange={(modelID) =>
+                        void updateChatProfile({
+                          ...chatProfile(),
+                          normal: { ...chatProfile().normal, modelID },
+                        })
+                      }
+                      placeholder="Chat 模型"
+                      menuPosition="top"
+                    />
+                    <NeuSelect
+                      value={chatProfile().normal?.reasoningEffort ?? "medium"}
+                      options={[
+                        { value: "minimal", label: "minimal" },
+                        { value: "low", label: "low" },
+                        { value: "medium", label: "medium" },
+                        { value: "high", label: "high" },
+                        { value: "xhigh", label: "xhigh" },
+                      ]}
+                      onChange={(effort) =>
+                        void updateChatProfile({
+                          ...chatProfile(),
+                          normal: {
+                            ...chatProfile().normal,
+                            reasoningEffort: effort as
+                              | "minimal"
+                              | "low"
+                              | "medium"
+                              | "high"
+                              | "xhigh",
+                          },
+                        })
+                      }
+                      placeholder="Chat 推理"
+                      menuPosition="top"
+                    />
+                    <NeuSelect
+                      value={chatProfile().expert?.modelID ?? ""}
+                      options={modelOptions()}
+                      onChange={(modelID) =>
+                        void updateChatProfile({
+                          ...chatProfile(),
+                          expert: { ...chatProfile().expert, modelID },
+                        })
+                      }
+                      placeholder="专家模型"
+                      menuPosition="top"
+                    />
+                    <NeuSelect
+                      value={chatProfile().expert?.reasoningEffort ?? "medium"}
+                      options={[
+                        { value: "minimal", label: "minimal" },
+                        { value: "low", label: "low" },
+                        { value: "medium", label: "medium" },
+                        { value: "high", label: "high" },
+                        { value: "xhigh", label: "xhigh" },
+                      ]}
+                      onChange={(effort) =>
+                        void updateChatProfile({
+                          ...chatProfile(),
+                          expert: {
+                            ...chatProfile().expert,
+                            reasoningEffort: effort as
+                              | "minimal"
+                              | "low"
+                              | "medium"
+                              | "high"
+                              | "xhigh",
+                          },
+                        })
+                      }
+                      placeholder="专家推理"
+                      menuPosition="top"
+                    />
+                  </div>
+                  <Composer
+                    value={chatDraft()}
+                    placeholder="向 Navi 提问…"
+                    busy={Boolean(naviChatActivity())}
+                    onInput={setChatDraft}
+                    onStop={() => void props.ctx.runtime.chatAbort?.()}
+                    attachments={chatAttachments()}
+                    onRemoveAttachment={(path) =>
+                      setChatAttachments(
+                        chatAttachments().filter((item) => item.path !== path),
+                      )
+                    }
+                    onPaste={(event) =>
+                      handlePasteAttachments(
+                        event,
+                        chatAttachments(),
+                        setChatAttachments,
+                      )
+                    }
+                    onSubmit={() => {
+                      const text = chatDraft();
+                      if (text.trim() || chatAttachments().length) {
+                        console.log("[navi-ui] submitting chat", {
+                          text,
+                          attachments: chatAttachments().map(
+                            (item) => item.path,
+                          ),
+                        });
+                        const result = props.ctx.runtime.chatSubmit?.({
+                          text,
+                          ...(chatAttachments().length
+                            ? {
+                                attachments: chatAttachments().map(
+                                  (item) => item.path,
+                                ),
+                              }
+                            : {}),
+                        });
+                        if (result && typeof result.then === "function") {
+                          void result
+                            .then((value) =>
+                              console.log(
+                                "[navi-ui] chatSubmit resolved",
+                                value,
+                              ),
+                            )
+                            .catch((cause) =>
+                              console.error(
+                                "[navi-ui] chatSubmit failed",
+                                cause instanceof Error
+                                  ? cause.message
+                                  : String(cause),
+                              ),
+                            );
+                        }
+                        setChatDraft("");
+                        setChatAttachments([]);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </Show>
+          </div>
+        </section>
+
+        {/* Right secondary tabs */}
+        {rightVisible() ? (
+          <>
+            <div
+              class="neu-right-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              onPointerDown={startRightResize}
+            />
+            <aside class="neu-secondary" style={{ width: `${rightWidth()}px` }}>
+              <div class="neu-secondary-tabs">
+                <For each={rightTabs()}>
+                  {(tab) => (
+                    <button
+                      type="button"
+                      class="neu-secondary-tab"
+                      data-active={rightTab() === tab.id}
+                      onClick={() => setRightTab(tab.id)}
+                    >
+                      {tab.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+              <div class="neu-secondary-content">
+                <Show when={rightTab() === "diff"}>
+                  <ReviewPane
+                    runtime={props.ctx.runtime}
+                    requestedTab={reviewRequestedTab()}
+                    requestedCheckpointID={reviewRequestedCheckpointID()}
+                    sessionID={selectedSessionID() || state().sessionID}
+                  />
+                </Show>
+                <Show when={rightTab() === "plan"}>
+                  <PlanPanel state={state()} runtime={props.ctx.runtime} />
+                </Show>
+                <Show
+                  when={
+                    rightTab() === "nia"
+                      ? selectedSessionID() || state().sessionID || "none"
+                      : false
+                  }
+                  keyed
+                >
+                  <NiaPanel
+                    state={state()}
+                    runtime={props.ctx.runtime}
+                    sessionID={selectedSessionID() || state().sessionID}
+                  />
+                </Show>
+                <Show when={rightTab() === "todo" && todoPanel()}>
+                  <div
+                    class="neu-todo-host"
+                    style="height:100%;"
+                    ref={(element) => {
+                      if (element) mountTodoPanel(element);
+                    }}
+                  />
+                </Show>
+                <Show when={rightTab() === "agent"}>
+                  <AgentPanel
+                    state={state()}
+                    runtime={props.ctx.runtime}
+                    onOpenTerminal={() => setRightTab("terminal")}
+                  />
+                </Show>
+                <Show when={rightTab() === "terminal" && terminalPanel()}>
+                  <div
+                    class="neu-terminal-host"
+                    style="height:100%;"
+                    ref={(element) => {
+                      if (element) mountTerminalPanel(element);
+                    }}
+                  />
+                </Show>
+                <Show when={rightTab() === "files" && filePanel()}>
+                  <div
+                    class="neu-file-editor-host"
+                    ref={(element) => {
+                      if (element) mountFilePanel(element);
+                    }}
+                  />
                 </Show>
               </div>
-              </Show>
-              <div class="neu-activity-bar" data-running={Boolean(naviChatActivity())}>
-                <span class="neu-activity-pulse" />
-                <span class="neu-activity-label">
-                  {naviChatActivity()
-                    ? `${chatActivityLabel()} · ${formatDuration(chatElapsedMs())}`
-                    : "idle"}
-                </span>
-              </div>
-              <div class="neu-main-toolbar">
-                <NeuSelect
-                  value={chatProfile().normal?.modelID ?? ""}
-                  options={modelOptions()}
-                  onChange={(modelID) =>
-                    void updateChatProfile({
-                      ...chatProfile(),
-                      normal: { ...chatProfile().normal, modelID },
-                    })
-                  }
-                  placeholder="Chat 模型"
-                  menuPosition="top"
-                />
-                <NeuSelect
-                  value={chatProfile().normal?.reasoningEffort ?? "medium"}
-                  options={[
-                    { value: "minimal", label: "minimal" },
-                    { value: "low", label: "low" },
-                    { value: "medium", label: "medium" },
-                    { value: "high", label: "high" },
-                    { value: "xhigh", label: "xhigh" },
-                  ]}
-                  onChange={(effort) =>
-                    void updateChatProfile({
-                      ...chatProfile(),
-                      normal: {
-                        ...chatProfile().normal,
-                        reasoningEffort: effort as "minimal" | "low" | "medium" | "high" | "xhigh",
-                      },
-                    })
-                  }
-                  placeholder="Chat 推理"
-                  menuPosition="top"
-                />
-                <NeuSelect
-                  value={chatProfile().expert?.modelID ?? ""}
-                  options={modelOptions()}
-                  onChange={(modelID) =>
-                    void updateChatProfile({
-                      ...chatProfile(),
-                      expert: { ...chatProfile().expert, modelID },
-                    })
-                  }
-                  placeholder="专家模型"
-                  menuPosition="top"
-                />
-                <NeuSelect
-                  value={chatProfile().expert?.reasoningEffort ?? "medium"}
-                  options={[
-                    { value: "minimal", label: "minimal" },
-                    { value: "low", label: "low" },
-                    { value: "medium", label: "medium" },
-                    { value: "high", label: "high" },
-                    { value: "xhigh", label: "xhigh" },
-                  ]}
-                  onChange={(effort) =>
-                    void updateChatProfile({
-                      ...chatProfile(),
-                      expert: {
-                        ...chatProfile().expert,
-                        reasoningEffort: effort as "minimal" | "low" | "medium" | "high" | "xhigh",
-                      },
-                    })
-                  }
-                  placeholder="专家推理"
-                  menuPosition="top"
-                />
-              </div>
-              <Composer
-                value={chatDraft()}
-                placeholder="向 Navi 提问…"
-                busy={Boolean(naviChatActivity())}
-                onInput={setChatDraft}
-                onStop={() => void props.ctx.runtime.chatAbort?.()}
-                attachments={chatAttachments()}
-                onRemoveAttachment={(path) =>
-                  setChatAttachments(chatAttachments().filter((item) => item.path !== path))
-                }
-                onPaste={(event) => handlePasteAttachments(event, chatAttachments(), setChatAttachments)}
-                onSubmit={() => {
-                  const text = chatDraft();
-                  if (text.trim() || chatAttachments().length) {
-                    console.log("[navi-ui] submitting chat", {
-                      text,
-                      attachments: chatAttachments().map((item) => item.path),
-                    });
-                    const result = props.ctx.runtime.chatSubmit?.({
-                      text,
-                      ...(chatAttachments().length
-                        ? { attachments: chatAttachments().map((item) => item.path) }
-                        : {}),
-                    });
-                    if (result && typeof result.then === "function") {
-                      void result
-                        .then((value) =>
-                          console.log("[navi-ui] chatSubmit resolved", value),
-                        )
-                        .catch((cause) =>
-                          console.error(
-                            "[navi-ui] chatSubmit failed",
-                            cause instanceof Error
-                              ? cause.message
-                              : String(cause),
-                          ),
-                        );
-                    }
-                    setChatDraft("");
-                    setChatAttachments([]);
-                  }
-                }}
-              />
-            </div>
-          </div>
-          </Show>
-
-        </div>
-      </section>
-
-      {/* Right secondary tabs */}
-      {rightVisible() ? (
-        <>
-          <div
-            class="neu-right-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            onPointerDown={startRightResize}
-          />
-          <aside class="neu-secondary" style={{ width: `${rightWidth()}px` }}>
-            <div class="neu-secondary-tabs">
-              <For each={rightTabs()}>
-                {(tab) => (
-                  <button
-                    type="button"
-                    class="neu-secondary-tab"
-                    data-active={rightTab() === tab.id}
-                    onClick={() => setRightTab(tab.id)}
-                  >
-                    {tab.label}
-                  </button>
-                )}
-              </For>
-            </div>
-            <div class="neu-secondary-content">
-              <Show when={rightTab() === "diff"}>
-                <ReviewPane
-                  runtime={props.ctx.runtime}
-                  requestedTab={reviewRequestedTab()}
-                  requestedCheckpointID={reviewRequestedCheckpointID()}
-                />
-              </Show>
-              <Show when={rightTab() === "plan"}>
-                <PlanPanel state={state()} runtime={props.ctx.runtime} />
-              </Show>
-              <Show
-                when={
-                  rightTab() === "nia"
-                    ? selectedSessionID() || state().sessionID || "none"
-                    : false
-                }
-                keyed
-              >
-                <NiaPanel
-                  state={state()}
-                  runtime={props.ctx.runtime}
-                  sessionID={selectedSessionID() || state().sessionID}
-                />
-              </Show>
-              <Show when={rightTab() === "todo" && todoPanel()}>
-                <div
-                  class="neu-todo-host"
-                  style="height:100%;"
-                  ref={(element) => {
-                    if (element) mountTodoPanel(element);
-                  }}
-                />
-              </Show>
-              <Show when={rightTab() === "agent"}>
-                <AgentPanel
-                  state={state()}
-                  runtime={props.ctx.runtime}
-                  onOpenTerminal={() => setRightTab("terminal")}
-                />
-              </Show>
-              <Show when={rightTab() === "terminal" && terminalPanel()}>
-                <div
-                  class="neu-terminal-host"
-                  style="height:100%;"
-                  ref={(element) => {
-                    if (element) mountTerminalPanel(element);
-                  }}
-                />
-              </Show>
-              <Show when={rightTab() === "files" && filePanel()}>
-                <div
-                  class="neu-file-editor-host"
-                  ref={(element) => {
-                    if (element) mountFilePanel(element);
-                  }}
-                />
-              </Show>
-            </div>
-          </aside>
-        </>
-      ) : (
-        <button
-          type="button"
-          class="neu-collapsed-rail neu-right-rail"
-          onClick={() => setRightVisible(true)}
-          title="展开右侧栏（Ctrl+J）"
-        >
-          <span class="neu-rail-dots" />
-        </button>
-      )}
+            </aside>
+          </>
+        ) : (
+          <button
+            type="button"
+            class="neu-collapsed-rail neu-right-rail"
+            onClick={() => setRightVisible(true)}
+            title="展开右侧栏（Ctrl+J）"
+          >
+            <span class="neu-rail-dots" />
+          </button>
+        )}
       </div>
       <PermissionPanel
         open={permissionOpen()}
@@ -2827,7 +3084,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       />
       <WorkspaceSettingsPanel
         open={workspaceSettingsOpen()}
-        workspaceID={workspaces().find((entry) => entry.status === "active")?.workspaceID}
+        workspaceID={
+          workspaces().find((entry) => entry.status === "active")?.workspaceID
+        }
         runtime={props.ctx.runtime}
         onClose={() => setWorkspaceSettingsOpen(false)}
       />
@@ -2841,13 +3100,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           try {
             if (!path) return;
             if (!props.ctx.runtime.workspaceAdd) {
-              setWorkspaceError("当前 runtime 不支持 workspaceAdd，请确认连接的是 Natalia runtime serve");
+              setWorkspaceError(
+                "当前 runtime 不支持 workspaceAdd，请确认连接的是 Natalia runtime serve",
+              );
               throw new Error("workspaceAdd unsupported");
             }
-            const workspace = (await props.ctx.runtime.workspaceAdd({ path })) as WorkspaceSummary;
-            if (!workspace) throw new Error("workspaceAdd returned no workspace");
+            const workspace = (await props.ctx.runtime.workspaceAdd({
+              path,
+            })) as WorkspaceSummary;
+            if (!workspace)
+              throw new Error("workspaceAdd returned no workspace");
             if (workspace.status !== "active") {
-              await props.ctx.runtime.workspaceActivate?.(workspace.workspaceID);
+              await props.ctx.runtime.workspaceActivate?.(
+                workspace.workspaceID,
+              );
             }
             await refreshWorkspaces();
             await refreshSessions();
@@ -2877,8 +3143,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onClose={() => setSessionMenuOpen(false)}
         onPin={async () => {
           if (!selectedSessionID()) return;
-          const target = sessionList().find((entry) => entry.id === selectedSessionID());
-          await props.ctx.runtime.sessionPin?.(selectedSessionID(), !target?.pinned);
+          const target = sessionList().find(
+            (entry) => entry.id === selectedSessionID(),
+          );
+          await props.ctx.runtime.sessionPin?.(
+            selectedSessionID(),
+            !target?.pinned,
+          );
           await refreshSessions();
         }}
         onSnapshot={() => props.ctx.runtime.snapshot()}
@@ -2889,7 +3160,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }
         onDelete={() => physicallyDeleteSelectedSession()}
       />
-      <GovernancePanel open={governanceOpen()} onClose={() => setGovernanceOpen(false)} state={state()} runtime={props.ctx.runtime} />
+      <GovernancePanel
+        open={governanceOpen()}
+        onClose={() => setGovernanceOpen(false)}
+        state={state()}
+        runtime={props.ctx.runtime}
+      />
       <SandboxPanel
         open={sandboxOpen()}
         onClose={() => setSandboxOpen(false)}
@@ -2932,7 +3208,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 currentProviders[key]?.connection?.baseURL === input.baseURL &&
                 currentProviders[key]?.connection?.apiKey === input.apiKey,
             );
-          console.log("[provider-save] inferredPreviousName", inferredPreviousName);
+          console.log(
+            "[provider-save] inferredPreviousName",
+            inferredPreviousName,
+          );
           const providerPatch: Record<string, unknown> = {
             [input.name]: {
               name: input.label || input.name,
@@ -2946,7 +3225,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 headers: input.headers ?? {},
               },
             },
-            ...(inferredPreviousName ? { [inferredPreviousName]: undefined } : {}),
+            ...(inferredPreviousName
+              ? { [inferredPreviousName]: undefined }
+              : {}),
           };
           const modelsPatch = input.models?.length
             ? Object.fromEntries(
@@ -2972,7 +3253,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   catalog: {
                     providers: {
                       [input.name]: { models: modelsPatch },
-                      ...(inferredPreviousName ? { [inferredPreviousName]: undefined } : {}),
+                      ...(inferredPreviousName
+                        ? { [inferredPreviousName]: undefined }
+                        : {}),
                     },
                   },
                 }
@@ -2991,13 +3274,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             props.ctx.runtime.modelCatalog?.(),
           ]);
           if (nextConfig) {
-            console.log("[provider-save] config providers", Object.keys(nextConfig.providers));
+            console.log(
+              "[provider-save] config providers",
+              Object.keys(nextConfig.providers),
+            );
             setConfig(nextConfig);
           }
           if (nextCatalog) setModelCatalog(nextCatalog);
         }}
       />
-      <StatusPanel open={statusOpen()} onClose={() => setStatusOpen(false)} state={state()} runtime={props.ctx.runtime} />
+      <StatusPanel
+        open={statusOpen()}
+        onClose={() => setStatusOpen(false)}
+        state={state()}
+        runtime={props.ctx.runtime}
+      />
       <PluginManagerPanel
         open={pluginManagerOpen()}
         onClose={() => setPluginManagerOpen(false)}

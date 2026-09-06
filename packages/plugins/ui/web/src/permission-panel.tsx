@@ -40,7 +40,10 @@ export function PermissionPanel(props: {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-permission-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-permission-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">权限请求</span>
             <button
@@ -61,15 +64,23 @@ export function PermissionPanel(props: {
           </div>
           <div class="neu-permission-body">
             <div class="neu-permission-tool">
-              <span class="neu-permission-tool-name">{props.approval?.title ?? "权限请求"}</span>
+              <span class="neu-permission-tool-name">
+                {props.approval?.title ?? "权限请求"}
+              </span>
               <span class="neu-permission-tool-badge">需审批</span>
             </div>
             <div class="neu-permission-command">
               <span class="neu-permission-label">预览</span>
-              <pre class="neu-permission-command-text">{props.approval?.preview ?? "等待模型请求权限..."}</pre>
+              <pre class="neu-permission-command-text">
+                {props.approval?.preview ?? "等待模型请求权限..."}
+              </pre>
             </div>
             <div class="neu-permission-info">
-              {props.approval?.detail ? <span>{props.approval.detail}</span> : <span>来源：运行时</span>}
+              {props.approval?.detail ? (
+                <span>{props.approval.detail}</span>
+              ) : (
+                <span>来源：运行时</span>
+              )}
             </div>
           </div>
           <Show

@@ -35,12 +35,12 @@ export function ContextMenu(props: ContextMenuProps) {
     props.items
       .map((entry, index) => ({ entry, index }))
       .filter(
-        (candidate): candidate is {
+        (
+          candidate,
+        ): candidate is {
           entry: Extract<ContextMenuItem, { type: "item" }>;
           index: number;
-        } =>
-          candidate.entry.type !== "separator" &&
-          !candidate.entry.disabled,
+        } => candidate.entry.type !== "separator" && !candidate.entry.disabled,
       )
       .map(({ entry, index }) => ({ item: entry, index }));
 
@@ -50,8 +50,7 @@ export function ContextMenu(props: ContextMenuProps) {
     const currentIndex = list.findIndex(
       (entry) => entry.index === activeIndex(),
     );
-    const nextIndex =
-      (currentIndex + delta + list.length) % list.length;
+    const nextIndex = (currentIndex + delta + list.length) % list.length;
     setActiveIndex(list[nextIndex]!.index);
   }
 

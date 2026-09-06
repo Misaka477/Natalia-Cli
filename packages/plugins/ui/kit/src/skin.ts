@@ -70,7 +70,9 @@ export function applyUiSkin(
 }
 
 /** Convenience for layout-only profiles that are not tied to a visual skin. */
-export function defineUiLayoutProfile(profile: UiLayoutProfile): UiLayoutProfile {
+export function defineUiLayoutProfile(
+  profile: UiLayoutProfile,
+): UiLayoutProfile {
   return profile;
 }
 

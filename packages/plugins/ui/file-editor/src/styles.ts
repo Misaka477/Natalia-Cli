@@ -6,7 +6,8 @@ import { contextMenuStyles } from "@natalia/ui-kit";
  * These are intentionally injected by this plugin so the main web UI does not
  * need to know about CodeMirror or the file tree.
  */
-export const fileEditorStyles = `
+export const fileEditorStyles =
+  `
 /* ===== File tree + editor ===== */
 .neu-file-pane { flex: 1; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .neu-file-header {

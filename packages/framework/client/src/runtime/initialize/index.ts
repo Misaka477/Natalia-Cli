@@ -15,7 +15,9 @@ export function createInitialize(
   async function initialize() {
     const initStart = performance.now();
     const mark = (name: string) =>
-      console.warn(`[perf] initialize ${name} +${(performance.now() - initStart).toFixed(1)}ms`);
+      console.warn(
+        `[perf] initialize ${name} +${(performance.now() - initStart).toFixed(1)}ms`,
+      );
     mark("start");
     try {
       const config = await configureCatalog(ctx, options);

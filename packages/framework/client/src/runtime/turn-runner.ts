@@ -9,10 +9,7 @@
  * call time.
  */
 import { providerForModel } from "@natalia/runtime";
-import {
-  projectedCollabMessages,
-  projectedPlanDocs,
-} from "@natalia/session";
+import { projectedCollabMessages, projectedPlanDocs } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import {
   ATTACHMENT_SERVICE,

@@ -23,7 +23,11 @@ for (const packageDir of await readdirSorted(pluginsRoot)) {
     await readFile(join(abs, "package.json"), "utf8"),
   ) as { name: string };
   storeDependencies[packageJSON.name] = `file:../plugins/${packageDir}`;
-  const target = join(storeRoot, "node_modules", ...packageJSON.name.split("/"));
+  const target = join(
+    storeRoot,
+    "node_modules",
+    ...packageJSON.name.split("/"),
+  );
   await mkdir(join(target), { recursive: true });
   await cp(abs, target, { recursive: true });
   lockPlugins[manifest.id] = {
@@ -57,5 +61,7 @@ await writeFile(
 console.log(`[refresh-plugin-store] rebuilt ${storeRoot}`);
 
 async function readdirSorted(dir: string) {
-  return (await import("node:fs/promises")).readdir(dir).then((items) => items.sort());
+  return (await import("node:fs/promises"))
+    .readdir(dir)
+    .then((items) => items.sort());
 }

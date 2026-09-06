@@ -247,6 +247,7 @@ export type SandboxChangeView = {
   after?: string;
   additions?: number;
   deletions?: number;
+  structured?: import("@natalia/contracts").RuntimeStructuredDiff;
 };
 
 export type SandboxManifestView = {

@@ -117,12 +117,8 @@ test("sqlite init does not resurrect JSON sessions after they were deleted", asy
     join(tmpdir(), "natalia-session-store-no-resurrect-"),
   );
   const json = new JsonSessionStore(join(root, ".natalia", "sessions"));
-  await json.save(
-    createSessionRecord("ses_keep" as SessionID, "Keep"),
-  );
-  await json.save(
-    createSessionRecord("ses_gone" as SessionID, "Gone"),
-  );
+  await json.save(createSessionRecord("ses_keep" as SessionID, "Keep"));
+  await json.save(createSessionRecord("ses_gone" as SessionID, "Gone"));
   const first = createSessionStoreController({
     workspaceRoot: root,
     sessionID: () => "ses_host" as SessionID,
@@ -130,9 +126,9 @@ test("sqlite init does not resurrect JSON sessions after they were deleted", asy
     attachments: createAttachmentService(root),
   });
   await first.init();
-  expect((await first.list()).some((session) => session.id === "ses_keep")).toBe(
-    true,
-  );
+  expect(
+    (await first.list()).some((session) => session.id === "ses_keep"),
+  ).toBe(true);
   await first.delete("ses_gone" as SessionID);
   await json.save(createSessionRecord("ses_gone" as SessionID, "Gone again"));
   await first.close();
@@ -185,7 +181,9 @@ test("session store controller archives and restores a session without deleting 
 });
 
 test("session store controller rolls messages back to a turn boundary", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-session-message-rollback-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-session-message-rollback-"),
+  );
   const controller = createSessionStoreController({
     workspaceRoot: root,
     sessionID: () => "ses_host" as SessionID,

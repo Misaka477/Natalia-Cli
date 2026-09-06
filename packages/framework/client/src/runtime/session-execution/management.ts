@@ -17,9 +17,10 @@ export function createManagementSurface(
       if (!config) return { default: "ask", profiles: [] };
       return {
         default: config.defaultAgentMode,
-        profiles: Object.entries(config.agentModes).map(
-          ([name, profile]) => ({ name, ...profile }),
-        ),
+        profiles: Object.entries(config.agentModes).map(([name, profile]) => ({
+          name,
+          ...profile,
+        })),
       };
     },
     async permissionSave(input) {

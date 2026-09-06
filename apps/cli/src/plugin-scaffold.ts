@@ -52,7 +52,8 @@ export async function createPluginScaffold(input: {
   };
   if (template === "ui" || template === "ui-panel")
     dependencies["@natalia/contracts"] = cliPackage.version;
-  if (template === "ui-panel") dependencies["@natalia/ui-host"] = cliPackage.version;
+  if (template === "ui-panel")
+    dependencies["@natalia/ui-host"] = cliPackage.version;
   const manifest = {
     apiVersion: PLUGIN_API_VERSION,
     id: input.pluginID,
@@ -67,7 +68,8 @@ export async function createPluginScaffold(input: {
             ? "A Natalia tool plugin."
             : "A Natalia plugin.",
     entry: "src/index.js",
-    scope: template === "ui" || template === "ui-panel" ? "process" : "workspace",
+    scope:
+      template === "ui" || template === "ui-panel" ? "process" : "workspace",
     provides: [],
     requires: [],
     optionalRequires: [],
@@ -109,9 +111,7 @@ export async function createPluginScaffold(input: {
         : ["src", "natalia.plugin.json"],
     exports: {
       ".": `./${manifest.entry}`,
-      ...(template === "ui-panel"
-        ? { "./ui": "./src/ui/plugin.js" }
-        : {}),
+      ...(template === "ui-panel" ? { "./ui": "./src/ui/plugin.js" } : {}),
     },
     dependencies,
   };
@@ -125,7 +125,8 @@ export async function createPluginScaffold(input: {
   };
 
   await mkdir(resolve(directory, "src"), { recursive: true });
-  if (template === "ui-panel") await mkdir(resolve(directory, "src/ui"), { recursive: true });
+  if (template === "ui-panel")
+    await mkdir(resolve(directory, "src/ui"), { recursive: true });
   const writes = [
     writeJSON(resolve(directory, "package.json"), packageJSON),
     writeJSON(resolve(directory, "natalia.plugin.json"), manifest),
@@ -213,7 +214,10 @@ function pluginUiSource(
   if (language === "ts") {
     return `import { defineUiPlugin } from "@natalia/ui-host";
 
-export function create${input.uiPanelID.split(".").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}UiPlugin() {
+export function create${input.uiPanelID
+      .split(".")
+      .map((part) => part[0]!.toUpperCase() + part.slice(1))
+      .join("")}UiPlugin() {
   return defineUiPlugin({
     id: ${JSON.stringify(input.uiPanelID)},
     name: "Panel UI",
@@ -236,7 +240,10 @@ export function create${input.uiPanelID.split(".").map((part) => part[0]!.toUppe
   }
   return `import { defineUiPlugin } from "@natalia/ui-host";
 
-export function create${input.uiPanelID.split(".").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}UiPlugin() {
+export function create${input.uiPanelID
+    .split(".")
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join("")}UiPlugin() {
   return defineUiPlugin({
     id: ${JSON.stringify(input.uiPanelID)},
     name: "Panel UI",

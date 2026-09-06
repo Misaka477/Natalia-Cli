@@ -72,11 +72,7 @@ export function createPermissions(
     const base = policy.createHookLayer(options.toolPolicy);
     const agentLayer = agentPolicyLayer(agent);
     const profileLayer = permissionProfileLayer(profile);
-    const layers = [
-      base,
-      agentLayer,
-      profileLayer,
-    ];
+    const layers = [base, agentLayer, profileLayer];
     return {
       ...policy.createHookLayer(undefined, {
         preExecute: async (event) => {
@@ -85,10 +81,7 @@ export function createPermissions(
             if (!result.allowed) return result;
           }
           const args = ctx.ports.tryParseToolArguments(event.arguments);
-          for (const rules of [
-            agent?.permissions,
-            profile?.permissions,
-          ]) {
+          for (const rules of [agent?.permissions, profile?.permissions]) {
             const result = policy.evaluatePermissionRules(
               rules,
               event.toolName,

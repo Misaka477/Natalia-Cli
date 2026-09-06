@@ -8,7 +8,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 import { profileShellCommand } from "@natalia/platform";
 import type { RuntimeTool, ToolExecutionContext } from "@natalia/tools";
 import type {

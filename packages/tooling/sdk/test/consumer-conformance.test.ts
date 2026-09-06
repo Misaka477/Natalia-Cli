@@ -11,9 +11,7 @@ import type {
   RuntimeRPCError,
   SubmittedTurn,
 } from "@natalia/contracts";
-import {
-  createRealRuntimeClient,
-} from "@natalia/client";
+import { createRealRuntimeClient } from "@natalia/client";
 import { callRuntimeRPC } from "@natalia/transport";
 import { createRuntimeHttpServer } from "@natalia/transport/host";
 import { projectEvents, displayText, type AppState } from "@natalia/view-store";

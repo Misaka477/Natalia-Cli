@@ -91,7 +91,12 @@ const comparedTerminalFields = [
  *     Deep-comparing a cell grid on every keystroke would cost more than the
  *     dedupe saves.
  */
-const uncomparedTerminalFields = ["type", "id", "screen", "workspaceID"] as const;
+const uncomparedTerminalFields = [
+  "type",
+  "id",
+  "screen",
+  "workspaceID",
+] as const;
 
 type ClassifiedTerminalField =
   | (typeof comparedTerminalFields)[number]

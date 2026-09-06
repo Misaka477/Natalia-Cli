@@ -1,6 +1,10 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { AppState, CapabilityView, ToolBlock } from "@natalia/view-store";
-import type { RuntimeClient, RuntimeDiagnostic, RuntimeStatusSnapshot } from "@natalia/contracts";
+import type {
+  RuntimeClient,
+  RuntimeDiagnostic,
+  RuntimeStatusSnapshot,
+} from "@natalia/contracts";
 
 type Tab = "status" | "diagnostics" | "tools";
 
@@ -11,24 +15,31 @@ function formatToolDetail(tool: ToolBlock): string {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const parts: string[] = [];
       if (typeof parsed.id === "string") parts.push(`id: ${parsed.id}`);
-      if (typeof parsed.terminalID === "string") parts.push(`terminal: ${parsed.terminalID}`);
+      if (typeof parsed.terminalID === "string")
+        parts.push(`terminal: ${parsed.terminalID}`);
       if (typeof parsed.writtenBytes === "number")
         parts.push(`写入 ${parsed.writtenBytes} 字节`);
       if (typeof parsed.delivery === "string")
         parts.push(`delivery: ${parsed.delivery}`);
-      if ("submitted" in parsed) parts.push(`submitted: ${String(parsed.submitted)}`);
+      if ("submitted" in parsed)
+        parts.push(`submitted: ${String(parsed.submitted)}`);
       if (typeof parsed.terminalKey === "string")
         parts.push(`按键: ${parsed.terminalKey}`);
       if (typeof parsed.path === "string") parts.push(`路径: ${parsed.path}`);
-      if (typeof parsed.text === "string" && parsed.text) parts.push(parsed.text);
-      if (typeof parsed.command === "string" && parsed.command) parts.push(parsed.command);
+      if (typeof parsed.text === "string" && parsed.text)
+        parts.push(parsed.text);
+      if (typeof parsed.command === "string" && parsed.command)
+        parts.push(parsed.command);
       if (Array.isArray(parsed.items) || Array.isArray(parsed.todos))
         parts.push(
           `todo 数量: ${((parsed.items as unknown[] | undefined) ?? (parsed.todos as unknown[] | undefined))!.length}`,
         );
       if (parts.length) return parts.join("\n");
       return Object.entries(parsed)
-        .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`)
+        .map(
+          ([key, value]) =>
+            `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
+        )
         .join("\n");
     }
   } catch {
@@ -70,9 +81,13 @@ export function StatusPanel(props: {
   runtime?: RuntimeClient;
 }) {
   const [tab, setTab] = createSignal<Tab>("status");
-  const [statusData, setStatusData] = createSignal<RuntimeStatusSnapshot | undefined>();
+  const [statusData, setStatusData] = createSignal<
+    RuntimeStatusSnapshot | undefined
+  >();
   const [diagRows, setDiagRows] = createSignal<RuntimeDiagnostic[]>([]);
-  const [expandedTool, setExpandedTool] = createSignal<string | undefined>(undefined);
+  const [expandedTool, setExpandedTool] = createSignal<string | undefined>(
+    undefined,
+  );
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -82,7 +97,9 @@ export function StatusPanel(props: {
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
 
     if (props.runtime) {
-      void props.runtime.runtimeStatus?.().then((value) => setStatusData(value));
+      void props.runtime
+        .runtimeStatus?.()
+        .then((value) => setStatusData(value));
       void props.runtime.diagnostics?.().then((value) => {
         if (value) setDiagRows(value);
       });
@@ -92,7 +109,10 @@ export function StatusPanel(props: {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-status-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-status-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">状态与诊断</span>
             <button
@@ -142,27 +162,41 @@ export function StatusPanel(props: {
               <div class="neu-status-grid">
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">Runtime</span>
-                  <span class="neu-status-card-value">{props.state.status}</span>
+                  <span class="neu-status-card-value">
+                    {props.state.status}
+                  </span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">当前模型</span>
-                  <span class="neu-status-card-value">{statusData()?.model ?? props.state.modelSelection?.modelID ?? "未选择"}</span>
+                  <span class="neu-status-card-value">
+                    {statusData()?.model ??
+                      props.state.modelSelection?.modelID ??
+                      "未选择"}
+                  </span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">Provider</span>
-                  <span class="neu-status-card-value">{statusData()?.provider ?? "未选择"}</span>
+                  <span class="neu-status-card-value">
+                    {statusData()?.provider ?? "未选择"}
+                  </span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">工作区</span>
-                  <span class="neu-status-card-value">{statusData()?.cwd ?? "unknown"}</span>
+                  <span class="neu-status-card-value">
+                    {statusData()?.cwd ?? "unknown"}
+                  </span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">会话</span>
-                  <span class="neu-status-card-value">{props.state.sessionID ?? "无"}</span>
+                  <span class="neu-status-card-value">
+                    {props.state.sessionID ?? "无"}
+                  </span>
                 </div>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">上下文</span>
-                  <span class="neu-status-card-value">{statusData()?.context ?? "—"}</span>
+                  <span class="neu-status-card-value">
+                    {statusData()?.context ?? "—"}
+                  </span>
                 </div>
               </div>
             </Show>
@@ -198,8 +232,14 @@ export function StatusPanel(props: {
                         }
                       >
                         <span class="neu-status-tool-name">{tool.name}</span>
-                        <span class="neu-status-tool-arrow">{expandedTool() === tool.name + tool.callID ? "▾" : "▸"}</span>
-                        <span class="neu-status-tool-status">{tool.status}</span>
+                        <span class="neu-status-tool-arrow">
+                          {expandedTool() === tool.name + tool.callID
+                            ? "▾"
+                            : "▸"}
+                        </span>
+                        <span class="neu-status-tool-status">
+                          {tool.status}
+                        </span>
                       </button>
                       <Show when={expandedTool() === tool.name + tool.callID}>
                         <div class="neu-status-tool-detail">
@@ -208,7 +248,10 @@ export function StatusPanel(props: {
                           </div>
                           <Show when={needsRawDetail(tool)}>
                             <pre class="neu-status-tool-detail-raw">
-                              {tool.result ?? tool.summary ?? tool.argumentsRaw ?? ""}
+                              {tool.result ??
+                                tool.summary ??
+                                tool.argumentsRaw ??
+                                ""}
                             </pre>
                           </Show>
                         </div>
@@ -220,9 +263,13 @@ export function StatusPanel(props: {
                 <For each={Object.values(props.state.capabilities)}>
                   {(cap: CapabilityView) => (
                     <div class="neu-status-cap-row">
-                      <span class="neu-status-cap-name">{cap.name ?? cap.id}</span>
+                      <span class="neu-status-cap-name">
+                        {cap.name ?? cap.id}
+                      </span>
                       <span class="neu-status-cap-version">v{cap.version}</span>
-                      <span class="neu-status-cap-grants">{(cap.grants ?? []).join(" · ")}</span>
+                      <span class="neu-status-cap-grants">
+                        {(cap.grants ?? []).join(" · ")}
+                      </span>
                     </div>
                   )}
                 </For>

@@ -54,7 +54,6 @@ test("web_fetch finalizes fetched content by stripping script blocks", () => {
   expect(finalized).toContain("<p>hello</p>");
 });
 
-
 test("web_search uses a native configured endpoint without proxying Go", async () => {
   const saved = process.env.NATALIA_WEB_SEARCH_URL;
   const server = Bun.serve({
@@ -105,7 +104,6 @@ test("web_search selects the configured endpoint only when its priority permits"
     configured.stop(true);
   }
 });
-
 
 test("web tools do not own browser tools", () => {
   const names = webToolFamily().tools.map((tool) => tool.name);

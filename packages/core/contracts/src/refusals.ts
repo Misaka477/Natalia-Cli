@@ -181,7 +181,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "deleted",
     note: "a delete moves to the system trash or reports a refusal; the value carries the outcome",
   },
-  workspaceWriteConflicts: { refusal: "none", note: "pure local lock-state read" },
+  workspaceWriteConflicts: {
+    refusal: "none",
+    note: "pure local lock-state read",
+  },
   workspaceGlob: {
     refusal: "error",
     note: "path and pattern policy refuse",
@@ -342,7 +345,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "an unknown session, active turn, or pending interactive request leaves no safe partial attach",
   },
   subagents: { refusal: "none", note: "pure read" },
-  subagentHistory: { refusal: "none", note: "pure read of persisted subagent history" },
+  subagentHistory: {
+    refusal: "none",
+    note: "pure read of persisted subagent history",
+  },
   uploadAttachment: {
     refusal: "error",
     note: "an unknown path or policy refusal is an argument error",
@@ -439,7 +445,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "enabled",
     note: "enables or disables an installed plugin for the workspace",
   },
-  pluginCatalog: { refusal: "none", note: "pure read of the installed plugin catalog" },
+  pluginCatalog: {
+    refusal: "none",
+    note: "pure read of the installed plugin catalog",
+  },
   commandCatalog: { refusal: "none", note: "pure read" },
   commandExecute: {
     refusal: "error",
@@ -525,6 +534,30 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read of the object-store backed workspace diff; may include file content from the shared object library",
   },
+  astDiff: {
+    refusal: "none",
+    note: "pure structural AST diff in runtime; returns node summaries, no writes",
+  },
+  astDiffBatch: {
+    refusal: "none",
+    note: "pure batch structural AST diff in runtime; returns node summaries per file, no writes",
+  },
+  astRefactorPreview: {
+    refusal: "none",
+    note: "pure structural refactor preview in runtime; returns node summaries, never writes",
+  },
+  astService: {
+    refusal: "none",
+    note: "pure AST index/query in runtime; builds structural indexes, never writes",
+  },
+  astRefactorPlan: {
+    refusal: "none",
+    note: "pure refactor plan generation in runtime; returns structural targets, never writes",
+  },
+  astApplyRefactor: {
+    refusal: "error",
+    note: "an unsupported language or an unsafe plan refuses before any file is written",
+  },
   workspaceGitDiff: {
     refusal: "none",
     note: "pure read of git status and git diff; may include file content from the working tree",
@@ -583,7 +616,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
 
   // --- Markdown plan document registry (replaces P8 C4) ---
   planDocList: { refusal: "none", note: "pure read of the plan registry" },
-  planDocRead: { refusal: "none", note: "pure read of a Markdown plan document" },
+  planDocRead: {
+    refusal: "none",
+    note: "pure read of a Markdown plan document",
+  },
   planDocWrite: {
     refusal: "value",
     expressedBy: "written",
@@ -599,13 +635,15 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "deleted",
     note: "deletes a plan registry record; does not delete the Markdown file",
   },
-  planDocStatus: { refusal: "none", note: "pure read of one plan's lifecycle status" },
+  planDocStatus: {
+    refusal: "none",
+    note: "pure read of one plan's lifecycle status",
+  },
   planDocUpdateStatus: {
     refusal: "value",
     expressedBy: "updated",
     note: "updates a plan document lifecycle status",
   },
-
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 
 type AssertNever<T extends never> = T;

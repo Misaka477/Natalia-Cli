@@ -33,12 +33,12 @@ test("seeding a fresh journal publishes all three rules as durable facts", () =>
     "C-REL-001",
     "C-REL-002",
   ]);
-  expect(seeded.find((rule) => rule.ruleID === "C-REL-001")?.overridePolicy).toBe(
-    "user_scoped",
-  );
-  expect(seeded.find((rule) => rule.ruleID === "C-REL-002")?.overridePolicy).toBe(
-    "forbidden",
-  );
+  expect(
+    seeded.find((rule) => rule.ruleID === "C-REL-001")?.overridePolicy,
+  ).toBe("user_scoped");
+  expect(
+    seeded.find((rule) => rule.ruleID === "C-REL-002")?.overridePolicy,
+  ).toBe("forbidden");
 });
 
 test("seeding is idempotent: a journal that already holds a rule is not reseeded", () => {

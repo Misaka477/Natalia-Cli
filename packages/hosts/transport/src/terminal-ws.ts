@@ -187,10 +187,7 @@ export function terminalWebsocketHandlers(client: TerminalHostClient) {
 export function upgradeTerminalSocket(
   request: Request,
   server: {
-    upgrade(
-      request: Request,
-      options: { data: TerminalSocketData },
-    ): boolean;
+    upgrade(request: Request, options: { data: TerminalSocketData }): boolean;
   },
   authorization: RuntimeAuthorizationContext | undefined,
 ) {

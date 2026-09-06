@@ -191,7 +191,7 @@ function createMainAgentChatTool(
   return {
     name: "collab_chat",
     description:
-      "Send or directly reply to an informal message with Navi or Nia. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means that sister already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. For a new message to Nia, set to to \"nia\"; otherwise it defaults to Navi. ",
+      'Send or directly reply to an informal message with Navi or Nia. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means that sister already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. For a new message to Nia, set to to "nia"; otherwise it defaults to Navi. ',
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -233,7 +233,11 @@ function createMainAgentChatTool(
         : undefined;
       const to =
         args.to ??
-        (target ? (target.from === "main_agent" ? target.to : target.from) : "live_chat");
+        (target
+          ? target.from === "main_agent"
+            ? target.to
+            : target.from
+          : "live_chat");
       let result;
       try {
         result = await ports.service.send({

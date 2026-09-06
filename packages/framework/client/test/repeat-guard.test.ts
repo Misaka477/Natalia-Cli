@@ -46,12 +46,16 @@ test("clearRepeat resets a key after a successful execution", () => {
 test("repeat keys normalize workspace absolute paths", () => {
   const a = repeatKey(
     "run_shell",
-    JSON.stringify({ command: 'cd "/home/user/project/build" && cmake --build .' }),
+    JSON.stringify({
+      command: 'cd "/home/user/project/build" && cmake --build .',
+    }),
     "/home/user/project",
   );
   const b = repeatKey(
     "run_shell",
-    JSON.stringify({ command: 'cd "/home/user/project/build" && cmake --build .' }),
+    JSON.stringify({
+      command: 'cd "/home/user/project/build" && cmake --build .',
+    }),
     "/home/user/project",
   );
   expect(a).toBe(b);

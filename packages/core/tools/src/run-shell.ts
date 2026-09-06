@@ -48,8 +48,12 @@ export async function runShell(
     let stdout = "";
     let stderr = "";
     const childEvents = child as unknown as NodeJS.EventEmitter & {
-      stdout?: { on(event: "data", listener: (chunk: Uint8Array) => void): unknown };
-      stderr?: { on(event: "data", listener: (chunk: Uint8Array) => void): unknown };
+      stdout?: {
+        on(event: "data", listener: (chunk: Uint8Array) => void): unknown;
+      };
+      stderr?: {
+        on(event: "data", listener: (chunk: Uint8Array) => void): unknown;
+      };
     };
     childEvents.stdout?.on("data", (chunk) => (stdout += String(chunk)));
     childEvents.stderr?.on("data", (chunk) => (stderr += String(chunk)));

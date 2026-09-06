@@ -1,6 +1,10 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
-import { defineUiPlugin, type UiPlugin, type UiPluginContext } from "@natalia/ui-host";
+import {
+  defineUiPlugin,
+  type UiPlugin,
+  type UiPluginContext,
+} from "@natalia/ui-host";
 import { TerminalPane } from "./terminal-panel";
 
 function TerminalPanelHost(props: { ctx: UiPluginContext }) {

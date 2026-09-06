@@ -214,9 +214,7 @@ test("pty controller isolates sessions via setActiveSession", async () => {
   expect(await controller.list()).toEqual([
     expect.objectContaining({ id: b.id }),
   ]);
-  await expect(controller.read(a.id)).rejects.toThrow(
-    /belongs to session/,
-  );
+  await expect(controller.read(a.id)).rejects.toThrow(/belongs to session/);
   await expect(controller.write(a.id, "from-b\n")).rejects.toThrow(
     /belongs to session/,
   );

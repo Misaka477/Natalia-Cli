@@ -7,9 +7,19 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const runtimeConfigPath = resolve(root, ".natalia", "global-config.json");
-const defaultRuntimeConfigPath = resolve(homedir(), ".config", "natalia-cli", "config.json");
+const defaultRuntimeConfigPath = resolve(
+  homedir(),
+  ".config",
+  "natalia-cli",
+  "config.json",
+);
 const runtimeWorkspacesPath = resolve(root, ".natalia", "workspaces.json");
-const defaultRuntimeWorkspacesPath = resolve(homedir(), ".config", "natalia-cli", "workspaces.json");
+const defaultRuntimeWorkspacesPath = resolve(
+  homedir(),
+  ".config",
+  "natalia-cli",
+  "workspaces.json",
+);
 mkdirSync(resolve(root, ".natalia"), { recursive: true });
 if (!existsSync(runtimeConfigPath) && existsSync(defaultRuntimeConfigPath)) {
   try {
@@ -18,7 +28,10 @@ if (!existsSync(runtimeConfigPath) && existsSync(defaultRuntimeConfigPath)) {
     // A missing or unreadable default config should not block the dev server.
   }
 }
-if (!existsSync(runtimeWorkspacesPath) && existsSync(defaultRuntimeWorkspacesPath)) {
+if (
+  !existsSync(runtimeWorkspacesPath) &&
+  existsSync(defaultRuntimeWorkspacesPath)
+) {
   try {
     copyFileSync(defaultRuntimeWorkspacesPath, runtimeWorkspacesPath);
   } catch {
@@ -78,18 +91,14 @@ serve.on("exit", (code) => {
 
 await waitForServer(port);
 
-const vite = spawn(
-  "npm",
-  ["--workspace", "@natalia/web-shell", "run", "dev"],
-  {
-    cwd: root,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      VITE_NATALIA_RUNTIME_URL: `http://127.0.0.1:${port}`,
-    },
+const vite = spawn("npm", ["--workspace", "@natalia/web-shell", "run", "dev"], {
+  cwd: root,
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    VITE_NATALIA_RUNTIME_URL: `http://127.0.0.1:${port}`,
   },
-);
+});
 
 async function shutdown(signal: string) {
   console.log(`[dev-web-ui] received ${signal}, shutting down`);

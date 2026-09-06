@@ -7,7 +7,12 @@
  */
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import type { CapabilityRegistryHost } from "@natalia/capability";
-import type { CollaborationParticipant, ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type {
+  CollaborationParticipant,
+  ConfigV3,
+  RuntimeEvent,
+  SessionID,
+} from "@natalia/contracts";
 import type {
   ContextLedgerFactory,
   CheckpointController,
@@ -172,7 +177,10 @@ export type RuntimePorts = {
     toolResource: string,
     commandText?: string,
   ) => string | undefined;
-  isToolAllowed: (toolName: string, exec: SessionExecutionState | undefined) => boolean;
+  isToolAllowed: (
+    toolName: string,
+    exec: SessionExecutionState | undefined,
+  ) => boolean;
   extensionToolPermission: (
     toolName: string,
     profile?: import("@natalia/contracts").PermissionProfile,
@@ -250,7 +258,9 @@ export type RuntimePorts = {
   getRuntimeContextConfig: () => RuntimeContextStatusConfig;
   getSessionID: () => SessionID;
   getProvider: () => StreamingProvider | undefined;
-  createToolPolicyLayer: (exec: SessionExecutionState | undefined) => ToolPolicyHookLayer;
+  createToolPolicyLayer: (
+    exec: SessionExecutionState | undefined,
+  ) => ToolPolicyHookLayer;
   getPermissionMode: () => "ask" | "auto" | "read_only";
   setPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getSelectedPermissionProfile: () =>

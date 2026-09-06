@@ -46,10 +46,7 @@ export function McpSettings(props: {
         ...(type() === "stdio"
           ? {
               command: command().trim().split(/\s+/)[0],
-              args: args()
-                .trim()
-                .split(/\s+/)
-                .filter(Boolean),
+              args: args().trim().split(/\s+/).filter(Boolean),
             }
           : { url: url().trim() }),
         enabled: true,
@@ -97,7 +94,9 @@ export function McpSettings(props: {
           <div class="neu-settings-item">
             <div class="neu-settings-item-main">
               <span class="neu-settings-item-label">暂无 MCP 服务器</span>
-              <span class="neu-settings-item-description">点击下方添加 MCP</span>
+              <span class="neu-settings-item-description">
+                点击下方添加 MCP
+              </span>
             </div>
           </div>
         }
@@ -127,9 +126,7 @@ export function McpSettings(props: {
           <select
             class="neu-form-input"
             value={type()}
-            onChange={(event) =>
-              setType(event.currentTarget.value as MCPType)
-            }
+            onChange={(event) => setType(event.currentTarget.value as MCPType)}
           >
             <option value="stdio">stdio</option>
             <option value="http">http</option>

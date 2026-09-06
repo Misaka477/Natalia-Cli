@@ -64,8 +64,7 @@ export function createExecuteOne(
     // D2: same shadowing as `executeToolCalls` — this segment's events and
     // ledger belong to the turn's session.
     const exec = executionBySession.get(turnSession.get(turnID) ?? sessionID);
-    if (!exec)
-      throw new Error(`no execution state for turn ${turnID}`);
+    if (!exec) throw new Error(`no execution state for turn ${turnID}`);
     const toolLayer = createToolPolicyLayer(exec);
     const toolPolicy =
       ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);

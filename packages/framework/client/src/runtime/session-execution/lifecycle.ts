@@ -91,7 +91,13 @@ export function createLifecycleSurface(
         input.patch as never,
         ctx.ports.getTsRuntimeConfig(),
       ) as never;
-      console.log("[updateConfig] begin", input.scope, "globalPath", options.globalConfigPath, JSON.stringify(patch, null, 2).slice(0, 4000));
+      console.log(
+        "[updateConfig] begin",
+        input.scope,
+        "globalPath",
+        options.globalConfigPath,
+        JSON.stringify(patch, null, 2).slice(0, 4000),
+      );
       // The TUI settings menu path, now a public surface: merge the patch onto
       // disk, then apply. The file is written either way; whether it takes
       // effect under a running turn is an ordinary answer, not an exception.
@@ -125,12 +131,17 @@ function normalizeProviderRenamePatch(
   const providersPatch = patch.providers as Record<string, unknown> | undefined;
   if (!providersPatch) return patch;
   const currentProviders = currentConfig?.providers ?? {};
-  const result: Record<string, unknown> = { ...patch, providers: { ...providersPatch } };
+  const result: Record<string, unknown> = {
+    ...patch,
+    providers: { ...providersPatch },
+  };
   const catalogPatch = patch.catalog as
     | { providers?: Record<string, unknown> }
     | undefined;
   const nextCatalog: { providers: Record<string, unknown> } | undefined =
-    catalogPatch ? { providers: { ...(catalogPatch.providers ?? {}) } } : undefined;
+    catalogPatch
+      ? { providers: { ...(catalogPatch.providers ?? {}) } }
+      : undefined;
   for (const [key, value] of Object.entries(providersPatch)) {
     if (value === undefined) continue;
     const provider = value as {
@@ -141,13 +152,16 @@ function normalizeProviderRenamePatch(
       (oldKey) =>
         oldKey !== key &&
         (currentProviders[oldKey]?.name === provider.name ||
-          (currentProviders[oldKey]?.connection?.baseURL === provider.connection?.baseURL &&
-            currentProviders[oldKey]?.connection?.apiKey === provider.connection?.apiKey)),
+          (currentProviders[oldKey]?.connection?.baseURL ===
+            provider.connection?.baseURL &&
+            currentProviders[oldKey]?.connection?.apiKey ===
+              provider.connection?.apiKey)),
     );
     if (match) {
       (result.providers as Record<string, unknown>)[match] = undefined;
       if (nextCatalog) {
-        if (nextCatalog.providers[key]) nextCatalog.providers[match] = undefined;
+        if (nextCatalog.providers[key])
+          nextCatalog.providers[match] = undefined;
         result.catalog = nextCatalog;
       }
       console.log("[updateConfig] provider rename inferred", match, "->", key);

@@ -182,12 +182,11 @@ export function createSessionExecution(
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
     else if (checkpointHasSummary && latestContextCheckpoint)
       execContext.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
-    const restoreEvents =
-      epoch
-        ? sessionStore.contextEventsAfter(sessionID, epoch)!
-        : checkpointHasSummary && latestContextCheckpoint
-          ? projection.replayableEvents.slice(checkpointIndex + 1)
-          : projection.replayableEvents;
+    const restoreEvents = epoch
+      ? sessionStore.contextEventsAfter(sessionID, epoch)!
+      : checkpointHasSummary && latestContextCheckpoint
+        ? projection.replayableEvents.slice(checkpointIndex + 1)
+        : projection.replayableEvents;
     contextLedgerFactory.restore(execContext, restoreEvents);
     console.warn("[context-restore] ensureExecution", {
       sessionID,
@@ -226,10 +225,8 @@ export function createSessionExecution(
       selectedAgent: projection.selectedAgent
         ? getAgentRegistry()?.select(projection.selectedAgent)
         : undefined,
-      selectedModel:
-        recovery?.selectedModel ?? projection.selectedModel,
-      reasoningEffort:
-        recovery?.reasoningEffort ?? projection.reasoningEffort,
+      selectedModel: recovery?.selectedModel ?? projection.selectedModel,
+      reasoningEffort: recovery?.reasoningEffort ?? projection.reasoningEffort,
       chatModelProfile:
         recovery?.chatModelProfile ?? projection.chatModelProfile,
       paused: false,

@@ -54,7 +54,10 @@ export default defineConfig({
       "solid-js/jsx-runtime": resolve(solidJs, "dist/solid.js"),
       "solid-js/jsx-dev-runtime": resolve(solidJs, "dist/solid.js"),
       "solid-js": solidJs,
-      "@natalia/transport": resolve(workspace, "packages/hosts/transport/src/rpc-client.ts"),
+      "@natalia/transport": resolve(
+        workspace,
+        "packages/hosts/transport/src/rpc-client.ts",
+      ),
       "@natalia/plugin-mcp/ui": mcpUiSrc,
       "@natalia/plugin-skills/ui": skillsUiSrc,
     },
@@ -67,7 +70,7 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',
+    host: "0.0.0.0",
     port: 5173,
     fs: { allow: [workspace] },
   },

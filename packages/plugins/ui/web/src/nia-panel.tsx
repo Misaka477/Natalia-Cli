@@ -149,8 +149,9 @@ export function NiaPanel(props: {
 
   createEffect(() => {
     const el = niaTranscriptEl();
-    const content =
-      el?.querySelector<HTMLElement>(".natalia-transcript-content");
+    const content = el?.querySelector<HTMLElement>(
+      ".natalia-transcript-content",
+    );
     if (el) niaObserver?.observe(el);
     if (content) niaObserver?.observe(content);
     if (el) {
@@ -200,7 +201,12 @@ export function NiaPanel(props: {
       await props.runtime?.chatSubmit?.({
         text,
         channel: "nia",
-        reasoningEffort: reasoning() as "minimal" | "low" | "medium" | "high" | "xhigh",
+        reasoningEffort: reasoning() as
+          | "minimal"
+          | "low"
+          | "medium"
+          | "high"
+          | "xhigh",
       });
     } catch (cause) {
       console.error("[nia-ui] submit failed", cause);
@@ -278,7 +284,12 @@ export function NiaPanel(props: {
             onChange={(next) => {
               setReasoning(next);
               void saveProfile({
-                reasoningEffort: next as "minimal" | "low" | "medium" | "high" | "xhigh",
+                reasoningEffort: next as
+                  | "minimal"
+                  | "low"
+                  | "medium"
+                  | "high"
+                  | "xhigh",
               });
             }}
             placeholder="Nia 推理"

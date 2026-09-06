@@ -230,10 +230,7 @@ export function createRuntimeHttpServer(
   const handleRequest = async (
     request: Request,
     bunServer?: {
-      upgrade(
-        request: Request,
-        options: { data: TerminalSocketData },
-      ): boolean;
+      upgrade(request: Request, options: { data: TerminalSocketData }): boolean;
     },
   ) => {
     const url = new URL(request.url);
@@ -462,6 +459,56 @@ export function createRuntimeHttpServer(
         );
       }
     }
+    if (url.pathname === "/ast-diff" && request.method === "POST") {
+      let payload: { oldText?: string; newText?: string; language?: string };
+      try {
+        payload = (await request.json()) as {
+          oldText?: string;
+          newText?: string;
+          language?: string;
+        };
+      } catch {
+        return Response.json(
+          { error: "invalid request body" },
+          { status: 400 },
+        );
+      }
+      if (
+        typeof payload?.oldText !== "string" ||
+        typeof payload?.newText !== "string" ||
+        typeof payload?.language !== "string"
+      )
+        return Response.json(
+          {
+            error: "oldText, newText and language are required strings",
+          },
+          { status: 400 },
+        );
+      try {
+        if (options.client.astDiff) {
+          const result = await options.client.astDiff({
+            oldText: payload.oldText,
+            newText: payload.newText,
+            language: payload.language,
+          });
+          return Response.json(result);
+        }
+        const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
+        const result = await diffWasmAst(
+          payload.oldText,
+          payload.newText,
+          payload.language,
+        );
+        return Response.json(result);
+      } catch (error) {
+        return Response.json(
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          { status: 500 },
+        );
+      }
+    }
     {
       const uiAssetMatch = url.pathname.match(
         /^\/plugins\/([^/]+)\/ui\.(js|css)$/u,
@@ -475,16 +522,25 @@ export function createRuntimeHttpServer(
         if (request.method === "OPTIONS")
           return new Response(null, { status: 204, headers: corsHeaders });
         if (request.method !== "GET")
-          return Response.json({ error: "method not allowed" }, { status: 405 });
+          return Response.json(
+            { error: "method not allowed" },
+            { status: 405 },
+          );
         if (!options.pluginUiResolver)
-          return Response.json({ error: "plugin ui not enabled" }, { status: 404 });
+          return Response.json(
+            { error: "plugin ui not enabled" },
+            { status: 404 },
+          );
         const pluginId = decodeURIComponent(uiAssetMatch[1] ?? "");
         if (!/^[a-z0-9][a-z0-9._-]*$/u.test(pluginId))
           return Response.json({ error: "invalid plugin id" }, { status: 400 });
         const asset = uiAssetMatch[2] === "css" ? "css" : "js";
         const bundle = await options.pluginUiResolver(pluginId, asset);
         if (!bundle)
-          return Response.json({ error: "plugin ui not found" }, { status: 404 });
+          return Response.json(
+            { error: "plugin ui not found" },
+            { status: 404 },
+          );
         return new Response(bundle.body, {
           headers: {
             ...corsHeaders,
@@ -595,7 +651,7 @@ export function createRuntimeHttpServer(
           headers: {
             "content-type": "application/json",
             "content-encoding": "gzip",
-            "vary": "accept-encoding",
+            vary: "accept-encoding",
           },
         });
       return new Response(json, {
@@ -675,10 +731,7 @@ export function createRuntimeHttpServer(
   const fetchHandler = async (
     request: Request,
     bunServer?: {
-      upgrade(
-        request: Request,
-        options: { data: TerminalSocketData },
-      ): boolean;
+      upgrade(request: Request, options: { data: TerminalSocketData }): boolean;
     },
   ) => {
     if (request.method === "OPTIONS") {

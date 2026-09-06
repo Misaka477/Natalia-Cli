@@ -7,21 +7,25 @@ import {
 } from "@natalia/ui-host";
 import { createWebRuntimeClient } from "./runtime-rpc";
 import { createLocalPreferenceStore } from "./local-preferences";
-import {
-  loadPluginUiBundles,
-  syncPluginUiBundles,
-} from "./plugin-ui-loader";
+import { loadPluginUiBundles, syncPluginUiBundles } from "./plugin-ui-loader";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
 
-const electron = (globalThis as {
-  electron?: { runtimeInfo?: () => Promise<{ url?: string; token?: string }> };
-}).electron;
-const injected = electron?.runtimeInfo ? await electron.runtimeInfo() : undefined;
+const electron = (
+  globalThis as {
+    electron?: {
+      runtimeInfo?: () => Promise<{ url?: string; token?: string }>;
+    };
+  }
+).electron;
+const injected = electron?.runtimeInfo
+  ? await electron.runtimeInfo()
+  : undefined;
 const runtimeURL =
   injected?.url ||
-  (import.meta as { env?: Record<string, string> }).env?.VITE_NATALIA_RUNTIME_URL ||
+  (import.meta as { env?: Record<string, string> }).env
+    ?.VITE_NATALIA_RUNTIME_URL ||
   "http://127.0.0.1:8790";
 
 const runtime = createWebRuntimeClient({

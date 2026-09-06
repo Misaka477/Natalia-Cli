@@ -416,7 +416,10 @@ test("SQLite session records retain inbox through duplicate and fork", () => {
 });
 
 test("SQLite delete removes message index state before session row", () => {
-  const path = join(tmpdir(), `natalia-message-index-delete-${crypto.randomUUID()}.db`);
+  const path = join(
+    tmpdir(),
+    `natalia-message-index-delete-${crypto.randomUUID()}.db`,
+  );
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_delete_index" as const;
   try {

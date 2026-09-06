@@ -85,7 +85,10 @@ export function createPluginRuntime(ctx: RuntimeContext): PluginRuntime {
     },
     async pluginUninstall(input) {
       const pluginStoreRoot = await requirePluginStore();
-      const result = await uninstallPlugin({ pluginStoreRoot, pluginID: input.pluginID });
+      const result = await uninstallPlugin({
+        pluginStoreRoot,
+        pluginID: input.pluginID,
+      });
       await ctx.ports.reloadConfigFromDisk?.();
       return result;
     },

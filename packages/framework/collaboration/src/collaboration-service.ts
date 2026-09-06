@@ -93,8 +93,7 @@ export function createCollaborationService(
       if (!ports.events(input.sessionID)) throw new Error("no session");
       const messages = list(input.sessionID);
       const to =
-        input.to ??
-        (input.from === "main_agent" ? "live_chat" : "main_agent");
+        input.to ?? (input.from === "main_agent" ? "live_chat" : "main_agent");
       const target =
         "replyToID" in input
           ? messages.find((message) => message.id === input.replyToID)

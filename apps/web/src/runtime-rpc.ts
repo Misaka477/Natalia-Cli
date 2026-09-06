@@ -148,6 +148,12 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   confirmedWorkspaceChanges: "observation.confirmed",
   workspaceDiff: "workspace.diff",
   workspaceGitDiff: "workspace.git.diff",
+  astDiff: "ast.diff",
+  astDiffBatch: "ast.diff.batch",
+  astRefactorPreview: "ast.refactor.preview",
+  astService: "ast.service",
+  astRefactorPlan: "ast.refactor.plan",
+  astApplyRefactor: "ast.refactor.apply",
   gitRefs: "git.refs",
   teamPRList: "team.pr.list",
   registeredTools: "tools.registered",
@@ -181,7 +187,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
 };
 
 const RPC_PARAM_NAMES: Record<string, string[]> = {
-  checkpointPreview: ["id", "sessionID"],
+  checkpointPreview: ["id", "sessionID", "options"],
   checkpointRename: ["id", "name", "sessionID"],
   subagentHistory: ["sessionID"],
   subagents: ["sessionID"],
@@ -197,7 +203,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   sessionRestore: ["id"],
   sessionExport: ["id"],
   sessionAttach: ["id"],
-  sandboxDiff: ["id", "sessionID"],
+  sandboxDiff: ["id", "sessionID", "options"],
   sandboxDelete: ["id", "sessionID"],
   sandboxResourceOutput: ["id", "resourceID", "maxBytes", "sessionID"],
   sandboxResourceStop: ["id", "resourceID", "sessionID"],
@@ -279,7 +285,6 @@ function buildParams(member: string, args: unknown[]) {
   return params;
 }
 
-
 export type WebRuntimeOptions = {
   url: string;
   token?: string;
@@ -305,21 +310,28 @@ export function createWebRuntimeClient(
   ): Promise<T> => {
     if (electron && !options.url) {
       const callStart = performance.now();
-      return electron.invoke<T>("runtime_call", {
-        method,
-        params: params ?? {},
-      }).finally(() => {
-        console.log(
-          `[perf] ipc ${method} ${(performance.now() - callStart).toFixed(1)}ms`,
-        );
-      });
+      return electron
+        .invoke<T>("runtime_call", {
+          method,
+          params: params ?? {},
+        })
+        .finally(() => {
+          console.log(
+            `[perf] ipc ${method} ${(performance.now() - callStart).toFixed(1)}ms`,
+          );
+        });
     }
+    const callStart = performance.now();
     return callRuntimeRPC<T>({
       url: options.url,
       token: options.token,
       method,
       params,
       fetch: options.fetch,
+    }).finally(() => {
+      console.log(
+        `[perf] rpc ${method} ${(performance.now() - callStart).toFixed(1)}ms`,
+      );
     });
   };
 
@@ -426,7 +438,6 @@ export function createWebRuntimeClient(
     }
   }
 
-
   let attachChain = Promise.resolve();
 
   async function attachAndReplay(id: string) {
@@ -482,7 +493,9 @@ export function createWebRuntimeClient(
       const persistedTarget =
         persisted === undefined
           ? undefined
-          : sessions.find((session) => session.id === persisted && !session.archived);
+          : sessions.find(
+              (session) => session.id === persisted && !session.archived,
+            );
       const touched = recent.filter((session) => session.lastAccessedAt);
       const meaningful = recent.filter(
         (session) => session.title && session.title !== "New session",
@@ -538,10 +551,10 @@ export function createWebRuntimeClient(
     // Electron: receive runtime events through the main-process IPC bridge.
     if (electron) {
       electron.on<RuntimeEvent>("natalia-runtime-event", (event) => {
-          emitLive(event);
+        emitLive(event);
       });
       electron.on<RuntimeEvent[]>("natalia-runtime-events", (events) => {
-          for (const event of events) emitLive(event);
+        for (const event of events) emitLive(event);
       });
       await restoreRecentSession();
       return;
@@ -551,9 +564,13 @@ export function createWebRuntimeClient(
   }
 
   async function runWebSSE() {
-    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
     while (true) {
-      if ((globalThis as { __NATALIA_ABORT?: AbortController }).__NATALIA_ABORT?.signal.aborted)
+      if (
+        (globalThis as { __NATALIA_ABORT?: AbortController }).__NATALIA_ABORT
+          ?.signal.aborted
+      )
         return;
       try {
         // Before every /events connection, enter the startup/reconnect guard.
@@ -575,7 +592,9 @@ export function createWebRuntimeClient(
           },
         );
         if (!response.ok || !response.body)
-          throw new Error(`[web-runtime] sse connect failed: ${response.status}`);
+          throw new Error(
+            `[web-runtime] sse connect failed: ${response.status}`,
+          );
         markStartup("sse.connected");
 
         const decoder = new TextDecoder();
@@ -641,7 +660,10 @@ export function createWebRuntimeClient(
     start,
     async submit(text, sessionID) {
       console.log("[web-runtime] submit", { text, sessionID });
-      return (await call("prompt", { text, ...(sessionID ? { sessionID } : {}) })) as never;
+      return (await call("prompt", {
+        text,
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
     },
     async submitInput(input) {
       console.log("[web-runtime] submitInput", input);
@@ -781,7 +803,10 @@ export function createWebRuntimeClient(
       })) as never;
     },
     async checkpointList(sessionID) {
-      return (await call("checkpoint.list", sessionID ? { sessionID } : undefined)) as never;
+      return (await call(
+        "checkpoint.list",
+        sessionID ? { sessionID } : undefined,
+      )) as never;
     },
     async checkpointRollback(input) {
       return (await call("checkpoint.rollback", {
@@ -913,6 +938,9 @@ export function createWebRuntimeClient(
     },
     async providerAdd(input) {
       return (await call("provider.add", { ...input })) as never;
+    },
+    async astDiff(input) {
+      return (await call("ast.diff", { ...input })) as never;
     },
     async dispose() {},
   };

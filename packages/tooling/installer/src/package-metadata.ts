@@ -94,7 +94,9 @@ export async function validateStagedPackage(
 function validatePluginModule(value: unknown, manifest: unknown) {
   const plugin = typeof value === "function" ? value() : value;
   if (!plugin || typeof plugin !== "object")
-    throw new Error("plugin entry must have a default plugin or factory export");
+    throw new Error(
+      "plugin entry must have a default plugin or factory export",
+    );
   const candidate = plugin as { manifest?: unknown; setup?: unknown };
   if (typeof candidate.setup !== "function")
     throw new Error("plugin entry default export must have a setup function");

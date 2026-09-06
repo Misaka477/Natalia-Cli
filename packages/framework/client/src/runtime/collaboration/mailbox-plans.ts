@@ -41,7 +41,10 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     sender: CollaborationParticipant,
     boundExec?: SessionExecutionState,
   ): RuntimeTool {
-    console.log("[collab-chat-tool] create", { sender, hasExec: Boolean(boundExec) });
+    console.log("[collab-chat-tool] create", {
+      sender,
+      hasExec: Boolean(boundExec),
+    });
     const {
       getExecutionBySession,
       redactToolOutput,

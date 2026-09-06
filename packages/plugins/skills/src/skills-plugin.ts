@@ -84,7 +84,8 @@ export function createSkillsPlugin(input: {
         title: "Install skill",
         async run(invocation) {
           const source = invocation?.args.join(" ").trim();
-          if (!source) throw new Error("/skill-install requires a local path or URL");
+          if (!source)
+            throw new Error("/skill-install requires a local path or URL");
           const result = await installSkill({
             source,
             targetRoot: join(input.workspaceRoot, ".natalia", "skills"),

@@ -18,7 +18,7 @@ import type {
  */
 export const WORKER_ROUTE_MEMBERS = {
   submit: "submit",
-  "submitAndWait": "submitAndWait",
+  submitAndWait: "submitAndWait",
   cancel: "cancel",
   pause: "pause",
   resume: "resume",
@@ -383,9 +383,10 @@ export function createWorkerRuntimeClient(
       >;
     },
     async runtimeStatus(sessionID) {
-      return (await request("runtime.status", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["runtimeStatus"]>>
-      >;
+      return (await request(
+        "runtime.status",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["runtimeStatus"]>>>;
     },
     async history(options) {
       return (await request("history", options)) as Awaited<
@@ -530,12 +531,18 @@ export function createWorkerRuntimeClient(
     },
 
     async nativeTerminalList(sessionID) {
-      return (await request("native-terminal.list", sessionID ? { sessionID } : undefined)) as Awaited<
+      return (await request(
+        "native-terminal.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalList"]>>
       >;
     },
     async nativeTerminalRead(id, sessionID) {
-      return (await request("native-terminal.read", { id, sessionID })) as Awaited<
+      return (await request("native-terminal.read", {
+        id,
+        sessionID,
+      })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalRead"]>>
       >;
     },
@@ -545,35 +552,38 @@ export function createWorkerRuntimeClient(
       >;
     },
     async nativeTerminalReleaseHumanControl(id, sessionID) {
-      return (await request(
-        "native-terminal.release-human-control",
-        { id, sessionID },
-      )) as Awaited<
+      return (await request("native-terminal.release-human-control", {
+        id,
+        sessionID,
+      })) as Awaited<
         ReturnType<
           NonNullable<RuntimeClient["nativeTerminalReleaseHumanControl"]>
         >
       >;
     },
     async nativeTerminalRevokeApprovalScope(id, sessionID) {
-      return (await request(
-        "native-terminal.revoke-approval-scope",
-        { id, sessionID },
-      )) as Awaited<
+      return (await request("native-terminal.revoke-approval-scope", {
+        id,
+        sessionID,
+      })) as Awaited<
         ReturnType<
           NonNullable<RuntimeClient["nativeTerminalRevokeApprovalScope"]>
         >
       >;
     },
     async nativeTerminalStop(id, sessionID) {
-      return (await request("native-terminal.stop", { id, sessionID })) as Awaited<
+      return (await request("native-terminal.stop", {
+        id,
+        sessionID,
+      })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalStop"]>>
       >;
     },
     async nativeTerminalBeginSecureInput(id, sessionID) {
-      return (await request(
-        "native-terminal.begin-secure-input",
-        { id, sessionID },
-      )) as Awaited<
+      return (await request("native-terminal.begin-secure-input", {
+        id,
+        sessionID,
+      })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalBeginSecureInput"]>>
       >;
     },
@@ -583,12 +593,13 @@ export function createWorkerRuntimeClient(
       >;
     },
     async checkpointList(sessionID) {
-      return (await request("checkpoint.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["checkpointList"]>>
-      >;
+      return (await request(
+        "checkpoint.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["checkpointList"]>>>;
     },
-    async workspaceDiff() {
-      return (await request("workspace.diff")) as Awaited<
+    async workspaceDiff(input) {
+      return (await request("workspace.diff", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["workspaceDiff"]>>
       >;
     },
@@ -603,12 +614,17 @@ export function createWorkerRuntimeClient(
       >;
     },
     async teamPRList(sessionID) {
-      return (await request("team.pr.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["teamPRList"]>>
-      >;
+      return (await request(
+        "team.pr.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["teamPRList"]>>>;
     },
-    async checkpointPreview(id, sessionID) {
-      return (await request("checkpoint.preview", { id, sessionID })) as Awaited<
+    async checkpointPreview(id, sessionID, options) {
+      return (await request("checkpoint.preview", {
+        id,
+        sessionID,
+        options,
+      })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["checkpointPreview"]>>
       >;
     },
@@ -669,14 +685,17 @@ export function createWorkerRuntimeClient(
       >;
     },
     async sandboxList(sessionID) {
-      return (await request("sandbox.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["sandboxList"]>>
-      >;
+      return (await request(
+        "sandbox.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["sandboxList"]>>>;
     },
-    async sandboxDiff(id, sessionID) {
-      return (await request("sandbox.diff", { id, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["sandboxDiff"]>>
-      >;
+    async sandboxDiff(id, sessionID, options) {
+      return (await request("sandbox.diff", {
+        id,
+        sessionID,
+        options,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["sandboxDiff"]>>>;
     },
     async sandboxResources(id, sessionID) {
       return (await request("sandbox.resources", { id, sessionID })) as Awaited<
@@ -709,14 +728,16 @@ export function createWorkerRuntimeClient(
       >;
     },
     async sessionSnapshot(sessionID) {
-      return (await request("session.snapshot", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>
-      >;
+      return (await request(
+        "session.snapshot",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>>;
     },
     async planDocList(sessionID) {
-      return (await request("planDoc.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["planDocList"]>>
-      >;
+      return (await request(
+        "planDoc.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocList"]>>>;
     },
     async planDocRead(input) {
       return (await request("planDoc.read", input)) as Awaited<
@@ -734,14 +755,16 @@ export function createWorkerRuntimeClient(
       >;
     },
     async planDocDelete(planID, sessionID) {
-      return (await request("planDoc.delete", { planID, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["planDocDelete"]>>
-      >;
+      return (await request("planDoc.delete", {
+        planID,
+        sessionID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocDelete"]>>>;
     },
     async planDocStatus(planID, sessionID) {
-      return (await request("planDoc.status", { planID, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>
-      >;
+      return (await request("planDoc.status", {
+        planID,
+        sessionID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocStatus"]>>>;
     },
     async planDocUpdateStatus(input) {
       return (await request("planDoc.updateStatus", input)) as Awaited<
@@ -749,9 +772,10 @@ export function createWorkerRuntimeClient(
       >;
     },
     async mailboxList(sessionID) {
-      return (await request("mailbox.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["mailboxList"]>>
-      >;
+      return (await request(
+        "mailbox.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["mailboxList"]>>>;
     },
     async mailboxSend(input) {
       return (await request("mailbox.send", input)) as Awaited<
@@ -759,34 +783,44 @@ export function createWorkerRuntimeClient(
       >;
     },
     async mailboxAcknowledge(messageID, sessionID) {
-      return (await request("mailbox.acknowledge", { messageID, sessionID })) as Awaited<
+      return (await request("mailbox.acknowledge", {
+        messageID,
+        sessionID,
+      })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["mailboxAcknowledge"]>>
       >;
     },
     async driftFindings(sessionID) {
-      return (await request("drift.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["driftFindings"]>>
-      >;
+      return (await request(
+        "drift.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>;
     },
     async completions(sessionID) {
-      return (await request("completions", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["completions"]>>
-      >;
+      return (await request(
+        "completions",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["completions"]>>>;
     },
     async constitutionRules(sessionID) {
-      return (await request("constitution.list", sessionID ? { sessionID } : undefined)) as Awaited<
+      return (await request(
+        "constitution.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<
         ReturnType<NonNullable<RuntimeClient["constitutionRules"]>>
       >;
     },
     async decisionRecords(sessionID) {
-      return (await request("decision.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>
-      >;
+      return (await request(
+        "decision.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>>;
     },
     async evidenceRecords(sessionID) {
-      return (await request("evidence.list", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>
-      >;
+      return (await request(
+        "evidence.list",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>>;
     },
     async projectionContributions() {
       return (await request("projections.list")) as Awaited<
@@ -794,9 +828,10 @@ export function createWorkerRuntimeClient(
       >;
     },
     async requestOverride(input, sessionID) {
-      return (await request("constitution.override.request", { ...input, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["requestOverride"]>>
-      >;
+      return (await request("constitution.override.request", {
+        ...input,
+        sessionID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["requestOverride"]>>>;
     },
     async approveOverride(input) {
       return (await request("constitution.override.approve", input)) as Awaited<
@@ -804,14 +839,16 @@ export function createWorkerRuntimeClient(
       >;
     },
     async chatMessages(channel, sessionID) {
-      return (await request("chat.messages", { channel, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
-      >;
+      return (await request("chat.messages", {
+        channel,
+        sessionID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["chatMessages"]>>>;
     },
     async subagents(sessionID) {
-      return (await request("session.subagents", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["subagents"]>>
-      >;
+      return (await request(
+        "session.subagents",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["subagents"]>>>;
     },
     async subagentHistory(sessionID) {
       return (await request("subagent.history", sessionID)) as Awaited<
@@ -839,17 +876,26 @@ export function createWorkerRuntimeClient(
       >;
     },
     async chatRollback(input, channel, sessionID) {
-      return (await request("chat.rollback", { input, channel, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["chatRollback"]>>
-      >;
+      return (await request("chat.rollback", {
+        input,
+        channel,
+        sessionID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["chatRollback"]>>>;
     },
     async chatModelProfile(channel, sessionID) {
-      return (await request("chat.model.profile", { channel, sessionID })) as Awaited<
+      return (await request("chat.model.profile", {
+        channel,
+        sessionID,
+      })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatModelProfile"]>>
       >;
     },
     async setChatModelProfile(profile, channel, sessionID) {
-      return (await request("chat.model.profile.set", { profile, channel, sessionID })) as Awaited<
+      return (await request("chat.model.profile.set", {
+        profile,
+        channel,
+        sessionID,
+      })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["setChatModelProfile"]>>
       >;
     },
@@ -870,9 +916,10 @@ export function createWorkerRuntimeClient(
       >;
     },
     async resume(sessionID) {
-      return (await request("resume", sessionID ? { sessionID } : undefined)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["resume"]>>
-      >;
+      return (await request(
+        "resume",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["resume"]>>>;
     },
     snapshot() {
       const id = `snap_worker_${Date.now().toString(36)}`;
@@ -1085,10 +1132,16 @@ export async function handleWorkerRequest(
     return await client.nativeTerminalOpenHub?.();
   if (request.method === "native-terminal.release-human-control") {
     const value = request.value as { id: string; sessionID?: string };
-    return await client.nativeTerminalReleaseHumanControl?.(value.id, value.sessionID);
+    return await client.nativeTerminalReleaseHumanControl?.(
+      value.id,
+      value.sessionID,
+    );
   }
   if (request.method === "diagnostics") {
-    const value = request.value as { limit?: number; sessionID?: string } | number | undefined;
+    const value = request.value as
+      | { limit?: number; sessionID?: string }
+      | number
+      | undefined;
     return await client.diagnostics?.(
       typeof value === "number" ? value : value?.limit,
       typeof value === "number" ? undefined : value?.sessionID,
@@ -1096,7 +1149,10 @@ export async function handleWorkerRequest(
   }
   if (request.method === "native-terminal.revoke-approval-scope") {
     const value = request.value as { id: string; sessionID?: string };
-    return await client.nativeTerminalRevokeApprovalScope?.(value.id, value.sessionID);
+    return await client.nativeTerminalRevokeApprovalScope?.(
+      value.id,
+      value.sessionID,
+    );
   }
   if (request.method === "native-terminal.stop") {
     const value = request.value as { id: string; sessionID?: string };
@@ -1104,31 +1160,48 @@ export async function handleWorkerRequest(
   }
   if (request.method === "native-terminal.begin-secure-input") {
     const value = request.value as { id: string; sessionID?: string };
-    return await client.nativeTerminalBeginSecureInput?.(value.id, value.sessionID);
+    return await client.nativeTerminalBeginSecureInput?.(
+      value.id,
+      value.sessionID,
+    );
   }
   if (request.method === "native-terminal.end-secure-input") {
     const value = request.value as { id: string; sessionID?: string };
-    return await client.nativeTerminalEndSecureInput?.(value.id, value.sessionID);
+    return await client.nativeTerminalEndSecureInput?.(
+      value.id,
+      value.sessionID,
+    );
   }
   if (request.method === "checkpoint.list")
     return await client.checkpointList?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
     );
   if (request.method === "workspace.diff")
-    return await client.workspaceDiff?.();
+    return await client.workspaceDiff?.(
+      request.value as { includePatch?: boolean } | undefined,
+    );
   if (request.method === "workspace.git.diff")
     return await client.workspaceGitDiff?.(
-      request.value as { from?: string; to?: string; path?: string } | undefined,
+      request.value as
+        | { from?: string; to?: string; path?: string; includePatch?: boolean }
+        | undefined,
     );
-  if (request.method === "git.refs")
-    return await client.gitRefs?.();
+  if (request.method === "git.refs") return await client.gitRefs?.();
   if (request.method === "team.pr.list")
     return await client.teamPRList?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
     );
   if (request.method === "checkpoint.preview") {
-    const value = request.value as { id: string; sessionID?: string };
-    return await client.checkpointPreview?.(value.id, value.sessionID);
+    const value = request.value as {
+      id: string;
+      sessionID?: string;
+      options?: { includePatch?: boolean };
+    };
+    return await client.checkpointPreview?.(
+      value.id,
+      value.sessionID,
+      value.options,
+    );
   }
   if (request.method === "checkpoint.rollback")
     return await client.checkpointRollback?.(
@@ -1139,7 +1212,10 @@ export async function handleWorkerRequest(
       request.value as { id: string; name: string; sessionID?: string },
     );
   if (request.method === "cancel") {
-    const value = request.value as { reason?: unknown; sessionID?: string } | string | undefined;
+    const value = request.value as
+      | { reason?: unknown; sessionID?: string }
+      | string
+      | undefined;
     return client.cancel(
       typeof value === "string"
         ? value
@@ -1150,7 +1226,10 @@ export async function handleWorkerRequest(
     );
   }
   if (request.method === "pause") {
-    const value = request.value as { reason?: string; sessionID?: string } | string | undefined;
+    const value = request.value as
+      | { reason?: string; sessionID?: string }
+      | string
+      | undefined;
     return client.pause?.(
       typeof value === "string" ? value : value?.reason,
       typeof value === "string" ? undefined : value?.sessionID,
@@ -1203,13 +1282,24 @@ export async function handleWorkerRequest(
     return await client.sessionRollbackMessages?.(input.id, input.turnID);
   }
   if (request.method === "sandbox.list") return await client.sandboxList?.();
-  if (request.method === "sandbox.diff")
-    return await client.sandboxDiff?.(request.value as string);
+  if (request.method === "sandbox.diff") {
+    const value = request.value as {
+      id: string;
+      sessionID?: string;
+      options?: { includePatch?: boolean };
+    };
+    return await client.sandboxDiff?.(value.id, value.sessionID, value.options);
+  }
   if (request.method === "sandbox.resources")
     return await client.sandboxResources?.(request.value as string);
   if (request.method === "sandbox.resource-output")
     return await client.sandboxResourceOutput?.(
-      request.value as { id: string; resourceID: string; maxBytes?: number; sessionID?: string },
+      request.value as {
+        id: string;
+        resourceID: string;
+        maxBytes?: number;
+        sessionID?: string;
+      },
     );
   if (request.method === "sandbox.resource-stop")
     return await client.sandboxResourceStop?.(
@@ -1287,7 +1377,10 @@ export async function handleWorkerRequest(
     return await client.approveOverride?.(request.value as never);
   if (request.method === "chat.messages") {
     const value = request.value as
-      | { channel?: import("@natalia/contracts").ChatChannel; sessionID?: string }
+      | {
+          channel?: import("@natalia/contracts").ChatChannel;
+          sessionID?: string;
+        }
       | undefined;
     return await client.chatMessages?.(value?.channel, value?.sessionID);
   }
@@ -1305,7 +1398,10 @@ export async function handleWorkerRequest(
     return await client.chatSubmit?.(request.value as never);
   if (request.method === "chat.abort") {
     const value = request.value as
-      | { channel?: import("@natalia/contracts").ChatChannel; sessionID?: string }
+      | {
+          channel?: import("@natalia/contracts").ChatChannel;
+          sessionID?: string;
+        }
       | undefined;
     return await client.chatAbort?.(value?.channel, value?.sessionID);
   }
@@ -1315,11 +1411,18 @@ export async function handleWorkerRequest(
       channel?: import("@natalia/contracts").ChatChannel;
       sessionID?: string;
     };
-    return await client.chatRollback?.(value.input, value.channel, value.sessionID);
+    return await client.chatRollback?.(
+      value.input,
+      value.channel,
+      value.sessionID,
+    );
   }
   if (request.method === "chat.model.profile") {
     const value = request.value as
-      | { channel?: import("@natalia/contracts").ChatChannel; sessionID?: string }
+      | {
+          channel?: import("@natalia/contracts").ChatChannel;
+          sessionID?: string;
+        }
       | undefined;
     return await client.chatModelProfile?.(value?.channel, value?.sessionID);
   }

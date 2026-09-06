@@ -34,8 +34,13 @@ export type NataliaSDK = {
    * deferred until the current turn ends are all ordinary answers, and a caller
    * that cannot see them will render the wrong thing.
    */
-  pause(reason?: string, sessionID?: string): Promise<import("@natalia/contracts").PauseOutcome>;
-  resume(sessionID?: string): Promise<import("@natalia/contracts").ResumeOutcome>;
+  pause(
+    reason?: string,
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").PauseOutcome>;
+  resume(
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").ResumeOutcome>;
   selectAgent(
     name?: string,
     sessionID?: string,
@@ -209,27 +214,31 @@ export type NataliaSDK = {
     checkpointID: string,
     options?: { dryRun?: boolean },
   ): Promise<SubmittedTurn>;
-  checkpointList(sessionID?: string): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
+  checkpointList(
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
   checkpointPreview(
     id: string,
     sessionID?: string,
+    options?: { includePatch?: boolean },
   ): Promise<import("@natalia/contracts").CheckpointPreview>;
-  checkpointRollback(
-    input: {
-      id: string;
-      dryRun?: boolean;
-      sessionID?: string;
-    },
-  ): Promise<import("@natalia/contracts").CheckpointPreview>;
+  checkpointRollback(input: {
+    id: string;
+    dryRun?: boolean;
+    sessionID?: string;
+  }): Promise<import("@natalia/contracts").CheckpointPreview>;
   checkpointRename(input: {
     id: string;
     name: string;
     sessionID?: string;
   }): Promise<import("@natalia/contracts").RuntimeCheckpoint>;
-  sandboxList(sessionID?: string): Promise<import("@natalia/contracts").RuntimeSandbox[]>;
+  sandboxList(
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").RuntimeSandbox[]>;
   sandboxDiff(
     id: string,
     sessionID?: string,
+    options?: { includePatch?: boolean },
   ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
   sandboxResources(
     id: string,
@@ -244,7 +253,10 @@ export type NataliaSDK = {
     id: string,
     sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
-  sandboxDelete(id: string, sessionID?: string): Promise<{
+  sandboxDelete(
+    id: string,
+    sessionID?: string,
+  ): Promise<{
     pendingChanges: import("@natalia/contracts").RuntimeSandboxChange[];
     runningResources: string[];
   }>;
@@ -270,13 +282,18 @@ export type NataliaSDK = {
   ): Promise<unknown>;
   mcpResource(server: string, uri: string): Promise<unknown>;
   plugins(): Promise<import("@natalia/contracts").PluginStatus[]>;
-  pluginInstall(input: { spec: string }): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["pluginInstall"]>>>
-  >;
-  pluginUninstall(input: { pluginID: string }): Promise<
+  pluginInstall(input: {
+    spec: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["pluginInstall"]>>>>;
+  pluginUninstall(input: {
+    pluginID: string;
+  }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["pluginUninstall"]>>>
   >;
-  pluginSetEnabled(input: { pluginID: string; enabled: boolean }): Promise<
+  pluginSetEnabled(input: {
+    pluginID: string;
+    enabled: boolean;
+  }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["pluginSetEnabled"]>>>
   >;
   pluginCatalog(): Promise<
@@ -295,7 +312,9 @@ export type NataliaSDK = {
   workGraphNodes(): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
   workGraphEdges(): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
   /** The native terminal host. P0-D scopes the secure-input members. */
-  nativeTerminalList(sessionID?: string): Promise<
+  nativeTerminalList(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalList"]>>>
   >;
   nativeTerminalRead(
@@ -376,64 +395,77 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalResize"]>>>
   >;
   /** Intelligence queries. Routed and reachable; answer empty until there are writers. */
-  constitutionRules(sessionID?: string): Promise<
+  constitutionRules(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["constitutionRules"]>>>
   >;
-  decisionRecords(sessionID?: string): Promise<
+  decisionRecords(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>>
   >;
   /** Records a durable decision fact (CST3 writer). */
-  recordDecision(input: {
-    decision: string;
-    rationale?: string[];
-    alternatives?: { option: string; rejectedReason?: string }[];
-    consequences?: string[];
-    linkedPlans?: string[];
-    linkedConstraints?: string[];
-  }, sessionID?: string): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["recordDecision"]>>>
-  >;
-  evidenceRecords(sessionID?: string): Promise<
+  recordDecision(
+    input: {
+      decision: string;
+      rationale?: string[];
+      alternatives?: { option: string; rejectedReason?: string }[];
+      consequences?: string[];
+      linkedPlans?: string[];
+      linkedConstraints?: string[];
+    },
+    sessionID?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["recordDecision"]>>>>;
+  evidenceRecords(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>>
   >;
   /** Runs a validation command and records the outcome as durable evidence. */
-  recordValidation(input: {
-    taskID: string;
-    objective: string;
-    command: string;
-    timeoutSec?: number;
-    knownGaps?: string[];
-  }, sessionID?: string): Promise<
+  recordValidation(
+    input: {
+      taskID: string;
+      objective: string;
+      command: string;
+      timeoutSec?: number;
+      knownGaps?: string[];
+    },
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordValidation"]>>>
   >;
   /** The completion cards, projected from the journal (P2 E4). */
-  completions(sessionID?: string): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["completions"]>>>
-  >;
+  completions(
+    sessionID?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["completions"]>>>>;
   /** Records a completion card and its validated_by Work Graph edges. */
-  recordCompletion(input: {
-    taskID: string;
-    objective: string;
-    changeSummary: string;
-    behaviorImpact?: string;
-    validations?: Array<{
-      command: string;
-      result: "passed" | "failed" | "skipped";
-      safeSummary: string;
-    }>;
-    humanValidation?: string;
-    knownGaps?: string[];
-    externalSideEffects?: string[];
-    rollbackState?: "clean" | "available" | "none" | "needs_promotion";
-    evidenceIDs?: string[];
-    changePaths?: string[];
-  }, sessionID?: string): Promise<
+  recordCompletion(
+    input: {
+      taskID: string;
+      objective: string;
+      changeSummary: string;
+      behaviorImpact?: string;
+      validations?: Array<{
+        command: string;
+        result: "passed" | "failed" | "skipped";
+        safeSummary: string;
+      }>;
+      humanValidation?: string;
+      knownGaps?: string[];
+      externalSideEffects?: string[];
+      rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+      evidenceIDs?: string[];
+      changePaths?: string[];
+    },
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordCompletion"]>>>
   >;
   /** The durable Live Work Chat mailbox, projected from the journal. */
-  mailboxList(sessionID?: string): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["mailboxList"]>>>
-  >;
+  mailboxList(
+    sessionID?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mailboxList"]>>>>;
   /** Enqueues a Live Work Chat intent as a durable mailbox message. */
   mailboxSend(input: {
     source?: "user_via_live_chat" | "system";
@@ -472,9 +504,9 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSupersede"]>>>
   >;
   /** Lists persisted plan documents for the active session (P8 C4 replacement). */
-  planDocList(sessionID?: string): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["planDocList"]>>>
-  >;
+  planDocList(
+    sessionID?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocList"]>>>>;
   /** Reads a Markdown plan document by planID or path. */
   planDocRead(input: {
     planID?: string;
@@ -506,39 +538,49 @@ export type NataliaSDK = {
   planDocUpdateStatus(input: {
     planID: string;
     status: string;
-  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>>>;
-  driftFindings(sessionID?: string): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
+  }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>>
   >;
+  driftFindings(
+    sessionID?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>>;
   /** Runs the DriftEvaluator against safe signals and publishes findings. */
-  evaluateDrift(input: {
-    objective: string;
-    currentActivity: string;
-    applicableConstraints?: string[];
-    changes?: Array<{
-      path?: string;
-      action?: string;
-      target?: string;
-      summary?: string;
-    }>;
-    evidenceRefs?: string[];
-  }, sessionID?: string): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["evaluateDrift"]>>>>;
+  evaluateDrift(
+    input: {
+      objective: string;
+      currentActivity: string;
+      applicableConstraints?: string[];
+      changes?: Array<{
+        path?: string;
+        action?: string;
+        target?: string;
+        summary?: string;
+      }>;
+      evidenceRefs?: string[];
+    },
+    sessionID?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["evaluateDrift"]>>>>;
   /** Acknowledges an open drift finding (P7 D3). */
-  acknowledgeDriftFinding(input: {
-    findingID: string;
-    status: "explained" | "dismissed" | "corrected";
-    rationale?: string;
-  }, sessionID?: string): Promise<
+  acknowledgeDriftFinding(
+    input: {
+      findingID: string;
+      status: "explained" | "dismissed" | "corrected";
+      rationale?: string;
+    },
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["acknowledgeDriftFinding"]>>>
   >;
   /** Reconciles watcher hints and returns the confirmed changes (WG4 Phase 3). */
-  confirmedWorkspaceChanges(sessionID?: string): Promise<
+  confirmedWorkspaceChanges(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["confirmedWorkspaceChanges"]>>>
   >;
   /** Returns the object-store backed global workspace diff. */
-  workspaceDiff(): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["workspaceDiff"]>>>
-  >;
+  workspaceDiff(input?: {
+    includePatch?: boolean;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["workspaceDiff"]>>>>;
   /** Returns the git backed workspace diff for optional ref/worktree ranges. */
   workspaceGitDiff(input?: {
     from?: string;
@@ -552,10 +594,12 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["gitRefs"]>>>
   >;
   /** Lists the current session's sandboxed sub-agent PRs. */
-  teamPRList(sessionID?: string): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["teamPRList"]>>>
-  >;
-  registeredTools(sessionID?: string): Promise<
+  teamPRList(
+    sessionID?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["teamPRList"]>>>>;
+  registeredTools(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
   >;
   projectionContributions(): Promise<
@@ -564,15 +608,21 @@ export type NataliaSDK = {
   requestOverride(
     input: Parameters<NonNullable<RuntimeClient["requestOverride"]>>[0],
     sessionID?: string,
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["requestOverride"]>>>>;
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["requestOverride"]>>>
+  >;
   approveOverride(
     input: Parameters<NonNullable<RuntimeClient["approveOverride"]>>[0],
-  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["approveOverride"]>>>>;
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["approveOverride"]>>>
+  >;
   /** Loaded capability records, distinct from `availability()` (what is implemented). */
   capabilities(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["capabilities"]>>>
   >;
-  sessionSnapshot(sessionID?: string): Promise<
+  sessionSnapshot(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>>
   >;
   /** Submits a turn with attachments, resources and agent mentions. */
@@ -615,7 +665,9 @@ export type NataliaSDK = {
   reloadConfig(): Promise<{ applied: boolean; reason?: string }>;
   canReloadConfig(): Promise<{ allowed: boolean; reason?: string }>;
   availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
-  runtimeStatus(sessionID?: string): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
+  runtimeStatus(
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
   diagnostics(
     limit?: number,
     sessionID?: string,
@@ -724,10 +776,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       });
     },
     reasoningEffort: async (sessionID) =>
-      (await call(
-        "model.reasoning",
-        sessionID ? { sessionID } : {},
-      )) ?? undefined,
+      (await call("model.reasoning", sessionID ? { sessionID } : {})) ??
+      undefined,
     setReasoningEffort: async (effort, sessionID) => {
       await call("model.reasoning.set", {
         ...(effort === undefined ? {} : { effort }),
@@ -800,18 +850,23 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     checkpointList: async (sessionID) =>
       await call("checkpoint.list", sessionID ? { sessionID } : {}),
-    checkpointPreview: async (id, sessionID) =>
+    checkpointPreview: async (id, sessionID, options) =>
       await call("checkpoint.preview", {
         id,
         ...(sessionID ? { sessionID } : {}),
+        ...(options ? { options } : {}),
       }),
     checkpointRollback: async (input) =>
       await call("checkpoint.rollback", input),
     checkpointRename: async (input) => await call("checkpoint.rename", input),
     sandboxList: async (sessionID) =>
       await call("sandbox.list", sessionID ? { sessionID } : {}),
-    sandboxDiff: async (id, sessionID) =>
-      await call("sandbox.diff", { id, ...(sessionID ? { sessionID } : {}) }),
+    sandboxDiff: async (id, sessionID, options) =>
+      await call("sandbox.diff", {
+        id,
+        ...(sessionID ? { sessionID } : {}),
+        ...(options ? { options } : {}),
+      }),
     sandboxResources: async (id, sessionID) =>
       await call("sandbox.resources", {
         id,
@@ -1007,7 +1062,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     confirmedWorkspaceChanges: async (sessionID) =>
       await call("observation.confirmed", sessionID ? { sessionID } : {}),
-    workspaceDiff: async () => await call("workspace.diff", {}),
+    workspaceDiff: async (input) => await call("workspace.diff", input ?? {}),
     workspaceGitDiff: async (input) =>
       await call("workspace.git.diff", input ?? {}),
     gitRefs: async () => await call("git.refs", {}),

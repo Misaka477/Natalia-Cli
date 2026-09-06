@@ -401,7 +401,9 @@ export function cloneState(state: AppState): AppState {
     sandboxDiffs: { ...state.sandboxDiffs },
     subagents: { ...state.subagents },
     subagentHistory: mapRecord(state.subagentHistory, (value) => [...value]),
-    subagentStates: mapRecord(state.subagentStates, (value) => cloneState(value)),
+    subagentStates: mapRecord(state.subagentStates, (value) =>
+      cloneState(value),
+    ),
     mcp: { ...state.mcp },
     plugins: { ...state.plugins },
     capabilities: { ...state.capabilities },

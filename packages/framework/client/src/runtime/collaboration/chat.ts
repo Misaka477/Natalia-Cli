@@ -8,7 +8,12 @@ import type {
   RuntimeServiceClient,
 } from "@natalia/runtime-services";
 import { providerForModel } from "@natalia/runtime";
-import type { ChatChannel, ChatModelProfile, RuntimeReasoningEffort, SessionID } from "@natalia/contracts";
+import type {
+  ChatChannel,
+  ChatModelProfile,
+  RuntimeReasoningEffort,
+  SessionID,
+} from "@natalia/contracts";
 import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 type Surface = Pick<
@@ -29,15 +34,10 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
   );
 }
 
-async function chatExec(
-  ctx: RuntimeContext,
-  sessionID?: string,
-) {
+async function chatExec(ctx: RuntimeContext, sessionID?: string) {
   if (sessionID)
     return (
-      ctx.ports
-        .getExecutionBySession()
-        .get(sessionID as SessionID) ??
+      ctx.ports.getExecutionBySession().get(sessionID as SessionID) ??
       (await ctx.ports.ensureExecution(sessionID as SessionID))
     );
   return ctx.ports.getActiveExec();
@@ -48,7 +48,9 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       const exec = await chatExec(ctx, sessionID);
       if (!exec) return [];
       return projectedChatMessages(exec.session.events)
-        .filter((message) => (message.channel ?? "navi") === (channel ?? "navi"))
+        .filter(
+          (message) => (message.channel ?? "navi") === (channel ?? "navi"),
+        )
         .map((message) => ({
           messageID: message.messageID,
           role: message.role,
@@ -57,10 +59,13 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           ...(message.channel ? { channel: message.channel } : {}),
         }));
     },
-    async chatRollback(input: { toMessageID: string }, channel?: ChatChannel, sessionID?: string) {
+    async chatRollback(
+      input: { toMessageID: string },
+      channel?: ChatChannel,
+      sessionID?: string,
+    ) {
       const exec = await chatExec(ctx, sessionID);
-      if (!exec)
-        return { rolledBackTo: input.toMessageID, removed: 0 };
+      if (!exec) return { rolledBackTo: input.toMessageID, removed: 0 };
       const channelKey = channel ?? "navi";
       const history = projectedChatMessages(exec.session.events).filter(
         (message) => (message.channel ?? "navi") === channelKey,
@@ -88,14 +93,24 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
     async chatModelProfile(channel?: ChatChannel, sessionID?: string) {
       const exec = await chatExec(ctx, sessionID);
       if (!exec) return {};
-      const profiles = exec.chatModelProfile as Record<string, ChatModelProfile> | undefined;
+      const profiles = exec.chatModelProfile as
+        | Record<string, ChatModelProfile>
+        | undefined;
       return (profiles?.[channel ?? "navi"] as ChatModelProfile) ?? {};
     },
-    async setChatModelProfile(profile, channel?: ChatChannel, sessionID?: string) {
+    async setChatModelProfile(
+      profile,
+      channel?: ChatChannel,
+      sessionID?: string,
+    ) {
       const exec = await chatExec(ctx, sessionID);
       if (!exec) return { saved: false };
       const profileChannel = channel ?? "navi";
-      const profiles = { ...(exec.chatModelProfile as Record<string, ChatModelProfile> | undefined) };
+      const profiles = {
+        ...(exec.chatModelProfile as
+          | Record<string, ChatModelProfile>
+          | undefined),
+      };
       profiles[profileChannel] = profile;
       (exec as { chatModelProfile?: unknown }).chatModelProfile = profiles;
       ctx.ports.publishForSession(exec, {
@@ -158,7 +173,9 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
         sessionID: exec?.session.id,
       });
       if (!text || !exec || !provider || !controller) {
-        console.warn("[chat] chatSubmit rejected: missing text/exec/provider/controller");
+        console.warn(
+          "[chat] chatSubmit rejected: missing text/exec/provider/controller",
+        );
         return { messageID: "" };
       }
       if (input.model?.modelID) {

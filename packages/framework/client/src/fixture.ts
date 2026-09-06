@@ -684,7 +684,9 @@ export function createFakeBackend(): FakeBackend {
       publishStatusSnapshot("boot ready");
     },
     async submitAndWait(input) {
-      return await this.submit(typeof input === "string" ? input : input.text ?? "");
+      return await this.submit(
+        typeof input === "string" ? input : (input.text ?? ""),
+      );
     },
     async submit(text) {
       const id = `turn_${Date.now().toString(36)}`;

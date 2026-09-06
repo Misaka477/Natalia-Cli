@@ -1084,7 +1084,7 @@ export class NativeTerminalRegistry {
           sessionID: (raw as Record<string, unknown>).sessionID as
             | string
             | undefined,
-          ...((raw as Record<string, unknown>).agentID as string | undefined
+          ...(((raw as Record<string, unknown>).agentID as string | undefined)
             ? { agentID: (raw as Record<string, unknown>).agentID as string }
             : {}),
           host: "wezterm",

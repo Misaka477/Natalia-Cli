@@ -13,7 +13,8 @@ import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname; // packages/plugins/browser
 const EXT_DIR = join(ROOT, "src/extension/chromium");
-const BRIDGE_URL = process.env.NATALIA_BROWSER_BRIDGE_URL || "http://127.0.0.1:18765";
+const BRIDGE_URL =
+  process.env.NATALIA_BROWSER_BRIDGE_URL || "http://127.0.0.1:18765";
 
 function isUp(url: string) {
   try {
@@ -47,7 +48,11 @@ function sleep(ms: number) {
 function browserCandidates(): string[] {
   const candidates: string[] = [];
   if (process.platform === "win32") {
-    const roots = [process.env.LOCALAPPDATA, process.env.ProgramFiles, process.env.ProgramW6432].filter(Boolean) as string[];
+    const roots = [
+      process.env.LOCALAPPDATA,
+      process.env.ProgramFiles,
+      process.env.ProgramW6432,
+    ].filter(Boolean) as string[];
     for (const root of roots) {
       for (const rel of [
         "Google/Chrome/Application/chrome.exe",
@@ -55,7 +60,8 @@ function browserCandidates(): string[] {
         "Microsoft/Edge/Application/msedge.exe",
         "BraveSoftware/Brave-Browser/Application/brave.exe",
         "Vivaldi/Application/vivaldi.exe",
-      ]) candidates.push(join(root, rel));
+      ])
+        candidates.push(join(root, rel));
     }
   } else if (process.platform === "darwin") {
     for (const rel of [
@@ -63,7 +69,8 @@ function browserCandidates(): string[] {
       "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
       "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
       "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
-    ]) candidates.push(rel);
+    ])
+      candidates.push(rel);
   } else {
     for (const name of [
       "google-chrome",
@@ -77,7 +84,9 @@ function browserCandidates(): string[] {
       "vivaldi",
     ]) {
       try {
-        const path = execSync(`command -v ${name}`, { stdio: "pipe" }).toString().trim();
+        const path = execSync(`command -v ${name}`, { stdio: "pipe" })
+          .toString()
+          .trim();
         if (path) candidates.push(path);
       } catch {}
     }
@@ -129,9 +138,10 @@ function runningBrowserProcesses(): string[] {
           .flatMap(([, processName]) => [processName, name]);
         return { candidate: real, processNames };
       })
-      .filter(({ candidate, processNames }) =>
-        !/firefox|safari/i.test(candidate) &&
-        processNames.some((processName) => out.includes(processName)),
+      .filter(
+        ({ candidate, processNames }) =>
+          !/firefox|safari/i.test(candidate) &&
+          processNames.some((processName) => out.includes(processName)),
       )
       .map(({ candidate }) => candidate);
   } catch {
@@ -152,20 +162,30 @@ function isBrowserRunning() {
 async function main() {
   console.log("[natalia-browser-bridge] install helper");
   if (!isUp(BRIDGE_URL)) startBridgeServer();
-  else console.log(`[natalia-browser-bridge] bridge already running at ${BRIDGE_URL}`);
+  else
+    console.log(
+      `[natalia-browser-bridge] bridge already running at ${BRIDGE_URL}`,
+    );
 
   const running = runningBrowserProcesses();
   const browser = running[0] || findBrowser();
   if (!browser) {
-    console.error("No supported Chromium browser found. Please install Chrome, Edge, Brave, Opera, Vivaldi or Arc.");
+    console.error(
+      "No supported Chromium browser found. Please install Chrome, Edge, Brave, Opera, Vivaldi or Arc.",
+    );
     process.exit(1);
   }
 
-  if (running[0]) console.log(`[natalia-browser-bridge] detected running browser: ${browser}`);
+  if (running[0])
+    console.log(
+      `[natalia-browser-bridge] detected running browser: ${browser}`,
+    );
   else console.log(`[natalia-browser-bridge] browser: ${browser}`);
 
   if (/firefox|safari/i.test(browser)) {
-    console.error("This helper currently only auto-installs Chromium browsers.");
+    console.error(
+      "This helper currently only auto-installs Chromium browsers.",
+    );
     console.error("Firefox support is still under development.");
     process.exit(1);
   }
@@ -173,11 +193,17 @@ async function main() {
   console.log(`[natalia-browser-bridge] extension dir: ${EXT_DIR}`);
 
   if (!isBrowserRunning()) {
-    console.log("[natalia-browser-bridge] launching browser with --load-extension...");
-    const child = spawn(browser, [`--load-extension=${EXT_DIR}`, "about:blank"], {
-      stdio: "ignore",
-      detached: true,
-    });
+    console.log(
+      "[natalia-browser-bridge] launching browser with --load-extension...",
+    );
+    const child = spawn(
+      browser,
+      [`--load-extension=${EXT_DIR}`, "about:blank"],
+      {
+        stdio: "ignore",
+        detached: true,
+      },
+    );
     child.unref();
     console.log("Done. The extension should auto-connect.");
   } else {
@@ -187,8 +213,13 @@ async function main() {
     console.log(`  ${page}`);
     console.log(`  then load unpacked folder: ${EXT_DIR}`);
     try {
-      spawn(browser, [extensionPageFor(browser)], { stdio: "ignore", detached: true }).unref();
-      console.log(`Opened ${extensionPageFor(browser)} in the detected browser.`);
+      spawn(browser, [extensionPageFor(browser)], {
+        stdio: "ignore",
+        detached: true,
+      }).unref();
+      console.log(
+        `Opened ${extensionPageFor(browser)} in the detected browser.`,
+      );
     } catch {
       console.error("Could not open the extensions page automatically.");
     }

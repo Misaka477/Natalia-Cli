@@ -14,7 +14,11 @@ export function applyWorkspaceEvent(
 ): boolean {
   if (event.type === "workspace.added") {
     const workspace = event.workspace;
-    if (!state.workspaces.some((entry) => entry.workspaceID === workspace.workspaceID)) {
+    if (
+      !state.workspaces.some(
+        (entry) => entry.workspaceID === workspace.workspaceID,
+      )
+    ) {
       state.workspaces.push({ ...workspace });
     }
     if (workspace.status === "active") {
@@ -35,7 +39,8 @@ export function applyWorkspaceEvent(
     else state.workspaces.push({ ...workspace });
     state.activeWorkspaceID = workspace.workspaceID;
     for (const entry of state.workspaces) {
-      entry.status = entry.workspaceID === workspace.workspaceID ? "active" : "idle";
+      entry.status =
+        entry.workspaceID === workspace.workspaceID ? "active" : "idle";
     }
     return true;
   }
@@ -47,8 +52,8 @@ export function applyWorkspaceEvent(
     );
     if (state.activeWorkspaceID === event.workspaceID) {
       state.activeWorkspaceID =
-        state.workspaces.find((entry) => entry.status === "active")?.workspaceID ??
-        state.workspaces[0]?.workspaceID;
+        state.workspaces.find((entry) => entry.status === "active")
+          ?.workspaceID ?? state.workspaces[0]?.workspaceID;
       if (state.activeWorkspaceID) {
         const active = state.workspaces.find(
           (entry) => entry.workspaceID === state.activeWorkspaceID,

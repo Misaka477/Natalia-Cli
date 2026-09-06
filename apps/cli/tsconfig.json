@@ -4,11 +4,7 @@
   "compilerOptions": {
     "rootDir": "../.."
   },
-  "include": [
-    "src",
-    "test",
-    "package.json"
-  ],
+  "include": ["src", "test", "package.json"],
   "references": [
     {
       "path": "../../packages/core/capability"

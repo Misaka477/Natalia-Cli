@@ -9,7 +9,8 @@ export const BROWSER_PLUGIN_MANIFEST: PluginManifest = {
   id: BROWSER_PLUGIN_ID,
   version: "1.0.0",
   name: "Browser Tools",
-  description: "Control the user's existing browser through the Natalia Browser Bridge extension.",
+  description:
+    "Control the user's existing browser through the Natalia Browser Bridge extension.",
   entry: "index.js",
   scope: "session",
   provides: [],

@@ -11,7 +11,9 @@ export function createTurnControlSurface(
       // Refusing is a value: a caller that gets `paused: true` when nothing was
       // paused has been told the turn is held when it is not.
       const exec = sessionID
-        ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
+        ? ctx.ports
+            .getExecutionBySession()
+            .get(sessionID as import("@natalia/contracts").SessionID)
         : ctx.ports.getActiveExec();
       if (!exec?.lastSubmitted)
         return { paused: false, reason: "no turn has been submitted" };
@@ -32,7 +34,9 @@ export function createTurnControlSurface(
     },
     resume(sessionID?: string) {
       const exec = sessionID
-        ? ctx.ports.getExecutionBySession().get(sessionID as import("@natalia/contracts").SessionID)
+        ? ctx.ports
+            .getExecutionBySession()
+            .get(sessionID as import("@natalia/contracts").SessionID)
         : ctx.ports.getActiveExec();
       if (!exec?.lastSubmitted)
         return { resumed: false, reason: "no turn has been submitted" };
@@ -43,7 +47,10 @@ export function createTurnControlSurface(
       const waiters = exec.pauseWaiters;
       exec.pauseWaiters = [];
       for (const resolveWaiter of waiters) resolveWaiter();
-      ctx.ports.publishForSession(exec, { type: "turn.resumed", id: exec.lastSubmitted.id });
+      ctx.ports.publishForSession(exec, {
+        type: "turn.resumed",
+        id: exec.lastSubmitted.id,
+      });
       ctx.ports.publishForSession(exec, {
         type: "status.update",
         status: "running",

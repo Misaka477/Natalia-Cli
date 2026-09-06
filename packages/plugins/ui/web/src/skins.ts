@@ -36,7 +36,6 @@ export const nataliaLightSkin: UiSkin = defineUiSkin({
   },
 });
 
-
 export const nataliaDarkSkin: UiSkin = defineUiSkin({
   id: "dark",
   name: "Graphite",

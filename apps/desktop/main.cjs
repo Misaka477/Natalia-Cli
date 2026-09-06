@@ -229,39 +229,45 @@ function flushRuntimeEvents() {
 }
 
 async function streamRuntimeEvents() {
-  try {
-    const response = await runtimeFetch("/events", {
-      headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : undefined,
-    });
-    if (!response.ok || !response.body) {
-      console.error("[desktop] runtime event stream failed", response.status);
-      return;
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let current = null;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            current = JSON.parse(line.slice(6));
-          } catch {
+  while (true) {
+    try {
+      const response = await runtimeFetch("/events", {
+        headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : undefined,
+      });
+      if (!response.ok || !response.body) {
+        console.error("[desktop] runtime event stream failed", response.status);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let current = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              current = JSON.parse(line.slice(6));
+            } catch {
+              current = null;
+            }
+          } else if (line === "" && current) {
+            sendRuntimeEvent(current);
             current = null;
           }
-        } else if (line === "" && current) {
-          sendRuntimeEvent(current);
-          current = null;
         }
       }
+      console.log("[desktop] runtime event stream closed; reconnecting");
+    } catch (error) {
+      console.log("[desktop] runtime event stream disconnected, retrying");
     }
-  } catch (error) {
-    console.error("[desktop] runtime event stream error", error);
+    if (mainWindow?.isDestroyed()) return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 }
 

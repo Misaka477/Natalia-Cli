@@ -64,18 +64,37 @@ export function Composer(props: ComposerProps) {
         <div class="natalia-composer-attachments">
           <For each={props.attachments}>
             {(attachment) => (
-              <div class="natalia-attachment-chip" data-image={Boolean(attachment.previewUrl)}>
+              <div
+                class="natalia-attachment-chip"
+                data-image={Boolean(attachment.previewUrl)}
+              >
                 <Show
                   when={attachment.previewUrl}
                   fallback={
-                    <svg class="natalia-attachment-icon" viewBox="0 0 16 16" fill="none">
-                      <path d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <svg
+                      class="natalia-attachment-icon"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
                     </svg>
                   }
                 >
-                  <img class="natalia-attachment-thumb" src={attachment.previewUrl} alt={attachment.name ?? ""} />
+                  <img
+                    class="natalia-attachment-thumb"
+                    src={attachment.previewUrl}
+                    alt={attachment.name ?? ""}
+                  />
                 </Show>
-                <span class="natalia-attachment-name">{attachment.name ?? attachment.path.split("/").pop()}</span>
+                <span class="natalia-attachment-name">
+                  {attachment.name ?? attachment.path.split("/").pop()}
+                </span>
                 <button
                   type="button"
                   class="natalia-attachment-remove"
@@ -83,7 +102,12 @@ export function Composer(props: ComposerProps) {
                   aria-label="Remove attachment"
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <path d="M2 2L8 8M8 2L2 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                    <path
+                      d="M2 2L8 8M8 2L2 8"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                      stroke-linecap="round"
+                    />
                   </svg>
                 </button>
               </div>
@@ -117,8 +141,19 @@ export function Composer(props: ComposerProps) {
               title="添加附件"
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path d="M13.5 7.5V11.5C13.5 13.1569 12.1569 14.5 10.5 14.5H5.5C3.84315 14.5 2.5 13.1569 2.5 11.5V5.5C2.5 3.84315 3.84315 2.5 5.5 2.5H9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                <path d="M11 2.5H13.5M13.5 2.5V5M13.5 2.5L9 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path
+                  d="M13.5 7.5V11.5C13.5 13.1569 12.1569 14.5 10.5 14.5H5.5C3.84315 14.5 2.5 13.1569 2.5 11.5V5.5C2.5 3.84315 3.84315 2.5 5.5 2.5H9"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M11 2.5H13.5M13.5 2.5V5M13.5 2.5L9 6.5"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </button>
           </Show>
@@ -134,12 +169,25 @@ export function Composer(props: ComposerProps) {
               when={props.busy}
               fallback={
                 <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <path d="M16.5 8.5L2.5 15V2L16.5 8.5Z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                  <path
+                    d="M16.5 8.5L2.5 15V2L16.5 8.5Z"
+                    fill="currentColor"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linejoin="round"
+                  />
                 </svg>
               }
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor"/>
+                <rect
+                  x="2"
+                  y="2"
+                  width="10"
+                  height="10"
+                  rx="1.5"
+                  fill="currentColor"
+                />
               </svg>
             </Show>
           </button>

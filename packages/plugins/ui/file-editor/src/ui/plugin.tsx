@@ -28,7 +28,9 @@ export function createFileEditorPlugin(): UiPlugin {
           }
           container.replaceChildren();
           const disposeRender = render(
-            () => <FileEditor transport={ctx.transport} runtime={ctx.runtime} />,
+            () => (
+              <FileEditor transport={ctx.transport} runtime={ctx.runtime} />
+            ),
             container,
           );
           return () => disposeRender();

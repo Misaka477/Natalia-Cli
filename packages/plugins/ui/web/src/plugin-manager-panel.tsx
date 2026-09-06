@@ -29,12 +29,14 @@ export function PluginManagerPanel(props: {
   ctx: UiPluginContext;
 }) {
   const [runtimePlugins, setRuntimePlugins] = createSignal<PluginStatus[]>([]);
-  const [runtimeCatalog, setRuntimeCatalog] = createSignal<Array<{
-    id: string;
-    name: string;
-    version: string;
-    enabled?: boolean;
-  }>>([]);
+  const [runtimeCatalog, setRuntimeCatalog] = createSignal<
+    Array<{
+      id: string;
+      name: string;
+      version: string;
+      enabled?: boolean;
+    }>
+  >([]);
   const [uiPlugins, setUiPlugins] = createSignal<UiPluginView[]>([]);
   const [error, setError] = createSignal<string | undefined>(undefined);
   const [installSpec, setInstallSpec] = createSignal("");
@@ -43,8 +45,8 @@ export function PluginManagerPanel(props: {
     name: string;
   } | null>(null);
   const uiRegistry = (): UiRegistryEntry[] =>
-    ((props.ctx.extra as { uiPluginRegistry?: UiRegistryEntry[] } | undefined)
-      ?.uiPluginRegistry ?? []);
+    (props.ctx.extra as { uiPluginRegistry?: UiRegistryEntry[] } | undefined)
+      ?.uiPluginRegistry ?? [];
   const syncPluginUis = () =>
     (
       props.ctx.extra as
@@ -78,12 +80,14 @@ export function PluginManagerPanel(props: {
       const catalog = (await props.ctx.runtime.pluginCatalog?.()) ?? [];
       const ui = props.ctx.host?.loaded() ?? [];
       setRuntimePlugins(runtime);
-      setRuntimeCatalog(catalog.map((plugin) => ({
-        id: plugin.id,
-        name: plugin.name ?? plugin.id,
-        version: plugin.version,
-        enabled: plugin.enabled,
-      })));
+      setRuntimeCatalog(
+        catalog.map((plugin) => ({
+          id: plugin.id,
+          name: plugin.name ?? plugin.id,
+          version: plugin.version,
+          enabled: plugin.enabled,
+        })),
+      );
       setUiPlugins(ui);
       setEnabledMap((prev) => {
         const next = { ...prev };
@@ -171,14 +175,24 @@ export function PluginManagerPanel(props: {
   return (
     <Show when={props.open}>
       <Show when={confirmUninstall()}>
-        <div class="neu-confirm-backdrop" onClick={() => setConfirmUninstall(null)}>
-          <div class="neu-confirm-box" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-confirm-backdrop"
+          onClick={() => setConfirmUninstall(null)}
+        >
+          <div
+            class="neu-confirm-box"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div class="neu-confirm-title">确认卸载</div>
             <div class="neu-confirm-text">
               确定要卸载 <strong>{confirmUninstall()!.name}</strong> 吗？
             </div>
             <div class="neu-confirm-actions">
-              <button type="button" class="neu-plugin-btn" onClick={() => setConfirmUninstall(null)}>
+              <button
+                type="button"
+                class="neu-plugin-btn"
+                onClick={() => setConfirmUninstall(null)}
+              >
                 取消
               </button>
               <button
@@ -193,7 +207,10 @@ export function PluginManagerPanel(props: {
         </div>
       </Show>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-plugin-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-plugin-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">插件管理</span>
             <button
@@ -203,7 +220,12 @@ export function PluginManagerPanel(props: {
               aria-label="关闭插件管理"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                <path
+                  d="M3 3l10 10M13 3L3 13"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                />
               </svg>
             </button>
           </div>
@@ -218,12 +240,21 @@ export function PluginManagerPanel(props: {
                 value={installSpec()}
                 onInput={(event) => setInstallSpec(event.currentTarget.value)}
               />
-              <button type="button" class="neu-plugin-btn" onClick={() => void installRuntime()}>
+              <button
+                type="button"
+                class="neu-plugin-btn"
+                onClick={() => void installRuntime()}
+              >
                 安装
               </button>
             </div>
             <div class="neu-plugin-section-title">UI 插件</div>
-            <Show when={uiRegistry().length || uiPlugins().length} fallback={<div class="neu-plugin-empty">没有已加载的 UI 插件</div>}>
+            <Show
+              when={uiRegistry().length || uiPlugins().length}
+              fallback={
+                <div class="neu-plugin-empty">没有已加载的 UI 插件</div>
+              }
+            >
               <For each={uiRegistry()}>
                 {(entry) => {
                   const loaded = uiPlugins().some(
@@ -233,14 +264,17 @@ export function PluginManagerPanel(props: {
                     <div class="neu-plugin-row">
                       <div class="neu-plugin-main">
                         <span class="neu-plugin-name">{entry.name}</span>
-                        <span class="neu-plugin-meta">{entry.id} · {entry.version}</span>
+                        <span class="neu-plugin-meta">
+                          {entry.id} · {entry.version}
+                        </span>
                       </div>
                       <label class="neu-plugin-switch">
                         <input
                           type="checkbox"
                           checked={loaded}
                           onChange={(event) => {
-                            if (event.currentTarget.checked) void enableUi(entry);
+                            if (event.currentTarget.checked)
+                              void enableUi(entry);
                             else void disableUi(entry.id);
                           }}
                         />
@@ -254,15 +288,25 @@ export function PluginManagerPanel(props: {
               </For>
             </Show>
             <div class="neu-plugin-section-title">运行时插件</div>
-            <Show when={runtimeCatalog().length} fallback={<div class="neu-plugin-empty">没有运行时插件</div>}>
+            <Show
+              when={runtimeCatalog().length}
+              fallback={<div class="neu-plugin-empty">没有运行时插件</div>}
+            >
               <For each={runtimeCatalog()}>
                 {(plugin) => (
                   <div class="neu-plugin-row">
                     <div class="neu-plugin-main">
                       <span class="neu-plugin-name">{plugin.name}</span>
-                      <span class="neu-plugin-meta">{plugin.id}{plugin.version ? ` · ${plugin.version}` : ""}</span>
+                      <span class="neu-plugin-meta">
+                        {plugin.id}
+                        {plugin.version ? ` · ${plugin.version}` : ""}
+                      </span>
                     </div>
-                    <button type="button" class="neu-plugin-btn" onClick={() => requestUninstall(plugin.id, plugin.name)}>
+                    <button
+                      type="button"
+                      class="neu-plugin-btn"
+                      onClick={() => requestUninstall(plugin.id, plugin.name)}
+                    >
                       卸载
                     </button>
                     <label class="neu-plugin-switch">
@@ -271,7 +315,10 @@ export function PluginManagerPanel(props: {
                         checked={enabledMap()[plugin.id] ?? true}
                         onChange={(event) => {
                           const next = event.currentTarget.checked;
-                          setEnabledMap((prev) => ({ ...prev, [plugin.id]: next }));
+                          setEnabledMap((prev) => ({
+                            ...prev,
+                            [plugin.id]: next,
+                          }));
                           void setEnabled(plugin.id, next);
                         }}
                       />
@@ -279,7 +326,11 @@ export function PluginManagerPanel(props: {
                         <span class="neu-plugin-switch-thumb" />
                       </span>
                     </label>
-                    <button type="button" class="neu-plugin-btn" onClick={() => void reloadRuntime(plugin.id)}>
+                    <button
+                      type="button"
+                      class="neu-plugin-btn"
+                      onClick={() => void reloadRuntime(plugin.id)}
+                    >
                       重新加载
                     </button>
                   </div>

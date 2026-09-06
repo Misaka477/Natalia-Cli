@@ -203,9 +203,9 @@ export class SqliteSessionStore {
   private ensureNewRecoveryColumns() {
     const columns = new Set(
       (
-        this.db
-          .query(`PRAGMA table_info(recovery_selection)`)
-          .all() as Array<{ name: string }>
+        this.db.query(`PRAGMA table_info(recovery_selection)`).all() as Array<{
+          name: string;
+        }>
       ).map((column) => column.name),
     );
     const additions: Array<[string, string]> = [
@@ -414,17 +414,17 @@ export class SqliteSessionStore {
         sessionID,
         afterSeq,
       ]);
-      this.run(`DELETE FROM message_turns WHERE session_id = ? AND start_seq > ?`, [
-        sessionID,
-        afterSeq,
-      ]);
+      this.run(
+        `DELETE FROM message_turns WHERE session_id = ? AND start_seq > ?`,
+        [sessionID, afterSeq],
+      );
       this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [
         sessionID,
       ]);
-      this.run(`DELETE FROM context_epochs WHERE session_id = ? AND baseline_seq > ?`, [
-        sessionID,
-        afterSeq,
-      ]);
+      this.run(
+        `DELETE FROM context_epochs WHERE session_id = ? AND baseline_seq > ?`,
+        [sessionID, afterSeq],
+      );
       this.run(`DELETE FROM recovery_turns WHERE session_id = ?`, [sessionID]);
       this.run(
         `INSERT INTO recovery_state(session_id, indexed_events) VALUES (?, ?)
@@ -482,7 +482,9 @@ export class SqliteSessionStore {
       this.clearDeleted(session.id);
       this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [session.id]);
       this.run(`DELETE FROM message_turns WHERE session_id = ?`, [session.id]);
-      this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [session.id]);
+      this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [
+        session.id,
+      ]);
       this.run(`DELETE FROM session_inputs WHERE session_id = ?`, [session.id]);
       this.deleteRecoveryProjection(session.id);
       this.run(`DELETE FROM events WHERE session_id = ?`, [session.id]);
@@ -612,9 +614,10 @@ export class SqliteSessionStore {
           | import("@natalia/contracts").RuntimeReasoningEffort
           | undefined) ?? undefined,
       chatModelProfile: selection?.chat_model_profile
-        ? (JSON.parse(
-            selection.chat_model_profile,
-          ) as Record<string, import("@natalia/contracts").ChatModelProfile>)
+        ? (JSON.parse(selection.chat_model_profile) as Record<
+            string,
+            import("@natalia/contracts").ChatModelProfile
+          >)
         : undefined,
       permissionMode:
         (selection?.permission_mode as
@@ -756,17 +759,19 @@ export class SqliteSessionStore {
     const after = Math.max(0, options.after ?? 0);
     const offset = Math.max(0, options.offset ?? 0);
     const limit = Math.min(2000, Math.max(1, options.limit ?? 100));
-    const rows = (options.offset === undefined
-      ? this.db
-          .query(
-            `SELECT seq, event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
-          )
-          .all(sessionID, after, limit + 1)
-      : this.db
-          .query(
-            `SELECT seq, event FROM events WHERE session_id = ? ORDER BY seq LIMIT ? OFFSET ?`,
-          )
-          .all(sessionID, limit + 1, offset)) as Array<{
+    const rows = (
+      options.offset === undefined
+        ? this.db
+            .query(
+              `SELECT seq, event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
+            )
+            .all(sessionID, after, limit + 1)
+        : this.db
+            .query(
+              `SELECT seq, event FROM events WHERE session_id = ? ORDER BY seq LIMIT ? OFFSET ?`,
+            )
+            .all(sessionID, limit + 1, offset)
+    ) as Array<{
       seq: number;
       event: string;
     }>;
@@ -1084,9 +1089,10 @@ export class SqliteSessionStore {
         )
         .get(sessionID) as { chat_model_profile?: string } | undefined;
       const profiles = existing?.chat_model_profile
-        ? (JSON.parse(
-            existing.chat_model_profile,
-          ) as Record<string, import("@natalia/contracts").ChatModelProfile>)
+        ? (JSON.parse(existing.chat_model_profile) as Record<
+            string,
+            import("@natalia/contracts").ChatModelProfile
+          >)
         : {};
       profiles[event.channel] = event.profile;
       this.run(
@@ -1144,9 +1150,7 @@ export class SqliteSessionStore {
 
   private ensureMessageIndex(sessionID: SessionID) {
     const state = this.db
-      .query(
-        `SELECT last_seq FROM message_index_state WHERE session_id = ?`,
-      )
+      .query(`SELECT last_seq FROM message_index_state WHERE session_id = ?`)
       .get(sessionID) as { last_seq: number } | undefined;
     const lastSeq = state?.last_seq ?? 0;
     this.run(

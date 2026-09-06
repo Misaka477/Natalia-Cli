@@ -489,10 +489,7 @@ export interface CheckpointController {
   createCheckpoint(
     input: import("@natalia/runtime").CreateCheckpointInput,
   ): ReturnType<CheckpointStore["createCheckpoint"]>;
-  rename(
-    id: string,
-    name: string,
-  ): ReturnType<CheckpointStore["rename"]>;
+  rename(id: string, name: string): ReturnType<CheckpointStore["rename"]>;
   isEnabled(): boolean;
   resources(): Array<{
     kind: "subagent" | "tool";
@@ -591,10 +588,7 @@ export interface TerminalController {
     id: string,
     sessionID?: string,
   ): RuntimeNativeTerminalSession;
-  endSecureInput(
-    id: string,
-    sessionID?: string,
-  ): RuntimeNativeTerminalSession;
+  endSecureInput(id: string, sessionID?: string): RuntimeNativeTerminalSession;
   stop(
     id: string,
     actor: "model" | "human" | "system",

@@ -17,9 +17,47 @@ import {
   type StatusSnapshotController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
+
+async function appendCheckpointMutation(
+  ctx: RuntimeContext,
+  sessionID: string,
+  path: string,
+  operation: "add" | "modify" | "delete" | "rename",
+) {
+  try {
+    const logPath = resolve(
+      ctx.ports.getWorkspaceRoot(),
+      ".natalia",
+      "workspace-mutations.json",
+    );
+    await mkdir(dirname(logPath), { recursive: true });
+    let rows: Array<Record<string, unknown>> = [];
+    try {
+      rows = JSON.parse(await readFile(logPath, "utf8")) as Array<
+        Record<string, unknown>
+      >;
+    } catch {
+      rows = [];
+    }
+    rows.push({
+      id: `mut_${Date.now().toString(36)}`,
+      at: new Date().toISOString(),
+      workspaceRoot: ctx.ports.getWorkspaceRoot(),
+      sessionID,
+      path,
+      operation,
+      origin: "checkpoint_rollback",
+    });
+    await writeFile(logPath, JSON.stringify(rows, null, 2));
+  } catch {
+    // best-effort
+  }
+}
 
 export function createCheckpointRuntime(ctx: RuntimeContext) {
   return {
@@ -46,30 +84,86 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     return { controller, owner };
   }
 
-  async function checkpointList(sessionID?: string): Promise<
+  async function checkpointList(
+    sessionID?: string,
+  ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeServiceClient["checkpointList"]>>>
   > {
     const { controller } = await requireInitializedController(sessionID);
     return (await controller.list()).map(toRuntimeCheckpoint);
   }
 
-  async function checkpointPreview(id: string, sessionID?: string) {
+  async function checkpointPreview(
+    id: string,
+    sessionID?: string,
+    options?: { includePatch?: boolean },
+  ) {
     const { controller } = await requireInitializedController(sessionID);
-    return await controller.preview(id);
+    const preview = await controller.preview(id);
+    if (options?.includePatch === false) {
+      return {
+        ...preview,
+        changes: preview.changes.map((change) => ({
+          kind: change.kind,
+          path: change.path,
+          ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+          ...(change.mode ? { mode: change.mode } : {}),
+          additions: change.additions ?? 0,
+          deletions: change.deletions ?? 0,
+          ...(change.structured ? { structured: change.structured } : {}),
+        })),
+      };
+    }
+    return preview;
   }
 
-  async function workspaceDiff(): Promise<
+  async function workspaceDiff(input?: {
+    includePatch?: boolean;
+  }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeServiceClient["workspaceDiff"]>>>
   > {
     const { controller } = await requireInitializedController();
-    return await controller.get().workspaceDiff();
+    const changes = await controller.get().workspaceDiff();
+    if (input?.includePatch === false) {
+      return changes.map((change) => ({
+        path: change.path,
+        operation: change.operation,
+        ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+        additions: 0,
+        deletions: 0,
+        ...(change.structured ? { structured: change.structured } : {}),
+      }));
+    }
+    return changes;
   }
 
-  async function checkpointRollback(input: { id: string; dryRun?: boolean; sessionID?: string }) {
-    const { controller, owner } = await requireInitializedController(input.sessionID);
+  async function checkpointRollback(input: {
+    id: string;
+    dryRun?: boolean;
+    sessionID?: string;
+  }) {
+    const { controller, owner } = await requireInitializedController(
+      input.sessionID,
+    );
     const preview = await controller.rollback(input.id, {
       dryRun: input.dryRun,
     });
+    if (!input.dryRun) {
+      for (const change of preview.changes) {
+        void appendCheckpointMutation(
+          ctx,
+          owner.session.id,
+          change.path,
+          change.kind === "add"
+            ? "add"
+            : change.kind === "delete"
+              ? "delete"
+              : change.kind === "rename"
+                ? "rename"
+                : "modify",
+        );
+      }
+    }
     const status = ctx.ports.resolveService<StatusSnapshotController>(
       STATUS_SNAPSHOT_CONTROLLER_SERVICE,
     );
@@ -85,7 +179,11 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     return preview;
   }
 
-  async function checkpointRename(input: { id: string; name: string; sessionID?: string }) {
+  async function checkpointRename(input: {
+    id: string;
+    name: string;
+    sessionID?: string;
+  }) {
     const { controller } = await requireInitializedController(input.sessionID);
     return toRuntimeCheckpoint(await controller.rename(input.id, input.name));
   }
@@ -108,7 +206,9 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
 
   function toRuntimeCheckpoint(
     record: Awaited<ReturnType<CheckpointController["list"]>>[number],
-  ): Awaited<ReturnType<NonNullable<RuntimeServiceClient["checkpointList"]>>>[number] {
+  ): Awaited<
+    ReturnType<NonNullable<RuntimeServiceClient["checkpointList"]>>
+  >[number] {
     return {
       id: record.id,
       sequence: record.sequence,

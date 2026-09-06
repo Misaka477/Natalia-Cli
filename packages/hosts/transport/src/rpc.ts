@@ -231,6 +231,12 @@ export const RPC_ROUTE_MEMBERS = {
   "observation.confirmed": "confirmedWorkspaceChanges",
   "workspace.diff": "workspaceDiff",
   "workspace.git.diff": "workspaceGitDiff",
+  "ast.diff": "astDiff",
+  "ast.diff.batch": "astDiffBatch",
+  "ast.refactor.preview": "astRefactorPreview",
+  "ast.service": "astService",
+  "ast.refactor.plan": "astRefactorPlan",
+  "ast.refactor.apply": "astApplyRefactor",
   "git.refs": "gitRefs",
   "team.pr.list": "teamPRList",
   "tools.registered": "registeredTools",
@@ -365,6 +371,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "task.schedule",
   "task.unschedule",
   "flow.install-examples",
+  "ast.refactor.apply",
 ]);
 
 /**
@@ -630,7 +637,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.resume?.(optionalStringParam(body.params, "sessionID")),
+        result: await client.resume?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "agent.select") {
@@ -869,8 +878,14 @@ export async function handleRPCMessage(
       if (typeof content !== "string")
         throw invalidParams("workspace.write.params.content must be a string");
       const encoding = (params as { encoding?: unknown }).encoding;
-      if (encoding !== undefined && encoding !== "utf8" && encoding !== "base64")
-        throw invalidParams("workspace.write.params.encoding must be utf8 or base64");
+      if (
+        encoding !== undefined &&
+        encoding !== "utf8" &&
+        encoding !== "base64"
+      )
+        throw invalidParams(
+          "workspace.write.params.encoding must be utf8 or base64",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -894,7 +909,9 @@ export async function handleRPCMessage(
         throw invalidParams("workspace.create.params.content must be a string");
       const directory = (params as { directory?: unknown }).directory;
       if (directory !== undefined && typeof directory !== "boolean")
-        throw invalidParams("workspace.create.params.directory must be a boolean");
+        throw invalidParams(
+          "workspace.create.params.directory must be a boolean",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -1023,8 +1040,14 @@ export async function handleRPCMessage(
     if (body.method === "workspace.permission.set") {
       optionsGuard(client, "workspacePermissionSet");
       const workspaceID = stringParam(body.params, "workspaceID");
-      if (!body.params || typeof body.params.settings !== "object" || body.params.settings === null)
-        throw invalidParams("workspace.permission.set.params.settings must be an object");
+      if (
+        !body.params ||
+        typeof body.params.settings !== "object" ||
+        body.params.settings === null
+      )
+        throw invalidParams(
+          "workspace.permission.set.params.settings must be an object",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -1046,8 +1069,14 @@ export async function handleRPCMessage(
     if (body.method === "workspace.tool.set") {
       optionsGuard(client, "workspaceToolSet");
       const workspaceID = stringParam(body.params, "workspaceID");
-      if (!body.params || typeof body.params.settings !== "object" || body.params.settings === null)
-        throw invalidParams("workspace.tool.set.params.settings must be an object");
+      if (
+        !body.params ||
+        typeof body.params.settings !== "object" ||
+        body.params.settings === null
+      )
+        throw invalidParams(
+          "workspace.tool.set.params.settings must be an object",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -1069,12 +1098,25 @@ export async function handleRPCMessage(
     }
     if (body.method === "checkpoint.preview") {
       optionsGuard(client, "checkpointPreview");
+      const checkpointOptions = (
+        body.params as
+          | {
+              options?: { includePatch?: boolean };
+            }
+          | undefined
+      )?.options;
+      const includePatch = checkpointOptions?.includePatch;
+      if (includePatch !== undefined && typeof includePatch !== "boolean")
+        throw invalidParams(
+          "checkpoint.preview.params.options.includePatch must be a boolean",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.checkpointPreview(
           stringParam(body.params, "id"),
           optionalStringParam(body.params, "sessionID"),
+          includePatch === undefined ? undefined : { includePatch },
         ),
       };
     }
@@ -1122,12 +1164,25 @@ export async function handleRPCMessage(
     }
     if (body.method === "sandbox.diff") {
       optionsGuard(client, "sandboxDiff");
+      const sandboxOptions = (
+        body.params as
+          | {
+              options?: { includePatch?: boolean };
+            }
+          | undefined
+      )?.options;
+      const includePatch = sandboxOptions?.includePatch;
+      if (includePatch !== undefined && typeof includePatch !== "boolean")
+        throw invalidParams(
+          "sandbox.diff.params.options.includePatch must be a boolean",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sandboxDiff?.(
           stringParam(body.params, "id"),
           optionalStringParam(body.params, "sessionID"),
+          includePatch === undefined ? undefined : { includePatch },
         ),
       };
     }
@@ -1535,7 +1590,9 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.nativeTerminalList?.(optionalStringParam(body.params, "sessionID")),
+        result: await client.nativeTerminalList?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
       };
     }
     if (body.method === "nativeTerminal.read") {
@@ -1822,7 +1879,8 @@ export async function handleRPCMessage(
       const result = await client.recordValidation?.(
         {
           taskID: params.taskID,
-          objective: typeof params.objective === "string" ? params.objective : "",
+          objective:
+            typeof params.objective === "string" ? params.objective : "",
           command: params.command,
           ...(typeof params.timeoutSec === "number"
             ? { timeoutSec: params.timeoutSec }
@@ -1869,7 +1927,8 @@ export async function handleRPCMessage(
       const result = await client.recordCompletion?.(
         {
           taskID: params.taskID,
-          objective: typeof params.objective === "string" ? params.objective : "",
+          objective:
+            typeof params.objective === "string" ? params.objective : "",
           changeSummary: params.changeSummary,
           ...(typeof params.behaviorImpact === "string"
             ? { behaviorImpact: params.behaviorImpact }
@@ -1942,7 +2001,9 @@ export async function handleRPCMessage(
           objective: params.objective,
           currentActivity: params.currentActivity,
           ...(Array.isArray(params.applicableConstraints)
-            ? { applicableConstraints: params.applicableConstraints.map(String) }
+            ? {
+                applicableConstraints: params.applicableConstraints.map(String),
+              }
             : {}),
           ...(Array.isArray(params.changes) ? { changes: params.changes } : {}),
           ...(Array.isArray(params.evidenceRefs)
@@ -1997,19 +2058,269 @@ export async function handleRPCMessage(
     }
     if (body.method === "workspace.diff") {
       optionsGuard(client, "workspaceDiff");
+      const includePatch = body.params?.includePatch;
+      if (includePatch !== undefined && typeof includePatch !== "boolean")
+        throw invalidParams(
+          "workspace.diff.params.includePatch must be a boolean",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.workspaceDiff?.(),
+        result: await client.workspaceDiff?.(
+          includePatch === undefined ? undefined : { includePatch },
+        ),
       };
     }
     if (body.method === "workspace.git.diff") {
       optionsGuard(client, "workspaceGitDiff");
-      const input = body.params as { from?: string; to?: string; path?: string } | undefined;
+      const input = body.params as
+        | {
+            from?: string;
+            to?: string;
+            path?: string;
+            includePatch?: boolean;
+            includeContent?: boolean;
+          }
+        | undefined;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.workspaceGitDiff?.(input),
+      };
+    }
+    if (body.method === "ast.diff") {
+      optionsGuard(client, "astDiff");
+      const input = body.params as
+        | { oldText: string; newText: string; language: string }
+        | undefined;
+      if (
+        !input ||
+        typeof input.oldText !== "string" ||
+        typeof input.newText !== "string" ||
+        typeof input.language !== "string"
+      )
+        throw invalidParams(
+          "ast.diff.params.oldText, newText and language are required strings",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.astDiff?.(input),
+      };
+    }
+    if (body.method === "ast.diff.batch") {
+      optionsGuard(client, "astDiffBatch");
+      const input = body.params as
+        | {
+            files?: Array<{
+              path?: string;
+              oldText: string;
+              newText: string;
+              language: string;
+            }>;
+            options?: { maxChangesPerFile?: number };
+          }
+        | undefined;
+      if (!input || !Array.isArray(input.files) || input.files.length === 0)
+        throw invalidParams(
+          "ast.diff.batch.params.files must be a non-empty array",
+        );
+      const files = input.files;
+      for (const file of files) {
+        if (
+          !file ||
+          typeof file.oldText !== "string" ||
+          typeof file.newText !== "string" ||
+          typeof file.language !== "string"
+        )
+          throw invalidParams(
+            "ast.diff.batch.params.files requires oldText/newText/language strings",
+          );
+      }
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.astDiffBatch?.({
+          files,
+          ...(input.options ? { options: input.options } : {}),
+        }),
+      };
+    }
+    if (body.method === "ast.refactor.preview") {
+      optionsGuard(client, "astRefactorPreview");
+      const input = body.params as
+        | {
+            operation: "rename" | "extract" | "inline" | "move" | "custom";
+            files?: Array<{
+              path?: string;
+              oldText: string;
+              newText: string;
+              language: string;
+            }>;
+          }
+        | undefined;
+      if (
+        !input ||
+        typeof input.operation !== "string" ||
+        !Array.isArray(input.files) ||
+        input.files.length === 0
+      )
+        throw invalidParams(
+          "ast.refactor.preview.params.operation and files are required",
+        );
+      for (const file of input.files) {
+        if (
+          !file ||
+          typeof file.oldText !== "string" ||
+          typeof file.newText !== "string" ||
+          typeof file.language !== "string"
+        )
+          throw invalidParams(
+            "ast.refactor.preview.params.files requires oldText/newText/language strings",
+          );
+      }
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.astRefactorPreview?.({
+          operation: input.operation as
+            | "rename"
+            | "extract"
+            | "inline"
+            | "move"
+            | "custom",
+          files: input.files,
+        }),
+      };
+    }
+    if (body.method === "ast.service") {
+      optionsGuard(client, "astService");
+      const input = body.params as
+        | {
+            operation: "index" | "query";
+            files?: Array<{
+              path?: string;
+              source: string;
+              language: string;
+            }>;
+            query?: { nodeKind?: string; textIncludes?: string };
+          }
+        | undefined;
+      if (
+        !input ||
+        (input.operation !== "index" && input.operation !== "query") ||
+        !Array.isArray(input.files) ||
+        input.files.length === 0
+      )
+        throw invalidParams(
+          "ast.service.params.operation and files are required",
+        );
+      for (const file of input.files) {
+        if (
+          !file ||
+          typeof file.source !== "string" ||
+          typeof file.language !== "string"
+        )
+          throw invalidParams(
+            "ast.service.params.files requires source/language strings",
+          );
+      }
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.astService?.({
+          operation: input.operation,
+          files: input.files,
+          ...(input.query ? { query: input.query } : {}),
+        }),
+      };
+    }
+    if (body.method === "ast.refactor.plan") {
+      optionsGuard(client, "astRefactorPlan");
+      const input = body.params as
+        | {
+            operation: "rename" | "extract" | "inline" | "move" | "custom";
+            files?: Array<{
+              path?: string;
+              source: string;
+              language: string;
+            }>;
+            rename?: { from: string; to: string };
+            query?: { nodeKind?: string; textIncludes?: string };
+          }
+        | undefined;
+      if (
+        !input ||
+        typeof input.operation !== "string" ||
+        !Array.isArray(input.files) ||
+        input.files.length === 0
+      )
+        throw invalidParams(
+          "ast.refactor.plan.params.operation and files are required",
+        );
+      for (const file of input.files) {
+        if (
+          !file ||
+          typeof file.source !== "string" ||
+          typeof file.language !== "string"
+        )
+          throw invalidParams(
+            "ast.refactor.plan.params.files requires source/language strings",
+          );
+      }
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.astRefactorPlan?.({
+          operation: input.operation,
+          files: input.files,
+          ...(input.rename ? { rename: input.rename } : {}),
+          ...(input.query ? { query: input.query } : {}),
+        }),
+      };
+    }
+    if (body.method === "ast.refactor.apply") {
+      optionsGuard(client, "astApplyRefactor");
+      const input = body.params as
+        | {
+            operation: "rename" | "extract" | "inline" | "move" | "custom";
+            files?: Array<{
+              path?: string;
+              source: string;
+              language: string;
+            }>;
+            rename?: { from: string; to: string };
+            dryRun?: boolean;
+          }
+        | undefined;
+      if (
+        !input ||
+        typeof input.operation !== "string" ||
+        !Array.isArray(input.files) ||
+        input.files.length === 0
+      )
+        throw invalidParams(
+          "ast.refactor.apply.params.operation and files are required",
+        );
+      for (const file of input.files) {
+        if (
+          !file ||
+          typeof file.source !== "string" ||
+          typeof file.language !== "string"
+        )
+          throw invalidParams(
+            "ast.refactor.apply.params.files requires source/language strings",
+          );
+      }
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.astApplyRefactor?.({
+          operation: input.operation,
+          files: input.files,
+          ...(input.rename ? { rename: input.rename } : {}),
+          ...(input.dryRun ? { dryRun: input.dryRun } : {}),
+        }),
       };
     }
     if (body.method === "git.refs") {
@@ -2060,21 +2371,21 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.requestOverride?.(
           {
-          ruleID: params.ruleID,
-          reason: params.reason,
-          ...(Array.isArray(params.paths)
-            ? {
-                paths: params.paths.filter(
-                  (path): path is string => typeof path === "string",
-                ),
-              }
-            : {}),
-          ...(typeof params.taskID === "string"
-            ? { taskID: params.taskID }
-            : {}),
-          ...(typeof params.expiresAt === "string"
-            ? { expiresAt: params.expiresAt }
-            : {}),
+            ruleID: params.ruleID,
+            reason: params.reason,
+            ...(Array.isArray(params.paths)
+              ? {
+                  paths: params.paths.filter(
+                    (path): path is string => typeof path === "string",
+                  ),
+                }
+              : {}),
+            ...(typeof params.taskID === "string"
+              ? { taskID: params.taskID }
+              : {}),
+            ...(typeof params.expiresAt === "string"
+              ? { expiresAt: params.expiresAt }
+              : {}),
           },
           optionalStringParam(body.params, "sessionID"),
         ),
@@ -2102,7 +2413,8 @@ export async function handleRPCMessage(
     }
     if (body.method === "mailbox.list") {
       optionsGuard(client, "mailboxList");
-      const sessionID = (body.params as { sessionID?: string } | undefined)?.sessionID;
+      const sessionID = (body.params as { sessionID?: string } | undefined)
+        ?.sessionID;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2220,7 +2532,8 @@ export async function handleRPCMessage(
     }
     if (body.method === "planDoc.list") {
       optionsGuard(client, "planDocList");
-      const sessionID = (body.params as { sessionID?: string } | undefined)?.sessionID;
+      const sessionID = (body.params as { sessionID?: string } | undefined)
+        ?.sessionID;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2262,9 +2575,7 @@ export async function handleRPCMessage(
         result: await client.planDocWrite?.({
           path: params.path,
           content: params.content,
-          ...(typeof params.title === "string"
-            ? { title: params.title }
-            : {}),
+          ...(typeof params.title === "string" ? { title: params.title } : {}),
           ...(typeof params.planID === "string"
             ? { planID: params.planID }
             : {}),
@@ -2288,9 +2599,7 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.planDocMark?.({
           path: params.path,
-          ...(typeof params.title === "string"
-            ? { title: params.title }
-            : {}),
+          ...(typeof params.title === "string" ? { title: params.title } : {}),
           ...(typeof params.sessionID === "string"
             ? { sessionID: params.sessionID }
             : {}),
@@ -2395,9 +2704,13 @@ export async function handleRPCMessage(
       if (typeof name !== "string" || !name)
         throw invalidParams("attachment.upload.params.name must be a string");
       if (typeof mediaType !== "string" || !mediaType)
-        throw invalidParams("attachment.upload.params.mediaType must be a string");
+        throw invalidParams(
+          "attachment.upload.params.mediaType must be a string",
+        );
       if (typeof data !== "string" || !data)
-        throw invalidParams("attachment.upload.params.data must be a base64 string");
+        throw invalidParams(
+          "attachment.upload.params.data must be a base64 string",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2412,7 +2725,9 @@ export async function handleRPCMessage(
       if (typeof path !== "string" || !path)
         throw invalidParams("attachment.dataUrl.params.path must be a string");
       if (typeof mediaType !== "string" || !mediaType)
-        throw invalidParams("attachment.dataUrl.params.mediaType must be a string");
+        throw invalidParams(
+          "attachment.dataUrl.params.mediaType must be a string",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2430,7 +2745,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.chatModelProfile?.(params?.channel, params?.sessionID),
+        result: await client.chatModelProfile?.(
+          params?.channel,
+          params?.sessionID,
+        ),
       };
     }
     if (body.method === "chat.model.profile.set") {
@@ -2439,9 +2757,13 @@ export async function handleRPCMessage(
       if (!params || typeof params !== "object")
         throw invalidParams("chat.model.profile.set.params must be an object");
       const profile = (params as { profile?: unknown }).profile;
-      const channel = (params as { channel?: import("@natalia/contracts").ChatChannel }).channel;
+      const channel = (
+        params as { channel?: import("@natalia/contracts").ChatChannel }
+      ).channel;
       if (!profile || typeof profile !== "object")
-        throw invalidParams("chat.model.profile.set.params.profile must be an object");
+        throw invalidParams(
+          "chat.model.profile.set.params.profile must be an object",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2486,7 +2808,9 @@ export async function handleRPCMessage(
       if (!params || typeof params !== "object")
         throw invalidParams("chat.submit.params must be an object");
       const text = (params as { text?: unknown }).text;
-      const channel = (params as { channel?: import("@natalia/contracts").ChatChannel }).channel;
+      const channel = (
+        params as { channel?: import("@natalia/contracts").ChatChannel }
+      ).channel;
       if (typeof text !== "string")
         throw invalidParams("chat.submit.params.text must be a string");
       return {
@@ -2496,10 +2820,24 @@ export async function handleRPCMessage(
           text,
           ...(channel ? { channel } : {}),
           ...(typeof (params as { model?: unknown }).model === "object"
-            ? { model: (params as { model?: { modelID?: string; variant?: string } }).model }
+            ? {
+                model: (
+                  params as { model?: { modelID?: string; variant?: string } }
+                ).model,
+              }
             : {}),
-          ...(typeof (params as { reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort }).reasoningEffort !== "undefined"
-            ? { reasoningEffort: (params as { reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort }).reasoningEffort }
+          ...(typeof (
+            params as {
+              reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+            }
+          ).reasoningEffort !== "undefined"
+            ? {
+                reasoningEffort: (
+                  params as {
+                    reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+                  }
+                ).reasoningEffort,
+              }
             : {}),
           ...(typeof (params as { sessionID?: string }).sessionID === "string"
             ? { sessionID: (params as { sessionID?: string }).sessionID }
@@ -2513,7 +2851,9 @@ export async function handleRPCMessage(
       if (!params || typeof params !== "object")
         throw invalidParams("chat.rollback.params must be an object");
       const toMessageID = (params as { toMessageID?: unknown }).toMessageID;
-      const channel = (params as { channel?: import("@natalia/contracts").ChatChannel }).channel;
+      const channel = (
+        params as { channel?: import("@natalia/contracts").ChatChannel }
+      ).channel;
       const sessionID = (params as { sessionID?: string }).sessionID;
       if (typeof toMessageID !== "string")
         throw invalidParams(
@@ -2571,7 +2911,9 @@ export async function handleRPCMessage(
       if (!patch || typeof patch !== "object")
         throw invalidParams("settings.set.params.patch must be an object");
       if (scope !== "global" && scope !== "project")
-        throw invalidParams("settings.set.params.scope must be global or project");
+        throw invalidParams(
+          "settings.set.params.scope must be global or project",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -2871,9 +3213,22 @@ export async function handleRPCMessage(
           apiKey,
           baseURL: typeof baseURL === "string" && baseURL ? baseURL : undefined,
           ...(typeof label === "string" && label ? { label } : {}),
-          ...(typeof previousName === "string" && previousName ? { previousName } : {}),
-          ...(headers && typeof headers === "object" ? { headers: headers as Record<string, string> } : {}),
-          ...(Array.isArray(models) ? { models: models as Array<{ id: string; name?: string; reasoning?: boolean; image?: boolean }> } : {}),
+          ...(typeof previousName === "string" && previousName
+            ? { previousName }
+            : {}),
+          ...(headers && typeof headers === "object"
+            ? { headers: headers as Record<string, string> }
+            : {}),
+          ...(Array.isArray(models)
+            ? {
+                models: models as Array<{
+                  id: string;
+                  name?: string;
+                  reasoning?: boolean;
+                  image?: boolean;
+                }>,
+              }
+            : {}),
         }),
       };
     }
@@ -2916,7 +3271,9 @@ export async function handleRPCMessage(
       optionsGuard(client, "pluginUninstall");
       const params = body.params as { pluginID?: unknown };
       if (!params || typeof params.pluginID !== "string")
-        throw invalidParams("plugin.uninstall.params.pluginID must be a string");
+        throw invalidParams(
+          "plugin.uninstall.params.pluginID must be a string",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,

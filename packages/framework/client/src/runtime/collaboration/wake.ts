@@ -34,7 +34,12 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   ) {
     if (ctx.ports.isDisposed()) return;
     const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
-    console.log("[collab-wake-main]", { source, kind, sourceID, sessionID: exec.session.id });
+    console.log("[collab-wake-main]", {
+      source,
+      kind,
+      sourceID,
+      sessionID: exec.session.id,
+    });
     scheduleInternalWake(exec, {
       id: `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
       text:

@@ -1,7 +1,11 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { RuntimeWorkspaceMatch } from "@natalia/contracts";
 
-type SearchResult = RuntimeWorkspaceMatch & { path: string; line: number; text: string };
+type SearchResult = RuntimeWorkspaceMatch & {
+  path: string;
+  line: number;
+  text: string;
+};
 
 export function SearchPanel(props: {
   open: boolean;
@@ -19,7 +23,10 @@ export function SearchPanel(props: {
     }
     if (props.onSearch) {
       const promise = props.onSearch(value.trim());
-      if (promise && typeof (promise as Promise<RuntimeWorkspaceMatch[]>).then === "function") {
+      if (
+        promise &&
+        typeof (promise as Promise<RuntimeWorkspaceMatch[]>).then === "function"
+      ) {
         void (promise as Promise<RuntimeWorkspaceMatch[]>).then(setResults);
       }
     } else {
@@ -38,7 +45,10 @@ export function SearchPanel(props: {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-search-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-search-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">搜索工作区</span>
             <button

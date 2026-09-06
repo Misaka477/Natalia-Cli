@@ -259,9 +259,7 @@ export const migratedPluginRules4: readonly MigratedPluginRule[] = [
   },
   {
     id: "natalia-ui-command-host",
-    targets: [
-      "packages/framework/runtime-status/src/status-controller.ts",
-    ],
+    targets: ["packages/framework/runtime-status/src/status-controller.ts"],
     forbidden: [
       {
         description: "process-global plugin command bridge",

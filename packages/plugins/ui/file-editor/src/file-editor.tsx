@@ -1,11 +1,23 @@
-import { createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  For,
+  Show,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type { UiTransport } from "@natalia/ui-host";
 import type { RuntimeClient } from "@natalia/contracts";
 import { ContextMenu, cssVar, type ContextMenuItem } from "@natalia/ui-kit";
 import { Compartment } from "@codemirror/state";
 import { EditorView, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { basicSetup } from "codemirror";
-import { StreamLanguage, syntaxHighlighting, HighlightStyle, foldGutter } from "@codemirror/language";
+import {
+  StreamLanguage,
+  syntaxHighlighting,
+  HighlightStyle,
+  foldGutter,
+} from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
@@ -122,7 +134,8 @@ const neuLightTheme = EditorView.theme(
       backgroundColor: cssVar("--neu-accent-soft", "rgba(143,183,176,0.08)"),
     },
     ".cm-selectionBackground": {
-      backgroundColor: cssVar("--neu-accent-soft", "rgba(143,183,176,0.22)") + " !important",
+      backgroundColor:
+        cssVar("--neu-accent-soft", "rgba(143,183,176,0.22)") + " !important",
     },
     ".cm-cursor": {
       borderLeftColor: "var(--neu-accent)",
@@ -133,13 +146,35 @@ const neuLightTheme = EditorView.theme(
 
 const neuLightHighlight = HighlightStyle.define([
   { tag: tags.comment, color: "var(--neu-muted)", fontStyle: "italic" },
-  { tag: [tags.keyword, tags.operatorKeyword], color: cssVar("--neu-code-keyword", "#b85e9c"), fontWeight: "600" },
-  { tag: [tags.string, tags.special(tags.string)], color: cssVar("--neu-code-string", "#2e8b57") },
-  { tag: [tags.number, tags.bool, tags.null], color: cssVar("--neu-code-number", "#b06e2c") },
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: cssVar("--neu-code-function", "#2a7ab0") },
-  { tag: [tags.className, tags.typeName], color: cssVar("--neu-code-class", "#7a4bb5") },
-  { tag: [tags.propertyName, tags.attributeName], color: cssVar("--neu-code-function", "#2a7ab0") },
-  { tag: [tags.definition(tags.variableName), tags.variableName], color: "var(--neu-text)" },
+  {
+    tag: [tags.keyword, tags.operatorKeyword],
+    color: cssVar("--neu-code-keyword", "#b85e9c"),
+    fontWeight: "600",
+  },
+  {
+    tag: [tags.string, tags.special(tags.string)],
+    color: cssVar("--neu-code-string", "#2e8b57"),
+  },
+  {
+    tag: [tags.number, tags.bool, tags.null],
+    color: cssVar("--neu-code-number", "#b06e2c"),
+  },
+  {
+    tag: [tags.function(tags.variableName), tags.function(tags.propertyName)],
+    color: cssVar("--neu-code-function", "#2a7ab0"),
+  },
+  {
+    tag: [tags.className, tags.typeName],
+    color: cssVar("--neu-code-class", "#7a4bb5"),
+  },
+  {
+    tag: [tags.propertyName, tags.attributeName],
+    color: cssVar("--neu-code-function", "#2a7ab0"),
+  },
+  {
+    tag: [tags.definition(tags.variableName), tags.variableName],
+    color: "var(--neu-text)",
+  },
 ]);
 
 function languageForPath(path: string): Extension {
@@ -156,8 +191,7 @@ function languageForPath(path: string): Extension {
   if (["yml", "yaml"].includes(ext)) return yaml();
   if (["md", "markdown"].includes(ext)) return markdown();
   if (["py"].includes(ext)) return python();
-  if (["sh", "bash", "zsh"].includes(ext))
-    return StreamLanguage.define(shell);
+  if (["sh", "bash", "zsh"].includes(ext)) return StreamLanguage.define(shell);
   if (["cmake", "txt"].includes(ext) && path.toLowerCase().includes("cmake"))
     return StreamLanguage.define(cmake);
   return [];
@@ -174,7 +208,9 @@ export function FileEditor(props: {
   const [preview, setPreview] = createSignal(false);
   const [fileWidth, setFileWidth] = createSignal(140);
   const [tree, setTree] = createSignal<FileNode[]>(initialTree);
-  const [entries, setEntries] = createSignal<Array<{ path: string; type: "file" | "directory" }>>([]);
+  const [entries, setEntries] = createSignal<
+    Array<{ path: string; type: "file" | "directory" }>
+  >([]);
   const nodeMap = new Map<string, FileNode>();
   const rowCache = new Map<string, VisibleRow>();
 
@@ -192,11 +228,7 @@ export function FileEditor(props: {
           row.depth = depth;
         }
         rows.push(row);
-        if (
-          node.type === "dir" &&
-          expanded().has(node.path) &&
-          node.children
-        ) {
+        if (node.type === "dir" && expanded().has(node.path) && node.children) {
           visit(node.children, depth + 1);
         }
       }
@@ -205,9 +237,10 @@ export function FileEditor(props: {
     return rows;
   });
   const [loadedDirs, setLoadedDirs] = createSignal<Set<string>>(new Set());
-  const [dialog, setDialog] = createSignal<
-    { mode: "new-file" | "new-folder" | "rename"; path?: string } | null
-  >(null);
+  const [dialog, setDialog] = createSignal<{
+    mode: "new-file" | "new-folder" | "rename";
+    path?: string;
+  } | null>(null);
   const [dialogValue, setDialogValue] = createSignal("");
   const [contextMenu, setContextMenu] = createSignal<{
     x: number;
@@ -259,7 +292,6 @@ export function FileEditor(props: {
         }
       }
     });
-
   });
 
   async function toggle(path: string) {
@@ -358,9 +390,12 @@ export function FileEditor(props: {
     void props.runtime?.workspaceRead?.({ path }).then(
       (result) => {
         if (!result) return;
-        const text = result.encoding === "base64"
-          ? new TextDecoder().decode(Uint8Array.from(atob(result.content), (ch) => ch.charCodeAt(0)))
-          : result.content;
+        const text =
+          result.encoding === "base64"
+            ? new TextDecoder().decode(
+                Uint8Array.from(atob(result.content), (ch) => ch.charCodeAt(0)),
+              )
+            : result.content;
         setContents((prev) => ({ ...prev, [path]: text }));
         updateEditor(path, text);
       },
@@ -404,16 +439,11 @@ export function FileEditor(props: {
     });
   }
 
-
-
   async function saveCurrentFile() {
     const path = selectedPath();
     if (!path) return;
     if (!props.runtime?.workspaceWrite) {
-      props.runtime?.diagnostic?.(
-        "当前 runtime 不支持文件保存",
-        "warning",
-      );
+      props.runtime?.diagnostic?.("当前 runtime 不支持文件保存", "warning");
       return;
     }
     try {
@@ -461,7 +491,9 @@ export function FileEditor(props: {
       const expandedDirs = [...expanded()];
       for (const directory of expandedDirs) {
         if (directory === ".") continue;
-        const childPage = await props.runtime?.workspaceList?.({ path: directory });
+        const childPage = await props.runtime?.workspaceList?.({
+          path: directory,
+        });
         if (!childPage) continue;
         const merged = new Map(entries().map((entry) => [entry.path, entry]));
         for (const entry of childPage.entries) merged.set(entry.path, entry);
@@ -500,8 +532,8 @@ export function FileEditor(props: {
 
   function openRename(path: string) {
     const name = path.endsWith("/")
-      ? path.slice(0, -1).split("/").at(-1) ?? path
-      : path.split("/").at(-1) ?? path;
+      ? (path.slice(0, -1).split("/").at(-1) ?? path)
+      : (path.split("/").at(-1) ?? path);
     setDialogValue(name);
     setDialog({ mode: "rename", path });
   }
@@ -716,7 +748,11 @@ export function FileEditor(props: {
                     />
                   </svg>
                 ) : (
-                  <svg class="file-tree-icon file-tree-file-icon" viewBox="0 0 16 16" fill="none">
+                  <svg
+                    class="file-tree-icon file-tree-file-icon"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                  >
                     <path
                       d="M4 2C4 1.44772 4.44772 1 5 1H10L12 3V14C12 14.5523 11.5523 15 11 15H5C4.44772 15 4 14.5523 4 14V2Z"
                       stroke="currentColor"
@@ -764,84 +800,98 @@ export function FileEditor(props: {
           <span>资源管理器</span>
         </div>
         <Show when={openTabs().length}>
-        <div class="neu-file-tabs-scroll">
-          <div
-            class="neu-file-editor-tabs"
-            onWheel={(event) => {
-              if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-                event.currentTarget.scrollLeft += event.deltaY;
-                event.preventDefault();
-              }
-            }}
-          >
-            <Show when={selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")}>
-              <button
-                type="button"
-                class="neu-file-editor-tab"
-                data-active={!preview()}
-                onClick={() => setPreview(false)}
+          <div class="neu-file-tabs-scroll">
+            <div
+              class="neu-file-editor-tabs"
+              onWheel={(event) => {
+                if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                  event.currentTarget.scrollLeft += event.deltaY;
+                  event.preventDefault();
+                }
+              }}
+            >
+              <Show
+                when={
+                  selectedPath().endsWith(".md") ||
+                  selectedPath().endsWith(".markdown")
+                }
               >
-                编辑
-              </button>
-              <button
-                type="button"
-                class="neu-file-editor-tab"
-                data-active={preview()}
-                onClick={() => setPreview(true)}
-              >
-                预览
-              </button>
-            </Show>
-            <For each={openTabs()}>
-              {(tab) => (
-                <div
+                <button
+                  type="button"
                   class="neu-file-editor-tab"
-                  data-active={selectedPath() === tab.path}
-                  onClick={() => {
-                    selectFile(tab.path);
-                    setPreview(false);
-                  }}
+                  data-active={!preview()}
+                  onClick={() => setPreview(false)}
                 >
-                  <svg class="file-tree-icon file-tree-file-icon" viewBox="0 0 16 16" fill="none">
-                    <path
-                      d="M4 2C4 1.44772 4.44772 1 5 1H10L12 3V14C12 14.5523 11.5523 15 11 15H5C4.44772 15 4 14.5523 4 14V2Z"
-                      stroke="currentColor"
-                      stroke-width="1.2"
-                    />
-                    <path
-                      d="M10 1V3H12"
-                      stroke="currentColor"
-                      stroke-width="1.2"
-                      stroke-linecap="round"
-                    />
-                  </svg>
-                  <span class="neu-file-editor-tab-label">
-                    {tab.path.split("/").pop()}
-                  </span>
-                  <span class="neu-tab-dirty" />
-                  <button
-                    type="button"
-                    class="neu-tab-close"
-                    aria-label="关闭文件"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      closeTab(tab.path);
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  class="neu-file-editor-tab"
+                  data-active={preview()}
+                  onClick={() => setPreview(true)}
+                >
+                  预览
+                </button>
+              </Show>
+              <For each={openTabs()}>
+                {(tab) => (
+                  <div
+                    class="neu-file-editor-tab"
+                    data-active={selectedPath() === tab.path}
+                    onClick={() => {
+                      selectFile(tab.path);
+                      setPreview(false);
                     }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <svg
+                      class="file-tree-icon file-tree-file-icon"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
                       <path
-                        d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+                        d="M4 2C4 1.44772 4.44772 1 5 1H10L12 3V14C12 14.5523 11.5523 15 11 15H5C4.44772 15 4 14.5523 4 14V2Z"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                      />
+                      <path
+                        d="M10 1V3H12"
                         stroke="currentColor"
                         stroke-width="1.2"
                         stroke-linecap="round"
                       />
                     </svg>
-                  </button>
-                </div>
-              )}
-            </For>
+                    <span class="neu-file-editor-tab-label">
+                      {tab.path.split("/").pop()}
+                    </span>
+                    <span class="neu-tab-dirty" />
+                    <button
+                      type="button"
+                      class="neu-tab-close"
+                      aria-label="关闭文件"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        closeTab(tab.path);
+                      }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                      >
+                        <path
+                          d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+                          stroke="currentColor"
+                          stroke-width="1.2"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
           </div>
-        </div>
         </Show>
       </div>
       <div class="neu-file-body">
@@ -861,29 +911,42 @@ export function FileEditor(props: {
         />
         <div class="neu-file-editor">
           <Show when={openTabs().length}>
-          <div class="neu-file-breadcrumbs">
-            <For each={breadcrumbs()}>
-              {(part, index) => (
-                <>
-                  <button
-                    type="button"
-                    class="neu-file-breadcrumb"
-                    disabled={index() === breadcrumbs().length - 1}
-                    onClick={() => void toggle(part)}
-                  >
-                    {part.split("/").pop()}
-                  </button>
-                  <Show when={index() < breadcrumbs().length - 1}>
-                    <span class="neu-file-breadcrumb-separator">›</span>
-                  </Show>
-                </>
-              )}
-            </For>
-          </div>
+            <div class="neu-file-breadcrumbs">
+              <For each={breadcrumbs()}>
+                {(part, index) => (
+                  <>
+                    <button
+                      type="button"
+                      class="neu-file-breadcrumb"
+                      disabled={index() === breadcrumbs().length - 1}
+                      onClick={() => void toggle(part)}
+                    >
+                      {part.split("/").pop()}
+                    </button>
+                    <Show when={index() < breadcrumbs().length - 1}>
+                      <span class="neu-file-breadcrumb-separator">›</span>
+                    </Show>
+                  </>
+                )}
+              </For>
+            </div>
           </Show>
-          <div class="neu-file-editor-area" classList={{ "neu-file-editor-area-preview": preview() && (selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")) }}>
-            {preview() && (selectedPath().endsWith(".md") || selectedPath().endsWith(".markdown")) ? (
-              <div class="neu-markdown-preview" innerHTML={renderMarkdown(selectedContent())} />
+          <div
+            class="neu-file-editor-area"
+            classList={{
+              "neu-file-editor-area-preview":
+                preview() &&
+                (selectedPath().endsWith(".md") ||
+                  selectedPath().endsWith(".markdown")),
+            }}
+          >
+            {preview() &&
+            (selectedPath().endsWith(".md") ||
+              selectedPath().endsWith(".markdown")) ? (
+              <div
+                class="neu-markdown-preview"
+                innerHTML={renderMarkdown(selectedContent())}
+              />
             ) : (
               <div
                 class="neu-file-codemirror"
@@ -896,10 +959,7 @@ export function FileEditor(props: {
         </div>
       </div>
       <Show when={dialog()}>
-        <div
-          class="neu-file-dialog-backdrop"
-          onClick={() => setDialog(null)}
-        >
+        <div class="neu-file-dialog-backdrop" onClick={() => setDialog(null)}>
           <div
             class="neu-file-dialog"
             onClick={(event) => event.stopPropagation()}

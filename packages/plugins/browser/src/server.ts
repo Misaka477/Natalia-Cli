@@ -37,13 +37,18 @@ export function createBrowserBridgeServer(
   options: BrowserBridgeServerOptions = {},
 ): BrowserBridgeServer {
   const host = options.host ?? "127.0.0.1";
-  const port = options.port ?? Number(process.env.NATALIA_BROWSER_BRIDGE_PORT ?? DEFAULT_PORT);
+  const port =
+    options.port ??
+    Number(process.env.NATALIA_BROWSER_BRIDGE_PORT ?? DEFAULT_PORT);
   const extensionConnections = new Set<ExtensionConnection>();
-  const pending = new Map<string, {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
+  const pending = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
   const BROWSER_ACTIONS = new Set([
     "open",
     "close",
@@ -67,10 +72,9 @@ export function createBrowserBridgeServer(
     port,
     async fetch(request, server) {
       const url = new URL(request.url);
-      if (
-        request.headers.get("upgrade")?.toLowerCase() === "websocket"
-      ) {
-        if (server.upgrade(request, { data: { extension: true } })) return undefined;
+      if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        if (server.upgrade(request, { data: { extension: true } }))
+          return undefined;
       }
       if (request.method === "GET" && url.pathname === "/healthz") {
         return Response.json({
@@ -88,13 +92,19 @@ export function createBrowserBridgeServer(
         }
         options.onCommand?.(action, payload);
         if (!BROWSER_ACTIONS.has(action)) {
-          return Response.json({ error: `unknown browser action: ${action}` }, { status: 404 });
+          return Response.json(
+            { error: `unknown browser action: ${action}` },
+            { status: 404 },
+          );
         }
         if (extensionConnections.size === 0) {
-          return Response.json({
-            error:
-              "browser extension is not connected; install/load Natalia Browser Bridge in Chrome/Edge",
-          }, { status: 503 });
+          return Response.json(
+            {
+              error:
+                "browser extension is not connected; install/load Natalia Browser Bridge in Chrome/Edge",
+            },
+            { status: 503 },
+          );
         }
         const id = randomUUID();
         const result = new Promise<unknown>((resolve, reject) => {

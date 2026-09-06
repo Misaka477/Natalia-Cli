@@ -413,8 +413,7 @@ export function createSessionStoreController(input: {
     if (store) {
       const durable = store.get(id as SessionID);
       const legacy = await sessionStore.load(id as SessionID);
-      if (!durable && !legacy)
-        throw new Error(`session not found: ${id}`);
+      if (!durable && !legacy) throw new Error(`session not found: ${id}`);
       if (durable) store.delete(id as SessionID);
       await sessionStore.delete(id as SessionID);
       const removedAttachments = await input.attachments.cleanup(

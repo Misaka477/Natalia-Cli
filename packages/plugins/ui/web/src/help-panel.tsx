@@ -9,10 +9,16 @@ const shortcuts = [
 ];
 
 const sections = [
-  { title: "Main Agent", text: "处理实际工作区任务，可执行工具、读写文件、运行命令。" },
+  {
+    title: "Main Agent",
+    text: "处理实际工作区任务，可执行工具、读写文件、运行命令。",
+  },
   { title: "Navi Chat", text: "用于规划、审查和提问，不直接操作工作区。" },
   { title: "右侧工具栏", text: "审阅 Diff / 终端 / 文件 / 浏览器。" },
-  { title: "会话与 Checkpoint", text: "左侧会话管理支持新建、Fork、快照、回滚。" },
+  {
+    title: "会话与 Checkpoint",
+    text: "左侧会话管理支持新建、Fork、快照、回滚。",
+  },
 ];
 
 export function HelpPanel(props: { open: boolean; onClose: () => void }) {
@@ -27,7 +33,10 @@ export function HelpPanel(props: { open: boolean; onClose: () => void }) {
   return (
     <Show when={props.open}>
       <div class="neu-settings-backdrop" onClick={props.onClose}>
-        <div class="neu-help-window" onClick={(event) => event.stopPropagation()}>
+        <div
+          class="neu-help-window"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div class="neu-settings-header">
             <span class="neu-settings-title">帮助</span>
             <button
@@ -63,7 +72,9 @@ export function HelpPanel(props: { open: boolean; onClose: () => void }) {
                   <span class="neu-help-shortcut-keys">
                     {shortcut.keys.join(" + ")}
                   </span>
-                  <span class="neu-help-shortcut-desc">{shortcut.description}</span>
+                  <span class="neu-help-shortcut-desc">
+                    {shortcut.description}
+                  </span>
                 </div>
               )}
             </For>

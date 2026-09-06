@@ -300,11 +300,8 @@ test("plugin create writes tool and UI adapter templates", async () => {
   ).toBeDefined();
 });
 
-
 test("plugin create writes a UI panel plugin package", async () => {
-  const root = await mkdtemp(
-    join(tmpdir(), "natalia-plugin-create-ui-panel-"),
-  );
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-create-ui-panel-"));
   const directory = join(root, "demo-panel");
   const result = runCli(
     root,
@@ -345,9 +342,9 @@ test("plugin create writes a UI panel plugin package", async () => {
     JSON.parse(await readFile(join(directory, "package.json"), "utf8"))
       .dependencies["@natalia/ui-host"],
   ).toBeDefined();
-  expect(
-    await readFile(join(directory, "src/ui/plugin.js"), "utf8"),
-  ).toContain("defineUiPlugin");
+  expect(await readFile(join(directory, "src/ui/plugin.js"), "utf8")).toContain(
+    "defineUiPlugin",
+  );
 });
 
 test("plugin create writes TypeScript source with a JavaScript install entry", async () => {

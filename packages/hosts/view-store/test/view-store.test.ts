@@ -1329,10 +1329,13 @@ test("Nia has its own complete chat stream and never mixes into Navi", () => {
   ]);
   expect(state.chatActivity?.messageID).toBe("chat:navi");
   expect(state.niaActivity?.messageID).toBe("chat:nia");
-  expect(state.niaMessages.some((block) => block.id.includes("chat:navi"))).toBe(false);
-  expect(state.chatMessages.some((block) => block.id.includes("chat:nia"))).toBe(false);
+  expect(
+    state.niaMessages.some((block) => block.id.includes("chat:navi")),
+  ).toBe(false);
+  expect(
+    state.chatMessages.some((block) => block.id.includes("chat:nia")),
+  ).toBe(false);
 });
-
 
 test("hydrating chat rows splits Navi and Nia into independent streams", () => {
   const state = initialState();
@@ -1354,7 +1357,9 @@ test("hydrating chat rows splits Navi and Nia into independent streams", () => {
   ]);
   expect(changed).toBe(true);
   expect(state.chatMessages.map((block) => block.text)).toEqual(["hi navi"]);
-  expect(state.niaMessages.map((block) => block.text)).toEqual(["audit result"]);
+  expect(state.niaMessages.map((block) => block.text)).toEqual([
+    "audit result",
+  ]);
 });
 test("events from another session do not mix into the current transcript", () => {
   const state = initialState();

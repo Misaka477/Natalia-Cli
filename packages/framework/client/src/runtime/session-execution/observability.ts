@@ -9,10 +9,7 @@ type Surface = Pick<
   RuntimeServiceClient,
   "runtimeStatus" | "diagnostics" | "sessionSnapshot"
 >;
-async function observabilityExec(
-  ctx: RuntimeContext,
-  sessionID?: string,
-) {
+async function observabilityExec(ctx: RuntimeContext, sessionID?: string) {
   if (sessionID)
     return (
       ctx.ports

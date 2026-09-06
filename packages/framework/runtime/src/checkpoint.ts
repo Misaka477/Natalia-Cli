@@ -1,4 +1,4 @@
-import { ObjectStore } from "@natalia/object-store";
+import { DiffCache, ObjectStore } from "@natalia/object-store";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
@@ -161,6 +161,7 @@ export class CheckpointStore {
   readonly storeDir: string;
   /** The shared content-addressed object library (`.natalia/objects`). */
   private readonly objects: ObjectStore;
+  private readonly diffCache: DiffCache;
   private readonly sessionID: SessionID;
   private readonly enabled: boolean;
   private readonly maxFiles: number;
@@ -182,6 +183,7 @@ export class CheckpointStore {
     this.objects = new ObjectStore(
       resolve(this.workspaceRoot, ".natalia", "objects"),
     );
+    this.diffCache = new DiffCache(this.objects, "checkpoint-diff");
     this.enabled = options.enabled ?? true;
     this.maxFiles = options.maxFiles ?? 20000;
     this.maxBytes = options.maxBytes ?? 512 * 1024 * 1024;
@@ -468,7 +470,11 @@ export class CheckpointStore {
             : change.kind === "rename"
               ? "renamed"
               : "modified";
-      const text = await diffTextAsync(change.path, oldContent, newContent);
+      const text = await this.diffTextCached(
+        change.path,
+        oldContent,
+        newContent,
+      );
       if (oldContent === undefined && newContent === undefined) {
         result.push({
           path: change.path,
@@ -487,11 +493,36 @@ export class CheckpointStore {
         additions: text.additions,
         deletions: text.deletions,
         ...(text.patch ? { patch: text.patch } : {}),
+        ...(text.structured ? { structured: text.structured } : {}),
         ...(oldContent !== undefined ? { before: oldContent } : {}),
         ...(newContent !== undefined ? { after: newContent } : {}),
         ...(change.mode ? { mode: change.mode } : {}),
       });
     }
+    return result;
+  }
+
+  private async diffTextCached(
+    path: string,
+    oldText: string | undefined,
+    newText: string | undefined,
+  ): Promise<Awaited<ReturnType<typeof diffTextAsync>>> {
+    const oldTextValue = oldText ?? "";
+    const newTextValue = newText ?? "";
+    const cached = await this.diffCache.get(oldTextValue, newTextValue);
+    if (cached)
+      return {
+        additions: cached.additions,
+        deletions: cached.deletions,
+        structured: cached.structured,
+      };
+    const result = await diffTextAsync(path, oldText, newText);
+    if (result.structured)
+      await this.diffCache.set(oldTextValue, newTextValue, {
+        additions: result.additions,
+        deletions: result.deletions,
+        structured: result.structured,
+      });
     return result;
   }
 
@@ -518,7 +549,11 @@ export class CheckpointStore {
             .then((buffer) => buffer.toString("utf8"))
             .catch(() => undefined)
         : undefined;
-      const text = await diffTextAsync(change.path, beforeContent, afterContent);
+      const text = await this.diffTextCached(
+        change.path,
+        beforeContent,
+        afterContent,
+      );
       result.push({
         kind: change.kind,
         path: change.path,
@@ -527,6 +562,7 @@ export class CheckpointStore {
         additions: text.additions,
         deletions: text.deletions,
         ...(text.patch ? { patch: text.patch } : {}),
+        ...(text.structured ? { structured: text.structured } : {}),
         ...(beforeContent !== undefined ? { before: beforeContent } : {}),
         ...(afterContent !== undefined ? { after: afterContent } : {}),
       });
@@ -1063,22 +1099,59 @@ async function diffTextAsync(
   path: string,
   oldText: string | undefined,
   newText: string | undefined,
-): Promise<{ additions: number; deletions: number; patch?: string }> {
+): Promise<{
+  additions: number;
+  deletions: number;
+  patch?: string;
+  structured?: import("@natalia/contracts").RuntimeStructuredDiff;
+}> {
   try {
-    const { diffWasm } = await import("@natalia/diff-wasm");
-    const wasm = await diffWasm(oldText ?? "", newText ?? "");
-    if (wasm.patch) {
-      const patch = `--- a/${path}\n+++ b/${path}\n${wasm.patch}`;
-      return {
-        additions: wasm.additions,
-        deletions: wasm.deletions,
-        patch,
-      };
-    }
+    const { diffWasmStructured } = await import("@natalia/diff-wasm");
+    const wasm = await diffWasmStructured(oldText ?? "", newText ?? "");
+    const patch = wasm.hunks.length
+      ? `--- a/${path}
++++ b/${path}
+${renderStructuredPatch(wasm)}`
+      : undefined;
+    return {
+      additions: wasm.additions,
+      deletions: wasm.deletions,
+      ...(patch ? { patch } : {}),
+      structured: wasm,
+    };
   } catch {
     // Fall back to the pure JS engine when WASM is unavailable.
   }
   return diffText(path, oldText, newText);
+}
+
+function renderStructuredPatch(diff: {
+  hunks: Array<{
+    oldStart: number;
+    oldCount: number;
+    newStart: number;
+    newCount: number;
+    lines: Array<{
+      type: "context" | "add" | "delete" | "hunk";
+      text: string;
+      oldLineNumber: number | null;
+      newLineNumber: number | null;
+    }>;
+  }>;
+}): string {
+  if (!diff.hunks.length) return "";
+  const lines: string[] = [];
+  for (const hunk of diff.hunks) {
+    lines.push(
+      `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`,
+    );
+    for (const line of hunk.lines) {
+      if (line.type === "add") lines.push(`+${line.text}`);
+      else if (line.type === "delete") lines.push(`-${line.text}`);
+      else lines.push(` ${line.text}`);
+    }
+  }
+  return lines.join("\n") + "\n";
 }
 
 function diffManifests(

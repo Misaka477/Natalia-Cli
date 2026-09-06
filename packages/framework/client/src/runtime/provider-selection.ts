@@ -210,9 +210,7 @@ export function createProviderSelection(
     return "image/png";
   }
 
-  function applyAgentProvider(
-    exec: SessionExecutionState | undefined,
-  ) {
+  function applyAgentProvider(exec: SessionExecutionState | undefined) {
     const {
       getTsRuntimeConfig,
       getProviderSource,
@@ -294,9 +292,7 @@ export function createProviderSelection(
     return modelRefKeyForSelection(getSelectedAgent(), getSelectedModel());
   }
 
-  function effectiveMaxSteps(
-    exec: SessionExecutionState | undefined,
-  ) {
+  function effectiveMaxSteps(exec: SessionExecutionState | undefined) {
     const { getSelectedAgent, getMaxSteps } = ctx.ports;
     return (
       (exec ? exec.selectedAgent : getSelectedAgent())?.maxSteps ??
@@ -310,9 +306,7 @@ export function createProviderSelection(
    * that states a value wins, then the workspace `security.redactToolOutput`
    * setting, then the schema default.
    */
-  function redactToolOutputEnabled(
-    exec: SessionExecutionState | undefined,
-  ) {
+  function redactToolOutputEnabled(exec: SessionExecutionState | undefined) {
     const { getSelectedAgent, getTsRuntimeConfig } = ctx.ports;
     return (
       (exec ? exec.selectedAgent : getSelectedAgent())?.permissions

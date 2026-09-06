@@ -5,9 +5,33 @@ function config(overrides: any = {}) {
   return {
     defaultAgentMode: "default",
     agentModes: {
-      default: { approval: "ask", description: "", systemPrompt: "", allowedTools: [], excludedTools: [], mcpServers: [], skills: true },
-      strict: { approval: "auto", description: "", systemPrompt: "", allowedTools: [], excludedTools: [], mcpServers: [], skills: true },
-      read_only: { approval: "read_only", description: "", systemPrompt: "", allowedTools: [], excludedTools: [], mcpServers: [], skills: true },
+      default: {
+        approval: "ask",
+        description: "",
+        systemPrompt: "",
+        allowedTools: [],
+        excludedTools: [],
+        mcpServers: [],
+        skills: true,
+      },
+      strict: {
+        approval: "auto",
+        description: "",
+        systemPrompt: "",
+        allowedTools: [],
+        excludedTools: [],
+        mcpServers: [],
+        skills: true,
+      },
+      read_only: {
+        approval: "read_only",
+        description: "",
+        systemPrompt: "",
+        allowedTools: [],
+        excludedTools: [],
+        mcpServers: [],
+        skills: true,
+      },
     },
     ...overrides,
   } as any;

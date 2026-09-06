@@ -1,9 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, relative, resolve, sep } from "node:path";
-import {
-  listInstalledPlugins,
-  packageDirectory,
-} from "@natalia/installer";
+import { listInstalledPlugins, packageDirectory } from "@natalia/installer";
 
 /**
  * Resolves a plugin's renderer-side UI bundle from the local plugin store.
