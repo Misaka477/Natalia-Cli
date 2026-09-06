@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
+  DurableContextCheckpointRecord,
   LocalAttachment,
   RuntimeEvent,
   RuntimeMessagePage,
@@ -303,6 +304,13 @@ export function createSessionStoreController(input: {
       : undefined;
   }
 
+  function writeContextEpoch(
+    id: SessionID,
+    snapshot: DurableContextCheckpointRecord,
+  ) {
+    if (sqliteStore) sqliteStore.writeContextEpoch(id, snapshot);
+  }
+
   async function referencedAttachments(): Promise<LocalAttachment[]> {
     return sqliteStore
       ? sqliteStore.referencedAttachments()
@@ -561,6 +569,7 @@ export function createSessionStoreController(input: {
     appendEvents,
     updateMetadata,
     contextEventsAfter,
+    writeContextEpoch,
     referencedAttachments,
     history,
     messages,

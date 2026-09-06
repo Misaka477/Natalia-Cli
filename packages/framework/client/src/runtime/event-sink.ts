@@ -21,7 +21,7 @@ import {
   SESSION_STORE_CONTROLLER_SERVICE,
   type SessionStoreController,
 } from "@natalia/runtime-services";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -36,6 +36,83 @@ export function createEventSink(
 ) {
   const collabSnapshotScheduler = createCollabSnapshotScheduler(ctx);
   ctx.ports.scheduleCollabSnapshot = collabSnapshotScheduler.schedule;
+
+  const CONTEXT_EPOCH_WRITE_EVERY = 100;
+  const CONTEXT_EPOCH_WRITE_INTERVAL_MS = 5_000;
+  const contextEpochDirty = new Map<
+    SessionID,
+    { pending: number; timer?: ReturnType<typeof setTimeout> }
+  >();
+
+  function writeContextEpoch(
+    exec: SessionExecutionState,
+    trigger: "boundary" | "count" | "interval",
+  ) {
+    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
+      SESSION_STORE_CONTROLLER_SERVICE,
+    );
+    if (!sessionStore || !exec.context) return;
+    try {
+      const step = exec.context.journalStatus().messageCount;
+      const snapshot = exec.context.durableCheckpoint(step);
+      sessionStore.writeContextEpoch(exec.session.id, snapshot);
+      console.warn(
+        `[perf] contextEpoch.write session=${exec.session.id} trigger=${trigger} step=${step} +0ms`,
+      );
+    } catch (error) {
+      // A failed context epoch must never break event publishing.
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.ports.publish?.({
+        type: "diagnostic",
+        level: "warning",
+        message: `context epoch write failed: ${message}`,
+      });
+    }
+  }
+
+  function scheduleContextEpochWrite(
+    exec: SessionExecutionState,
+    event: RuntimeEvent,
+  ) {
+    const sessionID = exec.session.id;
+    const dirty = contextEpochDirty.get(sessionID) ?? {
+      pending: 0,
+      timer: undefined,
+    };
+    contextEpochDirty.set(sessionID, dirty);
+    if (
+      event.type === "turn.finished" ||
+      event.type === "turn.cancelled" ||
+      event.type === "session.ready"
+    ) {
+      dirty.pending = 0;
+      if (dirty.timer) {
+        clearTimeout(dirty.timer);
+        dirty.timer = undefined;
+      }
+      writeContextEpoch(exec, "boundary");
+      return;
+    }
+    dirty.pending += 1;
+    if (dirty.pending >= CONTEXT_EPOCH_WRITE_EVERY) {
+      dirty.pending = 0;
+      if (dirty.timer) {
+        clearTimeout(dirty.timer);
+        dirty.timer = undefined;
+      }
+      writeContextEpoch(exec, "count");
+      return;
+    }
+    dirty.timer ??= setTimeout(() => {
+      dirty.timer = undefined;
+      const current = ctx.ports.getExecutionBySession().get(sessionID);
+      if (!current) return;
+      if (dirty.pending > 0) {
+        dirty.pending = 0;
+        writeContextEpoch(current, "interval");
+      }
+    }, CONTEXT_EPOCH_WRITE_INTERVAL_MS);
+  }
 
   function planDocsFor(exec: SessionExecutionState | undefined) {
     const snapshot = exec?.collabSnapshot;
@@ -154,6 +231,7 @@ export function createEventSink(
       runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(exec.session, event);
+      scheduleContextEpochWrite(exec, event);
       if (isCollabSnapshotRelevantEvent(event)) {
         collabSnapshotScheduler.schedule(exec);
       }

@@ -140,6 +140,10 @@ export interface SessionStoreController {
     id: SessionID,
     epoch?: StoredContextEpoch,
   ): RuntimeEvent[] | undefined;
+  writeContextEpoch(
+    id: SessionID,
+    snapshot: import("@natalia/contracts").DurableContextCheckpointRecord,
+  ): void;
   referencedAttachments(): Promise<LocalAttachment[]>;
   history(
     id: SessionID,

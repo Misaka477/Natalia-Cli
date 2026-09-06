@@ -873,6 +873,23 @@ export class SqliteSessionStore {
     return row?.cnt ?? 0;
   }
 
+  writeContextEpoch(
+    sessionID: SessionID,
+    snapshot: import("@natalia/contracts").DurableContextCheckpointRecord,
+  ) {
+    const row = this.db
+      .query(
+        `SELECT COALESCE(MAX(seq), 0) AS max_seq FROM events WHERE session_id = ?`,
+      )
+      .get(sessionID) as { max_seq: number };
+    const baselineSeq = Number(row?.max_seq ?? 0);
+    this.run(
+      `INSERT INTO context_epochs(session_id, baseline_seq, snapshot) VALUES (?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET baseline_seq = excluded.baseline_seq, snapshot = excluded.snapshot`,
+      [sessionID, baselineSeq, JSON.stringify(snapshot)],
+    );
+  }
+
   async appendEventAsync(sessionID: SessionID, event: RuntimeEvent) {
     this.enqueueEvent(sessionID, event);
     await this.flushPendingWrites(sessionID);
