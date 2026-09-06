@@ -42,7 +42,17 @@ export function parsePatchInWorker(patch: string) {
     structured: ReturnType<typeof import("../structured-parse").patchToStructured>;
   }>((resolve, reject) => {
     pending.set(id, { resolve: (value) => resolve(value as never), reject });
-    const request: DiffParseWorkerRequest = { id, patch };
+    const request: DiffParseWorkerRequest = { id, op: "patch", patch };
+    instance.postMessage(request);
+  });
+}
+
+export function diffChangesInWorker(rawDiff: string) {
+  const id = nextID++;
+  const instance = ensureWorker();
+  return new Promise<ReturnType<typeof import("../structured-parse").diffToChanges>>((resolve, reject) => {
+    pending.set(id, { resolve: (value) => resolve(value as never), reject });
+    const request: DiffParseWorkerRequest = { id, op: "diffChanges", rawDiff };
     instance.postMessage(request);
   });
 }

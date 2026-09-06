@@ -124,3 +124,34 @@ export function countPatch(patch: string): { additions: number; deletions: numbe
 }
 
 export type { StructuredDiffResult };
+
+export function diffToChanges(rawDiff: string) {
+  const changes: Array<{
+    path: string;
+    operation: "modified";
+    additions: number;
+    deletions: number;
+    patch?: string;
+    structured?: ReturnType<typeof patchToStructured>;
+  }> = [];
+  const sections = rawDiff.split(/(?=^diff --git )/m);
+  for (const section of sections) {
+    if (!section.trim()) continue;
+    const header = section.split("\n")[0] ?? "";
+    const match = header.match(/^diff --git a\/(.+) b\/(.+)$/u);
+    if (!match) continue;
+    const path = match[2]!;
+    const counts = countPatch(section);
+    const patch = section.trim() ? section.trimEnd() + "\n" : undefined;
+    const structured = patch ? patchToStructured(patch) : undefined;
+    changes.push({
+      path,
+      operation: "modified",
+      additions: counts.additions,
+      deletions: counts.deletions,
+      ...(patch ? { patch } : {}),
+      ...(structured ? { structured } : {}),
+    });
+  }
+  return changes;
+}

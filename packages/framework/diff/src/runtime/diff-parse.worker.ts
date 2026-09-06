@@ -1,19 +1,24 @@
 import { parentPort } from "node:worker_threads";
-import { patchToStructured, countPatch } from "../structured-parse";
+import {
+  patchToStructured,
+  countPatch,
+  diffToChanges,
+} from "../structured-parse";
 
-export type DiffParseWorkerRequest = {
-  id: number;
-  patch: string;
-};
+export type DiffParseWorkerRequest =
+  | { id: number; op: "patch"; patch: string }
+  | { id: number; op: "diffChanges"; rawDiff: string };
 
 export type DiffParseWorkerResponse =
   | {
       id: number;
       ok: true;
-      result: {
-        counts: { additions: number; deletions: number };
-        structured: ReturnType<typeof patchToStructured>;
-      };
+      result:
+        | {
+            counts: { additions: number; deletions: number };
+            structured: ReturnType<typeof patchToStructured>;
+          }
+        | ReturnType<typeof diffToChanges>;
     }
   | { id: number; ok: false; error: string };
 
@@ -22,12 +27,17 @@ if (!port) throw new Error("diff-parse worker requires parentPort");
 
 port.on("message", (request: DiffParseWorkerRequest) => {
   try {
-    const counts = countPatch(request.patch);
-    const structured = patchToStructured(request.patch);
+    const result =
+      request.op === "patch"
+        ? {
+            counts: countPatch(request.patch),
+            structured: patchToStructured(request.patch),
+          }
+        : diffToChanges(request.rawDiff);
     const response: DiffParseWorkerResponse = {
       id: request.id,
       ok: true,
-      result: { counts, structured },
+      result,
     };
     port.postMessage(response);
   } catch (error) {

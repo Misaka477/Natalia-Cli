@@ -983,7 +983,18 @@ export async function collectWorkspaceGitDiff(
     ...(input?.path ? ["--", input.path] : []),
   ]);
   if (rawDiff.exitCode !== 0 && !rawDiff.stdout.trim()) return [];
-  const changes = diffToChanges(rawDiff.stdout);
+  const changes = await (async () => {
+    try {
+      const { diffChangesInWorker } = await import(
+        "@natalia/framework-diff/runtime/diff-parse-client"
+      );
+      return (await diffChangesInWorker(
+        rawDiff.stdout,
+      )) as RuntimeWorkspaceDiffChange[];
+    } catch {
+      return diffToChanges(rawDiff.stdout);
+    }
+  })();
   if (input?.includeContent) {
     for (const change of changes) {
       const beforeBuffer = await gitShowContentBuffer(
