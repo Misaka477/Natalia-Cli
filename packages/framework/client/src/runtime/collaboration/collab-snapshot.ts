@@ -12,6 +12,8 @@
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { projectedCollabMessages, projectedPlanDocs } from "@natalia/session";
 import { computeCollabSnapshotInWorker } from "../session-project-client";
+import { SESSION_STORE_CONTROLLER_SERVICE } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import type { CollabSnapshot } from "../session-execution-state";
@@ -91,6 +93,14 @@ export function createCollabSnapshotScheduler(
       revision,
       eventCount: exec.session.events.length,
     };
+    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
+      SESSION_STORE_CONTROLLER_SERVICE,
+    );
+    sessionStore?.writeProjectionCache(sessionID, {
+      eventCount: exec.session.events.length,
+      collabMessages: snapshot.collabMessages,
+      planDocs: snapshot.planDocs,
+    });
   }
 
   function dispose() {

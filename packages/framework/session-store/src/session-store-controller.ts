@@ -21,6 +21,7 @@ import {
 } from "@natalia/session";
 import type {
   AttachmentService,
+  SessionProjectionCache,
   SessionStoreController,
   SessionStoreRecoveryView,
 } from "@natalia/runtime-services";
@@ -311,6 +312,25 @@ export function createSessionStoreController(input: {
     if (sqliteStore) sqliteStore.writeContextEpoch(id, snapshot);
   }
 
+  function projectionCache(id: SessionID): SessionProjectionCache | undefined {
+    if (!sqliteStore) return undefined;
+    const eventCount = sqliteStore.projectionEventCount(id);
+    if (eventCount === undefined) return undefined;
+    return {
+      eventCount,
+      ...(sqliteStore.projectionCache(id)
+        ? { collabMessages: sqliteStore.projectionCache(id) }
+        : {}),
+      ...(sqliteStore.planProjectionCache(id)
+        ? { planDocs: sqliteStore.planProjectionCache(id) }
+        : {}),
+    };
+  }
+
+  function writeProjectionCache(id: SessionID, cache: SessionProjectionCache) {
+    if (sqliteStore) sqliteStore.writeProjectionCache(id, cache);
+  }
+
   async function referencedAttachments(): Promise<LocalAttachment[]> {
     return sqliteStore
       ? sqliteStore.referencedAttachments()
@@ -570,6 +590,8 @@ export function createSessionStoreController(input: {
     updateMetadata,
     contextEventsAfter,
     writeContextEpoch,
+    projectionCache,
+    writeProjectionCache,
     referencedAttachments,
     history,
     messages,
