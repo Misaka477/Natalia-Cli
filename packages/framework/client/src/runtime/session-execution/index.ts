@@ -285,12 +285,12 @@ export function createSessionExecution(
       // Fast path: defer full transcript to background; async consumers call
       // ensureSessionFullEvents before reading, so attach can return sooner.
       void sessionStore
-        .load(sessionID)
+        .loadFullAsync(sessionID)
         .then((full) => {
           const current = ctx.ports.getExecutionBySession().get(sessionID);
           if (current !== exec) return;
-          exec.session.events = full.session.events;
-          exec.eventCount = full.session.events.length;
+          exec.session.events = full.events;
+          exec.eventCount = full.events.length;
           try {
             sessionStore.ensureMessageIndex(sessionID);
           } catch {

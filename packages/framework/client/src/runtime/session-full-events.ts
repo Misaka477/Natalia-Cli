@@ -26,9 +26,9 @@ export function ensureSessionFullEvents(
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");
-    const full = await sessionStore.load(exec.session.id);
-    exec.session.events = full.session.events;
-    exec.eventCount = full.session.events.length;
+    const full = await sessionStore.loadFullAsync(exec.session.id);
+    exec.session.events = full.events;
+    exec.eventCount = full.events.length;
   })();
   exec.fullEventsPromise = promise.catch((error) => {
     exec.fullEventsPromise = undefined;

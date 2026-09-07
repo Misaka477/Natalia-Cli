@@ -536,6 +536,37 @@ export class SqliteSessionStore {
     return rows.map((r) => JSON.parse(r.event) as RuntimeEvent);
   }
 
+  async loadEventsAsync(sessionID: SessionID): Promise<RuntimeEvent[]> {
+    const rows = this.db
+      .query(`SELECT event FROM events WHERE session_id = ? ORDER BY seq`)
+      .all(sessionID) as { event: string }[];
+    const events: RuntimeEvent[] = [];
+    for (let index = 0; index < rows.length; index++) {
+      events.push(JSON.parse(rows[index]!.event) as RuntimeEvent);
+      if (index % 100 === 99)
+        await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return events;
+  }
+
+  async loadEventsAfterAsync(
+    sessionID: SessionID,
+    after: number,
+  ): Promise<RuntimeEvent[]> {
+    const rows = this.db
+      .query(
+        `SELECT event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq`,
+      )
+      .all(sessionID, after) as { event: string }[];
+    const events: RuntimeEvent[] = [];
+    for (let index = 0; index < rows.length; index++) {
+      events.push(JSON.parse(rows[index]!.event) as RuntimeEvent);
+      if (index % 100 === 99)
+        await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return events;
+  }
+
   loadRecoveryProjection(sessionID: SessionID): StoredRecoveryProjection {
     this.ensureRecoveryProjection(sessionID);
     const active = this.db

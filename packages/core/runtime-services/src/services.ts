@@ -145,6 +145,7 @@ export interface SessionStoreController {
     snapshot: import("@natalia/contracts").DurableContextCheckpointRecord,
   ): void;
   ensureMessageIndex(id: SessionID): void;
+  loadFullAsync(id: SessionID): Promise<SessionRecord>;
   referencedAttachments(): Promise<LocalAttachment[]>;
   history(
     id: SessionID,

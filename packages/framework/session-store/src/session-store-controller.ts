@@ -315,6 +315,28 @@ export function createSessionStoreController(input: {
     if (sqliteStore) sqliteStore.ensureMessageIndex(id);
   }
 
+  async function loadFullAsync(id: SessionID): Promise<SessionRecord> {
+    if (!sqliteStore) {
+      const record = await sessionStore.load(id);
+      if (!record) throw new Error(`session not found: ${id}`);
+      return record;
+    }
+    const durable = sqliteStore.get(id);
+    if (!durable) throw new Error(`session not found: ${id}`);
+    const events = await sqliteStore.loadEventsAsync(id);
+    const inbox = sqliteStore.loadInbox(id);
+    return {
+      id,
+      title: durable.title,
+      createdAt: durable.createdAt,
+      cancelled: durable.cancelled,
+      resumable: durable.resumable,
+      metadata: durable.metadata,
+      events,
+      ...(inbox.length ? { inbox } : {}),
+    };
+  }
+
   async function referencedAttachments(): Promise<LocalAttachment[]> {
     return sqliteStore
       ? sqliteStore.referencedAttachments()
@@ -575,6 +597,7 @@ export function createSessionStoreController(input: {
     contextEventsAfter,
     writeContextEpoch,
     ensureMessageIndex,
+    loadFullAsync,
     referencedAttachments,
     history,
     messages,
