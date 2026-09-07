@@ -10,7 +10,8 @@ import type {
   RuntimeClient,
   WorkspaceSummary,
 } from "@natalia/contracts";
-import { cloneState } from "@natalia/view-store";
+import { type AppState, cloneState } from "@natalia/view-store";
+import { cloneStateInWorker } from "./clone-state-worker-client";
 import {
   createSignal,
   createEffect,
@@ -526,36 +527,45 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       projectionFramePending = true;
       requestAnimationFrame(() => {
         projectionFramePending = false;
-        const projected = cloneState(props.ctx.projection.getState());
-        setState(projected);
-        if (projected.workspaces.length) setWorkspaces(projected.workspaces);
-        if (mainForceScroll) {
-          mainForceScroll = false;
-          requestAnimationFrame(() => {
-            if (transcriptEl()) {
-              const el = transcriptEl()!;
-              el.scrollTop = el.scrollHeight;
-              transcriptObservedTop = el.scrollTop;
-            }
-          });
-        }
-        if (chatForceScroll) {
-          chatForceScroll = false;
-          requestAnimationFrame(() => {
-            if (chatTranscriptEl()) {
-              const el = chatTranscriptEl()!;
-              el.scrollTop = el.scrollHeight;
-              chatObservedTop = el.scrollTop;
-            }
-          });
-        }
-        const currentTurn = projected.activeTurn;
-        if (currentTurn && activeTurnStartedAtValue() === undefined) {
-          setActiveTurnStartedAt(Date.now());
-        } else if (!currentTurn && activeTurnStartedAtValue() !== undefined) {
-          setActiveTurnStartedAt(undefined);
-          setTurnElapsedMs(0);
-        }
+        void (async () => {
+          let projected: AppState;
+          try {
+            projected = await cloneStateInWorker(
+              props.ctx.projection.getState(),
+            );
+          } catch {
+            projected = cloneState(props.ctx.projection.getState());
+          }
+          setState(projected);
+          if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+          if (mainForceScroll) {
+            mainForceScroll = false;
+            requestAnimationFrame(() => {
+              if (transcriptEl()) {
+                const el = transcriptEl()!;
+                el.scrollTop = el.scrollHeight;
+                transcriptObservedTop = el.scrollTop;
+              }
+            });
+          }
+          if (chatForceScroll) {
+            chatForceScroll = false;
+            requestAnimationFrame(() => {
+              if (chatTranscriptEl()) {
+                const el = chatTranscriptEl()!;
+                el.scrollTop = el.scrollHeight;
+                chatObservedTop = el.scrollTop;
+              }
+            });
+          }
+          const currentTurn = projected.activeTurn;
+          if (currentTurn && activeTurnStartedAtValue() === undefined) {
+            setActiveTurnStartedAt(Date.now());
+          } else if (!currentTurn && activeTurnStartedAtValue() !== undefined) {
+            setActiveTurnStartedAt(undefined);
+            setTurnElapsedMs(0);
+          }
+        })();
       });
     }),
   );
