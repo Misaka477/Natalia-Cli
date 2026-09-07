@@ -1,5 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { manifestIntegrationPoints } from "@natalia/plugin";
+import { projectPluginsInWorker } from "../secondary-worker-client";
 import type { RuntimeContext } from "../context";
 import { snapshotProjectionContributions } from "../../projection-contributions";
 type Surface = Pick<
@@ -17,16 +18,18 @@ export function createExtensionsRuntime(ctx: RuntimeContext): Surface {
   return {
     async plugins() {
       await ctx.ports.getReady();
-      return ctx.ports
-        .getPluginsController()
-        .list()
-        .map((plugin) => ({
+      const plugins = ctx.ports.getPluginsController().list();
+      try {
+        return await projectPluginsInWorker(plugins);
+      } catch {
+        return plugins.map((plugin) => ({
           id: plugin.id,
           version: plugin.version,
           name: plugin.name,
           description: plugin.description,
           capabilities: manifestIntegrationPoints(plugin),
         }));
+      }
     },
     async commandCatalog() {
       // The catalog reads the plugin registry and capability contributions,

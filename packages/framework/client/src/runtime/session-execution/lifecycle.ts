@@ -10,6 +10,7 @@ import {
   type TerminalController,
 } from "@natalia/runtime-services";
 import { updateConfigAtScope } from "@natalia/config";
+import { cloneConfigInWorker } from "../secondary-worker-client";
 import { sessionRunCoordinator } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
@@ -26,7 +27,11 @@ export function createLifecycleSurface(
       await ctx.ports.getReady();
       const config = ctx.ports.getTsRuntimeConfig();
       if (!config) throw new Error("runtime configuration is not initialized");
-      return structuredClone(config);
+      try {
+        return await cloneConfigInWorker(config);
+      } catch {
+        return structuredClone(config);
+      }
     },
     async dispose() {
       ctx.ports.setDisposed(true);
