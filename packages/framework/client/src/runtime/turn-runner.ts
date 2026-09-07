@@ -30,10 +30,7 @@ function collabMessagesForExec(
   exec: SessionExecutionState,
 ): ReturnType<typeof projectedCollabMessages> {
   const snapshot = exec.collabSnapshot;
-  if (
-    snapshot &&
-    snapshot.eventCount === (exec.eventCount ?? exec.session.events.length)
-  )
+  if (snapshot && snapshot.eventCount === exec.session.events.length)
     return snapshot.collabMessages;
   return projectedCollabMessages(exec.session.events);
 }
@@ -42,10 +39,7 @@ function planDocsForExec(
   exec: SessionExecutionState,
 ): ReturnType<typeof projectedPlanDocs> {
   const snapshot = exec.collabSnapshot;
-  if (
-    snapshot &&
-    snapshot.eventCount === (exec.eventCount ?? exec.session.events.length)
-  )
+  if (snapshot && snapshot.eventCount === exec.session.events.length)
     return snapshot.planDocs;
   return projectedPlanDocs(exec.session.events);
 }

@@ -33,13 +33,6 @@ export function createCollabSnapshotScheduler(
 
   function schedule(exec: SessionExecutionState) {
     if (ctx.ports.isDisposed()) return;
-    // While a session is still loading its full event log in the background,
-    // computing collab/plan from the truncated tail would persist a bad cache.
-    if (
-      exec.eventCount !== undefined &&
-      exec.eventCount !== exec.session.events.length
-    )
-      return;
     const sessionID: SessionID = exec.session.id;
     const next = (revisions.get(sessionID) ?? 0) + 1;
     revisions.set(sessionID, next);
@@ -98,13 +91,13 @@ export function createCollabSnapshotScheduler(
     exec.collabSnapshot = {
       ...snapshot,
       revision,
-      eventCount: exec.eventCount ?? exec.session.events.length,
+      eventCount: exec.session.events.length,
     };
     const sessionStore = ctx.ports.resolveService<SessionStoreController>(
       SESSION_STORE_CONTROLLER_SERVICE,
     );
     sessionStore?.writeProjectionCache(sessionID, {
-      eventCount: exec.eventCount ?? exec.session.events.length,
+      eventCount: exec.session.events.length,
       collabMessages: snapshot.collabMessages,
       planDocs: snapshot.planDocs,
     });

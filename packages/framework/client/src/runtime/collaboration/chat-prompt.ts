@@ -39,7 +39,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     events: RuntimeEvent[],
   ): ReturnType<typeof projectedCollabMessages> {
     const snapshot = exec?.collabSnapshot;
-    if (snapshot && snapshot.eventCount === (exec?.eventCount ?? events.length))
+    if (snapshot && snapshot.eventCount === events.length)
       return snapshot.collabMessages;
     return projectedCollabMessages(events);
   }
@@ -49,7 +49,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     events: RuntimeEvent[],
   ): ReturnType<typeof projectedPlanDocs> {
     const snapshot = exec?.collabSnapshot;
-    if (snapshot && snapshot.eventCount === (exec?.eventCount ?? events.length))
+    if (snapshot && snapshot.eventCount === events.length)
       return snapshot.planDocs;
     return projectedPlanDocs(events);
   }
