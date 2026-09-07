@@ -1304,7 +1304,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
     const hydrateRecentMessagesOnLoad = async () => {
       const hydrateStart = performance.now();
-      console.warn(`[perf] hydrateRecentMessagesOnLoad start +${(hydrateStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? hydrateStart)).toFixed(1)}ms`);
+      console.warn(
+        `[perf] hydrateRecentMessagesOnLoad start +${(hydrateStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? hydrateStart)).toFixed(1)}ms`,
+      );
       // Message-first startup: the latest projected page replaces the old
       // full-log replay. The page is newest-last on the wire; reverse it so the
       // projection's older-merge keeps transcript order.
@@ -1334,7 +1336,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         ) {
           if (naviChat) props.ctx.projection.hydrateChatMessages?.(naviChat);
           if (niaChat) props.ctx.projection.hydrateChatMessages?.(niaChat);
-          console.warn(`[perf] secondary chat applied +${(performance.now() - chatStart).toFixed(1)}ms`);
+          console.warn(
+            `[perf] secondary chat applied +${(performance.now() - chatStart).toFixed(1)}ms`,
+          );
         }
         markStartup("secondary.loaded");
         const timings = (
@@ -1471,6 +1475,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         openUnresolvedInteractives,
       ),
     );
+    // Fast session restore can finish before this UI module mounts. When the
+    // history-replay-complete event has already fired, replay it locally so
+    // the first attach still hydrates messages/chat/terminal instead of
+    // waiting forever for an event that will never arrive again.
+    const startupTimings = (
+      globalThis as unknown as {
+        __nataliaStartupTimings?: Record<string, number>;
+      }
+    ).__nataliaStartupTimings;
+    if (startupTimings?.["session.loaded"] !== undefined) {
+      queueMicrotask(() =>
+        openUnresolvedInteractives(
+          new Event("natalia:history-replay-complete"),
+        ),
+      );
+    }
 
     const applyTheme = () => {
       applyNeuTheme(themeMode(), props.ctx.root);
@@ -1522,10 +1542,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   function loadSecondaryStartupData() {
     const secondaryStart = performance.now();
-    console.warn(`[perf] loadSecondaryStartupData start +${(secondaryStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? secondaryStart)).toFixed(1)}ms`);
+    console.warn(
+      `[perf] loadSecondaryStartupData start +${(secondaryStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? secondaryStart)).toFixed(1)}ms`,
+    );
     runIdle(() => {
       void Promise.all([
-        createUiPanelRequirementContext(props.ctx.runtime).catch(() => undefined),
+        createUiPanelRequirementContext(props.ctx.runtime).catch(
+          () => undefined,
+        ),
         props.ctx.runtime.modelCatalog?.().catch(() => undefined),
         props.ctx.runtime.registeredTools?.().catch(() => undefined),
         props.ctx.runtime.configGet?.().catch(() => undefined),
@@ -1533,7 +1557,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ]).then(([requirementContext, catalog, tools, nextConfig, plugins]) => {
         const appliedAt = performance.now();
         batch(() => {
-          if (requirementContext) setPanelRequirementContext(requirementContext);
+          if (requirementContext)
+            setPanelRequirementContext(requirementContext);
           if (catalog) setModelCatalog(catalog);
           if (tools) setRegisteredTools(tools.map((tool) => tool.name));
           if (nextConfig) setConfig(nextConfig);
