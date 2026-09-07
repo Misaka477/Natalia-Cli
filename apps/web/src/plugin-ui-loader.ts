@@ -43,7 +43,11 @@ export async function loadPluginUiBundles(
   runtimeURL: string,
   token?: string,
 ): Promise<void> {
+  const catalogStart = performance.now();
   const catalog = (await runtime.pluginCatalog?.()) ?? [];
+  console.warn(
+    `[perf] plugin-ui catalog ${catalog.length} plugins +${(performance.now() - catalogStart).toFixed(1)}ms`,
+  );
   for (const plugin of catalog) {
     if (!plugin.enabled || !plugin.installed || !plugin.ui?.entry) continue;
     await loadOnePluginUi(host, runtimeURL, plugin, token);
@@ -108,7 +112,12 @@ async function loadOnePluginUi(
       `/plugins/${encodeURIComponent(plugin.id)}/ui.js`,
       runtimeURL,
     ).href;
+    const bundleStart = performance.now();
+    console.warn(`[perf] plugin-ui bundle start ${plugin.id} url=${moduleUrl}`);
     const mod = await importPluginUiModule(moduleUrl, token);
+    console.warn(
+      `[perf] plugin-ui bundle fetched ${plugin.id} +${(performance.now() - bundleStart).toFixed(1)}ms`,
+    );
     const factory = resolveUiPluginFactory(mod);
     if (!factory) {
       console.warn(
@@ -172,7 +181,10 @@ async function importPluginUiModule(
   token?: string,
 ): Promise<UiModule> {
   const headers = token ? { authorization: `Bearer ${token}` } : undefined;
-  const response = await fetch(url, { headers });
+  const response = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!response.ok)
     throw new Error(
       `plugin ui request failed (${response.status} ${response.statusText})`,
