@@ -1,4 +1,8 @@
-import type { RuntimeEvent } from "@natalia/contracts";
+import type {
+  RuntimeEvent,
+  RuntimeMessagePage,
+  SessionID,
+} from "@natalia/contracts";
 import type {
   SessionLoadWorkerRequest,
   SessionLoadWorkerResponse,
@@ -8,7 +12,10 @@ let worker: Worker | undefined;
 let nextID = 1;
 const pending = new Map<
   number,
-  { resolve: (value: RuntimeEvent[]) => void; reject: (error: Error) => void }
+  {
+    resolve: (value: RuntimeEvent[] | RuntimeMessagePage) => void;
+    reject: (error: Error) => void;
+  }
 >();
 
 function ensureWorker(): Worker {
@@ -23,8 +30,10 @@ function ensureWorker(): Worker {
       const entry = pending.get(response.id);
       if (!entry) return;
       pending.delete(response.id);
-      if (response.ok) entry.resolve(response.events);
-      else entry.reject(new Error(response.error));
+      if (response.ok) {
+        if ("events" in response) entry.resolve(response.events);
+        else entry.resolve(response.page);
+      } else entry.reject(new Error(response.error));
     },
   );
   worker.addEventListener("error", () => {
@@ -35,15 +44,43 @@ function ensureWorker(): Worker {
   return worker;
 }
 
+type SessionLoadWorkerTask =
+  | { op: "events"; dbPath: string; sessionID: string }
+  | {
+      op: "messagePage";
+      dbPath: string;
+      sessionID: SessionID;
+      options: { limit?: number; order?: "asc" | "desc"; cursor?: string };
+    };
+
+async function run<T>(request: SessionLoadWorkerTask): Promise<T> {
+  const id = nextID++;
+  const instance = ensureWorker();
+  return new Promise<T>((resolve, reject) => {
+    pending.set(id, {
+      resolve: (value) => resolve(value as T),
+      reject,
+    });
+    instance.postMessage({ ...request, id } as SessionLoadWorkerRequest);
+  });
+}
+
 export function loadSessionEventsInWorker(
   dbPath: string,
   sessionID: string,
 ): Promise<RuntimeEvent[]> {
-  const id = nextID++;
-  const instance = ensureWorker();
-  return new Promise<RuntimeEvent[]>((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    const request: SessionLoadWorkerRequest = { id, dbPath, sessionID };
-    instance.postMessage(request);
+  return run<RuntimeEvent[]>({ op: "events", dbPath, sessionID });
+}
+
+export function loadMessagePageInWorker(
+  dbPath: string,
+  sessionID: SessionID,
+  options: { limit?: number; order?: "asc" | "desc"; cursor?: string },
+): Promise<RuntimeMessagePage> {
+  return run<RuntimeMessagePage>({
+    op: "messagePage",
+    dbPath,
+    sessionID,
+    options,
   });
 }

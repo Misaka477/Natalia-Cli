@@ -24,7 +24,10 @@ import type {
   SessionStoreController,
   SessionStoreRecoveryView,
 } from "@natalia/runtime-services";
-import { loadSessionEventsInWorker } from "./session-load-worker-client";
+import {
+  loadMessagePageInWorker,
+  loadSessionEventsInWorker,
+} from "./session-load-worker-client";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in
@@ -379,7 +382,16 @@ export function createSessionStoreController(input: {
     fallback: SessionRecord,
     options: { limit?: number; order?: "asc" | "desc"; cursor?: string } = {},
   ): Promise<RuntimeMessagePage> {
-    if (sqliteStore) return sqliteStore.loadMessagePage(id, options);
+    if (sqliteStore) {
+      if (sqliteStorePath) {
+        try {
+          return await loadMessagePageInWorker(sqliteStorePath, id, options);
+        } catch {
+          // Fall back to the shared in-process store.
+        }
+      }
+      return sqliteStore.loadMessagePage(id, options);
+    }
     try {
       const { projectSessionMessagesInWorker } = await import(
         "./session-messages-worker-client"
