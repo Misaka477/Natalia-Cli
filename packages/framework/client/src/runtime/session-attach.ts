@@ -27,6 +27,10 @@ export function createSessionAttach(ctx: RuntimeContext) {
 
   async function attachSession(id: string) {
     const start = performance.now();
+    const mark = (name: string) =>
+      console.warn(
+        `[perf] attachSession.${name} target=${id} +${(performance.now() - start).toFixed(1)}ms`,
+      );
     console.warn(`[perf] attachSession start target=${id}`);
     const {
       getReady,
@@ -61,6 +65,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
       publishForSession,
     } = ctx.ports;
     await getReady();
+    mark("ready");
     // D2: a running turn is no longer a reason to refuse. The turn belongs to
     // its own session's exec and keeps running in the background; attach only
     // switches which session the UI is attached to.
@@ -88,11 +93,12 @@ export function createSessionAttach(ctx: RuntimeContext) {
     // A replacement runtime can open the old session as soon as attach returns.
     await getSessionPersistence();
     await sessionStore.flush(sessionID);
-
+    mark("flush");
     // D2: the attached session becomes the activity exec. Its ledger is its
     // own — restoring into the shared one would clobber the previous session's
     // ledger, which a background turn may still be writing to.
     const exec = await ensureExecution(nextID);
+    mark("ensureExecution");
     if (exec.session.metadata?.archived)
       throw new RuntimeRefusal("cannot attach an archived session");
     setSessionID(nextID);
@@ -127,6 +133,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
         });
     }
     getRuntimeDiagnosticsBySession().set(exec.session.id, diagnostics);
+    mark("projection");
     // The exec already restored its own ledger, agent and model selection
     // (`ensureExecution`); here the activity closures take the same values so
     // UI reads and the next attach start from them.
@@ -142,15 +149,19 @@ export function createSessionAttach(ctx: RuntimeContext) {
     } else if (exec.selectedModel) {
       applyAgentProvider(exec);
     }
+    mark("apply");
     await initializeCheckpointController(exec);
+    mark("checkpoint");
     publishForSession(exec, {
       type: "session.ready",
       sessionID: exec.session.id,
     });
+    mark("ready");
     publishForSession(
       exec,
       contextStatusEvent(exec.context.status(exec.runtimeContextConfig)),
     );
+    mark("context");
     publishForSession(
       exec,
       await status.snapshotFor({
@@ -159,6 +170,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
         permissionMode: exec.permissionMode,
       }),
     );
+    mark("status");
     console.warn(
       `[perf] attachSession done target=${id} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
     );
