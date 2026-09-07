@@ -44,6 +44,11 @@ export type SessionProjectWorkerRequest =
     }
   | {
       id: number;
+      op: "subagentHistory";
+      events: import("@natalia/contracts").RuntimeEvent[];
+    }
+  | {
+      id: number;
       op: "projection";
       name:
         | "planDocs"
@@ -113,6 +118,10 @@ port.on("message", (request: SessionProjectWorkerRequest) => {
         revision: 0,
         eventCount: request.events.length,
       };
+    } else if (request.op === "subagentHistory") {
+      result = request.events.filter(
+        (event) => event.type === "subagent.update",
+      );
     } else {
       switch (request.name) {
         case "planDocs":

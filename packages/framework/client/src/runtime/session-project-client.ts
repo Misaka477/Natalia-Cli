@@ -28,6 +28,10 @@ type SessionProjectTask =
       events: RuntimeEvent[];
     }
   | {
+      op: "subagentHistory";
+      events: RuntimeEvent[];
+    }
+  | {
       op: "projection";
       name:
         | "planDocs"
@@ -126,6 +130,15 @@ export function computeCollabSnapshotInWorker(
 ): Promise<import("./session-execution-state").CollabSnapshot> {
   return run<import("./session-execution-state").CollabSnapshot>({
     op: "collabSnapshot",
+    events,
+  });
+}
+
+export function subagentHistoryInWorker(
+  events: RuntimeEvent[],
+): Promise<Extract<RuntimeEvent, { type: "subagent.update" }>[]> {
+  return run<Extract<RuntimeEvent, { type: "subagent.update" }>[]>({
+    op: "subagentHistory",
     events,
   });
 }
