@@ -506,6 +506,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let topbarPanelRef: HTMLDivElement | undefined;
 
   let projectionFramePending = false;
+  let suppressProjectionClones = false;
   onCleanup(
     props.ctx.projection.subscribe((next) => {
       const replaying = (
@@ -517,7 +518,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // Cloning the whole AppState after every raw event is O(n^2) for long
       // sessions, so skip the heavy clones until the replay completes and then
       // take one final snapshot in openUnresolvedInteractives.
-      if (replaying) return;
+      if (replaying || suppressProjectionClones) return;
       // Live events stream as many small deltas per second. Clone the
       // projection at most once per animation frame and let Solid paint one
       // batched frame instead of one clone/update per raw event.
@@ -1407,7 +1408,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       if (isStaleLoad()) return;
       void (async () => {
         if (isStaleLoad()) return;
-        await Promise.all([refreshSessions(), hydrateRecentMessagesOnLoad()]);
+        suppressProjectionClones = true;
+        try {
+          await Promise.all([refreshSessions(), hydrateRecentMessagesOnLoad()]);
+        } finally {
+          suppressProjectionClones = false;
+        }
         if (isStaleLoad()) return;
         // Session loading finished; take one projection snapshot instead of
         // cloning once per raw event.
