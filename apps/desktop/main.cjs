@@ -22,6 +22,7 @@ process.env.NO_PROXY = [process.env.NO_PROXY, "127.0.0.1,localhost"]
 // GPU compositor path is noisy and can stall rendering, so the default is off
 // with software WebGL allowed. Restart is required to change this setting.
 const desktopSettings = readDesktopSettings();
+console.warn("[perf] desktop gpuEnabled", desktopSettings.gpuEnabled);
 if (desktopSettings.gpuEnabled === true) {
   // Keep hardware acceleration enabled; user opted in.
 } else {
@@ -372,6 +373,11 @@ if (process.platform === "linux") {
 
 app.whenReady().then(async () => {
   console.log(`[perf] desktop app ready +${(performance.now() - DESKTOP_START).toFixed(1)}ms`);
+  try {
+    console.warn("[perf] desktop gpu", app.getGPUFeatureStatus());
+  } catch {
+    console.warn("[perf] desktop gpu unavailable");
+  }
   app.userAgentFallback =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
   try {
