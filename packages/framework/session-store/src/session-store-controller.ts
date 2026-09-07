@@ -24,6 +24,7 @@ import type {
   SessionStoreController,
   SessionStoreRecoveryView,
 } from "@natalia/runtime-services";
+import { loadSessionEventsInWorker } from "./session-load-worker-client";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in
@@ -323,7 +324,16 @@ export function createSessionStoreController(input: {
     }
     const durable = sqliteStore.get(id);
     if (!durable) throw new Error(`session not found: ${id}`);
-    const events = await sqliteStore.loadEventsAsync(id);
+    let events: RuntimeEvent[];
+    if (sqliteStorePath) {
+      try {
+        events = await loadSessionEventsInWorker(sqliteStorePath, id);
+      } catch {
+        events = await sqliteStore.loadEventsAsync(id);
+      }
+    } else {
+      events = await sqliteStore.loadEventsAsync(id);
+    }
     const inbox = sqliteStore.loadInbox(id);
     return {
       id,
