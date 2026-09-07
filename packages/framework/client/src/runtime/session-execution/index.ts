@@ -249,6 +249,7 @@ export function createSessionExecution(
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
       pendingChatUserMessages: [],
+      eventCount: loaded.events.length,
     };
     executionBySession.set(sessionID, exec);
     pruneIdleSessionExecutions(ctx);

@@ -4,6 +4,7 @@ import {
   projectedWorkGraphNodes,
 } from "@natalia/session";
 import type { RuntimeContext } from "./context";
+import { ensureSessionFullEvents } from "./session-full-events";
 
 type WorkGraphRuntime = Pick<
   RuntimeServiceClient,
@@ -29,6 +30,8 @@ async function graphProjectionWithFallback(
 export function createWorkGraphRuntime(ctx: RuntimeContext): WorkGraphRuntime {
   return {
     async workGraphNodes() {
+      const exec = ctx.ports.getActiveExec();
+      if (exec) await ensureSessionFullEvents(ctx, exec);
       const session = ctx.ports.getSession();
       if (!session) return [];
       const nodes = (await graphProjectionWithFallback(
@@ -47,6 +50,8 @@ export function createWorkGraphRuntime(ctx: RuntimeContext): WorkGraphRuntime {
       }));
     },
     async workGraphEdges() {
+      const exec = ctx.ports.getActiveExec();
+      if (exec) await ensureSessionFullEvents(ctx, exec);
       const session = ctx.ports.getSession();
       if (!session) return [];
       const edges = (await graphProjectionWithFallback(

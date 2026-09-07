@@ -21,6 +21,7 @@ import { chatToolSummary } from "./chat-summary";
 import { createWorkspaceRuntime } from "../workspace-runtime";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
 
 const CHAT_READ_ONLY_TOOLS = new Set([
   "read_file",
@@ -67,6 +68,7 @@ export function createChatTools(ctx: RuntimeContext) {
         },
         async execute() {
           if (!exec) return JSON.stringify({ agentStatus: "unknown" });
+          await ensureSessionFullEvents(ctx, exec);
           return JSON.stringify(
             currentSessionSnapshot(exec, `snapshot:live:${exec.session.id}`),
           );
@@ -84,6 +86,7 @@ export function createChatTools(ctx: RuntimeContext) {
         },
         async execute() {
           if (!exec) return "[]";
+          await ensureSessionFullEvents(ctx, exec);
           return JSON.stringify(
             projectedMailboxMessages(exec.session.events).map((message) => ({
               messageID: message.messageID,

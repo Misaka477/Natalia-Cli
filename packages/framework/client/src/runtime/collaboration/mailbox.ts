@@ -2,6 +2,7 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { projectedMailboxMessages } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
 type Surface = Pick<
   RuntimeServiceClient,
   | "mailboxList"
@@ -39,7 +40,10 @@ async function mailboxesWithWorkerFallback(
     const { runSessionProjectionInWorker } = await import(
       "../session-project-client"
     );
-    const result = await runSessionProjectionInWorker("mailboxMessages", events);
+    const result = await runSessionProjectionInWorker(
+      "mailboxMessages",
+      events,
+    );
     return result as ReturnType<typeof projectedMailboxMessages>;
   } catch {
     return projectedMailboxMessages(events);
@@ -51,6 +55,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
     async mailboxList(sessionID?: string) {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec) return [];
+      await ensureSessionFullEvents(ctx, exec);
       const messages = await mailboxesWithWorkerFallback(exec.session.events);
       return messages.map((m) => ({
         messageID: m.messageID,
@@ -82,6 +87,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { delivered: false as const };
+      await ensureSessionFullEvents(ctx, exec);
       const messages = await mailboxesWithWorkerFallback(exec.session.events);
       const message = messages.find(
         (m) => m.messageID === messageID && m.status === "queued",
@@ -102,6 +108,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { acknowledged: false as const };
+      await ensureSessionFullEvents(ctx, exec);
       const messages = await mailboxesWithWorkerFallback(exec.session.events);
       const message = messages.find(
         (m) => m.messageID === messageID && m.status === "delivered",
@@ -122,6 +129,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { deferred: false as const };
+      await ensureSessionFullEvents(ctx, exec);
       const messages = await mailboxesWithWorkerFallback(exec.session.events);
       const message = messages.find(
         (m) => m.messageID === messageID && m.status === "queued",
@@ -148,6 +156,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { superseded: false as const };
+      await ensureSessionFullEvents(ctx, exec);
       const messages = await mailboxesWithWorkerFallback(exec.session.events);
       const message = messages.find(
         (m) => m.messageID === messageID && m.status === "queued",

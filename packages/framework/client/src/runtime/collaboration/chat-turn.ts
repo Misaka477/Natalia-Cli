@@ -26,6 +26,7 @@ import type { ProviderMessage, ProviderToolCall } from "@natalia/runtime";
 import type { ChatChannel, RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
 
 const MAX_PROTOCOL_CORRECTIONS = 2;
 
@@ -75,6 +76,7 @@ export function createChatTurn(ctx: RuntimeContext) {
     } = ctx.ports;
     const activeProvider = input.provider ?? input.exec.provider;
     const channel: ChatChannel = input.channel ?? "navi";
+    await ensureSessionFullEvents(ctx, input.exec);
     console.log("[chat-turn] start", {
       responseMessageID: input.responseMessageID,
       text: input.text,

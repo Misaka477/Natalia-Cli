@@ -28,6 +28,7 @@ import {
   resolveGovernanceRoot,
 } from "@natalia/governance-ledger";
 import type { RuntimeContext } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
 
@@ -66,7 +67,7 @@ async function projectedCanonicalToolsWithFallback(
     const { projectedCanonicalToolsInWorker } = await import(
       "../session-project-client"
     );
-    const result = await projectedCanonicalToolsInWorker(events) as Array<{
+    const result = (await projectedCanonicalToolsInWorker(events)) as Array<{
       name: string;
       owner: string;
       scope: string;
@@ -142,14 +143,16 @@ export function createIntelligenceSurface(
     return ledger;
   }
   async function intelligenceExec(sessionID?: string) {
-    return sessionID
+    const exec = sessionID
       ? (ctx.ports
           .getExecutionBySession()
           .get(sessionID as import("@natalia/contracts").SessionID) ??
-          (await ctx.ports.ensureExecution(
-            sessionID as import("@natalia/contracts").SessionID,
-          )))
+        (await ctx.ports.ensureExecution(
+          sessionID as import("@natalia/contracts").SessionID,
+        )))
       : ctx.ports.getActiveExec();
+    if (exec) await ensureSessionFullEvents(ctx, exec);
+    return exec;
   }
   async function intelligenceSession(sessionID?: string) {
     return (await intelligenceExec(sessionID))?.session;
@@ -630,14 +633,16 @@ export function createIntelligenceSurface(
     async registeredTools(sessionID?: string) {
       const session = await intelligenceSession(sessionID);
       const projected = session
-        ? (await projectedCanonicalToolsWithFallback(session.events)).map((t) => ({
-            name: t.name,
-            owner: t.owner,
-            scope: t.scope,
-            recovery: t.recovery,
-            precedence: t.precedence,
-            requiresApproval: t.requiresApproval,
-          }))
+        ? (await projectedCanonicalToolsWithFallback(session.events)).map(
+            (t) => ({
+              name: t.name,
+              owner: t.owner,
+              scope: t.scope,
+              recovery: t.recovery,
+              precedence: t.precedence,
+              requiresApproval: t.requiresApproval,
+            }),
+          )
         : [];
       // The live tool registry is the authoritative list of currently loaded
       // tools. Some plugin tools are registered before their projection events
@@ -651,10 +656,7 @@ export function createIntelligenceSurface(
         precedence: 0,
         requiresApproval: tool.requiresApproval,
       }));
-      const merged = new Map<
-        string,
-        (typeof projected)[number]
-      >();
+      const merged = new Map<string, (typeof projected)[number]>();
       for (const tool of [...live, ...projected]) merged.set(tool.name, tool);
       return [...merged.values()];
     },

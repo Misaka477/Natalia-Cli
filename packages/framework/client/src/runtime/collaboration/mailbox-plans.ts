@@ -22,6 +22,7 @@ import {
   type CollaborationService,
 } from "@natalia/collaboration";
 import type { RuntimeContext } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
 import type { SessionExecutionState } from "../context";
 
 export function createMailboxPlans(ctx: RuntimeContext) {
@@ -192,6 +193,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     await getReady();
     const owner = targetExec ?? getActiveExec();
     if (!owner) return { queued: false as const };
+    await ensureSessionFullEvents(ctx, owner);
     if (
       typeof input.intent !== "string" ||
       input.intent.trim().length === 0 ||
@@ -329,6 +331,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
   ) {
     const owner = targetExec ?? ctx.ports.getActiveExec();
     if (!owner || !messageID.trim()) return { cancelled: false as const };
+    await ensureSessionFullEvents(ctx, owner);
     const message = projectedMailboxMessages(owner.session.events).find(
       (candidate) => candidate.messageID === messageID,
     );

@@ -6,6 +6,7 @@ import {
 import { RuntimeRefusal } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
+import { ensureSessionFullEvents } from "../session-full-events";
 
 type ClientSurfaceOptions = Pick<
   RealRuntimeClientOptions,
@@ -53,10 +54,12 @@ function terminalIDsFor(
   );
 }
 
-function assertTerminalOwned(
+async function assertTerminalOwned(
+  ctx: RuntimeContext,
   exec: import("../context").SessionExecutionState,
   id: string,
 ) {
+  await ensureSessionFullEvents(ctx, exec);
   if (!terminalIDsFor(exec).has(id))
     throw new Error(
       `terminal ${id} does not belong to session ${exec.session.id}`,
@@ -78,7 +81,7 @@ export function createNativeTerminalSurface(
     async nativeTerminalRead(id, sessionID?: string) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, sessionID);
-      if (sessionID && exec) assertTerminalOwned(exec, id);
+      if (sessionID && exec) await assertTerminalOwned(ctx, exec, id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -108,7 +111,7 @@ export function createNativeTerminalSurface(
     async nativeTerminalClaimHumanInput(id, sessionID?: string) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, sessionID);
-      if (sessionID && exec) assertTerminalOwned(exec, id);
+      if (sessionID && exec) await assertTerminalOwned(ctx, exec, id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -119,7 +122,7 @@ export function createNativeTerminalSurface(
     async nativeTerminalReleaseHumanControl(id, sessionID) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, sessionID);
-      if (sessionID && exec) assertTerminalOwned(exec, id);
+      if (sessionID && exec) await assertTerminalOwned(ctx, exec, id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -137,7 +140,7 @@ export function createNativeTerminalSurface(
     async nativeTerminalBeginSecureInput(id, sessionID?: string) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, sessionID);
-      if (sessionID && exec) assertTerminalOwned(exec, id);
+      if (sessionID && exec) await assertTerminalOwned(ctx, exec, id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -147,7 +150,7 @@ export function createNativeTerminalSurface(
     async nativeTerminalEndSecureInput(id, sessionID?: string) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, sessionID);
-      if (sessionID && exec) assertTerminalOwned(exec, id);
+      if (sessionID && exec) await assertTerminalOwned(ctx, exec, id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -157,7 +160,7 @@ export function createNativeTerminalSurface(
     async nativeTerminalStop(id, sessionID?: string) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, sessionID);
-      if (sessionID && exec) assertTerminalOwned(exec, id);
+      if (sessionID && exec) await assertTerminalOwned(ctx, exec, id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -207,7 +210,8 @@ export function createNativeTerminalSurface(
     }) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, input.sessionID);
-      if (input.sessionID && exec) assertTerminalOwned(exec, input.id);
+      if (input.sessionID && exec)
+        await assertTerminalOwned(ctx, exec, input.id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );
@@ -231,7 +235,8 @@ export function createNativeTerminalSurface(
     }) {
       await ctx.ports.getReady();
       const exec = sessionExec(ctx, input.sessionID);
-      if (input.sessionID && exec) assertTerminalOwned(exec, input.id);
+      if (input.sessionID && exec)
+        await assertTerminalOwned(ctx, exec, input.id);
       const terminal = ctx.ports.resolveService<TerminalController>(
         TERMINAL_CONTROLLER_SERVICE,
       );

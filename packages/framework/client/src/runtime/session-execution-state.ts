@@ -50,6 +50,10 @@ export type SessionExecutionState = {
   >;
   advisorPending?: boolean;
   collabSnapshot?: CollabSnapshot;
+  /** Total durable event count; may be larger than session.events.length when full events are still loading in background. */
+  eventCount?: number;
+  /** Memoized promise that loads the complete durable event log into session.events. */
+  fullEventsPromise?: Promise<void>;
   injectedMailboxIDs: Set<string>;
   pendingChatUserMessages: Array<{ messageID: string; text: string }>;
 };

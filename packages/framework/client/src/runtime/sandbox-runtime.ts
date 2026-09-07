@@ -14,6 +14,7 @@ import {
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
+import { ensureSessionFullEvents } from "./session-full-events";
 
 async function appendSandboxMutation(
   ctx: RuntimeContext,
@@ -107,10 +108,12 @@ export function createSandboxRuntime(
     );
   }
 
-  function assertSandboxOwned(
+  async function assertSandboxOwned(
+    ctx: RuntimeContext,
     owner: import("./context").SessionExecutionState,
     id: string,
   ) {
+    await ensureSessionFullEvents(ctx, owner);
     if (!sandboxIDsFor(owner).has(id))
       throw new Error(
         `sandbox ${id} does not belong to session ${owner.session.id}`,
@@ -160,7 +163,7 @@ export function createSandboxRuntime(
     ) {
       await ctx.ports.getReady();
       const owner = await sessionOwner(sessionID);
-      assertSandboxOwned(owner, id);
+      await assertSandboxOwned(ctx, owner, id);
       const changes = await requireSandboxes().previewMerge(id);
       if (options?.includePatch === false) {
         return changes.map((change) => ({
@@ -178,7 +181,7 @@ export function createSandboxRuntime(
     async sandboxResources(id, sessionID?: string) {
       await ctx.ports.getReady();
       const owner = await sessionOwner(sessionID);
-      assertSandboxOwned(owner, id);
+      await assertSandboxOwned(ctx, owner, id);
       return requireSandboxes().resourcesFor(id);
     },
     async sandboxResourceOutput(input: {
@@ -189,7 +192,7 @@ export function createSandboxRuntime(
     }) {
       await ctx.ports.getReady();
       const owner = await sessionOwner(input.sessionID);
-      assertSandboxOwned(owner, input.id);
+      await assertSandboxOwned(ctx, owner, input.id);
       return await requireSandboxes().resourceOutput(
         input.id,
         input.resourceID,
@@ -199,7 +202,7 @@ export function createSandboxRuntime(
     async sandboxMerge(id, sessionID?) {
       await ctx.ports.getReady();
       const owner = await sessionOwner(sessionID);
-      assertSandboxOwned(owner, id);
+      await assertSandboxOwned(ctx, owner, id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_merge",
@@ -352,7 +355,7 @@ export function createSandboxRuntime(
     async sandboxDelete(id, sessionID?) {
       await ctx.ports.getReady();
       const owner = await sessionOwner(sessionID);
-      assertSandboxOwned(owner, id);
+      await assertSandboxOwned(ctx, owner, id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_delete",
@@ -380,7 +383,7 @@ export function createSandboxRuntime(
     }) {
       await ctx.ports.getReady();
       const owner = await sessionOwner(input.sessionID);
-      assertSandboxOwned(owner, input.id);
+      await assertSandboxOwned(ctx, owner, input.id);
       const sandboxes = requireSandboxes();
       await ctx.ports.authorizeSandboxManagement(
         "sandbox_resource_stop",

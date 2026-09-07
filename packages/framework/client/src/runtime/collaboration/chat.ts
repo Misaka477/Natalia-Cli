@@ -16,6 +16,7 @@ import type {
 } from "@natalia/contracts";
 import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
 type Surface = Pick<
   RuntimeServiceClient,
   | "chatSubmit"
@@ -47,6 +48,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
     async chatMessages(channel?: ChatChannel, sessionID?: string) {
       const exec = await chatExec(ctx, sessionID);
       if (!exec) return [];
+      await ensureSessionFullEvents(ctx, exec);
       return projectedChatMessages(exec.session.events)
         .filter(
           (message) => (message.channel ?? "navi") === (channel ?? "navi"),
@@ -66,6 +68,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
     ) {
       const exec = await chatExec(ctx, sessionID);
       if (!exec) return { rolledBackTo: input.toMessageID, removed: 0 };
+      await ensureSessionFullEvents(ctx, exec);
       const channelKey = channel ?? "navi";
       const history = projectedChatMessages(exec.session.events).filter(
         (message) => (message.channel ?? "navi") === channelKey,
