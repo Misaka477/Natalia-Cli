@@ -173,7 +173,9 @@ export function createSessionExecution(
     );
     if (!contextLedgerFactory)
       throw new Error("context ledger unavailable (natalia-context-ledger)");
-    const stored = await sessionStore.load(sessionID);
+    const stored = await sessionStore.load(sessionID, {
+      indexedRecovery: true,
+    });
     mark("load");
     const loaded = stored.session;
     const recovery = stored.recovery;
@@ -204,6 +206,23 @@ export function createSessionExecution(
         : projection.replayableEvents;
     contextLedgerFactory.restore(execContext, restoreEvents);
     mark("restore");
+    const fastPath = Boolean(epoch);
+    projection.replayableEvents = restoreEvents;
+    if (recovery) {
+      projection.selectedAgent =
+        recovery.selectedAgent ?? projection.selectedAgent;
+      projection.selectedModel =
+        recovery.selectedModel ?? projection.selectedModel;
+      projection.reasoningEffort =
+        recovery.reasoningEffort ?? projection.reasoningEffort;
+      projection.chatModelProfile =
+        recovery.chatModelProfile ?? projection.chatModelProfile;
+      projection.permissionMode =
+        recovery.permissionMode ?? projection.permissionMode;
+      projection.permissionProfile =
+        recovery.permissionProfile ?? projection.permissionProfile;
+    }
+    loaded.events = restoreEvents;
     console.warn("[context-restore] ensureExecution", {
       sessionID,
       replayableEvents: projection.replayableEvents.length,
@@ -211,17 +230,24 @@ export function createSessionExecution(
       contextEntries: execContext.snapshot().entries.length,
       hasEpoch: epoch !== undefined,
       checkpointHasSummary,
+      fastPath,
     });
+    const attachmentReferences = new Map(
+      projection.replayableEvents.flatMap((event) =>
+        event.type === "turn.submitted" && event.attachments?.length
+          ? [[`${event.id}:user`, event.attachments] as const]
+          : [],
+      ),
+    );
+    for (const [turnID, attachments] of recovery?.attachments ?? [])
+      attachmentReferences.set(`${turnID}:user`, attachments);
+    const cachedProjection = fastPath
+      ? sessionStore.projectionCache(sessionID)
+      : undefined;
     const exec: SessionExecutionState = {
       session: loaded,
       context: execContext,
-      attachmentReferences: new Map(
-        projection.replayableEvents.flatMap((event) =>
-          event.type === "turn.submitted" && event.attachments?.length
-            ? [[`${event.id}:user`, event.attachments] as const]
-            : [],
-        ),
-      ),
+      attachmentReferences,
       toolCalls: new Map(),
       provider:
         options.provider ??
@@ -249,18 +275,52 @@ export function createSessionExecution(
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
       pendingChatUserMessages: [],
+      eventCount: fastPath
+        ? epoch!.baselineSeq + restoreEvents.length
+        : loaded.events.length,
+      ...(cachedProjection
+        ? {
+            collabSnapshot: {
+              collabMessages: cachedProjection.collabMessages ?? [],
+              planDocs: cachedProjection.planDocs ?? [],
+              revision: 0,
+              eventCount: cachedProjection.eventCount,
+            },
+          }
+        : {}),
     };
     executionBySession.set(sessionID, exec);
     pruneIdleSessionExecutions(ctx);
     applyAgentProvider(exec);
     mark("apply");
-    // Warm the collaboration snapshot cache for attached/background sessions
-    // without making the user wait for the worker.
-    ctx.ports.scheduleCollabSnapshot?.(exec);
+    if (fastPath) {
+      // The execution is usable immediately with contextEpoch/recovery/cache.
+      // Load the full transcript in the background so chat/intelligence still
+      // see the complete log once it arrives; collab snapshots are only
+      // scheduled after the full log is in memory.
+      void sessionStore
+        .load(sessionID)
+        .then((full) => {
+          const current = ctx.ports.getExecutionBySession().get(sessionID);
+          if (current !== exec) return;
+          exec.session.events = full.session.events;
+          exec.eventCount = full.session.events.length;
+          ctx.ports.scheduleCollabSnapshot?.(exec);
+        })
+        .catch((error) => {
+          console.warn(
+            `[perf] ensureExecution background full-load failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+    } else {
+      // Warm the collaboration snapshot cache for attached/background sessions
+      // without making the user wait for the worker.
+      ctx.ports.scheduleCollabSnapshot?.(exec);
+    }
     await refreshExecutionContextConfig(exec);
     mark("refresh");
     console.warn(
-      `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
+      `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} fast=${fastPath} +${(performance.now() - start).toFixed(1)}ms`,
     );
     return exec;
   }

@@ -116,7 +116,11 @@ export function createEventSink(
 
   function planDocsFor(exec: SessionExecutionState | undefined) {
     const snapshot = exec?.collabSnapshot;
-    if (snapshot && snapshot.eventCount === (exec?.session.events.length ?? -1))
+    if (
+      snapshot &&
+      snapshot.eventCount ===
+        (exec?.eventCount ?? exec?.session.events.length ?? -1)
+    )
       return snapshot.planDocs;
     return projectedPlanDocs(exec?.session.events ?? []);
   }

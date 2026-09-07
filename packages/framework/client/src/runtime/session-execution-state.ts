@@ -50,6 +50,8 @@ export type SessionExecutionState = {
   >;
   advisorPending?: boolean;
   collabSnapshot?: CollabSnapshot;
+  /** Total durable event count; may be larger than session.events.length when full events are still loading in background. */
+  eventCount?: number;
   injectedMailboxIDs: Set<string>;
   pendingChatUserMessages: Array<{ messageID: string; text: string }>;
 };
