@@ -20,6 +20,7 @@ import type { RuntimeContext } from "./context";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { ensureSessionFullEvents } from "./session-full-events";
 import { subagentHistoryInWorker } from "./session-project-client";
+import { projectSubagentsInWorker } from "./secondary-worker-client";
 
 export function createSubagentRuntime(
   ctx: RuntimeContext,
@@ -32,15 +33,25 @@ export function createSubagentRuntime(
         ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
       if (!subagents?.enabled()) return [];
       const ownerSessionID = sessionID ?? ctx.ports.getActiveExec()?.session.id;
-      const result = subagents
+      const records = subagents
         .list()
         .filter(
           (record) =>
             !ownerSessionID ||
             !record.parentSessionID ||
             record.parentSessionID === ownerSessionID,
-        )
-        .map((record) => toSubagentView(record, subagents));
+        );
+      let result: RuntimeSubagentView[];
+      try {
+        result = await projectSubagentsInWorker(
+          records.map((record) => ({
+            record,
+            health: subagents.health(record.id),
+          })),
+        );
+      } catch {
+        result = records.map((record) => toSubagentView(record, subagents));
+      }
       console.warn(
         `[perf] subagents done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
       );

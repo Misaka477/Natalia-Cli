@@ -11,6 +11,14 @@ export type SecondaryWorkerRequest =
       id: number;
       op: "pluginList";
       plugins: unknown[];
+    }
+  | {
+      id: number;
+      op: "subagentList";
+      records: Array<{
+        record: unknown;
+        health: unknown;
+      }>;
     };
 
 export type SecondaryWorkerResponse =
@@ -25,6 +33,46 @@ port.on("message", (request: SecondaryWorkerRequest) => {
     let result: unknown;
     if (request.op === "configClone") {
       result = structuredClone(request.config);
+    } else if (request.op === "subagentList") {
+      result = request.records.map(({ record, health }) => {
+        const value = record as {
+          id: string;
+          status: string;
+          attached: boolean;
+          task: string;
+          parentSessionID?: string;
+          parentAgentID?: string;
+          continuation?: number;
+          phase?: string;
+          activityDetail?: string;
+          lastActivityAt?: string;
+          startedAt?: string;
+          endedAt?: string;
+        };
+        return {
+          type: "subagent.update",
+          id: value.id,
+          status: value.status,
+          attached: value.attached,
+          event: "status",
+          task: value.task,
+          ...(value.parentSessionID !== undefined
+            ? { parentSessionID: value.parentSessionID }
+            : {}),
+          ...(value.parentAgentID !== undefined
+            ? { parentAgentID: value.parentAgentID }
+            : {}),
+          ...(value.continuation !== undefined
+            ? { continuation: value.continuation }
+            : {}),
+          phase: value.phase,
+          activityDetail: value.activityDetail,
+          health,
+          lastActivityAt: value.lastActivityAt,
+          startedAt: value.startedAt,
+          ...(value.endedAt !== undefined ? { endedAt: value.endedAt } : {}),
+        };
+      });
     } else {
       result = request.plugins.map((plugin) => {
         const value = plugin as {

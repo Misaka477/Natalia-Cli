@@ -37,7 +37,11 @@ function ensureWorker(): Worker {
 
 type SecondaryWorkerTask =
   | { op: "configClone"; config: ConfigV3 }
-  | { op: "pluginList"; plugins: unknown[] };
+  | { op: "pluginList"; plugins: unknown[] }
+  | {
+      op: "subagentList";
+      records: Array<{ record: unknown; health: unknown }>;
+    };
 
 async function run<T>(request: SecondaryWorkerTask): Promise<T> {
   const id = nextID++;
@@ -67,5 +71,14 @@ export function projectPluginsInWorker(plugins: unknown[]): Promise<
   return run({
     op: "pluginList",
     plugins,
+  });
+}
+
+export function projectSubagentsInWorker(
+  records: Array<{ record: unknown; health: unknown }>,
+): Promise<import("@natalia/contracts").RuntimeSubagentView[]> {
+  return run({
+    op: "subagentList",
+    records,
   });
 }
