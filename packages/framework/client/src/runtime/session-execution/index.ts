@@ -173,7 +173,11 @@ export function createSessionExecution(
     );
     if (!contextLedgerFactory)
       throw new Error("context ledger unavailable (natalia-context-ledger)");
-    const stored = await sessionStore.load(sessionID);
+    const fastPathEnabled = process.env.NATALIA_FAST_EXECUTION_LOAD === "1";
+    const stored = await sessionStore.load(
+      sessionID,
+      fastPathEnabled ? { indexedRecovery: true } : undefined,
+    );
     mark("load");
     const loaded = stored.session;
     const recovery = stored.recovery;
@@ -204,6 +208,25 @@ export function createSessionExecution(
         : projection.replayableEvents;
     contextLedgerFactory.restore(execContext, restoreEvents);
     mark("restore");
+    const fastPath = fastPathEnabled && Boolean(epoch);
+    if (fastPath) {
+      projection.replayableEvents = restoreEvents;
+      if (recovery) {
+        projection.selectedAgent =
+          recovery.selectedAgent ?? projection.selectedAgent;
+        projection.selectedModel =
+          recovery.selectedModel ?? projection.selectedModel;
+        projection.reasoningEffort =
+          recovery.reasoningEffort ?? projection.reasoningEffort;
+        projection.chatModelProfile =
+          recovery.chatModelProfile ?? projection.chatModelProfile;
+        projection.permissionMode =
+          recovery.permissionMode ?? projection.permissionMode;
+        projection.permissionProfile =
+          recovery.permissionProfile ?? projection.permissionProfile;
+      }
+      loaded.events = restoreEvents;
+    }
     console.warn("[context-restore] ensureExecution", {
       sessionID,
       replayableEvents: projection.replayableEvents.length,
@@ -211,6 +234,7 @@ export function createSessionExecution(
       contextEntries: execContext.snapshot().entries.length,
       hasEpoch: epoch !== undefined,
       checkpointHasSummary,
+      fastPath,
     });
     const exec: SessionExecutionState = {
       session: loaded,
@@ -249,19 +273,40 @@ export function createSessionExecution(
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
       pendingChatUserMessages: [],
-      eventCount: loaded.events.length,
+      eventCount: fastPath
+        ? epoch!.baselineSeq + restoreEvents.length
+        : loaded.events.length,
     };
     executionBySession.set(sessionID, exec);
     pruneIdleSessionExecutions(ctx);
     applyAgentProvider(exec);
     mark("apply");
-    // Warm the collaboration snapshot cache for attached/background sessions
-    // without making the user wait for the worker.
-    ctx.ports.scheduleCollabSnapshot?.(exec);
+    if (fastPath) {
+      // Fast path: defer full transcript to background; async consumers call
+      // ensureSessionFullEvents before reading, so attach can return sooner.
+      void sessionStore
+        .load(sessionID)
+        .then((full) => {
+          const current = ctx.ports.getExecutionBySession().get(sessionID);
+          if (current !== exec) return;
+          exec.session.events = full.session.events;
+          exec.eventCount = full.session.events.length;
+          ctx.ports.scheduleCollabSnapshot?.(exec);
+        })
+        .catch((error) => {
+          console.warn(
+            `[perf] ensureExecution background full-load failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+    } else {
+      // Warm the collaboration snapshot cache for attached/background sessions
+      // without making the user wait for the worker.
+      ctx.ports.scheduleCollabSnapshot?.(exec);
+    }
     await refreshExecutionContextConfig(exec);
     mark("refresh");
     console.warn(
-      `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
+      `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} fast=${fastPath} +${(performance.now() - start).toFixed(1)}ms`,
     );
     return exec;
   }
