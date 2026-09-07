@@ -124,14 +124,6 @@ CREATE TABLE IF NOT EXISTS context_epochs (
   snapshot TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS projection_cache (
-  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
-  event_count INTEGER NOT NULL,
-  collab_messages TEXT,
-  plan_docs TEXT,
-  updated_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS deleted_sessions (
   id TEXT PRIMARY KEY,
   deleted_at TEXT NOT NULL
@@ -895,65 +887,6 @@ export class SqliteSessionStore {
       `INSERT INTO context_epochs(session_id, baseline_seq, snapshot) VALUES (?, ?, ?)
        ON CONFLICT(session_id) DO UPDATE SET baseline_seq = excluded.baseline_seq, snapshot = excluded.snapshot`,
       [sessionID, baselineSeq, JSON.stringify(snapshot)],
-    );
-  }
-
-  projectionCache(
-    sessionID: SessionID,
-  ): import("@natalia/session").ProjectedCollabMessage[] | undefined {
-    const row = this.db
-      .query(
-        `SELECT collab_messages FROM projection_cache WHERE session_id = ?`,
-      )
-      .get(sessionID) as { collab_messages: string | null } | undefined;
-    if (!row?.collab_messages) return undefined;
-    return JSON.parse(
-      row.collab_messages,
-    ) as import("@natalia/session").ProjectedCollabMessage[];
-  }
-
-  planProjectionCache(
-    sessionID: SessionID,
-  ): import("@natalia/session").ProjectedPlanDoc[] | undefined {
-    const row = this.db
-      .query(`SELECT plan_docs FROM projection_cache WHERE session_id = ?`)
-      .get(sessionID) as { plan_docs: string | null } | undefined;
-    if (!row?.plan_docs) return undefined;
-    return JSON.parse(
-      row.plan_docs,
-    ) as import("@natalia/session").ProjectedPlanDoc[];
-  }
-
-  projectionEventCount(sessionID: SessionID): number | undefined {
-    const row = this.db
-      .query(`SELECT event_count FROM projection_cache WHERE session_id = ?`)
-      .get(sessionID) as { event_count: number } | undefined;
-    return row?.event_count;
-  }
-
-  writeProjectionCache(
-    sessionID: SessionID,
-    cache: {
-      eventCount: number;
-      collabMessages?: import("@natalia/session").ProjectedCollabMessage[];
-      planDocs?: import("@natalia/session").ProjectedPlanDoc[];
-    },
-  ) {
-    this.run(
-      `INSERT INTO projection_cache(session_id, event_count, collab_messages, plan_docs, updated_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(session_id) DO UPDATE SET
-         event_count = excluded.event_count,
-         collab_messages = excluded.collab_messages,
-         plan_docs = excluded.plan_docs,
-         updated_at = excluded.updated_at`,
-      [
-        sessionID,
-        cache.eventCount,
-        cache.collabMessages ? JSON.stringify(cache.collabMessages) : null,
-        cache.planDocs ? JSON.stringify(cache.planDocs) : null,
-        new Date().toISOString(),
-      ],
     );
   }
 

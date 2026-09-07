@@ -104,12 +104,6 @@ export type AttachmentService = {
   referencedForSessions(sessions: SessionRecord[]): LocalAttachment[];
 };
 
-export type SessionProjectionCache = {
-  eventCount: number;
-  collabMessages?: import("@natalia/session").ProjectedCollabMessage[];
-  planDocs?: import("@natalia/session").ProjectedPlanDoc[];
-};
-
 export type SessionStoreRecoveryView = {
   activeTurnIDs: string[];
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
@@ -150,8 +144,6 @@ export interface SessionStoreController {
     id: SessionID,
     snapshot: import("@natalia/contracts").DurableContextCheckpointRecord,
   ): void;
-  projectionCache(id: SessionID): SessionProjectionCache | undefined;
-  writeProjectionCache(id: SessionID, cache: SessionProjectionCache): void;
   referencedAttachments(): Promise<LocalAttachment[]>;
   history(
     id: SessionID,
