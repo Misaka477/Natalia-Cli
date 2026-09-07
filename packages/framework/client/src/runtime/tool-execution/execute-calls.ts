@@ -27,6 +27,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
 import type { RealRuntimeClientOptions } from "../options";
 
 /**
@@ -73,14 +74,14 @@ export function createExecuteCalls(
    * makes it a block rather than a prompt: an approval that is skipped, cached
    * or auto-granted cannot let a self-protection violation through.
    */
-  function checkConstitutionForTool(
+  async function checkConstitutionForTool(
     turnID: string,
     callID: string,
     toolName: string,
     toolAction: string,
     toolResource: string,
     commandText?: string,
-  ): string | undefined {
+  ): Promise<string | undefined> {
     const { getActiveExec, executionForTurn, publishForSession } = ctx.ports;
     const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
       WORK_LEDGER_CONTROLLER_SERVICE,
@@ -92,6 +93,7 @@ export function createExecuteCalls(
       executionForTurn(turnID) ??
       ctx.ports.getExecutionBySession().get(sessionID as never);
     if (!exec) return undefined;
+    await ensureSessionFullEvents(ctx, exec);
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const rules = projectedConstitutionRules(exec.session.events);
     const overrides = projectedConstitutionOverrides(exec.session.events);

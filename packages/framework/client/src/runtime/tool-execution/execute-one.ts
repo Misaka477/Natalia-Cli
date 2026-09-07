@@ -187,8 +187,8 @@ export function createExecuteOne(
         publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
         return { decision: "deny" as const, reason: message };
       })
-      .preStage(() => {
-        const blocked = checkConstitutionForTool(
+      .preStage(async () => {
+        const blocked = await checkConstitutionForTool(
           turnID,
           call.id,
           tool.name,

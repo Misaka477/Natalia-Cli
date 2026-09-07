@@ -176,7 +176,7 @@ export type RuntimePorts = {
     toolAction: string,
     toolResource: string,
     commandText?: string,
-  ) => string | undefined;
+  ) => Promise<string | undefined>;
   isToolAllowed: (
     toolName: string,
     exec: SessionExecutionState | undefined,
