@@ -4,6 +4,10 @@ import type {
   SessionProjectWorkerRequest,
   SessionProjectWorkerResponse,
 } from "./session-project.worker";
+import {
+  createRuntimeWorkerPool,
+  defaultRuntimeWorkerPoolSize,
+} from "./worker-pool";
 
 type SessionProjectTask =
   | {
@@ -58,7 +62,6 @@ export type RecoveryContextPlan = {
   restoreEvents: RuntimeEvent[];
 };
 
-let worker: Worker | undefined;
 let nextID = 1;
 const pending = new Map<
   number,
@@ -68,33 +71,34 @@ const pending = new Map<
   }
 >();
 
-function ensureWorker(): Worker {
-  if (worker) return worker;
-  worker = new Worker(new URL("./session-project.worker.ts", import.meta.url), {
-    type: "module",
-  });
-  worker.addEventListener(
-    "message",
-    (event: MessageEvent<SessionProjectWorkerResponse>) => {
-      const response = event.data;
-      const entry = pending.get(response.id);
-      if (!entry) return;
-      pending.delete(response.id);
-      if (response.ok) entry.resolve(response.result);
-      else entry.reject(new Error(response.error));
-    },
-  );
-  worker.addEventListener("error", () => {
-    for (const { reject } of pending.values())
-      reject(new Error("session-project worker failed"));
-    pending.clear();
-  });
-  return worker;
+function onMessage(event: MessageEvent<SessionProjectWorkerResponse>) {
+  const response = event.data;
+  const entry = pending.get(response.id);
+  if (!entry) return;
+  pending.delete(response.id);
+  if (response.ok) entry.resolve(response.result);
+  else entry.reject(new Error(response.error));
 }
+
+function onWorkerError() {
+  for (const { reject } of pending.values())
+    reject(new Error("session-project worker failed"));
+  pending.clear();
+}
+
+const pool = createRuntimeWorkerPool(() => {
+  const instance = new Worker(
+    new URL("./session-project.worker.ts", import.meta.url),
+    { type: "module" },
+  );
+  instance.addEventListener("message", onMessage);
+  instance.addEventListener("error", onWorkerError);
+  return instance;
+}, defaultRuntimeWorkerPoolSize());
 
 async function run<T>(request: SessionProjectTask): Promise<T> {
   const id = nextID++;
-  const instance = ensureWorker();
+  const instance = pool.worker();
   return new Promise<T>((resolve, reject) => {
     pending.set(id, {
       resolve: (value) => resolve(value as T),

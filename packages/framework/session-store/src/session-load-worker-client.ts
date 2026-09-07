@@ -8,7 +8,6 @@ import type {
   SessionLoadWorkerResponse,
 } from "./session-load.worker";
 
-let worker: Worker | undefined;
 let nextID = 1;
 const pending = new Map<
   number,
@@ -18,30 +17,40 @@ const pending = new Map<
   }
 >();
 
-function ensureWorker(): Worker {
-  if (worker) return worker;
-  worker = new Worker(new URL("./session-load.worker.ts", import.meta.url), {
-    type: "module",
-  });
-  worker.addEventListener(
-    "message",
-    (event: MessageEvent<SessionLoadWorkerResponse>) => {
-      const response = event.data;
-      const entry = pending.get(response.id);
-      if (!entry) return;
-      pending.delete(response.id);
-      if (response.ok) {
-        if ("events" in response) entry.resolve(response.events);
-        else entry.resolve(response.page);
-      } else entry.reject(new Error(response.error));
-    },
+const workers: Worker[] = [];
+let nextWorker = 0;
+
+function poolWorker(): Worker {
+  const size = Math.max(
+    2,
+    Math.min(4, Number(process.env.NATALIA_SESSION_LOAD_WORKERS ?? 2)),
   );
-  worker.addEventListener("error", () => {
-    for (const { reject } of pending.values())
-      reject(new Error("session-load worker failed"));
-    pending.clear();
-  });
-  return worker;
+  while (workers.length < size) {
+    const instance = new Worker(
+      new URL("./session-load.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    instance.addEventListener(
+      "message",
+      (event: MessageEvent<SessionLoadWorkerResponse>) => {
+        const response = event.data;
+        const entry = pending.get(response.id);
+        if (!entry) return;
+        pending.delete(response.id);
+        if (response.ok) {
+          if ("events" in response) entry.resolve(response.events);
+          else entry.resolve(response.page);
+        } else entry.reject(new Error(response.error));
+      },
+    );
+    instance.addEventListener("error", () => {
+      for (const { reject } of pending.values())
+        reject(new Error("session-load worker failed"));
+      pending.clear();
+    });
+    workers.push(instance);
+  }
+  return workers[nextWorker++ % workers.length]!;
 }
 
 type SessionLoadWorkerTask =
@@ -55,7 +64,7 @@ type SessionLoadWorkerTask =
 
 async function run<T>(request: SessionLoadWorkerTask): Promise<T> {
   const id = nextID++;
-  const instance = ensureWorker();
+  const instance = poolWorker();
   return new Promise<T>((resolve, reject) => {
     pending.set(id, {
       resolve: (value) => resolve(value as T),
