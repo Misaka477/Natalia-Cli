@@ -1,5 +1,6 @@
 import { parentPort } from "node:worker_threads";
 import { Database } from "bun:sqlite";
+import { SqliteSessionStore } from "@natalia/session";
 
 export type SessionLoadWorkerRequest =
   | {
@@ -32,25 +33,31 @@ export type SessionLoadWorkerResponse =
 const port = parentPort;
 if (!port) throw new Error("session-load worker requires parentPort");
 
+const messageStores = new Map<string, SqliteSessionStore>();
+
+function messageStore(dbPath: string) {
+  let store = messageStores.get(dbPath);
+  if (!store) {
+    store = new SqliteSessionStore(dbPath);
+    messageStores.set(dbPath, store);
+  }
+  return store;
+}
+
 port.on("message", async (request: SessionLoadWorkerRequest) => {
   try {
     if (request.op === "messagePage") {
-      const { SqliteSessionStore } = await import("@natalia/session");
-      const store = new SqliteSessionStore(request.dbPath);
-      try {
-        const page = store.loadMessagePage(
-          request.sessionID as import("@natalia/contracts").SessionID,
-          request.options,
-        );
-        const response: SessionLoadWorkerResponse = {
-          id: request.id,
-          ok: true,
-          page,
-        };
-        port.postMessage(response);
-      } finally {
-        store.close();
-      }
+      const store = messageStore(request.dbPath);
+      const page = store.loadMessagePage(
+        request.sessionID as import("@natalia/contracts").SessionID,
+        request.options,
+      );
+      const response: SessionLoadWorkerResponse = {
+        id: request.id,
+        ok: true,
+        page,
+      };
+      port.postMessage(response);
       return;
     }
     let db: Database | undefined;
