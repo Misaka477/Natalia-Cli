@@ -337,6 +337,7 @@ export type {
   ProjectedCapability,
   ProjectedDriftFinding,
   ProjectedCollabMessage,
+  ProjectedMailboxMessage,
   ProjectedPlanDoc,
   SessionProjection,
 } from "./projector";

@@ -22,9 +22,24 @@ import type { SessionExecutionState } from "../context";
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   function planDocsFor(exec?: SessionExecutionState) {
     const snapshot = exec?.collabSnapshot;
-    if (snapshot && snapshot.eventCount === (exec?.session.events.length ?? -1))
+    if (
+      snapshot &&
+      snapshot.eventCount ===
+        (exec?.eventCount ?? exec?.session.events.length ?? -1)
+    )
       return snapshot.planDocs;
     return projectedPlanDocs(exec?.session.events ?? []);
+  }
+
+  function mailboxMessagesFor(exec?: SessionExecutionState) {
+    const snapshot = exec?.collabSnapshot;
+    if (
+      snapshot &&
+      snapshot.eventCount ===
+        (exec?.eventCount ?? exec?.session.events.length ?? -1)
+    )
+      return snapshot.mailboxMessages;
+    return projectedMailboxMessages(exec?.session.events ?? []);
   }
 
   return {
@@ -56,7 +71,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     const { publishForSession, nextMailboxSequence } = ctx.ports;
     const target = exec;
     if (!target?.session) return;
-    const delivered = projectedMailboxMessages(target.session.events).filter(
+    const delivered = mailboxMessagesFor(target).filter(
       (message) => message.status === "delivered",
     );
     if (!delivered.length) return;
@@ -83,7 +98,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     const { publishForSession, nextMailboxSequence } = ctx.ports;
     const target = exec;
     if (!target?.session) return;
-    const queued = projectedMailboxMessages(target.session.events).filter(
+    const queued = mailboxMessagesFor(target).filter(
       (message) => message.status === "queued",
     );
     if (!queued.length) return;
@@ -105,7 +120,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     if (!target?.session) return [];
     deliverQueuedMailboxAtBoundary(target);
     const injected = target.injectedMailboxIDs;
-    const fresh = projectedMailboxMessages(target.session.events).filter(
+    const fresh = mailboxMessagesFor(target).filter(
       (message) =>
         message.status === "delivered" && !injected.has(message.messageID),
     );

@@ -109,6 +109,7 @@ port.on("message", (request: SessionProjectWorkerRequest) => {
       result = {
         collabMessages: projectedCollabMessages(request.events),
         planDocs: projectedPlanDocs(request.events),
+        mailboxMessages: projectedMailboxMessages(request.events),
         revision: 0,
         eventCount: request.events.length,
       };

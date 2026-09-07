@@ -10,7 +10,11 @@
  * synchronous consumers keep reading a plain object from `exec.collabSnapshot`.
  */
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import { projectedCollabMessages, projectedPlanDocs } from "@natalia/session";
+import {
+  projectedCollabMessages,
+  projectedMailboxMessages,
+  projectedPlanDocs,
+} from "@natalia/session";
 import { computeCollabSnapshotInWorker } from "../session-project-client";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -66,6 +70,7 @@ export function createCollabSnapshotScheduler(
       const computed: CollabSnapshot = {
         collabMessages: projectedCollabMessages(events),
         planDocs: projectedPlanDocs(events),
+        mailboxMessages: projectedMailboxMessages(events),
         revision,
         eventCount: events.length,
       };

@@ -16,6 +16,7 @@ import type { RuntimeContextStatusConfig } from "./status-config";
 export type CollabSnapshot = {
   collabMessages: import("@natalia/session").ProjectedCollabMessage[];
   planDocs: import("@natalia/session").ProjectedPlanDoc[];
+  mailboxMessages: import("@natalia/session").ProjectedMailboxMessage[];
   revision: number;
   eventCount: number;
 };
