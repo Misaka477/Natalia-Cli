@@ -1,4 +1,5 @@
 import { parentPort } from "node:worker_threads";
+import { buildModelCatalog } from "@natalia/config";
 import {
   modelVisibleEvents,
   projectSession,
@@ -46,6 +47,11 @@ export type SessionProjectWorkerRequest =
       id: number;
       op: "subagentHistory";
       events: import("@natalia/contracts").RuntimeEvent[];
+    }
+  | {
+      id: number;
+      op: "modelCatalog";
+      config: import("@natalia/contracts").ConfigV3;
     }
   | {
       id: number;
@@ -122,6 +128,8 @@ port.on("message", (request: SessionProjectWorkerRequest) => {
       result = request.events.filter(
         (event) => event.type === "subagent.update",
       );
+    } else if (request.op === "modelCatalog") {
+      result = buildModelCatalog(request.config);
     } else {
       switch (request.name) {
         case "planDocs":

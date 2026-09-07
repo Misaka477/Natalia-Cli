@@ -32,6 +32,10 @@ type SessionProjectTask =
       events: RuntimeEvent[];
     }
   | {
+      op: "modelCatalog";
+      config: import("@natalia/contracts").ConfigV3;
+    }
+  | {
       op: "projection";
       name:
         | "planDocs"
@@ -140,6 +144,15 @@ export function subagentHistoryInWorker(
   return run<Extract<RuntimeEvent, { type: "subagent.update" }>[]>({
     op: "subagentHistory",
     events,
+  });
+}
+
+export function modelCatalogInWorker(
+  config: import("@natalia/contracts").ConfigV3,
+): Promise<ReturnType<typeof import("@natalia/config").buildModelCatalog>> {
+  return run<ReturnType<typeof import("@natalia/config").buildModelCatalog>>({
+    op: "modelCatalog",
+    config,
   });
 }
 
