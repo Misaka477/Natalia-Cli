@@ -536,7 +536,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           } catch {
             projected = cloneState(props.ctx.projection.getState());
           }
+          const setStart = performance.now();
           setState(projected);
+          const setMs = performance.now() - setStart;
+          console.warn(
+            `[perf] renderer projection frame messages=${projected.messages.length} chat=${projected.chatMessages.length} nia=${projected.niaMessages.length} set=${setMs.toFixed(1)}ms`,
+          );
           if (projected.workspaces.length) setWorkspaces(projected.workspaces);
           if (mainForceScroll) {
             mainForceScroll = false;
@@ -1780,6 +1785,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function handleTranscriptScroll() {
+    const scrollStart = performance.now();
     const el = transcriptEl();
     if (!el) return;
     const floor = Math.max(0, el.scrollHeight - el.clientHeight);
@@ -1798,6 +1804,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     setShowJumpToBottom(!nearBottom);
     transcriptObservedTop = el.scrollTop;
     if (el.scrollTop < 80) void loadOlderHistory();
+    const scrollMs = performance.now() - scrollStart;
+    if (scrollMs > 16)
+      console.warn(
+        `[perf] renderer scroll transcript ${scrollMs.toFixed(1)}ms scrollTop=${el.scrollTop} height=${el.scrollHeight}`,
+      );
   }
 
   function jumpToBottom() {
@@ -1810,6 +1821,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function handleChatTranscriptScroll() {
+    const scrollStart = performance.now();
     const el = chatTranscriptEl();
     if (!el) return;
     const floor = Math.max(0, el.scrollHeight - el.clientHeight);
@@ -1827,6 +1839,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     setChatFollowBottom(nearBottom);
     setChatShowJumpToBottom(!nearBottom);
     chatObservedTop = el.scrollTop;
+    const scrollMs = performance.now() - scrollStart;
+    if (scrollMs > 16)
+      console.warn(
+        `[perf] renderer scroll chat ${scrollMs.toFixed(1)}ms scrollTop=${el.scrollTop} height=${el.scrollHeight}`,
+      );
   }
 
   function jumpChatToBottom() {
