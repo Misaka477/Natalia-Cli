@@ -150,7 +150,16 @@ export function createSessionAttach(ctx: RuntimeContext) {
       applyAgentProvider(exec);
     }
     mark("apply");
-    await initializeCheckpointController(exec);
+    // Checkpoint store initialization scans the workspace and may write a
+    // baseline; it must not block the first visible attach. Let it run in the
+    // background; checkpoint operations lazy-init again when actually needed.
+    void initializeCheckpointController(exec).catch((error) => {
+      publishForSession(exec, {
+        type: "diagnostic",
+        level: "warning",
+        message: `checkpoint controller init deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
     mark("checkpoint");
     publishForSession(exec, {
       type: "session.ready",
