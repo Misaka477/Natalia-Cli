@@ -311,6 +311,10 @@ export function createSessionStoreController(input: {
     if (sqliteStore) sqliteStore.writeContextEpoch(id, snapshot);
   }
 
+  function ensureMessageIndex(id: SessionID) {
+    if (sqliteStore) sqliteStore.ensureMessageIndex(id);
+  }
+
   async function referencedAttachments(): Promise<LocalAttachment[]> {
     return sqliteStore
       ? sqliteStore.referencedAttachments()
@@ -570,6 +574,7 @@ export function createSessionStoreController(input: {
     updateMetadata,
     contextEventsAfter,
     writeContextEpoch,
+    ensureMessageIndex,
     referencedAttachments,
     history,
     messages,

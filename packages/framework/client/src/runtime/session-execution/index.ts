@@ -291,6 +291,11 @@ export function createSessionExecution(
           if (current !== exec) return;
           exec.session.events = full.session.events;
           exec.eventCount = full.session.events.length;
+          try {
+            sessionStore.ensureMessageIndex(sessionID);
+          } catch {
+            // Index rebuild is best-effort; the first messages RPC can retry.
+          }
           ctx.ports.scheduleCollabSnapshot?.(exec);
         })
         .catch((error) => {

@@ -796,7 +796,7 @@ export class SqliteSessionStore {
       throw new Error("message cursor cannot be combined with order");
     const order = cursor?.order ?? options.order ?? "desc";
     const limit = Math.min(200, Math.max(1, options.limit ?? 100));
-    this.ensureMessageIndex(sessionID);
+    this.buildMessageIndex(sessionID);
     const anchor = cursor
       ? this.messageTurn(sessionID, cursor.anchor)
       : undefined;
@@ -1165,7 +1165,11 @@ export class SqliteSessionStore {
     this.run(`DELETE FROM recovery_state WHERE session_id = ?`, [sessionID]);
   }
 
-  private ensureMessageIndex(sessionID: SessionID) {
+  ensureMessageIndex(sessionID: SessionID) {
+    this.buildMessageIndex(sessionID);
+  }
+
+  private buildMessageIndex(sessionID: SessionID) {
     const state = this.db
       .query(`SELECT last_seq FROM message_index_state WHERE session_id = ?`)
       .get(sessionID) as { last_seq: number } | undefined;
