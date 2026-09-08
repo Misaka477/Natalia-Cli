@@ -142,7 +142,8 @@ export function createSessionExecution(
   ): Promise<SessionExecutionState> {
     const start = performance.now();
     const mark = (name: string) =>
-      perfLog(`[perf] ensureExecution.${name} session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] ensureExecution.${name} session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
       );
     perfLog(`[perf] ensureExecution start session=${sessionID}`);
     const {
@@ -158,7 +159,8 @@ export function createSessionExecution(
     const { executionBySession } = ctx.state;
     const existing = executionBySession.get(sessionID);
     if (existing) {
-      perfLog(`[perf] ensureExecution hit session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] ensureExecution hit session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return existing;
     }
@@ -271,7 +273,10 @@ export function createSessionExecution(
       paused: false,
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
-      pendingChatUserMessages: [],
+      pendingNaviChatUserMessages: [],
+      pendingNiaChatUserMessages: [],
+      naviAbortWakePending: false,
+      niaAbortWakePending: false,
       eventCount: fastPath
         ? epoch!.baselineSeq + restoreEvents.length
         : loaded.events.length,
@@ -283,13 +288,11 @@ export function createSessionExecution(
     // Prewarm the default latest-100 message page for any session we attach.
     // This overlaps with full-event background loading and makes the first
     // session.messages RPC a cache hit when the prewarm finishes first.
-    void sessionStore
-      .prewarmMessagePage(sessionID)
-      .catch((error) => {
-        console.warn(
-          `[perf] ensureExecution message-page prewarm failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
+    void sessionStore.prewarmMessagePage(sessionID).catch((error) => {
+      console.warn(
+        `[perf] ensureExecution message-page prewarm failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
     if (fastPath) {
       // Fast path: defer full transcript to background; async consumers call
       // ensureSessionFullEvents before reading, so attach can return sooner.
@@ -319,7 +322,8 @@ export function createSessionExecution(
     }
     await refreshExecutionContextConfig(exec);
     mark("refresh");
-    perfLog(`[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} fast=${fastPath} +${(performance.now() - start).toFixed(1)}ms`,
+    perfLog(
+      `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} fast=${fastPath} +${(performance.now() - start).toFixed(1)}ms`,
     );
     return exec;
   }

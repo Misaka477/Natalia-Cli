@@ -198,15 +198,30 @@ export function NiaPanel(props: {
     // chat turn finishes.
     setDraft("");
     try {
+      const profile = await props.runtime?.chatModelProfile?.(
+        "nia",
+        props.sessionID,
+      );
       await props.runtime?.chatSubmit?.({
         text,
         channel: "nia",
-        reasoningEffort: reasoning() as
+        ...(profile?.normal?.modelID
+          ? {
+              model: {
+                modelID: profile.normal.modelID,
+                ...(profile.normal.variant
+                  ? { variant: profile.normal.variant }
+                  : {}),
+              },
+            }
+          : {}),
+        reasoningEffort: (profile?.normal?.reasoningEffort ?? reasoning()) as
           | "minimal"
           | "low"
           | "medium"
           | "high"
           | "xhigh",
+        ...(props.sessionID ? { sessionID: props.sessionID } : {}),
       });
     } catch (cause) {
       console.error("[nia-ui] submit failed", cause);

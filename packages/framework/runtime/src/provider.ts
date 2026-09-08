@@ -448,6 +448,9 @@ export type AnthropicProviderOptions = {
   streamIdleTimeoutMs?: number;
   maxTokens?: number;
   temperature?: number;
+  reasoningEffort?: string;
+  thinkingEnabled?: boolean;
+  thinkingBudgetTokens?: number;
 };
 
 export type GeminiProviderOptions = {
@@ -681,6 +684,9 @@ export class AnthropicProvider implements StreamingProvider {
   private readonly timeoutMs?: number;
   private readonly maxTokens?: number;
   private readonly temperature?: number;
+  private readonly reasoningEffort?: string;
+  private readonly thinkingEnabled?: boolean;
+  private readonly thinkingBudgetTokens?: number;
   private readonly streamIdleTimeoutMs?: number;
   private modelMetadata?: Promise<
     Array<{
@@ -704,6 +710,9 @@ export class AnthropicProvider implements StreamingProvider {
     this.timeoutMs = options.timeoutMs;
     this.maxTokens = options.maxTokens;
     this.temperature = options.temperature;
+    this.reasoningEffort = options.reasoningEffort;
+    this.thinkingEnabled = options.thinkingEnabled;
+    this.thinkingBudgetTokens = options.thinkingBudgetTokens;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
   }
 
@@ -723,6 +732,13 @@ export class AnthropicProvider implements StreamingProvider {
       (await this.outputTokenLimit().catch(
         () => CONSERVATIVE_MODEL_LIMIT_FALLBACK,
       ));
+    const thinking = this.thinkingEnabled
+      ? anthropicThinkingRequest(
+          this.thinkingBudgetTokens,
+          this.reasoningEffort,
+          maxTokens,
+        )
+      : undefined;
     const response = await this.fetchImpl(messagesURL(this.baseURL), {
       method: "POST",
       headers: {
@@ -755,9 +771,11 @@ export class AnthropicProvider implements StreamingProvider {
               : undefined,
         max_tokens: maxTokens,
         stream: true,
-        ...(this.temperature === undefined
+        // Anthropic rejects temperature when extended thinking is enabled.
+        ...(thinking || this.temperature === undefined
           ? {}
           : { temperature: this.temperature }),
+        ...(thinking ? { thinking } : {}),
       }),
       signal,
     });
@@ -1050,6 +1068,7 @@ export function providerFromEnvironment(env = process.env) {
 export function providerFromKind(
   input: OpenAICompatibleProviderOptions & {
     providerName?: string;
+    thinkingBudgetTokens?: number;
   },
 ) {
   const kind = (input.providerName ?? input.provider ?? "").toLowerCase();
@@ -1064,6 +1083,9 @@ export function providerFromKind(
       streamIdleTimeoutMs: input.streamIdleTimeoutMs,
       maxTokens: input.maxTokens,
       temperature: input.temperature,
+      reasoningEffort: input.reasoningEffort,
+      thinkingEnabled: input.thinkingEnabled,
+      thinkingBudgetTokens: input.thinkingBudgetTokens,
     });
   if (kind.includes("gemini") || kind.includes("google"))
     return new GeminiProvider({
@@ -1127,6 +1149,10 @@ export function providerForModel(
     thinkingEnabled: effective.capabilities.thinking
       ? effective.requestDefaults.thinkingEnabled
       : undefined,
+    thinkingBudgetTokens:
+      typeof effective.requestDefaults.options.thinkingBudgetTokens === "number"
+        ? effective.requestDefaults.options.thinkingBudgetTokens
+        : undefined,
     timeoutMs:
       config.runtime.timeouts.requestSec > 0
         ? config.runtime.timeouts.requestSec * 1000
@@ -1146,6 +1172,52 @@ function chatCompletionsURL(baseURL: string) {
 
 function messagesURL(baseURL: string) {
   return baseURL.endsWith("/messages") ? baseURL : `${baseURL}/messages`;
+}
+
+function anthropicThinkingRequest(
+  requestedBudgetTokens: number | undefined,
+  reasoningEffort: string | undefined,
+  maxTokens: number,
+) {
+  // The plan's 20%-with-256-floor formula can produce invalid sub-1024 values
+  // (for example, 819 for max_tokens 4096). Anthropic requires at least 1024,
+  // so no-effort defaults deviate upward to 1024 whenever max_tokens permits.
+  // Runtime effort is translated to a valid thinking budget, never forwarded as
+  // Anthropic's unsupported reasoning_effort request field.
+  const effortBudgetTokens =
+    reasoningEffort === undefined
+      ? 1024
+      : anthropicThinkingBudgetForEffort(reasoningEffort);
+  const budgetTokens =
+    requestedBudgetTokens ?? Math.min(effortBudgetTokens, maxTokens - 1);
+  if (
+    !Number.isInteger(budgetTokens) ||
+    budgetTokens < 1024 ||
+    budgetTokens >= maxTokens
+  )
+    throw new RangeError(
+      `Anthropic thinking requires an integer budget_tokens >= 1024 and < max_tokens (${maxTokens}); received ${budgetTokens}.`,
+    );
+  return { type: "enabled" as const, budget_tokens: budgetTokens };
+}
+
+function anthropicThinkingBudgetForEffort(reasoningEffort: string) {
+  switch (reasoningEffort) {
+    case "minimal":
+      return 1024;
+    case "low":
+      return 2048;
+    case "medium":
+      return 4096;
+    case "high":
+      return 8192;
+    case "xhigh":
+      return 16384;
+    default:
+      throw new RangeError(
+        `Unsupported Anthropic reasoning effort ${JSON.stringify(reasoningEffort)}.`,
+      );
+  }
 }
 
 function modelsURL(baseURL: string) {
@@ -1170,8 +1242,25 @@ function isLocalProviderURL(baseURL: string) {
 
 type AnthropicStreamChunk = {
   type?: string;
-  delta?: { text?: string; partial_json?: string; stop_reason?: string | null };
-  content_block?: { id?: string; name?: string; type?: string };
+  index?: number;
+  delta?: {
+    text?: string;
+    thinking?: string;
+    reasoning_content?: string;
+    partial_json?: string;
+    stop_reason?: string | null;
+    type?: string;
+  };
+  content_block?: {
+    id?: string;
+    name?: string;
+    type?: string;
+    thinking?: string;
+    reasoning_content?: string;
+  };
+  choices?: Array<{
+    delta?: { reasoning_content?: string; content?: string };
+  }>;
   usage?: { input_tokens?: number; output_tokens?: number };
   message?: { usage?: { input_tokens?: number; output_tokens?: number } };
 };
@@ -1276,86 +1365,118 @@ async function* streamAnthropicSSE(
 ): AsyncIterable<ProviderStreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  const toolCalls = new Map<number, ProviderToolCall>();
-  let currentToolIndex = -1;
-  let finishReason: ProviderFinishReason | undefined;
+  const state: AnthropicSSEState = {
+    blockTypes: new Map(),
+    toolCalls: new Map(),
+    nextBlockIndex: 0,
+  };
   let buffer = "";
   while (true) {
     const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
     if (next.done) break;
     buffer += decoder.decode(next.value, { stream: true });
-    const parts = buffer.split("\n\n");
+    const parts = buffer.split(/\r?\n\r?\n/u);
     buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      for (const line of part.split("\n")) {
-        if (!line.startsWith("data:")) continue;
-        const data = line.slice("data:".length).trim();
-        if (!data || data === "[DONE]") continue;
-        const parsed = JSON.parse(data) as AnthropicStreamChunk;
-        if (parsed.delta?.stop_reason)
-          finishReason = normalizeAnthropicFinishReason(
-            parsed.delta.stop_reason,
-            toolCalls.size > 0,
-          );
-        if (parsed.type === "content_block_start") {
-          currentToolIndex += 1;
-          if (parsed.content_block?.type === "tool_use")
-            toolCalls.set(currentToolIndex, {
-              id: parsed.content_block.id ?? `tool_${currentToolIndex}`,
-              name: parsed.content_block.name ?? "",
-              arguments: "",
-            });
-        }
-        if (parsed.delta?.text)
-          yield { type: "content", text: parsed.delta.text };
-        if (parsed.delta?.partial_json && toolCalls.has(currentToolIndex)) {
-          const current = toolCalls.get(currentToolIndex)!;
-          toolCalls.set(currentToolIndex, {
-            ...current,
-            arguments: `${current.arguments}${parsed.delta.partial_json}`,
-          });
-        }
-        const usage = parsed.usage ?? parsed.message?.usage;
-        if (
-          usage?.input_tokens !== undefined ||
-          usage?.output_tokens !== undefined
-        )
-          yield {
-            type: "usage",
-            inputTokens: usage.input_tokens ?? 0,
-            outputTokens: usage.output_tokens ?? 0,
-          };
-      }
-    }
+    for (const part of parts) yield* parseAnthropicSSEPart(part, state);
   }
+  buffer += decoder.decode();
   if (buffer) {
-    for (const line of buffer.split("\n")) {
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice("data:".length).trim();
-      if (!data || data === "[DONE]") continue;
-      const parsed = JSON.parse(data) as AnthropicStreamChunk;
-      if (parsed.delta?.stop_reason)
-        finishReason = normalizeAnthropicFinishReason(
-          parsed.delta.stop_reason,
-          toolCalls.size > 0,
-        );
-      if (parsed.delta?.text)
-        yield { type: "content", text: parsed.delta.text };
-      const usage = parsed.usage ?? parsed.message?.usage;
-      if (
-        usage?.input_tokens !== undefined ||
-        usage?.output_tokens !== undefined
-      )
-        yield {
-          type: "usage",
-          inputTokens: usage.input_tokens ?? 0,
-          outputTokens: usage.output_tokens ?? 0,
-        };
-    }
+    yield* parseAnthropicSSEPart(buffer, state);
   }
-  if (toolCalls.size)
-    yield { type: "tool_call", calls: [...toolCalls.values()] };
-  yield { type: "done", finishReason };
+  if (state.toolCalls.size)
+    yield { type: "tool_call", calls: [...state.toolCalls.values()] };
+  yield { type: "done", finishReason: state.finishReason };
+}
+
+type AnthropicSSEState = {
+  blockTypes: Map<number, string | undefined>;
+  toolCalls: Map<number, ProviderToolCall>;
+  currentBlockIndex?: number;
+  nextBlockIndex: number;
+  finishReason?: ProviderFinishReason;
+};
+
+function parseAnthropicSSEPart(
+  part: string,
+  state: AnthropicSSEState,
+): ProviderStreamChunk[] {
+  const chunks: ProviderStreamChunk[] = [];
+  for (const line of part.split(/\r?\n/u)) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice("data:".length).trim();
+    if (!data || data === "[DONE]") continue;
+    const parsed = JSON.parse(data) as AnthropicStreamChunk;
+    debugAnthropicSSE(parsed);
+    if (parsed.delta?.stop_reason)
+      state.finishReason = normalizeAnthropicFinishReason(
+        parsed.delta.stop_reason,
+        state.toolCalls.size > 0,
+      );
+
+    if (parsed.type === "content_block_start") {
+      const index = parsed.index ?? state.nextBlockIndex;
+      state.nextBlockIndex = Math.max(state.nextBlockIndex, index + 1);
+      state.currentBlockIndex = index;
+      const block = parsed.content_block;
+      state.blockTypes.set(index, block?.type);
+      if (block?.type === "tool_use")
+        state.toolCalls.set(index, {
+          id: block.id ?? `tool_${index}`,
+          name: block.name ?? "",
+          arguments: "",
+        });
+      const initialThinking = block?.thinking ?? block?.reasoning_content;
+      if (initialThinking)
+        chunks.push({ type: "thinking", text: initialThinking });
+    }
+
+    const index = parsed.index ?? state.currentBlockIndex;
+    const deltaThinking =
+      parsed.delta?.thinking ??
+      parsed.delta?.reasoning_content ??
+      parsed.choices?.[0]?.delta?.reasoning_content;
+    if (deltaThinking) chunks.push({ type: "thinking", text: deltaThinking });
+    if (parsed.delta?.text)
+      chunks.push({ type: "content", text: parsed.delta.text });
+    if (parsed.choices?.[0]?.delta?.content)
+      chunks.push({ type: "content", text: parsed.choices[0].delta.content });
+    // `partial_json` is meaningful only for a tool_use block. Thinking blocks
+    // can emit other delta types, so never append their bytes to tool arguments.
+    if (
+      parsed.delta?.partial_json &&
+      index !== undefined &&
+      state.blockTypes.get(index) === "tool_use"
+    ) {
+      const current = state.toolCalls.get(index);
+      if (current)
+        state.toolCalls.set(index, {
+          ...current,
+          arguments: `${current.arguments}${parsed.delta.partial_json}`,
+        });
+    }
+
+    const usage = parsed.usage ?? parsed.message?.usage;
+    if (usage?.input_tokens !== undefined || usage?.output_tokens !== undefined)
+      chunks.push({
+        type: "usage",
+        inputTokens: usage.input_tokens ?? 0,
+        outputTokens: usage.output_tokens ?? 0,
+      });
+  }
+  return chunks;
+}
+
+function debugAnthropicSSE(parsed: AnthropicStreamChunk) {
+  if (process.env.NATALIA_DEBUG_PROVIDER !== "1") return;
+  console.debug("[provider] anthropic SSE", {
+    eventType: parsed.type,
+    index: parsed.index,
+    contentBlockType: parsed.content_block?.type,
+    contentBlockKeys: Object.keys(parsed.content_block ?? {}),
+    deltaKeys: Object.keys(parsed.delta ?? {}),
+    choiceDeltaKeys: Object.keys(parsed.choices?.[0]?.delta ?? {}),
+    usageKeys: Object.keys(parsed.usage ?? parsed.message?.usage ?? {}),
+  });
 }
 
 async function* streamGeminiSSE(

@@ -1198,6 +1198,273 @@ test("Anthropic provider streams text usage and tool calls", async () => {
   );
 });
 
+test("Anthropic provider streams thinking variants without polluting tool JSON at fragmented CRLF EOF", async () => {
+  const encoder = new TextEncoder();
+  const events = [
+    'data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"plan"}}',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" more","partial_json":"{\\"ignored\\":true}"}}',
+    'data: {"type":"content_block_delta","index":0,"delta":{"reasoning_content":" compat"}}',
+    'data: {"choices":[{"delta":{"reasoning_content":" gateway","content":" choice text"}}]}',
+    'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tool_1","name":"read_file"}}',
+    'data: {"type":"content_block_start","index":2,"content_block":{"type":"text"}}',
+    'data: {"type":"content_block_delta","index":2,"delta":{"text":"hello"}}',
+    'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":5,"output_tokens":7}}',
+    'data: {"type":"input_json_delta","index":1,"delta":{"partial_json":"{\\"path\\":\\"a.txt\\"}"}}',
+  ].join("\r\n\r\n");
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let index = 0; index < events.length; index += 17)
+        controller.enqueue(encoder.encode(events.slice(index, index + 17)));
+      controller.close();
+    },
+  });
+  const fetchImpl = Object.assign(
+    async () =>
+      new Response(body, {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new AnthropicProvider({
+    apiKey: "test-key",
+    model: "claude-test",
+    maxTokens: 4096,
+    fetch: fetchImpl,
+  });
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    { type: "thinking", text: "plan" },
+    { type: "thinking", text: " more" },
+    { type: "thinking", text: " compat" },
+    { type: "thinking", text: " gateway" },
+    { type: "content", text: " choice text" },
+    { type: "content", text: "hello" },
+    { type: "usage", inputTokens: 5, outputTokens: 7 },
+    {
+      type: "tool_call",
+      calls: [
+        { id: "tool_1", name: "read_file", arguments: '{"path":"a.txt"}' },
+      ],
+    },
+    { type: "done", finishReason: "tool_calls" },
+  ]);
+});
+
+test("Anthropic thinking request is opt-in, validates its default budget, and honors an explicit budget", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for (const options of [
+    { thinkingEnabled: false },
+    { thinkingEnabled: true },
+    { thinkingEnabled: true, thinkingBudgetTokens: 2048 },
+  ]) {
+    const provider = new AnthropicProvider({
+      apiKey: "test-key",
+      model: "claude-test",
+      maxTokens: 4096,
+      temperature: 0.2,
+      fetch: fetchImpl,
+      ...options,
+    });
+    for await (const _chunk of provider.stream({ messages: [] })) {
+      // Drain the stream to record the request.
+    }
+  }
+  expect(bodies[0]).not.toHaveProperty("thinking");
+  expect(bodies[0]?.temperature).toBe(0.2);
+  expect(bodies[1]?.thinking).toEqual({
+    type: "enabled",
+    budget_tokens: 1024,
+  });
+  expect(bodies[2]?.thinking).toEqual({
+    type: "enabled",
+    budget_tokens: 2048,
+  });
+  expect(bodies[1]).not.toHaveProperty("temperature");
+  expect(bodies[2]).not.toHaveProperty("temperature");
+});
+
+test("Anthropic thinking rejects invalid budgets before fetch", async () => {
+  let fetchCalls = 0;
+  const fetchImpl = Object.assign(
+    async () => {
+      fetchCalls += 1;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for (const options of [
+    { maxTokens: 1024 },
+    { maxTokens: 4096, thinkingBudgetTokens: 1023 },
+    { maxTokens: 4096, thinkingBudgetTokens: 4096 },
+  ]) {
+    const provider = new AnthropicProvider({
+      apiKey: "test-key",
+      model: "claude-test",
+      thinkingEnabled: true,
+      fetch: fetchImpl,
+      ...options,
+    });
+    await expect(
+      (async () => {
+        for await (const _chunk of provider.stream({ messages: [] })) {
+          // Drain the stream to force request validation.
+        }
+      })(),
+    ).rejects.toThrow("Anthropic thinking requires an integer budget_tokens");
+  }
+  expect(fetchCalls).toBe(0);
+});
+
+test("Anthropic reasoning effort maps to thinking budgets and clamps to max_tokens", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for (const reasoningEffort of ["minimal", "low", "medium", "high", "xhigh"]) {
+    const provider = new AnthropicProvider({
+      apiKey: "test-key",
+      model: "claude-test",
+      maxTokens: 32768,
+      thinkingEnabled: true,
+      reasoningEffort,
+      fetch: fetchImpl,
+    });
+    for await (const _chunk of provider.stream({ messages: [] })) {
+      // Drain the stream to record the request.
+    }
+  }
+  const budgets = bodies.map(
+    (body) => (body.thinking as { budget_tokens: number }).budget_tokens,
+  );
+  expect(budgets).toEqual([1024, 2048, 4096, 8192, 16384]);
+
+  const clampedProvider = new AnthropicProvider({
+    apiKey: "test-key",
+    model: "claude-test",
+    maxTokens: 5000,
+    thinkingEnabled: true,
+    reasoningEffort: "high",
+    fetch: fetchImpl,
+  });
+  for await (const _chunk of clampedProvider.stream({ messages: [] })) {
+    // Drain the stream to record the request.
+  }
+  expect(bodies.at(-1)?.thinking).toEqual({
+    type: "enabled",
+    budget_tokens: 4999,
+  });
+});
+
+test("Anthropic explicit thinking budget overrides reasoning effort", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new AnthropicProvider({
+    apiKey: "test-key",
+    model: "claude-test",
+    maxTokens: 32768,
+    thinkingEnabled: true,
+    reasoningEffort: "xhigh",
+    thinkingBudgetTokens: 2048,
+    fetch: fetchImpl,
+  });
+  for await (const _chunk of provider.stream({ messages: [] })) {
+    // Drain the stream to record the request.
+  }
+  expect(body?.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+  expect(body).not.toHaveProperty("reasoning_effort");
+});
+
+test("providerForModel forwards Anthropic thinking settings", async () => {
+  const config = defaultConfigV3();
+  config.providers.internal_gateway = {
+    name: "Internal Gateway",
+    driver: "anthropic-compatible",
+    enabled: true,
+    connection: { apiKey: "test-key" },
+    requestDefaults: {
+      stream: true,
+      headers: {},
+      options: { reasoningEffort: "high", thinkingBudgetTokens: 2048 },
+    },
+  };
+  config.catalog.providers.internal_gateway = {
+    models: {
+      "thinking-model": {
+        name: "thinking-model",
+        status: "stable",
+        source: "manual",
+        capabilities: {
+          toolCall: false,
+          reasoning: true,
+          thinking: true,
+          imageInput: false,
+          pdfInput: false,
+          videoInput: false,
+        },
+        limits: { contextWindow: "auto", maxOutputTokens: 4096 },
+      },
+    },
+  };
+  config.modelOverrides["internal_gateway/thinking-model"] = {
+    enabled: true,
+    name: "Thinking",
+    requestDefaults: { temperature: null, topP: null, thinkingEnabled: true },
+    requestOptions: {},
+    headers: {},
+  };
+  let body: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  try {
+    const provider = providerForModel(
+      config,
+      "internal_gateway/thinking-model",
+    );
+    expect(provider).toBeInstanceOf(AnthropicProvider);
+    for await (const _chunk of provider!.stream({ messages: [] })) {
+      // Drain the stream to record the resolved request defaults.
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  expect(body?.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+});
+
 test("Gemini provider maps SSE content function calls and usage without placing its key in the URL", async () => {
   let requested: string | undefined;
   let headers: Headers | undefined;

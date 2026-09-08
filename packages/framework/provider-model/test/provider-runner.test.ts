@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { ContextLedger, providerError } from "@natalia/runtime";
+import {
+  AnthropicProvider,
+  ContextLedger,
+  providerError,
+} from "@natalia/runtime";
 import type {
   ProviderStreamChunk,
   ProviderStreamRequest,
@@ -219,6 +223,61 @@ const turn = {
   resources: [],
   agents: [],
 };
+
+test("Natalia main transcript receives Anthropic thinking without chat events", async () => {
+  const provider = new AnthropicProvider({
+    apiKey: "test-only",
+    model: "step-3.7-flash",
+    maxTokens: 4096,
+    fetch: (async () =>
+      new Response(
+        [
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "thinking", thinking: "main " },
+          },
+          {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "thinking_delta", thinking: "reasoning" },
+          },
+          { type: "content_block_stop", index: 0 },
+          {
+            type: "content_block_start",
+            index: 1,
+            content_block: { type: "text", text: "" },
+          },
+          {
+            type: "content_block_delta",
+            index: 1,
+            delta: { type: "text_delta", text: "main answer" },
+          },
+          { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        ]
+          .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+          .join(""),
+      )) as unknown as typeof fetch,
+  });
+  const { runner, events } = makeHarness(provider);
+  await runner.runTurn(turn);
+  expect(
+    events
+      .filter((event) => event.type === "thinking.delta")
+      .map((event) => event.text)
+      .join(""),
+  ).toBe("main reasoning");
+  expect(events.find((event) => event.type === "content.done")?.text).toBe(
+    "main answer",
+  );
+  expect(
+    events.some(
+      (event) =>
+        event.type.startsWith("navi.chat.") ||
+        event.type.startsWith("nia.chat."),
+    ),
+  ).toBe(false);
+});
 
 test("a turn streams content and usage, finishes done, and clears turn state", async () => {
   const { runner, events, ledger, checkpoints, abortController, activeTurnID } =

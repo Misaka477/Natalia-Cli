@@ -7,7 +7,6 @@ import type {
   ProviderModelController,
   RuntimeServiceClient,
 } from "@natalia/runtime-services";
-import { providerForModel } from "@natalia/runtime";
 import type {
   ChatChannel,
   ChatModelProfile,
@@ -17,6 +16,7 @@ import type {
 import { projectedChatMessages } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
+import { streamEvent } from "./chat-turn-common";
 type Surface = Pick<
   RuntimeServiceClient,
   | "chatSubmit"
@@ -26,6 +26,14 @@ type Surface = Pick<
   | "chatModelProfile"
   | "setChatModelProfile"
 >;
+type ChatSubmitInput = {
+  text: string;
+  model?: { modelID?: string; variant?: string };
+  reasoningEffort?: RuntimeReasoningEffort;
+  attachments?: string[];
+  channel?: ChatChannel;
+  sessionID?: string;
+};
 function redactToolOutput(output: string, redact: boolean | undefined) {
   if (!redact) return output;
   return output.replace(
@@ -58,6 +66,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           role: message.role,
           text: message.text,
           at: message.at,
+          ...(message.kind ? { kind: message.kind } : {}),
           ...(message.channel ? { channel: message.channel } : {}),
         }));
     },
@@ -83,14 +92,16 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
           toMessageID: input.toMessageID,
           removed,
         });
-      ctx.ports.publishForSession(exec, {
-        type: "chat.rollback",
-        id: `chat:rollback:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`,
-        toMessageID: input.toMessageID,
-        removed,
-        at: new Date().toISOString(),
-        ...(channel ? { channel } : {}),
-      });
+      ctx.ports.publishForSession(
+        exec,
+        streamEvent({
+          type: `${channelKey}.chat.rollback`,
+          id: `chat:rollback:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`,
+          toMessageID: input.toMessageID,
+          removed,
+          at: new Date().toISOString(),
+        }),
+      );
       return { rolledBackTo: input.toMessageID, removed };
     },
     async chatModelProfile(channel?: ChatChannel, sessionID?: string) {
@@ -116,11 +127,13 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       };
       profiles[profileChannel] = profile;
       (exec as { chatModelProfile?: unknown }).chatModelProfile = profiles;
-      ctx.ports.publishForSession(exec, {
-        type: "chat.model.profile",
-        channel: profileChannel,
-        profile,
-      });
+      ctx.ports.publishForSession(
+        exec,
+        streamEvent({
+          type: `${profileChannel}.chat.model.profile`,
+          profile,
+        }),
+      );
       return { saved: true };
     },
     async chatAbort(channel?: ChatChannel, sessionID?: string) {
@@ -128,121 +141,198 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       const controller = ctx.ports.resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       );
-      if (!exec || !controller?.abortChat) return { aborted: false as const };
-      return {
-        aborted: controller.abortChat(exec.session.id as SessionID, channel),
-      };
+      if (!exec || !controller) return { aborted: false as const };
+      const ownerSessionID = exec.session.id as SessionID;
+      const aborted =
+        channel === "nia"
+          ? controller.abortNia(ownerSessionID)
+          : controller.abortNavi(ownerSessionID);
+      if (aborted) {
+        const pending =
+          channel === "nia"
+            ? exec.pendingNiaChatUserMessages
+            : exec.pendingNaviChatUserMessages;
+        if (channel === "nia") exec.niaAbortWakePending = true;
+        else exec.naviAbortWakePending = true;
+        if (pending.length) {
+          if (channel === "nia") {
+            exec.niaAbortWakePending = false;
+            controller.requestNiaWake(ownerSessionID);
+          } else {
+            exec.naviAbortWakePending = false;
+            controller.requestNaviWake(ownerSessionID);
+          }
+        }
+      }
+      return { aborted };
     },
-    async chatSubmit(input: {
-      text: string;
-      model?: { modelID?: string; variant?: string };
-      reasoningEffort?: RuntimeReasoningEffort;
-      attachments?: string[];
-      channel?: ChatChannel;
-      sessionID?: string;
-    }) {
-      const channel = input.channel ?? "navi";
-      console.log("[chat] chatSubmit received", {
-        text: input.text,
-        model: input.model,
-        attachments: input.attachments,
-        channel,
-      });
-      const storedAttachments = input.attachments?.length
-        ? await ctx.ports
-            .resolveService<AttachmentService>(ATTACHMENT_SERVICE)
-            ?.store(input.attachments)
-        : undefined;
-      await ctx.ports.getReady();
-      const text = typeof input.text === "string" ? input.text.trim() : "";
-      const exec = await chatExec(ctx, input.sessionID);
-      const controller = ctx.ports.resolveService<ProviderModelController>(
+    async chatSubmit(input: ChatSubmitInput) {
+      return input.channel === "nia"
+        ? submitNiaChat(input)
+        : submitNaviChat(input);
+    },
+  };
+
+  async function prepareSubmit(input: ChatSubmitInput) {
+    const storedAttachments = input.attachments?.length
+      ? await ctx.ports
+          .resolveService<AttachmentService>(ATTACHMENT_SERVICE)
+          ?.store(input.attachments)
+      : undefined;
+    await ctx.ports.getReady();
+    return {
+      text: typeof input.text === "string" ? input.text.trim() : "",
+      storedAttachments,
+      exec: await chatExec(ctx, input.sessionID),
+      controller: ctx.ports.resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
-      );
-      let provider = exec?.provider;
-      if (!provider) {
-        const config = ctx.ports.getTsRuntimeConfig();
-        provider =
-          (config?.defaultModel &&
-            providerForModel(config, config.defaultModel)) ||
-          ctx.ports.providerFromEnvironment?.();
-        if (provider && exec) exec.provider = provider;
-      }
-      console.log("[chat] chatSubmit state", {
-        text,
-        hasExec: !!exec,
-        hasProvider: !!provider,
-        hasController: !!controller,
-        sessionID: exec?.session.id,
-      });
-      if (!text || !exec || !provider || !controller) {
-        console.warn(
-          "[chat] chatSubmit rejected: missing text/exec/provider/controller",
-        );
-        return { messageID: "" };
-      }
-      if (input.model?.modelID) {
-        const config = ctx.ports.getTsRuntimeConfig();
-        provider =
-          (config &&
-            providerForModel(config, input.model.modelID, input.model.variant, {
-              reasoningEffort: input.reasoningEffort,
-            })) ||
-          provider;
-      }
-      const now = new Date();
-      const userMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
-      ctx.ports.publishForSession(exec, {
-        type: "chat.message.added",
+      ),
+    };
+  }
+
+  async function submitNaviChat(input: ChatSubmitInput) {
+    const { text, storedAttachments, exec, controller } =
+      await prepareSubmit(input);
+    console.log("[navi-chat] submit received", {
+      text: input.text,
+      model: input.model,
+      attachments: input.attachments,
+    });
+    console.log("[navi-chat] submit state", {
+      text,
+      hasExec: !!exec,
+      hasController: !!controller,
+      sessionID: exec?.session.id,
+    });
+    if (!text || !exec || !controller) {
+      console.warn("[navi-chat] submit rejected: missing text/exec/controller");
+      return { messageID: "" };
+    }
+    const now = new Date();
+    const userMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
+    ctx.ports.publishForSession(
+      exec,
+      streamEvent({
+        type: "navi.chat.message.new",
         id: `${userMessageID}:user`,
         messageID: userMessageID,
         role: "user",
         text: redactToolOutput(text, true),
         at: now.toISOString(),
-        ...(channel ? { channel } : {}),
-      });
-      const responseMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
-      if (controller.chatBusy?.(exec.session.id as SessionID, channel)) {
-        console.log("[chat] chatSubmit queued while busy", {
-          userMessageID,
-          text,
-        });
-        exec.pendingChatUserMessages.push({
-          messageID: userMessageID,
-          text: redactToolOutput(text, true),
-        });
-        return { messageID: userMessageID };
-      }
-      console.log("[chat] chatSubmit running turn", {
+      }),
+    );
+    const responseMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
+    if (controller.naviBusy(exec.session.id as SessionID)) {
+      console.log("[navi-chat] queued while busy", {
         userMessageID,
-        responseMessageID,
         text,
       });
-      try {
-        await controller.runChatTurn({
-          sessionID: exec.session.id as SessionID,
-          text,
-          responseMessageID,
-          provider,
-          reasoningEffort: input.reasoningEffort,
-          attachments: storedAttachments,
-          channel,
-        });
-        console.log("[chat] chatSubmit turn finished", responseMessageID);
-      } catch (cause) {
-        const detail = cause instanceof Error ? cause.message : String(cause);
-        console.error("[chat] chatSubmit turn failed", detail);
-        ctx.ports.publishForSession(exec, {
-          type: "chat.message.added",
+      exec.pendingNaviChatUserMessages.push({
+        messageID: userMessageID,
+        text: redactToolOutput(text, true),
+      });
+      if (exec.naviAbortWakePending) {
+        exec.naviAbortWakePending = false;
+        controller.requestNaviWake(exec.session.id as SessionID);
+      }
+      return { messageID: userMessageID };
+    }
+    exec.naviAbortWakePending = false;
+    console.log("[navi-chat] running turn", {
+      userMessageID,
+      responseMessageID,
+      text,
+    });
+    try {
+      await controller.runNaviChatTurn({
+        sessionID: exec.session.id as SessionID,
+        text,
+        responseMessageID,
+        model: input.model,
+        reasoningEffort: input.reasoningEffort,
+        attachments: storedAttachments,
+      });
+      console.log("[navi-chat] turn finished", responseMessageID);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      console.error("[navi-chat] turn failed", detail);
+      ctx.ports.publishForSession(
+        exec,
+        streamEvent({
+          type: "navi.chat.message.new",
           id: `${responseMessageID}:chat`,
           messageID: responseMessageID,
           role: "chat",
           text: `Chat could not finish this turn: ${detail.split("\n")[0]!.slice(0, 240)}`,
           at: new Date().toISOString(),
-          ...(channel ? { channel } : {}),
-        });
+        }),
+      );
+    }
+    return { messageID: responseMessageID };
+  }
+
+  async function submitNiaChat(input: ChatSubmitInput) {
+    const { text, storedAttachments, exec, controller } =
+      await prepareSubmit(input);
+    console.log("[nia-chat] submit received", {
+      text: input.text,
+      model: input.model,
+      attachments: input.attachments,
+    });
+    if (!text || !exec || !controller) {
+      console.warn("[nia-chat] submit rejected: missing text/exec/controller");
+      return { messageID: "" };
+    }
+    const userMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
+    const safeText = redactToolOutput(text, true);
+    ctx.ports.publishForSession(
+      exec,
+      streamEvent({
+        type: "nia.chat.message.new",
+        id: `${userMessageID}:user`,
+        messageID: userMessageID,
+        role: "user",
+        text: safeText,
+        at: new Date().toISOString(),
+      }),
+    );
+    const responseMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
+    if (controller.niaBusy(exec.session.id as SessionID)) {
+      exec.pendingNiaChatUserMessages.push({
+        messageID: userMessageID,
+        text: safeText,
+      });
+      if (exec.niaAbortWakePending) {
+        exec.niaAbortWakePending = false;
+        controller.requestNiaWake(exec.session.id as SessionID);
       }
-      return { messageID: responseMessageID };
-    },
-  };
+      return { messageID: userMessageID };
+    }
+    exec.niaAbortWakePending = false;
+    try {
+      await controller.runNiaChatTurn({
+        sessionID: exec.session.id as SessionID,
+        text,
+        responseMessageID,
+        model: input.model,
+        reasoningEffort: input.reasoningEffort,
+        attachments: storedAttachments,
+      });
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      console.error("[nia-chat] turn failed", detail);
+      ctx.ports.publishForSession(
+        exec,
+        streamEvent({
+          type: "nia.chat.message.new",
+          id: `${responseMessageID}:chat`,
+          messageID: responseMessageID,
+          role: "chat",
+          text: `Nia could not finish this turn: ${detail.split("\n")[0]!.slice(0, 240)}`,
+          at: new Date().toISOString(),
+        }),
+      );
+    }
+    return { messageID: responseMessageID };
+  }
 }

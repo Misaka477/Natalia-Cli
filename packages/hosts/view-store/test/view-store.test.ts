@@ -1150,7 +1150,7 @@ test("plain long prose still segments", () => {
 test("chat tool calls render in event order with post-tool text below the card", () => {
   const state = initialState();
   applyEvent(state, {
-    type: "chat.message.added",
+    type: "navi.chat.message.new",
     id: "chat:1",
     messageID: "chat:m1",
     role: "user",
@@ -1158,13 +1158,13 @@ test("chat tool calls render in event order with post-tool text below the card",
     at: "now",
   });
   applyEvent(state, {
-    type: "chat.message.delta",
+    type: "navi.chat.message.delta",
     id: "chat:2",
     messageID: "chat:m2",
     text: "I will look.",
   });
   applyEvent(state, {
-    type: "chat.tool.used",
+    type: "navi.chat.tool.used",
     id: "chat:m2:tool:1",
     messageID: "chat:m2",
     toolName: "session_snapshot",
@@ -1175,13 +1175,13 @@ test("chat tool calls render in event order with post-tool text below the card",
     at: "now",
   });
   applyEvent(state, {
-    type: "chat.message.delta",
+    type: "navi.chat.message.delta",
     id: "chat:3",
     messageID: "chat:m2",
     text: " the main agent is idle.",
   });
   applyEvent(state, {
-    type: "chat.message.added",
+    type: "navi.chat.message.added",
     id: "chat:4",
     messageID: "chat:m2",
     role: "chat",
@@ -1211,13 +1211,13 @@ test("chat activity follows its own lifecycle without replacing main activity", 
     submitted("t1", "main work"),
     { type: "turn.started", id: "t1" },
     {
-      type: "chat.turn.started",
+      type: "navi.chat.turn.started",
       id: "chat:m1:started",
       messageID: "chat:m1",
       startedAt: 100,
     },
     {
-      type: "chat.turn.phase",
+      type: "navi.chat.turn.phase",
       id: "chat:m1:thinking",
       messageID: "chat:m1",
       phase: "thinking",
@@ -1232,7 +1232,7 @@ test("chat activity follows its own lifecycle without replacing main activity", 
   });
   expect(selectPrimaryActivity(state)?.turnID).toBe("t1");
   applyEvent(state, {
-    type: "chat.turn.finished",
+    type: "navi.chat.turn.finished",
     id: "chat:m1:finished",
     messageID: "chat:m1",
     stopReason: "done",
@@ -1245,46 +1245,41 @@ test("chat activity follows its own lifecycle without replacing main activity", 
 test("Nia has its own complete chat stream and never mixes into Navi", () => {
   const state = projectEvents([
     {
-      type: "chat.turn.started",
+      type: "navi.chat.turn.started",
       id: "chat:navi:started",
       messageID: "chat:navi",
       startedAt: 1,
-      channel: "navi",
     },
     {
-      type: "chat.message.added",
+      type: "navi.chat.message.new",
       id: "chat:navi:user",
       messageID: "chat:navi",
       role: "user",
       text: "Navi question",
       at: "t1",
-      channel: "navi",
     },
     {
-      type: "chat.message.added",
+      type: "navi.chat.message.added",
       id: "chat:navi:chat",
       messageID: "chat:navi",
       role: "chat",
       text: "Navi answer",
       at: "t2",
-      channel: "navi",
     },
     {
-      type: "chat.turn.started",
+      type: "nia.chat.turn.started",
       id: "chat:nia:started",
       messageID: "chat:nia",
       startedAt: 3,
-      channel: "nia",
     },
     {
-      type: "chat.message.delta",
+      type: "nia.chat.message.delta",
       id: "chat:nia:delta",
       messageID: "chat:nia",
       text: "Nia audit result ",
-      channel: "nia",
     },
     {
-      type: "chat.tool.used",
+      type: "nia.chat.tool.used",
       id: "chat:nia:tool:1",
       messageID: "chat:nia",
       toolName: "read_file",
@@ -1293,7 +1288,6 @@ test("Nia has its own complete chat stream and never mixes into Navi", () => {
       result: "{}",
       argumentsRaw: "{}",
       at: "t3",
-      channel: "nia",
     },
     {
       type: "collab.chat",
@@ -1307,13 +1301,12 @@ test("Nia has its own complete chat stream and never mixes into Navi", () => {
       at: "t4",
     },
     {
-      type: "chat.message.added",
+      type: "nia.chat.message.added",
       id: "chat:nia:chat",
       messageID: "chat:nia",
       role: "chat",
       text: "Nia audit result",
       at: "t5",
-      channel: "nia",
     },
   ]);
 
@@ -1335,6 +1328,138 @@ test("Nia has its own complete chat stream and never mixes into Navi", () => {
   expect(
     state.chatMessages.some((block) => block.id.includes("chat:nia")),
   ).toBe(false);
+});
+
+test("chat namespace prefixes isolate simultaneous identical message IDs", () => {
+  const state = projectEvents([
+    {
+      type: "navi.chat.message.new",
+      id: "navi:shared:user",
+      messageID: "shared",
+      role: "user",
+      text: "Navi request",
+      at: "t1",
+    },
+    {
+      type: "nia.chat.message.new",
+      id: "nia:shared:user",
+      messageID: "shared",
+      role: "user",
+      text: "Nia request",
+      at: "t2",
+    },
+    {
+      type: "navi.chat.thinking.delta",
+      id: "navi:shared:thinking",
+      messageID: "shared",
+      text: "Navi reasoning",
+    },
+    {
+      type: "nia.chat.thinking.delta",
+      id: "nia:shared:thinking",
+      messageID: "shared",
+      text: "Nia reasoning",
+    },
+  ]);
+
+  expect(state.chatMessages.map((block) => displayText(block))).toEqual([
+    "Navi request",
+    "Navi reasoning",
+  ]);
+  expect(state.niaMessages.map((block) => displayText(block))).toEqual([
+    "Nia request",
+    "Nia reasoning",
+  ]);
+});
+
+test("durable chat thinking replaces live deltas and restores thinking after restart", () => {
+  const state = initialState();
+  applyEvent(state, {
+    type: "navi.chat.thinking.delta",
+    id: "navi:shared:thinking:delta",
+    messageID: "shared",
+    text: "partial ",
+  });
+  applyEvent(state, {
+    type: "navi.chat.thinking.done",
+    id: "navi:shared:thinking:done",
+    messageID: "shared",
+    text: "complete Navi reasoning",
+  });
+  applyEvent(state, {
+    type: "nia.chat.thinking.done",
+    id: "nia:shared:thinking:done",
+    messageID: "shared",
+    text: "complete Nia reasoning",
+  });
+
+  expect(state.chatMessages.map(displayText)).toEqual([
+    "complete Navi reasoning",
+  ]);
+  expect(state.niaMessages.map(displayText)).toEqual([
+    "complete Nia reasoning",
+  ]);
+  expect(state.chatMessages[0]?.status).toBe("completed");
+  expect(state.niaMessages[0]?.status).toBe("completed");
+
+  const reloaded = initialState();
+  const changed = hydrateChatMessages(reloaded, [
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "complete Navi reasoning",
+      at: "",
+      channel: "navi",
+      kind: "thinking",
+    },
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "complete Nia reasoning",
+      at: "",
+      channel: "nia",
+      kind: "thinking",
+    },
+  ]);
+  expect(changed).toBe(true);
+  expect(reloaded.chatMessages.map(displayText)).toEqual([
+    "complete Navi reasoning",
+  ]);
+  expect(reloaded.niaMessages.map(displayText)).toEqual([
+    "complete Nia reasoning",
+  ]);
+  expect(reloaded.chatMessages[0]?.role).toBe("thinking");
+  expect(reloaded.niaMessages[0]?.role).toBe("thinking");
+});
+
+test("chat namespace prefixes override stale channel payloads", () => {
+  const state = projectEvents([
+    {
+      type: "navi.chat.message.new",
+      id: "navi:stale-channel",
+      messageID: "shared",
+      role: "user",
+      text: "Navi request",
+      at: "t1",
+      channel: "nia",
+    } as unknown as RuntimeEvent,
+    {
+      type: "nia.chat.message.new",
+      id: "nia:stale-channel",
+      messageID: "shared",
+      role: "user",
+      text: "Nia request",
+      at: "t2",
+      channel: "navi",
+    } as unknown as RuntimeEvent,
+  ]);
+
+  expect(state.chatMessages.map((block) => displayText(block))).toEqual([
+    "Navi request",
+  ]);
+  expect(state.niaMessages.map((block) => displayText(block))).toEqual([
+    "Nia request",
+  ]);
 });
 
 test("hydrating chat rows splits Navi and Nia into independent streams", () => {

@@ -57,7 +57,8 @@ export function createEventSink(
       const step = exec.context.journalStatus().messageCount;
       const snapshot = exec.context.durableCheckpoint(step);
       sessionStore.writeContextEpoch(exec.session.id, snapshot);
-      perfLog(`[perf] contextEpoch.write session=${exec.session.id} trigger=${trigger} step=${step} +0ms`,
+      perfLog(
+        `[perf] contextEpoch.write session=${exec.session.id} trigger=${trigger} step=${step} +0ms`,
       );
     } catch (error) {
       // A failed context epoch must never break event publishing.
@@ -314,38 +315,37 @@ export function createEventSink(
     }
     if (
       !event.agentID &&
-      event.type === "chat.turn.finished" &&
-      event.channel === "nia" &&
+      event.type === "nia.chat.turn.finished" &&
       event.stopReason === "done" &&
       exec?.session
     ) {
       const niaMessages = projectedChatMessages(exec.session.events).filter(
-        (message) => message.channel === "nia",
+        (message) => message.channel === "nia" && message.kind === "message",
       );
       const last = niaMessages[niaMessages.length - 1];
       const niaAuditWake = exec.session.events.some(
         (candidate) =>
-          candidate.type === "chat.turn.started" &&
+          candidate.type === "nia.chat.turn.started" &&
           candidate.messageID === event.messageID &&
           candidate.internal === true,
       );
       const auditReported = exec.session.events.some(
         (candidate) =>
-          candidate.type === "chat.tool.used" &&
+          candidate.type === "nia.chat.tool.used" &&
           candidate.messageID === event.messageID &&
           candidate.toolName === "audit_report",
       );
       const niaCollabSent = exec.session.events.some(
         (candidate) =>
-          candidate.type === "chat.tool.used" &&
+          candidate.type === "nia.chat.tool.used" &&
           candidate.messageID === event.messageID &&
           candidate.toolName === "collab_chat",
       );
       const auditReportEvent = exec.session.events.find(
         (
           candidate,
-        ): candidate is Extract<RuntimeEvent, { type: "chat.tool.used" }> =>
-          candidate.type === "chat.tool.used" &&
+        ): candidate is Extract<RuntimeEvent, { type: "nia.chat.tool.used" }> =>
+          candidate.type === "nia.chat.tool.used" &&
           candidate.messageID === event.messageID &&
           candidate.toolName === "audit_report",
       );

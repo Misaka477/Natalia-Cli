@@ -4,16 +4,25 @@ import { createUiEventBus, eventMatches } from "../src";
 test("empty and wildcard filters match every runtime event type", () => {
   expect(eventMatches("session.created", undefined)).toBe(true);
   expect(eventMatches("turn.submitted", [])).toBe(true);
-  expect(eventMatches("chat.message.added", ["*"])).toBe(true);
+  expect(eventMatches("navi.chat.message.added", ["*"])).toBe(true);
   expect(eventMatches("checkpoint.created", ["runtime.*"])).toBe(true);
 });
 
 test("turn, chat, and checkpoint prefixes match only their families", () => {
   expect(eventMatches("turn.submitted", ["runtime.turn.*"])).toBe(true);
   expect(eventMatches("turn.started", ["runtime.turn.*"])).toBe(true);
-  expect(eventMatches("chat.message.added", ["runtime.turn.*"])).toBe(false);
-  expect(eventMatches("chat.message.added", ["runtime.chat.*"])).toBe(true);
-  expect(eventMatches("chat.turn.started", ["runtime.chat.*"])).toBe(true);
+  expect(eventMatches("navi.chat.message.added", ["runtime.turn.*"])).toBe(
+    false,
+  );
+  expect(eventMatches("navi.chat.message.added", ["runtime.navi.chat.*"])).toBe(
+    true,
+  );
+  expect(eventMatches("nia.chat.turn.started", ["runtime.navi.chat.*"])).toBe(
+    false,
+  );
+  expect(eventMatches("nia.chat.turn.started", ["runtime.nia.chat.*"])).toBe(
+    true,
+  );
   expect(eventMatches("turn.submitted", ["runtime.chat.*"])).toBe(false);
   expect(eventMatches("checkpoint.created", ["runtime.checkpoint.*"])).toBe(
     true,

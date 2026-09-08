@@ -254,6 +254,7 @@ export type ProviderChatTurnInput = {
   text: string;
   responseMessageID: string;
   internal?: boolean;
+  model?: { modelID?: string; variant?: string };
   provider?: import("@natalia/runtime").StreamingProvider;
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
   attachments?: import("@natalia/contracts").LocalAttachment[];
@@ -405,6 +406,13 @@ export type ProviderRunnerInput = {
   waitingHuman(): { terminalID: string; reason: string } | undefined;
 };
 
+export type ProviderChatStreamInput = {
+  available(sessionID: SessionID): boolean;
+  publish(sessionID: SessionID, event: RuntimeEvent): void;
+  runBody(input: ProviderChatTurnInput, signal: AbortSignal): Promise<void>;
+  wake(sessionID: SessionID): Promise<void>;
+};
+
 export type ProviderModelControllerInput = {
   initialize(): void;
   runnerInput(sessionID: SessionID): ProviderRunnerInput;
@@ -418,15 +426,19 @@ export type ProviderModelControllerInput = {
       variant?: string,
     ): Promise<void>;
   };
-  chat: {
-    available(sessionID: SessionID): boolean;
-    publish(sessionID: SessionID, event: RuntimeEvent): void;
-    runBody(input: ProviderChatTurnInput, signal: AbortSignal): Promise<void>;
-    wake(sessionID: SessionID): Promise<void>;
-  };
+  navi: ProviderChatStreamInput;
+  nia: ProviderChatStreamInput;
 };
 export interface ProviderModelController {
   runTurn(sessionID: SessionID, turn: ProviderTurnInput): Promise<void>;
+  runNaviChatTurn(turn: ProviderChatTurnInput): Promise<void>;
+  runNiaChatTurn(turn: ProviderChatTurnInput): Promise<void>;
+  requestNaviWake(sessionID: SessionID): void;
+  requestNiaWake(sessionID: SessionID): void;
+  naviBusy(sessionID: SessionID): boolean;
+  niaBusy(sessionID: SessionID): boolean;
+  abortNavi(sessionID: SessionID): boolean;
+  abortNia(sessionID: SessionID): boolean;
   runChatTurn(turn: ProviderChatTurnInput): Promise<void>;
   requestChatWake(sessionID: SessionID, channel?: ChatChannel): void;
   chatBusy?(sessionID: SessionID, channel?: ChatChannel): boolean;

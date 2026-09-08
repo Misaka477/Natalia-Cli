@@ -62,7 +62,7 @@ function runtimeFixture() {
     async chatSubmit(input: { text: string }) {
       chat.push(input.text);
       sink?.({
-        type: "chat.message.added",
+        type: "navi.chat.message.added",
         id: "chat_1",
         messageID: "msg_1",
         role: "user",
@@ -138,7 +138,7 @@ test("the host loads a UI plugin, forwards events, and unloads it", async () => 
     "session.ready",
     "turn.submitted",
     "content.done",
-    "chat.message.added",
+    "navi.chat.message.added",
     "dispose",
   ]);
   await host.close();

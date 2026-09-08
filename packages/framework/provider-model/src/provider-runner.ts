@@ -493,6 +493,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           calls: [],
         };
         try {
+          if (process.env.NATALIA_DEBUG_PROVIDER === "1") {
+            console.log("[provider-runner] stream", {
+              id,
+              sessionID: input.session()?.id,
+              provider: activeProvider.provider,
+              model: activeProvider.model,
+              adapter: activeProvider.constructor.name,
+            });
+          }
           const stream = activeProvider.stream({
             messages,
             tools:
@@ -512,15 +521,13 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               console.log(
                 "[provider-runner] chunk",
                 chunk.type,
-                "text" in chunk ? String((chunk as { text?: string }).text?.length ?? "") : "",
+                "text" in chunk
+                  ? String((chunk as { text?: string }).text?.length ?? "")
+                  : "",
               );
             }
             if (chunk.type === "thinking") {
               result.thinking += chunk.text;
-              console.log(
-                "[provider-runner] thinking chunk",
-                chunk.text.length,
-              );
               input.publish({
                 type: "thinking.delta",
                 id,

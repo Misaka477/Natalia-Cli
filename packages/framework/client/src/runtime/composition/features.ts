@@ -8,7 +8,8 @@ import { createChatTools } from "../collaboration/chat-tools";
 import { createCollaborationWake } from "../collaboration/wake";
 import { createMailboxPlans } from "../collaboration/mailbox-plans";
 import { createPlanDocRuntime } from "../collaboration/plan-doc-runtime";
-import { createChatTurn } from "../collaboration/chat-turn";
+import { createNaviChatTurn } from "../collaboration/chat-turn-navi";
+import { createNiaChatTurn } from "../collaboration/chat-turn-nia";
 import { createPluginAssembly } from "../plugin-assembly";
 import { createConfigReload } from "../config-reload";
 import { createToolPublish } from "../tool-publish";
@@ -89,10 +90,13 @@ export function wireFeatures(
     return mailboxPlans.enqueueMailboxMessage(input, exec);
   };
   ports.planDocRuntime = createPlanDocRuntime(ctx);
-  ports.chatSystemPrompt = chatPrompt.chatSystemPrompt;
-  ports.chatTools = chatTools.chatTools;
+  ports.naviChatSystemPrompt = chatPrompt.naviChatSystemPrompt;
+  ports.niaChatSystemPrompt = chatPrompt.niaChatSystemPrompt;
+  ports.naviChatTools = chatTools.naviChatTools;
+  ports.niaChatTools = chatTools.niaChatTools;
   ports.chatToolSummary = chatTools.chatToolSummary;
-  ports.runChatTurnBody = createChatTurn(ctx).runChatTurnBody;
+  ports.runNaviChatTurn = createNaviChatTurn(ctx).runNaviChatTurn;
+  ports.runNiaChatTurn = createNiaChatTurn(ctx).runNiaChatTurn;
   ports.providerFromEnvironment = providerFromEnvironment;
 
   const pluginAssembly = createPluginAssembly(ctx, options);

@@ -11503,24 +11503,24 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
   });
   expect(history[1]).toMatchObject({ role: "chat" });
   expect(history[1].text).toContain("running step 2");
-  expect(events.filter((event) => event.type.startsWith("chat.turn."))).toEqual(
-    [
-      expect.objectContaining({
-        type: "chat.turn.started",
-        messageID: outcome.messageID,
-      }),
-      expect.objectContaining({
-        type: "chat.turn.phase",
-        messageID: outcome.messageID,
-        phase: "generating",
-      }),
-      expect.objectContaining({
-        type: "chat.turn.finished",
-        messageID: outcome.messageID,
-        stopReason: "done",
-      }),
-    ],
-  );
+  expect(
+    events.filter((event) => event.type.startsWith("navi.chat.turn.")),
+  ).toEqual([
+    expect.objectContaining({
+      type: "navi.chat.turn.started",
+      messageID: outcome.messageID,
+    }),
+    expect.objectContaining({
+      type: "navi.chat.turn.phase",
+      messageID: outcome.messageID,
+      phase: "generating",
+    }),
+    expect.objectContaining({
+      type: "navi.chat.turn.finished",
+      messageID: outcome.messageID,
+      stopReason: "done",
+    }),
+  ]);
   await client.chatSubmit!({ text: "and now" });
   expect(
     requests.at(-1)?.filter((message) => message.role !== "system"),
@@ -11572,7 +11572,9 @@ test("chat tool calls surface as conversation actions", async () => {
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
   await client.chatSubmit!({ text: "do not install that dependency" });
-  const actions = events.filter((event) => event.type === "chat.tool.used");
+  const actions = events.filter(
+    (event) => event.type === "navi.chat.tool.used",
+  );
   expect(actions).toHaveLength(1);
   expect(actions[0]).toMatchObject({ toolName: "mailbox_send" });
   expect((actions[0] as { summary: string }).summary).toContain(
@@ -11580,7 +11582,7 @@ test("chat tool calls surface as conversation actions", async () => {
   );
   expect(events).toContainEqual(
     expect.objectContaining({
-      type: "chat.turn.phase",
+      type: "navi.chat.turn.phase",
       phase: "using_tool",
       toolName: "mailbox_send",
     }),
@@ -11753,7 +11755,9 @@ test("chat ignores structured calls on its final step and emits fallback text", 
 
   await client.chatSubmit!({ text: "send a notice" });
 
-  expect(events.some((event) => event.type === "chat.tool.used")).toBe(false);
+  expect(events.some((event) => event.type === "navi.chat.tool.used")).toBe(
+    false,
+  );
   expect((await client.chatMessages!()).at(-1)?.text).toContain(
     "Tool execution completed",
   );
@@ -12489,7 +12493,7 @@ test("collab_answer rejects a truncated question id", async () => {
   await waitForAsync(async () =>
     events.some(
       (event) =>
-        event.type === "chat.tool.used" &&
+        event.type === "navi.chat.tool.used" &&
         event.toolName === "collab_answer" &&
         event.result?.includes("no pending question"),
     ),
@@ -12658,7 +12662,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
           (event) =>
             (event.type === "collab.message" &&
               event.message.kind === "chat") ||
-            event.type === "chat.tool.used" ||
+            event.type === "navi.chat.tool.used" ||
             event.type === "diagnostic" ||
             event.type === "turn.finished",
         )
@@ -12701,7 +12705,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
     expect(
       events.some(
         (event) =>
-          event.type === "chat.tool.used" &&
+          event.type === "navi.chat.tool.used" &&
           event.toolName === "collab_chat" &&
           event.result?.includes("reply required for chat message"),
       ),
@@ -12722,7 +12726,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
     expect(
       events.some(
         (event) =>
-          event.type === "chat.tool.used" &&
+          event.type === "navi.chat.tool.used" &&
           event.toolName === "collab_chat" &&
           event.result?.includes('"autoRoundLimitReached":true'),
       ),
@@ -12826,7 +12830,7 @@ test("collab_chat honors a configured one-round automatic limit", async () => {
     expect(
       events.some(
         (event) =>
-          event.type === "chat.tool.used" &&
+          event.type === "navi.chat.tool.used" &&
           event.result?.includes('"maxAutoRounds":1'),
       ),
     ).toBe(true);

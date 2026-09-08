@@ -224,13 +224,13 @@ export type RuntimePorts = {
     exec: SessionExecutionState,
     input: import("@natalia/contracts").SubmitInput,
   ) => void;
-  chatSystemPrompt: (
+  naviChatSystemPrompt: (exec?: SessionExecutionState) => string;
+  niaChatSystemPrompt: (exec?: SessionExecutionState) => string;
+  naviChatTools: (
     exec?: SessionExecutionState,
-    channel?: import("@natalia/contracts").ChatChannel,
-  ) => string;
-  chatTools: (
+  ) => import("@natalia/tools").RuntimeTool[];
+  niaChatTools: (
     exec?: SessionExecutionState,
-    channel?: "navi" | "nia",
   ) => import("@natalia/tools").RuntimeTool[];
   effectiveMaxSteps: (exec: SessionExecutionState | undefined) => number;
   waitIfPaused: (exec?: SessionExecutionState) => Promise<void>;
@@ -258,6 +258,7 @@ export type RuntimePorts = {
   getRuntimeContextConfig: () => RuntimeContextStatusConfig;
   getSessionID: () => SessionID;
   getProvider: () => StreamingProvider | undefined;
+  getChatDefaultProvider: () => StreamingProvider | undefined;
   createToolPolicyLayer: (
     exec: SessionExecutionState | undefined,
   ) => ToolPolicyHookLayer;

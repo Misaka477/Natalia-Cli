@@ -56,5 +56,8 @@ export type SessionExecutionState = {
   /** Memoized promise that loads the complete durable event log into session.events. */
   fullEventsPromise?: Promise<void>;
   injectedMailboxIDs: Set<string>;
-  pendingChatUserMessages: Array<{ messageID: string; text: string }>;
+  pendingNaviChatUserMessages: Array<{ messageID: string; text: string }>;
+  pendingNiaChatUserMessages: Array<{ messageID: string; text: string }>;
+  naviAbortWakePending?: boolean;
+  niaAbortWakePending?: boolean;
 };

@@ -1,4 +1,5 @@
 import type {
+  ChatChannel,
   CollaborationMessage,
   RuntimeEvent,
   RuntimeMessagePage,
@@ -100,6 +101,16 @@ export function chatModelProfileFromEvents(
     | Record<string, import("@natalia/contracts").ChatModelProfile>
     | undefined;
   for (const event of events) {
+    if (event.type === "navi.chat.model.profile") {
+      profile = profile ?? {};
+      profile.navi = event.profile;
+      continue;
+    }
+    if (event.type === "nia.chat.model.profile") {
+      profile = profile ?? {};
+      profile.nia = event.profile;
+      continue;
+    }
     if (event.type === "chat.model.profile") {
       profile = profile ?? {};
       profile[event.channel] = event.profile;
@@ -657,65 +668,169 @@ export function projectedMailboxMessages(
 }
 
 /**
- * Projects the Live Work Chat conversation from the durable journal. The
- * conversation is event-sourced: `chat.message.added` appends a message and
- * `chat.rollback` truncates the effective history at a message boundary, so the
- * Chat's context never diverges from what the journal records.
+ * Projects the independent Navi and Nia conversations from the durable journal.
+ * New records route by their `navi.chat.*` or `nia.chat.*` prefix. The legacy
+ * `chat.*` branch is retained only to ingest journals persisted before the
+ * namespace migration.
  */
 export type ProjectedChatMessage = {
   messageID: string;
   role: "user" | "chat";
   text: string;
   at: string;
-  channel?: import("@natalia/contracts").ChatChannel;
+  channel: ChatChannel;
+  kind?: "message" | "thinking";
 };
 
 export function projectedChatMessages(
   events: RuntimeEvent[],
 ): ProjectedChatMessage[] {
   const messages: ProjectedChatMessage[] = [];
-  const thinkingByMessage = new Map<string, ProjectedChatMessage & { kind: "thinking" }>();
+  const thinkingByMessage = new Map<string, ProjectedChatMessage>();
   for (const event of events) {
-    if (event.type === "chat.thinking.delta") {
-      const key = `${event.channel ?? "navi"}:${event.messageID}`;
+    const channel = chatEventChannel(event);
+    if (!channel) continue;
+    if (isChatThinkingDelta(event)) {
+      const key = `${channel}:${event.messageID}`;
       const existing = thinkingByMessage.get(key);
       if (existing) {
         existing.text += event.text;
       } else {
-        thinkingByMessage.set(key, {
+        const thinking: ProjectedChatMessage = {
           messageID: event.messageID,
           role: "chat",
           text: event.text,
-          at: new Date().toISOString(),
-          ...(event.channel ? { channel: event.channel } : {}),
+          // Chat deltas do not carry a timestamp. Keeping journal order avoids
+          // making replay depend on the wall clock used by the projector.
+          at: "",
+          channel,
           kind: "thinking",
-        });
+        };
+        thinkingByMessage.set(key, thinking);
+        messages.push(thinking);
       }
       continue;
     }
-    if (event.type === "chat.message.added") {
+    if (isChatThinkingDone(event)) {
+      const key = `${channel}:${event.messageID}`;
+      const existing = thinkingByMessage.get(key);
+      if (existing) {
+        // The durable settlement is the complete record. It supersedes any
+        // live-only delta captured by a caller that projects both streams.
+        existing.text = event.text;
+      } else {
+        const thinking: ProjectedChatMessage = {
+          messageID: event.messageID,
+          role: "chat",
+          text: event.text,
+          at: "",
+          channel,
+          kind: "thinking",
+        };
+        thinkingByMessage.set(key, thinking);
+        messages.push(thinking);
+      }
+      continue;
+    }
+    if (isChatMessageSettlement(event)) {
       messages.push({
         messageID: event.messageID,
         role: event.role,
         text: event.text,
         at: event.at,
-        ...(event.channel ? { channel: event.channel } : {}),
+        channel,
+        kind: "message",
       });
       continue;
     }
-    if (event.type === "chat.rollback") {
-      const index = messages.findIndex(
+    if (isChatRollback(event)) {
+      const boundary = messages.findIndex(
         (message) =>
           message.messageID === event.toMessageID &&
-          (event.channel == null || message.channel === event.channel),
+          message.channel === channel,
       );
-      if (index !== -1) messages.splice(index + 1);
-      else messages.length = 0;
+      if (boundary !== -1) {
+        for (let index = messages.length - 1; index >= 0; index -= 1)
+          if (messages[index]?.channel === channel && index > boundary)
+            messages.splice(index, 1);
+      } else {
+        for (let index = messages.length - 1; index >= 0; index -= 1)
+          if (messages[index]?.channel === channel) messages.splice(index, 1);
+      }
+      thinkingByMessage.clear();
+      for (const message of messages)
+        if (message.kind === "thinking")
+          thinkingByMessage.set(
+            `${message.channel}:${message.messageID}`,
+            message,
+          );
     }
   }
-  messages.push(...thinkingByMessage.values());
-  messages.sort((left, right) => left.at.localeCompare(right.at));
   return messages;
+}
+
+function chatEventChannel(event: RuntimeEvent): ChatChannel | undefined {
+  if (event.type.startsWith("navi.chat.")) return "navi";
+  if (event.type.startsWith("nia.chat.")) return "nia";
+  if (event.type.startsWith("chat."))
+    return (event as { channel?: ChatChannel }).channel ?? "navi";
+  return undefined;
+}
+
+function isChatThinkingDelta(
+  event: RuntimeEvent,
+): event is Extract<
+  RuntimeEvent,
+  { type: `${ChatChannel}.chat.thinking.delta` | "chat.thinking.delta" }
+> {
+  return (
+    event.type === "navi.chat.thinking.delta" ||
+    event.type === "nia.chat.thinking.delta" ||
+    event.type === "chat.thinking.delta"
+  );
+}
+
+function isChatMessageSettlement(event: RuntimeEvent): event is Extract<
+  RuntimeEvent,
+  {
+    type:
+      | `${ChatChannel}.chat.message.new`
+      | `${ChatChannel}.chat.message.added`
+      | "chat.message.added";
+  }
+> {
+  return (
+    event.type === "navi.chat.message.new" ||
+    event.type === "nia.chat.message.new" ||
+    event.type === "navi.chat.message.added" ||
+    event.type === "nia.chat.message.added" ||
+    event.type === "chat.message.added"
+  );
+}
+
+function isChatThinkingDone(
+  event: RuntimeEvent,
+): event is Extract<
+  RuntimeEvent,
+  { type: `${ChatChannel}.chat.thinking.done` }
+> {
+  return (
+    event.type === "navi.chat.thinking.done" ||
+    event.type === "nia.chat.thinking.done"
+  );
+}
+
+function isChatRollback(
+  event: RuntimeEvent,
+): event is Extract<
+  RuntimeEvent,
+  { type: `${ChatChannel}.chat.rollback` | "chat.rollback" }
+> {
+  return (
+    event.type === "navi.chat.rollback" ||
+    event.type === "nia.chat.rollback" ||
+    event.type === "chat.rollback"
+  );
 }
 
 /**

@@ -44,12 +44,20 @@ test("runtime event durability separates deltas from durable settlements", () =>
   ).toBe("durable");
   expect(
     runtimeEventDurability({
-      type: "chat.turn.started",
+      type: "navi.chat.turn.started",
       id: "chat:started",
       messageID: "chat:m1",
       startedAt: 1,
     }),
   ).toBe("live");
+  expect(
+    runtimeEventDurability({
+      type: "nia.chat.thinking.done",
+      id: "chat:thinking:done",
+      messageID: "chat:m1",
+      text: "durable reasoning",
+    }),
+  ).toBe("durable");
 });
 
 test("collab.message carries the strict collaboration union", () => {

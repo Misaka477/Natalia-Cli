@@ -11,10 +11,10 @@ import {
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   type ProviderModelController,
 } from "@natalia/runtime-services";
-import { providerForModel } from "@natalia/runtime";
 import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
+import { streamEvent } from "./chat-turn-common";
 
 export function createCollaborationWake(ctx: RuntimeContext) {
   return {
@@ -72,7 +72,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
       .resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
       )
-      ?.requestChatWake(exec.session.id as SessionID);
+      ?.requestNaviWake(exec.session.id as SessionID);
   }
 
   async function wakeNavi(exec: SessionExecutionState) {
@@ -81,60 +81,64 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     const controller = ctx.ports.resolveService<ProviderModelController>(
       PROVIDER_MODEL_CONTROLLER_SERVICE,
     );
-    if (!exec.provider || !controller) return;
+    if (!controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
     const expert = exec.advisorPending === true;
     const expertProfile = exec.chatModelProfile?.navi?.expert;
-    let provider = exec.provider;
-    if (expert && expertProfile?.modelID) {
-      const config = ctx.ports.getTsRuntimeConfig();
-      provider =
-        (config &&
-          providerForModel(
-            config,
-            expertProfile.modelID,
-            expertProfile.variant,
-            {
-              reasoningEffort: expertProfile.reasoningEffort,
-            },
-          )) ||
-        provider;
-      publishForSession(exec, {
-        type: "chat.message.added",
-        id: `${responseMessageID}:advisor`,
-        messageID: responseMessageID,
-        role: "user",
-        text: "(internal advisor request: Natalia hit a problem and needs expert guidance. Read the Main context and give concise technical advice.)",
-        at: new Date().toISOString(),
-      });
+    if (expert) {
+      publishForSession(
+        exec,
+        streamEvent({
+          type: "navi.chat.message.new",
+          id: `${responseMessageID}:advisor`,
+          messageID: responseMessageID,
+          role: "user",
+          text: "(internal advisor request: Natalia hit a problem and needs expert guidance. Read the Main context and give concise technical advice.)",
+          at: new Date().toISOString(),
+        }),
+      );
       exec.advisorPending = false;
     }
     try {
-      await controller.runChatTurn({
+      await controller.runNaviChatTurn({
         sessionID: exec.session.id as SessionID,
         text: "",
         responseMessageID,
         internal: true,
-        provider,
-        reasoningEffort: expertProfile?.reasoningEffort,
+        ...(expert && expertProfile?.modelID
+          ? {
+              model: {
+                modelID: expertProfile.modelID,
+                variant: expertProfile.variant,
+              },
+            }
+          : {}),
+        reasoningEffort: expert ? expertProfile?.reasoningEffort : undefined,
       });
     } catch (cause) {
-      publishForSession(exec, {
-        type: "chat.message.added",
-        id: `${responseMessageID}:chat`,
-        messageID: responseMessageID,
-        role: "chat",
-        text: `(live work chat error: ${
-          cause instanceof Error ? cause.message : String(cause)
-        })`,
-        at: new Date().toISOString(),
-      });
+      publishForSession(
+        exec,
+        streamEvent({
+          type: "navi.chat.message.new",
+          id: `${responseMessageID}:chat`,
+          messageID: responseMessageID,
+          role: "chat",
+          text: `(live work chat error: ${
+            cause instanceof Error ? cause.message : String(cause)
+          })`,
+          at: new Date().toISOString(),
+        }),
+      );
     }
   }
 
   function requestNiaWake(exec: SessionExecutionState) {
     if (ctx.ports.isDisposed()) return;
-    void wakeNia(exec);
+    ctx.ports
+      .resolveService<ProviderModelController>(
+        PROVIDER_MODEL_CONTROLLER_SERVICE,
+      )
+      ?.requestNiaWake(exec.session.id as SessionID);
   }
 
   async function wakeNia(exec: SessionExecutionState) {
@@ -142,29 +146,39 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     const controller = ctx.ports.resolveService<ProviderModelController>(
       PROVIDER_MODEL_CONTROLLER_SERVICE,
     );
-    if (!exec.provider || !controller) return;
+    if (!controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
     try {
-      await controller.runChatTurn({
+      const normalProfile = exec.chatModelProfile?.nia?.normal;
+      await controller.runNiaChatTurn({
         sessionID: exec.session.id as SessionID,
         text: "",
         responseMessageID,
         internal: true,
-        provider: exec.provider,
-        channel: "nia",
+        ...(normalProfile?.modelID
+          ? {
+              model: {
+                modelID: normalProfile.modelID,
+                variant: normalProfile.variant,
+              },
+            }
+          : {}),
+        reasoningEffort: normalProfile?.reasoningEffort,
       });
     } catch (cause) {
-      publishForSession(exec, {
-        type: "chat.message.added",
-        id: `${responseMessageID}:chat`,
-        messageID: responseMessageID,
-        role: "chat",
-        text: `(Nia wake error: ${
-          cause instanceof Error ? cause.message : String(cause)
-        })`,
-        at: new Date().toISOString(),
-        channel: "nia",
-      });
+      publishForSession(
+        exec,
+        streamEvent({
+          type: "nia.chat.message.new",
+          id: `${responseMessageID}:chat`,
+          messageID: responseMessageID,
+          role: "chat",
+          text: `(Nia wake error: ${
+            cause instanceof Error ? cause.message : String(cause)
+          })`,
+          at: new Date().toISOString(),
+        }),
+      );
     }
   }
 }

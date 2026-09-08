@@ -854,10 +854,10 @@ test("latestSessionSnapshot returns the most recent snapshot", () => {
   expect(snap?.hasPTY).toBe(true);
 });
 
-test("the live work chat conversation projects messages and honours rollback boundaries", () => {
+test("the Navi conversation projects messages and honours rollback boundaries", () => {
   const session = createSessionRecord("ses_chat", "Chat");
   appendSessionEvent(session, {
-    type: "chat.message.added",
+    type: "navi.chat.message.added",
     id: "chat:1",
     messageID: "chat:m1",
     role: "user",
@@ -865,7 +865,7 @@ test("the live work chat conversation projects messages and honours rollback bou
     at: "2026-08-14T00:00:00.000Z",
   });
   appendSessionEvent(session, {
-    type: "chat.message.added",
+    type: "navi.chat.message.added",
     id: "chat:2",
     messageID: "chat:m2",
     role: "chat",
@@ -873,7 +873,7 @@ test("the live work chat conversation projects messages and honours rollback bou
     at: "2026-08-14T00:00:01.000Z",
   });
   appendSessionEvent(session, {
-    type: "chat.message.added",
+    type: "navi.chat.message.added",
     id: "chat:3",
     messageID: "chat:m3",
     role: "user",
@@ -892,7 +892,7 @@ test("the live work chat conversation projects messages and honours rollback bou
   });
 
   appendSessionEvent(session, {
-    type: "chat.rollback",
+    type: "navi.chat.rollback",
     id: "chat:r1",
     toMessageID: "chat:m2",
     removed: 1,
@@ -902,5 +902,252 @@ test("the live work chat conversation projects messages and honours rollback bou
   expect(after.map((message) => message.messageID)).toEqual([
     "chat:m1",
     "chat:m2",
+  ]);
+});
+
+test("chat replay keeps identical Navi and Nia message IDs and thinking isolated", () => {
+  const session = createSessionRecord("ses_chat_namespaces", "Chat namespaces");
+  appendSessionEvent(session, {
+    type: "navi.chat.message.new",
+    id: "navi:shared:user",
+    messageID: "shared",
+    role: "user",
+    text: "Navi question",
+    at: "2026-08-14T00:00:00.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "nia.chat.message.new",
+    id: "nia:shared:user",
+    messageID: "shared",
+    role: "user",
+    text: "Nia question",
+    at: "2026-08-14T00:00:01.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "navi.chat.thinking.delta",
+    id: "navi:shared:thinking:1",
+    messageID: "shared",
+    text: "Navi thinks. ",
+  });
+  appendSessionEvent(session, {
+    type: "nia.chat.thinking.delta",
+    id: "nia:shared:thinking:1",
+    messageID: "shared",
+    text: "Nia thinks. ",
+  });
+  appendSessionEvent(session, {
+    type: "navi.chat.thinking.delta",
+    id: "navi:shared:thinking:2",
+    messageID: "shared",
+    text: "Still Navi.",
+  });
+  appendSessionEvent(session, {
+    type: "nia.chat.message.added",
+    id: "nia:shared:chat",
+    messageID: "shared",
+    role: "chat",
+    text: "Nia answer",
+    at: "2026-08-14T00:00:02.000Z",
+  });
+
+  expect(projectedChatMessages(session.events)).toEqual([
+    {
+      messageID: "shared",
+      role: "user",
+      text: "Navi question",
+      at: "2026-08-14T00:00:00.000Z",
+      channel: "navi",
+      kind: "message",
+    },
+    {
+      messageID: "shared",
+      role: "user",
+      text: "Nia question",
+      at: "2026-08-14T00:00:01.000Z",
+      channel: "nia",
+      kind: "message",
+    },
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "Navi thinks. Still Navi.",
+      at: "",
+      channel: "navi",
+      kind: "thinking",
+    },
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "Nia thinks. ",
+      at: "",
+      channel: "nia",
+      kind: "thinking",
+    },
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "Nia answer",
+      at: "2026-08-14T00:00:02.000Z",
+      channel: "nia",
+      kind: "message",
+    },
+  ]);
+});
+
+test("durable chat thinking replaces live deltas and restores done-only streams", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "navi.chat.thinking.delta",
+      id: "navi:shared:thinking:delta",
+      messageID: "shared",
+      text: "partial ",
+    },
+    {
+      type: "navi.chat.thinking.done",
+      id: "navi:shared:thinking:done",
+      messageID: "shared",
+      text: "complete Navi reasoning",
+    },
+    {
+      type: "nia.chat.thinking.done",
+      id: "nia:shared:thinking:done",
+      messageID: "shared",
+      text: "complete Nia reasoning",
+    },
+  ];
+
+  expect(projectedChatMessages(events)).toEqual([
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "complete Navi reasoning",
+      at: "",
+      channel: "navi",
+      kind: "thinking",
+    },
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "complete Nia reasoning",
+      at: "",
+      channel: "nia",
+      kind: "thinking",
+    },
+  ]);
+});
+
+test("namespaced chat replay ignores stale channel payloads", () => {
+  const events = [
+    {
+      type: "navi.chat.message.new",
+      id: "navi:stale-channel",
+      messageID: "shared",
+      role: "user",
+      text: "Navi remains Navi",
+      at: "t1",
+      channel: "nia",
+    } as unknown as RuntimeEvent,
+    {
+      type: "nia.chat.thinking.delta",
+      id: "nia:stale-channel",
+      messageID: "shared",
+      text: "Nia remains Nia",
+      channel: "navi",
+    } as unknown as RuntimeEvent,
+  ];
+
+  expect(projectedChatMessages(events)).toEqual([
+    {
+      messageID: "shared",
+      role: "user",
+      text: "Navi remains Navi",
+      at: "t1",
+      channel: "navi",
+      kind: "message",
+    },
+    {
+      messageID: "shared",
+      role: "chat",
+      text: "Nia remains Nia",
+      at: "",
+      channel: "nia",
+      kind: "thinking",
+    },
+  ]);
+});
+
+test("legacy persisted chat records retain isolated channel histories", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "chat.message.added",
+      id: "legacy:navi:user",
+      messageID: "shared",
+      role: "user",
+      text: "Legacy Navi",
+      at: "t1",
+      channel: "navi",
+    },
+    {
+      type: "chat.message.added",
+      id: "legacy:nia:user",
+      messageID: "shared",
+      role: "user",
+      text: "Legacy Nia",
+      at: "t2",
+      channel: "nia",
+    },
+    {
+      type: "chat.message.added",
+      id: "legacy:navi:later",
+      messageID: "navi-later",
+      role: "chat",
+      text: "Legacy Navi later",
+      at: "t3",
+      channel: "navi",
+    },
+    {
+      type: "chat.message.added",
+      id: "legacy:nia:later",
+      messageID: "nia-later",
+      role: "chat",
+      text: "Legacy Nia later",
+      at: "t4",
+      channel: "nia",
+    },
+    {
+      type: "chat.rollback",
+      id: "legacy:nia:rollback",
+      toMessageID: "shared",
+      removed: 0,
+      at: "t5",
+      channel: "nia",
+    },
+  ];
+
+  expect(projectedChatMessages(events)).toEqual([
+    {
+      messageID: "shared",
+      role: "user",
+      text: "Legacy Navi",
+      at: "t1",
+      channel: "navi",
+      kind: "message",
+    },
+    {
+      messageID: "shared",
+      role: "user",
+      text: "Legacy Nia",
+      at: "t2",
+      channel: "nia",
+      kind: "message",
+    },
+    {
+      messageID: "navi-later",
+      role: "chat",
+      text: "Legacy Navi later",
+      at: "t3",
+      channel: "navi",
+      kind: "message",
+    },
   ]);
 });

@@ -129,6 +129,7 @@ export function wireFoundation(ctx: RuntimeContext) {
     );
   ports.getSessionID = () => state.sessionID;
   ports.getProvider = () => state.provider;
+  ports.getChatDefaultProvider = () => state.chatDefaultProvider;
   ports.getActiveExec = () => state.activeExec;
   ports.getActiveTurnID = () => state.activeTurnID;
   ports.getPauseWaiters = () => state.pauseWaiters;

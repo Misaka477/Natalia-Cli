@@ -52,11 +52,13 @@ import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
 const perfLog = (...args: unknown[]) => {
-  if ((globalThis as { __NATALIA_PERF_VERBOSE?: number }).__NATALIA_PERF_VERBOSE === 1) {
+  if (
+    (globalThis as { __NATALIA_PERF_VERBOSE?: number })
+      .__NATALIA_PERF_VERBOSE === 1
+  ) {
     console.warn(...args);
   }
 };
-
 
 type RightTab =
   | "diff"
@@ -1235,7 +1237,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           mainForceScroll = true;
           setFollowBottom(true);
         }
-        if (event.type === "chat.message.added" && event.role === "user") {
+        if (
+          (event.type === "navi.chat.message.new" ||
+            event.type === "navi.chat.message.added") &&
+          event.role === "user"
+        ) {
           chatForceScroll = true;
           setChatFollowBottom(true);
         }
@@ -1375,7 +1381,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         ).__nataliaStartupTimings;
         if (timings) {
           perfLog("[startup] complete", timings);
-          if ((globalThis as { __NATALIA_PERF_VERBOSE?: number }).__NATALIA_PERF_VERBOSE === 1) {
+          if (
+            (globalThis as { __NATALIA_PERF_VERBOSE?: number })
+              .__NATALIA_PERF_VERBOSE === 1
+          ) {
             console.table(timings);
           }
         }
@@ -2269,7 +2278,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           <span class="neu-topbar-logo">N</span>
           <div class="neu-topbar-meta">
             <span class="neu-topbar-title">Natalia</span>
-            <span class="neu-topbar-sub">The world is not beautiful; therefore it is.</span>
+            <span class="neu-topbar-sub">
+              The world is not beautiful; therefore it is.
+            </span>
           </div>
         </div>
         <div class="neu-topbar-right">

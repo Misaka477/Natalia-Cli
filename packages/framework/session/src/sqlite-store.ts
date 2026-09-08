@@ -1139,7 +1139,11 @@ export class SqliteSessionStore {
          ON CONFLICT(session_id) DO UPDATE SET reasoning_effort = excluded.reasoning_effort`,
         [sessionID, event.reasoningEffort ?? null],
       );
-    if (event.type === "chat.model.profile") {
+    if (
+      event.type === "navi.chat.model.profile" ||
+      event.type === "nia.chat.model.profile" ||
+      event.type === "chat.model.profile"
+    ) {
       const existing = this.db
         .query(
           `SELECT chat_model_profile FROM recovery_selection WHERE session_id = ?`,
@@ -1151,7 +1155,13 @@ export class SqliteSessionStore {
             import("@natalia/contracts").ChatModelProfile
           >)
         : {};
-      profiles[event.channel] = event.profile;
+      const chatProfileChannel =
+        event.type === "navi.chat.model.profile"
+          ? "navi"
+          : event.type === "nia.chat.model.profile"
+            ? "nia"
+            : event.channel;
+      profiles[chatProfileChannel] = event.profile;
       this.run(
         `INSERT INTO recovery_selection(session_id, chat_model_profile) VALUES (?, ?)
          ON CONFLICT(session_id) DO UPDATE SET chat_model_profile = excluded.chat_model_profile`,

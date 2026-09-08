@@ -16,7 +16,7 @@ import {
   projectedMailboxMessages,
   projectedPlanDocs,
 } from "@natalia/session";
-import type { ChatChannel, RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -31,7 +31,8 @@ export function createChatPrompt(ctx: RuntimeContext) {
   return {
     recentMainAgentActivity,
     recentToolActivity,
-    chatSystemPrompt,
+    naviChatSystemPrompt,
+    niaChatSystemPrompt,
   };
 
   function collabMessagesFor(
@@ -226,18 +227,22 @@ export function createChatPrompt(ctx: RuntimeContext) {
       .join("\n");
   }
 
-  /** The Chat system prompt: persona + the shared safe live-work context. */
-  function chatSystemPrompt(
+  function niaChatSystemPrompt(
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
-    channel: ChatChannel = "navi",
+  ): string {
+    const chatSession = exec?.session;
+    return chatSession
+      ? niaSystemPrompt(exec, chatSession)
+      : "You are Nia, the read-only audit agent.";
+  }
+
+  /** Navi's system prompt: persona + the shared safe live-work context. */
+  function naviChatSystemPrompt(
+    exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ): string {
     const { currentSessionSnapshot } = ctx.ports;
     const chatSession = exec?.session;
-    if (!chatSession)
-      return channel === "nia"
-        ? "You are Nia, the read-only audit agent."
-        : "You are Natalia's Live Work Chat.";
-    if (channel === "nia") return niaSystemPrompt(exec, chatSession);
+    if (!chatSession) return "You are Natalia's Live Work Chat.";
     // The real session intelligence snapshot the runtime publishes, not a
     // stub: agent status (idle/paused/running), step, active tool, changed
     // files and recent output are all journal-derived facts (§56.59).

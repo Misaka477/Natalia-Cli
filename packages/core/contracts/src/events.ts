@@ -329,6 +329,167 @@ export type CollaborationParticipant = "main_agent" | "live_chat" | "nia";
 
 export type ChatChannel = "navi" | "nia";
 
+export type ChatEventNamespace = "navi" | "nia";
+
+type ChatEventData<Namespace extends ChatEventNamespace> =
+  | {
+      type: `${Namespace}.chat.model.profile`;
+      profile: ChatModelProfile;
+    }
+  | {
+      type: `${Namespace}.chat.turn.started`;
+      id: string;
+      messageID: string;
+      startedAt: number;
+      internal?: boolean;
+    }
+  | {
+      type: `${Namespace}.chat.turn.phase`;
+      id: string;
+      messageID: string;
+      phase: "waiting" | "thinking" | "generating" | "using_tool";
+      toolName?: string;
+    }
+  | {
+      type: `${Namespace}.chat.turn.finished`;
+      id: string;
+      messageID: string;
+      stopReason: "done" | "error" | "cancelled";
+      startedAt: number;
+      endedAt: number;
+      error?: string;
+    }
+  | {
+      type: `${Namespace}.chat.message.new` | `${Namespace}.chat.message.added`;
+      id: string;
+      messageID: string;
+      role: "user" | "chat";
+      text: string;
+      at: string;
+    }
+  | {
+      type: `${Namespace}.chat.message.delta`;
+      id: string;
+      messageID: string;
+      text: string;
+    }
+  | {
+      type: `${Namespace}.chat.thinking.delta`;
+      id: string;
+      messageID: string;
+      text: string;
+    }
+  | {
+      /** Durable full thinking settlement for replay after live deltas expire. */
+      type: `${Namespace}.chat.thinking.done`;
+      id: string;
+      messageID: string;
+      text: string;
+    }
+  | {
+      type: `${Namespace}.chat.tool.used`;
+      id: string;
+      messageID: string;
+      toolName: string;
+      status: string;
+      summary: string;
+      result?: string;
+      argumentsRaw?: string;
+      startedAt?: number;
+      endedAt?: number;
+      at: string;
+    }
+  | {
+      type: `${Namespace}.chat.rollback`;
+      id: string;
+      toMessageID: string;
+      removed: number;
+      at: string;
+    };
+
+/**
+ * Pre-namespace chat records remain readable only so persisted session journals
+ * written before the stream split can be replayed. New producers use
+ * `navi.chat.*` or `nia.chat.*` exclusively.
+ */
+type LegacyChatEventData =
+  | {
+      type: "chat.model.profile";
+      channel: ChatChannel;
+      profile: ChatModelProfile;
+    }
+  | {
+      type: "chat.turn.started";
+      id: string;
+      messageID: string;
+      startedAt: number;
+      internal?: boolean;
+      channel?: ChatChannel;
+    }
+  | {
+      type: "chat.turn.phase";
+      id: string;
+      messageID: string;
+      phase: "waiting" | "thinking" | "generating" | "using_tool";
+      toolName?: string;
+      channel?: ChatChannel;
+    }
+  | {
+      type: "chat.turn.finished";
+      id: string;
+      messageID: string;
+      stopReason: "done" | "error" | "cancelled";
+      startedAt: number;
+      endedAt: number;
+      error?: string;
+      channel?: ChatChannel;
+    }
+  | {
+      type: "chat.message.added";
+      id: string;
+      messageID: string;
+      role: "user" | "chat";
+      text: string;
+      at: string;
+      channel?: ChatChannel;
+    }
+  | {
+      type: "chat.message.delta";
+      id: string;
+      messageID: string;
+      text: string;
+      channel?: ChatChannel;
+    }
+  | {
+      type: "chat.thinking.delta";
+      id: string;
+      messageID: string;
+      text: string;
+      channel?: ChatChannel;
+    }
+  | {
+      type: "chat.tool.used";
+      id: string;
+      messageID: string;
+      toolName: string;
+      status: string;
+      summary: string;
+      result?: string;
+      argumentsRaw?: string;
+      startedAt?: number;
+      endedAt?: number;
+      at: string;
+      channel?: ChatChannel;
+    }
+  | {
+      type: "chat.rollback";
+      id: string;
+      toMessageID: string;
+      removed: number;
+      at: string;
+      channel?: ChatChannel;
+    };
+
 export type CollaborationKind =
   | "chat"
   | "suggestion"
@@ -548,11 +709,9 @@ type RuntimeEventData =
       type: "model.reasoning.set";
       reasoningEffort?: RuntimeReasoningEffort;
     }
-  | {
-      type: "chat.model.profile";
-      channel: ChatChannel;
-      profile: ChatModelProfile;
-    }
+  | ChatEventData<"navi">
+  | ChatEventData<"nia">
+  | LegacyChatEventData
   | {
       type: "session.permission.mode";
       mode: "ask" | "auto" | "read_only";
@@ -1124,77 +1283,6 @@ type RuntimeEventData =
       outputTokens?: number;
     }
   | {
-      type: "chat.turn.started";
-      id: string;
-      messageID: string;
-      startedAt: number;
-      internal?: boolean;
-      channel?: ChatChannel;
-    }
-  | {
-      type: "chat.turn.phase";
-      id: string;
-      messageID: string;
-      phase: "waiting" | "thinking" | "generating" | "using_tool";
-      toolName?: string;
-      channel?: ChatChannel;
-    }
-  | {
-      type: "chat.turn.finished";
-      id: string;
-      messageID: string;
-      stopReason: "done" | "error" | "cancelled";
-      startedAt: number;
-      endedAt: number;
-      error?: string;
-      channel?: ChatChannel;
-    }
-  | {
-      type: "chat.message.added";
-      id: string;
-      messageID: string;
-      role: "user" | "chat";
-      text: string;
-      at: string;
-      channel?: ChatChannel;
-    }
-  | {
-      type: "chat.message.delta";
-      id: string;
-      messageID: string;
-      text: string;
-      channel?: ChatChannel;
-    }
-  | {
-      type: "chat.thinking.delta";
-      id: string;
-      messageID: string;
-      text: string;
-      channel?: ChatChannel;
-    }
-  | {
-      type: "chat.tool.used";
-      id: string;
-      messageID: string;
-      toolName: string;
-      status: string;
-      summary: string;
-      result?: string;
-      argumentsRaw?: string;
-      startedAt?: number;
-      endedAt?: number;
-      at: string;
-      channel?: ChatChannel;
-    }
-  | {
-      type: "chat.rollback";
-      id: string;
-      toMessageID: string;
-      removed: number;
-      at: string;
-      channel?: ChatChannel;
-    }
-  | {
       type: "collab.suggestion";
       id: string;
       from: "live_chat";
@@ -1725,6 +1813,17 @@ export function runtimeEventDurability(
     case "context.status":
     case "status.update":
     case "terminal.update":
+    case "navi.chat.turn.started":
+    case "navi.chat.turn.phase":
+    case "navi.chat.turn.finished":
+    case "nia.chat.turn.started":
+    case "nia.chat.turn.phase":
+    case "nia.chat.turn.finished":
+    case "navi.chat.message.delta":
+    case "navi.chat.thinking.delta":
+    case "nia.chat.message.delta":
+    case "nia.chat.thinking.delta":
+    // Legacy chat lifecycle records are accepted only for existing journals.
     case "chat.turn.started":
     case "chat.turn.phase":
     case "chat.turn.finished":
@@ -2940,7 +3039,8 @@ export type RuntimeClient = {
    * Sends the user's message into the Live Work Chat conversation (P8 C2). The
    * Chat is a long-lived, always-available collaborator with the full safe
    * project/execution context, not a stateless second agent; it answers with a
-   * streamed `chat.message.delta` and settles with `chat.message.added`.
+   * stream-owned `${channel}.chat.message.delta` and settles with
+   * `${channel}.chat.message.added`.
    */
   chatSubmit?(input: {
     text: string;
@@ -2965,8 +3065,9 @@ export type RuntimeClient = {
     sessionID?: string,
   ): Promise<{ saved: boolean }>;
   /**
-   * The durable Chat conversation, oldest first. `chat.rollback` truncates it
-   * at a message boundary, so the projection returns the effective history.
+   * The durable stream-owned Chat conversation, oldest first. A stream-owned
+   * `*.chat.rollback` truncates it at a message boundary, so the projection
+   * returns the effective history.
    */
   chatMessages?(
     channel?: ChatChannel,

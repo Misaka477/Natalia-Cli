@@ -68,13 +68,27 @@ export type RuntimePortsExtra = {
   providerFromEnvironment: () =>
     | import("@natalia/runtime").StreamingProvider
     | undefined;
-  runChatTurnBody: (
+  runNaviChatTurn: (
     input: {
       text: string;
       responseMessageID: string;
       exec: SessionExecutionState;
       internal?: boolean;
-      channel?: import("@natalia/contracts").ChatChannel;
+      model?: { modelID?: string; variant?: string };
+      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+      attachments?: import("@natalia/contracts").LocalAttachment[];
+    },
+    signal: AbortSignal,
+  ) => Promise<{ text: string }>;
+  runNiaChatTurn: (
+    input: {
+      text: string;
+      responseMessageID: string;
+      exec: SessionExecutionState;
+      internal?: boolean;
+      model?: { modelID?: string; variant?: string };
+      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+      attachments?: import("@natalia/contracts").LocalAttachment[];
     },
     signal: AbortSignal,
   ) => Promise<{ text: string }>;

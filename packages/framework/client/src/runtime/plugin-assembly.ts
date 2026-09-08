@@ -8,7 +8,7 @@
 import { resolve } from "node:path";
 import { verifyTrust } from "@natalia/config";
 import { toolFamilyCapabilityID } from "../capabilities/tool-family-capabilities";
-import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { ConfigV3, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 import type { SkillMetadata } from "@natalia/runtime-services";
@@ -88,8 +88,10 @@ export function createPluginAssembly(
       providerFromEnvironment,
       getExecutionBySession,
       publishForSession,
-      runChatTurnBody,
+      runNaviChatTurn,
+      runNiaChatTurn,
       wakeNavi,
+      wakeNia,
       providerRunnerInput,
       clientModelCatalog,
       selectRuntimeModel,
@@ -113,9 +115,8 @@ export function createPluginAssembly(
           await selectRuntimeModel(modelID, variant, exec);
         },
       },
-      chat: {
-        available: (id) =>
-          getExecutionBySession().get(id)?.provider !== undefined,
+      navi: {
+        available: (id) => getExecutionBySession().has(id),
         publish: (id, event) =>
           publishForSession(getExecutionBySession().get(id), event),
         runBody: async (input, signal) => {
@@ -124,11 +125,28 @@ export function createPluginAssembly(
             throw new Error(
               `no execution state for session ${input.sessionID}`,
             );
-          await runChatTurnBody({ ...input, exec }, signal);
+          await runNaviChatTurn({ ...input, exec }, signal);
         },
         wake: async (id) => {
           const exec = getExecutionBySession().get(id);
           if (exec) await wakeNavi(exec);
+        },
+      },
+      nia: {
+        available: (id) => getExecutionBySession().has(id),
+        publish: (id, event) =>
+          publishForSession(getExecutionBySession().get(id), event),
+        runBody: async (input, signal) => {
+          const exec = getExecutionBySession().get(input.sessionID);
+          if (!exec)
+            throw new Error(
+              `no execution state for session ${input.sessionID}`,
+            );
+          await runNiaChatTurn({ ...input, exec }, signal);
+        },
+        wake: async (id) => {
+          const exec = getExecutionBySession().get(id);
+          if (exec) await wakeNia(exec);
         },
       },
     };

@@ -117,6 +117,8 @@ export type RuntimeState = {
   pluginStoreRoot?: string;
   sessionID: SessionID;
   provider?: StreamingProvider;
+  /** Immutable host/test provider injection for the independent chat streams. */
+  readonly chatDefaultProvider?: StreamingProvider;
   providerSource: "explicit" | "environment" | "ts_config" | "unconfigured";
   capabilityRegistry: CapabilityRegistryHost;
   capabilityHost?: CapabilityHost;

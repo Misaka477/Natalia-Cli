@@ -76,7 +76,8 @@ export class SessionRecoveryCoordinator {
   async run(): Promise<SessionRecoveryResult> {
     const start = performance.now();
     const mark = (name: string) =>
-      perfLog(`[perf] recovery.${name} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] recovery.${name} +${(performance.now() - start).toFixed(1)}ms`,
       );
     await this.phase0Load();
     mark("phase0.load");
@@ -147,7 +148,10 @@ export class SessionRecoveryCoordinator {
       paused: false,
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
-      pendingChatUserMessages: [],
+      pendingNaviChatUserMessages: [],
+      pendingNiaChatUserMessages: [],
+      naviAbortWakePending: false,
+      niaAbortWakePending: false,
     };
     scope.activeExec = initialExec;
     scope.executionBySession.set(scope.sessionID, initialExec);
@@ -210,7 +214,9 @@ export class SessionRecoveryCoordinator {
         .then((sessions) => {
           for (const session of sessions) {
             void this.sessionStore
-              .prewarmMessagePage(session.id as import("@natalia/contracts").SessionID)
+              .prewarmMessagePage(
+                session.id as import("@natalia/contracts").SessionID,
+              )
               .catch((error) => {
                 console.warn(
                   `[perf] recovery message-page prewarm failed session=${session.id}: ${error instanceof Error ? error.message : String(error)}`,

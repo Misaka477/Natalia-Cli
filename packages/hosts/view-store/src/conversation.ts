@@ -699,12 +699,14 @@ function chatSurface(state: AppState, channel: "navi" | "nia"): StreamTarget {
       };
 }
 
-function chatChannelOf(event: RuntimeEvent): "navi" | "nia" {
-  // audit_report is Nia-only. Even if a legacy/malformed event omits the
-  // channel, it must never land in Navi's stream.
-  if (event.type === "chat.tool.used" && event.toolName === "audit_report")
-    return "nia";
-  return (event as { channel?: "navi" | "nia" }).channel ?? "navi";
+function chatChannelOf(event: RuntimeEvent): "navi" | "nia" | undefined {
+  if (event.type.startsWith("navi.chat.")) return "navi";
+  if (event.type.startsWith("nia.chat.")) return "nia";
+  // Compatibility ingestion for journals persisted before stream namespaces.
+  // New event routing must never infer ownership from an optional channel.
+  if (event.type.startsWith("chat."))
+    return (event as { channel?: "navi" | "nia" }).channel ?? "navi";
+  return undefined;
 }
 
 /**
@@ -712,12 +714,18 @@ function chatChannelOf(event: RuntimeEvent): "navi" | "nia" {
  * as the main transcript (§8.3: one projection per agent, not a separate
  * drift-prone copy). Navi and Nia each own a complete projection: streamed
  * deltas, thinking, tool rows, durable messages and rollback state. The
- * `channel` field on each chat event routes it to the right agent's stream so
- * Nia audit output can never leak into the Navi Live Work Chat.
+ * The event namespace routes each event to its owning stream. Legacy `chat.*`
+ * records are accepted only for persisted journal replay.
  */
 export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
-  const channel = chatChannelOf(event);
+  const eventChannel = chatChannelOf(event);
+  if (!eventChannel && !event.type.startsWith("collab.")) return false;
+  // Collaboration rows select their own target below; this fallback is never
+  // used to route a namespaced chat event.
+  const channel = eventChannel ?? "navi";
   switch (event.type) {
+    case "navi.chat.turn.started":
+    case "nia.chat.turn.started":
     case "chat.turn.started": {
       const activity: ChatActivityView = {
         messageID: event.messageID,
@@ -729,6 +737,8 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       else state.chatActivity = activity;
       return true;
     }
+    case "navi.chat.turn.phase":
+    case "nia.chat.turn.phase":
     case "chat.turn.phase": {
       if (channel === "nia") {
         if (state.niaActivity?.messageID === event.messageID) {
@@ -741,6 +751,8 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       }
       return true;
     }
+    case "navi.chat.turn.finished":
+    case "nia.chat.turn.finished":
     case "chat.turn.finished": {
       if (channel === "nia") {
         if (state.niaActivity?.messageID === event.messageID)
@@ -750,6 +762,10 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       }
       return true;
     }
+    case "navi.chat.message.new":
+    case "nia.chat.message.new":
+    case "navi.chat.message.added":
+    case "nia.chat.message.added":
     case "chat.message.added": {
       const target = chatSurface(state, channel);
       if (event.role === "user") {
@@ -785,6 +801,8 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       delete target.streamPhases[`chat:${event.messageID}`];
       return true;
     }
+    case "navi.chat.message.delta":
+    case "nia.chat.message.delta":
     case "chat.message.delta": {
       const target = chatSurface(state, channel);
       prepareStreamPhase(target, `chat:${event.messageID}`, "assistant");
@@ -796,6 +814,8 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       });
       return true;
     }
+    case "navi.chat.thinking.delta":
+    case "nia.chat.thinking.delta":
     case "chat.thinking.delta": {
       const target = chatSurface(state, channel);
       prepareStreamPhase(target, `chat:${event.messageID}`, "thinking");
@@ -807,6 +827,18 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       });
       return true;
     }
+    case "navi.chat.thinking.done":
+    case "nia.chat.thinking.done": {
+      settleChatThinking(
+        chatSurface(state, channel),
+        event.messageID,
+        event.text,
+        channel,
+      );
+      return true;
+    }
+    case "navi.chat.tool.used":
+    case "nia.chat.tool.used":
     case "chat.tool.used": {
       // Mirrors the transcript's `tool.update`: commit any in-flight text,
       // open a fresh segment so the model's post-tool reply renders BELOW the
@@ -842,6 +874,8 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       if (toolBlock) toolBlock.channel = channel;
       return true;
     }
+    case "navi.chat.rollback":
+    case "nia.chat.rollback":
     case "chat.rollback": {
       const target = chatSurface(state, channel);
       const boundary = `chat:${event.toMessageID}`;
@@ -968,4 +1002,37 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
     default:
       return false;
   }
+}
+
+function settleChatThinking(
+  target: StreamTarget,
+  messageID: string,
+  text: string,
+  channel: "navi" | "nia",
+): void {
+  const id = `chat:${messageID}:thinking`;
+  const first = target.messages.findIndex(
+    (block) => block.id === id || block.id.startsWith(`${id}:segment:`),
+  );
+  target.messages.splice(
+    0,
+    target.messages.length,
+    ...target.messages.filter(
+      (block) => block.id !== id && !block.id.startsWith(`${id}:segment:`),
+    ),
+  );
+  delete target.streams[id];
+  delete target.streamPhases[`chat:${messageID}`];
+  if (!text) return;
+  const block: MessageBlock = {
+    id,
+    role: "thinking",
+    text,
+    pendingText: "",
+    reasoningVisible: true,
+    channel,
+    status: "completed",
+  };
+  if (first === -1) target.messages.push(block);
+  else target.messages.splice(first, 0, block);
 }
