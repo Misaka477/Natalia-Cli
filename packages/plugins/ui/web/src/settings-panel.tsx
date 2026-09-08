@@ -292,16 +292,52 @@ export function SettingsPanel(props: {
           },
         ]
       : categories;
-  createEffect(() => {
-    if (props.open) {
-      void desktopElectron
-        ?.invoke<{ gpuEnabled?: boolean }>("desktop_get_setting", "gpuEnabled")
-        .then((value) => {
-          if (typeof value?.gpuEnabled === "boolean")
-            setGpuAcceleration(value.gpuEnabled);
-        })
-        .catch(() => undefined);
+
+  async function syncGpuAccelerationFromDesktop() {
+    if (!desktopElectron) return;
+    try {
+      const value = await desktopElectron.invoke<{ gpuEnabled?: boolean }>(
+        "desktop_get_setting",
+        "gpuEnabled",
+      );
+      // Desktop settings file is the source of truth. When the key is absent
+      // the actual Electron mode is hardware acceleration disabled, so do not
+      // let a stale localStorage preference keep showing “开启”.
+      const enabled =
+        typeof value?.gpuEnabled === "boolean" ? value.gpuEnabled : false;
+      setGpuAcceleration(enabled);
+      props.preferences?.set("gpuAcceleration", enabled);
+    } catch {
+      // If IPC is unavailable (e.g. plain web shell), keep the local pref.
     }
+  }
+
+  async function setGpuAccelerationPersisted(next: boolean) {
+    if (!desktopElectron) {
+      props.preferences?.set("gpuAcceleration", next);
+      return;
+    }
+    const previous = gpuAcceleration();
+    setGpuAcceleration(next);
+    try {
+      await desktopElectron.invoke("desktop_set_setting", {
+        key: "gpuEnabled",
+        value: next,
+      });
+      props.preferences?.set("gpuAcceleration", next);
+    } catch (error) {
+      console.warn(
+        "[settings] failed to persist GPU acceleration",
+        error instanceof Error ? error.message : String(error),
+      );
+      // Revert the optimistic UI value so it cannot lie about the actual
+      // Electron setting.
+      setGpuAcceleration(previous);
+    }
+  }
+
+  createEffect(() => {
+    if (props.open) void syncGpuAccelerationFromDesktop();
   });
   const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(
     props.preferences?.get<string>("runtimeWriteScope") ?? "global",
@@ -548,18 +584,7 @@ export function SettingsPanel(props: {
       );
     },
     "GPU 加速": () => {
-      const next = !gpuAcceleration();
-      setGpuAcceleration(next);
-      props.preferences?.set("gpuAcceleration", next);
-      const electron = (
-        globalThis as {
-          electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> };
-        }
-      ).electron;
-      void electron?.invoke("desktop_set_setting", {
-        key: "gpuEnabled",
-        value: next,
-      });
+      void setGpuAccelerationPersisted(!gpuAcceleration());
     },
     Keybinds: () => {
       window.alert("当前版本快捷键覆盖请通过 TUI 快捷键配置。");
@@ -948,22 +973,7 @@ export function SettingsPanel(props: {
                             onClick={() => {
                               const next = !gpuAcceleration();
                               console.log("[settings] GPU 加速 toggle", next);
-                              setGpuAcceleration(next);
-                              props.preferences?.set("gpuAcceleration", next);
-                              const electron = (
-                                globalThis as {
-                                  electron?: {
-                                    invoke<T>(
-                                      channel: string,
-                                      args?: unknown,
-                                    ): Promise<T>;
-                                  };
-                                }
-                              ).electron;
-                              void electron?.invoke("desktop_set_setting", {
-                                key: "gpuEnabled",
-                                value: next,
-                              });
+                              void setGpuAccelerationPersisted(next);
                             }}
                           >
                             <div class="neu-settings-item-main">
@@ -1017,6 +1027,11 @@ export function SettingsPanel(props: {
                 </>
               </Show>
             </section>
+          </div>
+          <div class="neu-settings-footer">
+            <span class="neu-settings-footer-title">Natalia</span>
+            <span class="neu-settings-footer-sub">Neural Autonomous Terminal Agent</span>
+            <span class="neu-settings-footer-quote">“Computation can carry what time cannot. Not metaphor. Mathematics.”</span>
           </div>
         </div>
       </div>

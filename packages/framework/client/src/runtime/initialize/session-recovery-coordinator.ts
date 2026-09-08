@@ -16,6 +16,7 @@ import {
   type RecoveryContextPlan,
 } from "../session-project-client";
 import type { InitializeScope } from "./runtime";
+import { perfLog } from "@natalia/runtime-services";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;
@@ -75,8 +76,7 @@ export class SessionRecoveryCoordinator {
   async run(): Promise<SessionRecoveryResult> {
     const start = performance.now();
     const mark = (name: string) =>
-      console.warn(
-        `[perf] recovery.${name} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] recovery.${name} +${(performance.now() - start).toFixed(1)}ms`,
       );
     await this.phase0Load();
     mark("phase0.load");
@@ -115,10 +115,11 @@ export class SessionRecoveryCoordinator {
 
     await scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE)?.init();
 
+    const fastPathEnabled = process.env.NATALIA_FAST_EXECUTION_LOAD === "1";
     const storedSession = await this.sessionStore.load(scope.sessionID, {
       title: this.options.title,
       create: true,
-      indexedRecovery: scope.replayMode === "none",
+      indexedRecovery: fastPathEnabled || scope.replayMode === "none",
     });
     scope.session = storedSession?.session;
     const session = scope.session;
@@ -158,6 +159,67 @@ export class SessionRecoveryCoordinator {
     // scope.session record. Point it at the recovered record, or per-scope
     // session reads through the exec would see the pre-recovery shell.
     if (scope.activeExec) scope.activeExec.session = session;
+
+    // Fast recovery: when NATALIA_FAST_EXECUTION_LOAD is enabled and a context
+    // epoch exists, the store already returned a recovery projection without
+    // loading the full event log. Use the post-epoch events for the in-memory
+    // session and load the full log in the background.
+    const restoreEvents = fastPathEnabled
+      ? this.sessionStore.contextEventsAfter(
+          scope.sessionID,
+          storedSession.contextEpoch,
+        )
+      : undefined;
+    if (restoreEvents && storedSession.contextEpoch) {
+      session.events = restoreEvents;
+      if (scope.activeExec) scope.activeExec.session.events = restoreEvents;
+      void this.sessionStore
+        .loadFullAsync(scope.sessionID)
+        .then((full) => {
+          this.session.events = full.events;
+          if (scope.activeExec) scope.activeExec.session.events = full.events;
+        })
+        .catch((error) => {
+          console.warn(
+            `[perf] recovery background full-load failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+    }
+    if (fastPathEnabled) {
+      // Prewarm the message index in a worker thread so the first
+      // session.messages RPC does not build it on the critical path.
+      void this.sessionStore
+        .ensureMessageIndexAsync(scope.sessionID)
+        .catch((error) => {
+          console.warn(
+            `[perf] recovery message-index prewarm failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      void this.sessionStore
+        .prewarmMessagePage(scope.sessionID)
+        .catch((error) => {
+          console.warn(
+            `[perf] recovery message-page prewarm failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      // Prewarm the latest message page for every session so the UI can
+      // attach to any recent session without paying the projection cost on
+      // the first messages RPC.
+      void this.sessionStore
+        .list()
+        .then((sessions) => {
+          for (const session of sessions) {
+            void this.sessionStore
+              .prewarmMessagePage(session.id as import("@natalia/contracts").SessionID)
+              .catch((error) => {
+                console.warn(
+                  `[perf] recovery message-page prewarm failed session=${session.id}: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              });
+          }
+        })
+        .catch(() => undefined);
+    }
 
     await this.attachmentService
       .cleanup(await this.sessionStore.referencedAttachments())

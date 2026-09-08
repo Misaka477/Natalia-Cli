@@ -8,6 +8,7 @@ import type {
   ToolPolicyService,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
+import { perfLog } from "@natalia/runtime-services";
 
 export async function configureRuntime(
   ctx: RuntimeContext,
@@ -17,8 +18,7 @@ export async function configureRuntime(
   const scope = createInitializeRuntime(ctx);
   const start = performance.now();
   const mark = (name: string) =>
-    console.warn(
-      `[perf] configureRuntime.${name} +${(performance.now() - start).toFixed(1)}ms`,
+    perfLog(`[perf] configureRuntime.${name} +${(performance.now() - start).toFixed(1)}ms`,
     );
   ctx.state.frameworkServices = await scope.wireFrameworkServices(ctx, options);
   mark("wireFrameworkServices");

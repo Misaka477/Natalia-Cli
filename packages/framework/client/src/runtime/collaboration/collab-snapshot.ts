@@ -19,6 +19,7 @@ import { computeCollabSnapshotInWorker } from "../session-project-client";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import type { CollabSnapshot } from "../session-execution-state";
+import { perfLog } from "@natalia/runtime-services";
 
 const SNAPSHOT_DEBOUNCE_MS = 80;
 
@@ -39,8 +40,7 @@ export function createCollabSnapshotScheduler(
     const next = (revisions.get(sessionID) ?? 0) + 1;
     revisions.set(sessionID, next);
     if (process.env.NATALIA_PERF_VERBOSE === "1")
-      console.warn(
-        `[perf] collabSnapshot.schedule session=${sessionID} revision=${next}`,
+      perfLog(`[perf] collabSnapshot.schedule session=${sessionID} revision=${next}`,
       );
     const existing = timers.get(sessionID);
     if (existing) clearTimeout(existing);
@@ -62,8 +62,7 @@ export function createCollabSnapshotScheduler(
     try {
       const computed = await computeCollabSnapshotInWorker(events);
       commit(sessionID, revision, computed);
-      console.warn(
-        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms worker`,
+      perfLog(`[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms worker`,
       );
     } catch {
       // Worker failure must never take the collaboration surfaces offline.
@@ -75,8 +74,7 @@ export function createCollabSnapshotScheduler(
         eventCount: events.length,
       };
       commit(sessionID, revision, computed);
-      console.warn(
-        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms fallback`,
+      perfLog(`[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms fallback`,
       );
     }
   }

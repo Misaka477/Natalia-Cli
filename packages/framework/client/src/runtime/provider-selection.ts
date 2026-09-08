@@ -28,6 +28,7 @@ import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RealRuntimeClientOptions } from "./options";
+import { perfLog } from "@natalia/runtime-services";
 
 export function defaultContextStatusConfig(): RuntimeContextStatusConfig {
   return {
@@ -49,8 +50,7 @@ async function resolveContextStatusConfig(
   if (!selectedRef && !config.defaultModel) return defaultContextStatusConfig();
   const resolveStart = performance.now();
   const mark = (name: string) =>
-    console.warn(
-      `[perf] resolveContextStatusConfig.${name} model=${selectedRef ?? config.defaultModel} +${(performance.now() - resolveStart).toFixed(1)}ms`,
+    perfLog(`[perf] resolveContextStatusConfig.${name} model=${selectedRef ?? config.defaultModel} +${(performance.now() - resolveStart).toFixed(1)}ms`,
     );
   const effective = resolveEffectiveModel(
     config,

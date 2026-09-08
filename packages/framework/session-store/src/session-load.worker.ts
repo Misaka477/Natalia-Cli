@@ -15,6 +15,12 @@ export type SessionLoadWorkerRequest =
       dbPath: string;
       sessionID: string;
       options: { limit?: number; order?: "asc" | "desc"; cursor?: string };
+    }
+  | {
+      id: number;
+      op: "ensureMessageIndex";
+      dbPath: string;
+      sessionID: string;
     };
 
 export type SessionLoadWorkerResponse =
@@ -57,6 +63,18 @@ port.on("message", async (request: SessionLoadWorkerRequest) => {
         ok: true,
         page,
       };
+      port.postMessage(response);
+      return;
+    }
+    if (request.op === "ensureMessageIndex") {
+      const store = messageStore(request.dbPath);
+      store.ensureMessageIndex(
+        request.sessionID as import("@natalia/contracts").SessionID,
+      );
+      const response: SessionLoadWorkerResponse = {
+        id: request.id,
+        ok: true,
+      } as SessionLoadWorkerResponse;
       port.postMessage(response);
       return;
     }

@@ -674,7 +674,25 @@ export function projectedChatMessages(
   events: RuntimeEvent[],
 ): ProjectedChatMessage[] {
   const messages: ProjectedChatMessage[] = [];
+  const thinkingByMessage = new Map<string, ProjectedChatMessage & { kind: "thinking" }>();
   for (const event of events) {
+    if (event.type === "chat.thinking.delta") {
+      const key = `${event.channel ?? "navi"}:${event.messageID}`;
+      const existing = thinkingByMessage.get(key);
+      if (existing) {
+        existing.text += event.text;
+      } else {
+        thinkingByMessage.set(key, {
+          messageID: event.messageID,
+          role: "chat",
+          text: event.text,
+          at: new Date().toISOString(),
+          ...(event.channel ? { channel: event.channel } : {}),
+          kind: "thinking",
+        });
+      }
+      continue;
+    }
     if (event.type === "chat.message.added") {
       messages.push({
         messageID: event.messageID,
@@ -695,6 +713,8 @@ export function projectedChatMessages(
       else messages.length = 0;
     }
   }
+  messages.push(...thinkingByMessage.values());
+  messages.sort((left, right) => left.at.localeCompare(right.at));
   return messages;
 }
 

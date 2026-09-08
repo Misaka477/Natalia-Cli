@@ -51,6 +51,13 @@ import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 
+const perfLog = (...args: unknown[]) => {
+  if ((globalThis as { __NATALIA_PERF_VERBOSE?: number }).__NATALIA_PERF_VERBOSE === 1) {
+    console.warn(...args);
+  }
+};
+
+
 type RightTab =
   | "diff"
   | "plan"
@@ -348,7 +355,7 @@ function SessionTree(props: {
 
 export function AppNeu(props: { ctx: UiPluginContext }) {
   const appNeuStart = performance.now();
-  console.warn(
+  perfLog(
     `[perf] AppNeu component start +${(appNeuStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? appNeuStart)).toFixed(1)}ms`,
   );
   const [state, setState] = createSignal(
@@ -539,7 +546,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           const setStart = performance.now();
           setState(projected);
           const setMs = performance.now() - setStart;
-          console.warn(
+          perfLog(
             `[perf] renderer projection frame messages=${projected.messages.length} chat=${projected.chatMessages.length} nia=${projected.niaMessages.length} set=${setMs.toFixed(1)}ms`,
           );
           if (projected.workspaces.length) setWorkspaces(projected.workspaces);
@@ -637,7 +644,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const phaseStart = performance.now();
     workspacesRefreshInFlight = (async () => {
       const roots = await props.ctx.runtime.workspaceRoots?.();
-      console.warn(
+      perfLog(
         `[perf] refreshWorkspaces done roots=${roots?.length ?? 0} +${(performance.now() - phaseStart).toFixed(1)}ms`,
       );
       if (roots) {
@@ -661,7 +668,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const timings = (global.__nataliaStartupTimings ??= {});
     const elapsed = performance.now() - global.__nataliaStartupStart;
     timings[phase] = elapsed;
-    console.log(`[startup] ${phase} +${elapsed.toFixed(1)}ms`);
+    perfLog(`[startup] ${phase} +${elapsed.toFixed(1)}ms`);
   }
 
   function logStartupSummary() {
@@ -670,7 +677,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         __nataliaStartupComplete?: boolean;
       }
     ).__nataliaStartupComplete = true;
-    console.info("[web-ui] startup complete");
+    perfLog("[web-ui] startup complete");
   }
 
   async function loadAttachmentUrl(path: string, mediaType?: string) {
@@ -750,7 +757,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     operation = (async () => {
       try {
         const sessions = await props.ctx.runtime.sessionList?.();
-        console.warn(
+        perfLog(
           `[perf] refreshSessions done count=${sessions?.length ?? 0} +${(performance.now() - phaseStart).toFixed(1)}ms`,
         );
         if (token !== sessionsRefreshToken) return;
@@ -1045,7 +1052,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   async function hydrateRecentMessages(options?: { replace?: boolean }) {
     const hydrateStart = performance.now();
     const page = await props.ctx.runtime.messages?.({ limit: 100 });
-    console.warn(
+    perfLog(
       `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
     );
     if (!page?.data.length) {
@@ -1061,7 +1068,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
     historyCursor = page.cursor.next;
     newerHistoryCursor = undefined;
-    console.warn(
+    perfLog(
       `[perf] messages hydrate total ${(performance.now() - hydrateStart).toFixed(1)}ms`,
     );
   }
@@ -1170,7 +1177,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       )
         setChatProfile(profileValue);
     });
-    console.warn(
+    perfLog(
       `[perf] perSessionModelConfig applied selection=${selectionValue?.modelID ?? "-"} reasoning=${effortValue ?? "-"} profile=${profileValue?.normal?.modelID ?? "-"} +${(performance.now() - appliedStart).toFixed(1)}ms`,
     );
   }
@@ -1182,7 +1189,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   onMount(() => {
     const mountStart = performance.now();
-    console.warn(
+    perfLog(
       `[perf] AppNeu onMount +${(mountStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? mountStart)).toFixed(1)}ms`,
     );
     const handleKeydown = (event: KeyboardEvent) => {
@@ -1249,6 +1256,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // from the view-store pending state during replay.
     const resetProjectionForSessionSwitch = () => {
       historyReplayDone = false;
+      messagesHydrationStarted = false;
       historyCursor = undefined;
       newerHistoryCursor = undefined;
       loadingOlderHistory = false;
@@ -1318,9 +1326,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ),
     );
 
+    let messagesHydrationStarted = false;
     const hydrateRecentMessagesOnLoad = async () => {
+      if (messagesHydrationStarted) return;
+      messagesHydrationStarted = true;
       const hydrateStart = performance.now();
-      console.warn(
+      perfLog(
         `[perf] hydrateRecentMessagesOnLoad start +${(hydrateStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? hydrateStart)).toFixed(1)}ms`,
       );
       // Message-first startup: the latest projected page replaces the old
@@ -1342,7 +1353,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           props.ctx.runtime.chatMessages?.("navi"),
           props.ctx.runtime.chatMessages?.("nia"),
         ]);
-        console.warn(
+        perfLog(
           `[perf] secondary chatMessages ${(performance.now() - chatStart).toFixed(1)}ms`,
         );
         if (
@@ -1352,7 +1363,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         ) {
           if (naviChat) props.ctx.projection.hydrateChatMessages?.(naviChat);
           if (niaChat) props.ctx.projection.hydrateChatMessages?.(niaChat);
-          console.warn(
+          perfLog(
             `[perf] secondary chat applied +${(performance.now() - chatStart).toFixed(1)}ms`,
           );
         }
@@ -1363,8 +1374,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           }
         ).__nataliaStartupTimings;
         if (timings) {
-          console.warn("[startup] complete", timings);
-          console.table(timings);
+          perfLog("[startup] complete", timings);
+          if ((globalThis as { __NATALIA_PERF_VERBOSE?: number }).__NATALIA_PERF_VERBOSE === 1) {
+            console.table(timings);
+          }
         }
         // Sub-agent data is not part of the primary Natalia/Navi/Nia view.
         // Load it slightly later on idle so it never delays first paint or the
@@ -1378,7 +1391,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }).then(async () => {
           const subagentsStart = performance.now();
           const subagents = await props.ctx.runtime.subagents?.();
-          console.warn(
+          perfLog(
             `[perf] background subagents ${(performance.now() - subagentsStart).toFixed(1)}ms`,
           );
           if (
@@ -1390,7 +1403,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             props.ctx.projection.hydrateSubagents?.(subagents);
           const subagentHistoryStart = performance.now();
           const subagentHistory = await props.ctx.runtime.subagentHistory?.();
-          console.warn(
+          perfLog(
             `[perf] background subagentHistory ${(performance.now() - subagentHistoryStart).toFixed(1)}ms`,
           );
           if (
@@ -1404,9 +1417,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       })();
     };
 
+    const onSessionAttached = () => {
+      void hydrateRecentMessagesOnLoad();
+    };
+    window.addEventListener("natalia:session-attached", onSessionAttached);
+    onCleanup(() =>
+      window.removeEventListener("natalia:session-attached", onSessionAttached),
+    );
+
     const openUnresolvedInteractives = (event: Event) => {
       const openStart = performance.now();
-      console.warn(
+      perfLog(
         `[perf] openUnresolvedInteractives start +${(openStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? openStart)).toFixed(1)}ms`,
       );
       const detail = (
@@ -1436,10 +1457,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const cloneStart = performance.now();
         setState(projected);
         if (projected.workspaces.length) setWorkspaces(projected.workspaces);
-        console.warn(
+        perfLog(
           `[perf] openUnresolvedInteractives hydrate/state clone +${(performance.now() - cloneStart).toFixed(1)}ms`,
         );
         markStartup("first.paint");
+        const startupMask = document.getElementById("natalia-startup-mask");
+        if (startupMask) {
+          startupMask.classList.add("natalia-startup-mask-hide");
+          setTimeout(() => startupMask.remove(), 500);
+        }
         logStartupSummary();
         void loadSecondaryStartupData();
         const scrollToBottom = () => {
@@ -1477,10 +1503,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setCurrentQuestion(questions[0]);
           setQuestionOpen(true);
         }
-        console.warn(
+        perfLog(
           `[perf] pendingInteractive applied approvals=${approvals.length} questions=${questions.length} +${(performance.now() - interactiveStart).toFixed(1)}ms`,
         );
-        console.warn(
+        perfLog(
           `[perf] openUnresolvedInteractives done +${(performance.now() - openStart).toFixed(1)}ms`,
         );
         historyReplayDone = true;
@@ -1563,7 +1589,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   function loadSecondaryStartupData() {
     const secondaryStart = performance.now();
-    console.warn(
+    perfLog(
       `[perf] loadSecondaryStartupData start +${(secondaryStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? secondaryStart)).toFixed(1)}ms`,
     );
     runIdle(() => {
@@ -1589,7 +1615,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             ),
           );
         });
-        console.warn(
+        perfLog(
           `[perf] secondary all applied catalog=${catalog?.length ?? 0} tools=${tools?.length ?? 0} plugins=${plugins?.length ?? 0} +${(performance.now() - appliedAt).toFixed(1)}ms`,
         );
       });
@@ -1600,7 +1626,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     runIdle(() => {
       void debouncedRefreshWorkspaces();
     });
-    console.warn(
+    perfLog(
       `[perf] loadSecondaryStartupData scheduled +${(performance.now() - secondaryStart).toFixed(1)}ms`,
     );
   }
@@ -1806,7 +1832,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     if (el.scrollTop < 80) void loadOlderHistory();
     const scrollMs = performance.now() - scrollStart;
     if (scrollMs > 16)
-      console.warn(
+      perfLog(
         `[perf] renderer scroll transcript ${scrollMs.toFixed(1)}ms scrollTop=${el.scrollTop} height=${el.scrollHeight}`,
       );
   }
@@ -1841,7 +1867,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     chatObservedTop = el.scrollTop;
     const scrollMs = performance.now() - scrollStart;
     if (scrollMs > 16)
-      console.warn(
+      perfLog(
         `[perf] renderer scroll chat ${scrollMs.toFixed(1)}ms scrollTop=${el.scrollTop} height=${el.scrollHeight}`,
       );
   }
@@ -2243,7 +2269,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           <span class="neu-topbar-logo">N</span>
           <div class="neu-topbar-meta">
             <span class="neu-topbar-title">Natalia</span>
-            <span class="neu-topbar-sub">natalia-cli</span>
+            <span class="neu-topbar-sub">The world is not beautiful; therefore it is.</span>
           </div>
         </div>
         <div class="neu-topbar-right">
@@ -2867,37 +2893,37 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         const rollback = pendingRollback();
                         const submit = async () => {
                           try {
-                            if (rollback?.checkpointID) {
-                              const preview =
-                                await props.ctx.runtime.checkpointRollback?.({
-                                  id: rollback.checkpointID,
-                                });
-                              await refreshTranscript();
-                              setRollbackNotice({
-                                text: `已还原消息并恢复工作区检查点。`,
-                                safetyCheckpointID: preview?.safetyCheckpointID,
-                                restoredCount: 1,
-                              });
-                            } else if (rollback) {
+                            if (rollback) {
                               const sessionID =
                                 selectedSessionID() || state().sessionID;
-                              if (sessionID) {
-                                const result =
-                                  await props.ctx.runtime.sessionRollbackMessages?.(
-                                    sessionID,
-                                    rollback.turnID,
-                                  );
-                                await refreshTranscript();
-                                if (result) {
-                                  setRollbackNotice({
-                                    text: result.safetyCheckpointID
-                                      ? `已还原 1 条消息，并创建了安全后悔点。`
-                                      : `已还原 1 条消息。没有可用的文件检查点，因此未恢复工作区更改。`,
-                                    safetyCheckpointID:
-                                      result.safetyCheckpointID,
-                                    restoredCount: 1,
-                                  });
-                                }
+                              const messageResult =
+                                rollback.turnID && sessionID
+                                  ? await props.ctx.runtime.sessionRollbackMessages?.(
+                                      sessionID,
+                                      rollback.turnID,
+                                    )
+                                  : undefined;
+                              const preview = rollback.checkpointID
+                                ? await props.ctx.runtime.checkpointRollback?.({
+                                    id: rollback.checkpointID,
+                                  })
+                                : undefined;
+                              await refreshTranscript();
+                              if (messageResult || preview) {
+                                setRollbackNotice({
+                                  text:
+                                    messageResult && preview
+                                      ? `已还原消息，并恢复工作区检查点。`
+                                      : preview
+                                        ? `已恢复工作区检查点。`
+                                        : messageResult?.safetyCheckpointID
+                                          ? `已还原 1 条消息，并创建了安全后悔点。`
+                                          : `已还原 1 条消息。没有可用的文件检查点，因此未恢复工作区更改。`,
+                                  safetyCheckpointID:
+                                    messageResult?.safetyCheckpointID ??
+                                    preview?.safetyCheckpointID,
+                                  restoredCount: 1,
+                                });
                               }
                             } else {
                               setRollbackNotice(undefined);

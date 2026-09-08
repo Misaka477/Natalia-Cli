@@ -21,6 +21,7 @@ import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
+import { perfLog } from "@natalia/runtime-services";
 
 const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
   64,
@@ -141,10 +142,9 @@ export function createSessionExecution(
   ): Promise<SessionExecutionState> {
     const start = performance.now();
     const mark = (name: string) =>
-      console.warn(
-        `[perf] ensureExecution.${name} session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] ensureExecution.${name} session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
       );
-    console.warn(`[perf] ensureExecution start session=${sessionID}`);
+    perfLog(`[perf] ensureExecution start session=${sessionID}`);
     const {
       getProviderSource,
       getProvider,
@@ -158,8 +158,7 @@ export function createSessionExecution(
     const { executionBySession } = ctx.state;
     const existing = executionBySession.get(sessionID);
     if (existing) {
-      console.warn(
-        `[perf] ensureExecution hit session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] ensureExecution hit session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return existing;
     }
@@ -281,6 +280,16 @@ export function createSessionExecution(
     pruneIdleSessionExecutions(ctx);
     applyAgentProvider(exec);
     mark("apply");
+    // Prewarm the default latest-100 message page for any session we attach.
+    // This overlaps with full-event background loading and makes the first
+    // session.messages RPC a cache hit when the prewarm finishes first.
+    void sessionStore
+      .prewarmMessagePage(sessionID)
+      .catch((error) => {
+        console.warn(
+          `[perf] ensureExecution message-page prewarm failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
     if (fastPath) {
       // Fast path: defer full transcript to background; async consumers call
       // ensureSessionFullEvents before reading, so attach can return sooner.
@@ -310,8 +319,7 @@ export function createSessionExecution(
     }
     await refreshExecutionContextConfig(exec);
     mark("refresh");
-    console.warn(
-      `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} fast=${fastPath} +${(performance.now() - start).toFixed(1)}ms`,
+    perfLog(`[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} fast=${fastPath} +${(performance.now() - start).toFixed(1)}ms`,
     );
     return exec;
   }

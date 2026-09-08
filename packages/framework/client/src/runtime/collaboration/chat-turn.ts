@@ -273,6 +273,14 @@ export function createChatTurn(ctx: RuntimeContext) {
           ? stream
           : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(stream));
         for await (const chunk of normalized) {
+          if (process.env.NATALIA_DEBUG_PROVIDER === "1") {
+            console.log(
+              "[chat-turn] chunk",
+              channel ?? "navi",
+              chunk.type,
+              "text" in chunk ? String((chunk as { text?: string }).text?.length ?? "") : "",
+            );
+          }
           if (chunk.type === "thinking") {
             setPhase("thinking");
             thinking += chunk.text;

@@ -3011,6 +3011,7 @@ export type ChatMessageRow = {
   text: string;
   at: string;
   channel?: ChatChannel;
+  kind?: "message" | "thinking";
 };
 
 export type FakeBackend = RuntimeClient;

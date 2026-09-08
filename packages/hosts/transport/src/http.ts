@@ -10,6 +10,7 @@ import {
   upgradeTerminalSocket,
   type TerminalSocketData,
 } from "./terminal-ws";
+import { perfLog } from "@natalia/runtime-services";
 
 export type TaskDeliveryRequest = {
   taskPath?: string;
@@ -641,8 +642,7 @@ export function createRuntimeHttpServer(
       const json = JSON.stringify(payload);
       const methodName = (body as { method?: unknown })?.method ?? "unknown";
       if (json.length > 100000) {
-        console.warn(
-          `[perf] rpc serialize ${String(methodName)} ${json.length} bytes ${(performance.now() - serializeStart).toFixed(1)}ms`,
+        perfLog(`[perf] rpc serialize ${String(methodName)} ${json.length} bytes ${(performance.now() - serializeStart).toFixed(1)}ms`,
         );
       }
       if (acceptsGzip)

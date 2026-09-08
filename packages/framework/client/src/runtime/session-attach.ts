@@ -19,6 +19,7 @@ import {
 } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
+import { perfLog } from "@natalia/runtime-services";
 
 export function createSessionAttach(ctx: RuntimeContext) {
   return {
@@ -28,10 +29,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
   async function attachSession(id: string) {
     const start = performance.now();
     const mark = (name: string) =>
-      console.warn(
-        `[perf] attachSession.${name} target=${id} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] attachSession.${name} target=${id} +${(performance.now() - start).toFixed(1)}ms`,
       );
-    console.warn(`[perf] attachSession start target=${id}`);
+    perfLog(`[perf] attachSession start target=${id}`);
     const {
       getReady,
       getSessionID,
@@ -84,8 +84,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
     const sessionID = getSessionID();
     const nextID = id as SessionID;
     if (nextID === sessionID) {
-      console.warn(
-        `[perf] attachSession same target=${id} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] attachSession same target=${id} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return { sessionID: nextID };
     }
@@ -180,8 +179,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
       }),
     );
     mark("status");
-    console.warn(
-      `[perf] attachSession done target=${id} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
+    perfLog(`[perf] attachSession done target=${id} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
     );
     return { sessionID: exec.session.id };
   }

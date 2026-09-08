@@ -1,3 +1,4 @@
+import { perfLog } from "./perf-log";
 import type {
   ApprovalResponse,
   ChatModelProfile,
@@ -312,7 +313,7 @@ export function createWebRuntimeClient(
     const startupBase = (
       globalThis as unknown as { __nataliaStartupStart?: number }
     ).__nataliaStartupStart ?? callStart;
-    console.warn(
+    perfLog(
       `[perf] rpc start ${method} +${(callStart - startupBase).toFixed(1)}ms`,
     );
     if (electron && !options.url) {
@@ -322,7 +323,7 @@ export function createWebRuntimeClient(
           params: params ?? {},
         })
         .finally(() => {
-          console.log(
+          perfLog(
             `[perf] ipc ${method} ${(performance.now() - callStart).toFixed(1)}ms`,
           );
         });
@@ -334,7 +335,7 @@ export function createWebRuntimeClient(
       params,
       fetch: options.fetch,
     }).finally(() => {
-      console.log(
+      perfLog(
         `[perf] rpc ${method} ${(performance.now() - callStart).toFixed(1)}ms`,
       );
     });
@@ -349,7 +350,7 @@ export function createWebRuntimeClient(
     const timings = (global.__nataliaStartupTimings ??= {});
     const elapsed = performance.now() - global.__nataliaStartupStart;
     timings[phase] = elapsed;
-    console.log(`[startup] ${phase} +${elapsed.toFixed(1)}ms`);
+    perfLog(`[startup] ${phase} +${elapsed.toFixed(1)}ms`);
   }
 
   const starts: Array<(event: RuntimeEvent) => void> = [];
@@ -457,6 +458,13 @@ export function createWebRuntimeClient(
         activeSessionID = result?.id ?? id;
         persistSessionID(activeSessionID);
         markStartup("session.attach");
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("natalia:session-attached", {
+              detail: { sessionID: activeSessionID, token },
+            }),
+          );
+        }
         try {
           await call("session.touch", { id });
         } catch {

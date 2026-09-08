@@ -7,6 +7,7 @@ import { projectInteractiveRequests } from "@natalia/session";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
+import { perfLog } from "@natalia/runtime-services";
 type Surface = Pick<
   RuntimeServiceClient,
   "history" | "messages" | "pendingInteractive" | "submitInput"
@@ -45,8 +46,7 @@ export function createTranscriptSurface(
         throw new Error("session store unavailable (natalia-session-store)");
       const start = performance.now();
       const page = await sessionStore.messages(requestedID, session, options);
-      console.warn(
-        `[perf] session.messages ${requestedID} ${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] session.messages ${requestedID} ${(performance.now() - start).toFixed(1)}ms`,
       );
       return page;
     },

@@ -8,8 +8,8 @@ export const outputTokenLimitSchema = z
   .optional();
 
 export const timeoutSchema = z.object({
-  requestSec: z.number().int().positive().default(120),
-  streamIdleSec: z.number().int().positive().default(120),
+  requestSec: z.number().int().min(0).default(0),
+  streamIdleSec: z.number().int().min(0).default(0),
   toolSec: z.number().int().positive().optional(),
   turnSec: z.number().int().positive().nullable().default(null),
 });

@@ -21,6 +21,7 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { ensureSessionFullEvents } from "./session-full-events";
 import { subagentHistoryInWorker } from "./session-project-client";
 import { projectSubagentsInWorker } from "./secondary-worker-client";
+import { perfLog } from "@natalia/runtime-services";
 
 export function createSubagentRuntime(
   ctx: RuntimeContext,
@@ -52,8 +53,7 @@ export function createSubagentRuntime(
       } catch {
         result = records.map((record) => toSubagentView(record, subagents));
       }
-      console.warn(
-        `[perf] subagents done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] subagents done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return result;
     },
@@ -79,8 +79,7 @@ export function createSubagentRuntime(
             event.type === "subagent.update",
         );
       }
-      console.warn(
-        `[perf] subagentHistory done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(`[perf] subagentHistory done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return result;
     },

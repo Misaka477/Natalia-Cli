@@ -24,6 +24,13 @@ import { UnifiedDiffView, SplitDiffView, buildSplitRows, diffLines, structuredRo
 import { computeDiffInWorker, computeDiffInWorkerStream } from "@natalia/framework-diff";
 import type { DiffItem } from "@natalia/framework-diff";
 
+const perfLog = (...args: unknown[]) => {
+  if ((globalThis as { __NATALIA_PERF_VERBOSE?: number }).__NATALIA_PERF_VERBOSE === 1) {
+    console.warn(...args);
+  }
+};
+
+
 type ReviewSubTab = "git" | "sandbox" | "checkpoint";
 
 function toDiffItem(change: {
@@ -309,7 +316,7 @@ export function ReviewPane(
           .filter((change) => !sessionPaths || sessionPaths.has(change.path));
         setGitChanges(mapped);
         if (mapped.length) await selectGitFile(mapped[0]!.path);
-        console.warn(
+        perfLog(
           `[perf] diff git list ${mapped.length} files ${(performance.now() - start).toFixed(1)}ms`,
         );
         return;
@@ -323,7 +330,7 @@ export function ReviewPane(
       .filter((change) => !sessionPaths || sessionPaths.has(change.path));
     setGitChanges(mapped);
     if (mapped.length) setGitSelected(mapped[0]!.path);
-    console.warn(
+    perfLog(
       `[perf] diff workspace fallback ${mapped.length} files ${(performance.now() - start).toFixed(1)}ms`,
     );
   }
@@ -346,7 +353,7 @@ export function ReviewPane(
         setGitChanges((prev) =>
           prev.map((change) => (change.path === path ? updated : change)),
         );
-        console.warn(
+        perfLog(
           `[perf] diff git file ${path} ${updated.patch?.length ?? 0} chars ${(performance.now() - start).toFixed(1)}ms`,
         );
       }
@@ -366,7 +373,7 @@ export function ReviewPane(
       const mapped = changes.map(toDiffItem);
       setSandboxChanges(mapped);
       if (mapped.length) setSandboxSelected(mapped[0]!.path);
-      console.warn(
+      perfLog(
         `[perf] diff sandbox ${id} ${mapped.length} files ${(performance.now() - start).toFixed(1)}ms`,
       );
     } catch {
@@ -394,7 +401,7 @@ export function ReviewPane(
     const mapped = preview.changes.map(toDiffItem);
     setCheckpointChanges(mapped);
     if (mapped.length) setCheckpointSelected(mapped[0]!.path);
-    console.warn(
+    perfLog(
       `[perf] diff checkpoint ${id} ${mapped.length} files ${(performance.now() - start).toFixed(1)}ms`,
     );
   }

@@ -38,7 +38,9 @@
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports",
     "cleanup:test-tmp": "bun scripts/cleanup-test-tmp.ts",
     "docs:api-reference": "API_REFERENCE_WRITE=1 bun run packages/hosts/transport/test/api-reference.test.ts",
-    "refresh:plugin-store": "bun scripts/refresh-plugin-store.ts"
+    "refresh:plugin-store": "bun scripts/refresh-plugin-store.ts",
+    "desktop:cef": "bash apps/cef-desktop/run-cef-desktop.sh",
+    "desktop:cef:build": "npm --workspace @natalia/cef-desktop run build"
   },
   "dependencies": {
     "zod": "3.25.76"

@@ -25,6 +25,7 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
+import { perfLog } from "@natalia/runtime-services";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;
@@ -56,8 +57,7 @@ export function createEventSink(
       const step = exec.context.journalStatus().messageCount;
       const snapshot = exec.context.durableCheckpoint(step);
       sessionStore.writeContextEpoch(exec.session.id, snapshot);
-      console.warn(
-        `[perf] contextEpoch.write session=${exec.session.id} trigger=${trigger} step=${step} +0ms`,
+      perfLog(`[perf] contextEpoch.write session=${exec.session.id} trigger=${trigger} step=${step} +0ms`,
       );
     } catch (error) {
       // A failed context epoch must never break event publishing.

@@ -382,6 +382,15 @@ export class SqliteSessionStore {
     return fork;
   }
 
+  seqForTurnStart(sessionID: SessionID, turnID: string): number | undefined {
+    const row = this.db
+      .query(
+        `SELECT start_seq FROM message_turns WHERE session_id = ? AND turn_id = ? LIMIT 1`,
+      )
+      .get(sessionID, turnID) as { start_seq: number } | undefined;
+    return row?.start_seq;
+  }
+
   seqForTurnEnd(sessionID: SessionID, turnID: string): number {
     const start = this.db
       .query(

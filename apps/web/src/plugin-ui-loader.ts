@@ -1,3 +1,4 @@
+import { perfLog } from "./perf-log";
 import type { PluginCatalogEntry, RuntimeClient } from "@natalia/contracts";
 import type { UiPlugin, UiPluginHost } from "@natalia/ui-host";
 
@@ -26,6 +27,35 @@ function resolveUiPluginFactory(mod: UiModule): UiPluginFactory | undefined {
 /** Maps loaded UI plugin ids back to the runtime plugin they came from. */
 const uiSourceByPluginId = new Map<string, string>();
 
+/** Maximum number of UI bundles fetched and evaluated concurrently. */
+const MAX_CONCURRENT_PLUGIN_UI_LOADS = 4;
+
+async function forEachWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const current = nextIndex++;
+        await mapper(items[current]!);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
+function enabledUiPlugins(
+  catalog: readonly PluginCatalogEntry[],
+): PluginCatalogEntry[] {
+  return catalog.filter(
+    (plugin) => plugin.enabled && plugin.installed && plugin.ui?.entry,
+  );
+}
+
 /**
  * Loads every enabled/installed plugin's renderer-side UI bundle through the
  * same path used for official and third-party plugins.
@@ -45,13 +75,15 @@ export async function loadPluginUiBundles(
 ): Promise<void> {
   const catalogStart = performance.now();
   const catalog = (await runtime.pluginCatalog?.()) ?? [];
-  console.warn(
+  perfLog(
     `[perf] plugin-ui catalog ${catalog.length} plugins +${(performance.now() - catalogStart).toFixed(1)}ms`,
   );
-  for (const plugin of catalog) {
-    if (!plugin.enabled || !plugin.installed || !plugin.ui?.entry) continue;
-    await loadOnePluginUi(host, runtimeURL, plugin, token);
-  }
+  const plugins = enabledUiPlugins(catalog);
+  await forEachWithConcurrency(
+    plugins,
+    MAX_CONCURRENT_PLUGIN_UI_LOADS,
+    (plugin) => loadOnePluginUi(host, runtimeURL, plugin, token),
+  );
 }
 
 /**
@@ -93,11 +125,15 @@ export async function syncPluginUiBundles(
     uiSourceByPluginId.delete(uiPluginId);
   }
 
-  for (const plugin of catalog) {
-    if (!enabled.has(plugin.id)) continue;
-    if ([...uiSourceByPluginId.values()].includes(plugin.id)) continue;
-    await loadOnePluginUi(host, runtimeURL, plugin, token);
-  }
+  const loadedRuntimePluginIds = new Set(uiSourceByPluginId.values());
+  const pluginsToLoad = enabledUiPlugins(catalog).filter(
+    (plugin) => !loadedRuntimePluginIds.has(plugin.id),
+  );
+  await forEachWithConcurrency(
+    pluginsToLoad,
+    MAX_CONCURRENT_PLUGIN_UI_LOADS,
+    (plugin) => loadOnePluginUi(host, runtimeURL, plugin, token),
+  );
 }
 
 async function loadOnePluginUi(
@@ -113,9 +149,9 @@ async function loadOnePluginUi(
       runtimeURL,
     ).href;
     const bundleStart = performance.now();
-    console.warn(`[perf] plugin-ui bundle start ${plugin.id} url=${moduleUrl}`);
+    perfLog(`[perf] plugin-ui bundle start ${plugin.id} url=${moduleUrl}`);
     const mod = await importPluginUiModule(moduleUrl, token);
-    console.warn(
+    perfLog(
       `[perf] plugin-ui bundle fetched ${plugin.id} +${(performance.now() - bundleStart).toFixed(1)}ms`,
     );
     const factory = resolveUiPluginFactory(mod);

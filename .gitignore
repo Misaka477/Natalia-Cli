@@ -88,3 +88,9 @@ Thumbs.db
 /packages/framework/diff-wasm/text-build/
 /packages/framework/diff-wasm/src/natalia_diff_wasm.wasm
 /packages/hosts/object-store/native-index/target/
+
+# Local CEF SDK/test artifacts
+.cef-test/
+about-gpu-*.txt
+*.bdic
+apps/cef-desktop/build/

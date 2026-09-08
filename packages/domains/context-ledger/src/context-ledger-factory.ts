@@ -4,6 +4,7 @@ import type {
   ContextLedgerFactory,
   RuntimeContextLedger,
 } from "@natalia/runtime-services";
+import { perfLog } from "@natalia/runtime-services";
 
 export function createContextLedgerFactory(): ContextLedgerFactory {
   return {
@@ -103,8 +104,7 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           }
         }
       }
-      console.warn(
-        `[perf] contextLedgerFactory.restore events=${events.length} entries=${context.snapshot().entries.length} add=${addMs.toFixed(1)}ms total=${(performance.now() - restoreStart).toFixed(1)}ms`,
+      perfLog(`[perf] contextLedgerFactory.restore events=${events.length} entries=${context.snapshot().entries.length} add=${addMs.toFixed(1)}ms total=${(performance.now() - restoreStart).toFixed(1)}ms`,
       );
     },
   };

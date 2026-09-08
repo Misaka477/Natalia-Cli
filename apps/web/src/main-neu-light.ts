@@ -1,3 +1,4 @@
+import { perfLog } from "./perf-log";
 import { createNataliaNeuLightPlugin } from "@natalia/plugin-web-ui";
 import { UI_PLUGIN_REGISTRY } from "./ui-plugin-registry";
 import {
@@ -13,7 +14,8 @@ const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
 const startupStart = performance.now();
 ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ??= startupStart);
-console.log(`[perf] renderer boot start +0.0ms`);
+perfLog(`[perf] renderer boot start +0.0ms`);
+
 
 // Observability: log every main-thread long task during startup and runtime.
 // This is the primary signal for the "silent gap" / interaction jank issue.
@@ -22,7 +24,7 @@ if (typeof PerformanceObserver !== "undefined") {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
         if (entry.duration >= 50) {
-          console.warn(
+          perfLog(
             `[perf] longtask ${entry.duration.toFixed(1)}ms start +${entry.startTime.toFixed(1)}ms`,
           );
         }
@@ -45,7 +47,7 @@ if (typeof setInterval !== "undefined") {
       clearInterval(heartbeat);
       return;
     }
-    console.warn(
+    perfLog(
       `[perf] heartbeat +${(performance.now() - startupStart).toFixed(0)}ms`,
     );
   }, 1000);
@@ -61,7 +63,7 @@ const electron = (
 const injected = electron?.runtimeInfo
   ? await electron.runtimeInfo()
   : undefined;
-console.log(
+perfLog(
   `[startup] electron runtime info +${(performance.now() - startupStart).toFixed(1)}ms`,
 );
 const runtimeURL =
@@ -73,7 +75,7 @@ const runtimeURL =
 const runtime = createWebRuntimeClient({
   url: runtimeURL,
 });
-console.log(
+perfLog(
   `[startup] runtime client +${(performance.now() - startupStart).toFixed(1)}ms`,
 );
 
@@ -91,7 +93,7 @@ const host = await createUiPluginHost({
   },
   preferences: createLocalPreferenceStore(),
 });
-console.log(
+perfLog(
   `[startup] ui host +${(performance.now() - startupStart).toFixed(1)}ms`,
 );
 
@@ -103,12 +105,12 @@ for (const entry of UI_PLUGIN_REGISTRY) {
 // Load renderer-side UI bundles contributed by installed/enabled plugins.
 // This is the unified path for official and third-party feature UI.
 await loadPluginUiBundles(host, runtime, runtimeURL, injected?.token);
-console.log(
+perfLog(
   `[startup] plugin ui bundles +${(performance.now() - startupStart).toFixed(1)}ms`,
 );
 
 // Load the Neumorphism light UI plugin
 await host.load(createNataliaNeuLightPlugin());
-console.log(
+perfLog(
   `[startup] main ui loaded +${(performance.now() - startupStart).toFixed(1)}ms`,
 );

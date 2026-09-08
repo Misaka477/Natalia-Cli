@@ -10,11 +10,26 @@ import { listInstalledPlugins, packageDirectory } from "@natalia/installer";
  * and third-party plugins go through exactly the same path.
  */
 export function createPluginUiResolver(pluginStoreRoot: string) {
+  // CLI startup asks for several UI bundles back-to-back. Coalesce concurrent
+  // catalog reads so one burst does not repeat the install lookup for every
+  // plugin bundle; the promise is intentionally not kept after settling so
+  // later plugin install/enable changes are still observed.
+  let rowsPromise: ReturnType<typeof listInstalledPlugins> | undefined;
+
+  async function installedRows() {
+    if (!rowsPromise) {
+      rowsPromise = listInstalledPlugins({
+        pluginStoreRoot,
+        workspaceRoot: process.cwd(),
+      }).finally(() => {
+        rowsPromise = undefined;
+      });
+    }
+    return await rowsPromise;
+  }
+
   return async (pluginId: string, asset: "js" | "css" = "js") => {
-    const rows = await listInstalledPlugins({
-      pluginStoreRoot,
-      workspaceRoot: process.cwd(),
-    });
+    const rows = await installedRows();
     const row = rows.find(
       (candidate) => candidate.id === pluginId && candidate.enabled,
     );

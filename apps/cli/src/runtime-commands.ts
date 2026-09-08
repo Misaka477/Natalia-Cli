@@ -12,6 +12,7 @@ import { createPluginUiResolver } from "./plugin-ui";
 import { promptArguments } from "./index";
 import { valueAfter, waitSignal, withoutOption } from "./command-helpers";
 import { pluginStoreRoot } from "./official-plugins";
+import { perfLog } from "@natalia/runtime-services";
 
 export async function handleRuntimeCommand(argv: string[]) {
   const command = argv[0];
@@ -41,8 +42,7 @@ export async function handleRuntimeCommand(argv: string[]) {
       ),
     });
     await manager.load();
-    console.log(
-      `[perf] runtime manager loaded +${(performance.now() - commandStart).toFixed(1)}ms`,
+    perfLog(`[perf] runtime manager loaded +${(performance.now() - commandStart).toFixed(1)}ms`,
     );
     const client = createWorkspaceRuntimeClient(manager);
     const serveStart = performance.now();
@@ -53,11 +53,9 @@ export async function handleRuntimeCommand(argv: string[]) {
       terminalWrite: true,
       pluginUiResolver: createPluginUiResolver(pluginStoreRoot()),
     });
-    console.log(
-      `[perf] runtime serve ready +${(performance.now() - serveStart).toFixed(1)}ms`,
+    perfLog(`[perf] runtime serve ready +${(performance.now() - serveStart).toFixed(1)}ms`,
     );
-    console.log(
-      `[perf] runtime serve ready total +${(performance.now() - commandStart).toFixed(1)}ms`,
+    perfLog(`[perf] runtime serve ready total +${(performance.now() - commandStart).toFixed(1)}ms`,
     );
     console.log(
       JSON.stringify({

@@ -12,7 +12,7 @@ let nextID = 1;
 const pending = new Map<
   number,
   {
-    resolve: (value: RuntimeEvent[] | RuntimeMessagePage) => void;
+    resolve: (value: unknown) => void;
     reject: (error: Error) => void;
   }
 >();
@@ -39,7 +39,8 @@ function poolWorker(): Worker {
         pending.delete(response.id);
         if (response.ok) {
           if ("events" in response) entry.resolve(response.events);
-          else entry.resolve(response.page);
+          else if ("page" in response) entry.resolve(response.page);
+          else entry.resolve(undefined);
         } else entry.reject(new Error(response.error));
       },
     );
@@ -60,7 +61,8 @@ type SessionLoadWorkerTask =
       dbPath: string;
       sessionID: SessionID;
       options: { limit?: number; order?: "asc" | "desc"; cursor?: string };
-    };
+    }
+  | { op: "ensureMessageIndex"; dbPath: string; sessionID: SessionID };
 
 async function run<T>(request: SessionLoadWorkerTask): Promise<T> {
   const id = nextID++;
@@ -92,4 +94,11 @@ export function loadMessagePageInWorker(
     sessionID,
     options,
   });
+}
+
+export function ensureMessageIndexInWorker(
+  dbPath: string,
+  sessionID: SessionID,
+): Promise<void> {
+  return run<void>({ op: "ensureMessageIndex", dbPath, sessionID });
 }

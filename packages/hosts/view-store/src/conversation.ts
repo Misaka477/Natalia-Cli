@@ -219,10 +219,24 @@ export function applyConversationEvent(
         reasoningVisible: true,
       });
       return true;
-    case "thinking.done":
-      flushStream(state, streamID(event.id, "thinking"));
-      markBlockStatus(state, streamID(event.id, "thinking"), "completed");
+    case "thinking.done": {
+      const key = streamID(event.id, "thinking");
+      // Thinking deltas are live-only; on durable replay only the done event
+      // is present. Materialize the thinking block from its full text so the
+      // main transcript keeps THINKING across reloads.
+      if (!state.streams[key] && event.text) {
+        appendStream(state, {
+          id: key,
+          role: "thinking",
+          text: event.text,
+          attempt: event.attempt,
+          reasoningVisible: true,
+        });
+      }
+      flushStream(state, key);
+      markBlockStatus(state, key, "completed");
       return true;
+    }
     case "content.delta":
       markTurnStarted(state, event.id);
       prepareStreamPhase(state, event.id, "assistant");

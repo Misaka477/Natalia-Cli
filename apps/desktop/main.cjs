@@ -18,23 +18,13 @@ process.env.NO_PROXY = [process.env.NO_PROXY, "127.0.0.1,localhost"]
   .filter(Boolean)
   .join(",");
 
-// GPU acceleration is opt-in through Desktop settings. On Wayland/niri the
-// GPU compositor path is noisy and can stall rendering, so the default is off
-// with software WebGL allowed. Restart is required to change this setting.
-const desktopSettings = readDesktopSettings();
-console.warn("[perf] desktop gpuEnabled", desktopSettings.gpuEnabled);
-if (desktopSettings.gpuEnabled === true) {
-  // Keep hardware acceleration enabled; user opted in.
-} else {
-  app.disableHardwareAcceleration();
-  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
-}
-
-
-const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
-const WORKSPACE_ROOT = path.resolve(__dirname, "../..");
-
-const DESKTOP_SETTINGS_FILE = () => path.join(app.getPath("userData"), "desktop-settings.json");
+// NB: keep these definitions before readDesktopSettings() is called below.
+// DESKTOP_SETTINGS_FILE is a const and readDesktopSettings() runs before
+// Electron is ready; accessing the file-path helper before its initializer
+// would throw a TDZ ReferenceError inside the try/catch, making every startup
+// silently treat settings as “{}” even after the UI persists gpuEnabled=true.
+const DESKTOP_SETTINGS_FILE = () =>
+  path.join(app.getPath("userData"), "desktop-settings.json");
 
 function readDesktopSettings() {
   try {
@@ -55,6 +45,19 @@ function writeDesktopSettings(patch) {
   }
   return next;
 }
+
+// GPU acceleration is opt-in through Desktop settings. On Wayland/niri the
+// GPU compositor path is noisy and can stall rendering, so the default is off
+// with software WebGL allowed. Restart is required to change this setting.
+const desktopSettings = readDesktopSettings();
+console.warn("[perf] desktop gpuEnabled", desktopSettings.gpuEnabled);
+if (desktopSettings.gpuEnabled !== true) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
+}
+const TOKEN = process.env.NATALIA_TRANSPORT_TOKEN;
+const WORKSPACE_ROOT = path.resolve(__dirname, "../..");
+
 let runtimeURL = process.env.NATALIA_RUNTIME_URL || "";
 let runtimeProcess;
 let runtimeOwned = false;
@@ -365,10 +368,100 @@ ipcMain.handle("desktop_set_setting", (_event, payload) => {
   return { ok: true };
 });
 
-// Electron/Chromium works best on niri with explicit Wayland text-input-v3.
+function readEdgeX11Environment() {
+  try {
+    const candidates = fs
+      .readdirSync("/proc")
+      .filter((name) => /^\d+$/u.test(name))
+      .map(Number);
+    for (const pid of candidates) {
+      try {
+        const cmdline = fs
+          .readFileSync(`/proc/${pid}/cmdline`, "utf8")
+          .replace(/\0+/gu, " ");
+        if (!cmdline.includes("/opt/microsoft/msedge/") &&
+            !cmdline.includes("msedge")) continue;
+        const environ = fs.readFileSync(`/proc/${pid}/environ`, "utf8");
+        const variables = environ.split("\0");
+        for (const entry of variables) {
+          if (entry.startsWith("DISPLAY=")) {
+            process.env.DISPLAY = entry.slice("DISPLAY=".length);
+          }
+          if (entry.startsWith("XAUTHORITY=")) {
+            process.env.XAUTHORITY = entry.slice("XAUTHORITY=".length);
+          }
+        }
+        if (process.env.DISPLAY) return true;
+      } catch {
+        // Ignore unreadable processes and keep scanning.
+      }
+    }
+  } catch {
+    // /proc not available; keep current environment.
+  }
+  return false;
+}
+
+function findStandardXAuthority() {
+  const candidates = [
+    path.join(process.env.HOME || "", ".Xauthority"),
+    path.join(process.env.XDG_RUNTIME_DIR || "", "Xauthority"),
+    path.join(process.env.XDG_RUNTIME_DIR || "", "xwayland", "Xauthority"),
+    path.join(process.env.XDG_RUNTIME_DIR || "", "niri", "Xauthority"),
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
 if (process.platform === "linux") {
+  const edgeX11 = readEdgeX11Environment();
+  if (!process.env.XAUTHORITY) {
+    const standardAuth = findStandardXAuthority();
+    if (standardAuth) process.env.XAUTHORITY = standardAuth;
+  }
+  let xSockets = [];
+  try {
+    xSockets = fs.readdirSync("/tmp/.X11-unix");
+  } catch {
+    xSockets = [];
+  }
+  console.warn(
+    `[perf] desktop edgeX11=${edgeX11} DISPLAY=${process.env.DISPLAY || ""} XAUTHORITY=${process.env.XAUTHORITY || ""} xSockets=${xSockets.join(",") || "none"}`,
+  );
+  try {
+    const edgeGpuProcesses = fs
+      .readdirSync("/proc")
+      .filter((name) => /^\d+$/u.test(name))
+      .map(Number)
+      .map((pid) => {
+        try {
+          return fs
+            .readFileSync(`/proc/${pid}/cmdline`, "utf8")
+            .replace(/\0+/gu, " ");
+        } catch {
+          return "";
+        }
+      })
+      .filter(
+        (cmdline) => cmdline.includes("msedge") && cmdline.includes("--type=gpu-process"),
+      );
+    for (const edgeGpu of edgeGpuProcesses) {
+      console.warn(`[perf] desktop edge gpu-process ${edgeGpu}`);
+    }
+  } catch {
+    // ignore
+  }
+
+  // Mirror Edge's working Wayland GPU process as closely as possible:
+  // only ozone-platform + render-node-override, no ANGLE/zygote/blocklist
+  // overrides that Electron's Chromium build may not handle.
   app.commandLine.appendSwitch("ozone-platform", "wayland");
-  app.commandLine.appendSwitch("enable-features", "WaylandTextInputV3");
+  for (let renderNodeIndex = 128; renderNodeIndex < 160; renderNodeIndex++) {
+    const renderNode = `/dev/dri/renderD${renderNodeIndex}`;
+    if (fs.existsSync(renderNode)) {
+      app.commandLine.appendSwitch("render-node-override", renderNode);
+      break;
+    }
+  }
 }
 
 app.whenReady().then(async () => {
@@ -377,6 +470,20 @@ app.whenReady().then(async () => {
     console.warn("[perf] desktop gpu", app.getGPUFeatureStatus());
   } catch {
     console.warn("[perf] desktop gpu unavailable");
+  }
+  try {
+    const gpuInfo = await app.getGPUInfo("basic");
+    console.warn("[perf] desktop gpuInfo", JSON.stringify(gpuInfo));
+  } catch {
+    console.warn("[perf] desktop gpuInfo unavailable");
+  }
+  try {
+    console.warn(
+      "[perf] desktop hardwareAccelerationEnabled",
+      app.isHardwareAccelerationEnabled(),
+    );
+  } catch {
+    console.warn("[perf] desktop hardwareAccelerationEnabled unavailable");
   }
   app.userAgentFallback =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";

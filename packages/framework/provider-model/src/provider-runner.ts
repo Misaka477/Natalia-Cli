@@ -508,6 +508,13 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               )
             : stream;
           for await (const chunk of normalized) {
+            if (process.env.NATALIA_DEBUG_PROVIDER === "1") {
+              console.log(
+                "[provider-runner] chunk",
+                chunk.type,
+                "text" in chunk ? String((chunk as { text?: string }).text?.length ?? "") : "",
+              );
+            }
             if (chunk.type === "thinking") {
               result.thinking += chunk.text;
               console.log(

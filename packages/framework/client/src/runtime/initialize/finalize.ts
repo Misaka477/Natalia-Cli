@@ -10,6 +10,7 @@ import type {
   WorkLedgerController,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
+import { perfLog } from "@natalia/runtime-services";
 
 export async function finalizeInitialize(
   ctx: RuntimeContext,
@@ -22,8 +23,7 @@ export async function finalizeInitialize(
   const scope = createInitializeRuntime(ctx);
   const start = performance.now();
   const mark = (name: string) =>
-    console.warn(
-      `[perf] finalizeInitialize.${name} +${(performance.now() - start).toFixed(1)}ms`,
+    perfLog(`[perf] finalizeInitialize.${name} +${(performance.now() - start).toFixed(1)}ms`,
     );
   const governanceLedgerController =
     scope.resolveService<GovernanceLedgerController>(

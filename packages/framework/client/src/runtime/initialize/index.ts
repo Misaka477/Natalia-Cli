@@ -7,6 +7,7 @@ import { createSubagentTools } from "./subagent-tools";
 import { installSubagents } from "./subagent-runner";
 import { recoverSession } from "./session-recovery";
 import { finalizeInitialize } from "./finalize";
+import { perfLog } from "@natalia/runtime-services";
 
 export function createInitialize(
   ctx: RuntimeContext,
@@ -15,8 +16,7 @@ export function createInitialize(
   async function initialize() {
     const initStart = performance.now();
     const mark = (name: string) =>
-      console.warn(
-        `[perf] initialize ${name} +${(performance.now() - initStart).toFixed(1)}ms`,
+      perfLog(`[perf] initialize ${name} +${(performance.now() - initStart).toFixed(1)}ms`,
       );
     mark("start");
     try {

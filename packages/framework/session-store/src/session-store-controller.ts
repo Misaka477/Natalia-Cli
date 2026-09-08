@@ -25,9 +25,11 @@ import type {
   SessionStoreRecoveryView,
 } from "@natalia/runtime-services";
 import {
+  ensureMessageIndexInWorker,
   loadMessagePageInWorker,
   loadSessionEventsInWorker,
 } from "./session-load-worker-client";
+import { perfLog } from "@natalia/runtime-services";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in
@@ -98,6 +100,15 @@ export function createSessionStoreController(input: {
   let sqliteStore: SqliteSessionStore | undefined;
   let sqliteStorePath: string | undefined;
   let initialized = false;
+  const messagePageCache = new Map<SessionID, RuntimeMessagePage>();
+  const messagePagePromises = new Map<SessionID, Promise<void>>();
+  const messagePageVersions = new Map<SessionID, number>();
+
+  function invalidateMessagePage(id: SessionID) {
+    messagePageVersions.set(id, (messagePageVersions.get(id) ?? 0) + 1);
+    messagePageCache.delete(id);
+    messagePagePromises.delete(id);
+  }
 
   async function init() {
     sessionStore = new JsonSessionStore(
@@ -218,10 +229,9 @@ export function createSessionStoreController(input: {
   }> {
     const loadStart = performance.now();
     const mark = (name: string) =>
-      console.warn(
-        `[perf] sessionStore.load.${name} id=${id} +${(performance.now() - loadStart).toFixed(1)}ms`,
+      perfLog(`[perf] sessionStore.load.${name} id=${id} +${(performance.now() - loadStart).toFixed(1)}ms`,
       );
-    console.warn(`[perf] sessionStore.load start id=${id}`);
+    perfLog(`[perf] sessionStore.load start id=${id}`);
     const store = sqliteStore;
     const legacy =
       options.create && !store
@@ -279,6 +289,7 @@ export function createSessionStoreController(input: {
   }
 
   async function appendEvent(session: SessionRecord, event: RuntimeEvent) {
+    invalidateMessagePage(session.id);
     if (sqliteStore) {
       // Queue the event and let the SQLite store flush in batches (20ms or
       // 100 events). Awaiting a flush per event makes initialization spend
@@ -290,6 +301,7 @@ export function createSessionStoreController(input: {
   }
 
   async function appendEvents(session: SessionRecord, events: RuntimeEvent[]) {
+    invalidateMessagePage(session.id);
     if (sqliteStore) sqliteStore.appendEvents(session.id, events);
     else await sessionStore.save(session);
   }
@@ -317,6 +329,49 @@ export function createSessionStoreController(input: {
 
   function ensureMessageIndex(id: SessionID) {
     if (sqliteStore) sqliteStore.ensureMessageIndex(id);
+  }
+
+  async function ensureMessageIndexAsync(id: SessionID) {
+    if (!sqliteStore) return;
+    if (sqliteStorePath) {
+      try {
+        await ensureMessageIndexInWorker(sqliteStorePath, id);
+        return;
+      } catch {
+        // Fall through to the shared in-process store.
+      }
+    }
+    sqliteStore.ensureMessageIndex(id);
+  }
+
+  function prewarmMessagePage(id: SessionID): Promise<void> {
+    if (!sqliteStore) return Promise.resolve();
+    const existing = messagePagePromises.get(id);
+    if (existing) return existing;
+    const version = messagePageVersions.get(id) ?? 0;
+    const promise = (async () => {
+      try {
+        const page = sqliteStorePath
+          ? await loadMessagePageInWorker(sqliteStorePath, id, {
+              limit: 100,
+              order: "desc",
+            })
+          : sqliteStore.loadMessagePage(id, { limit: 100, order: "desc" });
+        // Only store the result if no rollback/append invalidated this
+        // session while the background prewarm was in flight.
+        if ((messagePageVersions.get(id) ?? 0) === version) {
+          messagePageCache.set(id, page);
+        }
+      } catch {
+        // Best-effort; the first real messages RPC can compute the page.
+      }
+    })().finally(() => {
+      if ((messagePageVersions.get(id) ?? 0) === version) {
+        messagePagePromises.delete(id);
+      }
+    });
+    messagePagePromises.set(id, promise);
+    return promise;
   }
 
   async function loadFullAsync(id: SessionID): Promise<SessionRecord> {
@@ -383,6 +438,20 @@ export function createSessionStoreController(input: {
     options: { limit?: number; order?: "asc" | "desc"; cursor?: string } = {},
   ): Promise<RuntimeMessagePage> {
     if (sqliteStore) {
+      if (
+        !options.cursor &&
+        !options.order &&
+        options.limit === 100
+      ) {
+        const cached = messagePageCache.get(id);
+        if (cached) return cached;
+        const pending = messagePagePromises.get(id);
+        if (pending) {
+          await pending;
+          const warmed = messagePageCache.get(id);
+          if (warmed) return warmed;
+        }
+      }
       if (sqliteStorePath) {
         try {
           return await loadMessagePageInWorker(sqliteStorePath, id, options);
@@ -508,10 +577,16 @@ export function createSessionStoreController(input: {
   }
 
   async function messageRollback(id: string, turnID: string) {
+    const sessionID = id as SessionID;
+    // The cached latest-100 message page is now stale after truncation.
+    invalidateMessagePage(sessionID);
     const store = sqliteStore as SqliteSessionStore | undefined;
     if (store) {
-      const endSeq = store.seqForTurnEnd(id as SessionID, turnID);
-      store.truncateAfter(id as SessionID, endSeq);
+      const startSeq = store.seqForTurnStart(id as SessionID, turnID);
+      if (startSeq === undefined) throw new Error(`turn not found: ${turnID}`);
+      // Removing this turn and everything after it. The new user submission
+      // becomes the new version of the selected turn.
+      store.truncateAfter(id as SessionID, startSeq - 1);
       return { id, rolledBackTo: turnID };
     }
     const record = await byID(id);
@@ -519,11 +594,8 @@ export function createSessionStoreController(input: {
       (event) => event.type === "turn.submitted" && event.id === turnID,
     );
     if (start < 0) throw new Error(`turn not found: ${turnID}`);
-    const next = record.events.findIndex(
-      (event, index) => index > start && event.type === "turn.submitted",
-    );
-    const end = next === -1 ? record.events.length : next;
-    record.events = record.events.slice(0, end);
+    // Keep only events before the selected turn.
+    record.events = record.events.slice(0, start);
     await sessionStore.save(record);
     return { id, rolledBackTo: turnID };
   }
@@ -619,6 +691,8 @@ export function createSessionStoreController(input: {
     contextEventsAfter,
     writeContextEpoch,
     ensureMessageIndex,
+    ensureMessageIndexAsync,
+    prewarmMessagePage,
     loadFullAsync,
     referencedAttachments,
     history,

@@ -1857,6 +1857,32 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   color: var(--neu-text);
   margin-bottom: 14px;
 }
+.neu-settings-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--neu-hairline);
+  font-size: 11px;
+  color: var(--neu-muted);
+}
+.neu-settings-footer-title {
+  font-weight: 700;
+  color: var(--neu-text);
+  white-space: nowrap;
+}
+.neu-settings-footer-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.neu-settings-footer-quote {
+  margin-left: auto;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .neu-settings-item {
   display: flex;
   align-items: center;

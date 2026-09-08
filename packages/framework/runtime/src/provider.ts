@@ -1127,8 +1127,14 @@ export function providerForModel(
     thinkingEnabled: effective.capabilities.thinking
       ? effective.requestDefaults.thinkingEnabled
       : undefined,
-    timeoutMs: config.runtime.timeouts.requestSec * 1000,
-    streamIdleTimeoutMs: config.runtime.timeouts.streamIdleSec * 1000,
+    timeoutMs:
+      config.runtime.timeouts.requestSec > 0
+        ? config.runtime.timeouts.requestSec * 1000
+        : undefined,
+    streamIdleTimeoutMs:
+      config.runtime.timeouts.streamIdleSec > 0
+        ? config.runtime.timeouts.streamIdleSec * 1000
+        : undefined,
   });
 }
 

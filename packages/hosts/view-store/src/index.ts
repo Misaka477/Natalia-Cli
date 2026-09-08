@@ -300,11 +300,22 @@ export function hydrateProjectedMessages(
  */
 function chatRowToBlock(row: ChatMessageRow): {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "thinking" | "system";
   text: string;
   pendingText: string;
   channel: "navi" | "nia";
+  reasoningVisible?: boolean;
 } {
+  if (row.kind === "thinking") {
+    return {
+      id: `chat:${row.messageID}:thinking`,
+      role: "thinking",
+      text: row.text,
+      pendingText: "",
+      channel: row.channel ?? "navi",
+      reasoningVisible: true,
+    };
+  }
   const internal = row.role === "user" && row.text.startsWith("(internal");
   return {
     id: internal
