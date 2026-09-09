@@ -3149,11 +3149,11 @@ export type ChatModelProfile = {
 
 export type ChatMessageRow = {
   messageID: string;
-  role: "user" | "chat";
+  role: "user" | "chat" | "system";
   text: string;
   at: string;
   channel?: ChatChannel;
-  kind?: "message" | "thinking" | "tool" | "compaction";
+  kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
   tool?: {
     name: string;
     status: string;

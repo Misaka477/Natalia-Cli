@@ -33,7 +33,7 @@ export function naviChatHistory(
   messageIDs: Set<string>;
   durableMessages: Array<{
     messageID: string;
-    role: "user" | "chat";
+    role: "user" | "chat" | "system";
     text: string;
   }>;
 } {
@@ -59,7 +59,7 @@ export function niaChatHistory(
   messageIDs: Set<string>;
   durableMessages: Array<{
     messageID: string;
-    role: "user" | "chat";
+    role: "user" | "chat" | "system";
     text: string;
   }>;
 } {
@@ -96,7 +96,7 @@ export async function compactChatBeforeProviderStep(
     instruction: string;
     durableMessages: Array<{
       messageID: string;
-      role: "user" | "chat";
+      role: "user" | "chat" | "system";
       text: string;
     }>;
     publishCompacted(summary: string, compactedThroughMessageID: string): void;

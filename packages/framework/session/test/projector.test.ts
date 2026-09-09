@@ -11,6 +11,8 @@ import {
   projectedDriftFindings,
   projectedConstitutionRules,
   projectedChatMessages,
+  projectedNiaChatMessages,
+  projectedNaviChatMessages,
   projectedDecisionRecords,
   projectedEvidenceRecords,
   projectedMailboxMessages,
@@ -1050,6 +1052,49 @@ test("chat replay keeps identical Navi and Nia message IDs and thinking isolated
       kind: "message",
     },
   ]);
+});
+
+test("projected Nia/Navi chat streams include collaboration rows by sender", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "nia.collab.message",
+      message: {
+        id: "collab:nia:1",
+        threadID: "collab:nia:1",
+        kind: "chat",
+        from: "nia",
+        to: "main_agent",
+        text: "Nia audit result",
+        round: 1,
+        expectsReply: false,
+        at: "t1",
+      },
+    },
+    {
+      type: "natalia.collab.message",
+      message: {
+        id: "collab:natalia:1",
+        threadID: "collab:natalia:1",
+        kind: "chat",
+        from: "main_agent",
+        to: "nia",
+        text: "Natalia reply",
+        round: 1,
+        expectsReply: false,
+        at: "t2",
+      },
+    },
+  ];
+
+  expect(projectedNiaChatMessages(events)).toEqual([
+    expect.objectContaining({
+      messageID: "collab:nia:1",
+      role: "system",
+      kind: "collab",
+      text: "Nia → Natalia: Nia audit result",
+    }),
+  ]);
+  expect(projectedNaviChatMessages(events)).toEqual([]);
 });
 
 test("durable chat thinking replaces live deltas and restores done-only streams", () => {

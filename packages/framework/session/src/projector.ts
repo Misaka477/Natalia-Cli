@@ -675,11 +675,11 @@ export function projectedMailboxMessages(
  */
 export type ProjectedChatMessage = {
   messageID: string;
-  role: "user" | "chat";
+  role: "user" | "chat" | "system";
   text: string;
   at: string;
   channel: ChatChannel;
-  kind?: "message" | "thinking" | "tool" | "compaction";
+  kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
   tool?: {
     name: string;
     status: string;
@@ -850,6 +850,40 @@ function projectNiaChatMessages(
   return projectChatStream(events, "nia", isNiaChatEvent);
 }
 
+function collabChatRow(
+  event: RuntimeEvent,
+  channel: ChatChannel,
+): ProjectedChatMessage | undefined {
+  const message = normalizeCollaborationEvent(event);
+  if (!message) return undefined;
+  if (channel === "navi" && message.from !== "live_chat") return undefined;
+  if (channel === "nia" && message.from !== "nia") return undefined;
+  const from =
+    message.from === "main_agent"
+      ? "Natalia"
+      : message.from === "live_chat"
+        ? "Navi"
+        : "Nia";
+  const to =
+    message.to === "main_agent"
+      ? "Natalia"
+      : message.to === "live_chat"
+        ? "Navi"
+        : "Nia";
+  const text =
+    message.kind === "response"
+      ? `Natalia ${message.decision} the suggestion${message.reason ? ` (${message.reason})` : ""}`
+      : `${from} → ${to}: ${message.text}`;
+  return {
+    messageID: message.id,
+    role: "system",
+    text,
+    at: message.at,
+    channel,
+    kind: "collab",
+  };
+}
+
 function projectChatStream(
   events: RuntimeEvent[],
   channel: ChatChannel,
@@ -858,6 +892,11 @@ function projectChatStream(
   const messages: ProjectedChatMessage[] = [];
   const thinkingByMessage = new Map<string, ProjectedChatMessage>();
   for (const event of events) {
+    const collab = collabChatRow(event, channel);
+    if (collab) {
+      messages.push(collab);
+      continue;
+    }
     if (!owns(event)) continue;
     if (isChatThinkingDelta(event)) {
       const existing = thinkingByMessage.get(event.messageID);

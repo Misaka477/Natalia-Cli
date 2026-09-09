@@ -385,6 +385,14 @@ function chatRowToBlock(row: ChatMessageRow): {
       },
     };
   }
+  if (row.role === "system") {
+    return {
+      id: `chat:${row.messageID}:${row.kind === "collab" ? "collab" : "system"}`,
+      role: "system",
+      text: row.text,
+      pendingText: "",
+    };
+  }
   const internal = row.role === "user" && row.text.startsWith("(internal");
   return {
     id: internal
