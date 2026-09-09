@@ -5,7 +5,7 @@ import type {
   RuntimeReasoningEffort,
   SubmittedTurn,
 } from "@natalia/contracts";
-import type { StreamingProvider } from "@natalia/runtime";
+import { ContextLedger, type StreamingProvider } from "@natalia/runtime";
 import type { SessionRecord } from "@natalia/session";
 import type {
   RuntimeContextLedger,
@@ -45,10 +45,10 @@ export type SessionExecutionState = {
   lastSubmitted?: SubmittedTurn;
   paused: boolean;
   pauseWaiters: Array<() => void>;
-  chatModelProfile?: Record<
-    string,
-    import("@natalia/contracts").ChatModelProfile
-  >;
+  naviChatLedger: ContextLedger;
+  niaChatLedger: ContextLedger;
+  naviChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
+  niaChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
   advisorPending?: boolean;
   collabSnapshot?: CollabSnapshot;
   /** Total durable event count; may be larger than session.events.length when full events are still loading in background. */
@@ -56,8 +56,8 @@ export type SessionExecutionState = {
   /** Memoized promise that loads the complete durable event log into session.events. */
   fullEventsPromise?: Promise<void>;
   injectedMailboxIDs: Set<string>;
-  pendingNaviChatUserMessages: Array<{ messageID: string; text: string }>;
-  pendingNiaChatUserMessages: Array<{ messageID: string; text: string }>;
+  naviPendingQueue: Array<{ messageID: string; text: string }>;
+  niaPendingQueue: Array<{ messageID: string; text: string }>;
   naviAbortWakePending?: boolean;
   niaAbortWakePending?: boolean;
 };

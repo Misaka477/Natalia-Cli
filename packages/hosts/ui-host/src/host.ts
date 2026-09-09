@@ -68,6 +68,8 @@ export async function createUiPluginHost<TContext = unknown>(
   const transport = options.transport ?? createMemoryTransport();
   const t = options.t ?? ((text: string) => text);
   const events = createUiEventBus();
+  const sessionStates = new Map<string, viewStore.AppState>();
+  let activeKey: string | undefined;
   let state = viewStore.initialState();
   const projectionListeners = new Set<(next: viewStore.AppState) => void>();
   const mounted = new Map<string, MountedPlugin>();
@@ -94,10 +96,21 @@ export async function createUiPluginHost<TContext = unknown>(
       for (const listener of projectionListeners) listener(state);
       return evicted;
     },
-    hydrateChatMessages(messages) {
-      const evicted = viewStore.hydrateChatMessages(state, messages);
+    hydrateNaviMessages(messages) {
+      const evicted = viewStore.hydrateNaviMessages(state, messages);
       for (const listener of projectionListeners) listener(state);
       return evicted;
+    },
+    hydrateNiaMessages(messages) {
+      const evicted = viewStore.hydrateNiaMessages(state, messages);
+      for (const listener of projectionListeners) listener(state);
+      return evicted;
+    },
+    beginNaviHydration() {
+      viewStore.beginNaviHydration(state);
+    },
+    beginNiaHydration() {
+      viewStore.beginNiaHydration(state);
     },
     hydrateSubagents(subagents) {
       const changed = viewStore.hydrateSubagents(state, subagents);
@@ -109,15 +122,35 @@ export async function createUiPluginHost<TContext = unknown>(
       for (const listener of projectionListeners) listener(state);
       return changed;
     },
-    reset() {
-      state = viewStore.initialState();
+    activateSession(sessionID, workspaceID) {
+      activeKey = `${workspaceID ?? "default"}:${sessionID}`;
+      state = sessionStates.get(activeKey) ?? viewStore.initialState();
+      state.sessionID ??= sessionID as never;
+      sessionStates.set(activeKey, state);
       for (const listener of projectionListeners) listener(state);
     },
   };
 
   const fanout = (event: RuntimeEvent) => {
-    viewStore.applyEvent(state, event);
-    for (const listener of projectionListeners) listener(state);
+    const sessionID = event.sessionID;
+    const workspaceID = (event as { workspaceID?: string }).workspaceID;
+    const key = sessionID
+      ? `${workspaceID ?? "default"}:${sessionID}`
+      : activeKey;
+    if (!key) {
+      viewStore.applyEvent(state, event);
+      for (const listener of projectionListeners) listener(state);
+      events.emit(event);
+      return;
+    }
+    const target = sessionStates.get(key) ?? viewStore.initialState();
+    if (sessionID) target.sessionID ??= sessionID;
+    sessionStates.set(key, target);
+    viewStore.applyEvent(target, event);
+    if (key === activeKey) {
+      state = target;
+      for (const listener of projectionListeners) listener(state);
+    }
     events.emit(event);
   };
 

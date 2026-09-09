@@ -356,14 +356,16 @@ export function createSelectionSurface(
           exec.pendingAgent?.model?.startsWith(modelPrefix)
         )
           references.push(`session:${exec.session.id}`);
-        for (const [channel, profile] of Object.entries(
-          exec.chatModelProfile ?? {},
-        )) {
+        for (const [stream, profile] of [
+          ["navi", exec.naviChatModelProfile],
+          ["nia", exec.niaChatModelProfile],
+        ] as const) {
+          if (!profile) continue;
           if (
             profile.normal?.modelID?.startsWith(modelPrefix) ||
             profile.expert?.modelID?.startsWith(modelPrefix)
           )
-            references.push(`session:${exec.session.id}:${channel}`);
+            references.push(`session:${exec.session.id}:${stream}`);
         }
       }
       if (references.length)

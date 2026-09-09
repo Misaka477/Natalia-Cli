@@ -642,6 +642,9 @@ export function createChatTools(ctx: RuntimeContext) {
             status,
             gaps: args.gaps ?? [],
             updated: result.updated,
+            ...(args.verdict === "passed"
+              ? { noWakeNatalia: true }
+              : {}),
           });
         },
       });

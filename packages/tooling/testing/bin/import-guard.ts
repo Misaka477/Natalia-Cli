@@ -136,7 +136,7 @@ const forbiddenConsumerContractImports = kernelPackages.map(
  * this list in step with the `exports` maps, so an undeclared subpath still
  * fails the deep-import rule below.
  */
-const declaredSubpathExports = ["@natalia/transport/host"];
+const declaredSubpathExports = ["@natalia/transport/host", "@natalia/diff-wasm/ast"];
 /**
  * Host-side transport (`createRuntimeHttpServer`, `createRuntimeWsServer`, the
  * daemon store/token/spawn) opens sockets, mints bearer tokens and spawns
@@ -228,6 +228,10 @@ for (const manifest of await workspacePackageManifests("packages")) {
 }
 for (const dir of dependencyGuarded)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
+    // Plugin UI subpaths are intentionally presentation code (they export a
+    // SolidJS UI plugin through package `./ui`); backend dependency rules do
+    // not apply to a dedicated UI entry point.
+    if (/\/src\/ui\//u.test(full)) return;
     for (const pattern of forbiddenDependencies) {
       if (pattern.test(text))
         failures.push(`${full}: forbidden dependency ${pattern}`);

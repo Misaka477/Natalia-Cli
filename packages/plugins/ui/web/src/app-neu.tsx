@@ -564,7 +564,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           setState(projected);
           const setMs = performance.now() - setStart;
           perfLog(
-            `[perf] renderer projection frame messages=${projected.messages.length} chat=${projected.chatMessages.length} nia=${projected.niaMessages.length} set=${setMs.toFixed(1)}ms`,
+            `[perf] renderer projection frame messages=${projected.messages.length} navi=${projected.navi.messages.length} nia=${projected.nia.messages.length} set=${setMs.toFixed(1)}ms`,
           );
           if (projected.workspaces.length) setWorkspaces(projected.workspaces);
           if (mainForceScroll) {
@@ -1074,11 +1074,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   async function hydrateRecentMessages(options?: { replace?: boolean }) {
-    const hydrateStart = performance.now();
     const sessionID = selectedSessionID() || state().sessionID;
+    await hydrateRecentMessagesForSession(sessionID, () => true, options);
+  }
+
+  async function hydrateRecentMessagesForSession(
+    sessionID: string | undefined,
+    isCurrent: () => boolean,
+    options?: { replace?: boolean },
+  ) {
+    const hydrateStart = performance.now();
     const page = sessionID
       ? await props.ctx.runtime.messages?.({ limit: 100, sessionID })
       : await props.ctx.runtime.messages?.({ limit: 100 });
+    if (!isCurrent()) return;
     perfLog(
       `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
     );
@@ -1244,12 +1253,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         ).__nataliaReplayingHistory;
         if (replaying) return;
         const currentSession = selectedSessionID() || state().sessionID;
-        if (
-          currentSession &&
-          event.sessionID &&
-          event.sessionID !== currentSession
-        )
-          return;
         if (event.type === "approval.request" && historyReplayDone) {
           setCurrentApproval(event);
           setPermissionOpen(true);
@@ -1305,7 +1308,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       setPermissionOpen(false);
       setCurrentQuestion(null);
       setQuestionOpen(false);
-      props.ctx.projection.reset?.();
       const projected = cloneState(props.ctx.projection.getState());
       setState(projected);
     };
@@ -1361,6 +1363,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const hydrateRecentMessagesOnLoad = async () => {
       if (messagesHydrationStarted) return;
       messagesHydrationStarted = true;
+      const sessionID = selectedSessionID() || state().sessionID;
+      const loadToken = (
+        globalThis as unknown as { __nataliaSessionLoadToken?: number }
+      ).__nataliaSessionLoadToken;
+      const isCurrentLoad = () =>
+        loadToken ===
+          (globalThis as unknown as { __nataliaSessionLoadToken?: number })
+            .__nataliaSessionLoadToken &&
+        sessionID === (selectedSessionID() || state().sessionID);
       const hydrateStart = performance.now();
       perfLog(
         `[perf] hydrateRecentMessagesOnLoad start +${(hydrateStart - ((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ?? hydrateStart)).toFixed(1)}ms`,
@@ -1368,19 +1379,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // Message-first startup: the latest projected page replaces the old
       // full-log replay. The page is newest-last on the wire; reverse it so the
       // projection's older-merge keeps transcript order.
-      await hydrateRecentMessages();
+      await hydrateRecentMessagesForSession(sessionID, isCurrentLoad);
+      if (!isCurrentLoad()) return;
       markStartup("main.messages");
       // Chat and subagents are secondary surfaces. Hydrate them in the
       // background so the primary transcript paints first and does not wait
       // for extra RPCs before the first visible frame.
-      const loadToken = (
-        globalThis as unknown as {
-          __nataliaSessionLoadToken?: number;
-        }
-      ).__nataliaSessionLoadToken;
       void (async () => {
         const chatStart = performance.now();
-        const sessionID = selectedSessionID() || state().sessionID;
+        props.ctx.projection.beginNaviHydration?.();
+        props.ctx.projection.beginNiaHydration?.();
         const [naviChat, niaChat] = await Promise.all([
           props.ctx.runtime.chatMessages?.("navi", sessionID),
           props.ctx.runtime.chatMessages?.("nia", sessionID),
@@ -1388,13 +1396,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         perfLog(
           `[perf] secondary chatMessages ${(performance.now() - chatStart).toFixed(1)}ms`,
         );
-        if (
-          loadToken ===
-          (globalThis as unknown as { __nataliaSessionLoadToken?: number })
-            .__nataliaSessionLoadToken
-        ) {
-          if (naviChat) props.ctx.projection.hydrateChatMessages?.(naviChat);
-          if (niaChat) props.ctx.projection.hydrateChatMessages?.(niaChat);
+        if (isCurrentLoad()) {
+          // Empty snapshots intentionally replace the selected stream and clear
+          // stale durable history. Each hydration targets its explicit stream.
+          props.ctx.projection.hydrateNaviMessages?.(naviChat ?? []);
+          props.ctx.projection.hydrateNiaMessages?.(niaChat ?? []);
           perfLog(
             `[perf] secondary chat applied +${(performance.now() - chatStart).toFixed(1)}ms`,
           );
@@ -1424,35 +1430,34 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             setTimeout(resolve, 1500);
           }
         }).then(async () => {
+          if (!isCurrentLoad()) return;
           const subagentsStart = performance.now();
-          const subagents = await props.ctx.runtime.subagents?.();
+          const subagents = await props.ctx.runtime.subagents?.(sessionID);
           perfLog(
             `[perf] background subagents ${(performance.now() - subagentsStart).toFixed(1)}ms`,
           );
-          if (
-            subagents &&
-            loadToken ===
-              (globalThis as unknown as { __nataliaSessionLoadToken?: number })
-                .__nataliaSessionLoadToken
-          )
+          if (subagents && isCurrentLoad())
             props.ctx.projection.hydrateSubagents?.(subagents);
           const subagentHistoryStart = performance.now();
-          const subagentHistory = await props.ctx.runtime.subagentHistory?.();
+          const subagentHistory =
+            await props.ctx.runtime.subagentHistory?.(sessionID);
           perfLog(
             `[perf] background subagentHistory ${(performance.now() - subagentHistoryStart).toFixed(1)}ms`,
           );
-          if (
-            subagentHistory &&
-            loadToken ===
-              (globalThis as unknown as { __nataliaSessionLoadToken?: number })
-                .__nataliaSessionLoadToken
-          )
+          if (subagentHistory && isCurrentLoad())
             props.ctx.projection.hydrateSubagentHistory?.(subagentHistory);
         });
       })();
     };
 
-    const onSessionAttached = () => {
+    const onSessionAttached = (event: Event) => {
+      const sessionID = (event as CustomEvent<{ sessionID?: string }>).detail
+        ?.sessionID;
+      if (sessionID)
+        props.ctx.projection.activateSession?.(
+          sessionID,
+          state().activeWorkspaceID,
+        );
       void hydrateRecentMessagesOnLoad();
     };
     window.addEventListener("natalia:session-attached", onSessionAttached);
@@ -1970,18 +1975,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           return "Paused";
       }
     }
-    return state().activeTurn ? "Working" : "Ready";
+    return state().natalia.activeTurn ? "Working" : "Ready";
   }
 
   const mainMessages = createMemo<Message[]>(() =>
-    (state().messages ?? []).map((msg, idx) => {
+    state().natalia.messages.map((msg, idx) => {
       if (msg.tool) {
         return {
           id: msg.id,
           role: "assistant",
           content: "",
           status:
-            state().activeTurn && idx === (state().messages?.length ?? 0) - 1
+            state().natalia.activeTurn &&
+            idx === state().natalia.messages.length - 1
               ? "running"
               : (msg.tool.status as Message["status"]),
           toolCalls: [
@@ -2020,12 +2026,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           : {}),
         content: msg.text + (msg.pendingText || ""),
         status:
-          state().activeTurn && idx === (state().messages?.length ?? 0) - 1
+          state().natalia.activeTurn &&
+          idx === state().natalia.messages.length - 1
             ? "running"
             : undefined,
         streaming: Boolean(
-          state().activeTurn &&
-            idx === (state().messages?.length ?? 0) - 1 &&
+          state().natalia.activeTurn &&
+            idx === state().natalia.messages.length - 1 &&
             msg.role !== "user" &&
             (msg.pendingText ?? "").length > 0,
         ),
@@ -2040,10 +2047,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return messages.slice(0, hiddenAfter);
   });
 
-  const naviChatActivity = () => state().chatActivity;
+  const naviChatActivity = () => state().navi.activity;
 
   const chatMessages = createMemo<Message[]>(() =>
-    (state().chatMessages ?? []).map((msg, idx) => {
+    state().navi.messages.map((msg, idx) => {
       if (msg.tool) {
         return {
           id: msg.id,
@@ -2067,7 +2074,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         content: msg.text + (msg.pendingText || ""),
         streaming: Boolean(
           naviChatActivity() &&
-            idx === state().chatMessages.length - 1 &&
+            idx === state().navi.messages.length - 1 &&
             msg.role !== "user",
         ),
       };
@@ -2765,9 +2772,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   <span class="neu-pane-title">Natalia</span>
                   <span
                     class="neu-pane-status"
-                    data-running={state().activeTurn}
+                    data-running={state().natalia.activeTurn}
                   >
-                    {state().activeTurn ? "running" : "idle"}
+                    {state().natalia.activeTurn ? "running" : "idle"}
                   </span>
                 </div>
                 <div class="neu-pane-content">
@@ -2803,11 +2810,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   </Show>
                   <div
                     class="neu-activity-bar"
-                    data-running={state().activeTurn}
+                    data-running={state().natalia.activeTurn}
                   >
                     <span class="neu-activity-pulse" />
                     <span class="neu-activity-label">
-                      {state().activeTurn
+                      {state().natalia.activeTurn
                         ? `${activityLabel()} · ${formatDuration(turnElapsedMs())}`
                         : "idle"}
                     </span>
@@ -2908,7 +2915,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   <Composer
                     value={mainDraft()}
                     placeholder="输入消息，使用 @ 提及文件…"
-                    busy={Boolean(state().activeTurn)}
+                    busy={Boolean(state().natalia.activeTurn)}
                     onInput={setMainDraft}
                     attachments={mainAttachments()}
                     onRemoveAttachment={(path) =>

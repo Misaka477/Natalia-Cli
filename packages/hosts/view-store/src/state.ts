@@ -52,8 +52,6 @@ export type MessageBlock = {
   status?: string;
   /** Present only on thinking blocks the provider allows a UI to render. */
   reasoningVisible?: boolean;
-  /** Which Live Work Chat channel owns this block (defaults to navi). */
-  channel?: "navi" | "nia";
   tool?: ToolBlock;
   taskID?: string;
 };
@@ -165,13 +163,39 @@ export type ActivityView = {
   detail?: string;
 };
 
-export type ChatActivityView = {
+export type StreamActivityView = {
   messageID: string;
   phase: "waiting" | "thinking" | "generating" | "using_tool";
   startedAt: number;
   toolName?: string;
   error?: string;
-  channel?: "navi" | "nia";
+};
+
+/** State owned by one runtime stream, never selected by a channel argument. */
+export type AgentStreamState = {
+  messages: MessageBlock[];
+  streams: Record<string, StreamState>;
+  streamPhases: Record<string, "thinking" | "assistant">;
+  activity?: StreamActivityView;
+  /** Baseline captured immediately before an asynchronous durable snapshot. */
+  hydrationBaseline?: MessageBlock[];
+};
+
+/** Natalia's independent transcript and turn state. */
+export type NataliaStreamState = AgentStreamState & {
+  activeTurn?: string;
+  paused: boolean;
+  tools: Record<string, ToolBlock>;
+  todos: TodoView[];
+  pendingApprovals: PendingApproval[];
+  pendingQuestions: PendingQuestion[];
+  activities: Record<string, ActivityView>;
+};
+
+export type SubagentStreamState = {
+  active: Record<string, SubagentView>;
+  history: Record<string, SubagentView[]>;
+  states: Record<string, AppState>;
 };
 
 /** An advisory line a UI shows while something transient is happening. */
@@ -216,20 +240,11 @@ export type AppState = {
   /** All currently live work; settled activities are removed by the projection. */
   activities: Record<string, ActivityView>;
 
-  // live work chat
-  /** The Navi Live Work Chat conversation, projected like the main transcript (§8.3). */
-  chatMessages: MessageBlock[];
-  chatStreams: Record<string, StreamState>;
-  chatStreamPhases: Record<string, "thinking" | "assistant">;
-  chatActivity?: ChatActivityView;
-  /**
-   * The Nia audit conversation. Nia is a separate agent with its own complete
-   * projection; it must never share Navi's stream.
-   */
-  niaMessages: MessageBlock[];
-  niaStreams: Record<string, StreamState>;
-  niaStreamPhases: Record<string, "thinking" | "assistant">;
-  niaActivity?: ChatActivityView;
+  // Independent runtime stream projections. These must not be routed by a
+  // `channel` field: their event namespaces identify the owning stream.
+  natalia: NataliaStreamState;
+  navi: AgentStreamState;
+  nia: AgentStreamState;
 
   // resources
   terminals: Record<string, TerminalView>;
@@ -241,6 +256,7 @@ export type AppState = {
   subagentHistory: Record<string, SubagentView[]>;
   /** Per-subagent projected state for isolated message/tool streams. */
   subagentStates: Record<string, AppState>;
+  subagentStream: SubagentStreamState;
   mcp: Record<string, McpView>;
   plugins: Record<string, PluginView>;
   capabilities: Record<string, CapabilityView>;
@@ -307,6 +323,17 @@ export type PlanDocView = {
 };
 
 export function initialState(): AppState {
+  const messages: MessageBlock[] = [];
+  const streams: Record<string, StreamState> = {};
+  const streamPhases: Record<string, "thinking" | "assistant"> = {};
+  const tools: Record<string, ToolBlock> = {};
+  const todos: TodoView[] = [];
+  const pendingApprovals: PendingApproval[] = [];
+  const pendingQuestions: PendingQuestion[] = [];
+  const activities: Record<string, ActivityView> = {};
+  const subagents: Record<string, SubagentView> = {};
+  const subagentHistory: Record<string, SubagentView[]> = {};
+  const subagentStates: Record<string, AppState> = {};
   return {
     workspaces: [],
     sessions: [],
@@ -318,29 +345,41 @@ export function initialState(): AppState {
       "model:not-connected",
       "provider:not-connected",
     ],
-    messages: [],
+    messages,
     paused: false,
-    streams: {},
-    streamPhases: {},
-    tools: {},
-    todos: [],
-    pendingApprovals: [],
-    pendingQuestions: [],
-    activities: {},
-    chatMessages: [],
-    chatStreams: {},
-    chatStreamPhases: {},
-    niaMessages: [],
-    niaStreams: {},
-    niaStreamPhases: {},
+    streams,
+    streamPhases,
+    tools,
+    todos,
+    pendingApprovals,
+    pendingQuestions,
+    activities,
+    natalia: {
+      messages,
+      streams,
+      streamPhases,
+      tools,
+      todos,
+      pendingApprovals,
+      pendingQuestions,
+      activities,
+      paused: false,
+    },
+    navi: { messages: [], streams: {}, streamPhases: {} },
+    nia: { messages: [], streams: {}, streamPhases: {} },
     terminals: {},
     terminalTimeline: {},
     terminalApprovals: {},
     sandboxes: {},
     sandboxDiffs: {},
-    subagents: {},
-    subagentHistory: {},
-    subagentStates: {},
+    subagents,
+    subagentHistory,
+    subagentStates,
+    subagentStream: {
+      active: subagents,
+      history: subagentHistory,
+      states: subagentStates,
+    },
     mcp: {},
     plugins: {},
     capabilities: {},
@@ -382,18 +421,9 @@ export function cloneState(state: AppState): AppState {
     pendingApprovals: [...state.pendingApprovals],
     pendingQuestions: [...state.pendingQuestions],
     activities: mapRecord(state.activities, (value) => ({ ...value })),
-    chatMessages: state.chatMessages.map((block) => ({
-      ...block,
-      ...(block.tool ? { tool: { ...block.tool } } : {}),
-    })),
-    chatStreams: mapRecord(state.chatStreams, (value) => ({ ...value })),
-    chatStreamPhases: { ...state.chatStreamPhases },
-    niaMessages: state.niaMessages.map((block) => ({
-      ...block,
-      ...(block.tool ? { tool: { ...block.tool } } : {}),
-    })),
-    niaStreams: mapRecord(state.niaStreams, (value) => ({ ...value })),
-    niaStreamPhases: { ...state.niaStreamPhases },
+    natalia: cloneNataliaStream(state.natalia),
+    navi: cloneAgentStream(state.navi),
+    nia: cloneAgentStream(state.nia),
     terminals: { ...state.terminals },
     terminalTimeline: mapRecord(state.terminalTimeline, (value) => [...value]),
     terminalApprovals: { ...state.terminalApprovals },
@@ -404,6 +434,13 @@ export function cloneState(state: AppState): AppState {
     subagentStates: mapRecord(state.subagentStates, (value) =>
       cloneState(value),
     ),
+    subagentStream: {
+      active: { ...state.subagentStream.active },
+      history: mapRecord(state.subagentStream.history, (value) => [...value]),
+      states: mapRecord(state.subagentStream.states, (value) =>
+        cloneState(value),
+      ),
+    },
     mcp: { ...state.mcp },
     plugins: { ...state.plugins },
     capabilities: { ...state.capabilities },
@@ -421,6 +458,59 @@ export function cloneState(state: AppState): AppState {
     mailbox: mapRecord(state.mailbox, (value) => ({ ...value })),
     plans: mapRecord(state.plans, (value) => ({ ...value })),
     ...(state.rollback ? { rollback: { ...state.rollback } } : {}),
+  };
+}
+
+function cloneNataliaStream(state: NataliaStreamState): NataliaStreamState {
+  return {
+    ...cloneAgentStream(state),
+    paused: state.paused,
+    tools: mapRecord(state.tools, (value) => ({ ...value })),
+    todos: [...state.todos],
+    pendingApprovals: [...state.pendingApprovals],
+    pendingQuestions: [...state.pendingQuestions],
+    activities: mapRecord(state.activities, (value) => ({ ...value })),
+  };
+}
+
+/** Keeps legacy projector internals and the public stream slices coherent. */
+export function synchronizeStreamSlices(state: AppState): void {
+  Object.assign(state.natalia, {
+    messages: state.messages,
+    streams: state.streams,
+    streamPhases: state.streamPhases,
+    activeTurn: state.activeTurn,
+    paused: state.paused,
+    tools: state.tools,
+    todos: state.todos,
+    pendingApprovals: state.pendingApprovals,
+    pendingQuestions: state.pendingQuestions,
+    activities: state.activities,
+  });
+  Object.assign(state.subagentStream, {
+    active: state.subagents,
+    history: state.subagentHistory,
+    states: state.subagentStates,
+  });
+}
+
+function cloneAgentStream(state: AgentStreamState): AgentStreamState {
+  return {
+    ...state,
+    messages: state.messages.map((block) => ({
+      ...block,
+      ...(block.tool ? { tool: { ...block.tool } } : {}),
+    })),
+    streams: mapRecord(state.streams, (value) => ({ ...value })),
+    streamPhases: { ...state.streamPhases },
+    ...(state.activity ? { activity: { ...state.activity } } : {}),
+    ...(state.hydrationBaseline
+      ? {
+          hydrationBaseline: state.hydrationBaseline.map((block) => ({
+            ...block,
+          })),
+        }
+      : {}),
   };
 }
 

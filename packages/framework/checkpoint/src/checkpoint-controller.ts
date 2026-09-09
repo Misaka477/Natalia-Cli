@@ -112,6 +112,10 @@ export function createCheckpointController(input: {
     return await get().rename(id, name);
   }
 
+  async function workspaceDiff() {
+    return await get().workspaceDiff();
+  }
+
   function resources(): Array<{
     kind: "subagent" | "tool";
     id: string;
@@ -173,6 +177,7 @@ export function createCheckpointController(input: {
     rollback,
     createCheckpoint,
     rename,
+    workspaceDiff,
     isEnabled,
     resources,
     rollbackOptions,

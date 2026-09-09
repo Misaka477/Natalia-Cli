@@ -24,6 +24,7 @@
     "solid-js": "1.9.12",
     "@vscode/tree-sitter-wasm": "*",
     "web-tree-sitter": "*",
-    "@natalia/framework-diff": "workspace:*"
+    "@natalia/framework-diff": "workspace:*",
+    "@natalia/plugin": "workspace:*"
   }
 }

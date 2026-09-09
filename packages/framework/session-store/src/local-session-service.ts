@@ -12,11 +12,12 @@ import {
 } from "@natalia/session";
 
 export type LocalSessionRow = {
-  id: string;
+  id: SessionID;
   title: string;
   createdAt: string;
   lastAccessedAt?: string;
   pinned: boolean;
+  archived?: boolean;
   events: number;
   pendingInputs: number;
 };
@@ -40,9 +41,11 @@ export function createLocalSessionService(workspaceRoot = process.cwd()) {
   };
 
   return {
-    async list(): Promise<LocalSessionRow[]> {
+    async list(
+      options: { useSqliteStore?: boolean } = {},
+    ): Promise<LocalSessionRow[]> {
       const jsonSessions = await json().list();
-      const database = sqlite();
+      const database = options.useSqliteStore === false ? undefined : sqlite();
       const sqliteSessions = database
         ? database.list().map(
             (session) =>
@@ -54,6 +57,7 @@ export function createLocalSessionService(workspaceRoot = process.cwd()) {
                   | string
                   | undefined,
                 pinned: session.pinned,
+                archived: Boolean(session.metadata.archived),
                 events: database.eventCount(session.id),
                 pendingInputs: database.pendingInputCount(session.id),
               }) satisfies LocalSessionRow,
@@ -62,7 +66,13 @@ export function createLocalSessionService(workspaceRoot = process.cwd()) {
       database?.close();
       const sqliteIDs = new Set(sqliteSessions.map((session) => session.id));
       const sessions = jsonSessions
-        .filter((session) => !sqliteIDs.has(session.id))
+        .filter((session) =>
+          // Match runtime migration: once SQLite is populated, missing JSON
+          // IDs are treated as deleted rather than resurrected on startup.
+          options.useSqliteStore === true && sqliteIDs.size > 0
+            ? false
+            : !sqliteIDs.has(session.id),
+        )
         .map(
           (session) =>
             ({
@@ -71,6 +81,7 @@ export function createLocalSessionService(workspaceRoot = process.cwd()) {
               createdAt: session.createdAt,
               lastAccessedAt: session.metadata?.lastAccessedAt,
               pinned: Boolean(session.metadata?.pinned),
+              archived: Boolean(session.metadata?.archived),
               events: session.events.length,
               pendingInputs:
                 session.inbox?.filter((input) => !input.promotedAt).length ?? 0,

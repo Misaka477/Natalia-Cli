@@ -151,10 +151,10 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
     try {
       while (
         step <= effectiveMaxSteps(input.exec) ||
-        input.exec.pendingNaviChatUserMessages.length > 0
+        input.exec.naviPendingQueue.length > 0
       ) {
         signal.throwIfAborted();
-        const pending = input.exec.pendingNaviChatUserMessages.splice(0);
+        const pending = input.exec.naviPendingQueue.splice(0);
         for (const incoming of pending)
           if (!consumedMessageIDs.has(incoming.messageID)) {
             messages.push({ role: "user", content: incoming.text });
@@ -165,18 +165,56 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           step >= effectiveMaxSteps(input.exec) &&
           !requiredReply &&
           pending.length === 0 &&
-          input.exec.pendingNaviChatUserMessages.length === 0;
+          input.exec.naviPendingQueue.length === 0;
         ranFinalOnlyStep ||= finalOnly;
         const calls: ProviderToolCall[] = [];
         let stepOutput = "";
         let protocolViolation = "";
         const compactedMessages = await compactChatBeforeProviderStep(
           ctx,
-          "navi",
           input.exec,
+          input.exec.naviChatLedger,
           activeProvider,
           messages,
           signal,
+          {
+            compactionID: `navi-chat:${input.exec.session.id}`,
+            durableMessages: history.durableMessages,
+            instruction:
+              "Compact the older Navi chat history while preserving concrete user goals, decisions, identifiers, tool outcomes, and unresolved questions.",
+            publishCompacted: (summary, compactedThroughMessageID) =>
+              publish(
+                streamEvent({
+                  type: "navi.chat.compacted",
+                  id: `navi-chat:${input.exec.session.id}:${Date.now().toString(36)}:${ctx.ports.nextPlanSequence()}`,
+                  messageID: `navi-chat-compacted:${input.exec.session.id}:${Date.now().toString(36)}`,
+                  summary,
+                  compactedThroughMessageID,
+                  at: new Date().toISOString(),
+                }),
+              ),
+            publishCompactionEvent: (
+              event: Extract<
+                ConcreteRuntimeEvent,
+                { type: "compaction.begin" | "compaction.end" }
+              >,
+            ) =>
+              publish(
+                streamEvent({
+                  type: "navi.chat.compaction",
+                  id: event.id,
+                  state:
+                    event.type === "compaction.begin" ? "started" : "finished",
+                  ...(event.type === "compaction.begin"
+                    ? { beforeTokens: event.beforeTokens }
+                    : {
+                        beforeTokens: event.beforeTokens,
+                        afterTokens: event.afterTokens,
+                        success: event.success,
+                      }),
+                }),
+              ),
+          },
         );
         if (compactedMessages !== messages)
           messages.splice(0, messages.length, ...compactedMessages);
@@ -277,7 +315,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           // A user message can arrive after this step drained the queue but
           // before its stream completed. Preserve this reply in context and run
           // one more Navi-only provider step rather than stranding the message.
-          if (input.exec.pendingNaviChatUserMessages.length) {
+          if (input.exec.naviPendingQueue.length) {
             step += 1;
             messages.push({ role: "assistant", content: stepOutput });
             continue;
@@ -409,7 +447,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
     model?: { modelID?: string; variant?: string };
     reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
   }): StreamingProvider | undefined {
-    const profile = input.exec.chatModelProfile?.navi?.normal;
+    const profile = input.exec.naviChatModelProfile?.normal;
     const model = input.model?.modelID
       ? input.model
       : profile?.modelID

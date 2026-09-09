@@ -36,11 +36,14 @@ export function createObservabilitySurface(
       );
       if (!status)
         throw new Error("runtime UI unavailable (natalia-runtime-ui)");
-      return await status.snapshotFor({
-        provider: exec.provider,
-        context: exec.context,
-        permissionMode: exec.permissionMode,
-      });
+      return {
+        ...(await status.snapshotFor({
+          provider: exec.provider,
+          context: exec.context,
+          permissionMode: exec.permissionMode,
+        })),
+        sessionID: exec.session.id,
+      };
     },
     async diagnostics(limit = 100, sessionID?: string) {
       await ctx.ports.getReady();

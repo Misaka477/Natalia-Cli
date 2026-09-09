@@ -325,6 +325,8 @@ export {
   projectedMailboxMessages,
   projectedPlanDocs,
   projectedChatMessages,
+  projectedNaviChatMessages,
+  projectedNiaChatMessages,
   projectedCollabMessages,
   normalizeCollaborationEvent,
   projectSession,

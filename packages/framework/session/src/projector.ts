@@ -679,7 +679,16 @@ export type ProjectedChatMessage = {
   text: string;
   at: string;
   channel: ChatChannel;
-  kind?: "message" | "thinking" | "compaction";
+  kind?: "message" | "thinking" | "tool" | "compaction";
+  tool?: {
+    name: string;
+    status: string;
+    summary: string;
+    result?: string;
+    argumentsRaw?: string;
+    startedAt?: number;
+    endedAt?: number;
+  };
 };
 
 export function projectedChatMessages(
@@ -743,6 +752,30 @@ export function projectedChatMessages(
       });
       continue;
     }
+    if (isChatToolUsed(event)) {
+      messages.push({
+        messageID: event.messageID,
+        role: "chat",
+        text: event.summary,
+        at: event.at,
+        channel,
+        kind: "tool",
+        tool: {
+          name: event.toolName,
+          status: event.status,
+          summary: event.summary,
+          ...(event.result !== undefined ? { result: event.result } : {}),
+          ...(event.argumentsRaw !== undefined
+            ? { argumentsRaw: event.argumentsRaw }
+            : {}),
+          ...(event.startedAt !== undefined
+            ? { startedAt: event.startedAt }
+            : {}),
+          ...(event.endedAt !== undefined ? { endedAt: event.endedAt } : {}),
+        },
+      });
+      continue;
+    }
     if (isChatRollback(event)) {
       const boundary = messages.findIndex(
         (message) =>
@@ -793,6 +826,129 @@ ${event.summary}`,
   return messages;
 }
 
+export function projectedNaviChatMessages(
+  events: RuntimeEvent[],
+): ProjectedChatMessage[] {
+  return projectNaviChatMessages(events);
+}
+
+export function projectedNiaChatMessages(
+  events: RuntimeEvent[],
+): ProjectedChatMessage[] {
+  return projectNiaChatMessages(events);
+}
+
+function projectNaviChatMessages(
+  events: RuntimeEvent[],
+): ProjectedChatMessage[] {
+  return projectChatStream(events, "navi", isNaviChatEvent);
+}
+
+function projectNiaChatMessages(
+  events: RuntimeEvent[],
+): ProjectedChatMessage[] {
+  return projectChatStream(events, "nia", isNiaChatEvent);
+}
+
+function projectChatStream(
+  events: RuntimeEvent[],
+  channel: ChatChannel,
+  owns: (event: RuntimeEvent) => boolean,
+): ProjectedChatMessage[] {
+  const messages: ProjectedChatMessage[] = [];
+  const thinkingByMessage = new Map<string, ProjectedChatMessage>();
+  for (const event of events) {
+    if (!owns(event)) continue;
+    if (isChatThinkingDelta(event)) {
+      const existing = thinkingByMessage.get(event.messageID);
+      if (existing) existing.text += event.text;
+      else {
+        const thinking = {
+          messageID: event.messageID,
+          role: "chat" as const,
+          text: event.text,
+          at: "",
+          channel,
+          kind: "thinking" as const,
+        };
+        thinkingByMessage.set(event.messageID, thinking);
+        messages.push(thinking);
+      }
+      continue;
+    }
+    if (isChatThinkingDone(event)) {
+      const existing = thinkingByMessage.get(event.messageID);
+      if (existing) existing.text = event.text;
+      else {
+        const thinking = {
+          messageID: event.messageID,
+          role: "chat" as const,
+          text: event.text,
+          at: "",
+          channel,
+          kind: "thinking" as const,
+        };
+        thinkingByMessage.set(event.messageID, thinking);
+        messages.push(thinking);
+      }
+      continue;
+    }
+    if (isChatMessageSettlement(event)) {
+      messages.push({
+        messageID: event.messageID,
+        role: event.role,
+        text: event.text,
+        at: event.at,
+        channel,
+        kind: "message",
+      });
+      continue;
+    }
+    if (isChatRollback(event)) {
+      const boundary = messages.findIndex(
+        (message) => message.messageID === event.toMessageID,
+      );
+      messages.splice(boundary === -1 ? 0 : boundary + 1);
+      thinkingByMessage.clear();
+      for (const message of messages)
+        if (message.kind === "thinking")
+          thinkingByMessage.set(message.messageID, message);
+      continue;
+    }
+    if (isChatCompacted(event)) {
+      const boundary = messages.findIndex(
+        (message) => message.messageID === event.compactedThroughMessageID,
+      );
+      messages.splice(boundary === -1 ? 0 : boundary);
+      messages.push({
+        messageID: event.messageID,
+        role: "chat",
+        text: `[已压缩的聊天历史]\n${event.summary}`,
+        at: event.at,
+        channel,
+        kind: "compaction",
+      });
+    }
+  }
+  return messages;
+}
+
+function isNaviChatEvent(event: RuntimeEvent): boolean {
+  return (
+    event.type.startsWith("navi.chat.") ||
+    (event.type.startsWith("chat.") &&
+      (event as { channel?: ChatChannel }).channel !== "nia")
+  );
+}
+
+function isNiaChatEvent(event: RuntimeEvent): boolean {
+  return (
+    event.type.startsWith("nia.chat.") ||
+    (event.type.startsWith("chat.") &&
+      (event as { channel?: ChatChannel }).channel === "nia")
+  );
+}
+
 function chatEventChannel(event: RuntimeEvent): ChatChannel | undefined {
   if (event.type.startsWith("navi.chat.")) return "navi";
   if (event.type.startsWith("nia.chat.")) return "nia";
@@ -803,13 +959,9 @@ function chatEventChannel(event: RuntimeEvent): ChatChannel | undefined {
 
 function isChatCompacted(
   event: RuntimeEvent,
-): event is Extract<
-  RuntimeEvent,
-  { type: `${ChatChannel}.chat.compacted` }
-> {
+): event is Extract<RuntimeEvent, { type: `${ChatChannel}.chat.compacted` }> {
   return (
-    event.type === "navi.chat.compacted" ||
-    event.type === "nia.chat.compacted"
+    event.type === "navi.chat.compacted" || event.type === "nia.chat.compacted"
   );
 }
 
@@ -823,6 +975,19 @@ function isChatThinkingDelta(
     event.type === "navi.chat.thinking.delta" ||
     event.type === "nia.chat.thinking.delta" ||
     event.type === "chat.thinking.delta"
+  );
+}
+
+function isChatToolUsed(
+  event: RuntimeEvent,
+): event is Extract<
+  RuntimeEvent,
+  { type: `${ChatChannel}.chat.tool.used` | "chat.tool.used" }
+> {
+  return (
+    event.type === "navi.chat.tool.used" ||
+    event.type === "nia.chat.tool.used" ||
+    event.type === "chat.tool.used"
   );
 }
 

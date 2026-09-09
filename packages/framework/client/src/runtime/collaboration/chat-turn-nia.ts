@@ -156,6 +156,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       if (!auditIntent || !activePlan) return undefined;
       if (auditReported || collabSent) return undefined;
       return {
+        id: activePlan.planID,
         action: "audit report to Natalia",
         correction: `AUDIT_REQUIRED: You are auditing plan ${activePlan.planID} (${activePlan.status}). You must call audit_report with planID ${activePlan.planID} and verdict passed or gaps before ending. You may also call collab_chat to send the concrete findings to Natalia. Reading tools alone does not complete an audit.`,
       };
@@ -163,10 +164,10 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     try {
       while (
         step <= effectiveMaxSteps(input.exec) ||
-        input.exec.pendingNiaChatUserMessages.length > 0
+        input.exec.niaPendingQueue.length > 0
       ) {
         signal.throwIfAborted();
-        const pending = input.exec.pendingNiaChatUserMessages.splice(0);
+        const pending = input.exec.niaPendingQueue.splice(0);
         for (const incoming of pending)
           if (!consumedMessageIDs.has(incoming.messageID)) {
             messages.push({ role: "user", content: incoming.text });
@@ -177,18 +178,56 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           step >= effectiveMaxSteps(input.exec) &&
           !requiredReply &&
           pending.length === 0 &&
-          input.exec.pendingNiaChatUserMessages.length === 0;
+          input.exec.niaPendingQueue.length === 0;
         ranFinalOnlyStep ||= finalOnly;
         const calls: ProviderToolCall[] = [];
         let stepOutput = "";
         let protocolViolation = "";
         const compactedMessages = await compactChatBeforeProviderStep(
           ctx,
-          "nia",
           input.exec,
+          input.exec.niaChatLedger,
           activeProvider,
           messages,
           signal,
+          {
+            compactionID: `nia-chat:${input.exec.session.id}`,
+            durableMessages: history.durableMessages,
+            instruction:
+              "Compact the older Nia audit chat history while preserving concrete user goals, decisions, identifiers, tool outcomes, findings, and unresolved questions.",
+            publishCompacted: (summary, compactedThroughMessageID) =>
+              publish(
+                streamEvent({
+                  type: "nia.chat.compacted",
+                  id: `nia-chat:${input.exec.session.id}:${Date.now().toString(36)}:${ctx.ports.nextPlanSequence()}`,
+                  messageID: `nia-chat-compacted:${input.exec.session.id}:${Date.now().toString(36)}`,
+                  summary,
+                  compactedThroughMessageID,
+                  at: new Date().toISOString(),
+                }),
+              ),
+            publishCompactionEvent: (
+              event: Extract<
+                ConcreteRuntimeEvent,
+                { type: "compaction.begin" | "compaction.end" }
+              >,
+            ) =>
+              publish(
+                streamEvent({
+                  type: "nia.chat.compaction",
+                  id: event.id,
+                  state:
+                    event.type === "compaction.begin" ? "started" : "finished",
+                  ...(event.type === "compaction.begin"
+                    ? { beforeTokens: event.beforeTokens }
+                    : {
+                        beforeTokens: event.beforeTokens,
+                        afterTokens: event.afterTokens,
+                        success: event.success,
+                      }),
+                }),
+              ),
+          },
         );
         if (compactedMessages !== messages)
           messages.splice(0, messages.length, ...compactedMessages);
@@ -238,7 +277,19 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         }
         usedTools ||= calls.length > 0;
         for (const call of calls) {
-          if (call.name === "audit_report") auditReported = true;
+          let callAuditVerdict: string | undefined;
+          if (call.name === "audit_report") {
+            auditReported = true;
+            try {
+              callAuditVerdict = (
+                JSON.parse(call.arguments) as { verdict?: string }
+              ).verdict;
+            } catch {
+              // Ignore malformed audit_report arguments; generic execution reports it.
+            }
+            // The audit_report tool result carries noWakeNatalia when passed;
+            // no mid-conversation system injection is needed.
+          }
           if (call.name === "collab_chat") collabSent = true;
         }
         const outstandingAudit = requiredAuditAction();
@@ -294,7 +345,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           // A user message can arrive after this step drained the queue but
           // before its stream completed. Preserve this reply in context and run
           // one more Nia-only provider step rather than stranding the message.
-          if (input.exec.pendingNiaChatUserMessages.length) {
+          if (input.exec.niaPendingQueue.length) {
             step += 1;
             messages.push({ role: "assistant", content: stepOutput });
             continue;
@@ -345,6 +396,20 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
               toolCallID: call.id,
               toolName: call.name,
               content: `ERROR: parameter validation failed for ${call.name}`,
+            });
+            continue;
+          }
+          if (
+            tool.name === "collab_chat" &&
+            auditIntent &&
+            activePlan &&
+            !auditReported
+          ) {
+            messages.push({
+              role: "tool",
+              toolCallID: call.id,
+              toolName: call.name,
+              content: `AUDIT_ORDER: call audit_report with planID ${activePlan.planID} and verdict passed or gaps before sending collab_chat to Natalia.`,
             });
             continue;
           }
@@ -434,7 +499,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     model?: { modelID?: string; variant?: string };
     reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
   }): StreamingProvider | undefined {
-    const profile = input.exec.chatModelProfile?.nia?.normal;
+    const profile = input.exec.niaChatModelProfile?.normal;
     const model = input.model?.modelID
       ? input.model
       : profile?.modelID

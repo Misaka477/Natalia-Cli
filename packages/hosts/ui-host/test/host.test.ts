@@ -118,6 +118,7 @@ test("the host loads a UI plugin, forwards events, and unloads it", async () => 
   });
   const host = await createUiPluginHost({ root, runtime: fixture.runtime });
   const loaded = await host.load(plugin);
+  host.projection.activateSession?.("ses_fixture");
   expect(loaded.panels.map((panel) => panel.id)).toEqual(["main", "chat"]);
   expect(host.loaded()).toHaveLength(1);
   expect(host.projection.getState().sessionID).toBe("ses_fixture");
@@ -128,7 +129,7 @@ test("the host loads a UI plugin, forwards events, and unloads it", async () => 
   expect(host.projection.getState().messages.length).toBeGreaterThan(0);
   await host.executeCommand("runtime.chatSubmit", { text: "navi" });
   expect(fixture.chat()).toEqual(["navi"]);
-  expect(host.projection.getState().chatMessages).toHaveLength(1);
+  expect(host.projection.getState().navi.messages).toHaveLength(1);
   await host.unload("example.web");
   expect(host.loaded()).toHaveLength(0);
   expect(root.textContent).toBe("");
@@ -205,4 +206,108 @@ test("unloading stops event delivery and a closed host refuses new plugins", asy
       }),
     ),
   ).rejects.toThrow("ui plugin host is closed");
+});
+
+test("background session events stay cached across A to B to A activation", async () => {
+  const fixture = runtimeFixture();
+  const host = await createUiPluginHost({
+    root: fakeRoot(),
+    runtime: fixture.runtime,
+  });
+  await host.load(
+    defineUiPlugin({ id: "cache", name: "Cache", version: "1", mount() {} }),
+  );
+  fixture.emit({
+    type: "session.created",
+    sessionID: "ses_a" as never,
+    title: "A",
+  });
+  fixture.emit({
+    type: "turn.submitted",
+    id: "a1",
+    text: "first",
+    byteLength: 5,
+    lineCount: 1,
+    sha256: "x",
+    sessionID: "ses_a" as never,
+  });
+  host.projection.activateSession?.("ses_b");
+  fixture.emit({
+    type: "content.delta",
+    id: "a1",
+    text: "background",
+    sessionID: "ses_a" as never,
+  });
+  fixture.emit({
+    type: "session.created",
+    sessionID: "ses_b" as never,
+    title: "B",
+  });
+  fixture.emit({
+    type: "turn.submitted",
+    id: "b1",
+    text: "other",
+    byteLength: 5,
+    lineCount: 1,
+    sha256: "x",
+    sessionID: "ses_b" as never,
+  });
+  host.projection.activateSession?.("ses_a");
+  expect(
+    host.projection
+      .getState()
+      .messages.map((message) => message.text + message.pendingText),
+  ).toContain("background");
+  expect(
+    host.projection.getState().messages.map((message) => message.text),
+  ).not.toContain("other");
+  await host.close();
+});
+
+test("workspace keys isolate identical session IDs", async () => {
+  const fixture = runtimeFixture();
+  const host = await createUiPluginHost({
+    root: fakeRoot(),
+    runtime: fixture.runtime,
+  });
+  await host.load(
+    defineUiPlugin({
+      id: "workspace-cache",
+      name: "Workspace cache",
+      version: "1",
+      mount() {},
+    }),
+  );
+  fixture.emit({
+    type: "turn.submitted",
+    id: "one",
+    text: "workspace one",
+    byteLength: 13,
+    lineCount: 1,
+    sha256: "x",
+    sessionID: "ses_shared" as never,
+    workspaceID: "one",
+  });
+  fixture.emit({
+    type: "turn.submitted",
+    id: "two",
+    text: "workspace two",
+    byteLength: 13,
+    lineCount: 1,
+    sha256: "x",
+    sessionID: "ses_shared" as never,
+    workspaceID: "two",
+  });
+  host.projection.activateSession?.("ses_shared", "one");
+  expect(
+    host.projection.getState().messages.map((message) => message.text),
+  ).toContain("workspace one");
+  expect(
+    host.projection.getState().messages.map((message) => message.text),
+  ).not.toContain("workspace two");
+  host.projection.activateSession?.("ses_shared", "two");
+  expect(
+    host.projection.getState().messages.map((message) => message.text),
+  ).toContain("workspace two");
+  await host.close();
 });

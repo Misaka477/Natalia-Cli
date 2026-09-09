@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { defaultConfigV3 } from "@natalia/config";
+import { ContextLedger } from "@natalia/runtime";
 import type { ProviderChatTurnInput } from "@natalia/runtime-services";
 import type {
   RuntimeContext,
@@ -54,23 +55,23 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   const events: RuntimeEvent[] = [];
   const exec = {
     session: { id: "ses_model_streams", events },
-    pendingNaviChatUserMessages: [],
-    pendingNiaChatUserMessages: [],
-    chatModelProfile: {
-      navi: {
-        normal: { modelID: "expert/expert-model", reasoningEffort: "low" },
-        expert: {
-          modelID: "expert/expert-model",
-          variant: "expert-variant",
-          reasoningEffort: "xhigh",
-        },
+    naviChatLedger: new ContextLedger(),
+    niaChatLedger: new ContextLedger(),
+    naviPendingQueue: [],
+    niaPendingQueue: [],
+    naviChatModelProfile: {
+      normal: { modelID: "expert/expert-model", reasoningEffort: "low" },
+      expert: {
+        modelID: "expert/expert-model",
+        variant: "expert-variant",
+        reasoningEffort: "xhigh",
       },
-      nia: {
-        normal: {
-          modelID: "grok/grok-4.6",
-          variant: "nia-variant",
-          reasoningEffort: "high",
-        },
+    },
+    niaChatModelProfile: {
+      normal: {
+        modelID: "grok/grok-4.6",
+        variant: "nia-variant",
+        reasoningEffort: "high",
       },
     },
     provider: {
@@ -179,7 +180,7 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
       reasoningEffort: "xhigh",
     });
     expect(exec.advisorPending).toBe(false);
-    exec.chatModelProfile!.nia = { normal: { reasoningEffort: "high" } };
+    exec.niaChatModelProfile = { normal: { reasoningEffort: "high" } };
     await nia.runNiaChatTurn(
       { exec, text: "default", responseMessageID: "nia-default" },
       new AbortController().signal,

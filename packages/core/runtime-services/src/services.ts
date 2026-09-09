@@ -1,7 +1,6 @@
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import type {
   ApprovalResponse,
-  ChatChannel,
   ChatModelProfile,
   CheckpointResourcePolicy,
   ConfigV3,
@@ -258,7 +257,6 @@ export type ProviderChatTurnInput = {
   provider?: import("@natalia/runtime").StreamingProvider;
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
   attachments?: import("@natalia/contracts").LocalAttachment[];
-  channel?: ChatChannel;
 };
 export type SkillMetadata = {
   name: string;
@@ -439,10 +437,6 @@ export interface ProviderModelController {
   niaBusy(sessionID: SessionID): boolean;
   abortNavi(sessionID: SessionID): boolean;
   abortNia(sessionID: SessionID): boolean;
-  runChatTurn(turn: ProviderChatTurnInput): Promise<void>;
-  requestChatWake(sessionID: SessionID, channel?: ChatChannel): void;
-  chatBusy?(sessionID: SessionID, channel?: ChatChannel): boolean;
-  abortChat?(sessionID: SessionID, channel?: ChatChannel): boolean;
   dispose(): Promise<void>;
 }
 
@@ -510,6 +504,7 @@ export interface CheckpointController {
     input: import("@natalia/runtime").CreateCheckpointInput,
   ): ReturnType<CheckpointStore["createCheckpoint"]>;
   rename(id: string, name: string): ReturnType<CheckpointStore["rename"]>;
+  workspaceDiff(): ReturnType<CheckpointStore["workspaceDiff"]>;
   isEnabled(): boolean;
   resources(): Array<{
     kind: "subagent" | "tool";

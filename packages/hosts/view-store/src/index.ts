@@ -41,7 +41,11 @@ import type {
   RuntimeSubagentView,
 } from "@natalia/contracts";
 import { applyActivityEvent } from "./activity";
-import { applyChatEvent, applyConversationEvent } from "./conversation";
+import {
+  applyNaviEvent,
+  applyNiaEvent,
+  applyConversationEvent,
+} from "./conversation";
 import { applyResourceEvent } from "./resources";
 import { applyStatusEvent } from "./status";
 import { applyWorkspaceEvent } from "./workspace";
@@ -49,6 +53,7 @@ import {
   boundTranscript,
   cloneState,
   initialState,
+  synchronizeStreamSlices,
   type AppState,
 } from "./state";
 
@@ -72,7 +77,8 @@ export {
   upsertBlock,
   type AppState,
   type Banner,
-  type ChatActivityView,
+  type StreamActivityView,
+  type AgentStreamState,
   type CapabilityView,
   type CheckpointView,
   type ContextView,
@@ -119,7 +125,11 @@ export {
 export { applyResourceEvent } from "./resources";
 export { applyStatusEvent } from "./status";
 export { applyWorkspaceEvent } from "./workspace";
-export { applyChatEvent, applyConversationEvent } from "./conversation";
+export {
+  applyNaviEvent,
+  applyNiaEvent,
+  applyConversationEvent,
+} from "./conversation";
 export {
   selectUnattributedWorkGraphNodes,
   selectWorkGraphNeighborhood,
@@ -132,17 +142,6 @@ export {
  * working when the runtime adds an event.
  */
 export function applyEvent(state: AppState, event: RuntimeEvent): void {
-  const projectedSession = state.sessionID ?? state.activeSessionID;
-  if (
-    projectedSession &&
-    event.sessionID &&
-    event.sessionID !== projectedSession &&
-    event.type !== "session.created" &&
-    event.type !== "session.ready" &&
-    event.type !== "session.title.updated" &&
-    !event.type.startsWith("workspace.")
-  )
-    return;
   if (event.agentID) {
     // Events belonging to a subagent are projected into that subagent's own
     // isolated state, so the main Natalia/Navi transcript and the subagent
@@ -150,25 +149,30 @@ export function applyEvent(state: AppState, event: RuntimeEvent): void {
     const agentID = event.agentID;
     const child = (state.subagentStates[agentID] ??= initialState());
     applyEvent(child, { ...event, agentID: undefined });
+    synchronizeStreamSlices(state);
     return;
   }
   if (applyWorkspaceEvent(state, event)) return;
   if (applyConversationEvent(state, event)) {
     applyActivityEvent(state, event);
+    synchronizeStreamSlices(state);
     return;
   }
-  if (applyChatEvent(state, event)) {
+  if (applyNaviEvent(state, event) || applyNiaEvent(state, event)) {
     applyActivityEvent(state, event);
+    synchronizeStreamSlices(state);
     return;
   }
   if (applyResourceEvent(state, event)) {
     if (event.type === "rollback.end")
       truncateHistoryAfterRollback(state, event);
     applyActivityEvent(state, event);
+    synchronizeStreamSlices(state);
     return;
   }
   applyStatusEvent(state, event);
   applyActivityEvent(state, event);
+  synchronizeStreamSlices(state);
 }
 
 /**
@@ -246,11 +250,34 @@ export function hydrateProjectedMessages(
   }
   if (options.replace) {
     const incoming = projected.messages.map((message) => ({ ...message }));
-    const bounded = boundTranscript(incoming, direction);
+    const incomingIDs = new Set(incoming.map((message) => message.id));
+    const liveRows = state.messages.filter(
+      (message) =>
+        !incomingIDs.has(message.id) &&
+        (message.pendingText.length > 0 ||
+          message.role === "thinking" ||
+          message.tool !== undefined ||
+          message.status === "running"),
+    );
+    const bounded = boundTranscript([...incoming, ...liveRows], direction);
     state.messages = bounded.messages;
-    state.streams = { ...projected.streams };
-    state.streamPhases = { ...projected.streamPhases };
-    state.tools = { ...projected.tools };
+    const liveStreams = Object.fromEntries(
+      Object.entries(state.streams).filter(
+        ([id]) => !(id in projected.streams),
+      ),
+    );
+    const livePhases = Object.fromEntries(
+      Object.entries(state.streamPhases).filter(
+        ([id]) => !(id in projected.streamPhases),
+      ),
+    );
+    const liveTools = Object.fromEntries(
+      Object.entries(state.tools).filter(([id]) => !(id in projected.tools)),
+    );
+    state.streams = { ...projected.streams, ...liveStreams };
+    state.streamPhases = { ...projected.streamPhases, ...livePhases };
+    state.tools = { ...projected.tools, ...liveTools };
+    synchronizeStreamSlices(state);
     return bounded.evicted;
   }
   const incoming = projected.messages.map((message) => ({ ...message }));
@@ -290,6 +317,7 @@ export function hydrateProjectedMessages(
   if (!state.sessionID && projected.sessionID)
     state.sessionID = projected.sessionID;
   if (!state.title && projected.title) state.title = projected.title;
+  synchronizeStreamSlices(state);
   return bounded.evicted;
 }
 
@@ -303,7 +331,6 @@ function chatRowToBlock(row: ChatMessageRow): {
   role: "user" | "assistant" | "thinking" | "system";
   text: string;
   pendingText: string;
-  channel: "navi" | "nia";
   reasoningVisible?: boolean;
 } {
   if (row.kind === "thinking") {
@@ -312,8 +339,33 @@ function chatRowToBlock(row: ChatMessageRow): {
       role: "thinking",
       text: row.text,
       pendingText: "",
-      channel: row.channel ?? "navi",
       reasoningVisible: true,
+    };
+  }
+  if (row.kind === "tool" && row.tool) {
+    return {
+      id: `chat:${row.tool.name}:${row.tool.status}:${row.messageID}:tool`,
+      role: "tool",
+      text: row.tool.summary,
+      pendingText: "",
+      status: row.tool.status,
+      tool: {
+        name: row.tool.name,
+        status: row.tool.status,
+        summary: row.tool.summary,
+        ...(row.tool.result !== undefined
+          ? { result: row.tool.result }
+          : {}),
+        ...(row.tool.argumentsRaw !== undefined
+          ? { argumentsRaw: row.tool.argumentsRaw }
+          : {}),
+        ...(row.tool.startedAt !== undefined
+          ? { startedAt: row.tool.startedAt }
+          : {}),
+        ...(row.tool.endedAt !== undefined
+          ? { endedAt: row.tool.endedAt }
+          : {}),
+      },
     };
   }
   const internal = row.role === "user" && row.text.startsWith("(internal");
@@ -330,7 +382,6 @@ function chatRowToBlock(row: ChatMessageRow): {
         : ("assistant" as const),
     text: row.text,
     pendingText: "",
-    channel: row.channel ?? "navi",
   };
 }
 
@@ -339,32 +390,60 @@ function chatRowToBlock(row: ChatMessageRow): {
  * Nia are independent streams: the channel on each durable row routes it into
  * that agent's own projection so neither UI can read the other's transcript.
  */
-export function hydrateChatMessages(
+export function hydrateNaviMessages(
   state: AppState,
   rows: ChatMessageRow[],
 ): boolean {
-  if (!rows.length) return false;
-  const naviIncoming: ReturnType<typeof chatRowToBlock>[] = [];
-  const niaIncoming: ReturnType<typeof chatRowToBlock>[] = [];
-  for (const row of rows) {
-    const block = chatRowToBlock(row);
-    if (block.channel === "nia") niaIncoming.push(block);
-    else naviIncoming.push(block);
+  return replaceAgentMessages(state.navi, rows);
+}
+
+export function hydrateNiaMessages(
+  state: AppState,
+  rows: ChatMessageRow[],
+): boolean {
+  return replaceAgentMessages(state.nia, rows);
+}
+
+function replaceAgentMessages(
+  target: AppState["navi"],
+  rows: ChatMessageRow[],
+): boolean {
+  const incoming = rows.map(chatRowToBlock);
+  const incomingIDs = new Set(incoming.map((row) => row.id));
+  const baseline = new Map(
+    target.hydrationBaseline?.map((row) => [row.id, row]) ?? [],
+  );
+  // A successful snapshot is authoritative for rows unchanged since its request
+  // began. Retain only post-request live changes, including same-ID deltas,
+  // compaction, and rollback updates. A failed request never calls this method,
+  // leaving the warm cache untouched.
+  const liveChanges = target.messages.filter((row) => {
+    const before = baseline.get(row.id);
+    return !before || JSON.stringify(before) !== JSON.stringify(row);
+  });
+  for (const row of liveChanges) {
+    const snapshot = incoming.find((candidate) => candidate.id === row.id);
+    if (snapshot) snapshot.pendingText = row.pendingText;
   }
-  let changed = false;
-  const merge = (
-    target: AppState["chatMessages"],
-    incoming: ReturnType<typeof chatRowToBlock>[],
-  ) => {
-    if (!incoming.length) return;
-    const incomingIDs = new Set(incoming.map((row) => row.id));
-    const retained = target.filter((row) => !incomingIDs.has(row.id));
-    target.splice(0, target.length, ...incoming, ...retained);
-    changed = true;
-  };
-  merge(state.chatMessages, naviIncoming);
-  merge(state.niaMessages, niaIncoming);
-  return changed;
+  const liveOnly = target.messages.filter(
+    (row) =>
+      !incomingIDs.has(row.id) &&
+      (row.pendingText.length > 0 ||
+        row.role === "thinking" ||
+        row.tool !== undefined ||
+        row.status === "running"),
+  );
+  target.messages.splice(0, target.messages.length, ...incoming, ...liveOnly);
+  delete target.hydrationBaseline;
+  return true;
+}
+
+export function beginNaviHydration(state: AppState): void {
+  state.navi.hydrationBaseline = state.navi.messages.map((row) => ({ ...row }));
+}
+
+export function beginNiaHydration(state: AppState): void {
+  state.nia.hydrationBaseline = state.nia.messages.map((row) => ({ ...row }));
 }
 
 /**

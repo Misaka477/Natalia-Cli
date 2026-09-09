@@ -40,7 +40,7 @@ test("provider model controller initializes and disposes chat work", async () =>
 
   await controller.dispose();
   await expect(
-    controller.runChatTurn({
+    controller.runNaviChatTurn({
       sessionID: "ses_test" as never,
       text: "hello",
       responseMessageID: "msg_1",
@@ -95,7 +95,11 @@ test.each(["navi", "nia"] as const)(
     await Promise.resolve();
     expect(controller.naviBusy(sessionID)).toBe(true);
     expect(controller.niaBusy(sessionID)).toBe(true);
-    expect(controller.abortChat!(sessionID, stream)).toBe(true);
+    expect(
+      stream === "nia"
+        ? controller.abortNia(sessionID)
+        : controller.abortNavi(sessionID),
+    ).toBe(true);
     expect(signals.get(stream)!.aborted).toBe(true);
     expect(signals.get(stream === "navi" ? "nia" : "navi")!.aborted).toBe(
       false,
@@ -179,19 +183,27 @@ test.each(["navi", "nia"] as const)(
     }
     const controller = createProviderModelController(input);
     const sessionID = "ses_abort_wake" as never;
-    const task = controller.runChatTurn({
+    const task =
+      stream === "nia"
+        ? controller.runNiaChatTurn({
       sessionID,
-      channel: stream,
       responseMessageID: stream,
       text: "work",
-    });
+          })
+        : controller.runNaviChatTurn({
+            sessionID,
+            responseMessageID: stream,
+            text: "work",
+          });
     const settled = Promise.allSettled([task]);
     controller.requestNaviWake(sessionID);
     controller.requestNiaWake(sessionID);
     // Let the wake coordinator start waiting on the in-flight task.
     await Promise.resolve();
     await Promise.resolve();
-    controller.abortChat!(sessionID, stream);
+    stream === "nia"
+      ? controller.abortNia(sessionID)
+      : controller.abortNavi(sessionID);
     release();
     await settled;
     await Promise.resolve();
@@ -315,22 +327,36 @@ test.each(["navi", "nia"] as const)(
     const controller = createProviderModelController(input);
     const sessionID = "ses_publish_fail" as never;
     await expect(
-      controller.runChatTurn({
+      (stream === "nia"
+        ? controller.runNiaChatTurn({
         sessionID,
-        channel: stream,
         text: "work",
         responseMessageID: "test",
-      }),
+          })
+        : controller.runNaviChatTurn({
+            sessionID,
+            text: "work",
+            responseMessageID: "test",
+          })),
     ).rejects.toThrow("publish failed");
     expect(bodies).toBe(0);
-    expect(controller.chatBusy!(sessionID, stream)).toBe(false);
+    expect(
+      stream === "nia"
+        ? controller.niaBusy(sessionID)
+        : controller.naviBusy(sessionID),
+    ).toBe(false);
     input[stream].publish = () => {};
-    await controller.runChatTurn({
-      sessionID,
-      channel: stream,
-      text: "retry",
-      responseMessageID: "next",
-    });
+    await (stream === "nia"
+      ? controller.runNiaChatTurn({
+          sessionID,
+          text: "retry",
+          responseMessageID: "next",
+        })
+      : controller.runNaviChatTurn({
+          sessionID,
+          text: "retry",
+          responseMessageID: "next",
+        }));
     expect(bodies).toBe(1);
     await controller.dispose();
   },

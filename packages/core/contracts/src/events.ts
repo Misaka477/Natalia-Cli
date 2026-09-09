@@ -400,6 +400,14 @@ type ChatEventData<Namespace extends ChatEventNamespace> =
       at: string;
     }
   | {
+      type: `${Namespace}.chat.compaction`;
+      id: string;
+      state: "started" | "finished";
+      beforeTokens: number;
+      afterTokens?: number;
+      success?: boolean;
+    }
+  | {
       type: `${Namespace}.chat.rollback`;
       id: string;
       toMessageID: string;
@@ -3124,7 +3132,16 @@ export type ChatMessageRow = {
   text: string;
   at: string;
   channel?: ChatChannel;
-  kind?: "message" | "thinking";
+  kind?: "message" | "thinking" | "tool" | "compaction";
+  tool?: {
+    name: string;
+    status: string;
+    summary: string;
+    result?: string;
+    argumentsRaw?: string;
+    startedAt?: number;
+    endedAt?: number;
+  };
 };
 
 export type FakeBackend = RuntimeClient;

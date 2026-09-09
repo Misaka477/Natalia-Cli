@@ -22,7 +22,8 @@ import {
   streamSegmentChars,
   upsertBlock,
   type AppState,
-  type ChatActivityView,
+  type AgentStreamState,
+  type StreamActivityView,
   type MessageBlock,
   type StreamState,
   type ToolBlock,
@@ -473,7 +474,6 @@ function appendStream(
     text: string;
     attempt?: number;
     reasoningVisible?: boolean;
-    channel?: "navi" | "nia";
   },
 ): void {
   const stream = (target.streams[input.id] ??= newStream());
@@ -492,13 +492,7 @@ function appendStream(
   stream.retrySkip = applied.retrySkip;
   if (!applied.text && applied.retrySkip) {
     // The whole chunk was text we already have; nothing to render yet.
-    writeStreamBlock(
-      target,
-      input.id,
-      input.role,
-      input.reasoningVisible,
-      input.channel,
-    );
+    writeStreamBlock(target, input.id, input.role, input.reasoningVisible);
     return;
   }
   stream.tail += applied.text;
@@ -538,13 +532,7 @@ function appendStream(
       stream.segmentIndex += 1;
       stream.committed = "";
       stream.tail = carried;
-      writeStreamBlock(
-        target,
-        input.id,
-        input.role,
-        input.reasoningVisible,
-        input.channel,
-      );
+      writeStreamBlock(target, input.id, input.role, input.reasoningVisible);
       return;
     }
   }
@@ -557,7 +545,6 @@ function writeStreamBlock(
   id: string,
   role: "thinking" | "assistant",
   reasoningVisible?: boolean,
-  channel?: "navi" | "nia",
 ): void {
   const stream = target.streams[id];
   if (!stream) return;
@@ -573,7 +560,6 @@ function writeStreamBlock(
     {
       pendingText: stream.tail,
       ...(role === "thinking" ? { reasoningVisible } : {}),
-      ...(channel ? { channel } : {}),
     },
   );
 }
@@ -685,81 +671,37 @@ function userText(
   return `${event.text}\n\nAttachments: ${attachments}`;
 }
 
-function chatSurface(state: AppState, channel: "navi" | "nia"): StreamTarget {
-  return channel === "nia"
-    ? {
-        messages: state.niaMessages,
-        streams: state.niaStreams,
-        streamPhases: state.niaStreamPhases,
-      }
-    : {
-        messages: state.chatMessages,
-        streams: state.chatStreams,
-        streamPhases: state.chatStreamPhases,
-      };
-}
-
-function chatChannelOf(event: RuntimeEvent): "navi" | "nia" | undefined {
-  if (event.type.startsWith("navi.chat.")) return "navi";
-  if (event.type.startsWith("nia.chat.")) return "nia";
-  // Compatibility ingestion for journals persisted before stream namespaces.
-  // New event routing must never infer ownership from an optional channel.
-  if (event.type.startsWith("chat."))
-    return (event as { channel?: "navi" | "nia" }).channel ?? "navi";
-  return undefined;
-}
-
-/**
- * Projects the Live Work Chat conversation through the same streaming machinery
- * as the main transcript (§8.3: one projection per agent, not a separate
- * drift-prone copy). Navi and Nia each own a complete projection: streamed
- * deltas, thinking, tool rows, durable messages and rollback state. The
- * The event namespace routes each event to its owning stream. Legacy `chat.*`
- * records are accepted only for persisted journal replay.
- */
-export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
-  const eventChannel = chatChannelOf(event);
-  if (!eventChannel && !event.type.startsWith("collab.")) return false;
-  // Collaboration rows select their own target below; this fallback is never
-  // used to route a namespaced chat event.
-  const channel = eventChannel ?? "navi";
+/** Shared mechanics for explicit stream-specific projectors. */
+function applyAgentChatEvent(
+  target: AgentStreamState,
+  event: RuntimeEvent,
+): boolean {
   switch (event.type) {
     case "navi.chat.turn.started":
     case "nia.chat.turn.started":
     case "chat.turn.started": {
-      const activity: ChatActivityView = {
+      const activity: StreamActivityView = {
         messageID: event.messageID,
         phase: "waiting",
         startedAt: event.startedAt,
-        channel,
       };
-      if (channel === "nia") state.niaActivity = activity;
-      else state.chatActivity = activity;
+      target.activity = activity;
       return true;
     }
     case "navi.chat.turn.phase":
     case "nia.chat.turn.phase":
     case "chat.turn.phase": {
-      if (channel === "nia") {
-        if (state.niaActivity?.messageID === event.messageID) {
-          state.niaActivity.phase = event.phase;
-          state.niaActivity.toolName = event.toolName;
-        }
-      } else if (state.chatActivity?.messageID === event.messageID) {
-        state.chatActivity.phase = event.phase;
-        state.chatActivity.toolName = event.toolName;
+      if (target.activity?.messageID === event.messageID) {
+        target.activity.phase = event.phase;
+        target.activity.toolName = event.toolName;
       }
       return true;
     }
     case "navi.chat.turn.finished":
     case "nia.chat.turn.finished":
     case "chat.turn.finished": {
-      if (channel === "nia") {
-        if (state.niaActivity?.messageID === event.messageID)
-          state.niaActivity = undefined;
-      } else if (state.chatActivity?.messageID === event.messageID) {
-        state.chatActivity = undefined;
-      }
+      if (target.activity?.messageID === event.messageID)
+        target.activity = undefined;
       return true;
     }
     case "navi.chat.message.new":
@@ -767,7 +709,6 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
     case "navi.chat.message.added":
     case "nia.chat.message.added":
     case "chat.message.added": {
-      const target = chatSurface(state, channel);
       if (event.role === "user") {
         // Internal synthetic prompts (advisor wake, mailbox steering) are
         // not human user turns. Render them as system rows so a chat pane
@@ -778,7 +719,6 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
           role: internal ? "system" : "user",
           text: event.text,
           pendingText: "",
-          channel,
         });
         return true;
       }
@@ -795,7 +735,6 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       if (event.text && !alreadyRendered)
         upsertInto(target.messages, currentID, "assistant", event.text);
       const settled = target.messages.find((block) => block.id === currentID);
-      if (settled && !settled.channel) settled.channel = channel;
       delete target.streams[key];
       delete target.streams[`chat:${event.messageID}:thinking`];
       delete target.streamPhases[`chat:${event.messageID}`];
@@ -804,37 +743,28 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
     case "navi.chat.message.delta":
     case "nia.chat.message.delta":
     case "chat.message.delta": {
-      const target = chatSurface(state, channel);
       prepareStreamPhase(target, `chat:${event.messageID}`, "assistant");
       appendStream(target, {
         id: `chat:${event.messageID}:assistant`,
         role: "assistant",
         text: event.text,
-        channel,
       });
       return true;
     }
     case "navi.chat.thinking.delta":
     case "nia.chat.thinking.delta":
     case "chat.thinking.delta": {
-      const target = chatSurface(state, channel);
       prepareStreamPhase(target, `chat:${event.messageID}`, "thinking");
       appendStream(target, {
         id: `chat:${event.messageID}:thinking`,
         role: "thinking",
         text: event.text,
-        channel,
       });
       return true;
     }
     case "navi.chat.thinking.done":
     case "nia.chat.thinking.done": {
-      settleChatThinking(
-        chatSurface(state, channel),
-        event.messageID,
-        event.text,
-        channel,
-      );
+      settleChatThinking(target, event.messageID, event.text);
       return true;
     }
     case "navi.chat.tool.used":
@@ -844,7 +774,6 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       // open a fresh segment so the model's post-tool reply renders BELOW the
       // card (not merged into the block above it), then insert the card.
       const turnKey = `chat:${event.messageID}`;
-      const target = chatSurface(state, channel);
       flushStream(target, `${turnKey}:thinking`);
       flushStream(target, `${turnKey}:assistant`);
       beginPostToolSegment(target, turnKey);
@@ -871,13 +800,11 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       const toolBlock = target.messages.find(
         (block) => block.id === `chat:${event.id}:tool`,
       );
-      if (toolBlock) toolBlock.channel = channel;
       return true;
     }
     case "navi.chat.rollback":
     case "nia.chat.rollback":
     case "chat.rollback": {
-      const target = chatSurface(state, channel);
       const boundary = `chat:${event.toMessageID}`;
       const index = target.messages.findIndex((block) =>
         block.id.startsWith(`${boundary}:`),
@@ -892,123 +819,138 @@ export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
       target.streamPhases = {};
       return true;
     }
-    case "collab.suggestion":
-      upsertInto(
-        state.chatMessages,
-        `chat:${event.id}:collab`,
-        "system",
-        `Navi → Natalia: ${event.suggestion}`,
-      );
-      return true;
-    case "collab.notice":
-      upsertInto(
-        state.chatMessages,
-        `chat:${event.id}:collab`,
-        "system",
-        `Natalia → Navi: [${event.noticeType}] ${event.notice}`,
-      );
-      return true;
-    case "collab.question":
-      upsertInto(
-        state.chatMessages,
-        `chat:${event.id}:collab`,
-        "system",
-        `Natalia → Navi: ${event.question}`,
-      );
-      return true;
-    case "collab.answer":
-      upsertInto(
-        state.chatMessages,
-        `chat:${event.id}:collab`,
-        "system",
-        `Navi → Natalia: ${event.answer}`,
-      );
-      return true;
-    case "collab.chat": {
-      if (event.from === "nia" || event.to === "nia") {
-        const direction =
-          event.from === "main_agent"
-            ? "Natalia → Nia"
-            : event.from === "live_chat"
-              ? "Navi → Nia"
-              : event.to === "main_agent"
-                ? "Nia → Natalia"
-                : "Nia → Navi";
-        upsertInto(
-          state.niaMessages,
-          `chat:${event.id}:collab`,
-          "system",
-          `${direction}: ${event.text}`,
-        );
-        return true;
-      }
-      upsertInto(
-        state.chatMessages,
-        `chat:${event.id}:collab`,
-        "system",
-        `${event.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia"}: ${event.text}`,
-      );
-      return true;
-    }
-    case "collab.response":
-      upsertInto(
-        state.chatMessages,
-        `chat:${event.id}:collab`,
-        "system",
-        `Natalia ${event.decision} the suggestion${event.reason ? ` (${event.reason})` : ""}`,
-      );
-      return true;
-    case "collab.message": {
-      const message = event.message;
-      if (message.from === "nia" || message.to === "nia") {
-        const direction =
-          message.from === "main_agent"
-            ? "Natalia → Nia"
-            : message.from === "live_chat"
-              ? "Navi → Nia"
-              : message.to === "main_agent"
-                ? "Nia → Natalia"
-                : "Nia → Navi";
-        const text =
-          message.kind === "notice"
-            ? `${direction}: [${message.noticeType}] ${message.text}`
-            : message.kind === "response"
-              ? `Nia ${message.decision}${message.reason ? ` (${message.reason})` : ""}`
-              : `${direction}: ${message.text}`;
-        upsertInto(
-          state.niaMessages,
-          `chat:${message.id}:collab`,
-          "system",
-          text,
-        );
-        return true;
-      }
-      const direction =
-        message.from === "main_agent" ? "Natalia → Navi" : "Navi → Natalia";
-      const text =
-        message.kind === "notice"
-          ? `${direction}: [${message.noticeType}] ${message.text}`
-          : message.kind === "response"
-            ? `Natalia ${message.decision} the suggestion${message.reason ? ` (${message.reason})` : ""}`
-            : `${direction}: ${message.text}`;
-      upsertInto(
-        state.chatMessages,
-        `chat:${message.id}:collab`,
-        "system",
-        text,
-      );
-      return true;
-    }
     default:
       return false;
   }
+}
+
+export function applyNaviEvent(state: AppState, event: RuntimeEvent): boolean {
+  if (event.type.startsWith("navi.chat."))
+    return applyAgentChatEvent(state.navi, event);
+  // Legacy journals are the sole place payload channel compatibility remains.
+  if (
+    event.type.startsWith("chat.") &&
+    (event as { channel?: string }).channel !== "nia"
+  )
+    return applyAgentChatEvent(state.navi, event);
+  if (!isNaviCollaboration(event)) return false;
+  upsertInto(
+    state.navi.messages,
+    `chat:${collabID(event)}:collab`,
+    "system",
+    collabText(event),
+  );
+  return true;
+}
+
+function isNaviCollaboration(
+  event: RuntimeEvent,
+): event is Extract<
+  RuntimeEvent,
+  {
+    type:
+      | "collab.chat"
+      | "collab.message"
+      | "collab.suggestion"
+      | "collab.notice"
+      | "collab.question"
+      | "collab.answer"
+      | "collab.response";
+  }
+> {
+  if (!event.type.startsWith("collab.")) return false;
+  return (
+    event.type !== "collab.chat" || (event.from !== "nia" && event.to !== "nia")
+  );
+}
+
+export function applyNiaEvent(state: AppState, event: RuntimeEvent): boolean {
+  if (event.type.startsWith("nia.chat."))
+    return applyAgentChatEvent(state.nia, event);
+  if (
+    event.type.startsWith("chat.") &&
+    (event as { channel?: string }).channel === "nia"
+  )
+    return applyAgentChatEvent(state.nia, event);
+  if (
+    event.type === "collab.chat" &&
+    (event.from === "nia" || event.to === "nia")
+  ) {
+    upsertInto(
+      state.nia.messages,
+      `chat:${collabID(event)}:collab`,
+      "system",
+      collabText(event),
+    );
+    return true;
+  }
+  return false;
+}
+
+function collabID(
+  event: Extract<
+    RuntimeEvent,
+    {
+      type:
+        | "collab.chat"
+        | "collab.message"
+        | "collab.suggestion"
+        | "collab.notice"
+        | "collab.question"
+        | "collab.answer"
+        | "collab.response";
+    }
+  >,
+): string {
+  return event.type === "collab.message" ? event.message.id : event.id;
+}
+
+function collabText(
+  event: Extract<
+    RuntimeEvent,
+    {
+      type:
+        | "collab.chat"
+        | "collab.message"
+        | "collab.suggestion"
+        | "collab.notice"
+        | "collab.question"
+        | "collab.answer"
+        | "collab.response";
+    }
+  >,
+): string {
+  if (event.type === "collab.suggestion")
+    return `Navi → Natalia: ${event.suggestion}`;
+  if (event.type === "collab.notice")
+    return `Natalia → Navi: [${event.noticeType}] ${event.notice}`;
+  if (event.type === "collab.question")
+    return `Natalia → Navi: ${event.question}`;
+  if (event.type === "collab.answer") return `Navi → Natalia: ${event.answer}`;
+  if (event.type === "collab.response")
+    return `Natalia ${event.decision} the suggestion${event.reason ? ` (${event.reason})` : ""}`;
+  if (event.type === "collab.message" && event.message.kind === "response")
+    return `Natalia ${event.message.decision} the suggestion${event.message.reason ? ` (${event.message.reason})` : ""}`;
+  const message = event.type === "collab.message" ? event.message : event;
+  const from =
+    message.from === "main_agent"
+      ? "Natalia"
+      : message.from === "live_chat"
+        ? "Navi"
+        : "Nia";
+  const to =
+    message.to === "main_agent"
+      ? "Natalia"
+      : message.to === "live_chat"
+        ? "Navi"
+        : "Nia";
+  return `${from} → ${to}: ${message.text}`;
 }
 
 function settleChatThinking(
   target: StreamTarget,
   messageID: string,
   text: string,
-  channel: "navi" | "nia",
 ): void {
   const id = `chat:${messageID}:thinking`;
   const first = target.messages.findIndex(
@@ -1030,7 +972,6 @@ function settleChatThinking(
     text,
     pendingText: "",
     reasoningVisible: true,
-    channel,
     status: "completed",
   };
   if (first === -1) target.messages.push(block);

@@ -6,7 +6,7 @@
  * helpers that drive the turn controller for a session. Reads host state
  * through `RuntimeContext` at call time.
  */
-import { providerForModel } from "@natalia/runtime";
+import { ContextLedger, providerForModel } from "@natalia/runtime";
 import { projectSession } from "@natalia/session";
 import {
   CONTEXT_LEDGER_FACTORY_SERVICE,
@@ -268,13 +268,17 @@ export function createSessionExecution(
         : undefined,
       selectedModel: recovery?.selectedModel ?? projection.selectedModel,
       reasoningEffort: recovery?.reasoningEffort ?? projection.reasoningEffort,
-      chatModelProfile:
-        recovery?.chatModelProfile ?? projection.chatModelProfile,
+      naviChatLedger: new ContextLedger(),
+      niaChatLedger: new ContextLedger(),
+      naviChatModelProfile:
+        (recovery?.chatModelProfile ?? projection.chatModelProfile)?.navi,
+      niaChatModelProfile:
+        (recovery?.chatModelProfile ?? projection.chatModelProfile)?.nia,
       paused: false,
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
-      pendingNaviChatUserMessages: [],
-      pendingNiaChatUserMessages: [],
+      naviPendingQueue: [],
+      niaPendingQueue: [],
       naviAbortWakePending: false,
       niaAbortWakePending: false,
       eventCount: fastPath

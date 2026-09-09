@@ -123,7 +123,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     Awaited<ReturnType<NonNullable<RuntimeServiceClient["workspaceDiff"]>>>
   > {
     const { controller } = await requireInitializedController();
-    const changes = await controller.get().workspaceDiff();
+    const changes = await controller.workspaceDiff();
     if (input?.includePatch === false) {
       return changes.map((change) => ({
         path: change.path,

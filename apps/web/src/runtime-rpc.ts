@@ -356,7 +356,6 @@ export function createWebRuntimeClient(
   let started = false;
   let sessionLoadToken = 0;
   let activeSessionID: string | undefined;
-  let liveBufferSessionID: string | undefined;
   const liveBuffer: RuntimeEvent[] = [];
 
   type SessionLoadGlobal = {
@@ -374,8 +373,6 @@ export function createWebRuntimeClient(
 
   function beginSessionLoad(sessionID?: string) {
     const token = ++sessionLoadToken;
-    liveBufferSessionID = sessionID;
-    liveBuffer.length = 0;
     const load = sessionLoadGlobal();
     load.__nataliaSessionLoadToken = token;
     load.__nataliaReplayingHistory = true;
@@ -386,15 +383,9 @@ export function createWebRuntimeClient(
 
   function emitLive(event: RuntimeEvent) {
     if (sessionLoadGlobal().__nataliaReplayingHistory) {
-      // A stale attach may still publish its session.ready after a newer
-      // session load has begun; never let another session's buffered events
-      // bleed into the current load.
-      if (
-        liveBufferSessionID &&
-        event.sessionID &&
-        event.sessionID !== liveBufferSessionID
-      )
-        return;
+      // Buffer every session while attach/hydration is in progress. The host
+      // projects each event into its session cache; filtering here would make a
+      // background turn invisible when its session is activated again.
       liveBuffer.push(event);
       return;
     }
@@ -410,7 +401,6 @@ export function createWebRuntimeClient(
   function finishSessionLoad(token: number, sessionID?: string) {
     if (!isCurrentSessionLoad(token)) return;
     sessionLoadGlobal().__nataliaReplayingHistory = false;
-    liveBufferSessionID = undefined;
     flushLiveBuffer(token);
     markStartup("session.loaded");
     if (typeof window !== "undefined")
@@ -425,24 +415,6 @@ export function createWebRuntimeClient(
     return new Date(session.lastAccessedAt ?? session.createdAt).getTime();
   }
 
-  const SESSION_SELECTION_KEY = "natalia:current-session";
-
-  function readPersistedSessionID(): string | undefined {
-    try {
-      return localStorage.getItem(SESSION_SELECTION_KEY) ?? undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  function persistSessionID(sessionID: string) {
-    try {
-      localStorage.setItem(SESSION_SELECTION_KEY, sessionID);
-    } catch {
-      // Persistence is best-effort; session keep working without it.
-    }
-  }
-
   let attachChain = Promise.resolve();
 
   async function attachAndReplay(id: string) {
@@ -450,12 +422,11 @@ export function createWebRuntimeClient(
     const run = async () => {
       if (!isCurrentSessionLoad(token)) return undefined;
       try {
-        const result = await call<RuntimeSessionSummary>("session.attach", {
+        const result = await call<{ sessionID: string }>("session.attach", {
           id,
         });
         if (!isCurrentSessionLoad(token)) return undefined;
-        activeSessionID = result?.id ?? id;
-        persistSessionID(activeSessionID);
+        activeSessionID = result?.sessionID ?? id;
         markStartup("session.attach");
         if (typeof window !== "undefined") {
           window.dispatchEvent(
@@ -490,10 +461,8 @@ export function createWebRuntimeClient(
   }
 
   async function restoreRecentSession() {
-    // On page load, prefer the most recent non-archived session over the
-    // runtime's deterministic default session. This makes a reload/reopen
-    // resume the last conversation. If the list/attach is unavailable, keep the
-    // runtime's current session.
+    // The workspace runtime restores its selected session before publishing.
+    // A browser-global localStorage key must not override that selection.
     let newest: RuntimeSessionSummary | undefined;
     try {
       const sessions = await call<RuntimeSessionSummary[]>("session.list");
@@ -501,26 +470,17 @@ export function createWebRuntimeClient(
       const recent = sessions
         .filter((session) => !session.archived)
         .sort((a, b) => sessionRecency(b) - sessionRecency(a));
-      const persisted = readPersistedSessionID();
+      const snapshot = await call<RuntimeEvent>("runtime.status").catch(
+        () => undefined,
+      );
+      const persisted = snapshot?.sessionID;
       const persistedTarget =
         persisted === undefined
           ? undefined
           : sessions.find(
               (session) => session.id === persisted && !session.archived,
             );
-      const touched = recent.filter((session) => session.lastAccessedAt);
-      const meaningful = recent.filter(
-        (session) => session.title && session.title !== "New session",
-      );
-      const nonEmpty = recent.filter((session) => session.events > 0);
-      const fallbackSource = touched.length
-        ? touched
-        : meaningful.length
-          ? meaningful
-          : nonEmpty.length
-            ? nonEmpty
-            : recent;
-      const target = persistedTarget ?? fallbackSource[0];
+      const target = persistedTarget ?? recent[0];
       newest = target;
       if (newest) {
         if (sessionLoadToken !== 0) return newest;
@@ -553,12 +513,10 @@ export function createWebRuntimeClient(
     started = true;
 
     // The /events endpoint replays the server-side event ring buffer on
-    // connect. That replay may contain events from every recent session, so
-    // hold them in liveBuffer until restoreRecentSession has chosen the
-    // startup session; beginSessionLoad then discards pre-target events.
+    // connect. Hold them until restoreRecentSession has chosen the startup
+    // session, but retain all sessions so background projections stay current.
     sessionLoadGlobal().__nataliaReplayingHistory = true;
     liveBuffer.length = 0;
-    liveBufferSessionID = undefined;
 
     // Electron: receive runtime events through the main-process IPC bridge.
     if (electron) {
@@ -591,7 +549,6 @@ export function createWebRuntimeClient(
         // be applied before the current session has been re-attached/resynced.
         sessionLoadGlobal().__nataliaReplayingHistory = true;
         liveBuffer.length = 0;
-        liveBufferSessionID = activeSessionID;
 
         const response = await (options.fetch ?? globalThis.fetch)(
           new URL("/events", options.url),

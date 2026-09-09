@@ -3,7 +3,9 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   applyEvent,
   displayText,
-  hydrateChatMessages,
+  hydrateNaviMessages,
+  hydrateNiaMessages,
+  beginNaviHydration,
   hydrateProjectedMessages,
   initialState,
   projectEvents,
@@ -108,13 +110,13 @@ test("collaboration chat renders both Natalia and Navi directions", () => {
     },
   ]);
 
-  expect(state.chatMessages.map((message) => displayText(message))).toEqual([
+  expect(state.navi.messages.map((message) => displayText(message))).toEqual([
     "Natalia → Navi: Check this edge case.",
     "Navi → Natalia: It is covered.",
   ]);
-  expect(state.chatMessages.every((message) => message.role === "system")).toBe(
-    true,
-  );
+  expect(
+    state.navi.messages.every((message) => message.role === "system"),
+  ).toBe(true);
 });
 
 test("unified collaboration messages render as system rows", () => {
@@ -136,10 +138,10 @@ test("unified collaboration messages render as system rows", () => {
       },
     },
   ]);
-  expect(displayText(state.chatMessages[0]!)).toBe(
+  expect(displayText(state.navi.messages[0]!)).toBe(
     "Natalia adopted the suggestion (lower risk)",
   );
-  expect(state.chatMessages[0]?.role).toBe("system");
+  expect(state.navi.messages[0]?.role).toBe("system");
 });
 
 test("a queued turn stays visibly queued without replacing active work", () => {
@@ -1188,7 +1190,7 @@ test("chat tool calls render in event order with post-tool text below the card",
     text: "I will look. the main agent is idle.",
     at: "now",
   });
-  const blocks = state.chatMessages;
+  const blocks = state.navi.messages;
   const order = blocks.map((block) => block.id);
   // user -> pre-tool text -> tool card -> post-tool segment below the card.
   expect(order).toEqual([
@@ -1223,12 +1225,11 @@ test("chat activity follows its own lifecycle without replacing main activity", 
       phase: "thinking",
     },
   ]);
-  expect(state.chatActivity).toEqual({
+  expect(state.navi.activity).toEqual({
     messageID: "chat:m1",
     phase: "thinking",
     startedAt: 100,
     toolName: undefined,
-    channel: "navi",
   });
   expect(selectPrimaryActivity(state)?.turnID).toBe("t1");
   applyEvent(state, {
@@ -1239,7 +1240,7 @@ test("chat activity follows its own lifecycle without replacing main activity", 
     startedAt: 100,
     endedAt: 200,
   });
-  expect(state.chatActivity).toBeUndefined();
+  expect(state.navi.activity).toBeUndefined();
 });
 
 test("Nia has its own complete chat stream and never mixes into Navi", () => {
@@ -1310,23 +1311,23 @@ test("Nia has its own complete chat stream and never mixes into Navi", () => {
     },
   ]);
 
-  expect(state.chatMessages.map((block) => displayText(block))).toEqual([
+  expect(state.navi.messages.map((block) => displayText(block))).toEqual([
     "Navi question",
     "Navi answer",
   ]);
-  expect(state.niaMessages.map((block) => displayText(block))).toEqual([
+  expect(state.nia.messages.map((block) => displayText(block))).toEqual([
     "Nia audit result ",
     "read a file",
     "Nia → Natalia: audit findings sent",
     "Nia audit result",
   ]);
-  expect(state.chatActivity?.messageID).toBe("chat:navi");
-  expect(state.niaActivity?.messageID).toBe("chat:nia");
+  expect(state.navi.activity?.messageID).toBe("chat:navi");
+  expect(state.nia.activity?.messageID).toBe("chat:nia");
   expect(
-    state.niaMessages.some((block) => block.id.includes("chat:navi")),
+    state.nia.messages.some((block) => block.id.includes("chat:navi")),
   ).toBe(false);
   expect(
-    state.chatMessages.some((block) => block.id.includes("chat:nia")),
+    state.navi.messages.some((block) => block.id.includes("chat:nia")),
   ).toBe(false);
 });
 
@@ -1362,11 +1363,11 @@ test("chat namespace prefixes isolate simultaneous identical message IDs", () =>
     },
   ]);
 
-  expect(state.chatMessages.map((block) => displayText(block))).toEqual([
+  expect(state.navi.messages.map((block) => displayText(block))).toEqual([
     "Navi request",
     "Navi reasoning",
   ]);
-  expect(state.niaMessages.map((block) => displayText(block))).toEqual([
+  expect(state.nia.messages.map((block) => displayText(block))).toEqual([
     "Nia request",
     "Nia reasoning",
   ]);
@@ -1393,17 +1394,17 @@ test("durable chat thinking replaces live deltas and restores thinking after res
     text: "complete Nia reasoning",
   });
 
-  expect(state.chatMessages.map(displayText)).toEqual([
+  expect(state.navi.messages.map(displayText)).toEqual([
     "complete Navi reasoning",
   ]);
-  expect(state.niaMessages.map(displayText)).toEqual([
+  expect(state.nia.messages.map(displayText)).toEqual([
     "complete Nia reasoning",
   ]);
-  expect(state.chatMessages[0]?.status).toBe("completed");
-  expect(state.niaMessages[0]?.status).toBe("completed");
+  expect(state.navi.messages[0]?.status).toBe("completed");
+  expect(state.nia.messages[0]?.status).toBe("completed");
 
   const reloaded = initialState();
-  const changed = hydrateChatMessages(reloaded, [
+  const changed = hydrateNaviMessages(reloaded, [
     {
       messageID: "shared",
       role: "chat",
@@ -1412,6 +1413,8 @@ test("durable chat thinking replaces live deltas and restores thinking after res
       channel: "navi",
       kind: "thinking",
     },
+  ]);
+  hydrateNiaMessages(reloaded, [
     {
       messageID: "shared",
       role: "chat",
@@ -1422,14 +1425,14 @@ test("durable chat thinking replaces live deltas and restores thinking after res
     },
   ]);
   expect(changed).toBe(true);
-  expect(reloaded.chatMessages.map(displayText)).toEqual([
+  expect(reloaded.navi.messages.map(displayText)).toEqual([
     "complete Navi reasoning",
   ]);
-  expect(reloaded.niaMessages.map(displayText)).toEqual([
+  expect(reloaded.nia.messages.map(displayText)).toEqual([
     "complete Nia reasoning",
   ]);
-  expect(reloaded.chatMessages[0]?.role).toBe("thinking");
-  expect(reloaded.niaMessages[0]?.role).toBe("thinking");
+  expect(reloaded.navi.messages[0]?.role).toBe("thinking");
+  expect(reloaded.nia.messages[0]?.role).toBe("thinking");
 });
 
 test("chat namespace prefixes override stale channel payloads", () => {
@@ -1454,17 +1457,17 @@ test("chat namespace prefixes override stale channel payloads", () => {
     } as unknown as RuntimeEvent,
   ]);
 
-  expect(state.chatMessages.map((block) => displayText(block))).toEqual([
+  expect(state.navi.messages.map((block) => displayText(block))).toEqual([
     "Navi request",
   ]);
-  expect(state.niaMessages.map((block) => displayText(block))).toEqual([
+  expect(state.nia.messages.map((block) => displayText(block))).toEqual([
     "Nia request",
   ]);
 });
 
 test("hydrating chat rows splits Navi and Nia into independent streams", () => {
   const state = initialState();
-  const changed = hydrateChatMessages(state, [
+  const changed = hydrateNaviMessages(state, [
     {
       messageID: "chat:navi",
       role: "user",
@@ -1472,6 +1475,8 @@ test("hydrating chat rows splits Navi and Nia into independent streams", () => {
       at: "t1",
       channel: "navi",
     },
+  ]);
+  hydrateNiaMessages(state, [
     {
       messageID: "chat:nia",
       role: "chat",
@@ -1481,8 +1486,8 @@ test("hydrating chat rows splits Navi and Nia into independent streams", () => {
     },
   ]);
   expect(changed).toBe(true);
-  expect(state.chatMessages.map((block) => block.text)).toEqual(["hi navi"]);
-  expect(state.niaMessages.map((block) => block.text)).toEqual([
+  expect(state.navi.messages.map((block) => block.text)).toEqual(["hi navi"]);
+  expect(state.nia.messages.map((block) => block.text)).toEqual([
     "audit result",
   ]);
 });
@@ -1504,4 +1509,41 @@ test("events from another session do not mix into the current transcript", () =>
   });
   expect(state.sessionID).toBe("ses_a");
   expect(state.messages.map((block) => block.text)).toEqual(["from a"]);
+});
+
+test("empty explicit stream hydration clears durable rows without losing live output", () => {
+  const state = initialState();
+  hydrateNaviMessages(state, [
+    { messageID: "old", role: "chat", text: "old", at: "t" },
+  ]);
+  beginNaviHydration(state);
+  hydrateNaviMessages(state, []);
+  expect(state.navi.messages).toEqual([]);
+  beginNaviHydration(state);
+  applyEvent(state, {
+    type: "navi.chat.message.delta",
+    id: "live",
+    messageID: "new",
+    text: "live",
+  });
+  hydrateNaviMessages(state, []);
+  expect(state.navi.messages.map(displayText)).toEqual(["live"]);
+});
+
+test("a late snapshot retains a live delta for the same message ID", () => {
+  const state = initialState();
+  hydrateNaviMessages(state, [
+    { messageID: "same", role: "chat", text: "durable", at: "t" },
+  ]);
+  beginNaviHydration(state);
+  applyEvent(state, {
+    type: "navi.chat.message.delta",
+    id: "same:delta",
+    messageID: "same",
+    text: " live",
+  });
+  hydrateNaviMessages(state, [
+    { messageID: "same", role: "chat", text: "durable", at: "t" },
+  ]);
+  expect(state.navi.messages.map(displayText)).toEqual(["durable live"]);
 });

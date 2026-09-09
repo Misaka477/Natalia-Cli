@@ -1,4 +1,5 @@
 import type { RuntimeEvent } from "@natalia/contracts";
+import { ContextLedger } from "@natalia/runtime";
 import type { SessionProjection } from "@natalia/session";
 import type {
   AttachmentService,
@@ -148,8 +149,10 @@ export class SessionRecoveryCoordinator {
       paused: false,
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
-      pendingNaviChatUserMessages: [],
-      pendingNiaChatUserMessages: [],
+      naviChatLedger: new ContextLedger(),
+      niaChatLedger: new ContextLedger(),
+      naviPendingQueue: [],
+      niaPendingQueue: [],
       naviAbortWakePending: false,
       niaAbortWakePending: false,
     };
@@ -351,8 +354,10 @@ export class SessionRecoveryCoordinator {
 
     const recoveredChatProfile =
       this.sqliteRecovery?.chatModelProfile ?? projection.chatModelProfile;
-    if (recoveredChatProfile && scope.activeExec)
-      scope.activeExec.chatModelProfile = recoveredChatProfile;
+    if (recoveredChatProfile && scope.activeExec) {
+      scope.activeExec.naviChatModelProfile = recoveredChatProfile.navi;
+      scope.activeExec.niaChatModelProfile = recoveredChatProfile.nia;
+    }
 
     const recoveredPermissionMode =
       this.sqliteRecovery?.permissionMode ?? projection.permissionMode;

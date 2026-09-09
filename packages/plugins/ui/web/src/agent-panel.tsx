@@ -108,7 +108,7 @@ export function AgentPanel(props: {
   });
 
   const subagents = createMemo(() =>
-    Object.values(props.state.subagents ?? {}).sort((a, b) => {
+    Object.values(props.state.subagentStream.active).sort((a, b) => {
       const at = a.lastActivityAt ?? 0;
       const bt = b.lastActivityAt ?? 0;
       return bt - at;
@@ -146,7 +146,7 @@ export function AgentPanel(props: {
   const subagentMessages = createMemo<Message[]>(() => {
     const id = selectedID();
     if (!id) return [];
-    const child = props.state.subagentStates?.[id];
+    const child = props.state.subagentStream.states[id];
     if (child?.messages?.length) {
       return child.messages.map((msg, index) => {
         if (msg.tool) {
@@ -182,7 +182,7 @@ export function AgentPanel(props: {
         } satisfies Message;
       });
     }
-    const history = props.state.subagentHistory?.[id] ?? [];
+    const history = props.state.subagentStream.history[id] ?? [];
     return history.map((event, index) => {
       const text =
         event.text || event.activityDetail || event.task || event.event;

@@ -8653,6 +8653,100 @@ test("real runtime client spawns and projects a TS/Bun subagent lifecycle", asyn
   expect(history?.events.some((item) => item.event.agentID)).toBe(false);
 });
 
+test("subagent compaction uses its active provider and stays in the child lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-subagent-compaction-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(join(root, "readable.txt"), "subagent input ".repeat(12_000));
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      context: {
+        compactionThresholdPercent: 85,
+        preservedRecentMessages: 0,
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const provider = subagentCompactionProvider();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_subagent_compaction",
+    permissionMode: "auto",
+    provider,
+  });
+  client.start((event) => events.push(event));
+
+  await client.submitAndWait!("delegate a compacted child task");
+  await waitFor(
+    () =>
+      events.some(
+        (event) => event.type === "subagent.update" && event.event === "created",
+      ),
+    5_000,
+    "the compacted subagent to start",
+  );
+  const childID = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "subagent.update" }> =>
+      event.type === "subagent.update" && event.event === "created",
+  )?.id;
+  expect(childID).toBeDefined();
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "compaction.begin" && event.agentID === childID,
+      ),
+    5_000,
+    "the subagent preflight compaction",
+  );
+
+  expect(provider.compactionCalls).toBe(1);
+  const compactionEvents = events.filter(
+    (
+      event,
+    ): event is Extract<
+      RuntimeEvent,
+      { type: "compaction.begin" | "compaction.end" }
+    > & { agentID: string } =>
+      (event.type === "compaction.begin" || event.type === "compaction.end") &&
+      Boolean(event.agentID),
+  );
+  expect(compactionEvents).toHaveLength(2);
+  expect(compactionEvents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "compaction.begin",
+        agentID: childID,
+        sessionID: "ses_subagent_compaction",
+        id: expect.stringMatching(/^subagent:.+:preflight:/u),
+      }),
+      expect.objectContaining({
+        type: "compaction.end",
+        agentID: childID,
+        sessionID: "ses_subagent_compaction",
+        id: expect.stringMatching(/^subagent:.+:preflight:/u),
+        success: true,
+      }),
+    ]),
+  );
+  expect(
+    events.some(
+      (event) =>
+        (event.type === "compaction.begin" || event.type === "compaction.end") &&
+        !event.agentID,
+    ),
+  ).toBe(false);
+  expect(
+    (await client.history?.({ limit: 1_000 }))?.events.some(
+      (item) =>
+        item.event.type === "compaction.begin" ||
+        item.event.type === "compaction.end",
+    ),
+  ).toBe(false);
+  await client.dispose?.();
+});
+
 test("subagent executes TS native workspace tools before reporting completion", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-subagent-tools-"));
   const events: RuntimeEvent[] = [];
@@ -9191,6 +9285,78 @@ function subagentProvider(): StreamingProvider {
               id: "call_subagent",
               name: "agent_spawn",
               arguments: JSON.stringify({ task: "child task" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent complete" };
+      yield { type: "done" };
+    },
+  };
+}
+
+function subagentCompactionProvider(): StreamingProvider & {
+  compactionCalls: number;
+} {
+  let compactionCalls = 0;
+  return {
+    provider: "scripted-subagent-compaction",
+    model: "scripted-subagent-compaction-model",
+    get compactionCalls() {
+      return compactionCalls;
+    },
+    async *stream(request: ProviderStreamRequest) {
+      if (
+        request.messages[0]?.role === "system" &&
+        request.messages[0].content ===
+          "You compact long coding-agent context into a faithful, concise operational summary. Do not invent facts."
+      ) {
+        compactionCalls += 1;
+        yield { type: "content", text: "Child task summary" };
+        yield { type: "done" };
+        return;
+      }
+      const hasCompactedSummary = request.messages.some((message) =>
+        message.content.includes("Natalia compacted context summary"),
+      );
+      const isChild =
+        (hasCompactedSummary ||
+          (request.messages[0]?.role === "system" &&
+            request.messages[0].content.includes(
+              "focused Natalia TS/Bun subagent",
+            ))) &&
+        request.messages.some((message) =>
+          message.content.includes("child compaction task"),
+        );
+      if (isChild && !request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_child_read_for_compaction",
+              name: "read_file",
+              arguments: JSON.stringify({ path: "readable.txt" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      if (isChild) {
+        yield { type: "content", text: "child compacted result" };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_spawn_compacted_child",
+              name: "agent_spawn",
+              arguments: JSON.stringify({ task: "child compaction task" }),
             },
           ],
         };

@@ -91,11 +91,14 @@ export type UiProjection = {
     direction?: "older" | "newer",
     options?: { replace?: boolean },
   ): boolean;
-  hydrateChatMessages?(messages: ChatMessageRow[]): boolean;
+  hydrateNaviMessages?(messages: ChatMessageRow[]): boolean;
+  hydrateNiaMessages?(messages: ChatMessageRow[]): boolean;
+  beginNaviHydration?(): void;
+  beginNiaHydration?(): void;
   hydrateSubagents?(subagents: RuntimeSubagentView[]): boolean;
   hydrateSubagentHistory?(history: RuntimeSubagentView[]): boolean;
-  /** Resets the projected state for a session/workspace switch. */
-  reset?(): void;
+  /** Activates a cached workspace/session projection without discarding others. */
+  activateSession?(sessionID: string, workspaceID?: string): void;
 };
 
 export type UiPluginContext<TContext = unknown> = {

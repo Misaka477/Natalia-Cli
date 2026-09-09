@@ -350,11 +350,14 @@ export function createEventSink(
           candidate.toolName === "audit_report",
       );
       let auditSummary = last?.text ?? "";
+      let auditVerdict: string | undefined;
       if (auditReportEvent?.argumentsRaw) {
         try {
           const args = JSON.parse(auditReportEvent.argumentsRaw) as {
+            verdict?: string;
             gaps?: string[];
           };
+          auditVerdict = args.verdict;
           if (Array.isArray(args.gaps) && args.gaps.length) {
             auditSummary += `\n\nGap list from audit_report:\n${args.gaps
               .map((gap, index) => `${index + 1}. ${gap}`)
@@ -364,16 +367,20 @@ export function createEventSink(
           // Keep the natural-language fallback if arguments are not JSON.
         }
       }
+      const auditPassed = auditVerdict === "passed";
       // Nia's audit wake usually goes through collab_chat or audit_report.
-      // Always forward when audit_report was used, even for a manually started
-      // Nia audit, because that report has already changed the plan lifecycle.
-      // Only skip when Nia actively used collab_chat, so the formal audit
-      // message is not duplicated.
-      const shouldForwardAudit = niaAuditWake || auditReported;
+      // Forward when audit_report was used, even for a manually started Nia
+      // audit, because that report has already changed the plan lifecycle.
+      // Once the plan is passed there is nothing left to remediate, so do not
+      // wake Natalia again. Only skip when Nia actively used collab_chat, so
+      // the formal audit message is not duplicated.
+      const shouldForwardAudit = (niaAuditWake || auditReported) && !auditPassed;
       console.log("[nia-audit-tail]", {
         messageID: event.messageID,
         niaAuditWake,
         auditReported,
+        auditVerdict,
+        auditPassed,
         niaCollabSent,
         shouldForwardAudit,
         forwarded: Boolean(last && shouldForwardAudit && !niaCollabSent),

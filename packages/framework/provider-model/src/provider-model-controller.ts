@@ -279,14 +279,6 @@ export function createProviderModelController(
     abortNia,
     naviBusy: (id) => navi.aborts.has(id),
     niaBusy: (id) => nia.aborts.has(id),
-    runChatTurn: (turn) =>
-      turn.channel === "nia" ? runNiaChatTurn(turn) : runNaviChatTurn(turn),
-    requestChatWake: (id, channel) =>
-      channel === "nia" ? requestNiaWake(id) : requestNaviWake(id),
-    chatBusy: (id, channel) =>
-      channel === "nia" ? nia.aborts.has(id) : navi.aborts.has(id),
-    abortChat: (id, channel) =>
-      channel === "nia" ? abortNia(id) : abortNavi(id),
     dispose,
   };
 }

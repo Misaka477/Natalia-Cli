@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { createLocalSessionService } from "@natalia/session-store";
 import type {
   RuntimeSessionSummary,
   WorkspaceSummary,
@@ -65,7 +66,10 @@ async function readSettings(root: string): Promise<{
         enabledTools: [],
         disabledTools: [],
       },
-      activeSessionID: raw.activeSessionID,
+      activeSessionID:
+        typeof raw.activeSessionID === "string" && raw.activeSessionID.trim()
+          ? raw.activeSessionID
+          : undefined,
     };
   } catch {
     return {
@@ -82,7 +86,30 @@ async function readSettings(root: string): Promise<{
   }
 }
 
-async function writeSettings(
+const settingsWrites = new Map<string, Promise<unknown>>();
+
+function writeSettings(
+  root: string,
+  update: {
+    permissionSettings?: WorkspacePermissionSettings;
+    toolSettings?: WorkspaceToolSettings;
+    activeSessionID?: string;
+  },
+) {
+  // Attach and settings edits may finish together; serialize read/modify/write.
+  const write = (settingsWrites.get(root) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => saveSettings(root, update));
+  settingsWrites.set(root, write);
+  void write
+    .finally(() => {
+      if (settingsWrites.get(root) === write) settingsWrites.delete(root);
+    })
+    .catch(() => undefined);
+  return write;
+}
+
+async function saveSettings(
   root: string,
   update: {
     permissionSettings?: WorkspacePermissionSettings;
@@ -95,8 +122,8 @@ async function writeSettings(
   const next = {
     permissionSettings: update.permissionSettings ?? current.permissionSettings,
     toolSettings: update.toolSettings ?? current.toolSettings,
-    ...(update.activeSessionID !== undefined
-      ? { activeSessionID: update.activeSessionID }
+    ...((update.activeSessionID ?? current.activeSessionID) !== undefined
+      ? { activeSessionID: update.activeSessionID ?? current.activeSessionID }
       : {}),
   };
   await mkdir(join(root, ".natalia"), { recursive: true, mode: 0o700 });
@@ -174,10 +201,7 @@ export type WorkspaceManager = {
     settings: WorkspacePermissionSettings,
   ): Promise<WorkspacePermissionSettings>;
   workspaceSessionGet(workspaceID: string): Promise<string | undefined>;
-  workspaceSessionSet(
-    workspaceID: string,
-    sessionID: string,
-  ): Promise<void>;
+  workspaceSessionSet(workspaceID: string, sessionID: string): Promise<void>;
   workspaceToolGet(workspaceID: string): Promise<WorkspaceToolSettings>;
   workspaceToolSet(
     workspaceID: string,
@@ -274,15 +298,25 @@ export function createWorkspaceManager(
 
     await migrateLegacyWorkspaceSessions(root, options.sessionDir);
     const settings = await readSettings(root);
+    const sessions = (
+      await createLocalSessionService(root).list({
+        useSqliteStore: options.useSqliteStore ?? false,
+      })
+    ).filter((session) => !session.archived);
+    const activeSessionID =
+      sessions.find((session) => session.id === settings.activeSessionID)?.id ??
+      sessions.sort((left, right) =>
+        (right.lastAccessedAt ?? right.createdAt).localeCompare(
+          left.lastAccessedAt ?? left.createdAt,
+        ),
+      )[0]?.id;
     const client = createRealRuntimeClient({
       workspaceRoot: root,
       pluginStoreRoot: options.pluginStoreRoot,
       globalConfigPath: options.globalConfigPath,
       useSqliteStore: options.useSqliteStore,
       contextWindowCachePath: options.contextWindowCachePath,
-      ...(settings.activeSessionID
-        ? { sessionID: settings.activeSessionID }
-        : {}),
+      ...(activeSessionID ? { sessionID: activeSessionID } : {}),
     });
     const ws: WorkspaceRuntime = {
       workspaceID: `ws_${randomUUID().replace(/-/gu, "").slice(0, 12)}`,
@@ -418,9 +452,10 @@ export function createWorkspaceRuntimeClient(
     for (const listener of listeners) listener(event);
   }
 
-  function decorateSession<T extends RuntimeSessionSummary>(session: T): T {
-    const active = manager.getActive();
-    if (!active) return session;
+  function decorateSession<T extends RuntimeSessionSummary>(
+    session: T,
+    workspace: WorkspaceRuntime,
+  ): T {
     const summarySession = session as RuntimeSessionSummary;
     const status =
       summarySession.status ??
@@ -431,7 +466,7 @@ export function createWorkspaceRuntimeClient(
           : summarySession.resumable
             ? "idle"
             : "stopped");
-    return { ...session, workspaceID: active.workspaceID, status };
+    return { ...session, workspaceID: workspace.workspaceID, status };
   }
 
   function startWorkspaceClient(workspace: WorkspaceRuntime) {
@@ -531,10 +566,16 @@ export function createWorkspaceRuntimeClient(
           ).apply(activeForSession.client, args);
           if (prop === "sessionList" && Array.isArray(result)) {
             return result.map((item) =>
-              decorateSession(item as RuntimeSessionSummary),
+              decorateSession(item as RuntimeSessionSummary, activeForSession),
             );
           }
-          if (prop === "sessionAttach" && result?.sessionID) {
+          if (
+            prop === "sessionAttach" &&
+            result &&
+            typeof result === "object" &&
+            "sessionID" in result &&
+            typeof result.sessionID === "string"
+          ) {
             await manager.workspaceSessionSet(
               activeForSession.workspaceID,
               result.sessionID,
@@ -547,7 +588,10 @@ export function createWorkspaceRuntimeClient(
             "title" in result &&
             !("workspaceID" in result)
           ) {
-            return decorateSession(result as RuntimeSessionSummary);
+            return decorateSession(
+              result as RuntimeSessionSummary,
+              activeForSession,
+            );
           }
           return result;
         };

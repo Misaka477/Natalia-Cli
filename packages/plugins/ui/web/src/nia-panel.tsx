@@ -35,7 +35,7 @@ export function NiaPanel(props: {
   let profileLoadToken = 0;
 
   const messages = createMemo<Message[]>(() =>
-    (props.state.niaMessages ?? []).map((msg, idx) => {
+    props.state.nia.messages.map((msg, idx) => {
       if (msg.tool) {
         return {
           id: msg.id,
@@ -57,8 +57,8 @@ export function NiaPanel(props: {
         thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
         content: msg.text + (msg.pendingText ?? ""),
         streaming: Boolean(
-          props.state.niaActivity &&
-            idx === (props.state.niaMessages ?? []).length - 1 &&
+          props.state.nia.activity &&
+            idx === props.state.nia.messages.length - 1 &&
             msg.role !== "user",
         ),
       };
@@ -218,7 +218,7 @@ export function NiaPanel(props: {
     }
   }
 
-  const active = () => props.state.niaActivity;
+  const active = () => props.state.nia.activity;
 
   return (
     <div class="neu-pane nia-flat-pane">

@@ -107,7 +107,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     if (!controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
     const expert = exec.advisorPending === true;
-    const expertProfile = exec.chatModelProfile?.navi?.expert;
+    const expertProfile = exec.naviChatModelProfile?.expert;
     if (expert) {
       publishForSession(
         exec,
@@ -182,10 +182,10 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     console.log("[nia-wake] wakeNia start", {
       sessionID: exec.session.id,
       responseMessageID,
-      model: exec.chatModelProfile?.nia?.normal?.modelID,
+      model: exec.niaChatModelProfile?.normal?.modelID,
     });
     try {
-      const normalProfile = exec.chatModelProfile?.nia?.normal;
+      const normalProfile = exec.niaChatModelProfile?.normal;
       await controller.runNiaChatTurn({
         sessionID: exec.session.id as SessionID,
         text: "",
