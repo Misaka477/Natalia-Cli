@@ -2500,17 +2500,15 @@ export type RuntimeClient = {
     sessionID?: string,
   ): Promise<RuntimeCheckpoint[]>;
   auditRounds?(planID?: string): Promise<AuditRoundRecord[]>;
-  roundDiff?(
-    input: {
-      from: CheckpointRef;
-      to: CheckpointRef;
-      paths?: string[];
-      includePatch?: boolean;
-      includeContent?: boolean;
-      maxFiles?: number;
-      maxPatchChars?: number;
-    },
-  ): Promise<RuntimeWorkspaceDiffChange[]>;
+  roundDiff?(input: {
+    from: CheckpointRef;
+    to: CheckpointRef;
+    paths?: string[];
+    includePatch?: boolean;
+    includeContent?: boolean;
+    maxFiles?: number;
+    maxPatchChars?: number;
+  }): Promise<RuntimeWorkspaceDiffChange[]>;
   checkpointPreview?(
     id: string,
     sessionID?: string,

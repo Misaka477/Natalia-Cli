@@ -101,7 +101,9 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     sessionID?: string,
   ) {
     const { controller } = await requireInitializedController(sessionID);
-    return (await controller.listCheckpointsByKind(kind)).map(toRuntimeCheckpoint);
+    return (await controller.listCheckpointsByKind(kind)).map(
+      toRuntimeCheckpoint,
+    );
   }
 
   async function auditRounds(planID?: string) {

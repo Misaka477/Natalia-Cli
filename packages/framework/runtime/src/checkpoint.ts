@@ -440,7 +440,9 @@ export class CheckpointStore {
   }): Promise<CheckpointRecord> {
     const existing = await this.listAuditRounds(input.planID);
     if (existing.some((round) => round.round === input.round))
-      throw new Error(`audit round already exists: ${input.planID}:${input.round}`);
+      throw new Error(
+        `audit round already exists: ${input.planID}:${input.round}`,
+      );
     return this.createCheckpoint({
       reason: "audit_round",
       context: input.context,
@@ -468,17 +470,10 @@ export class CheckpointStore {
     const fromManifest = await this.manifestForRef(from);
     const toManifest = await this.manifestForRef(to);
     const changes = diffManifests(fromManifest, toManifest);
-    return this.renderDiffChanges(
-      fromManifest,
-      toManifest,
-      changes,
-      options,
-    );
+    return this.renderDiffChanges(fromManifest, toManifest, changes, options);
   }
 
-  private async manifestForRef(
-    ref: CheckpointRef,
-  ): Promise<WorkspaceManifest> {
+  private async manifestForRef(ref: CheckpointRef): Promise<WorkspaceManifest> {
     if (ref.kind === "current") return this.captureManifest();
     const records = await this.list();
     let record: CheckpointRecord | undefined;
@@ -526,8 +521,7 @@ export class CheckpointStore {
       if (
         options.paths?.length &&
         !options.paths.some(
-          (path) =>
-            change.path === path || change.path.startsWith(`${path}/`),
+          (path) => change.path === path || change.path.startsWith(`${path}/`),
         )
       )
         continue;

@@ -657,9 +657,8 @@ export function createChatTools(ctx: RuntimeContext) {
           let round = 0;
           let roundCheckpointID: string | undefined;
           try {
-            const sessionID = (
-              context as { sessionID?: string } | undefined
-            )?.sessionID as import("@natalia/contracts").SessionID | undefined;
+            const sessionID = (context as { sessionID?: string } | undefined)
+              ?.sessionID as import("@natalia/contracts").SessionID | undefined;
             const owner = sessionID
               ? ctx.ports.getExecutionBySession().get(sessionID)
               : exec;
@@ -670,15 +669,17 @@ export function createChatTools(ctx: RuntimeContext) {
                 (await checkpointController?.listAuditRounds?.(args.planID)) ??
                 [];
               round = (rounds.at(-1)?.round ?? 0) + 1;
-              const record = await checkpointController?.createAuditRoundCheckpoint?.({
-                planID: args.planID,
-                round,
-                verdict: args.verdict as "gaps" | "passed",
-                context: owner.context,
-                step: owner.context.journalStatus().messageCount,
-                sessionID: owner.session.id as import("@natalia/contracts").SessionID,
-                turnID: (context as { turnID?: string } | undefined)?.turnID,
-              });
+              const record =
+                await checkpointController?.createAuditRoundCheckpoint?.({
+                  planID: args.planID,
+                  round,
+                  verdict: args.verdict as "gaps" | "passed",
+                  context: owner.context,
+                  step: owner.context.journalStatus().messageCount,
+                  sessionID: owner.session
+                    .id as import("@natalia/contracts").SessionID,
+                  turnID: (context as { turnID?: string } | undefined)?.turnID,
+                });
               roundCheckpointID = record?.id;
             }
           } catch (error) {
@@ -702,6 +703,127 @@ export function createChatTools(ctx: RuntimeContext) {
         },
       });
     }
+    visible.push({
+      name: "diff_workspace",
+      description:
+        "Compare workspace state against audit round checkpoints without using Git. " +
+        "Use target=last_audit to see changes since the previous audit, target=baseline for the full plan diff, " +
+        "or target=rounds to compare two specific audit rounds. Restrict paths to avoid a huge diff.",
+      requiresApproval: false,
+      parameters: {
+        type: "object",
+        properties: {
+          target: {
+            type: "string",
+            enum: ["last_audit", "baseline", "rounds", "current"],
+          },
+          planID: { type: "string" },
+          fromRound: { type: "number" },
+          toRound: { type: "number" },
+          paths: { type: "array", items: { type: "string" } },
+          format: {
+            type: "string",
+            enum: ["unified", "summary", "files"],
+          },
+        },
+        required: ["target"],
+        additionalProperties: false,
+      },
+      async execute(parsed, context) {
+        const args = parsed as {
+          target?: string;
+          planID?: string;
+          fromRound?: number;
+          toRound?: number;
+          paths?: string[];
+          format?: string;
+        };
+        if (!args.target) return "diff_workspace requires target";
+        const sessionID = (context as { sessionID?: string } | undefined)
+          ?.sessionID as import("@natalia/contracts").SessionID | undefined;
+        const checkpoint = ctx.ports.getCheckpointRuntime();
+        const paths = Array.isArray(args.paths)
+          ? args.paths.filter(
+              (value): value is string => typeof value === "string",
+            )
+          : undefined;
+        const from =
+          args.target === "last_audit"
+            ? ({ kind: "last_audit", planID: args.planID } as const)
+            : args.target === "baseline"
+              ? ({ kind: "baseline" } as const)
+              : args.target === "rounds"
+                ? {
+                    kind: "round",
+                    planID: args.planID ?? "",
+                    round: Number(args.fromRound ?? 0),
+                  }
+                : args.target === "current"
+                  ? {
+                      kind: "round",
+                      planID: args.planID ?? "",
+                      round: Number(args.toRound ?? 0),
+                    }
+                  : undefined;
+        if (!from) return "diff_workspace: unsupported target";
+        const to =
+          args.target === "last_audit" || args.target === "baseline"
+            ? ({ kind: "current" } as const)
+            : args.target === "rounds"
+              ? {
+                  kind: "round",
+                  planID: args.planID ?? "",
+                  round: Number(args.toRound ?? 0),
+                }
+              : ({ kind: "current" } as const);
+        try {
+          if (!checkpoint.roundDiff)
+            return "diff_workspace: round diff unavailable";
+          const changes = await checkpoint.roundDiff({
+            from: from as import("@natalia/contracts").CheckpointRef,
+            to: to as import("@natalia/contracts").CheckpointRef,
+            paths,
+            includePatch: args.format !== "summary" && args.format !== "files",
+            includeContent: false,
+          });
+          const additions = changes.reduce(
+            (sum, change) => sum + change.additions,
+            0,
+          );
+          const deletions = changes.reduce(
+            (sum, change) => sum + change.deletions,
+            0,
+          );
+          const rows =
+            args.format === "files"
+              ? changes.map((change) => ({
+                  path: change.path,
+                  operation: change.operation,
+                  additions: change.additions,
+                  deletions: change.deletions,
+                }))
+              : changes.map((change) => ({
+                  path: change.path,
+                  operation: change.operation,
+                  additions: change.additions,
+                  deletions: change.deletions,
+                  ...(change.patch ? { patch: change.patch } : {}),
+                }));
+          return JSON.stringify({
+            from,
+            to,
+            files: changes.length,
+            additions,
+            deletions,
+            changes: rows,
+          });
+        } catch (error) {
+          return `diff_workspace: ${
+            error instanceof Error ? error.message : String(error)
+          }`;
+        }
+      },
+    });
     return visible;
   }
 }

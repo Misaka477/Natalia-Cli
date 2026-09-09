@@ -1185,9 +1185,9 @@ export async function handleRPCMessage(
     }
     if (body.method === "workspace.round.diff") {
       optionsGuard(client, "roundDiff");
-      const input = body.params as Parameters<
-        NonNullable<RuntimeClient["roundDiff"]>
-      >[0] | undefined;
+      const input = body.params as
+        | Parameters<NonNullable<RuntimeClient["roundDiff"]>>[0]
+        | undefined;
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,

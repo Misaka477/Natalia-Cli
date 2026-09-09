@@ -224,17 +224,15 @@ export type NataliaSDK = {
   auditRounds(
     planID?: string,
   ): Promise<import("@natalia/contracts").AuditRoundRecord[]>;
-  roundDiff(
-    input: {
-      from: import("@natalia/contracts").CheckpointRef;
-      to: import("@natalia/contracts").CheckpointRef;
-      paths?: string[];
-      includePatch?: boolean;
-      includeContent?: boolean;
-      maxFiles?: number;
-      maxPatchChars?: number;
-    },
-  ): Promise<import("@natalia/contracts").RuntimeWorkspaceDiffChange[]>;
+  roundDiff(input: {
+    from: import("@natalia/contracts").CheckpointRef;
+    to: import("@natalia/contracts").CheckpointRef;
+    paths?: string[];
+    includePatch?: boolean;
+    includeContent?: boolean;
+    maxFiles?: number;
+    maxPatchChars?: number;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceDiffChange[]>;
   checkpointPreview(
     id: string,
     sessionID?: string,
