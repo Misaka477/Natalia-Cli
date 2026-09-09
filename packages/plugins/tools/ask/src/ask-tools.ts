@@ -22,7 +22,9 @@ function askUserTool(): RuntimeTool {
   return {
     name: "ask_user",
     description:
-      "Ask the user a structured question and wait for their answer.",
+      "Ask the user a structured question and wait for their answer. " +
+      "Use when a decision depends on the user's preference, intent, or approval; " +
+      "do not guess on user-facing choices.",
     requiresApproval: false,
     parameters: {
       type: "object",

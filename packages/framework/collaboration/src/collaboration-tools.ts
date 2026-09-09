@@ -151,7 +151,9 @@ export function collaborationTools(
   const ask: RuntimeTool = {
     name: "collab_ask",
     description:
-      "Ask Navi, the Live Work Chat collaborator, for a second opinion on an approach, risk, or tradeoff.",
+      "Ask Navi, the Live Work Chat collaborator, for a second opinion on an approach, risk, or tradeoff. " +
+      "Use proactively when you need expert technical advice on architecture, test strategy, implementation detail, " +
+      "or a difficult decision — not only after an error.",
     requiresApproval: false,
     parameters: {
       type: "object",

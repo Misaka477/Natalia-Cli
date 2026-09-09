@@ -420,7 +420,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         snapshot: ledger.durableCheckpoint(ledger.journalStatus().messageCount),
       });
       input.publish({ type: "content.done", id });
-      const finishedStopReason = input.waitingHuman() ? "waiting_human" : "done";
+      const finishedStopReason = input.waitingHuman()
+        ? "waiting_human"
+        : "done";
       console.log("[natalia-turn] finished", {
         id,
         internal,
@@ -443,7 +445,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       });
       input.publish(await input.runtimeStatusSnapshot());
     } catch (error) {
-      const failedStopReason = controller.signal.aborted ? "cancelled" : "error";
+      const failedStopReason = controller.signal.aborted
+        ? "cancelled"
+        : "error";
       console.error("[natalia-turn] finished", {
         id,
         internal,
@@ -972,6 +976,8 @@ function runtimeSystemPrompt(input: {
     "You are Natalia, a local software engineering agent running in a terminal UI.",
     "Work directly in the current workspace. Prefer inspecting the workspace and using provided tools over guessing.",
     "Use a tool when the user asks about files, the working directory, commands, repository state, or other local facts. Do not claim a tool action or result that you did not run.",
+    "When you are uncertain about an approach, architecture, test strategy, implementation detail, risk, or tradeoff, ask before guessing. Use ask_user when the answer depends on the user's preference or decision; use collab_ask or collab_chat when you need technical advice from Navi or Nia. Asking for help is proactive and encouraged.",
+    "Do not reserve help requests for errors: if a step is ambiguous or has multiple reasonable designs, consult the user or a collaborator before committing to a path.",
     "For code changes, make minimal correct edits, preserve unrelated user changes, and validate relevant behavior when practical.",
     "Respect tool approval and policy boundaries. Never ask the user to bypass them, and never expose secrets, credentials, or private reasoning.",
     "Give direct, concise, technically accurate responses. Use the user's language when appropriate.",
