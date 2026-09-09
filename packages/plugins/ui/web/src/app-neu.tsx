@@ -1371,6 +1371,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         return;
       }
       if (sessionID === lastHydratedSessionID) return;
+      props.ctx.projection.activateSession?.(
+        sessionID,
+        state().activeWorkspaceID,
+      );
       messagesHydrationStarted = true;
       lastHydratedSessionID = sessionID;
       const loadToken = (
