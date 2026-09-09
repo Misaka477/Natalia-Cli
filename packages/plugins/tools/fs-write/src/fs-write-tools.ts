@@ -23,7 +23,8 @@ export const FS_WRITE_PLUGIN_ID = "natalia-tool-fs-write";
 function writeFileTool(): RuntimeTool {
   return {
     name: "write_file",
-    description: "Write a UTF-8 text file inside the workspace.",
+    description:
+      "Write UTF-8 text inside the workspace. Creates parent directories as needed and overwrites existing content; use edit_file or apply_edits for surgical changes.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -78,7 +79,8 @@ function writeFileTool(): RuntimeTool {
 function editFileTool(): RuntimeTool {
   return {
     name: "edit_file",
-    description: "Replace exact text inside a UTF-8 workspace file.",
+    description:
+      "Replace exact text inside a UTF-8 workspace file. oldText must occur exactly once; if it appears multiple times, include more surrounding context or use write_file/apply_edits.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -123,8 +125,21 @@ function editFileTool(): RuntimeTool {
         path,
       });
       const oldText = requireString(args.oldText, "oldText");
-      const current = await readFile(path, "utf8");
-      if (!current.includes(oldText)) throw new Error("oldText not found");
+      let current: string;
+      try {
+        current = await readFile(path, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          throw new Error(`edit_file: file does not exist: ${args.path}`);
+        throw error;
+      }
+      const count = countOccurrences(current, oldText);
+      if (count === 0)
+        throw new Error(`edit_file: oldText not found in ${args.path}`);
+      if (count > 1)
+        throw new Error(
+          `edit_file: oldText is ambiguous (${count} occurrences) in ${args.path}; include more context or use write_file`,
+        );
       const next = current.replace(
         oldText,
         requireString(args.newText, "newText"),

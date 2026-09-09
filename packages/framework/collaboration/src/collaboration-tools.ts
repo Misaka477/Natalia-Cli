@@ -88,7 +88,7 @@ export function collaborationTools(
         typeof args.messageID !== "string" ||
         typeof args.decision !== "string"
       )
-        return "collab_respond requires messageID and decision";
+        return "collab_respond requires messageID and decision; messageID comes from the <navi_collaborations> context block";
       const sessionID = context.sessionID as SessionID | undefined;
       if (!sessionID || !sessionEvents(sessionID)) return "no session";
       let result;
@@ -162,7 +162,7 @@ export function collaborationTools(
     async execute(parsed, context) {
       const question = (parsed as { question?: string }).question;
       if (typeof question !== "string" || !question.trim())
-        return "collab_ask requires question";
+        return "collab_ask requires a non-empty question";
       const sessionID = context.sessionID as SessionID | undefined;
       if (!sessionID || !sessionEvents(sessionID)) return "no session";
       const result = await ports.service.send({
@@ -221,7 +221,7 @@ function createMainAgentChatTool(
         continueConversation?: boolean;
       };
       if (typeof args.text !== "string" || !args.text.trim())
-        return "collab_chat requires text";
+        return "collab_chat requires a non-empty text";
       const sessionID = context.sessionID as SessionID | undefined;
       const events = sessionEvents(sessionID);
       if (!sessionID || !events) return "no session";

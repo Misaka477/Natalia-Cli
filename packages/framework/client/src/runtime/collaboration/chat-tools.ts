@@ -121,7 +121,7 @@ export function createChatTools(ctx: RuntimeContext) {
             priority?: string;
           };
           if (typeof args.suggestion !== "string" || !args.suggestion.trim())
-            return "collab_suggest requires suggestion";
+            return "collab_suggest requires a non-empty suggestion";
           if (!exec) return "no session";
           const service = ctx.ports.resolveService<CollaborationService>(
             COLLABORATION_SERVICE,
@@ -164,7 +164,7 @@ export function createChatTools(ctx: RuntimeContext) {
             typeof args.questionID !== "string" ||
             typeof args.answer !== "string"
           )
-            return "collab_answer requires questionID and answer";
+            return "collab_answer requires questionID and answer; questionID comes from the <natalia_collaborations> context block";
           const owner = context.sessionID
             ? getExecutionBySession().get(context.sessionID as SessionID)
             : undefined;
@@ -224,7 +224,7 @@ export function createChatTools(ctx: RuntimeContext) {
             relatedPlanID?: string;
           };
           if (typeof args.intent !== "string" || typeof args.text !== "string")
-            return "mailbox_send requires intent and text";
+            return "mailbox_send requires intent and text; intent must be one of clarification, constraint, reprioritize, pause, cancel, request_report, proposed_change, next_plan_handoff";
           return JSON.stringify(
             await enqueueMailboxMessage(
               {
@@ -260,7 +260,7 @@ export function createChatTools(ctx: RuntimeContext) {
         async execute(parsed) {
           const args = parsed as { messageID?: string; reason?: string };
           if (typeof args.messageID !== "string")
-            return "mailbox_cancel requires messageID";
+            return "mailbox_cancel requires messageID; use the exact messageID returned by mailbox_send or shown in the pending mailbox list";
           return JSON.stringify(
             await cancelMailboxMessage(args.messageID, args.reason, exec),
           );
@@ -411,7 +411,7 @@ export function createChatTools(ctx: RuntimeContext) {
         async execute(parsed) {
           const args = parsed as { planID?: string; path?: string };
           if (!args.planID && !args.path)
-            return "plan_doc_read requires planID or path";
+            return "plan_doc_read requires planID or path; use plan_doc_list to find an available plan document";
           try {
             return JSON.stringify(
               await ctx.ports.planDocRuntime.planDocRead({
@@ -566,7 +566,7 @@ export function createChatTools(ctx: RuntimeContext) {
         async execute(parsed) {
           const args = parsed as { planID?: string; path?: string };
           if (!args.planID && !args.path)
-            return "plan_doc_read requires planID or path";
+            return "plan_doc_read requires planID or path; use plan_doc_list to find an available plan document";
           try {
             return JSON.stringify(
               await ctx.ports.planDocRuntime.planDocRead({
@@ -626,7 +626,8 @@ export function createChatTools(ctx: RuntimeContext) {
             planID: args.planID,
             verdict: args.verdict,
             status,
-            sessionID: (context as { sessionID?: string } | undefined)?.sessionID,
+            sessionID: (context as { sessionID?: string } | undefined)
+              ?.sessionID,
           });
           const result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
             planID: args.planID,
@@ -642,9 +643,7 @@ export function createChatTools(ctx: RuntimeContext) {
             status,
             gaps: args.gaps ?? [],
             updated: result.updated,
-            ...(args.verdict === "passed"
-              ? { noWakeNatalia: true }
-              : {}),
+            ...(args.verdict === "passed" ? { noWakeNatalia: true } : {}),
           });
         },
       });

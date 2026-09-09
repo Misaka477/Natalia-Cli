@@ -71,7 +71,16 @@ function readFileTool(): RuntimeTool {
         context.workspaceRoot,
         requireString(args.path, "path"),
       );
-      const content = await readFile(path, "utf8");
+      let content: string;
+      try {
+        content = await readFile(path, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          throw new Error(
+            `read_file: file does not exist: ${relative(context.workspaceRoot, path)}`,
+          );
+        throw error;
+      }
       if (args.offset === undefined && args.length === undefined)
         return content;
 
@@ -114,8 +123,18 @@ function readMediaFileTool(): RuntimeTool {
         context.workspaceRoot,
         requireString(requireObject(input).path, "path"),
       );
-      const info = await stat(path);
-      const data = await readFile(path);
+      let info: Awaited<ReturnType<typeof stat>>;
+      let data: Buffer;
+      try {
+        info = await stat(path);
+        data = await readFile(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          throw new Error(
+            `read_media_file: file does not exist: ${relative(context.workspaceRoot, path)}`,
+          );
+        throw error;
+      }
       return JSON.stringify(
         {
           path: relative(context.workspaceRoot, path),
@@ -156,13 +175,23 @@ export function imageReadTool(): RuntimeTool {
     },
     async execute(input, context) {
       if (!context.attachImage)
-        throw new Error("image attachment is unavailable in this context");
+        throw new Error(
+          "image attachment is unavailable in this context; the selected provider or host does not support image input",
+        );
       const args = requireObject(input);
       const path = workspacePath(
         context.workspaceRoot,
         requireString(args.path, "path"),
       );
-      await context.attachImage(path);
+      try {
+        await context.attachImage(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          throw new Error(
+            `image_read: file does not exist: ${relative(context.workspaceRoot, path)}`,
+          );
+        throw error;
+      }
       return `image attached: ${path}`;
     },
   };

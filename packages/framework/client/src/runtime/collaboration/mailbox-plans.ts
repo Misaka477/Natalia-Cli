@@ -89,7 +89,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           continueConversation?: boolean;
         };
         if (typeof args.text !== "string" || !args.text.trim())
-          return "collab_chat requires text";
+          return "collab_chat requires a non-empty text";
         const owner =
           boundExec ??
           (context.sessionID

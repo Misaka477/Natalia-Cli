@@ -79,6 +79,10 @@ function webFetchTool(): RuntimeTool {
         throw new Error("web_fetch requires http(s) URL");
       assertNetworkURL(url, context);
       const response = await fetch(url, { signal: context.signal });
+      if (!response.ok)
+        throw new Error(
+          `web_fetch failed: HTTP ${response.status} from ${url}`,
+        );
       const text = await response.text();
       return [
         `status=${response.status}`,
