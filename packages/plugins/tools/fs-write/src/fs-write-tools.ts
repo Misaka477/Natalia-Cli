@@ -144,7 +144,30 @@ function applyPatchTool(): RuntimeTool {
       "Apply a unified diff (the format `git diff` emits) to workspace files. " +
       "Use it to make several coordinated edits in one call instead of many separate " +
       "edit_file calls. Every hunk must match before anything is written, so a bad " +
-      "patch changes nothing.",
+      "patch changes nothing.\n\n" +
+      "Strict unified diff example:\n\n" +
+      "--- a/src/main.rs\n" +
+      "+++ b/src/main.rs\n" +
+      "@@ -1,5 +1,7 @@\n" +
+      " fn main() {\n" +
+      "     let x = 1;\n" +
+      "-    let y = 2;\n" +
+      "+    let y = 3;\n" +
+      '+    println!("{x} + {y}");\n' +
+      " }\n" +
+      "\n" +
+      "Required:\n" +
+      "1. --- and +++ file headers\n" +
+      "2. @@ ... @@ hunk header\n" +
+      "3. context lines start with a single space\n" +
+      "4. removed lines start with -\n" +
+      "5. added lines start with +\n" +
+      "\n" +
+      "Forbidden:\n" +
+      "- diff --git alone\n" +
+      "- file headers without hunks\n" +
+      "- Markdown code fences around the patch\n" +
+      "- JSON patch / custom replace blocks",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -169,6 +192,11 @@ function applyPatchTool(): RuntimeTool {
     async execute(input, context) {
       const args = requireObject(input);
       const patch = requireString(args.patch, "patch");
+      if (!patch.trim()) throw new Error("patch contains no file changes");
+      if (!/^--- /m.test(patch))
+        throw new Error("apply_patch: no diff file headers found in patch");
+      if (!/^@@ /m.test(patch))
+        throw new Error("apply_patch: patch has no @@ hunks");
       const files = parseUnifiedPatch(patch);
       if (!files.length) throw new Error("patch contains no file changes");
 

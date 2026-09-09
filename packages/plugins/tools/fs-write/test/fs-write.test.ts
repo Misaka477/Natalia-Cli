@@ -136,6 +136,41 @@ test("apply_patch changes nothing when a hunk does not match", async () => {
   expect(await readFile(join(root, "a.ts"), "utf8")).toBe("const a = 1;\n");
 });
 
+test("apply_patch gives model-friendly diagnostics for malformed patches", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-tool-fs-write-patch-diagnostics-"),
+  );
+  const tools = new Map(
+    fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const apply = tools.get("apply_patch")!;
+  const context = { workspaceRoot: root };
+
+  await expect(apply.execute({ patch: "" }, context)).rejects.toThrow(
+    "patch contains no file changes",
+  );
+
+  await expect(
+    apply.execute({ patch: "diff --git a/a.ts b/a.ts\n" }, context),
+  ).rejects.toThrow("apply_patch: no diff file headers found in patch");
+
+  await expect(
+    apply.execute({ patch: "--- a/a.ts\n+++ b/a.ts\n" }, context),
+  ).rejects.toThrow("apply_patch: patch has no @@ hunks");
+});
+
+test("apply_patch description includes a strict unified diff example", () => {
+  const apply = fsWriteToolFamily().tools.find(
+    (tool) => tool.name === "apply_patch",
+  )!;
+  expect(apply.description).toContain("Strict unified diff example:");
+  expect(apply.description).toContain("--- a/src/main.rs");
+  expect(apply.description).toContain("@@ -1,5 +1,7 @@");
+  expect(apply.description).toContain("Required:");
+  expect(apply.description).toContain("Forbidden:");
+  expect(apply.description).toContain("diff --git alone");
+});
+
 test("apply_patch creates a new file from a /dev/null diff", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-tool-fs-write-patch-new-"),
