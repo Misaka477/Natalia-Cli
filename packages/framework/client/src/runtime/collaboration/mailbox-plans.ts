@@ -118,7 +118,9 @@ export function createMailboxPlans(ctx: RuntimeContext) {
                 : {}),
           });
         } catch (error) {
-          return error instanceof Error ? error.message : String(error);
+          return `collab_chat: ${
+            error instanceof Error ? error.message : String(error)
+          }`;
         }
         console.log("[collab-chat-tool] result", {
           sender,

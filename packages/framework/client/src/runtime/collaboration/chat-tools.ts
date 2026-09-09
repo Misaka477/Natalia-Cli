@@ -127,16 +127,24 @@ export function createChatTools(ctx: RuntimeContext) {
             COLLABORATION_SERVICE,
           );
           if (!service) return "collaboration service unavailable";
-          const { message } = await service.send({
-            sessionID: exec.session.id as SessionID,
-            kind: "suggestion",
-            from: "live_chat",
-            text: redactToolOutput(args.suggestion, true),
-            ...(args.rationale
-              ? { rationale: redactToolOutput(args.rationale, true) }
-              : {}),
-            priority: args.priority === "high" ? "high" : "normal",
-          });
+          let sent;
+          try {
+            ({ message: sent } = await service.send({
+              sessionID: exec.session.id as SessionID,
+              kind: "suggestion",
+              from: "live_chat",
+              text: redactToolOutput(args.suggestion, true),
+              ...(args.rationale
+                ? { rationale: redactToolOutput(args.rationale, true) }
+                : {}),
+              priority: args.priority === "high" ? "high" : "normal",
+            }));
+          } catch (error) {
+            return `collab_suggest: ${
+              error instanceof Error ? error.message : String(error)
+            }`;
+          }
+          const message = sent;
           // Symmetric round-robin: if the main agent is idle, wake it to see
           // the suggestion; if it is working, the suggestion reaches its next
           // turn through <navi_collaborations>.
@@ -183,7 +191,9 @@ export function createChatTools(ctx: RuntimeContext) {
               text: redactToolOutput(args.answer, true),
             }));
           } catch (error) {
-            return error instanceof Error ? error.message : String(error);
+            return `collab_answer: ${
+              error instanceof Error ? error.message : String(error)
+            }`;
           }
           wakeMainForCollaboration(owner, message.id, "answer", "Navi");
           return JSON.stringify({ answered: true });
@@ -629,13 +639,20 @@ export function createChatTools(ctx: RuntimeContext) {
             sessionID: (context as { sessionID?: string } | undefined)
               ?.sessionID,
           });
-          const result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
-            planID: args.planID,
-            status,
-            ...((context as { sessionID?: string } | undefined)?.sessionID
-              ? { sessionID: (context as { sessionID: string }).sessionID }
-              : {}),
-          });
+          let result;
+          try {
+            result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
+              planID: args.planID,
+              status,
+              ...((context as { sessionID?: string } | undefined)?.sessionID
+                ? { sessionID: (context as { sessionID: string }).sessionID }
+                : {}),
+            });
+          } catch (error) {
+            return `audit_report: ${
+              error instanceof Error ? error.message : String(error)
+            }`;
+          }
           return JSON.stringify({
             reported: true,
             planID: args.planID,

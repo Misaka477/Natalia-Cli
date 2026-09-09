@@ -103,7 +103,7 @@ export function collaborationTools(
           ...(args.reason ? { reason: ports.redact(args.reason) } : {}),
         });
       } catch (error) {
-        return error instanceof Error ? error.message : String(error);
+        return `collab_respond: ${error instanceof Error ? error.message : String(error)}`;
       }
       ports.requestWake(sessionID, {
         recipient: result.wake.recipient,
@@ -166,13 +166,19 @@ export function collaborationTools(
       if (typeof question !== "string" || !question.trim())
         return "collab_ask requires a non-empty question";
       const sessionID = context.sessionID as SessionID | undefined;
-      if (!sessionID || !sessionEvents(sessionID)) return "no session";
-      const result = await ports.service.send({
-        sessionID,
-        kind: "question",
-        from: "main_agent",
-        text: ports.redact(question),
-      });
+      if (!sessionID || !sessionEvents(sessionID))
+        return "collab_ask: no active session; retry after the session is ready";
+      let result;
+      try {
+        result = await ports.service.send({
+          sessionID,
+          kind: "question",
+          from: "main_agent",
+          text: ports.redact(question),
+        });
+      } catch (error) {
+        return `collab_ask: ${error instanceof Error ? error.message : String(error)}`;
+      }
       ports.requestWake(sessionID, {
         recipient: result.wake.recipient,
         messageID: result.message.id,
@@ -256,7 +262,7 @@ function createMainAgentChatTool(
               : {}),
         });
       } catch (error) {
-        return error instanceof Error ? error.message : String(error);
+        return `collab_chat: ${error instanceof Error ? error.message : String(error)}`;
       }
       ports.requestWake(sessionID, {
         recipient: result.wake.recipient,
