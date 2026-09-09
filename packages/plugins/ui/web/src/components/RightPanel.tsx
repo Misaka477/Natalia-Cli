@@ -1276,9 +1276,7 @@ export function ReviewPane(
           <div class="review-section-label">自动安全点</div>
           <div class="review-entity-control">
             <details>
-              <summary>
-                {autoCheckpoints().length} 个自动安全点
-              </summary>
+              <summary>{autoCheckpoints().length} 个自动安全点</summary>
               <NeuSelect
                 value={
                   autoCheckpoints().some((c) => c.id === selectedCheckpoint())
@@ -1327,7 +1325,9 @@ export function ReviewPane(
               ? "Git Changes"
               : tab() === "sandbox"
                 ? "Sandbox Changes"
-                : "Checkpoint Changes"}
+                : tab() === "rounds"
+                  ? "Round Changes"
+                  : "Checkpoint Changes"}
           </span>
         </div>
         <div class="review-meta">
@@ -1374,9 +1374,13 @@ export function ReviewPane(
                       />
                     </svg>
                   </div>
-                  <div class="review-empty-title">暂无变更</div>
+                  <div class="review-empty-title">
+                    {tab() === "rounds" ? "暂无审计轮次" : "暂无变更"}
+                  </div>
                   <div class="review-empty-desc">
-                    当前工作区没有待审阅的变更。
+                    {tab() === "rounds"
+                      ? "完成一次 audit_report 后会出现 Rounds 对比。"
+                      : "当前工作区没有待审阅的变更。"}
                   </div>
                 </div>
               }
