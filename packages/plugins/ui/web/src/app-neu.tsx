@@ -1364,7 +1364,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     let lastHydratedSessionID: string | undefined;
     const hydrateRecentMessagesOnLoad = async () => {
       const sessionID = selectedSessionID() || state().sessionID;
-      if (sessionID && sessionID === lastHydratedSessionID) return;
+      if (!sessionID) {
+        // Startup may not have selected/restored the session yet. Retry until
+        // runtime publishes the active session rather than hydrating empty data.
+        setTimeout(() => void hydrateRecentMessagesOnLoad(), 100);
+        return;
+      }
+      if (sessionID === lastHydratedSessionID) return;
       messagesHydrationStarted = true;
       lastHydratedSessionID = sessionID;
       const loadToken = (
