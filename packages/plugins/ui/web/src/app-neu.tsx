@@ -1362,6 +1362,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
     let messagesHydrationStarted = false;
     let lastHydratedSessionID: string | undefined;
+    const workspaceIDForSession = (sessionID: string) =>
+      sessionList().find((session) => session.id === sessionID)?.workspaceID ??
+      state().activeWorkspaceID;
     const hydrateRecentMessagesOnLoad = async () => {
       const sessionID = selectedSessionID() || state().sessionID;
       if (!sessionID) {
@@ -1373,7 +1376,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       if (sessionID === lastHydratedSessionID) return;
       props.ctx.projection.activateSession?.(
         sessionID,
-        state().activeWorkspaceID,
+        workspaceIDForSession(sessionID),
       );
       messagesHydrationStarted = true;
       lastHydratedSessionID = sessionID;
@@ -1469,7 +1472,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       if (sessionID)
         props.ctx.projection.activateSession?.(
           sessionID,
-          state().activeWorkspaceID,
+          workspaceIDForSession(sessionID),
         );
       void hydrateRecentMessagesOnLoad();
     };
