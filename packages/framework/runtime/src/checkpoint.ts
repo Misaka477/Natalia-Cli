@@ -672,68 +672,17 @@ export class CheckpointStore {
   async workspaceDiff(): Promise<RuntimeWorkspaceDiffChange[]> {
     this.assertAvailable();
     const records = await this.list();
-    const baseline = records.find((record) => record.complete);
-    if (!baseline) return [];
-    const current = await this.captureManifest();
-    const changes = diffManifests(baseline.manifest, current);
-    const result: RuntimeWorkspaceDiffChange[] = [];
-    for (const change of changes) {
-      const oldEntry =
-        baseline.manifest.entries[change.oldPath ?? change.path] ??
-        (change.oldPath
-          ? baseline.manifest.entries[change.oldPath]
-          : undefined);
-      const newEntry = current.entries[change.path];
-      const oldContent = oldEntry?.objectHash
-        ? await this.objects
-            .get(oldEntry.objectHash)
-            .then((buffer) => buffer.toString("utf8"))
-            .catch(() => undefined)
-        : undefined;
-      const newContent = newEntry?.objectHash
-        ? await this.objects
-            .get(newEntry.objectHash)
-            .then((buffer) => buffer.toString("utf8"))
-            .catch(() => undefined)
-        : undefined;
-      const operation =
-        change.kind === "add"
-          ? "added"
-          : change.kind === "delete"
-            ? "deleted"
-            : change.kind === "rename"
-              ? "renamed"
-              : "modified";
-      const text = await this.diffTextCached(
-        change.path,
-        oldContent,
-        newContent,
-      );
-      if (oldContent === undefined && newContent === undefined) {
-        result.push({
-          path: change.path,
-          operation,
-          ...(change.oldPath ? { oldPath: change.oldPath } : {}),
-          additions: 0,
-          deletions: 0,
-          ...(change.mode ? { mode: change.mode } : {}),
-        });
-        continue;
-      }
-      result.push({
-        path: change.path,
-        operation,
-        ...(change.oldPath ? { oldPath: change.oldPath } : {}),
-        additions: text.additions,
-        deletions: text.deletions,
-        ...(text.patch ? { patch: text.patch } : {}),
-        ...(text.structured ? { structured: text.structured } : {}),
-        ...(oldContent !== undefined ? { before: oldContent } : {}),
-        ...(newContent !== undefined ? { after: newContent } : {}),
-        ...(change.mode ? { mode: change.mode } : {}),
-      });
-    }
-    return result;
+    if (!records.some((record) => record.complete)) return [];
+    return this.diffCheckpoints(
+      { kind: "baseline" },
+      { kind: "current" },
+      {
+        includePatch: true,
+        includeContent: true,
+        maxFiles: 20_000,
+        maxPatchChars: 1_000_000,
+      },
+    );
   }
 
   private async diffTextCached(

@@ -62,6 +62,10 @@ test("audit round checkpoints are listed and diffable across rounds", async () =
     expect.objectContaining({ round: 1, verdict: "gaps" }),
     expect.objectContaining({ round: 2, verdict: "gaps" }),
   ]);
+  const auditRecords = await store.listCheckpointsByKind("audit");
+  expect(auditRecords.map((record) => record.reason)).toEqual(
+    expect.arrayContaining(["baseline", "audit_round", "audit_round"]),
+  );
   expect(between).toHaveLength(1);
   expect(between[0]?.path).toBe("src.txt");
   expect(between[0]?.operation).toBe("modified");
