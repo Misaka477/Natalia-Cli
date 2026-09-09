@@ -12,6 +12,7 @@ import type { AdmittedSessionInput } from "./inbox";
 import {
   decodeMessageCursor,
   encodeMessageCursor,
+  projectSessionMessages,
   projectTurnMessage,
 } from "./projector";
 
@@ -836,7 +837,17 @@ export class SqliteSessionStore {
       throw new Error("message cursor cannot be combined with order");
     const order = cursor?.order ?? options.order ?? "desc";
     const limit = Math.min(200, Math.max(1, options.limit ?? 100));
-    this.buildMessageIndex(sessionID);
+    if (!this.messageIndexIsCurrent(sessionID)) {
+      try {
+        this.buildMessageIndex(sessionID);
+      } catch (error) {
+        // A read-only workspace must still be able to page through an existing
+        // session. Fall back to projecting the journal in memory.
+        if (isReadonlyError(error))
+          return this.projectFromEvents(sessionID, options);
+        throw error;
+      }
+    }
     const anchor = cursor
       ? this.messageTurn(sessionID, cursor.anchor)
       : undefined;
@@ -1243,6 +1254,31 @@ export class SqliteSessionStore {
     );
   }
 
+  private messageIndexIsCurrent(sessionID: SessionID): boolean {
+    const state = this.db
+      .query(`SELECT last_seq FROM message_index_state WHERE session_id = ?`)
+      .get(sessionID) as { last_seq: number } | undefined;
+    if (!state) return false;
+    const turnCount = this.db
+      .query(`SELECT COUNT(*) AS count FROM message_turns WHERE session_id = ?`)
+      .get(sessionID) as { count: number } | undefined;
+    return (
+      state.last_seq === this.eventCount(sessionID) &&
+      (turnCount?.count ?? 0) > 0
+    );
+  }
+
+  private projectFromEvents(
+    sessionID: SessionID,
+    options: { limit?: number; order?: "asc" | "desc"; cursor?: string } = {},
+  ): RuntimeMessagePage {
+    const events = this.loadEvents(sessionID);
+    return projectSessionMessages(
+      { id: sessionID, title: "", createdAt: "", events } as SessionRecord,
+      options,
+    );
+  }
+
   private messageTurn(sessionID: SessionID, turnID: string) {
     const row = this.db
       .query(
@@ -1371,4 +1407,12 @@ function parseOptionalJSON(value: unknown) {
   } catch {
     return undefined;
   }
+}
+
+function isReadonlyError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: string }).code === "SQLITE_READONLY"
+  );
 }
