@@ -635,6 +635,18 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "deleted",
     note: "deletes a plan registry record; does not delete the Markdown file",
   },
+  checkpointListByKind: {
+    refusal: "none",
+    note: "pure read of categorized checkpoint records",
+  },
+  auditRounds: {
+    refusal: "none",
+    note: "pure read of audit round checkpoint metadata",
+  },
+  roundDiff: {
+    refusal: "none",
+    note: "pure read of checkpoint/audit-round diff changes",
+  },
   planDocStatus: {
     refusal: "none",
     note: "pure read of one plan's lifecycle status",

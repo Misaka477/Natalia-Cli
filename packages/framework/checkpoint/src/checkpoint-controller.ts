@@ -116,6 +116,30 @@ export function createCheckpointController(input: {
     return await get().workspaceDiff();
   }
 
+  async function listCheckpointsByKind(
+    kind?: import("@natalia/contracts").CheckpointKind,
+  ) {
+    return await get().listCheckpointsByKind(kind);
+  }
+
+  async function listAuditRounds(planID?: string) {
+    return await get().listAuditRounds(planID);
+  }
+
+  async function createAuditRoundCheckpoint(
+    input: Parameters<CheckpointStore["createAuditRoundCheckpoint"]>[0],
+  ) {
+    return await get().createAuditRoundCheckpoint(input);
+  }
+
+  async function diffCheckpoints(
+    from: import("@natalia/contracts").CheckpointRef,
+    to: import("@natalia/contracts").CheckpointRef,
+    options?: import("@natalia/contracts").DiffCheckpointsOptions,
+  ) {
+    return await get().diffCheckpoints(from, to, options);
+  }
+
   function resources(): Array<{
     kind: "subagent" | "tool";
     id: string;
@@ -178,6 +202,10 @@ export function createCheckpointController(input: {
     createCheckpoint,
     rename,
     workspaceDiff,
+    listCheckpointsByKind,
+    listAuditRounds,
+    createAuditRoundCheckpoint,
+    diffCheckpoints,
     isEnabled,
     resources,
     rollbackOptions,

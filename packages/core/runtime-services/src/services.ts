@@ -505,6 +505,20 @@ export interface CheckpointController {
   ): ReturnType<CheckpointStore["createCheckpoint"]>;
   rename(id: string, name: string): ReturnType<CheckpointStore["rename"]>;
   workspaceDiff(): ReturnType<CheckpointStore["workspaceDiff"]>;
+  listCheckpointsByKind(
+    kind?: import("@natalia/contracts").CheckpointKind,
+  ): ReturnType<CheckpointStore["listCheckpointsByKind"]>;
+  listAuditRounds(
+    planID?: string,
+  ): ReturnType<CheckpointStore["listAuditRounds"]>;
+  createAuditRoundCheckpoint(
+    input: Parameters<CheckpointStore["createAuditRoundCheckpoint"]>[0],
+  ): ReturnType<CheckpointStore["createAuditRoundCheckpoint"]>;
+  diffCheckpoints(
+    from: import("@natalia/contracts").CheckpointRef,
+    to: import("@natalia/contracts").CheckpointRef,
+    options?: import("@natalia/contracts").DiffCheckpointsOptions,
+  ): ReturnType<CheckpointStore["diffCheckpoints"]>;
   isEnabled(): boolean;
   resources(): Array<{
     kind: "subagent" | "tool";

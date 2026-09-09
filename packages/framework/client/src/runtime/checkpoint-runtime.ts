@@ -64,6 +64,9 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     checkpointControllerFor,
     initializeCheckpointController,
     checkpointList,
+    checkpointListByKind,
+    auditRounds,
+    roundDiff,
     checkpointPreview,
     checkpointRollback,
     checkpointRename,
@@ -91,6 +94,38 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
   > {
     const { controller } = await requireInitializedController(sessionID);
     return (await controller.list()).map(toRuntimeCheckpoint);
+  }
+
+  async function checkpointListByKind(
+    kind?: import("@natalia/contracts").CheckpointKind,
+    sessionID?: string,
+  ) {
+    const { controller } = await requireInitializedController(sessionID);
+    return (await controller.listCheckpointsByKind(kind)).map(toRuntimeCheckpoint);
+  }
+
+  async function auditRounds(planID?: string) {
+    const { controller } = await requireInitializedController();
+    return await controller.listAuditRounds(planID);
+  }
+
+  async function roundDiff(input: {
+    from: import("@natalia/contracts").CheckpointRef;
+    to: import("@natalia/contracts").CheckpointRef;
+    paths?: string[];
+    includePatch?: boolean;
+    includeContent?: boolean;
+    maxFiles?: number;
+    maxPatchChars?: number;
+  }) {
+    const { controller } = await requireInitializedController();
+    return await controller.diffCheckpoints(input.from, input.to, {
+      paths: input.paths,
+      includePatch: input.includePatch,
+      includeContent: input.includeContent,
+      maxFiles: input.maxFiles,
+      maxPatchChars: input.maxPatchChars,
+    });
   }
 
   async function checkpointPreview(

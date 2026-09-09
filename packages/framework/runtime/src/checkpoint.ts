@@ -46,7 +46,39 @@ export type CheckpointReason =
   | "manual"
   | "pre_tool"
   | "pre_compaction"
+  | "rollback_safety"
+  | "audit_round";
+
+export type CheckpointKind =
+  | "audit"
+  | "manual"
+  | "auto_safety"
   | "rollback_safety";
+
+export type AuditRoundRecord = {
+  checkpointID: string;
+  planID: string;
+  round: number;
+  verdict: "gaps" | "passed";
+  auditReportAt: string;
+  sequence: number;
+  createdAt: string;
+};
+
+export type CheckpointRef =
+  | { kind: "checkpoint"; id: string }
+  | { kind: "round"; planID: string; round: number }
+  | { kind: "last_audit"; planID?: string }
+  | { kind: "baseline" }
+  | { kind: "current" };
+
+export type DiffCheckpointsOptions = {
+  paths?: string[];
+  includePatch?: boolean;
+  includeContent?: boolean;
+  maxFiles?: number;
+  maxPatchChars?: number;
+};
 
 export type ManifestEntry = {
   path: string;
@@ -97,6 +129,8 @@ export type CheckpointRecord = {
     compactionGeneration: number;
   };
   diskUsageBytes: number;
+  /** 新增：宽松元数据，旧记录不存在时忽略。 */
+  metadata?: Record<string, unknown>;
 };
 
 export type CheckpointRuntimeResource = {
@@ -128,6 +162,7 @@ export type CreateCheckpointInput = {
   model?: string;
   status?: string;
   name?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type RollbackOptions = {
@@ -298,6 +333,7 @@ export class CheckpointStore {
           compactionGeneration: context.compactionGeneration,
         },
         diskUsageBytes,
+        ...(input.metadata ? { metadata: input.metadata } : {}),
       };
       await this.writeJournal([...existing, record]);
       if (!record.complete)
@@ -353,6 +389,210 @@ export class CheckpointStore {
     return records.find(
       (record) => record.id === id || String(record.sequence) === id,
     );
+  }
+
+  async listCheckpointsByKind(
+    kind?: CheckpointKind,
+  ): Promise<CheckpointRecord[]> {
+    const records = await this.list();
+    if (!kind) return records;
+    return records.filter((record) => checkpointKind(record) === kind);
+  }
+
+  async listAuditRounds(planID?: string): Promise<AuditRoundRecord[]> {
+    const records = await this.list();
+    const rounds: AuditRoundRecord[] = [];
+    for (const record of records) {
+      if (record.reason !== "audit_round") continue;
+      const metadata = record.metadata ?? {};
+      const metadataPlanID = metadata.planID;
+      if (typeof metadataPlanID !== "string") continue;
+      if (planID && metadataPlanID !== planID) continue;
+      const round = metadata.round;
+      const verdict = metadata.verdict;
+      if (typeof round !== "number") continue;
+      if (verdict !== "gaps" && verdict !== "passed") continue;
+      rounds.push({
+        checkpointID: record.id,
+        planID: metadataPlanID,
+        round,
+        verdict,
+        auditReportAt:
+          typeof metadata.auditReportAt === "string"
+            ? metadata.auditReportAt
+            : record.createdAt,
+        sequence: record.sequence,
+        createdAt: record.createdAt,
+      });
+    }
+    return rounds.sort((a, b) => a.round - b.round);
+  }
+
+  async createAuditRoundCheckpoint(input: {
+    planID: string;
+    round: number;
+    verdict: "gaps" | "passed";
+    context: ContextLedger;
+    step: number;
+    sessionID: SessionID;
+    turnID?: string;
+    reportID?: string;
+  }): Promise<CheckpointRecord> {
+    const existing = await this.listAuditRounds(input.planID);
+    if (existing.some((round) => round.round === input.round))
+      throw new Error(`audit round already exists: ${input.planID}:${input.round}`);
+    return this.createCheckpoint({
+      reason: "audit_round",
+      context: input.context,
+      step: input.step,
+      turnID: input.turnID,
+      name: `audit_round:${input.planID}:${input.round}`,
+      status: `audit_round:${input.verdict}`,
+      metadata: {
+        kind: "audit_round",
+        planID: input.planID,
+        round: input.round,
+        verdict: input.verdict,
+        auditReportAt: this.now().toISOString(),
+        ...(input.reportID ? { reportID: input.reportID } : {}),
+      },
+    });
+  }
+
+  async diffCheckpoints(
+    from: CheckpointRef,
+    to: CheckpointRef,
+    options: DiffCheckpointsOptions = {},
+  ): Promise<RuntimeWorkspaceDiffChange[]> {
+    this.assertAvailable();
+    const fromManifest = await this.manifestForRef(from);
+    const toManifest = await this.manifestForRef(to);
+    const changes = diffManifests(fromManifest, toManifest);
+    return this.renderDiffChanges(
+      fromManifest,
+      toManifest,
+      changes,
+      options,
+    );
+  }
+
+  private async manifestForRef(
+    ref: CheckpointRef,
+  ): Promise<WorkspaceManifest> {
+    if (ref.kind === "current") return this.captureManifest();
+    const records = await this.list();
+    let record: CheckpointRecord | undefined;
+    if (ref.kind === "baseline") {
+      record = records.find((candidate) => candidate.complete);
+      if (!record) throw new Error("baseline checkpoint not found");
+    } else if (ref.kind === "checkpoint") {
+      record = records.find(
+        (candidate) =>
+          candidate.id === ref.id || String(candidate.sequence) === ref.id,
+      );
+      if (!record) throw new Error(`checkpoint not found: ${ref.id}`);
+    } else if (ref.kind === "round") {
+      const rounds = await this.listAuditRounds(ref.planID);
+      const round = rounds.find((candidate) => candidate.round === ref.round);
+      if (!round)
+        throw new Error(`audit round not found: ${ref.planID}:${ref.round}`);
+      record = records.find((candidate) => candidate.id === round.checkpointID);
+    } else {
+      const rounds = await this.listAuditRounds(ref.planID);
+      if (!rounds.length)
+        throw new Error(
+          `no audit round found${ref.planID ? ` for plan ${ref.planID}` : ""}`,
+        );
+      const round = rounds.at(-1)!;
+      record = records.find((candidate) => candidate.id === round.checkpointID);
+    }
+    if (!record) throw new Error("checkpoint record not found");
+    if (!record.complete)
+      throw new Error(`checkpoint is incomplete: ${record.id}`);
+    return record.manifest;
+  }
+
+  private async renderDiffChanges(
+    fromManifest: WorkspaceManifest,
+    toManifest: WorkspaceManifest,
+    changes: CheckpointChange[],
+    options: DiffCheckpointsOptions,
+  ): Promise<RuntimeWorkspaceDiffChange[]> {
+    const result: RuntimeWorkspaceDiffChange[] = [];
+    const maxFiles = options.maxFiles ?? 50;
+    const maxPatchChars = options.maxPatchChars ?? 12_000;
+    for (const change of changes) {
+      if (result.length >= maxFiles) break;
+      if (
+        options.paths?.length &&
+        !options.paths.some(
+          (path) =>
+            change.path === path || change.path.startsWith(`${path}/`),
+        )
+      )
+        continue;
+      const oldEntry =
+        fromManifest.entries[change.oldPath ?? change.path] ??
+        (change.oldPath ? fromManifest.entries[change.oldPath] : undefined);
+      const newEntry = toManifest.entries[change.path];
+      const oldContent = oldEntry?.objectHash
+        ? await this.objects
+            .get(oldEntry.objectHash)
+            .then((buffer) => buffer.toString("utf8"))
+            .catch(() => undefined)
+        : undefined;
+      const newContent = newEntry?.objectHash
+        ? await this.objects
+            .get(newEntry.objectHash)
+            .then((buffer) => buffer.toString("utf8"))
+            .catch(() => undefined)
+        : undefined;
+      const operation =
+        change.kind === "add"
+          ? "added"
+          : change.kind === "delete"
+            ? "deleted"
+            : change.kind === "rename"
+              ? "renamed"
+              : "modified";
+      const text = await this.diffTextCached(
+        change.path,
+        oldContent,
+        newContent,
+      );
+      const patch =
+        options.includePatch === false
+          ? undefined
+          : text.patch?.slice(0, maxPatchChars);
+      if (oldContent === undefined && newContent === undefined) {
+        result.push({
+          path: change.path,
+          operation,
+          ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+          additions: 0,
+          deletions: 0,
+          ...(change.mode ? { mode: change.mode } : {}),
+        });
+        continue;
+      }
+      result.push({
+        path: change.path,
+        operation,
+        ...(change.oldPath ? { oldPath: change.oldPath } : {}),
+        additions: text.additions,
+        deletions: text.deletions,
+        ...(patch ? { patch } : {}),
+        ...(text.structured ? { structured: text.structured } : {}),
+        ...(options.includeContent !== false && oldContent !== undefined
+          ? { before: oldContent }
+          : {}),
+        ...(options.includeContent !== false && newContent !== undefined
+          ? { after: newContent }
+          : {}),
+        ...(change.mode ? { mode: change.mode } : {}),
+      });
+    }
+    return result;
   }
 
   async rename(id: string, name: string): Promise<CheckpointRecord> {
@@ -1152,6 +1392,14 @@ function renderStructuredPatch(diff: {
     }
   }
   return lines.join("\n") + "\n";
+}
+
+function checkpointKind(record: CheckpointRecord): CheckpointKind {
+  if (record.reason === "rollback_safety") return "rollback_safety";
+  if (record.reason === "manual") return "manual";
+  if (record.reason === "audit_round" || record.reason === "baseline")
+    return "audit";
+  return "auto_safety";
 }
 
 function diffManifests(

@@ -233,7 +233,8 @@ export type RuntimeCheckpoint = {
     | "manual"
     | "pre_tool"
     | "pre_compaction"
-    | "rollback_safety";
+    | "rollback_safety"
+    | "audit_round";
   name?: string;
   createdAt: string;
   complete: boolean;
@@ -282,6 +283,37 @@ export type RuntimeWorkspaceDiffChange = {
   after?: string;
   mode?: string;
   structured?: RuntimeStructuredDiff;
+};
+
+export type CheckpointKind =
+  | "audit"
+  | "manual"
+  | "auto_safety"
+  | "rollback_safety";
+
+export type AuditRoundRecord = {
+  checkpointID: string;
+  planID: string;
+  round: number;
+  verdict: "gaps" | "passed";
+  auditReportAt: string;
+  sequence: number;
+  createdAt: string;
+};
+
+export type CheckpointRef =
+  | { kind: "checkpoint"; id: string }
+  | { kind: "round"; planID: string; round: number }
+  | { kind: "last_audit"; planID?: string }
+  | { kind: "baseline" }
+  | { kind: "current" };
+
+export type DiffCheckpointsOptions = {
+  paths?: string[];
+  includePatch?: boolean;
+  includeContent?: boolean;
+  maxFiles?: number;
+  maxPatchChars?: number;
 };
 
 export type RuntimeTeamPR = {
@@ -2463,6 +2495,22 @@ export type RuntimeClient = {
     sessionID?: string;
   }): Promise<RuntimeNativeTerminalSession>;
   checkpointList?(sessionID?: string): Promise<RuntimeCheckpoint[]>;
+  checkpointListByKind?(
+    kind?: CheckpointKind,
+    sessionID?: string,
+  ): Promise<RuntimeCheckpoint[]>;
+  auditRounds?(planID?: string): Promise<AuditRoundRecord[]>;
+  roundDiff?(
+    input: {
+      from: CheckpointRef;
+      to: CheckpointRef;
+      paths?: string[];
+      includePatch?: boolean;
+      includeContent?: boolean;
+      maxFiles?: number;
+      maxPatchChars?: number;
+    },
+  ): Promise<RuntimeWorkspaceDiffChange[]>;
   checkpointPreview?(
     id: string,
     sessionID?: string,

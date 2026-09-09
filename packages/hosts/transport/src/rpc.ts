@@ -156,6 +156,9 @@ export const RPC_ROUTE_MEMBERS = {
   "checkpoint.preview": "checkpointPreview",
   "checkpoint.rollback": "checkpointRollback",
   "checkpoint.rename": "checkpointRename",
+  "checkpoint.listByKind": "checkpointListByKind",
+  "audit.rounds": "auditRounds",
+  "workspace.round.diff": "roundDiff",
   "sandbox.list": "sandboxList",
   "sandbox.diff": "sandboxDiff",
   "sandbox.resources": "sandboxResources",
@@ -1151,6 +1154,44 @@ export async function handleRPCMessage(
             ? { sessionID: optionalStringParam(body.params, "sessionID") }
             : {}),
         }),
+      };
+    }
+    if (body.method === "checkpoint.listByKind") {
+      optionsGuard(client, "checkpointListByKind");
+      const kind = optionalStringParam(body.params, "kind") as
+        | "audit"
+        | "manual"
+        | "auto_safety"
+        | "rollback_safety"
+        | undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.checkpointListByKind?.(
+          kind,
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "audit.rounds") {
+      optionsGuard(client, "auditRounds");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.auditRounds?.(
+          optionalStringParam(body.params, "planID"),
+        ),
+      };
+    }
+    if (body.method === "workspace.round.diff") {
+      optionsGuard(client, "roundDiff");
+      const input = body.params as Parameters<
+        NonNullable<RuntimeClient["roundDiff"]>
+      >[0] | undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.roundDiff?.(input as never),
       };
     }
     if (body.method === "sandbox.list") {

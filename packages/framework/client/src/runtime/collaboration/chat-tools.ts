@@ -653,6 +653,41 @@ export function createChatTools(ctx: RuntimeContext) {
               error instanceof Error ? error.message : String(error)
             }`;
           }
+
+          let round = 0;
+          let roundCheckpointID: string | undefined;
+          try {
+            const sessionID = (
+              context as { sessionID?: string } | undefined
+            )?.sessionID as import("@natalia/contracts").SessionID | undefined;
+            const owner = sessionID
+              ? ctx.ports.getExecutionBySession().get(sessionID)
+              : exec;
+            if (owner) {
+              const checkpointController =
+                await ctx.ports.initializeCheckpointController(owner);
+              const rounds =
+                (await checkpointController?.listAuditRounds?.(args.planID)) ??
+                [];
+              round = (rounds.at(-1)?.round ?? 0) + 1;
+              const record = await checkpointController?.createAuditRoundCheckpoint?.({
+                planID: args.planID,
+                round,
+                verdict: args.verdict as "gaps" | "passed",
+                context: owner.context,
+                step: owner.context.journalStatus().messageCount,
+                sessionID: owner.session.id as import("@natalia/contracts").SessionID,
+                turnID: (context as { turnID?: string } | undefined)?.turnID,
+              });
+              roundCheckpointID = record?.id;
+            }
+          } catch (error) {
+            console.warn("[nia-audit-report] round checkpoint failed", {
+              planID: args.planID,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+
           return JSON.stringify({
             reported: true,
             planID: args.planID,
@@ -660,6 +695,8 @@ export function createChatTools(ctx: RuntimeContext) {
             status,
             gaps: args.gaps ?? [],
             updated: result.updated,
+            ...(round ? { round } : {}),
+            ...(roundCheckpointID ? { roundCheckpointID } : {}),
             ...(args.verdict === "passed" ? { noWakeNatalia: true } : {}),
           });
         },

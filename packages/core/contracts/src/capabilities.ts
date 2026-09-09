@@ -169,6 +169,9 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** Snapshotting the workspace and rolling it back. */
   checkpoint: [
     "checkpointList",
+    "checkpointListByKind",
+    "auditRounds",
+    "roundDiff",
     "checkpointPreview",
     "checkpointRollback",
     "checkpointRename",

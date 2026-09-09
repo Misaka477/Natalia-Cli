@@ -73,6 +73,9 @@ export const WORKER_ROUTE_MEMBERS = {
   "checkpoint.preview": "checkpointPreview",
   "checkpoint.rollback": "checkpointRollback",
   "checkpoint.rename": "checkpointRename",
+  "checkpoint.listByKind": "checkpointListByKind",
+  "audit.rounds": "auditRounds",
+  "workspace.round.diff": "roundDiff",
   "workspace.diff": "workspaceDiff",
   "workspace.git.diff": "workspaceGitDiff",
   "team.pr.list": "teamPRList",
@@ -189,6 +192,9 @@ type WorkerRequest = {
     | "checkpoint.preview"
     | "checkpoint.rollback"
     | "checkpoint.rename"
+    | "checkpoint.listByKind"
+    | "audit.rounds"
+    | "workspace.round.diff"
     | "workspace.diff"
     | "workspace.git.diff"
     | "team.pr.list"
@@ -597,6 +603,25 @@ export function createWorkerRuntimeClient(
         "checkpoint.list",
         sessionID ? { sessionID } : undefined,
       )) as Awaited<ReturnType<NonNullable<RuntimeClient["checkpointList"]>>>;
+    },
+    async checkpointListByKind(kind, sessionID) {
+      return (await request("checkpoint.listByKind", {
+        kind,
+        sessionID,
+      })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["checkpointListByKind"]>>
+      >;
+    },
+    async auditRounds(planID) {
+      return (await request(
+        "audit.rounds",
+        planID ? { planID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["auditRounds"]>>>;
+    },
+    async roundDiff(input) {
+      return (await request("workspace.round.diff", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["roundDiff"]>>
+      >;
     },
     async workspaceDiff(input) {
       return (await request("workspace.diff", input)) as Awaited<
@@ -1175,6 +1200,18 @@ export async function handleWorkerRequest(
   if (request.method === "checkpoint.list")
     return await client.checkpointList?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "checkpoint.listByKind") {
+    const value = request.value as { kind?: any; sessionID?: string };
+    return await client.checkpointListByKind?.(value.kind, value.sessionID);
+  }
+  if (request.method === "audit.rounds")
+    return await client.auditRounds?.(
+      (request.value as { planID?: string } | undefined)?.planID,
+    );
+  if (request.method === "workspace.round.diff")
+    return await client.roundDiff?.(
+      request.value as Parameters<NonNullable<RuntimeClient["roundDiff"]>>[0],
     );
   if (request.method === "workspace.diff")
     return await client.workspaceDiff?.(

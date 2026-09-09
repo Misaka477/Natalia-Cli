@@ -125,6 +125,9 @@ export type RuntimePortsExtra = {
   getCheckpointRuntime: () => Pick<
     import("@natalia/runtime-services").RuntimeServiceClient,
     | "checkpointList"
+    | "checkpointListByKind"
+    | "auditRounds"
+    | "roundDiff"
     | "checkpointPreview"
     | "checkpointRollback"
     | "checkpointRename"

@@ -217,6 +217,24 @@ export type NataliaSDK = {
   checkpointList(
     sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
+  checkpointListByKind(
+    kind?: import("@natalia/contracts").CheckpointKind,
+    sessionID?: string,
+  ): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
+  auditRounds(
+    planID?: string,
+  ): Promise<import("@natalia/contracts").AuditRoundRecord[]>;
+  roundDiff(
+    input: {
+      from: import("@natalia/contracts").CheckpointRef;
+      to: import("@natalia/contracts").CheckpointRef;
+      paths?: string[];
+      includePatch?: boolean;
+      includeContent?: boolean;
+      maxFiles?: number;
+      maxPatchChars?: number;
+    },
+  ): Promise<import("@natalia/contracts").RuntimeWorkspaceDiffChange[]>;
   checkpointPreview(
     id: string,
     sessionID?: string,
@@ -850,6 +868,14 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     checkpointList: async (sessionID) =>
       await call("checkpoint.list", sessionID ? { sessionID } : {}),
+    checkpointListByKind: async (kind, sessionID) =>
+      await call("checkpoint.listByKind", {
+        ...(kind ? { kind } : {}),
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    auditRounds: async (planID) =>
+      await call("audit.rounds", planID ? { planID } : {}),
+    roundDiff: async (input) => await call("workspace.round.diff", input),
     checkpointPreview: async (id, sessionID, options) =>
       await call("checkpoint.preview", {
         id,
