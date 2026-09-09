@@ -8,6 +8,7 @@ import {
   onCleanup,
 } from "solid-js";
 import type {
+  AuditRoundRecord,
   RuntimeAstNode,
   RuntimeCheckpoint,
   RuntimeClient,
@@ -20,18 +21,30 @@ import type {
 } from "@natalia/contracts";
 import type { StructuredDiffResult } from "@natalia/diff-wasm";
 import { NeuSelect } from "./NeuSelect";
-import { UnifiedDiffView, SplitDiffView, buildSplitRows, diffLines, structuredRows, languageFromPath } from "@natalia/framework-diff";
-import { computeDiffInWorker, computeDiffInWorkerStream } from "@natalia/framework-diff";
+import {
+  UnifiedDiffView,
+  SplitDiffView,
+  buildSplitRows,
+  diffLines,
+  structuredRows,
+  languageFromPath,
+} from "@natalia/framework-diff";
+import {
+  computeDiffInWorker,
+  computeDiffInWorkerStream,
+} from "@natalia/framework-diff";
 import type { DiffItem } from "@natalia/framework-diff";
 
 const perfLog = (...args: unknown[]) => {
-  if ((globalThis as { __NATALIA_PERF_VERBOSE?: number }).__NATALIA_PERF_VERBOSE === 1) {
+  if (
+    (globalThis as { __NATALIA_PERF_VERBOSE?: number })
+      .__NATALIA_PERF_VERBOSE === 1
+  ) {
     console.warn(...args);
   }
 };
 
-
-type ReviewSubTab = "git" | "sandbox" | "checkpoint";
+type ReviewSubTab = "git" | "sandbox" | "checkpoint" | "rounds";
 
 function toDiffItem(change: {
   path: string;
@@ -124,6 +137,12 @@ export function ReviewPane(
     string | null
   >(null);
   const [checkpointNameDraft, setCheckpointNameDraft] = createSignal("");
+  const [auditRounds, setAuditRounds] = createSignal<AuditRoundRecord[]>([]);
+  const [roundPlanID, setRoundPlanID] = createSignal<string>("");
+  const [roundFrom, setRoundFrom] = createSignal<number | undefined>(undefined);
+  const [roundTo, setRoundTo] = createSignal<number | undefined>(undefined);
+  const [roundChanges, setRoundChanges] = createSignal<DiffItem[]>([]);
+  const [roundSelected, setRoundSelected] = createSignal<string | null>(null);
   const [fileWidth, setFileWidth] = createSignal(180);
   const [viewMode, setViewMode] = createSignal<"unified" | "split" | "ast">(
     "unified",
@@ -387,6 +406,46 @@ export function ReviewPane(
     await loadSandboxDiff(id);
   }
 
+  async function runRoundDiff() {
+    const planID = roundPlanID();
+    const from = roundFrom();
+    const to = roundTo();
+    if (!planID || from === undefined || to === undefined || to <= from) {
+      setRoundChanges([]);
+      setRoundSelected(null);
+      return;
+    }
+    const changes =
+      (await props.runtime?.roundDiff?.({
+        from: { kind: "round", planID, round: from },
+        to: { kind: "round", planID, round: to },
+        includePatch: true,
+        includeContent: false,
+      })) ?? [];
+    const mapped = changes.map(toDiffItem);
+    setRoundChanges(mapped);
+    if (mapped.length) setRoundSelected(mapped[0]!.path);
+  }
+
+  async function loadRounds() {
+    const list = (await props.runtime?.auditRounds?.()) ?? [];
+    setAuditRounds(list);
+    const plans = [...new Set(list.map((item) => item.planID))];
+    const plan = plans.find((item) => item === roundPlanID()) ?? plans[0] ?? "";
+    setRoundPlanID(plan);
+    const planRounds = list
+      .filter((item) => item.planID === plan)
+      .sort((a, b) => a.round - b.round);
+    if (planRounds.length >= 2) {
+      setRoundFrom(planRounds[planRounds.length - 2]!.round);
+      setRoundTo(planRounds.at(-1)!.round);
+    } else {
+      setRoundFrom(planRounds[0]?.round);
+      setRoundTo(planRounds[0]?.round);
+    }
+    await runRoundDiff();
+  }
+
   async function loadCheckpointPreview(
     id: string,
     options?: { includePatch?: boolean },
@@ -447,13 +506,17 @@ export function ReviewPane(
       ? gitChanges()
       : tab() === "sandbox"
         ? sandboxChanges()
-        : checkpointChanges();
+        : tab() === "rounds"
+          ? roundChanges()
+          : checkpointChanges();
   const selectedForTab = () =>
     tab() === "git"
       ? gitSelected()
       : tab() === "sandbox"
         ? sandboxSelected()
-        : checkpointSelected();
+        : tab() === "rounds"
+          ? roundSelected()
+          : checkpointSelected();
   const selectedFile = () =>
     changesForTab().find((change) => change.path === selectedForTab());
 
@@ -918,6 +981,7 @@ export function ReviewPane(
     setTab(next);
     if (next === "sandbox") void loadSandboxTab();
     if (next === "checkpoint") void loadCheckpointTab();
+    if (next === "rounds") void loadRounds();
   }
 
   return (
@@ -946,6 +1010,14 @@ export function ReviewPane(
           onClick={() => selectTab("checkpoint")}
         >
           Checkpoint
+        </button>
+        <button
+          type="button"
+          class="review-subtab"
+          data-active={tab() === "rounds"}
+          onClick={() => selectTab("rounds")}
+        >
+          Rounds
         </button>
       </div>
       <Show when={tab() === "git"}>
@@ -983,6 +1055,61 @@ export function ReviewPane(
             onChange={(value) => {
               setGitTo(value);
               void loadGit();
+            }}
+          />
+        </div>
+      </Show>
+      <Show when={tab() === "rounds"}>
+        <div class="review-git-ranges">
+          <NeuSelect
+            value={roundPlanID()}
+            options={[...new Set(auditRounds().map((item) => item.planID))].map(
+              (planID) => ({
+                value: planID,
+                label: planID,
+              }),
+            )}
+            onChange={(value) => {
+              setRoundPlanID(value);
+              const planRounds = auditRounds().filter(
+                (item) => item.planID === value,
+              );
+              if (planRounds.length >= 2) {
+                setRoundFrom(planRounds[planRounds.length - 2]!.round);
+                setRoundTo(planRounds.at(-1)!.round);
+              } else {
+                setRoundFrom(planRounds[0]?.round);
+                setRoundTo(planRounds[0]?.round);
+              }
+              void runRoundDiff();
+            }}
+          />
+          <span class="review-git-arrow">→</span>
+          <NeuSelect
+            value={roundFrom() === undefined ? "" : String(roundFrom()!)}
+            options={auditRounds()
+              .filter((item) => item.planID === roundPlanID())
+              .map((item) => ({
+                value: String(item.round),
+                label: `R${item.round} (${item.verdict})`,
+              }))}
+            onChange={(value) => {
+              setRoundFrom(Number(value));
+              void runRoundDiff();
+            }}
+          />
+          <span class="review-git-arrow">→</span>
+          <NeuSelect
+            value={roundTo() === undefined ? "" : String(roundTo()!)}
+            options={auditRounds()
+              .filter((item) => item.planID === roundPlanID())
+              .map((item) => ({
+                value: String(item.round),
+                label: `R${item.round} (${item.verdict})`,
+              }))}
+            onChange={(value) => {
+              setRoundTo(Number(value));
+              void runRoundDiff();
             }}
           />
         </div>
@@ -1817,7 +1944,9 @@ export function ReviewPane(
                           rows={structuredRows(
                             selectedFile()?.structured ?? structuredDiff()!,
                           )}
-                          language={languageFromPath(selectedFile()?.path ?? "")}
+                          language={languageFromPath(
+                            selectedFile()?.path ?? "",
+                          )}
                         />
                       }
                     >
