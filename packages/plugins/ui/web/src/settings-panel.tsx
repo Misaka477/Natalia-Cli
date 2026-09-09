@@ -1030,7 +1030,7 @@ export function SettingsPanel(props: {
           </div>
           <div class="neu-settings-footer">
             <span class="neu-settings-footer-title">Natalia</span>
-            <span class="neu-settings-footer-sub">Neural Autonomous Terminal Agent</span>
+            <span class="neu-settings-footer-sub">Neural Autonomous Terminal Agent with Local Intelligence Architecture</span>
             <span class="neu-settings-footer-quote">“Computation can carry what time cannot. Not metaphor. Mathematics.”</span>
           </div>
         </div>
