@@ -69,6 +69,40 @@ function mainTurnHasPendingCollabReply(
   );
 }
 
+const INFRASTRUCTURE_ERROR_KINDS = new Set([
+  "timeout",
+  "connection",
+  "rate_limit",
+  "server",
+  "auth",
+  "invalid_request",
+  "empty_response",
+  "context_limit",
+  "quota",
+]);
+
+function mainTurnHasInfrastructureError(
+  exec: SessionExecutionState,
+  turnID: string,
+): boolean {
+  const events = exec.session.events;
+  const start = events.findIndex(
+    (event) => event.type === "turn.submitted" && event.id === turnID,
+  );
+  const end = events.findIndex(
+    (event) => event.type === "turn.finished" && event.id === turnID,
+  );
+  if (start < 0 || end < 0 || end <= start) return false;
+  return events
+    .slice(start, end)
+    .some(
+      (event) =>
+        event.type === "step.retry.exhausted" &&
+        event.id.startsWith(`${turnID}:`) &&
+        INFRASTRUCTURE_ERROR_KINDS.has(event.reason),
+    );
+}
+
 export function createEventSink(
   ctx: RuntimeContext,
   options: RealRuntimeClientOptions,
@@ -347,9 +381,22 @@ export function createEventSink(
       exec?.session &&
       event.stopReason === "error"
     ) {
-      exec.advisorPending = true;
-      console.log("[navi-wake-trigger] main turn error");
-      requestNaviWake(exec);
+      const infrastructureError =
+        event.reason === "missing_final_response" ||
+        mainTurnHasInfrastructureError(exec, event.id);
+      if (infrastructureError) {
+        console.log(
+          "[navi-wake-trigger] skipped provider/infrastructure error",
+          {
+            turnID: event.id,
+            reason: event.reason ?? "unknown",
+          },
+        );
+      } else {
+        exec.advisorPending = true;
+        console.log("[navi-wake-trigger] main turn error");
+        requestNaviWake(exec);
+      }
     }
     if (
       !event.agentID &&
