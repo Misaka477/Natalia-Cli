@@ -594,10 +594,12 @@ export function boundTranscript<T extends { role: string }>(
       if (removed >= excess && messages[start]?.role === "user") break;
     }
     if (start === 0 && removed === messages.length)
-      // No user turn boundary exists to evict whole turns against. Keeping a
-      // partial transcript is better than wiping an internal/collaboration-heavy
-      // session that has few or no user rows.
-      return { messages, evicted: false };
+      // No user turn boundary exists. Fall back to ordinary bounded trimming:
+      // keep the newest watermark rows instead of wiping the transcript.
+      return {
+        messages: messages.slice(Math.max(0, messages.length - watermark)),
+        evicted: true,
+      };
     return { messages: messages.slice(0, start), evicted: true };
   }
   let end = 0;
@@ -608,6 +610,9 @@ export function boundTranscript<T extends { role: string }>(
     removed++;
   }
   if (end === messages.length && removed === messages.length)
-    return { messages, evicted: false };
+    return {
+      messages: messages.slice(0, Math.min(watermark, messages.length)),
+      evicted: true,
+    };
   return { messages: messages.slice(end), evicted: true };
 }

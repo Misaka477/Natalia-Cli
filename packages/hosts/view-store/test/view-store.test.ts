@@ -1766,15 +1766,16 @@ test("empty replace hydration does not clear existing turn rows", () => {
   );
 });
 
-test("boundTranscript does not wipe an internal-heavy transcript", () => {
+test("boundTranscript trims an internal-heavy transcript without wiping it", () => {
   const messages = Array.from({ length: 400 }, (_, index) => ({
     id: `internal:${index}`,
     role: index % 2 === 0 ? "system" : "tool",
     text: "x",
   }));
   const bounded = boundTranscript(messages, "older");
-  expect(bounded.messages).not.toHaveLength(0);
-  expect(bounded.evicted).toBe(false);
+  expect(bounded.messages.length).toBeGreaterThan(0);
+  expect(bounded.messages.length).toBeLessThan(messages.length);
+  expect(bounded.evicted).toBe(true);
 });
 
 test("empty explicit stream hydration clears durable rows without losing live output", () => {
