@@ -65,9 +65,35 @@ test("service sends every collaboration kind as collab.message", async () => {
   });
 
   expect(events).toHaveLength(6);
-  expect(events.every((event) => event.type === "collab.message")).toBe(true);
+  expect(events.map((event) => event.type)).toEqual([
+    "natalia.collab.message", // question from main_agent
+    "navi.collab.message", // answer from live_chat
+    "navi.collab.message", // suggestion from live_chat
+    "natalia.collab.message", // response from main_agent
+    "natalia.collab.message", // notice from main_agent
+    "natalia.collab.message", // chat from main_agent
+  ]);
   expect(service.pendingFor(sessionID, "live_chat")).toHaveLength(1);
   expect(service.pendingFor(sessionID, "main_agent")).toHaveLength(0);
+});
+
+test("service namespaces Nia chat as nia.collab.message", async () => {
+  const { events, service } = setup();
+  await service.send({
+    sessionID,
+    kind: "chat",
+    from: "nia",
+    text: "audit findings are ready",
+  });
+  expect(events).toHaveLength(1);
+  expect(events[0]?.type).toBe("nia.collab.message");
+  expect(events[0]).toMatchObject({
+    message: {
+      from: "nia",
+      to: "main_agent",
+      text: "audit findings are ready",
+    },
+  });
 });
 
 test("service rejects invalid, inexact, and duplicate replies", async () => {

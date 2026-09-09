@@ -560,6 +560,26 @@ export type CollaborationMessage =
       expectsReply: false;
     });
 
+/**
+ * Namespaced collaboration events. New producers must publish one of these so
+ * each agent stream can project by namespace instead of filtering a shared
+ * `collab.*` payload by `from`/`to` at every consumer. The legacy shared
+ * `collab.*` types remain for journals written before the stream split.
+ */
+export type NamespacedCollabMessageEventData =
+  | {
+      type: "natalia.collab.message";
+      message: CollaborationMessage;
+    }
+  | {
+      type: "navi.collab.message";
+      message: CollaborationMessage;
+    }
+  | {
+      type: "nia.collab.message";
+      message: CollaborationMessage;
+    };
+
 type RuntimeEventData =
   | {
       type: "session.created";
@@ -1364,6 +1384,7 @@ type RuntimeEventData =
       type: "collab.message";
       message: CollaborationMessage;
     }
+  | NamespacedCollabMessageEventData
   | {
       type: "settings.updated";
       scope: "global" | "project";

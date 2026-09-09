@@ -99,7 +99,10 @@ export function createCollaborationService(
           ? messages.find((message) => message.id === input.replyToID)
           : undefined;
       const message = buildMessage(input, to, target, messages, ports);
-      ports.publish(input.sessionID, { type: "collab.message", message });
+      ports.publish(input.sessionID, {
+        type: `${collaborationStream(input.from)}.collab.message`,
+        message,
+      } as RuntimeEvent);
       console.log("[collab-trace] send", {
         from: input.from,
         to,
@@ -120,6 +123,19 @@ export function createCollaborationService(
       };
     },
   };
+}
+
+function collaborationStream(
+  from: CollaborationParticipant,
+): "natalia" | "navi" | "nia" {
+  switch (from) {
+    case "main_agent":
+      return "natalia";
+    case "live_chat":
+      return "navi";
+    case "nia":
+      return "nia";
+  }
 }
 
 function buildMessage(

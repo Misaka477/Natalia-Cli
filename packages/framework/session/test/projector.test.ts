@@ -610,6 +610,64 @@ test("projectedCollabMessages normalizes mixed and out-of-order replies", () => 
   ]);
 });
 
+test("projectedCollabMessages normalizes namespaced collab events", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "natalia.collab.message",
+      message: {
+        id: "ns:1",
+        threadID: "ns:1",
+        kind: "chat",
+        from: "main_agent",
+        to: "live_chat",
+        text: "from Natalia",
+        round: 1,
+        expectsReply: true,
+        at: "t0",
+      },
+    },
+    {
+      type: "navi.collab.message",
+      message: {
+        id: "ns:2",
+        threadID: "ns:1",
+        replyToID: "ns:1",
+        kind: "chat",
+        from: "live_chat",
+        to: "main_agent",
+        text: "from Navi",
+        round: 2,
+        expectsReply: false,
+        at: "t1",
+      },
+    },
+    {
+      type: "nia.collab.message",
+      message: {
+        id: "ns:3",
+        threadID: "ns:3",
+        kind: "chat",
+        from: "nia",
+        to: "main_agent",
+        text: "from Nia",
+        round: 1,
+        expectsReply: false,
+        at: "t2",
+      },
+    },
+  ];
+
+  expect(projectedCollabMessages(events)).toEqual([
+    expect.objectContaining({ id: "ns:1", status: "replied" }),
+    expect.objectContaining({ id: "ns:2", status: "informational" }),
+    expect.objectContaining({
+      id: "ns:3",
+      from: "nia",
+      status: "informational",
+    }),
+  ]);
+});
+
 test("projectedPlanDocs tracks mark, status and deletion", () => {
   const session = createSessionRecord("ses_plan_docs", "Plan docs");
   appendSessionEvent(session, {

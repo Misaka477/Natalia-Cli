@@ -1074,7 +1074,13 @@ export function normalizeCollaborationEvent(
   event: RuntimeEvent,
   targets: ReadonlyMap<string, CollaborationMessage> = new Map(),
 ): CollaborationMessage | undefined {
-  if (event.type === "collab.message") return event.message;
+  if (
+    event.type === "collab.message" ||
+    event.type === "natalia.collab.message" ||
+    event.type === "navi.collab.message" ||
+    event.type === "nia.collab.message"
+  )
+    return event.message;
   if (event.type === "collab.suggestion")
     return {
       id: event.id,

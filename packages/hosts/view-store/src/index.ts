@@ -33,7 +33,7 @@
  *     live list in `facts`; constitution/decision/evidence/plan/mailbox/workgraph
  *     now have production writers and project here for any host.
  */
-import { subagentHistoryLimit } from "./state";
+import { subagentHistoryLimit, type ToolBlock } from "./state";
 import type {
   ChatMessageRow,
   RuntimeEvent,
@@ -42,6 +42,9 @@ import type {
 } from "@natalia/contracts";
 import { applyActivityEvent } from "./activity";
 import {
+  applyNataliaCollabEvent,
+  applyNaviCollabEvent,
+  applyNiaCollabEvent,
   applyNaviEvent,
   applyNiaEvent,
   applyConversationEvent,
@@ -126,6 +129,9 @@ export { applyResourceEvent } from "./resources";
 export { applyStatusEvent } from "./status";
 export { applyWorkspaceEvent } from "./workspace";
 export {
+  applyNataliaCollabEvent,
+  applyNaviCollabEvent,
+  applyNiaCollabEvent,
   applyNaviEvent,
   applyNiaEvent,
   applyConversationEvent,
@@ -158,7 +164,13 @@ export function applyEvent(state: AppState, event: RuntimeEvent): void {
     synchronizeStreamSlices(state);
     return;
   }
-  if (applyNaviEvent(state, event) || applyNiaEvent(state, event)) {
+  if (
+    applyNataliaCollabEvent(state, event) ||
+    applyNaviCollabEvent(state, event) ||
+    applyNiaCollabEvent(state, event) ||
+    applyNaviEvent(state, event) ||
+    applyNiaEvent(state, event)
+  ) {
     applyActivityEvent(state, event);
     synchronizeStreamSlices(state);
     return;
@@ -328,10 +340,12 @@ export function hydrateProjectedMessages(
  */
 function chatRowToBlock(row: ChatMessageRow): {
   id: string;
-  role: "user" | "assistant" | "thinking" | "system";
+  role: "user" | "assistant" | "thinking" | "system" | "tool";
   text: string;
   pendingText: string;
   reasoningVisible?: boolean;
+  status?: string;
+  tool?: ToolBlock;
 } {
   if (row.kind === "thinking") {
     return {
@@ -353,12 +367,8 @@ function chatRowToBlock(row: ChatMessageRow): {
         name: row.tool.name,
         status: row.tool.status,
         summary: row.tool.summary,
-        ...(row.tool.result !== undefined
-          ? { result: row.tool.result }
-          : {}),
-        ...(row.tool.argumentsRaw !== undefined
-          ? { argumentsRaw: row.tool.argumentsRaw }
-          : {}),
+        ...(row.tool.result !== undefined ? { result: row.tool.result } : {}),
+        argumentsRaw: row.tool.argumentsRaw ?? "",
         ...(row.tool.startedAt !== undefined
           ? { startedAt: row.tool.startedAt }
           : {}),

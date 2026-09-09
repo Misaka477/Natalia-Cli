@@ -9,7 +9,11 @@
  * transcript, which is the main reason this layer exists rather than every
  * consumer writing its own reducer.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type {
+  CollaborationMessage,
+  CollaborationParticipant,
+  RuntimeEvent,
+} from "@natalia/contracts";
 import {
   appendWithRetrySkip,
   splitMarkdownAtSafeBoundary,
@@ -833,35 +837,7 @@ export function applyNaviEvent(state: AppState, event: RuntimeEvent): boolean {
     (event as { channel?: string }).channel !== "nia"
   )
     return applyAgentChatEvent(state.navi, event);
-  if (!isNaviCollaboration(event)) return false;
-  upsertInto(
-    state.navi.messages,
-    `chat:${collabID(event)}:collab`,
-    "system",
-    collabText(event),
-  );
-  return true;
-}
-
-function isNaviCollaboration(
-  event: RuntimeEvent,
-): event is Extract<
-  RuntimeEvent,
-  {
-    type:
-      | "collab.chat"
-      | "collab.message"
-      | "collab.suggestion"
-      | "collab.notice"
-      | "collab.question"
-      | "collab.answer"
-      | "collab.response";
-  }
-> {
-  if (!event.type.startsWith("collab.")) return false;
-  return (
-    event.type !== "collab.chat" || (event.from !== "nia" && event.to !== "nia")
-  );
+  return applyNaviCollabEvent(state, event);
 }
 
 export function applyNiaEvent(state: AppState, event: RuntimeEvent): boolean {
@@ -872,54 +848,96 @@ export function applyNiaEvent(state: AppState, event: RuntimeEvent): boolean {
     (event as { channel?: string }).channel === "nia"
   )
     return applyAgentChatEvent(state.nia, event);
-  if (
-    event.type === "collab.chat" &&
-    (event.from === "nia" || event.to === "nia")
-  ) {
-    upsertInto(
-      state.nia.messages,
-      `chat:${collabID(event)}:collab`,
-      "system",
-      collabText(event),
-    );
-    return true;
-  }
+  return applyNiaCollabEvent(state, event);
+}
+
+/**
+ * Routes Natalia-sent collaboration messages into the main/Natalia stream.
+ *
+ * New producers use `natalia.collab.*`; legacy shared `collab.*` events are
+ * accepted here only when their sender is `main_agent`, never by their
+ * recipient.
+ */
+export function applyNataliaCollabEvent(
+  state: AppState,
+  event: RuntimeEvent,
+): boolean {
+  if (event.type.startsWith("natalia.collab."))
+    return applyCollabRow(state.messages, event);
+  if (event.type.startsWith("collab.") && collabFrom(event) === "main_agent")
+    return applyCollabRow(state.messages, event);
   return false;
 }
 
-function collabID(
-  event: Extract<
-    RuntimeEvent,
-    {
-      type:
-        | "collab.chat"
-        | "collab.message"
-        | "collab.suggestion"
-        | "collab.notice"
-        | "collab.question"
-        | "collab.answer"
-        | "collab.response";
-    }
-  >,
-): string {
-  return event.type === "collab.message" ? event.message.id : event.id;
+/**
+ * Routes Navi-sent collaboration messages into the Navi stream by `from`.
+ */
+export function applyNaviCollabEvent(
+  state: AppState,
+  event: RuntimeEvent,
+): boolean {
+  if (event.type.startsWith("navi.collab."))
+    return applyCollabRow(state.navi.messages, event);
+  if (event.type.startsWith("collab.") && collabFrom(event) === "live_chat")
+    return applyCollabRow(state.navi.messages, event);
+  return false;
 }
 
-function collabText(
-  event: Extract<
-    RuntimeEvent,
-    {
-      type:
-        | "collab.chat"
-        | "collab.message"
-        | "collab.suggestion"
-        | "collab.notice"
-        | "collab.question"
-        | "collab.answer"
-        | "collab.response";
-    }
-  >,
-): string {
+/**
+ * Routes Nia-sent collaboration messages into the Nia stream by `from`.
+ */
+export function applyNiaCollabEvent(
+  state: AppState,
+  event: RuntimeEvent,
+): boolean {
+  if (event.type.startsWith("nia.collab."))
+    return applyCollabRow(state.nia.messages, event);
+  if (event.type.startsWith("collab.") && collabFrom(event) === "nia")
+    return applyCollabRow(state.nia.messages, event);
+  return false;
+}
+
+function applyCollabRow(
+  messages: MessageBlock[],
+  event: RuntimeEvent,
+): boolean {
+  const id = collabID(event);
+  if (!id) return false;
+  upsertInto(messages, `chat:${id}:collab`, "system", collabText(event));
+  return true;
+}
+
+function collabMessageOf(
+  event: RuntimeEvent,
+): CollaborationMessage | undefined {
+  if (!("message" in event)) return undefined;
+  const message = event.message;
+  return typeof message === "object" && message !== null ? message : undefined;
+}
+
+function collabFrom(event: RuntimeEvent): CollaborationParticipant | undefined {
+  if (!event.type.startsWith("collab.")) return undefined;
+  const message = collabMessageOf(event);
+  if (message) return message.from;
+  if ("from" in event && typeof event.from === "string")
+    return event.from as CollaborationParticipant;
+  return undefined;
+}
+
+function collabID(event: RuntimeEvent): string | undefined {
+  if (
+    event.type === "collab.message" ||
+    event.type.endsWith(".collab.message")
+  ) {
+    const message = collabMessageOf(event);
+    if (message) return message.id;
+    return undefined;
+  }
+  if ("id" in event && typeof event.id === "string") return event.id;
+  return undefined;
+}
+
+function collabText(event: RuntimeEvent): string {
   if (event.type === "collab.suggestion")
     return `Navi → Natalia: ${event.suggestion}`;
   if (event.type === "collab.notice")
@@ -929,9 +947,10 @@ function collabText(
   if (event.type === "collab.answer") return `Navi → Natalia: ${event.answer}`;
   if (event.type === "collab.response")
     return `Natalia ${event.decision} the suggestion${event.reason ? ` (${event.reason})` : ""}`;
-  if (event.type === "collab.message" && event.message.kind === "response")
-    return `Natalia ${event.message.decision} the suggestion${event.message.reason ? ` (${event.message.reason})` : ""}`;
-  const message = event.type === "collab.message" ? event.message : event;
+  const message =
+    collabMessageOf(event) ?? (event as unknown as CollaborationMessage);
+  if (message.kind === "response")
+    return `Natalia ${message.decision} the suggestion${message.reason ? ` (${message.reason})` : ""}`;
   const from =
     message.from === "main_agent"
       ? "Natalia"

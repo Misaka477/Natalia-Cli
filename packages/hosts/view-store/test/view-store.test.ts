@@ -110,10 +110,15 @@ test("collaboration chat renders both Natalia and Navi directions", () => {
     },
   ]);
 
+  expect(state.natalia.messages.map((message) => displayText(message))).toEqual(
+    ["Natalia → Navi: Check this edge case."],
+  );
   expect(state.navi.messages.map((message) => displayText(message))).toEqual([
-    "Natalia → Navi: Check this edge case.",
     "Navi → Natalia: It is covered.",
   ]);
+  expect(
+    state.natalia.messages.every((message) => message.role === "system"),
+  ).toBe(true);
   expect(
     state.navi.messages.every((message) => message.role === "system"),
   ).toBe(true);
@@ -138,10 +143,220 @@ test("unified collaboration messages render as system rows", () => {
       },
     },
   ]);
-  expect(displayText(state.navi.messages[0]!)).toBe(
+  expect(displayText(state.natalia.messages[0]!)).toBe(
     "Natalia adopted the suggestion (lower risk)",
   );
-  expect(state.navi.messages[0]?.role).toBe("system");
+  expect(state.natalia.messages[0]?.role).toBe("system");
+});
+
+test("collaboration routing is strictly by sender, not by recipient", () => {
+  const state = projectEvents([
+    {
+      type: "collab.message",
+      message: {
+        id: "legacy:nia->natalia",
+        threadID: "legacy:nia->natalia",
+        kind: "chat",
+        from: "nia",
+        to: "main_agent",
+        text: "legacy nia to natalia",
+        round: 1,
+        expectsReply: false,
+        at: "t0",
+      },
+    },
+    {
+      type: "collab.message",
+      message: {
+        id: "legacy:natalia->nia",
+        threadID: "legacy:natalia->nia",
+        kind: "chat",
+        from: "main_agent",
+        to: "nia",
+        text: "legacy natalia to nia",
+        round: 1,
+        expectsReply: false,
+        at: "t1",
+      },
+    },
+    {
+      type: "collab.message",
+      message: {
+        id: "legacy:navi->natalia",
+        threadID: "legacy:navi->natalia",
+        kind: "chat",
+        from: "live_chat",
+        to: "main_agent",
+        text: "legacy navi to natalia",
+        round: 1,
+        expectsReply: false,
+        at: "t2",
+      },
+    },
+    {
+      type: "collab.message",
+      message: {
+        id: "legacy:natalia->navi",
+        threadID: "legacy:natalia->navi",
+        kind: "chat",
+        from: "main_agent",
+        to: "live_chat",
+        text: "legacy natalia to navi",
+        round: 1,
+        expectsReply: false,
+        at: "t3",
+      },
+    },
+    {
+      type: "collab.message",
+      message: {
+        id: "legacy:nia->navi",
+        threadID: "legacy:nia->navi",
+        kind: "chat",
+        from: "nia",
+        to: "live_chat",
+        text: "legacy nia to navi",
+        round: 1,
+        expectsReply: false,
+        at: "t4",
+      },
+    },
+    {
+      type: "collab.message",
+      message: {
+        id: "legacy:navi->nia",
+        threadID: "legacy:navi->nia",
+        kind: "chat",
+        from: "live_chat",
+        to: "nia",
+        text: "legacy navi to nia",
+        round: 1,
+        expectsReply: false,
+        at: "t5",
+      },
+    },
+    {
+      type: "nia.collab.message",
+      message: {
+        id: "new:nia->natalia",
+        threadID: "new:nia->natalia",
+        kind: "chat",
+        from: "nia",
+        to: "main_agent",
+        text: "new nia to natalia",
+        round: 1,
+        expectsReply: false,
+        at: "t6",
+      },
+    },
+    {
+      type: "natalia.collab.message",
+      message: {
+        id: "new:natalia->nia",
+        threadID: "new:natalia->nia",
+        kind: "chat",
+        from: "main_agent",
+        to: "nia",
+        text: "new natalia to nia",
+        round: 1,
+        expectsReply: false,
+        at: "t7",
+      },
+    },
+    {
+      type: "navi.collab.message",
+      message: {
+        id: "new:navi->natalia",
+        threadID: "new:navi->natalia",
+        kind: "chat",
+        from: "live_chat",
+        to: "main_agent",
+        text: "new navi to natalia",
+        round: 1,
+        expectsReply: false,
+        at: "t8",
+      },
+    },
+    {
+      type: "natalia.collab.message",
+      message: {
+        id: "new:natalia->navi",
+        threadID: "new:natalia->navi",
+        kind: "chat",
+        from: "main_agent",
+        to: "live_chat",
+        text: "new natalia to navi",
+        round: 1,
+        expectsReply: false,
+        at: "t9",
+      },
+    },
+    {
+      type: "nia.collab.message",
+      message: {
+        id: "new:nia->navi",
+        threadID: "new:nia->navi",
+        kind: "chat",
+        from: "nia",
+        to: "live_chat",
+        text: "new nia to navi",
+        round: 1,
+        expectsReply: false,
+        at: "t10",
+      },
+    },
+    {
+      type: "navi.collab.message",
+      message: {
+        id: "new:navi->nia",
+        threadID: "new:navi->nia",
+        kind: "chat",
+        from: "live_chat",
+        to: "nia",
+        text: "new navi to nia",
+        round: 1,
+        expectsReply: false,
+        at: "t11",
+      },
+    },
+  ] as RuntimeEvent[]);
+
+  expect(state.natalia.messages.map((block) => displayText(block))).toEqual([
+    "Natalia → Nia: legacy natalia to nia",
+    "Natalia → Navi: legacy natalia to navi",
+    "Natalia → Nia: new natalia to nia",
+    "Natalia → Navi: new natalia to navi",
+  ]);
+  expect(state.navi.messages.map((block) => displayText(block))).toEqual([
+    "Navi → Natalia: legacy navi to natalia",
+    "Navi → Nia: legacy navi to nia",
+    "Navi → Natalia: new navi to natalia",
+    "Navi → Nia: new navi to nia",
+  ]);
+  expect(state.nia.messages.map((block) => displayText(block))).toEqual([
+    "Nia → Natalia: legacy nia to natalia",
+    "Nia → Navi: legacy nia to navi",
+    "Nia → Natalia: new nia to natalia",
+    "Nia → Navi: new nia to navi",
+  ]);
+  expect(
+    state.natalia.messages.some(
+      (block) =>
+        block.text.startsWith("Nia →") || block.text.startsWith("Navi →"),
+    ),
+  ).toBe(false);
+  expect(
+    state.navi.messages.some(
+      (block) =>
+        block.text.startsWith("Nia →") || block.text.startsWith("Natalia →"),
+    ),
+  ).toBe(false);
+  expect(
+    state.nia.messages.some(
+      (block) =>
+        block.text.startsWith("Navi →") || block.text.startsWith("Natalia →"),
+    ),
+  ).toBe(false);
 });
 
 test("a queued turn stays visibly queued without replacing active work", () => {

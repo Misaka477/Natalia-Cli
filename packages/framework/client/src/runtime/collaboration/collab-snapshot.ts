@@ -40,7 +40,8 @@ export function createCollabSnapshotScheduler(
     const next = (revisions.get(sessionID) ?? 0) + 1;
     revisions.set(sessionID, next);
     if (process.env.NATALIA_PERF_VERBOSE === "1")
-      perfLog(`[perf] collabSnapshot.schedule session=${sessionID} revision=${next}`,
+      perfLog(
+        `[perf] collabSnapshot.schedule session=${sessionID} revision=${next}`,
       );
     const existing = timers.get(sessionID);
     if (existing) clearTimeout(existing);
@@ -62,7 +63,8 @@ export function createCollabSnapshotScheduler(
     try {
       const computed = await computeCollabSnapshotInWorker(events);
       commit(sessionID, revision, computed);
-      perfLog(`[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms worker`,
+      perfLog(
+        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms worker`,
       );
     } catch {
       // Worker failure must never take the collaboration surfaces offline.
@@ -74,7 +76,8 @@ export function createCollabSnapshotScheduler(
         eventCount: events.length,
       };
       commit(sessionID, revision, computed);
-      perfLog(`[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms fallback`,
+      perfLog(
+        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms fallback`,
       );
     }
   }
@@ -106,5 +109,9 @@ export function createCollabSnapshotScheduler(
 }
 
 export function isCollabSnapshotRelevantEvent(event: RuntimeEvent): boolean {
-  return event.type.startsWith("collab.") || event.type.startsWith("plan.doc.");
+  return (
+    event.type.startsWith("collab.") ||
+    event.type.includes(".collab.") ||
+    event.type.startsWith("plan.doc.")
+  );
 }
