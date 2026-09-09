@@ -269,7 +269,8 @@ export function hydrateProjectedMessages(
         (message.pendingText.length > 0 ||
           message.role === "thinking" ||
           message.tool !== undefined ||
-          message.status === "running"),
+          message.status === "running" ||
+          message.id.endsWith(":collab")),
     );
     const bounded = boundTranscript([...incoming, ...liveRows], direction);
     state.messages = bounded.messages;
@@ -441,7 +442,8 @@ function replaceAgentMessages(
       (row.pendingText.length > 0 ||
         row.role === "thinking" ||
         row.tool !== undefined ||
-        row.status === "running"),
+        row.status === "running" ||
+        row.id.endsWith(":collab")),
   );
   target.messages.splice(0, target.messages.length, ...incoming, ...liveOnly);
   delete target.hydrationBaseline;

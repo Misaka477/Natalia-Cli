@@ -1726,6 +1726,31 @@ test("events from another session do not mix into the current transcript", () =>
   expect(state.messages.map((block) => block.text)).toEqual(["from a"]);
 });
 
+test("replace hydration preserves collaboration system rows", () => {
+  const state = projectEvents([
+    {
+      type: "collab.chat",
+      id: "collab:keep:1",
+      threadID: "collab:keep:1",
+      from: "main_agent",
+      to: "live_chat",
+      text: "Natalia collaboration row",
+      round: 1,
+      expectsReply: true,
+      at: "t0",
+    },
+  ]);
+  expect(state.natalia.messages.map((message) => displayText(message))).toEqual([
+    "Natalia → Navi: Natalia collaboration row",
+  ]);
+
+  hydrateProjectedMessages(state, [], "older", { replace: true });
+
+  expect(state.natalia.messages.map((message) => displayText(message))).toEqual([
+    "Natalia → Navi: Natalia collaboration row",
+  ]);
+});
+
 test("empty explicit stream hydration clears durable rows without losing live output", () => {
   const state = initialState();
   hydrateNaviMessages(state, [
