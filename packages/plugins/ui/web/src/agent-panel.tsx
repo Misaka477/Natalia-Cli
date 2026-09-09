@@ -139,6 +139,24 @@ export function AgentPanel(props: {
     subagents().find((item) => item.id === selectedID()),
   );
 
+  const [subagentElapsedMs, setSubagentElapsedMs] = createSignal(0);
+  const subagentElapsedTimer = setInterval(() => {
+    const selected = selectedSubagent();
+    if (selected?.status === "running" && selected.startedAt)
+      setSubagentElapsedMs(Date.now() - selected.startedAt);
+    else setSubagentElapsedMs(0);
+  }, 1000);
+  onCleanup(() => clearInterval(subagentElapsedTimer));
+
+  function formatSubagentDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes < 1) return `${seconds}s`;
+    return `${minutes}m ${seconds}s`;
+  }
+
   const selectedTerminals = createMemo(() =>
     terminals().filter((terminal) => terminal.agentID === selectedID()),
   );
@@ -459,6 +477,15 @@ export function AgentPanel(props: {
                     scrollRef={setSubTranscriptEl}
                     onScroll={handleSubagentTranscriptScroll}
                   />
+                  <Show when={selectedSubagent()?.status === "running"}>
+                    <div class="neu-activity-bar" data-running={true}>
+                      <span class="neu-activity-pulse" />
+                      <span class="neu-activity-label">
+                        {selectedSubagent()?.status} ·{" "}
+                        {formatSubagentDuration(subagentElapsedMs())}
+                      </span>
+                    </div>
+                  </Show>
                   <Show when={subShowJumpToBottom()}>
                     <button
                       type="button"
