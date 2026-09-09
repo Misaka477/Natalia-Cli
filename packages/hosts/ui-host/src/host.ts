@@ -153,7 +153,13 @@ export async function createUiPluginHost<TContext = unknown>(
     if (sessionID) target.sessionID ??= sessionID;
     sessionStates.set(key, target);
     viewStore.applyEvent(target, event);
-    if (key === activeKey) {
+    const shouldRender =
+      key === activeKey ||
+      (sessionID &&
+        !activeKey &&
+        (!state.sessionID || state.sessionID === sessionID));
+    if (shouldRender) {
+      if (!activeKey) activeKey = key;
       state = target;
       for (const listener of projectionListeners) listener(state);
     }
