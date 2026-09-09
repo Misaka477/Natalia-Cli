@@ -1740,15 +1740,29 @@ test("replace hydration preserves collaboration system rows", () => {
       at: "t0",
     },
   ]);
-  expect(state.natalia.messages.map((message) => displayText(message))).toEqual([
-    "Natalia → Navi: Natalia collaboration row",
-  ]);
+  expect(state.natalia.messages.map((message) => displayText(message))).toEqual(
+    ["Natalia → Navi: Natalia collaboration row"],
+  );
 
   hydrateProjectedMessages(state, [], "older", { replace: true });
 
-  expect(state.natalia.messages.map((message) => displayText(message))).toEqual([
-    "Natalia → Navi: Natalia collaboration row",
+  expect(state.natalia.messages.map((message) => displayText(message))).toEqual(
+    ["Natalia → Navi: Natalia collaboration row"],
+  );
+});
+
+test("empty replace hydration does not clear existing turn rows", () => {
+  const state = projectEvents([
+    submitted("t1", "existing main turn"),
+    { type: "content.done", id: "t1", text: "existing answer" },
   ]);
+  expect(state.natalia.messages).not.toHaveLength(0);
+
+  hydrateProjectedMessages(state, [], "older", { replace: true });
+
+  expect(state.natalia.messages.map((message) => displayText(message))).toEqual(
+    ["existing main turn", "existing answer"],
+  );
 });
 
 test("empty explicit stream hydration clears durable rows without losing live output", () => {

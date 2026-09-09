@@ -261,6 +261,9 @@ export function hydrateProjectedMessages(
     for (const row of message.rows) applyEvent(projected, row.event);
   }
   if (options.replace) {
+    // An empty page must never wipe a transcript that was already projected
+    // from replay or live events. A later non-empty page will replace it.
+    if (messages.length === 0) return false;
     const incoming = projected.messages.map((message) => ({ ...message }));
     const incomingIDs = new Set(incoming.map((message) => message.id));
     const liveRows = state.messages.filter(
