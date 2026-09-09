@@ -1291,6 +1291,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const resetProjectionForSessionSwitch = () => {
       historyReplayDone = false;
       messagesHydrationStarted = false;
+      lastHydratedSessionID = undefined;
       historyCursor = undefined;
       newerHistoryCursor = undefined;
       loadingOlderHistory = false;
@@ -1360,10 +1361,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
 
     let messagesHydrationStarted = false;
+    let lastHydratedSessionID: string | undefined;
     const hydrateRecentMessagesOnLoad = async () => {
-      if (messagesHydrationStarted) return;
-      messagesHydrationStarted = true;
       const sessionID = selectedSessionID() || state().sessionID;
+      if (sessionID && sessionID === lastHydratedSessionID) return;
+      messagesHydrationStarted = true;
+      lastHydratedSessionID = sessionID;
       const loadToken = (
         globalThis as unknown as { __nataliaSessionLoadToken?: number }
       ).__nataliaSessionLoadToken;
@@ -1464,6 +1467,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     onCleanup(() =>
       window.removeEventListener("natalia:session-attached", onSessionAttached),
     );
+    // The host may start and restore the session before this plugin mounts, so
+    // hydration must not depend solely on the session-attached event.
+    void hydrateRecentMessagesOnLoad();
 
     const openUnresolvedInteractives = (event: Event) => {
       const openStart = performance.now();
