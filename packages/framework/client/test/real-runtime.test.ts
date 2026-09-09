@@ -8681,7 +8681,8 @@ test("subagent compaction uses its active provider and stays in the child lifecy
   await waitFor(
     () =>
       events.some(
-        (event) => event.type === "subagent.update" && event.event === "created",
+        (event) =>
+          event.type === "subagent.update" && event.event === "created",
       ),
     5_000,
     "the compacted subagent to start",
@@ -8733,7 +8734,8 @@ test("subagent compaction uses its active provider and stays in the child lifecy
   expect(
     events.some(
       (event) =>
-        (event.type === "compaction.begin" || event.type === "compaction.end") &&
+        (event.type === "compaction.begin" ||
+          event.type === "compaction.end") &&
         !event.agentID,
     ),
   ).toBe(false);
@@ -9330,7 +9332,10 @@ function subagentCompactionProvider(): StreamingProvider & {
         request.messages.some((message) =>
           message.content.includes("child compaction task"),
         );
-      if (isChild && !request.messages.some((message) => message.role === "tool")) {
+      if (
+        isChild &&
+        !request.messages.some((message) => message.role === "tool")
+      ) {
         yield {
           type: "tool_call",
           calls: [
@@ -9505,6 +9510,22 @@ async function fingerprintEntry(workspaceRoot: string, entryPath: string) {
     fingerprint: await fingerprintFile(entryPath),
     installedAt: new Date().toISOString(),
   });
+}
+
+type NamespacedCollabMessageEvent = Extract<
+  RuntimeEvent,
+  {
+    type:
+      | "natalia.collab.message"
+      | "navi.collab.message"
+      | "nia.collab.message";
+  }
+>;
+
+function isCollabMessageEvent(
+  event: RuntimeEvent,
+): event is NamespacedCollabMessageEvent {
+  return event.type.endsWith(".collab.message");
 }
 
 /** Polls until an async predicate holds (the runtime wakes turns asynchronously). */
@@ -12346,7 +12367,7 @@ test("the collaboration channel round-robins between Navi and the main agent", a
     async () =>
       rrEvents.some(
         (event) =>
-          event.type === "collab.message" && event.message.kind === "response",
+          isCollabMessageEvent(event) && event.message.kind === "response",
       ),
     10000,
   );
@@ -12448,13 +12469,11 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
   await client.submitAndWait!("hello");
   await waitForAsync(async () =>
     events.some(
-      (event) =>
-        event.type === "collab.message" && event.message.kind === "answer",
+      (event) => isCollabMessageEvent(event) && event.message.kind === "answer",
     ),
   );
   const answer = events.find(
-    (event) =>
-      event.type === "collab.message" && event.message.kind === "answer",
+    (event) => isCollabMessageEvent(event) && event.message.kind === "answer",
   );
   expect(answer).toMatchObject({
     message: { kind: "answer", text: "yes, echo is safe" },
@@ -12579,7 +12598,7 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
     await waitForAsync(async () =>
       events.some(
         (event) =>
-          event.type === "collab.message" && event.message.kind === "answer",
+          isCollabMessageEvent(event) && event.message.kind === "answer",
       ),
     );
     await waitForAsync(async () =>
@@ -12675,8 +12694,7 @@ test("collab_answer rejects a truncated question id", async () => {
   );
   expect(
     events.some(
-      (event) =>
-        event.type === "collab.message" && event.message.kind === "answer",
+      (event) => isCollabMessageEvent(event) && event.message.kind === "answer",
     ),
   ).toBe(false);
   await client.dispose?.();
@@ -12825,8 +12843,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
     await client.submitAndWait!("ask Navi to check it");
     await waitForAsync(async () => {
       const chatCount = events.filter(
-        (event) =>
-          event.type === "collab.message" && event.message.kind === "chat",
+        (event) => isCollabMessageEvent(event) && event.message.kind === "chat",
       ).length;
       if (chatCount > 4)
         throw new Error(`collab_chat exceeded its limit: ${chatCount}`);
@@ -12835,8 +12852,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
       const summary = events
         .filter(
           (event) =>
-            (event.type === "collab.message" &&
-              event.message.kind === "chat") ||
+            (isCollabMessageEvent(event) && event.message.kind === "chat") ||
             event.type === "navi.chat.tool.used" ||
             event.type === "diagnostic" ||
             event.type === "turn.finished",
@@ -12847,7 +12863,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
     });
 
     const chats = events.flatMap((event) =>
-      event.type === "collab.message" && event.message.kind === "chat"
+      isCollabMessageEvent(event) && event.message.kind === "chat"
         ? [event.message]
         : [],
     );
@@ -12991,12 +13007,12 @@ test("collab_chat honors a configured one-round automatic limit", async () => {
       async () =>
         events.filter(
           (event) =>
-            event.type === "collab.message" && event.message.kind === "chat",
+            isCollabMessageEvent(event) && event.message.kind === "chat",
         ).length === 2 && finalWakeObserved,
       10000,
     );
     const chats = events.flatMap((event) =>
-      event.type === "collab.message" && event.message.kind === "chat"
+      isCollabMessageEvent(event) && event.message.kind === "chat"
         ? [event.message]
         : [],
     );
