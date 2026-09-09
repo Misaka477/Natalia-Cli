@@ -5,7 +5,6 @@ import {
   parseBashCommandRule,
   parseBashSimpleCommand,
 } from "./bash-command-policy";
-import { parseUnifiedPatch } from "./unified-patch";
 import type {
   ToolHookEvent,
   ToolHookResult,
@@ -118,14 +117,14 @@ export function commandTextForTool(
 const WORKSPACE_WRITE_TOOLS = [
   "write_file",
   "edit_file",
-  "apply_patch",
+  "apply_edits",
   "browser_screenshot",
 ];
 
 /**
  * The workspace files one tool call will write, or an empty array when it
- * writes nothing there. `apply_patch` names every path its diff touches; the
- * path-based write tools name a single `path`.
+ * writes nothing there. `apply_edits` names every path in its structured edits;
+ * the path-based write tools name a single `path`.
  *
  * Exported so the permission layer can evaluate each touched path, while
  * `workspaceWritePathForTool` keeps answering the single-path question the
@@ -135,13 +134,13 @@ export function workspaceWritePathsForTool(
   toolName: string,
   args: Record<string, unknown>,
 ): string[] {
-  if (toolName === "apply_patch") {
-    const patch = typeof args.patch === "string" ? args.patch : "";
-    try {
-      return parseUnifiedPatch(patch).map((file) => file.path);
-    } catch {
-      return [];
-    }
+  if (toolName === "apply_edits") {
+    const edits = Array.isArray(args.edits) ? args.edits : [];
+    return edits.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const path = (entry as { path?: unknown }).path;
+      return typeof path === "string" && path.trim() ? [path] : [];
+    });
   }
   if (!WORKSPACE_WRITE_TOOLS.includes(toolName)) return [];
   return typeof args.path === "string" && args.path.trim() ? [args.path] : [];
@@ -156,7 +155,7 @@ export function workspaceWritePathsForTool(
  * one place. Three private copies of that list would drift, and the copy that
  * drifted would be the one enforcing policy.
  *
- * `apply_patch` can touch many files, so it reports the whole-workspace scope
+ * `apply_edits` can touch many files, so it reports the whole-workspace scope
  * `"."`: the write lock serialises it like any write, and the mutation registry
  * attributes any workspace change to it.
  */
@@ -166,7 +165,7 @@ export function workspaceWritePathForTool(
 ): string | undefined {
   const paths = workspaceWritePathsForTool(toolName, args);
   if (!paths.length) return undefined;
-  if (toolName === "apply_patch") return ".";
+  if (toolName === "apply_edits") return ".";
   return paths[0]!;
 }
 
@@ -303,8 +302,9 @@ export function evaluatePermissionRules(
     writePaths.length > 0 ||
     ["sandbox_write", "sandbox_merge"].includes(toolName);
   if (rules.files && (readsPath || writesPath)) {
-    // A path-based write tool names a single `path`; `apply_patch` names every
-    // path its diff touches; `sandbox_write` names a sandbox path directly.
+    // A path-based write tool names a single `path`; `apply_edits` names every
+    // path in its structured edit list; `sandbox_write` names a sandbox path
+    // directly.
     const evaluatedWritePaths =
       writesPath && writePaths.length
         ? writePaths

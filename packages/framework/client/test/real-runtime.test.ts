@@ -1818,7 +1818,7 @@ for (const [label, config] of [
             event.name === "edit_file" ||
             event.name === "read_media_file" ||
             event.name === "image_read" ||
-            event.name === "apply_patch"),
+            event.name === "apply_edits"),
       ),
     ).toBe(false);
     expect(kernel.has("natalia-tool-fs-read")).toBe(false);
@@ -1853,7 +1853,7 @@ test("disabling only the fs read plugin keeps the write tools", async () => {
   );
   for (const name of ["read_file", "read_media_file", "image_read"])
     expect(registered.has(name)).toBe(false);
-  for (const name of ["write_file", "edit_file", "apply_patch"])
+  for (const name of ["write_file", "edit_file", "apply_edits"])
     expect(registered.has(name)).toBe(true);
   expect(kernel.has("natalia-tool-fs-read")).toBe(false);
   expect(kernel.has("natalia-tool-fs-write")).toBe(true);

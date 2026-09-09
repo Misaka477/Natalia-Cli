@@ -8,8 +8,6 @@
  * nothing about the runtime or the capability kernel.
  */
 import {
-  applyUnifiedPatchToText,
-  parseUnifiedPatch,
   requireObject,
   requireString,
   workspacePath,
@@ -17,7 +15,7 @@ import {
   type ToolFamily,
 } from "@natalia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 
 export const FS_WRITE_PLUGIN_ID = "natalia-tool-fs-write";
@@ -137,42 +135,50 @@ function editFileTool(): RuntimeTool {
   };
 }
 
-function applyPatchTool(): RuntimeTool {
+function applyEditsTool(): RuntimeTool {
   return {
-    name: "apply_patch",
+    name: "apply_edits",
     description:
-      "Apply a unified diff (the format `git diff` emits) to workspace files. " +
+      "Apply a batch of precise text replacements across workspace files atomically. " +
       "Use it to make several coordinated edits in one call instead of many separate " +
-      "edit_file calls. Every hunk must match before anything is written, so a bad " +
-      "patch changes nothing.\n\n" +
-      "Strict unified diff example:\n\n" +
-      "--- a/src/main.rs\n" +
-      "+++ b/src/main.rs\n" +
-      "@@ -1,5 +1,7 @@\n" +
-      " fn main() {\n" +
-      "     let x = 1;\n" +
-      "-    let y = 2;\n" +
-      "+    let y = 3;\n" +
-      '+    println!("{x} + {y}");\n' +
-      " }\n" +
-      "\n" +
-      "Required:\n" +
-      "1. --- and +++ file headers\n" +
-      "2. @@ ... @@ hunk header\n" +
-      "3. context lines start with a single space\n" +
-      "4. removed lines start with -\n" +
-      "5. added lines start with +\n" +
-      "\n" +
-      "Forbidden:\n" +
-      "- diff --git alone\n" +
-      "- file headers without hunks\n" +
-      "- Markdown code fences around the patch\n" +
-      "- JSON patch / custom replace blocks",
+      "edit_file calls. Every match is verified before anything is written, so a bad " +
+      "edit changes nothing.\n\n" +
+      "Example:\n\n" +
+      "{\n" +
+      '  "edits": [\n' +
+      '    { "path": "src/main.rs", "operation": "replace", "oldText": "let y = 2;", "newText": "let y = 3;" },\n' +
+      '    { "path": "src/new.ts", "operation": "create", "newText": "export const x = 1;\\n" },\n' +
+      '    { "path": "src/old.ts", "operation": "delete" }\n' +
+      "  ]\n" +
+      "}\n\n" +
+      "Operations:\n" +
+      "1. replace: oldText must occur exactly once in the target file.\n" +
+      "2. create: the file must not already exist.\n" +
+      "3. delete: the file must already exist.\n\n" +
+      "Do not use unified diff or Markdown code fences. This is the model-facing batch editor.",
     requiresApproval: true,
     parameters: {
       type: "object",
-      properties: { patch: { type: "string" } },
-      required: ["patch"],
+      properties: {
+        edits: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+              operation: {
+                type: "string",
+                enum: ["replace", "create", "delete"],
+              },
+              oldText: { type: "string" },
+              newText: { type: "string" },
+            },
+            required: ["path", "operation"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["edits"],
       additionalProperties: false,
     },
     output: {
@@ -183,7 +189,7 @@ function applyPatchTool(): RuntimeTool {
         additionalProperties: false,
       },
       presentCall() {
-        return { kind: "diff", title: "workspace", summary: "apply patch" };
+        return { kind: "diff", title: "workspace", summary: "apply edits" };
       },
       presentResult(_args, value) {
         return { kind: "diff", title: "workspace", summary: value };
@@ -191,75 +197,158 @@ function applyPatchTool(): RuntimeTool {
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const patch = requireString(args.patch, "patch");
-      if (!patch.trim()) throw new Error("patch contains no file changes");
-      if (!/^--- /m.test(patch))
-        throw new Error("apply_patch: no diff file headers found in patch");
-      if (!/^@@ /m.test(patch))
-        throw new Error("apply_patch: patch has no @@ hunks");
-      const files = parseUnifiedPatch(patch);
-      if (!files.length) throw new Error("patch contains no file changes");
+      if (!Array.isArray(args.edits) || args.edits.length === 0)
+        throw new Error("apply_edits requires a non-empty edits array");
+      const edits = args.edits.map((entry, index) => {
+        const edit = requireObject(entry);
+        const path = requireString(edit.path, `edits[${index}].path`);
+        const operation = requireString(
+          edit.operation,
+          `edits[${index}].operation`,
+        );
+        if (
+          operation !== "replace" &&
+          operation !== "create" &&
+          operation !== "delete"
+        )
+          throw new Error(
+            `apply_edits: edits[${index}].operation must be replace, create, or delete`,
+          );
+        return {
+          path,
+          operation,
+          oldText:
+            edit.oldText === undefined
+              ? undefined
+              : requireString(edit.oldText, `edits[${index}].oldText`),
+          newText:
+            edit.newText === undefined
+              ? undefined
+              : requireString(edit.newText, `edits[${index}].newText`),
+        } as {
+          path: string;
+          operation: "replace" | "create" | "delete";
+          oldText?: string;
+          newText?: string;
+        };
+      });
 
-      // Phase 1: authorize every touched path and compute every new content in
-      // memory. A mismatch anywhere aborts here, before any file is written.
-      const prepared: Array<{
-        path: string;
-        abs: string;
-        next: string;
-        changed: boolean;
-      }> = [];
-      for (const file of files) {
-        const abs = workspacePath(context.workspaceRoot, file.path);
+      // Phase 1: authorize every touched path and compute every final file
+      // content in memory. A mismatch anywhere aborts here, before any file is
+      // written.
+      const order: string[] = [];
+      const states = new Map<
+        string,
+        {
+          original: string | undefined;
+          content: string | undefined;
+          deleted: boolean;
+        }
+      >();
+      for (const edit of edits) {
+        const abs = workspacePath(context.workspaceRoot, edit.path);
         await context.workspaceWriteAuthorize?.({
-          toolName: "apply_patch",
+          toolName: "apply_edits",
           path: abs,
         });
-        let current = "";
-        if (!file.newFile) {
-          try {
-            current = await readFile(abs, "utf8");
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT")
-              throw new Error(`apply_patch: file does not exist: ${file.path}`);
-            throw error;
-          }
-        }
-        const applied = applyUnifiedPatchToText(current, file);
-        prepared.push({
-          path: file.path,
-          abs,
-          next: applied.next,
-          changed: applied.changed,
-        });
-      }
-
-      // Phase 2: write the changed files. On a mid-write failure, restore the
-      // files already written so a patch is all-or-nothing on disk too.
-      const written: string[] = [];
-      const originals = new Map<string, string | undefined>();
-      try {
-        for (const entry of prepared) {
-          if (!entry.changed) continue;
+        if (!states.has(abs)) {
           let original: string | undefined;
           try {
-            original = await readFile(entry.abs, "utf8");
-          } catch {
-            original = undefined;
+            original = await readFile(abs, "utf8");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
           }
-          originals.set(entry.abs, original);
-          await mkdir(dirname(entry.abs), { recursive: true });
-          await writeFile(entry.abs, entry.next);
-          written.push(entry.path);
+          states.set(abs, {
+            original,
+            content: original,
+            deleted: false,
+          });
+          order.push(abs);
+        }
+        const state = states.get(abs)!;
+        if (edit.operation === "replace") {
+          if (state.deleted || state.content === undefined)
+            throw new Error(`apply_edits: file does not exist: ${edit.path}`);
+          const oldText = edit.oldText;
+          if (!oldText)
+            throw new Error(
+              `apply_edits: replace requires non-empty oldText for ${edit.path}`,
+            );
+          const count = countOccurrences(state.content, oldText);
+          if (count === 0)
+            throw new Error(`apply_edits: oldText not found in ${edit.path}`);
+          if (count > 1)
+            throw new Error(
+              `apply_edits: oldText is ambiguous (${count} occurrences) in ${edit.path}; include more context or use write_file`,
+            );
+          state.content = state.content.replace(oldText, edit.newText ?? "");
+        } else if (edit.operation === "create") {
+          if (state.content !== undefined || state.deleted)
+            throw new Error(`apply_edits: file already exists: ${edit.path}`);
+          state.content = edit.newText ?? "";
+        } else {
+          if (state.content === undefined || state.deleted)
+            throw new Error(`apply_edits: file does not exist: ${edit.path}`);
+          state.content = undefined;
+          state.deleted = true;
+        }
+      }
+
+      type PreparedEdit = {
+        path: string;
+        abs: string;
+        kind: "write" | "delete";
+        next?: string;
+        original?: string | undefined;
+      };
+      const prepared: PreparedEdit[] = order.flatMap<PreparedEdit>((abs) => {
+        const state = states.get(abs)!;
+        if (state.deleted)
+          return [
+            {
+              path: relative(context.workspaceRoot, abs),
+              abs,
+              kind: "delete" as const,
+              original: state.original,
+            },
+          ];
+        if (state.content === undefined) return [];
+        return [
+          {
+            path: relative(context.workspaceRoot, abs),
+            abs,
+            kind: "write" as const,
+            next: state.content,
+            original: state.original,
+          },
+        ];
+      });
+
+      // Phase 2: write/delete the changed paths. On a mid-write failure,
+      // restore the files already changed so a batch is all-or-nothing on disk.
+      const written: string[] = [];
+      try {
+        for (const entry of prepared) {
+          if (entry.kind === "write") {
+            if (entry.original === entry.next) continue;
+            await mkdir(dirname(entry.abs), { recursive: true });
+            await writeFile(entry.abs, entry.next!);
+            written.push(entry.path);
+          } else {
+            await rm(entry.abs, { force: false });
+            written.push(entry.path);
+          }
         }
       } catch (error) {
-        for (const [abs, original] of originals) {
+        for (const entry of [...prepared].reverse()) {
           try {
-            if (original === undefined) {
-              await import("node:fs/promises").then(({ rm }) =>
-                rm(abs, { force: true }),
-              );
+            if (entry.kind === "delete") {
+              if (entry.original !== undefined)
+                await writeFile(entry.abs, entry.original);
+            } else if (entry.original === undefined) {
+              await rm(entry.abs, { force: true });
             } else {
-              await writeFile(abs, original);
+              await writeFile(entry.abs, entry.original);
             }
           } catch {
             // Best-effort rollback; report the original failure below.
@@ -268,18 +357,27 @@ function applyPatchTool(): RuntimeTool {
         throw error;
       }
 
-      if (!written.length) return "patch already applied (no changes)";
-      return `applied patch to ${written.length} file${
-        written.length === 1 ? "" : "s"
-      }: ${written.join(", ")}`;
+      if (!written.length) return "apply_edits: no changes";
+      return `applied ${written.length} edit${written.length === 1 ? "" : "s"}: ${written.join(", ")}`;
     },
   };
+}
+
+function countOccurrences(text: string, needle: string): number {
+  let count = 0;
+  let offset = 0;
+  while (true) {
+    const index = text.indexOf(needle, offset);
+    if (index === -1) return count;
+    count += 1;
+    offset = index + needle.length;
+  }
 }
 
 export const writeFileTools: RuntimeTool[] = [
   writeFileTool(),
   editFileTool(),
-  applyPatchTool(),
+  applyEditsTool(),
 ];
 
 /**

@@ -112,7 +112,7 @@ const FILESYSTEM_READ_NAMES = new Set([
 const FILESYSTEM_WRITE_NAMES = new Set([
   "write_file",
   "edit_file",
-  "apply_patch",
+  "apply_edits",
   "file_write",
   "file_edit",
   "patch_file",

@@ -37,7 +37,7 @@ export function runtimeToolNames(): string[] {
     "image_read",
     "write_file",
     "edit_file",
-    "apply_patch",
+    "apply_edits",
     "web_fetch",
     "web_search",
     "browser_screenshot",

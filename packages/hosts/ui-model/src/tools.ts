@@ -125,7 +125,7 @@ export function classifyTool(
   if (
     kind === "diff" ||
     lower.includes("diff") ||
-    lower === "apply_patch" ||
+    lower === "apply_edits" ||
     lower === "edit"
   )
     return "diff";

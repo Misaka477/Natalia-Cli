@@ -193,7 +193,7 @@ export function createExecuteOne(
           call.id,
           tool.name,
           tool.name,
-          // `apply_patch` reports the whole-workspace scope `"."` because it can
+          // `apply_edits` reports the whole-workspace scope `"."` because it can
           // touch many files; `write_file`/`edit_file` report their single path.
           // Anything else has no path scope and falls through to "global".
           toolPolicy!.workspaceWritePathForTool(

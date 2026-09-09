@@ -44,7 +44,7 @@ test("the effective tool catalogue names migrated plugin tools", () => {
   expect(runtimeToolNames()).toEqual(
     expect.arrayContaining(["read_file", "write_file", "edit_file"]),
   );
-  expect(runtimeToolNames()).toContain("apply_patch");
+  expect(runtimeToolNames()).toContain("apply_edits");
   expect(runtimeToolNames()).toContain("web_fetch");
   expect(runtimeToolNames()).toContain("run_shell");
   expect(runtimeToolNames()).toContain("agent_spawn");

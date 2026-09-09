@@ -1,11 +1,5 @@
 export { validateToolParameters, assertValidToolParameters } from "./validate";
 export { assertNetworkURL } from "./network";
-export {
-  parseUnifiedPatch,
-  applyUnifiedPatchToText,
-  type UnifiedPatchFile,
-  type UnifiedPatchHunk,
-} from "./unified-patch";
 export { runShell } from "./run-shell";
 export {
   commandHasPrefix,

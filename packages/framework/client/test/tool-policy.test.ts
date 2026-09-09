@@ -277,7 +277,7 @@ test("terminal command buffer is pane-scoped and fails closed for unsafe input",
   ).resolves.toMatchObject({ allowed: false });
 });
 
-test("apply_patch is evaluated per path it touches", () => {
+test("apply_edits is evaluated per path it touches", () => {
   const fileRules = {
     files: {
       writePaths: [
@@ -285,34 +285,27 @@ test("apply_patch is evaluated per path it touches", () => {
       ],
     },
   };
-  // A patch that touches a protected path is blocked even when it also touches
+  // An edit that touches a protected path is blocked even when it also touches
   // an allowed one.
   expect(
-    evaluatePermissionRules(fileRules, "apply_patch", {
-      patch: [
-        "--- a/open.ts",
-        "+++ b/open.ts",
-        "@@ -1,1 +1,1 @@",
-        "-a",
-        "+A",
-        "--- a/protected/secret.ts",
-        "+++ b/protected/secret.ts",
-        "@@ -1,1 +1,1 @@",
-        "-b",
-        "+B",
-      ].join("\n"),
+    evaluatePermissionRules(fileRules, "apply_edits", {
+      edits: [
+        { path: "open.ts", operation: "replace", oldText: "a", newText: "A" },
+        {
+          path: "protected/secret.ts",
+          operation: "replace",
+          oldText: "b",
+          newText: "B",
+        },
+      ],
     }),
   ).toMatchObject({ allowed: false, reason: "protected" });
-  // A patch that avoids protected paths is allowed.
+  // An edit that avoids protected paths is allowed.
   expect(
-    evaluatePermissionRules(fileRules, "apply_patch", {
-      patch: [
-        "--- a/open.ts",
-        "+++ b/open.ts",
-        "@@ -1,1 +1,1 @@",
-        "-a",
-        "+A",
-      ].join("\n"),
+    evaluatePermissionRules(fileRules, "apply_edits", {
+      edits: [
+        { path: "open.ts", operation: "replace", oldText: "a", newText: "A" },
+      ],
     }),
   ).toMatchObject({ allowed: true });
 });

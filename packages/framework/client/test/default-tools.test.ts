@@ -22,7 +22,7 @@ test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("write_file")).toBe(false);
   expect(builtinTools().has("edit_file")).toBe(false);
   expect(builtinTools().has("image_read")).toBe(false);
-  expect(builtinTools().has("apply_patch")).toBe(false);
+  expect(builtinTools().has("apply_edits")).toBe(false);
   expect(builtinTools().has("web_fetch")).toBe(false);
   expect(builtinTools().has("web_search")).toBe(false);
   expect(builtinTools().has("browser_visit")).toBe(false);

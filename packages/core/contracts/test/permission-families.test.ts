@@ -9,7 +9,7 @@ describe("permission families", () => {
     expect(classifyPermissionFamily("read_file").id).toBe("filesystem-read");
     expect(classifyPermissionFamily("grep").id).toBe("filesystem-read");
     expect(classifyPermissionFamily("write_file").id).toBe("filesystem-write");
-    expect(classifyPermissionFamily("apply_patch").id).toBe("filesystem-write");
+    expect(classifyPermissionFamily("apply_edits").id).toBe("filesystem-write");
   });
 
   test("groups terminal operations across terminal IDs and risk levels", () => {

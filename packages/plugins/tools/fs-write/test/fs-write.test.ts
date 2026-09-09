@@ -69,8 +69,8 @@ test("write_file and edit_file go through the write lock", async () => {
   ]);
 });
 
-test("apply_patch edits several files in one call and authorizes each path", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tool-fs-write-patch-"));
+test("apply_edits edits several files in one call and authorizes each path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-fs-write-edits-"));
   await writeFile(join(root, "a.ts"), "const a = 1;\nconst b = 2;\n");
   await writeFile(join(root, "c.ts"), "const c = 3;\n");
   const writes: Array<{ toolName: string; path: string }> = [];
@@ -86,21 +86,26 @@ test("apply_patch edits several files in one call and authorizes each path", asy
   const tools = new Map(
     fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
   );
-  const patch = [
-    "--- a/a.ts",
-    "+++ b/a.ts",
-    "@@ -1,2 +1,2 @@",
-    " const a = 1;",
-    "-const b = 2;",
-    "+const b = 20;",
-    "--- a/c.ts",
-    "+++ b/c.ts",
-    "@@ -1,1 +1,1 @@",
-    "-const c = 3;",
-    "+const c = 30;",
-  ].join("\n");
-  const result = await tools.get("apply_patch")!.execute({ patch }, context);
-  expect(result).toContain("2 files");
+  const result = await tools.get("apply_edits")!.execute(
+    {
+      edits: [
+        {
+          path: "a.ts",
+          operation: "replace",
+          oldText: "const b = 2;",
+          newText: "const b = 20;",
+        },
+        {
+          path: "c.ts",
+          operation: "replace",
+          oldText: "const c = 3;",
+          newText: "const c = 30;",
+        },
+      ],
+    },
+    context,
+  );
+  expect(result).toContain("2 edits");
   expect(result).toContain("a.ts");
   expect(result).toContain("c.ts");
   const { readFile } = await import("node:fs/promises");
@@ -109,85 +114,134 @@ test("apply_patch edits several files in one call and authorizes each path", asy
   );
   expect(await readFile(join(root, "c.ts"), "utf8")).toBe("const c = 30;\n");
   expect(writes).toEqual([
-    { toolName: "apply_patch", path: join(root, "a.ts") },
-    { toolName: "apply_patch", path: join(root, "c.ts") },
+    { toolName: "apply_edits", path: join(root, "a.ts") },
+    { toolName: "apply_edits", path: join(root, "c.ts") },
   ]);
 });
 
-test("apply_patch changes nothing when a hunk does not match", async () => {
+test("apply_edits changes nothing when one oldText does not match", async () => {
   const root = await mkdtemp(
-    join(tmpdir(), "natalia-tool-fs-write-patch-fail-"),
+    join(tmpdir(), "natalia-tool-fs-write-edits-fail-"),
   );
   await writeFile(join(root, "a.ts"), "const a = 1;\n");
+  await writeFile(join(root, "missing.ts"), "different content\n");
   const tools = new Map(
     fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
   );
-  const patch = [
-    "--- a/a.ts",
-    "+++ b/a.ts",
-    "@@ -1,1 +1,1 @@",
-    "-does not exist",
-    "+replacement",
-  ].join("\n");
   await expect(
-    tools.get("apply_patch")!.execute({ patch }, { workspaceRoot: root }),
-  ).rejects.toThrow(/did not match/u);
+    tools.get("apply_edits")!.execute(
+      {
+        edits: [
+          {
+            path: "a.ts",
+            operation: "replace",
+            oldText: "const a = 1;",
+            newText: "const a = 10;",
+          },
+          {
+            path: "missing.ts",
+            operation: "replace",
+            oldText: "nope",
+            newText: "yes",
+          },
+        ],
+      },
+      { workspaceRoot: root },
+    ),
+  ).rejects.toThrow(/oldText not found/u);
   const { readFile } = await import("node:fs/promises");
   expect(await readFile(join(root, "a.ts"), "utf8")).toBe("const a = 1;\n");
 });
 
-test("apply_patch gives model-friendly diagnostics for malformed patches", async () => {
+test("apply_edits applies sequential edits to the same file", async () => {
   const root = await mkdtemp(
-    join(tmpdir(), "natalia-tool-fs-write-patch-diagnostics-"),
+    join(tmpdir(), "natalia-tool-fs-write-edits-sequential-"),
   );
+  await writeFile(join(root, "a.ts"), "const x = 1;\n");
   const tools = new Map(
     fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
   );
-  const apply = tools.get("apply_patch")!;
-  const context = { workspaceRoot: root };
-
-  await expect(apply.execute({ patch: "" }, context)).rejects.toThrow(
-    "patch contains no file changes",
+  await tools.get("apply_edits")!.execute(
+    {
+      edits: [
+        {
+          path: "a.ts",
+          operation: "replace",
+          oldText: "const x = 1;",
+          newText: "const x = 2;",
+        },
+        {
+          path: "a.ts",
+          operation: "replace",
+          oldText: "const x = 2;",
+          newText: "const x = 3;",
+        },
+      ],
+    },
+    { workspaceRoot: root },
   );
-
-  await expect(
-    apply.execute({ patch: "diff --git a/a.ts b/a.ts\n" }, context),
-  ).rejects.toThrow("apply_patch: no diff file headers found in patch");
-
-  await expect(
-    apply.execute({ patch: "--- a/a.ts\n+++ b/a.ts\n" }, context),
-  ).rejects.toThrow("apply_patch: patch has no @@ hunks");
+  const { readFile } = await import("node:fs/promises");
+  expect(await readFile(join(root, "a.ts"), "utf8")).toBe("const x = 3;\n");
 });
 
-test("apply_patch description includes a strict unified diff example", () => {
-  const apply = fsWriteToolFamily().tools.find(
-    (tool) => tool.name === "apply_patch",
-  )!;
-  expect(apply.description).toContain("Strict unified diff example:");
-  expect(apply.description).toContain("--- a/src/main.rs");
-  expect(apply.description).toContain("@@ -1,5 +1,7 @@");
-  expect(apply.description).toContain("Required:");
-  expect(apply.description).toContain("Forbidden:");
-  expect(apply.description).toContain("diff --git alone");
-});
-
-test("apply_patch creates a new file from a /dev/null diff", async () => {
+test("apply_edits creates and deletes files atomically", async () => {
   const root = await mkdtemp(
-    join(tmpdir(), "natalia-tool-fs-write-patch-new-"),
+    join(tmpdir(), "natalia-tool-fs-write-edits-files-"),
   );
+  await writeFile(join(root, "old.txt"), "remove me\n");
   const tools = new Map(
     fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
   );
-  const patch = [
-    "--- /dev/null",
-    "+++ b/notes.txt",
-    "@@ -0,0 +1,1 @@",
-    "+fresh",
-  ].join("\n");
-  const result = await tools
-    .get("apply_patch")!
-    .execute({ patch }, { workspaceRoot: root });
-  expect(result).toContain("notes.txt");
+  await tools.get("apply_edits")!.execute(
+    {
+      edits: [
+        { path: "notes.txt", operation: "create", newText: "fresh\n" },
+        { path: "old.txt", operation: "delete" },
+      ],
+    },
+    { workspaceRoot: root },
+  );
   const { readFile } = await import("node:fs/promises");
   expect(await readFile(join(root, "notes.txt"), "utf8")).toBe("fresh\n");
+  await expect(readFile(join(root, "old.txt"), "utf8")).rejects.toThrow();
+});
+
+test("apply_edits rejects an ambiguous oldText before writing anything", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-tool-fs-write-edits-ambiguous-"),
+  );
+  await writeFile(join(root, "a.ts"), "const x = 1;\nconst x = 2;\n");
+  const tools = new Map(
+    fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  await expect(
+    tools.get("apply_edits")!.execute(
+      {
+        edits: [
+          {
+            path: "a.ts",
+            operation: "replace",
+            oldText: "const x =",
+            newText: "const y =",
+          },
+        ],
+      },
+      { workspaceRoot: root },
+    ),
+  ).rejects.toThrow(/ambiguous \(2 occurrences\)/u);
+  const { readFile } = await import("node:fs/promises");
+  expect(await readFile(join(root, "a.ts"), "utf8")).toBe(
+    "const x = 1;\nconst x = 2;\n",
+  );
+});
+
+test("apply_edits description is a structured model-facing batch editor", () => {
+  const applyEdits = fsWriteToolFamily().tools.find(
+    (tool) => tool.name === "apply_edits",
+  )!;
+  expect(applyEdits.description).toContain('"edits"');
+  expect(applyEdits.description).toContain('"operation": "replace"');
+  expect(applyEdits.description).toContain("create");
+  expect(applyEdits.description).toContain("delete");
+  expect(applyEdits.description).toContain("Do not use unified diff");
 });
