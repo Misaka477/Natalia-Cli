@@ -23,6 +23,7 @@ import {
   Show,
 } from "solid-js";
 import { Transcript } from "@natalia/ui-kit";
+import { useConfirmDialog } from "./components/ConfirmDialog";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { ReviewPane } from "./components/RightPanel";
 import { SettingsPanel } from "./settings-panel";
@@ -512,6 +513,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     panelId: string;
   } | null>(null);
   const [moreOpen, setMoreOpen] = createSignal(false);
+  const { confirm, dialog } = useConfirmDialog();
   const [viewOpen, setViewOpen] = createSignal(false);
   let topbarPanelRef: HTMLDivElement | undefined;
 
@@ -1009,9 +1011,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const ids = [...bulkSelected()];
     if (!ids.length) return;
     if (
-      !window.confirm(
-        `确定彻底删除选中的 ${ids.length} 个会话吗？这会删除会话记录和附件，无法恢复。`,
-      )
+      !(await confirm({
+        title: "删除会话",
+        message: `确定彻底删除选中的 ${ids.length} 个会话吗？这会删除会话记录和附件，无法恢复。`,
+        confirmLabel: "确定",
+        cancelLabel: "取消",
+        danger: true,
+      }))
     )
       return;
     try {
@@ -1143,9 +1149,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const targetID = selectedSessionID();
     if (!targetID) return;
     if (
-      !window.confirm(
-        `确定要彻底删除会话“${selectedSession()}”吗？这会删除会话记录和附件，无法恢复。`,
-      )
+      !(await confirm({
+        title: "删除会话",
+        message: `确定要彻底删除会话“${selectedSession()}”吗？这会删除会话记录和附件，无法恢复。`,
+        confirmLabel: "确定",
+        cancelLabel: "取消",
+        danger: true,
+      }))
     ) {
       return;
     }
@@ -3503,6 +3513,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           if (next) setConfig(next);
         }}
       />
+      {dialog}
     </div>
   );
 }

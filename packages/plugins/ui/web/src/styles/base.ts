@@ -4023,3 +4023,61 @@ button.neu-settings-item.neu-settings-item-button:active {
 .review-drift-evidence { margin: 0; padding-left: 18px; color: var(--neu-muted); font-size: 11px; }
 .review-drift-evidence li { margin-bottom: 2px; word-break: break-word; }
 `;
+
+export const confirmDialogCss = `
+.neu-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+.neu-confirm-dialog {
+  min-width: 280px;
+  max-width: 420px;
+  background: #25272b;
+  color: #e8e8e8;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+.neu-confirm-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.neu-confirm-message {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c9c9c9;
+  white-space: pre-wrap;
+}
+.neu-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.neu-confirm-cancel,
+.neu-confirm-ok {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  background: transparent;
+  color: #e8e8e8;
+}
+.neu-confirm-ok {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+.neu-confirm-ok[data-danger="true"] {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+`;

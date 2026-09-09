@@ -14,6 +14,7 @@ import {
   type UiPanelRequirement,
 } from "@natalia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
+import { useConfirmDialog } from "./components/ConfirmDialog";
 
 const BUILTIN_PERMISSION_PROFILES = ["ask", "auto", "read_only"];
 
@@ -186,6 +187,7 @@ export function SettingsPanel(props: {
   host?: import("@natalia/ui-host").UiPluginContext["host"];
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
+  const { alert, dialog } = useConfirmDialog();
   const [density, setDensity] = createSignal(
     props.preferences?.get<string>("density") ?? "comfortable",
   );
@@ -587,7 +589,11 @@ export function SettingsPanel(props: {
       void setGpuAccelerationPersisted(!gpuAcceleration());
     },
     Keybinds: () => {
-      window.alert("当前版本快捷键覆盖请通过 TUI 快捷键配置。");
+      void alert({
+        title: "快捷键配置",
+        message: "当前版本快捷键覆盖请通过 TUI 快捷键配置。",
+        confirmLabel: "知道了",
+      });
     },
     界面偏好保存范围: () => {
       cyclePreference(
@@ -1030,8 +1036,14 @@ export function SettingsPanel(props: {
           </div>
           <div class="neu-settings-footer">
             <span class="neu-settings-footer-title">Natalia</span>
-            <span class="neu-settings-footer-sub">Neural Autonomous Terminal Agent with Local Intelligence Architecture</span>
-            <span class="neu-settings-footer-quote">“Computation can carry what time cannot. Not metaphor. Mathematics.”</span>
+            <span class="neu-settings-footer-sub">
+              Neural Autonomous Terminal Agent with Local Intelligence
+              Architecture
+            </span>
+            <span class="neu-settings-footer-quote">
+              “Computation can carry what time cannot. Not metaphor.
+              Mathematics.”
+            </span>
           </div>
         </div>
       </div>
@@ -1691,6 +1703,7 @@ export function SettingsPanel(props: {
           </div>
         </div>
       </Show>
+      {dialog}
     </Show>
   );
 }

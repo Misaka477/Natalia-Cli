@@ -1,5 +1,5 @@
 import { applyUiSkin } from "@natalia/ui-kit";
-import { nataliaNeuBaseStyles } from "./base";
+import { confirmDialogCss, nataliaNeuBaseStyles } from "./base";
 import { nataliaNeuThemeLight } from "./theme-light";
 import { nataliaNeuThemeDark } from "./theme-dark";
 import { NATALIA_SKINS, NEU_THEME_MODES, type NeuThemeMode } from "../skins";
@@ -12,7 +12,8 @@ export { NATALIA_SKINS, NEU_THEME_MODES } from "../skins";
 
 export const nataliaNeuThemeStyles = nataliaNeuThemeLight + nataliaNeuThemeDark;
 
-export const nataliaNeuStyles = nataliaNeuThemeStyles + nataliaNeuBaseStyles;
+export const nataliaNeuStyles =
+  nataliaNeuThemeStyles + nataliaNeuBaseStyles + confirmDialogCss;
 
 export function resolveNeuThemeMode(
   value: string | undefined | null,

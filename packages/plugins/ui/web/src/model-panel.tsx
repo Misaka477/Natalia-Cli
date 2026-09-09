@@ -12,6 +12,7 @@ import type {
   RuntimeModelSelection,
 } from "@natalia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
+import { useConfirmDialog } from "./components/ConfirmDialog";
 
 type ModelView = "tree" | "edit-provider";
 
@@ -97,6 +98,7 @@ export function ModelPanel(props: {
     reason?: string;
   }>;
 }) {
+  const { confirm, dialog } = useConfirmDialog();
   const [editingProvider, setEditingProvider] = createSignal<
     string | undefined
   >();
@@ -407,9 +409,13 @@ export function ModelPanel(props: {
       return;
     }
     if (
-      !window.confirm(
-        `确定删除提供商“${provider.label}”（ID: ${provider.name}）吗？同时删除模型目录和配置；不能撤销`,
-      )
+      !(await confirm({
+        title: "删除提供商",
+        message: `确定删除提供商“${provider.label}”（ID: ${provider.name}）吗？同时删除模型目录和配置；不能撤销`,
+        confirmLabel: "确定",
+        cancelLabel: "取消",
+        danger: true,
+      }))
     )
       return;
     setProviderActionInProgress(true);
@@ -858,6 +864,7 @@ export function ModelPanel(props: {
           </Show>
         </div>
       </div>
+      {dialog}
     </Show>
   );
 }
