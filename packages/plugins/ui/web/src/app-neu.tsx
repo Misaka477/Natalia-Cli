@@ -3453,7 +3453,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         selection={modelSelectionSignal() ?? undefined}
         providers={config()?.providers}
         config={config()}
-        onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
+        onSetDefault={(modelID) => props.ctx.runtime.setDefaultModel?.(modelID)}
         onAddProvider={async (input) => {
           if (!props.ctx.runtime.providerAdd) {
             throw new Error("providerAdd runtime method unavailable");

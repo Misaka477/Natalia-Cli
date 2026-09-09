@@ -1,4 +1,5 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { modelRefKey, parseModelRef } from "@natalia/contracts";
 import { discoverProviderModels, updateConfigAtScope } from "@natalia/config";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -10,6 +11,7 @@ type Surface = Pick<
   | "modelCatalog"
   | "modelSelection"
   | "selectModel"
+  | "setDefaultModel"
   | "reasoningEffort"
   | "setReasoningEffort"
   | "skills"
@@ -130,6 +132,27 @@ export function createSelectionSurface(
     async selectModel(modelID, variant, sessionID?) {
       const exec = await selectionExec(ctx, sessionID);
       await ctx.ports.selectRuntimeModel(modelID, variant, exec);
+    },
+    async setDefaultModel(modelID) {
+      await ctx.ports.getReady();
+      if (!modelID) return { saved: false, reason: "modelID is required" };
+      let modelRef;
+      try {
+        modelRef = parseModelRef(modelID);
+      } catch (error) {
+        return {
+          saved: false,
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
+      await updateConfigAtScope(
+        ctx.ports.getWorkspaceRoot(),
+        { defaultModel: modelRef } as never,
+        "global",
+        { globalPath: options.globalConfigPath },
+      );
+      await ctx.ports.applyConfigFromDisk().catch(() => undefined);
+      return { saved: true };
     },
     async reasoningEffort(sessionID?) {
       await ctx.ports.getReady();
@@ -338,16 +361,16 @@ export function createSelectionSurface(
       const config = ctx.ports.getTsRuntimeConfig();
       if (!config) throw new Error("provider configuration unavailable");
       const modelPrefix = `${name}/`;
-      const references: string[] = [];
-      if (config.defaultModel?.provider === name)
-        references.push("defaultModel");
+      const blocked: string[] = [];
+      const defaultModelReferencesProvider =
+        config.defaultModel?.provider === name;
       for (const [agentName, agent] of Object.entries(config.agents ?? {})) {
         if (agent.model?.startsWith(modelPrefix))
-          references.push(`agent:${agentName}`);
+          blocked.push(`agent:${agentName}`);
       }
       for (const [modeName, mode] of Object.entries(config.agentModes ?? {})) {
         if (mode.model?.startsWith(modelPrefix))
-          references.push(`agentMode:${modeName}`);
+          blocked.push(`agentMode:${modeName}`);
       }
       for (const exec of ctx.ports.getExecutionBySession().values()) {
         if (
@@ -355,7 +378,7 @@ export function createSelectionSurface(
           exec.selectedAgent?.model?.startsWith(modelPrefix) ||
           exec.pendingAgent?.model?.startsWith(modelPrefix)
         )
-          references.push(`session:${exec.session.id}`);
+          blocked.push(`session:${exec.session.id}`);
         for (const [stream, profile] of [
           ["navi", exec.naviChatModelProfile],
           ["nia", exec.niaChatModelProfile],
@@ -365,14 +388,50 @@ export function createSelectionSurface(
             profile.normal?.modelID?.startsWith(modelPrefix) ||
             profile.expert?.modelID?.startsWith(modelPrefix)
           )
-            references.push(`session:${exec.session.id}:${stream}`);
+            blocked.push(`session:${exec.session.id}:${stream}`);
         }
       }
-      if (references.length)
+      if (blocked.length)
         return {
           removed: false,
-          reason: `provider is referenced by ${references.join(", ")}`,
+          reason: `provider is referenced by ${blocked.join(", ")}`,
         };
+
+      let newDefaultModel: { provider: string; model: string } | undefined;
+      if (defaultModelReferencesProvider) {
+        const currentModelID =
+          ctx.ports.getActiveExec()?.selectedModel?.modelID ??
+          ctx.ports.getSelectedModel()?.modelID;
+        if (currentModelID && !currentModelID.startsWith(modelPrefix)) {
+          try {
+            newDefaultModel = parseModelRef(currentModelID);
+          } catch {
+            newDefaultModel = undefined;
+          }
+        }
+        if (!newDefaultModel) {
+          for (const [providerID, catalogProvider] of Object.entries(
+            config.catalog?.providers ?? {},
+          )) {
+            if (providerID === name) continue;
+            const firstModel = Object.keys(
+              (catalogProvider as { models?: Record<string, unknown> })
+                ?.models ?? {},
+            )[0];
+            if (firstModel) {
+              newDefaultModel = { provider: providerID, model: firstModel };
+              break;
+            }
+          }
+        }
+        if (!newDefaultModel)
+          return {
+            removed: false,
+            reason:
+              "provider is the only configured provider; cannot remove without creating another provider",
+          };
+      }
+
       const modelOverrides = Object.fromEntries(
         Object.keys(config.modelOverrides ?? {})
           .filter((key) => key.startsWith(modelPrefix))
@@ -384,12 +443,18 @@ export function createSelectionSurface(
           providers: { [name]: undefined },
           catalog: { providers: { [name]: undefined } },
           modelOverrides,
+          ...(newDefaultModel ? { defaultModel: newDefaultModel } : {}),
         } as never,
         "global",
         { globalPath: options.globalConfigPath },
       );
       await ctx.ports.applyConfigFromDisk();
-      return { removed: true };
+      return {
+        removed: true,
+        ...(newDefaultModel
+          ? { defaultModel: modelRefKey(newDefaultModel) }
+          : {}),
+      };
     },
   };
 }

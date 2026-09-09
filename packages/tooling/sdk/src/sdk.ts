@@ -52,6 +52,9 @@ export type NataliaSDK = {
   modelSelection(
     sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeModelSelection>;
+  setDefaultModel(
+    modelID: string,
+  ): Promise<{ saved: boolean; reason?: string }>;
   selectModel(
     modelID?: string,
     variant?: string,
@@ -784,6 +787,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     modelCatalog: async () => await call("model.catalog", {}),
     modelSelection: async (sessionID) =>
       await call("model.selection", sessionID ? { sessionID } : {}),
+    setDefaultModel: async (modelID) =>
+      await call("model.setDefault", { modelID }),
     selectModel: async (modelID, variant, sessionID) => {
       await call("model.select", {
         ...(modelID === undefined ? {} : { modelID }),

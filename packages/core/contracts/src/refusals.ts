@@ -143,6 +143,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "the caller named a model it needs; an unavailable model or unknown variant leaves nothing to proceed with, so there is no partial success to report",
   },
+  setDefaultModel: {
+    refusal: "value",
+    expressedBy: "saved",
+    note: "sets the global default model reference",
+  },
   reasoningEffort: { refusal: "none", note: "pure read" },
   setReasoningEffort: {
     refusal: "error",

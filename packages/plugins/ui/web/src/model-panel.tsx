@@ -96,6 +96,7 @@ export function ModelPanel(props: {
   onRemoveProvider?: (name: string) => Promise<{
     removed: boolean;
     reason?: string;
+    defaultModel?: string;
   }>;
 }) {
   const { confirm, dialog } = useConfirmDialog();
@@ -424,6 +425,12 @@ export function ModelPanel(props: {
       const result = await props.onRemoveProvider(provider.name);
       if (!result.removed) {
         setProviderAction(`删除失败：${result.reason || "运行时拒绝删除"}`);
+      } else {
+        setProviderAction(
+          result.defaultModel
+            ? `已删除，默认模型已自动切换为 ${result.defaultModel}`
+            : "已删除",
+        );
       }
     } catch (error: unknown) {
       setProviderAction(

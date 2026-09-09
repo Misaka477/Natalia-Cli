@@ -131,6 +131,7 @@ export const RPC_ROUTE_MEMBERS = {
   "model.catalog": "modelCatalog",
   "model.selection": "modelSelection",
   "model.select": "selectModel",
+  "model.setDefault": "setDefaultModel",
   "model.reasoning": "reasoningEffort",
   "model.reasoning.set": "setReasoningEffort",
   "skills.list": "skills",
@@ -326,6 +327,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "resume",
   "agent.select",
   "model.select",
+  "model.setDefault",
   "model.reasoning.set",
   "config.reload",
   "config.update",
@@ -705,6 +707,17 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: { modelID: modelID ?? null, variant: variant ?? null },
+      };
+    }
+    if (body.method === "model.setDefault") {
+      optionsGuard(client, "setDefaultModel");
+      const modelID = body.params?.modelID;
+      if (typeof modelID !== "string")
+        throw invalidParams("model.setDefault.params.modelID must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.setDefaultModel?.(modelID),
       };
     }
     if (body.method === "model.reasoning") {

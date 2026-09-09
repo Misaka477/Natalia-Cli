@@ -2328,6 +2328,9 @@ export type RuntimeClient = {
     variant?: string,
     sessionID?: string,
   ): Promise<void>;
+  setDefaultModel?(
+    modelID: string,
+  ): Promise<{ saved: boolean; reason?: string }>;
   /** A session-local Composer override for subsequent provider requests. */
   reasoningEffort?(
     sessionID?: string,

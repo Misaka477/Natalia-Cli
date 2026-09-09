@@ -50,6 +50,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   selectAgent: "agent.select",
   modelCatalog: "model.catalog",
   modelSelection: "model.selection",
+  setDefaultModel: "model.setDefault",
   selectModel: "model.select",
   reasoningEffort: "model.reasoning",
   setReasoningEffort: "model.reasoning.set",

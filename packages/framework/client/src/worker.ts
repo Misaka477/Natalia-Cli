@@ -42,6 +42,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "model.catalog": "modelCatalog",
   "model.selection": "modelSelection",
   "model.select": "selectModel",
+  "model.setDefault": "setDefaultModel",
   "model.reasoning": "reasoningEffort",
   "model.reasoning.set": "setReasoningEffort",
   "permission.list": "permissionList",
@@ -161,6 +162,7 @@ type WorkerRequest = {
     | "model.catalog"
     | "model.selection"
     | "model.select"
+    | "model.setDefault"
     | "model.reasoning"
     | "model.reasoning.set"
     | "permission.list"
@@ -421,6 +423,11 @@ export function createWorkerRuntimeClient(
     },
     async selectModel(modelID, variant) {
       await request("model.select", { modelID, variant });
+    },
+    async setDefaultModel(modelID) {
+      return (await request("model.setDefault", {
+        modelID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["setDefaultModel"]>>>;
     },
     async reasoningEffort() {
       return (await request("model.reasoning")) as Awaited<
@@ -1096,6 +1103,10 @@ export async function handleWorkerRequest(
   if (request.method === "model.catalog") return await client.modelCatalog?.();
   if (request.method === "model.selection")
     return await client.modelSelection?.();
+  if (request.method === "model.setDefault") {
+    const value = request.value as { modelID: string };
+    return await client.setDefaultModel?.(value.modelID);
+  }
   if (request.method === "model.select") {
     const input = request.value as { modelID?: string; variant?: string };
     return await client.selectModel?.(input.modelID, input.variant);
