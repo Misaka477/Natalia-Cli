@@ -904,6 +904,30 @@ function projectChatStream(
       });
       continue;
     }
+    if (isChatToolUsed(event)) {
+      messages.push({
+        messageID: event.messageID,
+        role: "chat",
+        text: event.summary,
+        at: event.at,
+        channel,
+        kind: "tool",
+        tool: {
+          name: event.toolName,
+          status: event.status,
+          summary: event.summary,
+          ...(event.result !== undefined ? { result: event.result } : {}),
+          ...(event.argumentsRaw !== undefined
+            ? { argumentsRaw: event.argumentsRaw }
+            : {}),
+          ...(event.startedAt !== undefined
+            ? { startedAt: event.startedAt }
+            : {}),
+          ...(event.endedAt !== undefined ? { endedAt: event.endedAt } : {}),
+        },
+      });
+      continue;
+    }
     if (isChatRollback(event)) {
       const boundary = messages.findIndex(
         (message) => message.messageID === event.toMessageID,

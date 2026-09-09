@@ -134,9 +134,15 @@ export async function createUiPluginHost<TContext = unknown>(
   const fanout = (event: RuntimeEvent) => {
     const sessionID = event.sessionID;
     const workspaceID = (event as { workspaceID?: string }).workspaceID;
-    const key = sessionID
-      ? `${workspaceID ?? "default"}:${sessionID}`
-      : activeKey;
+    const activeSessionID = activeKey
+      ? activeKey.slice(activeKey.indexOf(":") + 1)
+      : undefined;
+    const key =
+      sessionID && activeSessionID && sessionID === activeSessionID
+        ? activeKey
+        : sessionID
+          ? `${workspaceID ?? "default"}:${sessionID}`
+          : activeKey;
     if (!key) {
       viewStore.applyEvent(state, event);
       for (const listener of projectionListeners) listener(state);
