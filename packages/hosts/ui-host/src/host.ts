@@ -123,7 +123,14 @@ export async function createUiPluginHost<TContext = unknown>(
       return changed;
     },
     activateSession(sessionID, workspaceID) {
-      activeKey = `${workspaceID ?? "default"}:${sessionID}`;
+      const preferredKey = `${workspaceID ?? "default"}:${sessionID}`;
+      const existingKey =
+        sessionStates.has(preferredKey)
+          ? preferredKey
+          : [...sessionStates.keys()].find((key) =>
+              key.endsWith(`:${sessionID}`),
+            );
+      activeKey = existingKey ?? preferredKey;
       state = sessionStates.get(activeKey) ?? viewStore.initialState();
       state.sessionID ??= sessionID as never;
       sessionStates.set(activeKey, state);
