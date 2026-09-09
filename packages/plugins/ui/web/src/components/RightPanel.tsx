@@ -95,6 +95,9 @@ export function ReviewPane(
     requestedTab?: ReviewSubTab;
     requestedCheckpointID?: string;
     sessionID?: string;
+    events?: {
+      subscribe(listener: (event: RuntimeEvent) => void): () => void;
+    };
   } = {},
 ) {
   const [tab, setTab] = createSignal<ReviewSubTab>("git");
@@ -264,6 +267,39 @@ export function ReviewPane(
   const [astApplyLoading, setAstApplyLoading] = createSignal(false);
   const [astApplyError, setAstApplyError] = createSignal<string | undefined>();
 
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshCurrent = () => {
+    if (tab() === "git") void loadGit();
+    else if (tab() === "sandbox") void loadSandboxDiff(selectedSandbox() ?? "");
+    else if (tab() === "checkpoint") {
+      void (async () => {
+        const checkpointList = (await props.runtime?.checkpointList?.()) ?? [];
+        setCheckpoints(checkpointList);
+        if (selectedCheckpoint())
+          await loadCheckpointPreview(selectedCheckpoint()!, {
+            includePatch: false,
+          });
+      })();
+    } else if (tab() === "rounds") void loadRounds();
+  };
+  const onRefreshEvent = (event: RuntimeEvent) => {
+    const relevant =
+      event.type === "tool.update" ||
+      event.type === "checkpoint.created" ||
+      event.type === "rollback.previewed" ||
+      event.type === "rollback.begin" ||
+      event.type === "rollback.end" ||
+      event.type === "rollback.failed" ||
+      event.type === "plan.doc.created" ||
+      event.type === "plan.doc.updated" ||
+      event.type === "plan.doc.marked" ||
+      event.type === "plan.doc.status" ||
+      event.type === "plan.doc.deleted";
+    if (!relevant) return;
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => void refreshCurrent(), 300);
+  };
+
   onMount(() => {
     void (async () => {
       const refs = (await props.runtime?.gitRefs?.()) ?? [];
@@ -275,6 +311,11 @@ export function ReviewPane(
       await loadGit();
       setLoaded(true);
     })();
+    const off = props.events?.subscribe(onRefreshEvent);
+    onCleanup(() => {
+      off?.();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    });
   });
 
   async function loadSandboxTab() {

@@ -3241,13 +3241,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <Show when={rightTab() === "diff"}>
                   <ReviewPane
                     runtime={props.ctx.runtime}
+                    events={props.ctx.events}
                     requestedTab={reviewRequestedTab()}
                     requestedCheckpointID={reviewRequestedCheckpointID()}
                     sessionID={selectedSessionID() || state().sessionID}
                   />
                 </Show>
                 <Show when={rightTab() === "plan"}>
-                  <PlanPanel state={state()} runtime={props.ctx.runtime} />
+                  <PlanPanel
+                    state={state()}
+                    runtime={props.ctx.runtime}
+                    events={props.ctx.events}
+                  />
                 </Show>
                 <Show
                   when={

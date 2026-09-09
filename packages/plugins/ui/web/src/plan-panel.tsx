@@ -1,6 +1,13 @@
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import { marked } from "marked";
-import type { RuntimeClient } from "@natalia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
 
 type PlanRow = {
@@ -43,7 +50,13 @@ function MarkdownPreview(props: { content: string }) {
   return <div class="plan-panel-preview markdown-body" innerHTML={html()} />;
 }
 
-export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
+export function PlanPanel(props: {
+  state: AppState;
+  runtime?: RuntimeClient;
+  events?: {
+    subscribe(listener: (event: RuntimeEvent) => void): () => void;
+  };
+}) {
   const [selectedID, setSelectedID] = createSignal<string | undefined>();
   const [draft, setDraft] = createSignal("");
   const [preview, setPreview] = createSignal(false);
@@ -108,8 +121,26 @@ export function PlanPanel(props: { state: AppState; runtime?: RuntimeClient }) {
     }
   }
 
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshOnPlanEvent = (event: RuntimeEvent) => {
+    const relevant =
+      event.type === "plan.doc.created" ||
+      event.type === "plan.doc.updated" ||
+      event.type === "plan.doc.marked" ||
+      event.type === "plan.doc.status" ||
+      event.type === "plan.doc.deleted";
+    if (!relevant) return;
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => void refreshPlans(), 200);
+  };
+
   onMount(() => {
     void refreshPlans();
+    const off = props.events?.subscribe(refreshOnPlanEvent);
+    onCleanup(() => {
+      off?.();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    });
   });
 
   async function readSelected(planID?: string) {
