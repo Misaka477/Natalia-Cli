@@ -944,9 +944,20 @@ export function ReviewPane(
     }));
   });
 
-  const userCheckpoints = () =>
+  const auditCheckpoints = () =>
     checkpoints().filter(
-      (checkpoint) => checkpoint.reason !== "rollback_safety",
+      (checkpoint) =>
+        checkpoint.reason === "audit_round" || checkpoint.reason === "baseline",
+    );
+  const userCheckpoints = () =>
+    checkpoints().filter((checkpoint) => checkpoint.reason === "manual");
+  const autoCheckpoints = () =>
+    checkpoints().filter(
+      (checkpoint) =>
+        checkpoint.reason !== "rollback_safety" &&
+        checkpoint.reason !== "manual" &&
+        checkpoint.reason !== "audit_round" &&
+        checkpoint.reason !== "baseline",
     );
   const safetyCheckpoints = () =>
     checkpoints().filter(
@@ -1182,6 +1193,23 @@ export function ReviewPane(
         </div>
       </Show>
       <Show when={tab() === "checkpoint" && checkpoints().length}>
+        <Show when={auditCheckpoints().length}>
+          <div class="review-section-label">审计轮次</div>
+          <div class="review-entity-control">
+            <NeuSelect
+              value={
+                auditCheckpoints().some((c) => c.id === selectedCheckpoint())
+                  ? (selectedCheckpoint() ?? "")
+                  : ""
+              }
+              options={auditCheckpoints().map((checkpoint) => ({
+                value: checkpoint.id,
+                label: checkpointLabel(checkpoint),
+              }))}
+              onChange={(value) => void selectCheckpoint(value)}
+            />
+          </div>
+        </Show>
         <Show when={userCheckpoints().length}>
           <div class="review-section-label">我的快照</div>
           <div class="review-entity-control">
@@ -1243,6 +1271,28 @@ export function ReviewPane(
               </Show>
             </div>
           </Show>
+        </Show>
+        <Show when={autoCheckpoints().length}>
+          <div class="review-section-label">自动安全点</div>
+          <div class="review-entity-control">
+            <details>
+              <summary>
+                {autoCheckpoints().length} 个自动安全点
+              </summary>
+              <NeuSelect
+                value={
+                  autoCheckpoints().some((c) => c.id === selectedCheckpoint())
+                    ? (selectedCheckpoint() ?? "")
+                    : ""
+                }
+                options={autoCheckpoints().map((checkpoint) => ({
+                  value: checkpoint.id,
+                  label: checkpointLabel(checkpoint),
+                }))}
+                onChange={(value) => void selectCheckpoint(value)}
+              />
+            </details>
+          </div>
         </Show>
         <Show when={safetyCheckpoints().length}>
           <div class="review-section-label">安全点</div>
