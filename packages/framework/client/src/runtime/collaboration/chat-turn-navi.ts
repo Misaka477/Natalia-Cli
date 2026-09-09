@@ -12,6 +12,7 @@ import {
   requireNativeToolCallProtocol,
 } from "@natalia/runtime";
 import type {
+  ProviderFinishReason,
   ProviderMessage,
   ProviderToolCall,
   StreamingProvider,
@@ -22,6 +23,7 @@ import {
   type ConcreteRuntimeEvent,
   naviChatHistory,
   collabMessagesForExec,
+  compactChatBeforeProviderStep,
   promptData,
   streamEvent,
 } from "./chat-turn-common";
@@ -91,6 +93,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
     let finalResponse = "";
     let usedTools = false;
     let ranFinalOnlyStep = false;
+    let finishReason: ProviderFinishReason | undefined;
     let step = 1;
     let corrections = 0;
     let phase: "waiting" | "thinking" | "generating" | "using_tool" = "waiting";
@@ -167,6 +170,16 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         const calls: ProviderToolCall[] = [];
         let stepOutput = "";
         let protocolViolation = "";
+        const compactedMessages = await compactChatBeforeProviderStep(
+          ctx,
+          "navi",
+          input.exec,
+          activeProvider,
+          messages,
+          signal,
+        );
+        if (compactedMessages !== messages)
+          messages.splice(0, messages.length, ...compactedMessages);
         const raw = activeProvider.stream({
           messages: finalOnly
             ? [...messages, { role: "assistant", content: MAX_STEPS_PROMPT }]
@@ -209,8 +222,21 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           if (chunk.type === "tool_call") calls.push(...chunk.calls);
           if (chunk.type === "tool_protocol_violation")
             protocolViolation = chunk.text;
+          if (chunk.type === "done") finishReason = chunk.finishReason;
         }
         usedTools ||= calls.length > 0;
+        if (
+          finishReason === "length" ||
+          finishReason === "content_filter" ||
+          finishReason === "error"
+        )
+          throw new Error(
+            `provider stopped before completing the response (${finishReason})`,
+          );
+        if (finishReason === "tool_calls" && !calls.length)
+          throw new Error(
+            "provider reported tool_calls without a complete native tool call",
+          );
         const outstanding = requiredNataliaReply();
         if (finalOnly || !calls.length) {
           if (outstanding) {

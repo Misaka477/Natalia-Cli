@@ -10663,6 +10663,7 @@ test("agent and provider management persist, validate references and survive app
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_agent_provider_host",
+    globalConfigPath: join(root, "global.json"),
   });
   client.start(() => undefined);
   try {
@@ -10704,10 +10705,18 @@ test("agent and provider management persist, validate references and survive app
       type: "openai",
       baseURL: "http://127.0.0.1:1/v1",
       apiKey: "key",
+      models: [{ id: "gw-model", reasoning: true }],
     });
     expect(added?.saved).toBe(true);
+    const configuredBeforeDelete = await client.configGet?.();
+    expect(configuredBeforeDelete?.catalog.providers.gw?.models).toHaveProperty(
+      "gw-model",
+    );
     const removed = await client.providerRemove?.("gw");
     expect(removed?.removed).toBe(true);
+    const configuredAfterDelete = await client.configGet?.();
+    expect(configuredAfterDelete?.providers.gw).toBeUndefined();
+    expect(configuredAfterDelete?.catalog.providers.gw).toBeUndefined();
     const again = await client.providerRemove?.("gw");
     expect(again?.removed).toBe(true);
   } finally {

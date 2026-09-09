@@ -515,6 +515,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [viewOpen, setViewOpen] = createSignal(false);
   let topbarPanelRef: HTMLDivElement | undefined;
 
+  async function refreshModelConfig() {
+    if (!props.ctx.runtime.configGet) {
+      throw new Error("configGet runtime method unavailable");
+    }
+    if (!props.ctx.runtime.modelCatalog) {
+      throw new Error("modelCatalog runtime method unavailable");
+    }
+    const [nextConfig, nextCatalog] = await Promise.all([
+      props.ctx.runtime.configGet(),
+      props.ctx.runtime.modelCatalog(),
+    ]);
+    setConfig(nextConfig);
+    setModelCatalog(nextCatalog);
+  }
+
   let projectionFramePending = false;
   let suppressProjectionClones = false;
   onCleanup(
@@ -835,7 +850,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   };
 
   async function createSession() {
-    await props.ctx.runtime.sessionNew?.();
+    const created = await props.ctx.runtime.sessionNew?.();
+    if (created?.sessionID) {
+      userSelectedSession = true;
+      await props.ctx.runtime.sessionAttach?.(created.sessionID);
+      setSelectedSessionID(created.sessionID);
+      setSelectedSession("新会话");
+      void loadPerSessionModelConfig(created.sessionID);
+    }
     await refreshSessions();
   }
 
@@ -1053,7 +1075,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   async function hydrateRecentMessages(options?: { replace?: boolean }) {
     const hydrateStart = performance.now();
-    const page = await props.ctx.runtime.messages?.({ limit: 100 });
+    const sessionID = selectedSessionID() || state().sessionID;
+    const page = sessionID
+      ? await props.ctx.runtime.messages?.({ limit: 100, sessionID })
+      : await props.ctx.runtime.messages?.({ limit: 100 });
     perfLog(
       `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
     );
@@ -1355,9 +1380,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ).__nataliaSessionLoadToken;
       void (async () => {
         const chatStart = performance.now();
+        const sessionID = selectedSessionID() || state().sessionID;
         const [naviChat, niaChat] = await Promise.all([
-          props.ctx.runtime.chatMessages?.("navi"),
-          props.ctx.runtime.chatMessages?.("nia"),
+          props.ctx.runtime.chatMessages?.("navi", sessionID),
+          props.ctx.runtime.chatMessages?.("nia", sessionID),
         ]);
         perfLog(
           `[perf] secondary chatMessages ${(performance.now() - chatStart).toFixed(1)}ms`,
@@ -3208,6 +3234,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   <NiaPanel
                     state={state()}
                     runtime={props.ctx.runtime}
+                    catalog={modelCatalog()}
                     sessionID={selectedSessionID() || state().sessionID}
                   />
                 </Show>
@@ -3387,94 +3414,27 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         config={config()}
         onSetDefault={(modelID) => props.ctx.runtime.selectModel?.(modelID)}
         onAddProvider={async (input) => {
-          console.log("[provider-save] input", JSON.stringify(input, null, 2));
-          const currentProviders = config()?.providers ?? {};
-          const inferredPreviousName =
-            input.previousName ||
-            Object.keys(currentProviders).find(
-              (key) =>
-                key !== input.name &&
-                currentProviders[key]?.name === input.label,
-            ) ||
-            Object.keys(currentProviders).find(
-              (key) =>
-                key !== input.name &&
-                currentProviders[key]?.connection?.baseURL === input.baseURL &&
-                currentProviders[key]?.connection?.apiKey === input.apiKey,
-            );
-          console.log(
-            "[provider-save] inferredPreviousName",
-            inferredPreviousName,
-          );
-          const providerPatch: Record<string, unknown> = {
-            [input.name]: {
-              name: input.label || input.name,
-              driver: input.type,
-              enabled: true,
-              connection: {
-                baseURL: input.baseURL || undefined,
-                apiKey: input.apiKey,
-              },
-              requestDefaults: {
-                headers: input.headers ?? {},
-              },
-            },
-            ...(inferredPreviousName
-              ? { [inferredPreviousName]: undefined }
-              : {}),
-          };
-          const modelsPatch = input.models?.length
-            ? Object.fromEntries(
-                input.models.map((model) => [
-                  model.id,
-                  {
-                    name: model.name || model.id,
-                    capabilities: {
-                      reasoning: model.reasoning ?? false,
-                      imageInput: model.image ?? false,
-                    },
-                    limits: {},
-                    status: "stable",
-                    source: "manual",
-                  },
-                ]),
-              )
-            : undefined;
-          const patch = {
-            providers: providerPatch,
-            ...(modelsPatch
-              ? {
-                  catalog: {
-                    providers: {
-                      [input.name]: { models: modelsPatch },
-                      ...(inferredPreviousName
-                        ? { [inferredPreviousName]: undefined }
-                        : {}),
-                    },
-                  },
-                }
-              : {}),
-          } as never;
-          console.log("[provider-save] patch", JSON.stringify(patch, null, 2));
-          try {
-            await props.ctx.runtime.updateConfig?.({ patch, scope: "global" });
-            console.log("[provider-save] updateConfig ok");
-          } catch (error) {
-            console.error("[provider-save] updateConfig failed", error);
-            throw error;
+          if (!props.ctx.runtime.providerAdd) {
+            throw new Error("providerAdd runtime method unavailable");
           }
-          const [nextConfig, nextCatalog] = await Promise.all([
-            props.ctx.runtime.configGet?.(),
-            props.ctx.runtime.modelCatalog?.(),
-          ]);
-          if (nextConfig) {
-            console.log(
-              "[provider-save] config providers",
-              Object.keys(nextConfig.providers),
-            );
-            setConfig(nextConfig);
+          const result = await props.ctx.runtime.providerAdd(input);
+          if (!result.saved)
+            throw new Error("providerAdd did not save provider");
+          await refreshModelConfig();
+        }}
+        onDiscoverModels={async (input) => {
+          if (!props.ctx.runtime.providerDiscover) {
+            throw new Error("providerDiscover runtime method unavailable");
           }
-          if (nextCatalog) setModelCatalog(nextCatalog);
+          return await props.ctx.runtime.providerDiscover(input);
+        }}
+        onRemoveProvider={async (name) => {
+          if (!props.ctx.runtime.providerRemove) {
+            throw new Error("providerRemove runtime method unavailable");
+          }
+          const result = await props.ctx.runtime.providerRemove(name);
+          if (result.removed) await refreshModelConfig();
+          return result;
         }}
       />
       <StatusPanel

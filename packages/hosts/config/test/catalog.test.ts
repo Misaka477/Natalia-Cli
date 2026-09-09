@@ -85,6 +85,108 @@ test("discovers models from configured provider URL and imports them in batch", 
   }
 });
 
+test("discovers native and compatible providers with custom auth and normalized endpoints", async () => {
+  const requests: Array<{ path: string; headers: Headers }> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      requests.push({
+        path: new URL(request.url).pathname,
+        headers: request.headers,
+      });
+      if (new URL(request.url).pathname === "/models")
+        return Response.json({
+          models: [{ name: "models/gemini-2" }, { name: "gemini-1" }],
+        });
+      return Response.json({ data: [{ id: "claude-3" }, { id: "claude-3" }] });
+    },
+  });
+  try {
+    expect(
+      await discoverProviderModels(
+        "anthropic-compatible",
+        `${server.url}/v1`,
+        "key",
+        {
+          "X-Api-Key": "custom-key",
+        },
+      ),
+    ).toEqual(["claude-3"]);
+    expect(
+      await discoverProviderModels("gemini", server.url.toString(), "", {
+        "x-goog-api-key": "custom-key",
+      }),
+    ).toEqual(["gemini-1", "gemini-2"]);
+    expect(requests[0]?.path).toBe("/v1/models");
+    expect(requests[0]?.headers.get("x-api-key")).toBe("custom-key");
+    expect(requests[0]?.headers.get("anthropic-version")).toBe("2023-06-01");
+    expect(requests[1]?.path).toBe("/models");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("discovery preserves URL queries, rejects redirects and invalid model lists", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/redirect/models")
+        return Response.redirect(new URL("/models", request.url), 302);
+      if (path === "/invalid/models") return Response.json({ data: {} });
+      return Response.json({ data: [{ id: " model " }] });
+    },
+  });
+  try {
+    expect(
+      await discoverProviderModels(
+        "openai-compatible",
+        `${server.url}?tenant=one`,
+        "key",
+      ),
+    ).toEqual(["model"]);
+    await expect(
+      discoverProviderModels(
+        "openai-compatible",
+        `${server.url}/invalid`,
+        "key",
+      ),
+    ).rejects.toThrow("invalid response");
+    await expect(
+      discoverProviderModels(
+        "openai-compatible",
+        `${server.url}/redirect`,
+        "key",
+      ),
+    ).rejects.toThrow("request failed");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("discovery rejects unknown drivers and does not expose upstream response bodies or keys", async () => {
+  const secret = "secret-discovery-key";
+  const server = Bun.serve({
+    port: 0,
+    fetch() {
+      return new Response(`upstream leaked ${secret}`, { status: 401 });
+    },
+  });
+  try {
+    await expect(
+      discoverProviderModels("unknown", server.url.toString(), "key"),
+    ).rejects.toThrow("Unsupported provider driver");
+    await expect(
+      discoverProviderModels("openai", server.url.toString(), secret),
+    ).rejects.toThrow("Model discovery failed (401)");
+    await expect(
+      discoverProviderModels("openai", server.url.toString(), secret),
+    ).rejects.not.toThrow(secret);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("rejects a discovery import without credentials or model IDs", () => {
   expect(() =>
     configureProviderModels(configV3Schema.parse({ version: 3 }), {

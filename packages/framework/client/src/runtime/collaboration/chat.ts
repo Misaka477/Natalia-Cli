@@ -51,6 +51,11 @@ async function chatExec(ctx: RuntimeContext, sessionID?: string) {
     );
   return ctx.ports.getActiveExec();
 }
+
+function scheduleChatTitle(ctx: RuntimeContext, exec: SessionExecutionState, text: string) {
+  ctx.ports.rememberTitleInput(exec.session.id, text);
+  ctx.state.initialize?.scheduleTitleGeneration?.(exec.session.id);
+}
 export function createChatSurface(ctx: RuntimeContext): Surface {
   return {
     async chatMessages(channel?: ChatChannel, sessionID?: string) {
@@ -208,6 +213,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       console.warn("[navi-chat] submit rejected: missing text/exec/controller");
       return { messageID: "" };
     }
+    scheduleChatTitle(ctx, exec, text);
     const now = new Date();
     const userMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
     ctx.ports.publishForSession(
@@ -283,6 +289,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       console.warn("[nia-chat] submit rejected: missing text/exec/controller");
       return { messageID: "" };
     }
+    scheduleChatTitle(ctx, exec, text);
     const userMessageID = `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
     const safeText = redactToolOutput(text, true);
     ctx.ports.publishForSession(

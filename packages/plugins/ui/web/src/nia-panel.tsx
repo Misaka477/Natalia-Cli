@@ -21,6 +21,7 @@ export function NiaPanel(props: {
   state: AppState;
   runtime?: RuntimeClient;
   sessionID?: string;
+  catalog: RuntimeModelCatalogEntry[];
 }) {
   const [draft, setDraft] = createSignal("");
   const [modelID, setModelID] = createSignal("");
@@ -31,9 +32,6 @@ export function NiaPanel(props: {
   const [niaTranscriptEl, setNiaTranscriptEl] = niaTranscriptRef;
   const [niaFollowBottom, setNiaFollowBottom] = createSignal(true);
   const [niaShowJumpToBottom, setNiaShowJumpToBottom] = createSignal(false);
-  const [modelCatalog, setModelCatalog] = createSignal<
-    RuntimeModelCatalogEntry[]
-  >([]);
   let profileLoadToken = 0;
 
   const messages = createMemo<Message[]>(() =>
@@ -68,28 +66,18 @@ export function NiaPanel(props: {
   );
 
   const modelOptions = () =>
-    modelCatalog().map((entry) => ({
+    props.catalog.map((entry) => ({
       value: entry.id,
       label: entry.id,
     }));
 
   onMount(() => {
     void loadProfile();
-    void loadCatalog();
   });
 
   createEffect(() => {
     void loadProfile();
   });
-
-  async function loadCatalog() {
-    try {
-      const catalog = await props.runtime?.modelCatalog?.();
-      setModelCatalog(catalog ?? []);
-    } catch {
-      // Catalog may be unavailable until the runtime is fully ready.
-    }
-  }
 
   async function loadProfile() {
     const token = ++profileLoadToken;

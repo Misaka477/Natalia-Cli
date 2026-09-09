@@ -233,6 +233,19 @@ export async function createSubagentSupport(
     let result;
     while (true) {
       runner.signal.throwIfAborted();
+      await resolvedCompactionService.compactBeforeProviderStep({
+        compactionID: `${id}:preflight:${step}`,
+        ledger,
+        provider: activeProvider,
+        budget: activeContextConfig,
+        usedTokens: ledger.effectiveTokens(),
+        enabled: scope.tsRuntimeConfig?.context.compactionEnabled ?? true,
+        preservedRecentMessages:
+          scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
+        instruction: "Compact before this subagent provider request while preserving the active task.",
+        signal: runner.signal,
+        onEvent: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
+      });
       result = await resolvedCompactionService.runWithContextLimitRecovery({
         id,
         step,

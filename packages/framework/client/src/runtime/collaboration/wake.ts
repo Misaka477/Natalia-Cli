@@ -34,11 +34,14 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   ) {
     if (ctx.ports.isDisposed()) return;
     const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
+    const delivery = coordinator.active ? "queue" : "steer";
     console.log("[collab-wake-main]", {
       source,
       kind,
       sourceID,
       sessionID: exec.session.id,
+      delivery,
+      coordinatorActive: coordinator.active,
     });
     scheduleInternalWake(exec, {
       id: `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
@@ -46,7 +49,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
         source === "Nia"
           ? `(internal collaboration wake: Nia sent a ${kind}; read her audit findings in <nia_collaborations>, perform the required remediation work now, then reply to Nia with what you changed. Do not acknowledge with chat alone. This is not a user message.)`
           : `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`,
-      delivery: coordinator.active ? "queue" : "steer",
+      delivery,
     });
   }
 
@@ -57,11 +60,31 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     const { isDisposed, submitInput } = ctx.ports;
     const { internalWakeTasks } = ctx.state;
     if (isDisposed()) return;
+    console.log("[collab-wake-submit] scheduling", {
+      id: input.id,
+      sessionID: exec.session.id,
+      delivery: input.delivery,
+      text: input.text.slice(0, 160),
+    });
     const task = submitInput(
       { ...input, internal: true },
       exec.session.id as SessionID,
     )
-      .catch(() => undefined)
+      .then((submitted) => {
+        console.log("[collab-wake-submit] admitted", {
+          id: input.id,
+          sessionID: exec.session.id,
+          submittedID: submitted?.id,
+        });
+        return submitted;
+      })
+      .catch((error) => {
+        console.error("[collab-wake-submit] FAILED", {
+          id: input.id,
+          sessionID: exec.session.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
       .finally(() => internalWakeTasks.delete(task));
     internalWakeTasks.add(task);
   }
@@ -134,6 +157,9 @@ export function createCollaborationWake(ctx: RuntimeContext) {
 
   function requestNiaWake(exec: SessionExecutionState) {
     if (ctx.ports.isDisposed()) return;
+    console.log("[nia-wake] requestNiaWake", {
+      sessionID: exec.session.id,
+    });
     ctx.ports
       .resolveService<ProviderModelController>(
         PROVIDER_MODEL_CONTROLLER_SERVICE,
@@ -146,8 +172,18 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     const controller = ctx.ports.resolveService<ProviderModelController>(
       PROVIDER_MODEL_CONTROLLER_SERVICE,
     );
-    if (!controller) return;
+    if (!controller) {
+      console.warn("[nia-wake] wakeNia skipped: controller unavailable", {
+        sessionID: exec.session.id,
+      });
+      return;
+    }
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
+    console.log("[nia-wake] wakeNia start", {
+      sessionID: exec.session.id,
+      responseMessageID,
+      model: exec.chatModelProfile?.nia?.normal?.modelID,
+    });
     try {
       const normalProfile = exec.chatModelProfile?.nia?.normal;
       await controller.runNiaChatTurn({

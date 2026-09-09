@@ -679,7 +679,7 @@ export type ProjectedChatMessage = {
   text: string;
   at: string;
   channel: ChatChannel;
-  kind?: "message" | "thinking";
+  kind?: "message" | "thinking" | "compaction";
 };
 
 export function projectedChatMessages(
@@ -765,6 +765,30 @@ export function projectedChatMessages(
             message,
           );
     }
+    if (isChatCompacted(event)) {
+      const boundary = messages.findIndex(
+        (message) =>
+          message.messageID === event.compactedThroughMessageID &&
+          message.channel === channel,
+      );
+      if (boundary !== -1) {
+        for (let index = messages.length - 1; index >= 0; index -= 1)
+          if (messages[index]?.channel === channel && index >= boundary)
+            messages.splice(index, 1);
+      } else {
+        for (let index = messages.length - 1; index >= 0; index -= 1)
+          if (messages[index]?.channel === channel) messages.splice(index, 1);
+      }
+      messages.push({
+        messageID: event.messageID,
+        role: "chat",
+        text: `[已压缩的聊天历史]
+${event.summary}`,
+        at: event.at,
+        channel,
+        kind: "compaction",
+      });
+    }
   }
   return messages;
 }
@@ -775,6 +799,18 @@ function chatEventChannel(event: RuntimeEvent): ChatChannel | undefined {
   if (event.type.startsWith("chat."))
     return (event as { channel?: ChatChannel }).channel ?? "navi";
   return undefined;
+}
+
+function isChatCompacted(
+  event: RuntimeEvent,
+): event is Extract<
+  RuntimeEvent,
+  { type: `${ChatChannel}.chat.compacted` }
+> {
+  return (
+    event.type === "navi.chat.compacted" ||
+    event.type === "nia.chat.compacted"
+  );
 }
 
 function isChatThinkingDelta(

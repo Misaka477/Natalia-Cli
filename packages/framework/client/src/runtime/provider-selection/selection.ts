@@ -220,6 +220,7 @@ export function createSelectionSurface(
         input.type,
         input.baseURL,
         input.apiKey,
+        input.headers,
       );
       return { models };
     },
@@ -248,23 +249,24 @@ export function createSelectionSurface(
           ...(input.headers ? { headers: input.headers } : {}),
         },
       };
-      const models = input.models?.length
-        ? Object.fromEntries(
-            input.models.map((model) => [
-              model.id,
-              {
-                name: model.name || model.id,
-                capabilities: {
-                  reasoning: model.reasoning ?? false,
-                  imageInput: model.image ?? false,
+      const models =
+        input.models !== undefined
+          ? Object.fromEntries(
+              input.models.map((model) => [
+                model.id,
+                {
+                  name: model.name || model.id,
+                  capabilities: {
+                    reasoning: model.reasoning ?? false,
+                    imageInput: model.image ?? false,
+                  },
+                  limits: {},
+                  status: "stable",
+                  source: "manual",
                 },
-                limits: {},
-                status: "stable",
-                source: "manual",
-              },
-            ]),
-          )
-        : undefined;
+              ]),
+            )
+          : undefined;
       const providerPatch: Record<string, unknown> = {
         [input.name]: provider,
       };
@@ -274,7 +276,17 @@ export function createSelectionSurface(
       if (sourceName !== input.name)
         catalogProviderPatch[sourceName] = undefined;
       if (models) {
-        catalogProviderPatch[input.name] = { models };
+        // Config objects deep-merge; explicitly remove IDs missing from the submitted list.
+        catalogProviderPatch[input.name] = {
+          models: {
+            ...Object.fromEntries(
+              Object.keys(config?.catalog.providers[input.name]?.models ?? {})
+                .filter((id) => !(id in models))
+                .map((id) => [id, undefined]),
+            ),
+            ...models,
+          },
+        };
       } else if (
         sourceName !== input.name &&
         config?.catalog?.providers?.[sourceName]
@@ -282,21 +294,17 @@ export function createSelectionSurface(
         catalogProviderPatch[input.name] = config.catalog.providers[sourceName];
       }
 
-      const modelOverridesPatch =
-        sourceName !== input.name && config?.modelOverrides
-          ? Object.fromEntries(
-              Object.entries(config.modelOverrides).flatMap(([key, value]) => {
-                if (key.startsWith(`${sourceName}/`))
-                  return [
-                    [
-                      `${input.name}/${key.slice(sourceName.length + 1)}`,
-                      value,
-                    ],
-                  ];
-                return [[key, value]];
-              }),
-            )
-          : undefined;
+      const modelOverridesPatch: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(config?.modelOverrides ?? {})) {
+        if (!key.startsWith(`${sourceName}/`)) continue;
+        const id = key.slice(sourceName.length + 1);
+        if (models && !(id in models)) {
+          modelOverridesPatch[key] = undefined;
+        } else if (sourceName !== input.name) {
+          modelOverridesPatch[key] = undefined;
+          modelOverridesPatch[`${input.name}/${id}`] = value;
+        }
+      }
 
       await updateConfigAtScope(
         ctx.ports.getWorkspaceRoot(),
@@ -305,7 +313,7 @@ export function createSelectionSurface(
           ...(Object.keys(catalogProviderPatch).length
             ? { catalog: { providers: catalogProviderPatch } }
             : {}),
-          ...(modelOverridesPatch
+          ...(Object.keys(modelOverridesPatch).length
             ? { modelOverrides: modelOverridesPatch }
             : {}),
         } as never,
@@ -328,21 +336,52 @@ export function createSelectionSurface(
     async providerRemove(name) {
       await ctx.ports.getReady();
       const config = ctx.ports.getTsRuntimeConfig();
-      const referencedModel = config
-        ? (Object.keys(config.catalog?.providers?.[name]?.models ?? {})[0] ??
-          Object.keys(config.modelOverrides ?? {})
-            .filter((key) => key.startsWith(`${name}/`))
-            .map((key) => key.slice(name.length + 1))[0])
-        : undefined;
-      if (referencedModel)
+      if (!config) throw new Error("provider configuration unavailable");
+      const modelPrefix = `${name}/`;
+      const references: string[] = [];
+      if (config.defaultModel?.provider === name)
+        references.push("defaultModel");
+      for (const [agentName, agent] of Object.entries(config.agents ?? {})) {
+        if (agent.model?.startsWith(modelPrefix))
+          references.push(`agent:${agentName}`);
+      }
+      for (const [modeName, mode] of Object.entries(config.agentModes ?? {})) {
+        if (mode.model?.startsWith(modelPrefix))
+          references.push(`agentMode:${modeName}`);
+      }
+      for (const exec of ctx.ports.getExecutionBySession().values()) {
+        if (
+          exec.selectedModel?.modelID?.startsWith(modelPrefix) ||
+          exec.selectedAgent?.model?.startsWith(modelPrefix) ||
+          exec.pendingAgent?.model?.startsWith(modelPrefix)
+        )
+          references.push(`session:${exec.session.id}`);
+        for (const [channel, profile] of Object.entries(
+          exec.chatModelProfile ?? {},
+        )) {
+          if (
+            profile.normal?.modelID?.startsWith(modelPrefix) ||
+            profile.expert?.modelID?.startsWith(modelPrefix)
+          )
+            references.push(`session:${exec.session.id}:${channel}`);
+        }
+      }
+      if (references.length)
         return {
           removed: false,
-          reason: `provider is referenced by model: ${referencedModel}`,
+          reason: `provider is referenced by ${references.join(", ")}`,
         };
+      const modelOverrides = Object.fromEntries(
+        Object.keys(config.modelOverrides ?? {})
+          .filter((key) => key.startsWith(modelPrefix))
+          .map((key) => [key, undefined]),
+      );
       await updateConfigAtScope(
         ctx.ports.getWorkspaceRoot(),
         {
           providers: { [name]: undefined },
+          catalog: { providers: { [name]: undefined } },
+          modelOverrides,
         } as never,
         "global",
         { globalPath: options.globalConfigPath },

@@ -46,6 +46,7 @@ function workspaceSettingsPath(root: string) {
 async function readSettings(root: string): Promise<{
   permissionSettings: WorkspacePermissionSettings;
   toolSettings: WorkspaceToolSettings;
+  activeSessionID?: string;
 }> {
   try {
     const raw = JSON.parse(
@@ -53,6 +54,7 @@ async function readSettings(root: string): Promise<{
     ) as Partial<{
       permissionSettings?: WorkspacePermissionSettings;
       toolSettings?: WorkspaceToolSettings;
+      activeSessionID?: string;
     }>;
     return {
       permissionSettings: raw.permissionSettings ?? {
@@ -63,6 +65,7 @@ async function readSettings(root: string): Promise<{
         enabledTools: [],
         disabledTools: [],
       },
+      activeSessionID: raw.activeSessionID,
     };
   } catch {
     return {
@@ -74,6 +77,7 @@ async function readSettings(root: string): Promise<{
         enabledTools: [],
         disabledTools: [],
       },
+      activeSessionID: undefined,
     };
   }
 }
@@ -83,6 +87,7 @@ async function writeSettings(
   update: {
     permissionSettings?: WorkspacePermissionSettings;
     toolSettings?: WorkspaceToolSettings;
+    activeSessionID?: string;
   },
 ) {
   const path = workspaceSettingsPath(root);
@@ -90,6 +95,9 @@ async function writeSettings(
   const next = {
     permissionSettings: update.permissionSettings ?? current.permissionSettings,
     toolSettings: update.toolSettings ?? current.toolSettings,
+    ...(update.activeSessionID !== undefined
+      ? { activeSessionID: update.activeSessionID }
+      : {}),
   };
   await mkdir(join(root, ".natalia"), { recursive: true, mode: 0o700 });
   await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
@@ -165,6 +173,11 @@ export type WorkspaceManager = {
     workspaceID: string,
     settings: WorkspacePermissionSettings,
   ): Promise<WorkspacePermissionSettings>;
+  workspaceSessionGet(workspaceID: string): Promise<string | undefined>;
+  workspaceSessionSet(
+    workspaceID: string,
+    sessionID: string,
+  ): Promise<void>;
   workspaceToolGet(workspaceID: string): Promise<WorkspaceToolSettings>;
   workspaceToolSet(
     workspaceID: string,
@@ -260,14 +273,17 @@ export function createWorkspaceManager(
     if (existing) return await summary(existing);
 
     await migrateLegacyWorkspaceSessions(root, options.sessionDir);
+    const settings = await readSettings(root);
     const client = createRealRuntimeClient({
       workspaceRoot: root,
       pluginStoreRoot: options.pluginStoreRoot,
       globalConfigPath: options.globalConfigPath,
       useSqliteStore: options.useSqliteStore,
       contextWindowCachePath: options.contextWindowCachePath,
+      ...(settings.activeSessionID
+        ? { sessionID: settings.activeSessionID }
+        : {}),
     });
-    const settings = await readSettings(root);
     const ws: WorkspaceRuntime = {
       workspaceID: `ws_${randomUUID().replace(/-/gu, "").slice(0, 12)}`,
       root,
@@ -341,6 +357,16 @@ export function createWorkspaceManager(
       });
       ws.permissionSettings = saved.permissionSettings;
       return ws.permissionSettings;
+    },
+    async workspaceSessionGet(workspaceID) {
+      const ws = runtimes.get(workspaceID);
+      if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
+      return (await readSettings(ws.root)).activeSessionID;
+    },
+    async workspaceSessionSet(workspaceID, sessionID) {
+      const ws = runtimes.get(workspaceID);
+      if (!ws) throw new Error(`workspace not found: ${workspaceID}`);
+      await writeSettings(ws.root, { activeSessionID: sessionID });
     },
     async workspaceToolGet(workspaceID) {
       const ws = runtimes.get(workspaceID);
@@ -506,6 +532,12 @@ export function createWorkspaceRuntimeClient(
           if (prop === "sessionList" && Array.isArray(result)) {
             return result.map((item) =>
               decorateSession(item as RuntimeSessionSummary),
+            );
+          }
+          if (prop === "sessionAttach" && result?.sessionID) {
+            await manager.workspaceSessionSet(
+              activeForSession.workspaceID,
+              result.sessionID,
             );
           }
           if (

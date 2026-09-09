@@ -139,7 +139,10 @@ export function createSessionAdmission(
         agent: targetExec?.selectedAgent?.name,
       }),
     );
-    if (!input.internal) rememberTitleInput(targetSessionID, text);
+    if (!input.internal) {
+      rememberTitleInput(targetSessionID, text);
+      ctx.state.initialize?.scheduleTitleGeneration?.(targetSessionID);
+    }
     void targetCoordinator().wake(drainSessionFor(targetSessionID));
     return submitted;
   }

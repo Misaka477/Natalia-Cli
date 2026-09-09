@@ -381,6 +381,12 @@ export function createEventSink(
       });
       if (last && shouldForwardAudit && !niaCollabSent) {
         const wakeID = `turn_nia_${event.messageID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
+        console.log("[nia-audit-forward] scheduling main wake from audit tail", {
+          sessionID: exec.session.id,
+          wakeID,
+          responseMessageID: event.messageID,
+          auditSummary: auditSummary.slice(0, 180),
+        });
         ctx.ports.scheduleInternalWake(exec, {
           id: wakeID,
           text: `(internal Nia audit result: ${auditSummary}. This is internal context for you and the user. Do not forward it to Navi; act on the findings directly.)`,
@@ -434,6 +440,13 @@ export function createEventSink(
             plan.status === "executing" ||
             plan.status === "audit_gaps",
         );
+        console.log("[natalia-finish] promoting plans to awaiting_audit", {
+          sessionID: exec.session.id,
+          activePlans: activePlans.map((plan) => ({
+            planID: plan.planID,
+            status: plan.status,
+          })),
+        });
         for (const plan of activePlans)
           void ctx.ports.planDocRuntime.planDocUpdateStatus({
             planID: plan.planID,

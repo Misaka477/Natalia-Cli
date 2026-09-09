@@ -12,16 +12,19 @@ import {
   requireNativeToolCallProtocol,
 } from "@natalia/runtime";
 import type {
+  ProviderFinishReason,
   ProviderMessage,
   ProviderToolCall,
   StreamingProvider,
 } from "@natalia/runtime";
+import { projectedPlanDocs } from "@natalia/session";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
 import {
   type ConcreteRuntimeEvent,
   niaChatHistory,
   collabMessagesForExec,
+  compactChatBeforeProviderStep,
   promptData,
   streamEvent,
 } from "./chat-turn-common";
@@ -46,13 +49,14 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     await ensureSessionFullEvents(ctx, input.exec);
     const activeProvider = niaProvider(input);
     if (!activeProvider) throw new Error("provider unavailable for Nia chat");
-    if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-      console.log("[nia-chat-turn] provider", {
-        sessionID: input.exec.session.id,
-        adapter: activeProvider.constructor.name,
-        provider: activeProvider.provider,
-        model: activeProvider.model,
-      });
+    console.log("[nia-chat-turn] start", {
+      sessionID: input.exec.session.id,
+      responseMessageID: input.responseMessageID,
+      internal: input.internal === true,
+      adapter: activeProvider.constructor.name,
+      provider: activeProvider.provider,
+      model: activeProvider.model,
+    });
     const {
       publishForSession,
       nextChatSequence,
@@ -91,6 +95,9 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     let finalResponse = "";
     let usedTools = false;
     let ranFinalOnlyStep = false;
+    let auditReported = false;
+    let collabSent = false;
+    let finishReason: ProviderFinishReason | undefined;
     let step = 1;
     let corrections = 0;
     let phase: "waiting" | "thinking" | "generating" | "using_tool" = "waiting";
@@ -135,6 +142,24 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           }
         : undefined;
     };
+    const activePlan = projectedPlanDocs(input.exec.session.events).find(
+      (plan) =>
+        plan.status === "handed_off" ||
+        plan.status === "executing" ||
+        plan.status === "awaiting_audit" ||
+        plan.status === "auditing" ||
+        plan.status === "audit_gaps",
+    );
+    const auditIntent =
+      input.internal !== true && /审计|audit|审核/iu.test(input.text);
+    const requiredAuditAction = () => {
+      if (!auditIntent || !activePlan) return undefined;
+      if (auditReported || collabSent) return undefined;
+      return {
+        action: "audit report to Natalia",
+        correction: `AUDIT_REQUIRED: You are auditing plan ${activePlan.planID} (${activePlan.status}). You must call audit_report with planID ${activePlan.planID} and verdict passed or gaps before ending. You may also call collab_chat to send the concrete findings to Natalia. Reading tools alone does not complete an audit.`,
+      };
+    };
     try {
       while (
         step <= effectiveMaxSteps(input.exec) ||
@@ -157,6 +182,16 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         const calls: ProviderToolCall[] = [];
         let stepOutput = "";
         let protocolViolation = "";
+        const compactedMessages = await compactChatBeforeProviderStep(
+          ctx,
+          "nia",
+          input.exec,
+          activeProvider,
+          messages,
+          signal,
+        );
+        if (compactedMessages !== messages)
+          messages.splice(0, messages.length, ...compactedMessages);
         const raw = activeProvider.stream({
           messages: finalOnly
             ? [...messages, { role: "assistant", content: MAX_STEPS_PROMPT }]
@@ -199,9 +234,27 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           if (chunk.type === "tool_call") calls.push(...chunk.calls);
           if (chunk.type === "tool_protocol_violation")
             protocolViolation = chunk.text;
+          if (chunk.type === "done") finishReason = chunk.finishReason;
         }
         usedTools ||= calls.length > 0;
-        const outstanding = requiredNataliaReply();
+        for (const call of calls) {
+          if (call.name === "audit_report") auditReported = true;
+          if (call.name === "collab_chat") collabSent = true;
+        }
+        const outstandingAudit = requiredAuditAction();
+        if (
+          finishReason === "length" ||
+          finishReason === "content_filter" ||
+          finishReason === "error"
+        )
+          throw new Error(
+            `provider stopped before completing the response (${finishReason})`,
+          );
+        if (finishReason === "tool_calls" && !calls.length)
+          throw new Error(
+            "provider reported tool_calls without a complete native tool call",
+          );
+        const outstanding = requiredNataliaReply() ?? outstandingAudit;
         if (finalOnly || !calls.length) {
           if (outstanding) {
             setPhase("waiting");
@@ -354,12 +407,20 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         );
       }
       settleThinking();
+      const finalText = redactToolOutput(output.trim() || "(no reply)", true);
+      console.log("[nia-chat-turn] final", {
+        sessionID: input.exec.session.id,
+        responseMessageID: input.responseMessageID,
+        internal: input.internal === true,
+        finishReason,
+        finalText: finalText.slice(0, 240),
+      });
       publish({
         type: "nia.chat.message.new",
         id: `${input.responseMessageID}:chat`,
         messageID: input.responseMessageID,
         role: "chat",
-        text: redactToolOutput(output.trim() || "(no reply)", true),
+        text: finalText,
         at: new Date().toISOString(),
       });
       return { text: output };

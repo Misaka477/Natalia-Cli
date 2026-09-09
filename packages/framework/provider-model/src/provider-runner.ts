@@ -177,6 +177,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     const activeModelCapabilities = input.modelCapabilities();
     const activePermissionMode = input.permissionMode();
     const activeContextConfig = { ...input.runtimeContextConfig() };
+    console.log("[natalia-turn] start", {
+      id,
+      internal,
+      sessionID: input.session()?.id,
+      model: activeProvider.model,
+      provider: activeProvider.provider,
+      adapter: activeProvider.constructor.name,
+      text: text.slice(0, 240),
+    });
     input.setActiveModelCapabilities(activeModelCapabilities);
     input.setActiveAbort(controller);
     input.setActiveTurnID(id);
@@ -411,10 +420,21 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         snapshot: ledger.durableCheckpoint(ledger.journalStatus().messageCount),
       });
       input.publish({ type: "content.done", id });
+      const finishedStopReason = input.waitingHuman() ? "waiting_human" : "done";
+      console.log("[natalia-turn] finished", {
+        id,
+        internal,
+        stopReason: finishedStopReason,
+        model: activeProvider.model,
+        profile: activePermissionMode,
+        durationMs: Date.now() - startedAt,
+        inputTokens: providerUsage?.inputTokens,
+        outputTokens: providerUsage?.outputTokens,
+      });
       input.publish({
         type: "turn.finished",
         id,
-        stopReason: input.waitingHuman() ? "waiting_human" : "done",
+        stopReason: finishedStopReason,
         model: activeProvider.model,
         profile: activePermissionMode,
         durationMs: Date.now() - startedAt,
@@ -423,6 +443,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       });
       input.publish(await input.runtimeStatusSnapshot());
     } catch (error) {
+      const failedStopReason = controller.signal.aborted ? "cancelled" : "error";
+      console.error("[natalia-turn] finished", {
+        id,
+        internal,
+        stopReason: failedStopReason,
+        model: activeProvider.model,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt,
+      });
       input.publish({
         type: "diagnostic",
         level: controller.signal.aborted ? "warning" : "error",
@@ -431,7 +460,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       input.publish({
         type: "turn.finished",
         id,
-        stopReason: controller.signal.aborted ? "cancelled" : "error",
+        stopReason: failedStopReason,
         model: activeProvider.model,
         profile: activePermissionMode,
         durationMs: Date.now() - startedAt,

@@ -296,10 +296,17 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       const record = entries[planID];
       if (!record) return { updated: false };
       const now = new Date().toISOString();
+      const previousStatus = record.status;
       record.status = status;
       record.updatedAt = now;
       entries[planID] = record;
       await writeIndex(ctx, entries);
+      console.log("[plan-status] updated", {
+        planID,
+        status,
+        sessionID,
+        previousStatus,
+      });
       publish(
         requireWorkLedger().buildPlanDocStatus({
           id: `${planID}:status:${ctx.ports.nextPlanSequence()}`,
@@ -311,6 +318,12 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       );
       if (status === "awaiting_audit" || status === "auditing") {
         const exec = sessionExec(sessionID);
+        console.log("[nia-wake-trigger] plan status requires Nia audit", {
+          planID,
+          status,
+          sessionID,
+          hasExec: Boolean(exec),
+        });
         if (exec) ctx.ports.requestNiaWake(exec);
       }
       return { updated: true };

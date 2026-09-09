@@ -405,6 +405,15 @@ type ChatEventData<Namespace extends ChatEventNamespace> =
       toMessageID: string;
       removed: number;
       at: string;
+    }
+  | {
+      /** Durable chat compaction: replaces messages through this boundary with a summary. */
+      type: `${Namespace}.chat.compacted`;
+      id: string;
+      messageID: string;
+      summary: string;
+      compactedThroughMessageID: string;
+      at: string;
     };
 
 /**
@@ -2608,6 +2617,7 @@ export type RuntimeClient = {
     type: string;
     baseURL: string;
     apiKey: string;
+    headers?: Record<string, string>;
   }): Promise<{ models: string[] }>;
   /**
    * Adds or replaces a provider by type, endpoint and key, and applies the
@@ -2629,8 +2639,10 @@ export type RuntimeClient = {
     }>;
   }): Promise<{ saved: boolean }>;
   /**
-   * Removes a provider. A write; idempotent; a provider referenced by a model
-   * refuses deletion.
+   * Removes a provider and its catalog models and model overrides. A write;
+   * idempotent. Refuses deletion when the provider is referenced by the
+   * configured default model, an agent or mode, or a loaded session. References
+   * from the provider's own models do not prevent deletion.
    */
   providerRemove?(name: string): Promise<{
     removed: boolean;

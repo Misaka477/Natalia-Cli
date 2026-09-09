@@ -81,6 +81,76 @@ test("a method with no route is method-not-found, not invalid params", async () 
   });
 });
 
+test("provider discovery accepts empty keys with auth headers and validates header values", async () => {
+  let received: unknown;
+  const response = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "provider.discover",
+      params: {
+        type: "openai-compatible",
+        baseURL: "https://example.test",
+        apiKey: "",
+        headers: { Authorization: "Bearer custom" },
+      },
+    },
+    stubClient({
+      providerDiscover: async (input) => {
+        received = input;
+        return { models: ["model"] };
+      },
+    }),
+  );
+  expect(response.result).toEqual({ models: ["model"] });
+  expect(received).toEqual({
+    type: "openai-compatible",
+    baseURL: "https://example.test",
+    apiKey: "",
+    headers: { Authorization: "Bearer custom" },
+  });
+
+  const invalid = await fail(
+    "provider.discover",
+    {
+      type: "openai-compatible",
+      baseURL: "https://example.test",
+      apiKey: "key",
+      headers: { Authorization: 42 },
+    },
+    { providerDiscover: async () => ({ models: [] }) },
+  );
+  expect(invalid.error.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
+});
+
+test("provider addition accepts an empty API key for custom authentication", async () => {
+  let received: unknown;
+  const response = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "provider.add",
+      params: {
+        name: "custom",
+        type: "openai-compatible",
+        apiKey: "",
+        headers: { Authorization: "Bearer custom" },
+      },
+    },
+    stubClient({
+      providerAdd: async (input) => {
+        received = input;
+        return { saved: true };
+      },
+    }),
+  );
+  expect(response.result).toEqual({ saved: true });
+  expect(received).toMatchObject({
+    apiKey: "",
+    headers: { Authorization: "Bearer custom" },
+  });
+});
+
 test("a routed member this runtime lacks is not-supported, and names its capability", async () => {
   // The route exists; the member behind it does not. The caller cannot fix this
   // by changing arguments, so it must not look like an argument problem.

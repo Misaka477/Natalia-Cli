@@ -109,54 +109,103 @@ export async function discoverProviderModels(
   driver: string,
   baseURL: string,
   apiKey: string,
+  customHeaders?: Record<string, string>,
 ): Promise<string[]> {
-  const base = baseURL.trim().replace(/\/+$/u, "");
+  const base = baseURL.trim();
   if (!base)
     throw new Error("Provider base URL is required for model discovery");
-  if (!apiKey.trim())
+  const supported = [
+    "openai",
+    "openai-compatible",
+    "anthropic",
+    "anthropic-compatible",
+    "gemini",
+  ];
+  if (!supported.includes(driver))
+    throw new Error(
+      `Unsupported provider driver for model discovery: ${driver}`,
+    );
+  let parsed: URL;
+  try {
+    parsed = new URL(base);
+  } catch {
+    throw new Error("Provider base URL is invalid for model discovery");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    throw new Error("Provider base URL must use http or https");
+  const headers = new Headers(customHeaders);
+  const hasCustomAuth = [
+    "authorization",
+    "x-api-key",
+    "api-key",
+    "x-goog-api-key",
+  ].some((name) => headers.has(name));
+  if (!apiKey.trim() && !hasCustomAuth)
     throw new Error("Provider API key is required for model discovery");
 
-  const anthropic = driver === "anthropic";
+  const anthropic = driver === "anthropic" || driver === "anthropic-compatible";
   const gemini = driver === "gemini";
-  const url = gemini
-    ? `${base}/models`
-    : `${base.endsWith("/v1") ? base : `${base}/v1`}/models`;
-  const response = await fetch(url, {
-    headers: anthropic
-      ? {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        }
-      : gemini
-        ? { "x-goog-api-key": apiKey }
-        : { authorization: `Bearer ${apiKey}` },
-  });
-  if (!response.ok) {
-    const detail = (await response.text()).trim();
-    throw new Error(
-      `Model discovery failed (${response.status})${detail ? `: ${detail}` : ""}`,
-    );
+  const endpointPath = parsed.pathname.replace(/\/+$/u, "");
+  parsed.pathname = `${gemini || endpointPath ? endpointPath : "/v1"}/models`;
+  const url = parsed.toString();
+  const hasHeader = (name: string) => headers.has(name);
+  if (anthropic) {
+    if (apiKey && !hasHeader("x-api-key")) headers.set("x-api-key", apiKey);
+    if (!hasHeader("anthropic-version"))
+      headers.set("anthropic-version", "2023-06-01");
+  } else if (gemini) {
+    if (apiKey && !hasHeader("x-goog-api-key"))
+      headers.set("x-goog-api-key", apiKey);
+  } else if (apiKey && !hasHeader("authorization")) {
+    headers.set("authorization", `Bearer ${apiKey}`);
   }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await fetch(url, {
+      headers,
+      redirect: "error",
+      signal: controller.signal,
+    });
+    if (!response.ok)
+      throw new Error(`Model discovery failed (${response.status})`);
 
-  const payload = (await response.json()) as {
-    data?: Array<{ id?: unknown }>;
-    models?: Array<{ id?: unknown; name?: unknown }>;
-  };
-  const values = gemini
-    ? (payload.models ?? []).map((model) => model.name ?? model.id)
-    : payload.data
-      ? payload.data.map((model) => model.id)
-      : (payload.models ?? []).map((model) => model.id ?? model.name);
-  return [
-    ...new Set(
-      values.filter(
-        (value): value is string =>
-          typeof value === "string" && value.length > 0,
-      ),
-    ),
-  ]
-    .map((value) => (gemini ? value.replace(/^models\//u, "") : value))
-    .sort((left, right) => left.localeCompare(right));
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("Model discovery returned an invalid response");
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload))
+      throw new Error("Model discovery returned an invalid response");
+    const record = payload as Record<string, unknown>;
+    const list = gemini
+      ? record.models
+      : Array.isArray(record.data)
+        ? record.data
+        : record.models;
+    if (!Array.isArray(list))
+      throw new Error("Model discovery returned an invalid response");
+    const values = list.map((model) => {
+      if (!model || typeof model !== "object" || Array.isArray(model))
+        throw new Error("Model discovery returned an invalid response");
+      const item = model as Record<string, unknown>;
+      const value = gemini ? (item.name ?? item.id) : (item.id ?? item.name);
+      if (typeof value !== "string")
+        throw new Error("Model discovery returned an invalid response");
+      return value.trim().replace(/^models\//u, "");
+    });
+    return [
+      ...new Set(values.filter((value): value is string => value.length > 0)),
+    ].sort((left, right) => left.localeCompare(right));
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("Model discovery timed out");
+    if (error instanceof Error && error.message.startsWith("Model discovery"))
+      throw error;
+    throw new Error("Model discovery request failed");
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**

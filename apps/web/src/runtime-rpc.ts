@@ -245,7 +245,6 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   selectModel: ["modelID", "variant", "sessionID"],
   reasoningEffort: ["sessionID"],
   setReasoningEffort: ["effort", "sessionID"],
-  providerDiscover: ["type", "baseURL", "apiKey"],
   providerAdd: ["name", "type", "baseURL", "apiKey"],
   agentCreate: ["name", "config"],
   agentUpdate: ["name", "config"],
@@ -310,9 +309,9 @@ export function createWebRuntimeClient(
     params?: Record<string, unknown>,
   ): Promise<T> => {
     const callStart = performance.now();
-    const startupBase = (
-      globalThis as unknown as { __nataliaStartupStart?: number }
-    ).__nataliaStartupStart ?? callStart;
+    const startupBase =
+      (globalThis as unknown as { __nataliaStartupStart?: number })
+        .__nataliaStartupStart ?? callStart;
     perfLog(
       `[perf] rpc start ${method} +${(callStart - startupBase).toFixed(1)}ms`,
     );
@@ -951,6 +950,9 @@ export function createWebRuntimeClient(
     },
     async providerAdd(input) {
       return (await call("provider.add", { ...input })) as never;
+    },
+    async providerDiscover(input) {
+      return (await call("provider.discover", { ...input })) as never;
     },
     async astDiff(input) {
       return (await call("ast.diff", { ...input })) as never;

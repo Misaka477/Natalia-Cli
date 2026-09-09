@@ -26,6 +26,10 @@ export function applyNeuTheme(
 ) {
   const resolved = resolveNeuThemeMode(mode);
   const skin = NATALIA_SKINS[resolved];
-  applyUiSkin(skin, root ?? document.documentElement);
+  // Body portals (including context menus) must inherit the same theme as the shell.
+  const documentRoot =
+    root?.ownerDocument.documentElement ?? document.documentElement;
+  applyUiSkin(skin, documentRoot);
+  if (root && root !== documentRoot) applyUiSkin(skin, root);
   return resolved;
 }

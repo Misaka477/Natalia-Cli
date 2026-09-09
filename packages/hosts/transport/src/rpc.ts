@@ -3161,6 +3161,7 @@ export async function handleRPCMessage(
       const type = (params as { type?: unknown }).type;
       const baseURL = (params as { baseURL?: unknown }).baseURL;
       const apiKey = (params as { apiKey?: unknown }).apiKey;
+      const headers = (params as { headers?: unknown }).headers;
       if (typeof type !== "string" || !type)
         throw invalidParams(
           "provider.discover.params.type must be a non-empty string",
@@ -3169,14 +3170,29 @@ export async function handleRPCMessage(
         throw invalidParams(
           "provider.discover.params.baseURL must be a non-empty string",
         );
-      if (typeof apiKey !== "string" || !apiKey)
+      if (typeof apiKey !== "string")
+        throw invalidParams("provider.discover.params.apiKey must be a string");
+      if (
+        headers !== undefined &&
+        (typeof headers !== "object" ||
+          headers === null ||
+          Array.isArray(headers) ||
+          !Object.values(headers as Record<string, unknown>).every(
+            (value) => typeof value === "string",
+          ))
+      )
         throw invalidParams(
-          "provider.discover.params.apiKey must be a non-empty string",
+          "provider.discover.params.headers must contain only string values",
         );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.providerDiscover?.({ type, baseURL, apiKey }),
+        result: await client.providerDiscover?.({
+          type,
+          baseURL,
+          apiKey,
+          headers: headers as Record<string, string> | undefined,
+        }),
       };
     }
     if (body.method === "provider.add") {
@@ -3196,10 +3212,8 @@ export async function handleRPCMessage(
         throw invalidParams(
           "provider.add.params.type must be a non-empty string",
         );
-      if (typeof apiKey !== "string" || !apiKey)
-        throw invalidParams(
-          "provider.add.params.apiKey must be a non-empty string",
-        );
+      if (typeof apiKey !== "string")
+        throw invalidParams("provider.add.params.apiKey must be a string");
       const headers = (params as { headers?: unknown }).headers;
       const models = (params as { models?: unknown }).models;
       const label = (params as { label?: unknown }).label;

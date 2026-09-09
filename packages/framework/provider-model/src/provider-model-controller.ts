@@ -48,6 +48,12 @@ export function createProviderModelController(
     const startedAt = Date.now();
     const abort = new AbortController();
     navi.aborts.set(key, abort);
+    console.log("[navi-turn] start", {
+      sessionID: turn.sessionID,
+      responseMessageID: turn.responseMessageID,
+      internal: turn.internal === true,
+      model: turn.model?.modelID,
+    });
     // Reserve ownership before publishing or invoking user-provided callbacks.
     const task = Promise.resolve().then(() => {
       abort.signal.throwIfAborted();
@@ -63,23 +69,38 @@ export function createProviderModelController(
         ...(turn.internal ? { internal: true } : {}),
       });
       await task;
+      const naviStop = abort.signal.aborted ? "cancelled" : "done";
+      console.log("[navi-turn] finished", {
+        sessionID: turn.sessionID,
+        responseMessageID: turn.responseMessageID,
+        internal: turn.internal === true,
+        stopReason: naviStop,
+      });
       input.navi.publish(key, {
         type: "navi.chat.turn.finished",
         id: `${turn.responseMessageID}:finished`,
         messageID: turn.responseMessageID,
-        stopReason: abort.signal.aborted ? "cancelled" : "done",
+        stopReason: naviStop,
         startedAt,
         endedAt: Date.now(),
       });
     } catch (cause) {
       const cancelled = abort.signal.aborted;
+      const naviStop = cancelled ? "cancelled" : "error";
+      console.error("[navi-turn] finished", {
+        sessionID: turn.sessionID,
+        responseMessageID: turn.responseMessageID,
+        internal: turn.internal === true,
+        stopReason: naviStop,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
       abort.abort(cause);
       await task.catch(() => undefined);
       input.navi.publish(key, {
         type: "navi.chat.turn.finished",
         id: `${turn.responseMessageID}:finished`,
         messageID: turn.responseMessageID,
-        stopReason: cancelled ? "cancelled" : "error",
+        stopReason: naviStop,
         startedAt,
         endedAt: Date.now(),
         ...(!cancelled
@@ -105,6 +126,12 @@ export function createProviderModelController(
     const startedAt = Date.now();
     const abort = new AbortController();
     nia.aborts.set(key, abort);
+    console.log("[nia-turn] start", {
+      sessionID: turn.sessionID,
+      responseMessageID: turn.responseMessageID,
+      internal: turn.internal === true,
+      model: turn.model?.modelID,
+    });
     const task = Promise.resolve().then(() => {
       abort.signal.throwIfAborted();
       return input.nia.runBody(turn, abort.signal);
@@ -119,23 +146,38 @@ export function createProviderModelController(
         ...(turn.internal ? { internal: true } : {}),
       });
       await task;
+      const niaStop = abort.signal.aborted ? "cancelled" : "done";
+      console.log("[nia-turn] finished", {
+        sessionID: turn.sessionID,
+        responseMessageID: turn.responseMessageID,
+        internal: turn.internal === true,
+        stopReason: niaStop,
+      });
       input.nia.publish(key, {
         type: "nia.chat.turn.finished",
         id: `${turn.responseMessageID}:finished`,
         messageID: turn.responseMessageID,
-        stopReason: abort.signal.aborted ? "cancelled" : "done",
+        stopReason: niaStop,
         startedAt,
         endedAt: Date.now(),
       });
     } catch (cause) {
       const cancelled = abort.signal.aborted;
+      const niaStop = cancelled ? "cancelled" : "error";
+      console.error("[nia-turn] finished", {
+        sessionID: turn.sessionID,
+        responseMessageID: turn.responseMessageID,
+        internal: turn.internal === true,
+        stopReason: niaStop,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
       abort.abort(cause);
       await task.catch(() => undefined);
       input.nia.publish(key, {
         type: "nia.chat.turn.finished",
         id: `${turn.responseMessageID}:finished`,
         messageID: turn.responseMessageID,
-        stopReason: cancelled ? "cancelled" : "error",
+        stopReason: niaStop,
         startedAt,
         endedAt: Date.now(),
         ...(!cancelled

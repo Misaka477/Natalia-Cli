@@ -622,6 +622,12 @@ export function createChatTools(ctx: RuntimeContext) {
           )
             return "audit_report requires planID and verdict passed|gaps";
           const status = args.verdict === "passed" ? "completed" : "audit_gaps";
+          console.log("[nia-audit-report] submitting", {
+            planID: args.planID,
+            verdict: args.verdict,
+            status,
+            sessionID: (context as { sessionID?: string } | undefined)?.sessionID,
+          });
           const result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
             planID: args.planID,
             status,
