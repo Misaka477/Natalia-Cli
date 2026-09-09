@@ -10,6 +10,7 @@
 import {
   appendSessionEvent,
   projectedChatMessages,
+  projectedCollabMessages,
   projectedPlanDocs,
 } from "@natalia/session";
 import { runtimeEventDurability } from "@natalia/contracts";
@@ -30,6 +31,43 @@ import { perfLog } from "@natalia/runtime-services";
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;
 };
+
+function mainTurnHasPendingCollabReply(
+  exec: SessionExecutionState,
+  turnID: string,
+): boolean {
+  const events = exec.session.events;
+  const start = events.findIndex(
+    (event) => event.type === "turn.submitted" && event.id === turnID,
+  );
+  const end = events.findIndex(
+    (event) => event.type === "turn.finished" && event.id === turnID,
+  );
+  if (start < 0 || end < 0 || end <= start) return false;
+  const sentIDs = new Set<string>();
+  for (const event of events.slice(start, end)) {
+    const isCollabMessage =
+      event.type === "collab.message" || event.type.endsWith(".collab.message");
+    if (!isCollabMessage || !("message" in event)) continue;
+    const message = event.message;
+    if (
+      typeof message === "object" &&
+      message !== null &&
+      "from" in message &&
+      "expectsReply" in message &&
+      message.from === "main_agent" &&
+      message.expectsReply === true &&
+      "id" in message &&
+      typeof message.id === "string"
+    )
+      sentIDs.add(message.id);
+  }
+  if (!sentIDs.size) return false;
+  const projected = projectedCollabMessages(events);
+  return projected.some(
+    (message) => sentIDs.has(message.id) && message.status === "pending",
+  );
+}
 
 export function createEventSink(
   ctx: RuntimeContext,
@@ -374,7 +412,8 @@ export function createEventSink(
       // Once the plan is passed there is nothing left to remediate, so do not
       // wake Natalia again. Only skip when Nia actively used collab_chat, so
       // the formal audit message is not duplicated.
-      const shouldForwardAudit = (niaAuditWake || auditReported) && !auditPassed;
+      const shouldForwardAudit =
+        (niaAuditWake || auditReported) && !auditPassed;
       console.log("[nia-audit-tail]", {
         messageID: event.messageID,
         niaAuditWake,
@@ -388,12 +427,15 @@ export function createEventSink(
       });
       if (last && shouldForwardAudit && !niaCollabSent) {
         const wakeID = `turn_nia_${event.messageID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
-        console.log("[nia-audit-forward] scheduling main wake from audit tail", {
-          sessionID: exec.session.id,
-          wakeID,
-          responseMessageID: event.messageID,
-          auditSummary: auditSummary.slice(0, 180),
-        });
+        console.log(
+          "[nia-audit-forward] scheduling main wake from audit tail",
+          {
+            sessionID: exec.session.id,
+            wakeID,
+            responseMessageID: event.messageID,
+            auditSummary: auditSummary.slice(0, 180),
+          },
+        );
         ctx.ports.scheduleInternalWake(exec, {
           id: wakeID,
           text: `(internal Nia audit result: ${auditSummary}. This is internal context for you and the user. Do not forward it to Navi; act on the findings directly.)`,
@@ -437,10 +479,16 @@ export function createEventSink(
       // turn. The order matters — acknowledge the already-delivered batch before
       // delivering the queued batch, so a fresh delivery is not mis-acked.
       settleMailboxAtBoundary(exec);
+      // If Natalia just sent a collaboration question/chat and is now waiting
+      // for Navi or Nia to reply, do not promote plans to awaiting_audit yet.
+      // The audit should wait until the collaboration exchange completes.
+      const waitingForSisterReply =
+        exec?.session !== undefined &&
+        mainTurnHasPendingCollabReply(exec, event.id);
       // Runtime-owned plan lifecycle: after Natalia finishes, promote any
       // executed plan to awaiting_audit. planDocUpdateStatus itself wakes Nia,
       // so this never depends on the model remembering to call a status tool.
-      if (exec?.session) {
+      if (exec?.session && !waitingForSisterReply) {
         const activePlans = planDocsFor(exec).filter(
           (plan) =>
             plan.status === "handed_off" ||
