@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   applyEvent,
+  boundTranscript,
   displayText,
   hydrateNaviMessages,
   hydrateNiaMessages,
@@ -1763,6 +1764,17 @@ test("empty replace hydration does not clear existing turn rows", () => {
   expect(state.natalia.messages.map((message) => displayText(message))).toEqual(
     ["existing main turn", "existing answer"],
   );
+});
+
+test("boundTranscript does not wipe an internal-heavy transcript", () => {
+  const messages = Array.from({ length: 400 }, (_, index) => ({
+    id: `internal:${index}`,
+    role: index % 2 === 0 ? "system" : "tool",
+    text: "x",
+  }));
+  const bounded = boundTranscript(messages, "older");
+  expect(bounded.messages).not.toHaveLength(0);
+  expect(bounded.evicted).toBe(false);
 });
 
 test("empty explicit stream hydration clears durable rows without losing live output", () => {
