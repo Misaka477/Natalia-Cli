@@ -1,8 +1,13 @@
 import { For, Show, createMemo } from "solid-js";
 import type { AppState } from "@natalia/view-store";
 
-export function TodoPanel(props: { state: AppState }) {
-  const todos = createMemo(() => props.state.todos ?? []);
+type TodoItem = {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+};
+
+export function TodoPanel(props: { state: AppState; todos?: TodoItem[] }) {
+  const todos = createMemo(() => props.todos ?? props.state.todos ?? []);
   const visible = createMemo(() =>
     todos()
       .filter((todo) => todo.status !== "completed")

@@ -360,6 +360,27 @@ test("collaboration routing is strictly by sender, not by recipient", () => {
   ).toBe(false);
 });
 
+test("todo_write result projects the todo list without live argument deltas", () => {
+  const state = projectEvents([
+    {
+      type: "tool.update",
+      id: "t1:call_todo",
+      name: "todo_write",
+      callID: "call_todo",
+      status: "succeeded",
+      summary: "saved 1 todo items",
+      result: JSON.stringify({
+        saved: 1,
+        items: [{ content: "ship todo projection", status: "in_progress" }],
+      }),
+      endedAt: 1,
+    },
+  ]);
+  expect(state.todos).toEqual([
+    { content: "ship todo projection", status: "in_progress" },
+  ]);
+});
+
 test("a queued turn stays visibly queued without replacing active work", () => {
   const state = projectEvents([
     submitted("t1", "first"),

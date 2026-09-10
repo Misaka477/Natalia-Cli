@@ -408,6 +408,18 @@ function upsertTool(
     event.status !== "succeeded"
   )
     return;
+  if (event.result) {
+    try {
+      const result = JSON.parse(event.result) as Record<string, unknown>;
+      const resultItems = result.items ?? result.todos;
+      if (Array.isArray(resultItems)) {
+        state.todos = parseTodoItems(resultItems);
+        return;
+      }
+    } catch {
+      // Older tool results were prose; fall through to argument parsing.
+    }
+  }
   const parsed = parseToolArguments(argumentsRaw);
   if (!parsed.complete || !parsed.redactedJson) return;
   try {

@@ -102,7 +102,7 @@ function todoWriteTool(): RuntimeTool {
       await writeFile(path, `${JSON.stringify(items, null, 2)}\n`, {
         mode: 0o600,
       });
-      return `saved ${items.length} todo items`;
+      return JSON.stringify({ saved: items.length, items });
     },
   };
 }
