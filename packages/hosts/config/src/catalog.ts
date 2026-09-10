@@ -97,7 +97,8 @@ function catalogModelsForProvider(
         provider: providerID,
         name: override?.name ?? catalogModel?.name ?? modelID,
         capabilities: catalogModel?.capabilities ?? DEFAULT_CAPABILITIES,
-        limits: catalogModel?.limits ?? { contextWindow: "auto" },
+        limits: override?.limits ??
+          catalogModel?.limits ?? { contextWindow: "auto" },
         status: catalogModel?.status ?? "stable",
         source: catalogModel?.source ?? "manual",
       };
@@ -358,7 +359,8 @@ export function resolveEffectiveModel(
         ? override.enabled
         : catalogModel !== undefined,
     capabilities: catalogModel?.capabilities ?? DEFAULT_CAPABILITIES,
-    limits: catalogModel?.limits ?? { contextWindow: "auto" },
+    limits: override?.limits ??
+      catalogModel?.limits ?? { contextWindow: "auto" },
     status: catalogModel?.status ?? "stable",
     source: catalogModel?.source ?? "manual",
     override,

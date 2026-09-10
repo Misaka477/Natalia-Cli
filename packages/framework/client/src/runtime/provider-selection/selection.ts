@@ -283,7 +283,9 @@ export function createSelectionSurface(
                     reasoning: model.reasoning ?? false,
                     imageInput: model.image ?? false,
                   },
-                  limits: {},
+                  limits: {
+                    contextWindow: model.contextWindow ?? "auto",
+                  },
                   status: "stable",
                   source: "manual",
                 },

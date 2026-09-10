@@ -1664,6 +1664,10 @@ export type RuntimeModelCatalogEntry = {
   name: string;
   provider: string;
   variants: string[];
+  limits?: {
+    contextWindow?: number | "auto";
+    maxOutputTokens?: number | "auto";
+  };
 };
 export type RuntimeModelSelection = {
   modelID?: string;
@@ -2714,6 +2718,7 @@ export type RuntimeClient = {
       name?: string;
       reasoning?: boolean;
       image?: boolean;
+      contextWindow?: number;
     }>;
   }): Promise<{ saved: boolean }>;
   /**

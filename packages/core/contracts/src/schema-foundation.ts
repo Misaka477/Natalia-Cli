@@ -213,6 +213,7 @@ export const modelOverrideSchema = z.object({
   requestDefaults: modelOverrideRequestDefaultsSchema,
   requestOptions: z.record(z.unknown()).default({}),
   headers: z.record(z.string()).default({}),
+  limits: modelLimitsSchema.optional(),
 });
 
 /** A canonical model reference: `{provider, model}`. */

@@ -21,6 +21,7 @@ type EditableModel = {
   name: string;
   reasoning: boolean;
   image: boolean;
+  contextWindow?: number;
 };
 
 type ModelRow = EditableModel;
@@ -85,6 +86,7 @@ export function ModelPanel(props: {
       name?: string;
       reasoning?: boolean;
       image?: boolean;
+      contextWindow?: number;
     }>;
   }) => unknown;
   onDiscoverModels?: (input: {
@@ -296,6 +298,10 @@ export function ModelPanel(props: {
       name: model.name || id,
       reasoning: Boolean(model.capabilities?.reasoning),
       image: Boolean(model.capabilities?.imageInput),
+      contextWindow:
+        typeof model.limits?.contextWindow === "number"
+          ? model.limits.contextWindow
+          : undefined,
     }));
     const providerModels = rawModelRows.length
       ? rawModelRows
@@ -310,6 +316,10 @@ export function ModelPanel(props: {
               name: entry.name || id,
               reasoning: false,
               image: false,
+              contextWindow:
+                typeof entry.limits?.contextWindow === "number"
+                  ? entry.limits.contextWindow
+                  : undefined,
             };
           });
     const realHeaders = Object.entries(
@@ -455,6 +465,12 @@ export function ModelPanel(props: {
         name: model.name.trim() || model.id.trim(),
         reasoning: model.reasoning,
         image: model.image,
+        contextWindow:
+          typeof model.contextWindow === "number" &&
+          Number.isFinite(model.contextWindow) &&
+          model.contextWindow > 0
+            ? model.contextWindow
+            : undefined,
       }));
     const targetID = providerName().trim() || editingProvider() || "";
     const providerInput = {
@@ -769,6 +785,23 @@ export function ModelPanel(props: {
                       onInput={(event) =>
                         updateModel(index(), { id: event.currentTarget.value })
                       }
+                    />
+                    <input
+                      class="neu-form-input"
+                      type="number"
+                      min="1"
+                      placeholder="上下文窗口"
+                      title="上下文窗口 tokens"
+                      value={model.contextWindow ?? ""}
+                      onInput={(event) => {
+                        const value = Number(event.currentTarget.value);
+                        updateModel(index(), {
+                          contextWindow:
+                            Number.isFinite(value) && value > 0
+                              ? value
+                              : undefined,
+                        });
+                      }}
                     />
                     <label class="neu-form-checkbox">
                       <input
