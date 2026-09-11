@@ -252,6 +252,22 @@ export const fileEditorStyles =
 .neu-markdown-body p { margin: 0.6em 0; }
 .neu-markdown-body ul { margin: 0.6em 0; padding-left: 1.4em; }
 .neu-markdown-body li { margin: 0.2em 0; }
+.neu-markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.95em;
+}
+.neu-markdown-body th,
+.neu-markdown-body td {
+  border: 1px solid var(--neu-border, var(--neu-bg-light));
+  padding: 5px 10px;
+  text-align: left;
+}
+.neu-markdown-body th {
+  color: var(--neu-text);
+  background: var(--neu-bg);
+}
 .neu-markdown-body code {
   background: var(--neu-bg);
   padding: 0.1em 0.35em;

@@ -8,7 +8,12 @@ import {
 } from "solid-js";
 import type { UiTransport } from "@natalia/ui-host";
 import type { RuntimeClient } from "@natalia/contracts";
-import { ContextMenu, cssVar, type ContextMenuItem } from "@natalia/ui-kit";
+import {
+  ContextMenu,
+  cssVar,
+  renderMarkdownHtml,
+  type ContextMenuItem,
+} from "@natalia/ui-kit";
 import { Compartment } from "@codemirror/state";
 import { EditorView, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { basicSetup } from "codemirror";
@@ -462,25 +467,8 @@ export function FileEditor(props: {
   }
 
   function renderMarkdown(markdown: string): string {
-    let html = markdown
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-
-    html = html.replace(/```([\w+-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      return `<pre class="neu-markdown-code"><code>${code.trim()}</code></pre>`;
-    });
-    html = html.replace(/^### (.*)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^## (.*)$/gm, "<h2>$1</h2>");
-    html = html.replace(/^# (.*)$/gm, "<h1>$1</h1>");
-    html = html.replace(/^[-*] (.*)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>[\s\S]*?<\/li>)/g, (m) => `<ul>${m}</ul>`);
-    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-    html = html.replace(/\n\n+/g, "</p><p>");
-    html = `<div class="neu-markdown-body">${html}</div>`;
-    return html;
+    // GFM (tables, nested lists, fenced code) instead of the old regex subset.
+    return `<div class="neu-markdown-body">${renderMarkdownHtml(markdown)}</div>`;
   }
 
   function updateEditor(path: string, text: string) {

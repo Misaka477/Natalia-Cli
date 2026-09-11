@@ -20,4 +20,10 @@ export type {
 } from "./skin";
 
 export { cssVar } from "./css-vars";
-export { PendingBadge, PendingDetail, PendingList, PendingPanel } from "./pending";
+export {
+  PendingBadge,
+  PendingDetail,
+  PendingList,
+  PendingPanel,
+} from "./pending";
+export { renderMarkdownHtml } from "./markdown";
