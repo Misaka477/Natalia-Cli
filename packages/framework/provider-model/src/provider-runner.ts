@@ -861,55 +861,77 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           attachment.mediaType === "video/mp4" ||
           attachment.mediaType === "video/webm",
       );
+      const contentAdditions: string[] = [];
       if (textAttachments.length)
-        user.content = `${user.content}\n\n${(
-          await Promise.all(
+        contentAdditions.push(
+          ...(await Promise.all(
             textAttachments.map(
               async (attachment) =>
                 `[Attachment: ${attachment.filename}]\n${await input.attachments.text(attachment)}`,
             ),
-          )
-        ).join("\n\n")}`;
-      if (imageAttachments.length && !activeModelCapabilities.imageInput)
-        throw new Error("selected model does not support image attachments");
-      if (pdfAttachments.length && !activeModelCapabilities.pdfInput)
-        throw new Error("selected model does not support PDF attachments");
-      if (videoAttachments.length && !activeModelCapabilities.videoInput)
-        throw new Error("selected model does not support video attachments");
-      if (imageAttachments.length && !activeProvider.imageInput)
-        throw new Error(
-          "selected provider adapter does not support image attachment lowering",
+          )),
         );
-      if (pdfAttachments.length && !activeProvider.pdfInput)
-        throw new Error(
-          "selected provider adapter does not support PDF attachment lowering",
+
+      const imageSupported =
+        activeModelCapabilities.imageInput && activeProvider.imageInput;
+      if (imageAttachments.length && !imageSupported) {
+        contentAdditions.push(
+          ...imageAttachments.map(
+            (attachment) =>
+              `[Attached ${attachment.mediaType}: ${attachment.filename}]`,
+          ),
         );
-      if (videoAttachments.length && !activeProvider.videoInput)
-        throw new Error(
-          "selected provider adapter does not support video attachment lowering",
+      } else {
+        user.images = await Promise.all(
+          imageAttachments.map(async (attachment) => ({
+            mediaType: attachment.mediaType as
+              | "image/png"
+              | "image/jpeg"
+              | "image/webp"
+              | "image/gif",
+            dataURL: await input.attachments.dataURL(attachment),
+          })),
         );
-      user.images = await Promise.all(
-        imageAttachments.map(async (attachment) => ({
-          mediaType: attachment.mediaType as
-            | "image/png"
-            | "image/jpeg"
-            | "image/webp"
-            | "image/gif",
-          dataURL: await input.attachments.dataURL(attachment),
-        })),
-      );
-      user.pdfs = await Promise.all(
-        pdfAttachments.map(async (attachment) => ({
-          mediaType: "application/pdf" as const,
-          dataURL: await input.attachments.dataURL(attachment),
-        })),
-      );
-      user.videos = await Promise.all(
-        videoAttachments.map(async (attachment) => ({
-          mediaType: attachment.mediaType as "video/mp4" | "video/webm",
-          dataURL: await input.attachments.dataURL(attachment),
-        })),
-      );
+      }
+
+      const pdfSupported =
+        activeModelCapabilities.pdfInput && activeProvider.pdfInput;
+      if (pdfAttachments.length && !pdfSupported) {
+        contentAdditions.push(
+          ...pdfAttachments.map(
+            (attachment) =>
+              `[Attached ${attachment.mediaType}: ${attachment.filename}]`,
+          ),
+        );
+      } else {
+        user.pdfs = await Promise.all(
+          pdfAttachments.map(async (attachment) => ({
+            mediaType: "application/pdf" as const,
+            dataURL: await input.attachments.dataURL(attachment),
+          })),
+        );
+      }
+
+      const videoSupported =
+        activeModelCapabilities.videoInput && activeProvider.videoInput;
+      if (videoAttachments.length && !videoSupported) {
+        contentAdditions.push(
+          ...videoAttachments.map(
+            (attachment) =>
+              `[Attached ${attachment.mediaType}: ${attachment.filename}]`,
+          ),
+        );
+      } else {
+        user.videos = await Promise.all(
+          videoAttachments.map(async (attachment) => ({
+            mediaType: attachment.mediaType as "video/mp4" | "video/webm",
+            dataURL: await input.attachments.dataURL(attachment),
+          })),
+        );
+      }
+
+      if (contentAdditions.length)
+        user.content = `${user.content}\n\n${contentAdditions.join("\n\n")}`;
     }
   }
 

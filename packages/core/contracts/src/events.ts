@@ -1558,6 +1558,9 @@ export type LocalAttachment = {
     | "text/csv";
   byteLength: number;
   sha256: string;
+  /** Decoded image dimensions, when the media type is an image. */
+  width?: number;
+  height?: number;
 };
 export type PromptResourceMention = {
   server: string;

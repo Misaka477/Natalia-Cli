@@ -47,6 +47,7 @@ import {
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger";
+import { normalizePendingItems } from "@natalia/ui-model";
 const MCP_PLUGIN_ID = "natalia-mcp";
 const SKILLS_PLUGIN_ID = "natalia-skills";
 const TEAM_PLUGIN_ID = "natalia-team";
@@ -4955,7 +4956,7 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
     await mkdir(join(root, ".natalia"), { recursive: true });
     await writeFile(
       join(root, "image.png"),
-      Buffer.from("89504e470d0a1a0a", "hex"),
+      Buffer.from("89504e470d0a1a0a0000000d494844520000000100000001", "hex"),
     );
     await writeFile(
       join(root, ".natalia", "config.json"),
@@ -5041,14 +5042,17 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
   }
 });
 
-test("video attachments are refused by a model or adapter without video input", async () => {
+test("unsupported video attachments degrade to text instead of failing the turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-video-attachment-"));
+  const requests: Array<Record<string, unknown>> = [];
   const server = Bun.serve({
     port: 0,
-    fetch: async () =>
-      new Response("data: [DONE]\n\n", {
+    fetch: async (request) => {
+      requests.push((await request.json()) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
         headers: { "content-type": "text/event-stream" },
-      }),
+      });
+    },
   });
   try {
     await mkdir(join(root, ".natalia"), { recursive: true });
@@ -5088,39 +5092,40 @@ test("video attachments are refused by a model or adapter without video input", 
       sessionID: "ses_video_attachment",
     });
     client.start(() => undefined);
-    const finishedWithError = async (): Promise<boolean> => {
-      for (let elapsed = 0; elapsed < 10_000; elapsed += 20) {
-        const history = await client.history?.({ limit: 500 });
-        if (
-          history?.events.some(
-            (item) =>
-              item.event.type === "turn.finished" &&
-              (item.event as { stopReason?: string }).stopReason === "error",
-          )
-        )
-          return true;
-        await Bun.sleep(20);
-      }
-      return false;
+    const userText = (requestIndex: number): string => {
+      const messages = requests[requestIndex]?.messages as Array<{
+        role: string;
+        content: unknown;
+      }>;
+      const user = messages?.find((message) => message.role === "user");
+      return typeof user?.content === "string"
+        ? user.content
+        : JSON.stringify(user?.content ?? "");
     };
+    const finished = async (stopReason: string) => {
+      for (let elapsed = 0; elapsed < 3_000; elapsed += 10) {
+        const history = await client.history?.({ limit: 500 });
+        const event = history?.events.find(
+          (item) =>
+            item.event.type === "turn.finished" &&
+            (item.event as { stopReason?: string }).stopReason === stopReason,
+        );
+        if (event) return event.event;
+        await Bun.sleep(10);
+      }
+      throw new Error(`timed out waiting for turn.finished:${stopReason}`);
+    };
+
     await client.submitAndWait!({ text: "watch", attachments: ["clip.mp4"] });
-    expect(await finishedWithError()).toBe(true);
-    const firstHistory = await client.history?.({ limit: 500 });
-    expect(
-      firstHistory?.events.find((item) => item.event.type === "turn.finished")
-        ?.event,
-    ).toMatchObject({ stopReason: "error" });
+    expect(await finished("done")).toMatchObject({ stopReason: "done" });
+    expect(userText(0)).toContain("[Attached video/mp4: clip.mp4]");
+
     await client.updateConfig?.({
       patch: { defaultModel: { provider: "local", model: "vision" } },
     });
     await client.submitAndWait!({ text: "watch", attachments: ["clip.mp4"] });
-    expect(await finishedWithError()).toBe(true);
-    const diagnostics = await client.diagnostics?.(50);
-    expect(
-      diagnostics?.some((entry) =>
-        entry.message.includes("does not support video attachment lowering"),
-      ),
-    ).toBe(true);
+    expect(await finished("done")).toMatchObject({ stopReason: "done" });
+    expect(userText(1)).toContain("[Attached video/mp4: clip.mp4]");
     await client.dispose?.();
   } finally {
     server.stop(true);
@@ -13471,10 +13476,10 @@ function imageAttachProvider(): StreamingProvider {
 test("a model with image input can attach its own screenshot and see it", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-image-attach-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
-  // A valid PNG header; enough for the attach path.
+  // A valid 1x1 PNG header; enough for the attach path.
   await writeFile(
     join(root, "shot.png"),
-    Buffer.from("89504e470d0a1a0a0000000d49484452", "hex"),
+    Buffer.from("89504e470d0a1a0a0000000d494844520000000100000001", "hex"),
   );
   await writeFile(
     join(root, ".natalia", "config.json"),
@@ -13742,5 +13747,103 @@ test("a generic interactive kind round-trips through projection and response", a
         event.type === "interactive.response" && event.id === "custom_1",
     ),
   ).toBe(true);
+  await client.dispose?.();
+}, 30_000);
+
+test("a tool-issued generic interactive reaches projection, ui-model, and settlement", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-interactive-"));
+  const sessionID = "ses_tool_interactive" as SessionID;
+  const tools = createToolRegistry([]);
+  tools.set("ask_custom", {
+    name: "ask_custom",
+    description: "Ask a custom interactive question",
+    requiresApproval: false,
+    parameters: { type: "object", properties: {} },
+    async execute(_input, context) {
+      expect(context.askInteractive).toBeFunction();
+      const answer = await context.askInteractive!({
+        requestID: "custom_tool_1",
+        kind: "custom.tool.kind",
+        title: "Pick a color",
+        payload: { options: ["red", "blue"] },
+        validate: (response) =>
+          response === "red" ? undefined : ["must be red"],
+      });
+      return `answer: ${String(answer.response)}`;
+    },
+  });
+
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    tools,
+    provider: singleToolProvider("ask_custom", {}),
+  });
+  client.start((event) => events.push(event));
+
+  const running = client.submitAndWait!("ask the tool");
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "interactive.request" &&
+          event.id === "custom_tool_1" &&
+          event.kind === "custom.tool.kind",
+      ),
+    3_000,
+    "the tool-issued interactive request",
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "ask_custom",
+      status: "running",
+    }),
+  );
+
+  const projection = await client.pendingInteractive!();
+  expect(projection.interactives).toEqual([
+    expect.objectContaining({
+      id: "custom_tool_1",
+      kind: "custom.tool.kind",
+    }),
+  ]);
+  expect(
+    normalizePendingItems({ interactives: projection.interactives }),
+  ).toEqual([
+    expect.objectContaining({
+      id: "custom_tool_1",
+      kind: "custom.tool.kind",
+      title: "Pick a color",
+    }),
+  ]);
+
+  expect(
+    await client.respondInteractive!({
+      requestID: "custom_tool_1",
+      kind: "custom.tool.kind",
+      response: "red",
+      sessionID,
+    }),
+  ).toEqual({ accepted: true });
+  await running;
+
+  expect((await client.pendingInteractive!()).interactives).toEqual([]);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "interactive.response",
+      id: "custom_tool_1",
+      kind: "custom.tool.kind",
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "ask_custom",
+      status: "succeeded",
+      result: "answer: red",
+    }),
+  );
   await client.dispose?.();
 }, 30_000);

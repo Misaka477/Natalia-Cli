@@ -20,6 +20,8 @@ import type {
   SubagentToolService,
 } from "@natalia/tools";
 
+export const TEAM_REVIEW_DECISIONS = ["approve", "request-changes"] as const;
+
 export function createTeamFanoutTool(input: {
   subagents: () => SubagentToolService | undefined;
   sandboxes: () => SandboxToolService | undefined;
@@ -140,7 +142,7 @@ export function createTeamReviewTool(input: {
               id: { type: "string" },
               decision: {
                 type: "string",
-                enum: ["approve", "request-changes"],
+                enum: [...TEAM_REVIEW_DECISIONS],
               },
               reason: { type: "string" },
             },

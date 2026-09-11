@@ -23,6 +23,8 @@ import type {
   ToolOutputDefinition,
 } from "@natalia/tools";
 
+export const SUBAGENT_WAIT_UNTIL = ["all_terminal", "any_terminal"] as const;
+
 function requireSubagents(context: ToolExecutionContext) {
   if (!context.subagents) throw new Error("subagent runtime unavailable");
   return context.subagents;
@@ -320,7 +322,7 @@ function agentWaitTool(): RuntimeTool {
       type: "object",
       properties: {
         ids: { type: "array", items: { type: "string" } },
-        until: { type: "string", enum: ["all_terminal", "any_terminal"] },
+        until: { type: "string", enum: [...SUBAGENT_WAIT_UNTIL] },
         timeoutMs: { type: "number" },
       },
       required: ["ids", "until"],

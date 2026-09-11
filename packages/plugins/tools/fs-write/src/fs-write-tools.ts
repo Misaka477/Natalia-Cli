@@ -19,6 +19,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 
 export const FS_WRITE_PLUGIN_ID = "natalia-tool-fs-write";
+export const APPLY_EDIT_OPERATIONS = ["replace", "create", "delete"] as const;
 
 function writeFileTool(): RuntimeTool {
   return {
@@ -183,7 +184,7 @@ function applyEditsTool(): RuntimeTool {
               path: { type: "string" },
               operation: {
                 type: "string",
-                enum: ["replace", "create", "delete"],
+                enum: [...APPLY_EDIT_OPERATIONS],
               },
               oldText: { type: "string" },
               newText: { type: "string" },

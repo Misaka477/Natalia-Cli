@@ -32,6 +32,14 @@ import type {
   ToolFamily,
 } from "@natalia/tools";
 
+export const TERMINAL_OBSERVE_MODES = [
+  "full",
+  "tail",
+  "new_only",
+  "cursor",
+  "latest",
+] as const;
+
 function requireNativeTerminal(context: ToolExecutionContext) {
   if (!context.terminal)
     throw new Error(
@@ -250,7 +258,7 @@ function terminalObserveTool(): RuntimeTool {
         scrollbackRows: { type: "number" },
         mode: {
           type: "string",
-          enum: ["full", "tail", "new_only", "cursor", "latest"],
+          enum: [...TERMINAL_OBSERVE_MODES],
         },
       },
       required: ["id"],

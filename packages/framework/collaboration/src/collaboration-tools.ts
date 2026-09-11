@@ -10,6 +10,13 @@ import {
 import type { RuntimeTool } from "@natalia/tools";
 import type { CollaborationService } from "./collaboration-service";
 
+export const COLLAB_RESPONSE_DECISIONS = [
+  "adopted",
+  "rejected",
+  "deferred",
+] as const;
+export const COLLAB_CHAT_RECIPIENTS = ["live_chat", "nia"] as const;
+
 export type CollaborationToolPorts = {
   events(sessionID: SessionID): RuntimeEvent[] | undefined;
   publish(sessionID: SessionID, event: RuntimeEvent): void;
@@ -71,7 +78,7 @@ export function collaborationTools(
         messageID: { type: "string" },
         decision: {
           type: "string",
-          enum: ["adopted", "rejected", "deferred"],
+          enum: [...COLLAB_RESPONSE_DECISIONS],
         },
         reason: { type: "string" },
       },
@@ -207,7 +214,7 @@ function createMainAgentChatTool(
         text: { type: "string" },
         to: {
           type: "string",
-          enum: ["live_chat", "nia"],
+          enum: [...COLLAB_CHAT_RECIPIENTS],
           description:
             "The sister to send a new informal chat to. Omitted means Navi (live_chat). When replying with messageID, the recipient is inferred from the original message.",
         },

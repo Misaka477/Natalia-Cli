@@ -31,6 +31,23 @@ const CHAT_READ_ONLY_TOOLS = new Set([
   "web_search",
 ]);
 
+export const CHAT_SUGGESTION_PRIORITIES = ["normal", "high"] as const;
+export const MAILBOX_PRIORITIES = ["normal", "high", "urgent"] as const;
+export const MAILBOX_DELIVERY_POLICIES = [
+  "next_safe_boundary",
+  "before_next_tool",
+  "before_next_side_effect",
+  "immediate_control",
+] as const;
+export const AUDIT_VERDICTS = ["passed", "gaps"] as const;
+export const DIFF_TARGETS = [
+  "last_audit",
+  "baseline",
+  "rounds",
+  "current",
+] as const;
+export const DIFF_FORMATS = ["unified", "summary", "files"] as const;
+
 export function createChatTools(ctx: RuntimeContext) {
   return {
     naviChatTools,
@@ -109,7 +126,10 @@ export function createChatTools(ctx: RuntimeContext) {
           properties: {
             suggestion: { type: "string" },
             rationale: { type: "string" },
-            priority: { type: "string", enum: ["normal", "high"] },
+            priority: {
+              type: "string",
+              enum: [...CHAT_SUGGESTION_PRIORITIES],
+            },
           },
           required: ["suggestion"],
           additionalProperties: false,
@@ -210,15 +230,13 @@ export function createChatTools(ctx: RuntimeContext) {
           properties: {
             intent: { type: "string" },
             text: { type: "string" },
-            priority: { type: "string", enum: ["normal", "high", "urgent"] },
+            priority: {
+              type: "string",
+              enum: [...MAILBOX_PRIORITIES],
+            },
             deliveryPolicy: {
               type: "string",
-              enum: [
-                "next_safe_boundary",
-                "before_next_tool",
-                "before_next_side_effect",
-                "immediate_control",
-              ],
+              enum: [...MAILBOX_DELIVERY_POLICIES],
             },
             relatedPlanID: { type: "string" },
           },
@@ -615,7 +633,7 @@ export function createChatTools(ctx: RuntimeContext) {
             },
             verdict: {
               type: "string",
-              enum: ["passed", "gaps"],
+              enum: [...AUDIT_VERDICTS],
               description:
                 "passed when the plan is fully verified; gaps when there are open audit findings.",
             },
@@ -724,7 +742,7 @@ export function createChatTools(ctx: RuntimeContext) {
         properties: {
           target: {
             type: "string",
-            enum: ["last_audit", "baseline", "rounds", "current"],
+            enum: [...DIFF_TARGETS],
           },
           planID: { type: "string" },
           fromRound: { type: "number" },
@@ -732,7 +750,7 @@ export function createChatTools(ctx: RuntimeContext) {
           paths: { type: "array", items: { type: "string" } },
           format: {
             type: "string",
-            enum: ["unified", "summary", "files"],
+            enum: [...DIFF_FORMATS],
           },
         },
         required: ["target"],
