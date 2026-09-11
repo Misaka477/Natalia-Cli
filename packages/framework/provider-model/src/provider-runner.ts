@@ -30,6 +30,16 @@ import type {
   SkillMetadata,
 } from "@natalia/runtime-services";
 
+type ProviderAttachment = NonNullable<ProviderMessage["images"]>[number];
+
+function estimateProviderAttachment(attachment: ProviderAttachment): number {
+  // Legacy inline data URLs are transport encoding, not tokenizer-visible
+  // text. New durable refs are priced by their serialized metadata only.
+  if ("dataURL" in attachment && typeof attachment.dataURL === "string")
+    return 256;
+  return estimateTokens(JSON.stringify(attachment));
+}
+
 export function estimateProviderMessages(messages: ProviderMessage[]) {
   let tokens = 0;
   for (const message of messages) {
@@ -41,12 +51,12 @@ export function estimateProviderMessages(messages: ProviderMessage[]) {
         estimateTokens(call.id) +
         estimateTokens(call.name) +
         estimateTokens(call.arguments);
-    // Binary data URLs are transport encoding, not tokenizer-visible text.
-    // Keep a small protocol allowance until provider usage supplies the exact
-    // model-specific multimodal cost.
-    tokens += (message.images?.length ?? 0) * 256;
-    tokens += (message.pdfs?.length ?? 0) * 256;
-    tokens += (message.videos?.length ?? 0) * 256;
+    for (const attachment of message.images ?? [])
+      tokens += estimateProviderAttachment(attachment);
+    for (const attachment of message.pdfs ?? [])
+      tokens += estimateProviderAttachment(attachment);
+    for (const attachment of message.videos ?? [])
+      tokens += estimateProviderAttachment(attachment);
   }
   return tokens;
 }

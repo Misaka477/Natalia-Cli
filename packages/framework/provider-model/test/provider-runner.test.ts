@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   AnthropicProvider,
   ContextLedger,
+  estimateTokens,
   providerError,
 } from "@natalia/runtime";
 import type {
@@ -867,6 +868,23 @@ test("provider message estimates exclude binary data URLs", () => {
 
   expect(image).toBe(base + 256);
   expect(pdf).toBe(base + 256);
+});
+
+test("provider estimates price durable attachment refs by metadata, not bytes", () => {
+  const base = estimateProviderMessages([{ role: "user", content: "read it" }]);
+  const ref = {
+    id: "att_1",
+    path: ".natalia/attachments/att_1-image.png",
+    filename: "image.png",
+    mediaType: "image/png" as const,
+    byteLength: 5_000_000,
+    sha256: "a".repeat(64),
+  };
+  const estimate = estimateProviderMessages([
+    { role: "user", content: "read it", images: [ref] },
+  ]);
+  expect(estimate).toBe(base + estimateTokens(JSON.stringify(ref)));
+  expect(estimate).toBeLessThan(base + 256);
 });
 
 test("a turn keeps the context budget snapshotted with its active model", async () => {
