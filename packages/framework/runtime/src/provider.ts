@@ -3,6 +3,7 @@ import { modelSelectionStatus, resolveEffectiveModel } from "@natalia/config";
 import {
   parseModelRef,
   type ConfigV3,
+  type LocalAttachment,
   type ModelRef,
 } from "@natalia/contracts";
 import { providerError, providerErrorFromHttp } from "./errors";
@@ -13,15 +14,25 @@ import {
   type ModelMetadataProvider,
 } from "./modelmeta";
 
+/** Durable attachment reference carried into the provider layer. */
+export type ProviderAttachmentRef = LocalAttachment;
+
+/** Legacy wire shape kept during migration; new lowerings use refs. */
+export type ProviderAttachmentLegacy = {
+  mediaType: string;
+  dataURL: string;
+};
+
+export type ProviderAttachment =
+  | ProviderAttachmentRef
+  | ProviderAttachmentLegacy;
+
 export type ProviderMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
-  images?: Array<{
-    mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
-    dataURL: string;
-  }>;
-  pdfs?: Array<{ mediaType: "application/pdf"; dataURL: string }>;
-  videos?: Array<{ mediaType: "video/mp4" | "video/webm"; dataURL: string }>;
+  images?: ProviderAttachment[];
+  pdfs?: ProviderAttachment[];
+  videos?: ProviderAttachment[];
   toolCallID?: string;
   toolName?: string;
   toolCalls?: ProviderToolCall[];
@@ -387,6 +398,11 @@ export type ProviderStreamRequest = {
   tools?: ProviderTool[];
   toolChoice?: "auto" | "required" | "none";
   signal?: AbortSignal;
+  /**
+   * Resolves a durable attachment ref to a data URL at provider-dispatch time.
+   * Legacy inline data URLs remain supported during migration.
+   */
+  resolveAttachment?: (attachment: ProviderAttachmentRef) => Promise<string>;
 };
 
 export const MAX_STEPS_PROMPT = `CRITICAL - MAXIMUM STEPS REACHED
@@ -408,6 +424,92 @@ Any attempt to use tools is a critical violation. Respond with text ONLY.`;
 
 export const MISSING_FINAL_RESPONSE_FALLBACK =
   "Tool execution completed, but the model did not provide a final text summary. The completed tool results remain available in the conversation context.";
+
+function attachmentHasInlineDataURL(
+  attachment: ProviderAttachment,
+): attachment is ProviderAttachmentLegacy {
+  return (
+    typeof (attachment as { dataURL?: unknown }).dataURL === "string" &&
+    (attachment as { dataURL: string }).dataURL.length > 0
+  );
+}
+
+function attachmentIsRef(
+  attachment: ProviderAttachment,
+): attachment is ProviderAttachmentRef {
+  return (
+    typeof (attachment as { id?: unknown }).id === "string" &&
+    typeof (attachment as { path?: unknown }).path === "string"
+  );
+}
+
+async function materializeAttachment(
+  attachment: ProviderAttachment,
+  resolve?: (attachment: ProviderAttachmentRef) => Promise<string>,
+): Promise<ProviderAttachmentLegacy> {
+  if (attachmentHasInlineDataURL(attachment)) return attachment;
+  if (!attachmentIsRef(attachment) || !resolve)
+    throw new Error("provider attachment ref is missing a resolver");
+  return {
+    mediaType: attachment.mediaType,
+    dataURL: await resolve(attachment),
+  };
+}
+
+async function materializeMessage(
+  message: ProviderMessage,
+  resolve?: (attachment: ProviderAttachmentRef) => Promise<string>,
+): Promise<ProviderMessage> {
+  const materializeList = async (
+    attachments: ProviderAttachment[] | undefined,
+  ) =>
+    attachments
+      ? await Promise.all(
+          attachments.map((attachment) =>
+            materializeAttachment(attachment, resolve),
+          ),
+        )
+      : undefined;
+  const [images, pdfs, videos] = await Promise.all([
+    materializeList(message.images),
+    materializeList(message.pdfs),
+    materializeList(message.videos),
+  ]);
+  if (!images && !pdfs && !videos) return message;
+  return {
+    ...message,
+    ...(images ? { images } : {}),
+    ...(pdfs ? { pdfs } : {}),
+    ...(videos ? { videos } : {}),
+  };
+}
+
+/**
+ * Converts durable attachment refs into inline data URLs immediately before an
+ * adapter serializes its request. This keeps base64 out of projection, durable
+ * events, provider-message estimates, and the runner's message array.
+ */
+export async function materializeProviderMessages(
+  request: ProviderStreamRequest,
+): Promise<ProviderStreamRequest> {
+  if (
+    !request.messages.some(
+      (message) =>
+        message.images?.length ||
+        message.pdfs?.length ||
+        message.videos?.length,
+    )
+  )
+    return request;
+  return {
+    ...request,
+    messages: await Promise.all(
+      request.messages.map((message) =>
+        materializeMessage(message, request.resolveAttachment),
+      ),
+    ),
+  };
+}
 
 export type StreamingProvider = {
   provider: string;
@@ -510,6 +612,8 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   async *stream(
     request: ProviderStreamRequest,
   ): AsyncIterable<ProviderStreamChunk> {
+    request = await materializeProviderMessages(request);
+
     const timeout = this.timeoutMs
       ? AbortSignal.timeout(this.timeoutMs)
       : undefined;
@@ -719,6 +823,8 @@ export class AnthropicProvider implements StreamingProvider {
   async *stream(
     request: ProviderStreamRequest,
   ): AsyncIterable<ProviderStreamChunk> {
+    request = await materializeProviderMessages(request);
+
     const timeout = this.timeoutMs
       ? AbortSignal.timeout(this.timeoutMs)
       : undefined;
@@ -892,6 +998,8 @@ export class GeminiProvider implements StreamingProvider {
   async *stream(
     request: ProviderStreamRequest,
   ): AsyncIterable<ProviderStreamChunk> {
+    request = await materializeProviderMessages(request);
+
     const timeout = this.timeoutMs
       ? AbortSignal.timeout(this.timeoutMs)
       : undefined;
@@ -1753,11 +1861,11 @@ function toOpenAIMessage(message: ProviderMessage) {
         ...(message.content ? [{ type: "text", text: message.content }] : []),
         ...(message.images ?? []).map((image) => ({
           type: "image_url",
-          image_url: { url: image.dataURL },
+          image_url: { url: materializedDataURL(image) },
         })),
         ...(message.pdfs ?? []).map((pdf) => ({
           type: "file",
-          file: { file_data: pdf.dataURL },
+          file: { file_data: materializedDataURL(pdf) },
         })),
       ],
     };
@@ -1802,7 +1910,7 @@ function toAnthropicMessage(message: ProviderMessage) {
               source: {
                 type: "base64",
                 media_type: image.mediaType,
-                data: dataURLPayload(image.dataURL),
+                data: dataURLPayload(materializedDataURL(image)),
               },
             })),
             ...(message.pdfs ?? []).map((pdf) => ({
@@ -1810,7 +1918,7 @@ function toAnthropicMessage(message: ProviderMessage) {
               source: {
                 type: "base64",
                 media_type: pdf.mediaType,
-                data: dataURLPayload(pdf.dataURL),
+                data: dataURLPayload(materializedDataURL(pdf)),
               },
             })),
           ]
@@ -1846,23 +1954,28 @@ function toGeminiContent(message: ProviderMessage) {
       ...(message.images?.map((image) => ({
         inlineData: {
           mimeType: image.mediaType,
-          data: dataURLPayload(image.dataURL),
+          data: dataURLPayload(materializedDataURL(image)),
         },
       })) ?? []),
       ...(message.pdfs?.map((pdf) => ({
         inlineData: {
           mimeType: pdf.mediaType,
-          data: dataURLPayload(pdf.dataURL),
+          data: dataURLPayload(materializedDataURL(pdf)),
         },
       })) ?? []),
       ...(message.videos?.map((video) => ({
         inlineData: {
           mimeType: video.mediaType,
-          data: dataURLPayload(video.dataURL),
+          data: dataURLPayload(materializedDataURL(video)),
         },
       })) ?? []),
     ],
   };
+}
+
+function materializedDataURL(attachment: ProviderAttachment): string {
+  if (attachmentHasInlineDataURL(attachment)) return attachment.dataURL;
+  throw new Error("provider attachment was not materialized");
 }
 
 function dataURLPayload(value: string) {

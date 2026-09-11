@@ -569,6 +569,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
                 : undefined,
             toolChoice: allowToolCalls ? undefined : "none",
             signal: input.activeAbort()?.signal,
+            resolveAttachment: (attachment) =>
+              input.attachments.dataURL(attachment),
           });
           const normalized = allowToolCalls
             ? requireNativeToolCallProtocol(
@@ -895,16 +897,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           ),
         );
       } else {
-        user.images = await Promise.all(
-          imageAttachments.map(async (attachment) => ({
-            mediaType: attachment.mediaType as
-              | "image/png"
-              | "image/jpeg"
-              | "image/webp"
-              | "image/gif",
-            dataURL: await input.attachments.dataURL(attachment),
-          })),
-        );
+        user.images = imageAttachments;
       }
 
       const pdfSupported =
@@ -917,12 +910,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           ),
         );
       } else {
-        user.pdfs = await Promise.all(
-          pdfAttachments.map(async (attachment) => ({
-            mediaType: "application/pdf" as const,
-            dataURL: await input.attachments.dataURL(attachment),
-          })),
-        );
+        user.pdfs = pdfAttachments;
       }
 
       const videoSupported =
@@ -935,12 +923,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           ),
         );
       } else {
-        user.videos = await Promise.all(
-          videoAttachments.map(async (attachment) => ({
-            mediaType: attachment.mediaType as "video/mp4" | "video/webm",
-            dataURL: await input.attachments.dataURL(attachment),
-          })),
-        );
+        user.videos = videoAttachments;
       }
 
       if (contentAdditions.length)

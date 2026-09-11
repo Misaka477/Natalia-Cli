@@ -10,7 +10,10 @@ import {
   readWithIdleTimeout,
   requireNativeToolCallProtocol,
 } from "../src/provider";
-import type { ProviderStreamChunk } from "../src/provider";
+import type {
+  ProviderStreamChunk,
+  ProviderStreamRequest,
+} from "../src/provider";
 import { defaultConfigV3 } from "@natalia/config";
 import { ContextWindowResolver } from "../src/modelmeta";
 
@@ -804,6 +807,59 @@ test("providers lower image parts to their native request formats", async () => 
   });
   expect(gemini[0]?.parts.find((part) => part.inlineData)).toMatchObject({
     inlineData: { mimeType: "image/png", data: "cG5n" },
+  });
+});
+
+test("provider adapters materialize durable attachment refs through the resolver", async () => {
+  let resolved = 0;
+  const request: ProviderStreamRequest = {
+    messages: [
+      {
+        role: "user",
+        content: "inspect",
+        images: [
+          {
+            id: "att_1",
+            path: ".natalia/attachments/att_1-image.png",
+            filename: "image.png",
+            mediaType: "image/png",
+            byteLength: 8,
+            sha256: "image-hash",
+          },
+        ],
+      },
+    ],
+    resolveAttachment: async (attachment) => {
+      resolved += 1;
+      expect(attachment.id).toBe("att_1");
+      return "data:image/png;base64,cG5n";
+    },
+  };
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for await (const _chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "model",
+    fetch: fetchImpl,
+  }).stream(request)) {
+    // Drain.
+  }
+  expect(resolved).toBe(1);
+  const messages = body?.messages as Array<{
+    content: Array<{ type?: string; source?: { data?: string } }>;
+  }>;
+  expect(
+    messages[0]?.content.find((part) => part.type === "image"),
+  ).toMatchObject({
+    source: { type: "base64", media_type: "image/png", data: "cG5n" },
   });
 });
 

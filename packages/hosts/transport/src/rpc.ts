@@ -2938,21 +2938,28 @@ export async function handleRPCMessage(
     }
     if (body.method === "attachment.dataUrl") {
       optionsGuard(client, "attachmentDataUrl");
-      const params = body.params ?? {};
-      const path = params.path;
-      const mediaType = params.mediaType;
-      if (typeof path !== "string" || !path)
-        throw invalidParams("attachment.dataUrl.params.path must be a string");
-      if (typeof mediaType !== "string" || !mediaType)
+      const path = optionalStringParam(body.params, "path");
+      const mediaType = optionalStringParam(body.params, "mediaType");
+      const attachmentID = optionalStringParam(body.params, "attachmentID");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      if (attachmentID || sessionID) {
+        if (!attachmentID || !sessionID)
+          throw invalidParams(
+            "attachment.dataUrl.params requires attachmentID and sessionID together",
+          );
+      } else if (!path || !mediaType) {
         throw invalidParams(
-          "attachment.dataUrl.params.mediaType must be a string",
+          "attachment.dataUrl.params requires path+mediaType or attachmentID+sessionID",
         );
+      }
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.attachmentDataUrl?.({
-          path,
-          mediaType,
+          ...(path ? { path } : {}),
+          ...(mediaType ? { mediaType } : {}),
+          ...(attachmentID ? { attachmentID } : {}),
+          ...(sessionID ? { sessionID } : {}),
           ...(optionalStringParam(body.params, "workspaceID")
             ? { workspaceID: optionalStringParam(body.params, "workspaceID")! }
             : {}),

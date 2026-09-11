@@ -2173,8 +2173,11 @@ export type RuntimeClient = {
   }): Promise<LocalAttachment>;
   attachmentDataUrl?(input: {
     workspaceID?: string;
-    path: string;
-    mediaType: string;
+    /** Legacy path mode. New callers use `attachmentID` + `sessionID`. */
+    path?: string;
+    mediaType?: string;
+    attachmentID?: string;
+    sessionID?: string;
   }): Promise<string>;
   pendingInteractive?(input?: {
     sessionID?: string;

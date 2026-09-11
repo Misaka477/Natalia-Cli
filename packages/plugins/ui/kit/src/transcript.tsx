@@ -16,7 +16,7 @@ export interface TranscriptProps {
   assistantInitial?: string;
   scrollRef?: (el: HTMLDivElement) => void;
   onScroll?: (event: Event) => void;
-  loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
+  loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
   onFork?: (turnID: string) => void;
   onRollback?: (message: Message) => void;
   checkpointIDForMessage?: (message: Message) => string | undefined;
@@ -194,19 +194,19 @@ export interface MessageRowProps {
   message: Message;
   assistantName?: string;
   assistantInitial?: string;
-  loadAttachmentUrl?: (path: string, mediaType?: string) => Promise<string>;
+  loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
 }
 
 function AttachmentImage(props: {
   attachment: Attachment;
-  load?: (path: string, mediaType?: string) => Promise<string>;
+  load?: (attachment: Attachment) => Promise<string>;
 }) {
   const [src, setSrc] = createSignal("");
   onMount(() => {
     const type = props.attachment.mediaType ?? "";
     if (!type.startsWith("image/") || !props.load) return;
     void props
-      .load(props.attachment.path, props.attachment.mediaType)
+      .load(props.attachment)
       .then(setSrc)
       .catch(() => {});
   });

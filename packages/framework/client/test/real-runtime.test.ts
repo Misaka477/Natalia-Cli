@@ -5042,6 +5042,67 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
   }
 });
 
+test("attachmentDataUrl authorizes by session-referenced attachment id", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-attachment-auth-"));
+  const sessionID = "ses_attachment_auth";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("ok"),
+  });
+  client.start(() => undefined);
+  const png = Buffer.from(
+    "89504e470d0a1a0a0000000d494844520000000100000001",
+    "hex",
+  );
+  const uploaded = await client.uploadAttachment!({
+    name: "image.png",
+    mediaType: "image/png",
+    data: png.toString("base64"),
+  });
+  await expect(
+    client.attachmentDataUrl!({
+      attachmentID: uploaded.id,
+      sessionID,
+    }),
+  ).rejects.toThrow("not referenced");
+
+  await client.submitAndWait!({
+    text: "inspect",
+    attachments: [uploaded.path],
+  });
+  const history = await client.history?.({ limit: 500 });
+  const submitted = history?.events.find(
+    (entry) => entry.event.type === "turn.submitted",
+  )?.event;
+  const referenced =
+    submitted?.type === "turn.submitted"
+      ? submitted.attachments?.[0]
+      : undefined;
+  expect(referenced).toBeDefined();
+  expect(referenced!.id).not.toBe(uploaded.id);
+
+  await expect(
+    client.attachmentDataUrl!({
+      attachmentID: referenced!.id,
+      sessionID,
+    }),
+  ).resolves.toMatch(/^data:image\/png;base64,/u);
+  await expect(
+    client.attachmentDataUrl!({
+      attachmentID: referenced!.id,
+      sessionID: "ses_attachment_auth_other",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    client.attachmentDataUrl!({
+      path: referenced!.path,
+      mediaType: referenced!.mediaType,
+    }),
+  ).resolves.toMatch(/^data:image\/png;base64,/u);
+  await client.dispose?.();
+}, 30_000);
+
 test("unsupported video attachments degrade to text instead of failing the turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-video-attachment-"));
   const requests: Array<Record<string, unknown>> = [];

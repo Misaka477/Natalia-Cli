@@ -26,7 +26,7 @@ import {
   For,
   Show,
 } from "solid-js";
-import { PendingBadge, Transcript } from "@natalia/ui-kit";
+import { PendingBadge, Transcript, type Attachment } from "@natalia/ui-kit";
 import type { UiPanelDefinition } from "@natalia/ui-host";
 import { pendingToolLink } from "@natalia/ui-model";
 import { useConfirmDialog } from "./components/ConfirmDialog";
@@ -1006,10 +1006,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     perfLog("[web-ui] startup complete");
   }
 
-  async function loadAttachmentUrl(path: string, mediaType?: string) {
+  async function loadAttachmentUrl(attachment: Attachment) {
+    const sessionID = selectedSessionID() || state().sessionID;
     const result = await props.ctx.runtime.attachmentDataUrl?.({
-      path,
-      mediaType: mediaType ?? "image/png",
+      ...(attachment.id && sessionID
+        ? { attachmentID: attachment.id, sessionID }
+        : {}),
+      path: attachment.path,
+      mediaType: attachment.mediaType ?? "image/png",
     });
     return result ?? "";
   }
@@ -2502,6 +2506,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             ...(attachments
               ? {
                   attachments: attachments.map((attachment) => ({
+                    id: attachment.id,
                     path: attachment.path,
                     name: attachment.filename,
                     mediaType: attachment.mediaType,

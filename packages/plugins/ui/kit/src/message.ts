@@ -12,6 +12,7 @@ export interface MessageAction {
 }
 
 export interface Attachment {
+  id?: string;
   path: string;
   name: string;
   mediaType?: string;

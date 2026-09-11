@@ -6,10 +6,12 @@
  * durable LocalAttachment path for later submit. This avoids writing pasted
  * files into the user workspace.
  */
-import type { LocalAttachment } from "@natalia/contracts";
+import type { LocalAttachment, SessionID } from "@natalia/contracts";
 import {
   ATTACHMENT_SERVICE,
+  SESSION_STORE_CONTROLLER_SERVICE,
   type AttachmentService,
+  type SessionStoreController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
@@ -19,14 +21,50 @@ export function createAttachmentRuntime(
 ): Pick<RuntimeServiceClient, "uploadAttachment" | "attachmentDataUrl"> {
   return {
     async attachmentDataUrl(input: {
-      path: string;
-      mediaType: string;
+      path?: string;
+      mediaType?: string;
+      attachmentID?: string;
+      sessionID?: string;
     }): Promise<string> {
       await ctx.ports.getReady();
       const attachments =
         ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
       if (!attachments)
         throw new Error("attachment service unavailable (natalia-attachments)");
+
+      if (input.attachmentID || input.sessionID) {
+        if (!input.attachmentID || !input.sessionID)
+          throw new Error(
+            "attachmentDataUrl requires attachmentID and sessionID together",
+          );
+        const session =
+          ctx.ports.getExecutionBySession().get(input.sessionID as SessionID)
+            ?.session ??
+          (await (async () => {
+            const store = ctx.ports.resolveService<SessionStoreController>(
+              SESSION_STORE_CONTROLLER_SERVICE,
+            );
+            if (!store)
+              throw new Error(
+                "session store unavailable (natalia-session-store)",
+              );
+            return (await store.load(input.sessionID as SessionID)).session;
+          })());
+        const referenced = attachments.referencedForSessions([session]);
+        const attachment = referenced.find(
+          (item) => item.id === input.attachmentID,
+        );
+        if (!attachment)
+          throw new Error(
+            `attachment is not referenced by session: ${input.attachmentID}`,
+          );
+        return await attachments.dataURL(attachment);
+      }
+
+      if (!input.path || !input.mediaType)
+        throw new Error(
+          "attachmentDataUrl requires path+mediaType or attachmentID+sessionID",
+        );
       const filename = input.path.split(/[\\/]/u).pop() ?? "attachment";
       return await attachments.dataURL({
         id: "",
