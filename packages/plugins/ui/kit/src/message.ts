@@ -23,6 +23,8 @@ export interface Message {
   content: string;
   timestamp?: string;
   status?: "running" | "completed" | "error" | "done" | "failed";
+  /** A user input injected into a running turn rather than starting one. */
+  steering?: boolean;
   thinking?: boolean;
   streaming?: boolean;
   toolCalls?: ToolCall[];

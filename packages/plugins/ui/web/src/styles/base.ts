@@ -869,6 +869,7 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane .natalia-badge-running { color: var(--neu-success); }
 .neu-pane .natalia-badge-success { color: var(--neu-success); }
 .neu-pane .natalia-badge-error { color: var(--neu-error); }
+.neu-pane .natalia-badge-steering { color: var(--neu-accent); box-shadow: inset 0 0 0 1px var(--neu-accent-soft); }
 .neu-pane .natalia-tool-card {
   border-radius: 12px;
   overflow: hidden;

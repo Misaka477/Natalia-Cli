@@ -272,6 +272,14 @@ export function MessageRow(props: MessageRowProps) {
             {props.message.timestamp ?? ""}
           </span>
         </div>
+        <Show when={props.message.steering}>
+          <span
+            class="natalia-badge natalia-badge-steering"
+            title="运行中注入当前轮"
+          >
+            已注入
+          </span>
+        </Show>
         <Show when={props.message.status}>
           <span
             class="natalia-badge"

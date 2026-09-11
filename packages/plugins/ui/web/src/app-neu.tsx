@@ -2472,6 +2472,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             : undefined;
         const content = msg.text + (msg.pendingText || "");
         const status = active && isLast ? "running" : undefined;
+        const steering = msg.status === "steering";
         const streaming = Boolean(
           active &&
             isLast &&
@@ -2488,6 +2489,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             msg.reasoningVisible,
             content,
             status,
+            steering,
             streaming,
             Boolean(active),
             isLast,
@@ -2508,6 +2510,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               : {}),
             content,
             status,
+            steering,
             streaming,
           }),
         };
@@ -3563,20 +3566,21 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                               setRollbackNotice(undefined);
                             }
                             console.log("[web-plugin] send", text);
-                            // The Composer opts into mid-turn injection: while a
-                            // turn is running, send as `next-step` so the model
-                            // sees it in the same turn. Idle sends keep the
-                            // runtime default (`next-turn`), which starts at once.
+                            // The Composer opts into mid-turn injection by
+                            // default. The settings panel can switch a busy send
+                            // to `next-turn`, which queues a separate turn.
                             const busy = Boolean(state().natalia.activeTurn);
+                            const busySendDelivery =
+                              props.ctx.preferences.get<
+                                "next-step" | "next-turn"
+                              >("busySendDelivery") ?? "next-step";
                             const sessionID =
                               selectedSessionID() || state().sessionID;
                             if (props.ctx.runtime.submitInput) {
                               props.ctx.runtime.submitInput({
                                 text,
                                 ...(paths.length ? { attachments: paths } : {}),
-                                ...(busy
-                                  ? { delivery: "next-step" as const }
-                                  : {}),
+                                ...(busy ? { delivery: busySendDelivery } : {}),
                                 sessionID,
                               });
                             } else {

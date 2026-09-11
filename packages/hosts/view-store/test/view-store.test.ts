@@ -465,7 +465,12 @@ test("a claimed next-step leaves the queue and lands inside the running turn", (
   expect(ids.some((id) => id.startsWith("in_1:"))).toBe(false);
   expect(
     state.messages.find((block) => block.id === "t1:user:in_1"),
-  ).toMatchObject({ role: "user", text: "also do X", pendingText: "" });
+  ).toMatchObject({
+    role: "user",
+    text: "also do X",
+    pendingText: "",
+    status: "steering",
+  });
 });
 
 test("admitting a submission does not mark a turn running before it starts", () => {

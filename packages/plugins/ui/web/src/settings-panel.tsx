@@ -250,6 +250,12 @@ const categories: Category[] = [
     label: "界面",
     items: [
       { label: "Theme Mode", description: "切换浅色 / 深色", value: "浅色" },
+      {
+        label: "运行中发送",
+        description:
+          "busy 时发送默认注入当前轮（next-step），或排到下一轮（next-turn）",
+        value: "注入当前轮",
+      },
     ],
   },
   {
@@ -291,6 +297,12 @@ export function SettingsPanel(props: {
   const { alert, dialog } = useConfirmDialog();
   const [uiWriteScope, setUiWriteScope] = createSignal(
     props.preferences?.get<string>("uiWriteScope") ?? "project",
+  );
+  const [busySendDelivery, setBusySendDelivery] = createSignal<
+    "next-step" | "next-turn"
+  >(
+    props.preferences?.get<"next-step" | "next-turn">("busySendDelivery") ??
+      "next-step",
   );
 
   const [settingsPanel, setSettingsPanel] = createSignal<{
@@ -814,6 +826,36 @@ export function SettingsPanel(props: {
                             </div>
                             <span class="neu-settings-item-value">
                               {props.themeMode === "dark" ? "深色" : "浅色"}
+                            </span>
+                          </button>
+                        );
+                      }
+                      if (item.label === "运行中发送" && props.preferences) {
+                        return (
+                          <button
+                            type="button"
+                            class="neu-settings-item neu-settings-item-button"
+                            onClick={() => {
+                              const value =
+                                busySendDelivery() === "next-step"
+                                  ? ("next-turn" as const)
+                                  : ("next-step" as const);
+                              setBusySendDelivery(value);
+                              props.preferences?.set("busySendDelivery", value);
+                            }}
+                          >
+                            <div class="neu-settings-item-main">
+                              <span class="neu-settings-item-label">
+                                {item.label}
+                              </span>
+                              <span class="neu-settings-item-description">
+                                {item.description}
+                              </span>
+                            </div>
+                            <span class="neu-settings-item-value">
+                              {busySendDelivery() === "next-step"
+                                ? "注入当前轮"
+                                : "排到下一轮"}
                             </span>
                           </button>
                         );

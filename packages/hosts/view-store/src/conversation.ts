@@ -245,6 +245,9 @@ export function applyConversationEvent(
         role: event.internal ? "system" : "user",
         text: event.text,
         pendingText: "",
+        // Marks a mid-turn injected input so the transcript can label it
+        // without pretending it is a turn of its own.
+        status: "steering",
       });
       return true;
     case "turn.started":
