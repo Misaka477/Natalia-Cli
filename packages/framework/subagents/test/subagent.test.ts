@@ -691,9 +691,14 @@ test("spawn auto-saves after runner completes", async () => {
   const dir = await tempDir();
   const reg = new SubagentRegistry({ runner: delayedRunner, workDir: dir });
   await reg.spawn("auto save");
-  await new Promise((r) => setTimeout(r, 100));
   const store = new SubagentStore(dir);
-  const records = await store.load();
+  let records = await store.load();
+  // Auto-save is asynchronous; poll instead of racing a fixed sleep.
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (records.length === 1 && records[0]?.status === "completed") break;
+    await Bun.sleep(10);
+    records = await store.load();
+  }
   expect(records).toHaveLength(1);
   expect(records[0].status).toBe("completed");
 });
