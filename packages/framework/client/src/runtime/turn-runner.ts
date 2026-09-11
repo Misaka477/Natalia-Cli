@@ -287,6 +287,10 @@ export function createTurnRunner(
         exec.session.inbox?.some(
           (item) => !item.promotedAt && item.delivery === "next-step",
         ) ?? false,
+      isTurnAnnounced: (id) => exec.announcedTurnIDs.has(id),
+      markTurnAnnounced: (id) => {
+        exec.announcedTurnIDs.add(id);
+      },
       reloadConfig: async () => {
         const result = await reloadConfigFromDisk();
         if (result.providerReconfigured) applyAgentProvider(exec);

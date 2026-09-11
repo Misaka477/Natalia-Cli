@@ -45,6 +45,8 @@ function makeHarness(
     }>;
     takeStepInputs?: (step: number) => Array<{ id: string; text: string }>;
     hasPendingStepInputs?: () => boolean;
+    isTurnAnnounced?: (id: string) => boolean;
+    markTurnAnnounced?: (id: string) => void;
     naviSuggestions?: Array<{
       id: string;
       suggestion: string;
@@ -168,6 +170,8 @@ function makeHarness(
     takeLiveUserMessages: () => options?.takeLiveUserMessages?.() ?? [],
     takeStepInputs: (step) => options?.takeStepInputs?.(step) ?? [],
     hasPendingStepInputs: () => options?.hasPendingStepInputs?.() ?? false,
+    isTurnAnnounced: (id) => options?.isTurnAnnounced?.(id) ?? false,
+    markTurnAnnounced: (id) => options?.markTurnAnnounced?.(id),
     naviSuggestions: () => options?.naviSuggestions ?? [],
     naviIntro: () => options?.naviIntro ?? false,
     naviAnswers: () => options?.naviAnswers ?? [],
@@ -1016,4 +1020,23 @@ test("an active plan renders as a NextPlanHandoff in the system prompt", async (
   expect(systemPrompt).toContain("keep loopback default");
   expect(systemPrompt).toContain("port conflicts");
   expect(systemPrompt).toContain("</next_plan_handoff>");
+});
+
+test("an already-announced turn is not re-announced", async () => {
+  const announced = new Set<string>(["t1"]);
+  const { runner, events } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield content("done");
+      },
+    },
+    {
+      isTurnAnnounced: (id) => announced.has(id),
+      markTurnAnnounced: (id) => announced.add(id),
+    },
+  );
+  await runner.runTurn(turn);
+  expect(events.some((event) => event.type === "turn.submitted")).toBe(false);
 });

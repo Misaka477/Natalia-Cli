@@ -533,6 +533,25 @@ test("an internal wake admission stays out of the user-editable queue", () => {
   expect(state.messages.some((block) => block.id === "wake:user")).toBe(false);
 });
 
+test("admitting or editing a queued input never touches the transcript", () => {
+  const state = projectEvents([submitted("t1", "first")]);
+  const before = state.messages;
+  applyEvent(state, admitted("t2", "queued later", "next-turn"));
+  applyEvent(state, {
+    type: "input.updated",
+    id: "t2",
+    text: "edited later",
+    byteLength: 12,
+    lineCount: 1,
+    sha256: "z",
+  });
+  expect(state.pendingInputs).toHaveLength(1);
+  // The transcript array is untouched (same reference), so a queue edit cannot
+  // invalidate transcript row identity.
+  expect(state.messages).toBe(before);
+  expect(state.messages.some((block) => block.id.startsWith("t2"))).toBe(false);
+});
+
 test("content.done does not duplicate a response that already streamed", () => {
   const streamed = projectEvents([
     submitted("t1", "hi"),

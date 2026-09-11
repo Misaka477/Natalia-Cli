@@ -270,13 +270,21 @@ export function createSessionExecution(
       reasoningEffort: recovery?.reasoningEffort ?? projection.reasoningEffort,
       naviChatLedger: new ContextLedger(),
       niaChatLedger: new ContextLedger(),
-      naviChatModelProfile:
-        (recovery?.chatModelProfile ?? projection.chatModelProfile)?.navi,
-      niaChatModelProfile:
-        (recovery?.chatModelProfile ?? projection.chatModelProfile)?.nia,
+      naviChatModelProfile: (
+        recovery?.chatModelProfile ?? projection.chatModelProfile
+      )?.navi,
+      niaChatModelProfile: (
+        recovery?.chatModelProfile ?? projection.chatModelProfile
+      )?.nia,
       paused: false,
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
+      // `projectSession` already computed every submitted id; reuse its two
+      // sets instead of scanning the journal again.
+      announcedTurnIDs: new Set([
+        ...projection.activeTurnIDs,
+        ...projection.completedTurnIDs,
+      ]),
       naviPendingQueue: [],
       niaPendingQueue: [],
       naviAbortWakePending: false,

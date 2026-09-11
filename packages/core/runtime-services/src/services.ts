@@ -418,6 +418,10 @@ export type ProviderRunnerInput = {
   takeStepInputs?(step: number): Array<{ id: string; text: string }>;
   /** Whether any `next-step` input is still waiting to be claimed. */
   hasPendingStepInputs?(): boolean;
+  /** O(1) "was turn.submitted already published for this id" check. */
+  isTurnAnnounced?(id: string): boolean;
+  /** Records that `turn.submitted` was published for this turn. */
+  markTurnAnnounced?(id: string): void;
   reloadConfig(): Promise<{ providerReconfigured: boolean }>;
   runtimeStatusSnapshot(): Promise<RuntimeEvent>;
   effectiveMaxSteps(): number;

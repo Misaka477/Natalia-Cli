@@ -1,6 +1,7 @@
 import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger } from "@natalia/runtime";
 import type { SessionProjection } from "@natalia/session";
+import { announcedTurnIDsFrom } from "../session-execution-state";
 import type {
   AttachmentService,
   ContextLedgerFactory,
@@ -149,6 +150,7 @@ export class SessionRecoveryCoordinator {
       paused: false,
       pauseWaiters: [],
       injectedMailboxIDs: new Set(),
+      announcedTurnIDs: announcedTurnIDsFrom(session),
       naviChatLedger: new ContextLedger(),
       niaChatLedger: new ContextLedger(),
       naviPendingQueue: [],

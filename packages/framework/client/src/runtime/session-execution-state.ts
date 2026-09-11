@@ -56,8 +56,22 @@ export type SessionExecutionState = {
   /** Memoized promise that loads the complete durable event log into session.events. */
   fullEventsPromise?: Promise<void>;
   injectedMailboxIDs: Set<string>;
+  /**
+   * Turn ids whose `turn.submitted` was already published, so the runtime can
+   * avoid an O(events) journal scan before every turn. Seeded once from the
+   * loaded journal and extended as turns are announced.
+   */
+  announcedTurnIDs: Set<string>;
   naviPendingQueue: Array<{ messageID: string; text: string }>;
   niaPendingQueue: Array<{ messageID: string; text: string }>;
   naviAbortWakePending?: boolean;
   niaAbortWakePending?: boolean;
 };
+
+/** Seeds {@link SessionExecutionState.announcedTurnIDs} from the loaded journal. */
+export function announcedTurnIDsFrom(session: SessionRecord): Set<string> {
+  const ids = new Set<string>();
+  for (const event of session.events)
+    if (event.type === "turn.submitted") ids.add(event.id);
+  return ids;
+}

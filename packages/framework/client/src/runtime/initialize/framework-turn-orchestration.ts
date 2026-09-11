@@ -6,7 +6,7 @@
  * directly and contributes it as the `turn.controller` service. It depends on
  * the session-store subsystem, which is wired before it.
  */
-import { buildSubmittedTurn, type SessionRecord } from "@natalia/session";
+import { buildSubmittedTurn } from "@natalia/session";
 import { createTurnController } from "@natalia/turn-orchestration";
 import type { SessionID } from "@natalia/contracts";
 import {
@@ -15,7 +15,7 @@ import {
   type ProviderModelController,
   type SessionStoreController,
 } from "@natalia/runtime-services";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext, SessionExecutionState } from "../context";
 
 export type TurnOrchestrationHandle = { close(): void };
 
@@ -24,14 +24,13 @@ export type TurnOrchestrationHandle = { close(): void };
  * journal already has one (recovery/replay). The admitted input record carries
  * the attachments/resources/agents that a command otherwise never sees.
  */
-function buildAnnouncedTurn(session: SessionRecord, id: string, text: string) {
-  if (
-    session.events.some(
-      (event) => event.type === "turn.submitted" && event.id === id,
-    )
-  )
-    return undefined;
-  const input = session.inbox?.find((item) => item.id === id);
+function buildAnnouncedTurn(
+  owner: SessionExecutionState,
+  id: string,
+  text: string,
+) {
+  if (owner.announcedTurnIDs.has(id)) return undefined;
+  const input = owner.session.inbox?.find((item) => item.id === id);
   return buildSubmittedTurn({
     id,
     text,
@@ -90,8 +89,11 @@ export function wireTurnOrchestration(
     runCommand: async (id, text, signal, ownerID) => {
       const owner = await ctx.ports.ensureExecution(ownerID as SessionID);
       // Commands start a real turn too, so they announce it before it runs.
-      const submitted = buildAnnouncedTurn(owner.session, id, text);
-      if (submitted) ctx.ports.publishForSession(owner, submitted);
+      const submitted = buildAnnouncedTurn(owner, id, text);
+      if (submitted) {
+        ctx.ports.publishForSession(owner, submitted);
+        owner.announcedTurnIDs.add(id);
+      }
       ctx.ports.publishForSession(owner, { type: "turn.started", id });
       try {
         return await deps.handleCommand(id, text, signal, owner);

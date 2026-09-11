@@ -189,16 +189,10 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     input.setActiveModelCapabilities(activeModelCapabilities);
     input.setActiveAbort(controller);
     input.setActiveTurnID(id);
-    const currentSession = input.session();
     // Admission published `input.admitted`, not a turn. A turn that is actually
-    // starting now announces `turn.submitted`; the guard keeps replay/recovery
-    // idempotent when an older journal already has it.
-    if (
-      currentSession &&
-      !currentSession.events.some(
-        (event) => event.type === "turn.submitted" && event.id === id,
-      )
-    )
+    // starting now announces `turn.submitted`; the O(1) announced-id set keeps
+    // replay/recovery idempotent without rescanning the journal every turn.
+    if (!input.isTurnAnnounced?.(id)) {
       input.publish(
         buildSubmittedTurn({
           id,
@@ -209,6 +203,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           internal,
         }),
       );
+      input.markTurnAnnounced?.(id);
+    }
     input.setLastProviderUsage(undefined);
     let assistant = "";
     try {
