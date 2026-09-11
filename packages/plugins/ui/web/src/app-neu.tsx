@@ -66,6 +66,7 @@ const perfLog = (...args: unknown[]) => {
     console.warn(...args);
   }
 };
+const attachmentDataUrlCache = new Map<string, Promise<string>>();
 
 type RightTab = string;
 
@@ -1008,14 +1009,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   async function loadAttachmentUrl(attachment: Attachment) {
     const sessionID = selectedSessionID() || state().sessionID;
-    const result = await props.ctx.runtime.attachmentDataUrl?.({
-      ...(attachment.id && sessionID
-        ? { attachmentID: attachment.id, sessionID }
-        : {}),
-      path: attachment.path,
-      mediaType: attachment.mediaType ?? "image/png",
-    });
-    return result ?? "";
+    const key =
+      attachment.id && sessionID
+        ? `${sessionID}:${attachment.id}`
+        : `path:${attachment.path}`;
+    const cached = attachmentDataUrlCache.get(key);
+    if (cached) return cached;
+    const load = Promise.resolve(
+      props.ctx.runtime.attachmentDataUrl?.({
+        ...(attachment.id && sessionID
+          ? { attachmentID: attachment.id, sessionID }
+          : {}),
+        path: attachment.path,
+        mediaType: attachment.mediaType ?? "image/png",
+      }),
+    )
+      .then((result) => result ?? "")
+      .catch((error) => {
+        attachmentDataUrlCache.delete(key);
+        throw error;
+      });
+    attachmentDataUrlCache.set(key, load);
+    return load;
   }
 
   function handlePasteAttachments(
@@ -2510,6 +2525,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     path: attachment.path,
                     name: attachment.filename,
                     mediaType: attachment.mediaType,
+                    ...(attachment.width ? { width: attachment.width } : {}),
+                    ...(attachment.height ? { height: attachment.height } : {}),
                   })),
                 }
               : {}),

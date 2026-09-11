@@ -197,44 +197,122 @@ export interface MessageRowProps {
   loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
 }
 
+function imageBox(attachment: Attachment) {
+  const width = attachment.width ?? 160;
+  const height = attachment.height ?? 120;
+  const scale = Math.min(1, 240 / Math.max(width, height));
+  return {
+    width: Math.max(48, Math.round(width * scale)),
+    height: Math.max(48, Math.round(height * scale)),
+  };
+}
+
 function AttachmentImage(props: {
   attachment: Attachment;
   load?: (attachment: Attachment) => Promise<string>;
 }) {
   const [src, setSrc] = createSignal("");
-  onMount(() => {
+  const [status, setStatus] = createSignal<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [lightbox, setLightbox] = createSignal(false);
+  const box = imageBox(props.attachment);
+  const load = () => {
     const type = props.attachment.mediaType ?? "";
-    if (!type.startsWith("image/") || !props.load) return;
+    if (!type.startsWith("image/") || !props.load) {
+      setStatus("idle");
+      return;
+    }
+    setStatus("loading");
     void props
       .load(props.attachment)
-      .then(setSrc)
-      .catch(() => {});
-  });
+      .then((value) => {
+        setSrc(value);
+        setStatus("loaded");
+      })
+      .catch(() => setStatus("error"));
+  };
+  onMount(load);
+
+  const placeholder = () => (
+    <button
+      type="button"
+      class="natalia-message-attachment-placeholder"
+      style={{
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+      }}
+      title={
+        status() === "error" ? "加载失败，点击重试" : props.attachment.name
+      }
+      onClick={() => {
+        if (status() === "error") load();
+      }}
+    >
+      <Show when={status() === "loading"}>加载中…</Show>
+      <Show when={status() === "error"}>加载失败 · 重试</Show>
+      <Show when={status() === "idle"}>
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          class="natalia-message-attachment-icon"
+        >
+          <path
+            d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span>{props.attachment.name}</span>
+      </Show>
+    </button>
+  );
+
   return (
     <>
-      <Show when={src()}>
-        <img
-          class="natalia-message-image"
-          src={src()}
-          alt={props.attachment.name}
-        />
+      <Show when={status() === "loaded" && src()} fallback={placeholder()}>
+        <button
+          type="button"
+          class="natalia-message-image-button"
+          onClick={() => setLightbox(true)}
+        >
+          <img
+            class="natalia-message-image"
+            src={src()}
+            alt={props.attachment.name}
+            width={box.width}
+            height={box.height}
+            loading="lazy"
+          />
+        </button>
       </Show>
-      <Show when={!src()}>
-        <div class="natalia-message-attachment-file">
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            class="natalia-message-attachment-icon"
-          >
-            <path
-              d="M8.5 3.5L11.5 6.5L8.5 9.5M4.5 6.5H11.5"
-              stroke="currentColor"
-              stroke-width="1.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span>{props.attachment.name}</span>
+      <Show when={lightbox()}>
+        <div
+          class="natalia-message-lightbox"
+          style={{
+            position: "fixed",
+            inset: "0",
+            "z-index": "80",
+            display: "flex",
+            "align-items": "center",
+            "justify-content": "center",
+            padding: "24px",
+            background: "rgba(0,0,0,0.78)",
+            cursor: "zoom-out",
+          }}
+          onClick={() => setLightbox(false)}
+        >
+          <img
+            src={src()}
+            alt={props.attachment.name}
+            style={{
+              "max-width": "min(92vw, 1200px)",
+              "max-height": "92vh",
+              "object-fit": "contain",
+            }}
+          />
         </div>
       </Show>
     </>

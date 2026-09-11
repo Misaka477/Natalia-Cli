@@ -16,6 +16,8 @@ export interface Attachment {
   path: string;
   name: string;
   mediaType?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface Message {
