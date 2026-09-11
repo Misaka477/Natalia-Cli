@@ -247,6 +247,30 @@ test("provider compaction requests a structured, updateable work-state summary",
   expect(prompt).toContain("user: New requirement");
 });
 
+test("provider compaction reuses the routed system prefix", async () => {
+  let request: ProviderStreamRequest | undefined;
+  const provider: StreamingProvider = {
+    provider: "test",
+    model: "test",
+    async *stream(input) {
+      request = input;
+      yield { type: "content", text: "structured summary" };
+    },
+  };
+  await providerCompactor(provider).compact({
+    entries: [{ id: "user", role: "user", content: "New requirement" }],
+    resources: [],
+    prefixMessages: [
+      { role: "system", content: "Original routed system prompt" },
+    ],
+  });
+  expect(request?.messages[0]).toMatchObject({
+    role: "system",
+    content: "Original routed system prompt",
+  });
+  expect(request?.messages.at(-1)?.content).toContain("user: New requirement");
+});
+
 test("compaction skips when every entry belongs to the preserved tail", async () => {
   const ledger = ledgerWithMessages(2);
   let called = false;

@@ -737,6 +737,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
       maxOverflowRetries:
         input.tsRuntimeConfig()?.context.maxOverflowRetries ?? 1,
+      prefixMessages: messages.filter((message) => message.role === "system"),
       instruction: "Recover from provider context limit before retrying.",
       signal: input.activeAbort()?.signal,
       onEvent: input.publish,
@@ -791,6 +792,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
       preservedRecentTokens:
         input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
+      prefixMessages: messages.filter((message) => message.role === "system"),
       instruction:
         "Compact before the next provider request while preserving the active task.",
       signal: input.activeAbort()?.signal,

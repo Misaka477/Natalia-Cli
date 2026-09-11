@@ -10,6 +10,7 @@ import {
   compactionTrigger,
   providerError,
   providerCompactor,
+  type ProviderMessage,
   type StreamingProvider,
 } from "@natalia/runtime";
 
@@ -23,6 +24,7 @@ type CompactionOperation = {
   preservedRecentMessages: number;
   preservedRecentTokens?: number;
   maxOverflowRetries?: number;
+  prefixMessages?: ProviderMessage[];
   instruction: string;
   signal?: AbortSignal;
   onEvent?: (event: RuntimeEvent) => void;
@@ -49,6 +51,9 @@ export function createCompactionService(input: {
         ...(operation.preservedRecentTokens === undefined
           ? {}
           : { preservedRecentTokens: operation.preservedRecentTokens }),
+        ...(operation.prefixMessages
+          ? { prefixMessages: operation.prefixMessages }
+          : {}),
         instruction: operation.instruction,
         onEvent: operation.onEvent,
         retry: { policy: input.retry.policy(), signal: operation.signal },

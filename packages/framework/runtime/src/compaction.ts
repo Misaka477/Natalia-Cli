@@ -9,7 +9,7 @@ import {
   type ContextEntry,
 } from "./context";
 import { runWithRetry, type RetryRunnerOptions } from "./retry";
-import type { StreamingProvider } from "./provider";
+import type { ProviderMessage, StreamingProvider } from "./provider";
 
 const COMPACTION_SUMMARY_TEMPLATE = `Use exactly this Markdown structure and keep every section:
 ## Objective
@@ -40,6 +40,11 @@ export type CompactionInput = {
   entries: ContextEntry[];
   instruction?: string;
   resources: string[];
+  /**
+   * Optional prefix from the routed request. The system prompt is reused so a
+   * provider that supports prefix caching can avoid paying to re-read it.
+   */
+  prefixMessages?: ProviderMessage[];
 };
 
 export type CompactionResult = {
@@ -77,14 +82,14 @@ export function providerCompactor(
       ]
         .filter(Boolean)
         .join("\n\n");
+      const systemContent =
+        input.prefixMessages?.find((message) => message.role === "system")
+          ?.content ??
+        "You compact long coding-agent context into a faithful, concise operational summary. Do not invent facts.";
       let summary = "";
       for await (const chunk of provider.stream({
         messages: [
-          {
-            role: "system",
-            content:
-              "You compact long coding-agent context into a faithful, concise operational summary. Do not invent facts.",
-          },
+          { role: "system", content: systemContent },
           { role: "user", content: prompt },
         ],
         signal,
@@ -106,6 +111,7 @@ export type CompactionOptions = {
   reservedTokens: number;
   preservedRecentMessages: number;
   preservedRecentTokens?: number;
+  prefixMessages?: ProviderMessage[];
   beforeTokens?: number;
   instruction?: string;
   enabled?: boolean;
@@ -178,6 +184,9 @@ export async function compactContext(
             largeToolResultContext(entry),
           ),
           instruction: options.instruction,
+          ...(options.prefixMessages
+            ? { prefixMessages: options.prefixMessages }
+            : {}),
           // Active resources are re-injected as live entries after compaction;
           // summarizing them too would show the model stale duplicate state.
           resources: [],
