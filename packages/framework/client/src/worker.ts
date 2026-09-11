@@ -19,6 +19,9 @@ import type {
 export const WORKER_ROUTE_MEMBERS = {
   submit: "submit",
   submitAndWait: "submitAndWait",
+  "input.remove": "removeInput",
+  "input.replace": "replaceInput",
+  "input.promote": "promoteInput",
   cancel: "cancel",
   pause: "pause",
   resume: "resume",
@@ -143,6 +146,9 @@ type WorkerRequest = {
   method:
     | "submit"
     | "submitAndWait"
+    | "input.remove"
+    | "input.replace"
+    | "input.promote"
     | "cancel"
     | "pause"
     | "resume"
@@ -381,6 +387,21 @@ export function createWorkerRuntimeClient(
     },
     async submitInput(input) {
       return (await request("submit", input)) as SubmittedTurn;
+    },
+    async removeInput(input) {
+      return (await request("input.remove", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["removeInput"]>>
+      >;
+    },
+    async replaceInput(input) {
+      return (await request("input.replace", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["replaceInput"]>>
+      >;
+    },
+    async promoteInput(input) {
+      return (await request("input.promote", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["promoteInput"]>>
+      >;
     },
     async pendingInteractive(input) {
       return (await request("interactive.pending", input)) as Awaited<
@@ -1095,6 +1116,29 @@ export async function handleWorkerRequest(
           : input.text,
       );
     throw new Error("RuntimeClient does not support submitAndWait");
+  }
+  if (request.method === "input.remove") {
+    if (!client.removeInput)
+      throw new Error("RuntimeClient does not support input.remove");
+    return await client.removeInput(
+      request.value as import("@natalia/contracts").InputTarget,
+    );
+  }
+  if (request.method === "input.replace") {
+    if (!client.replaceInput)
+      throw new Error("RuntimeClient does not support input.replace");
+    return await client.replaceInput(
+      request.value as import("@natalia/contracts").InputTarget & {
+        text: string;
+      },
+    );
+  }
+  if (request.method === "input.promote") {
+    if (!client.promoteInput)
+      throw new Error("RuntimeClient does not support input.promote");
+    return await client.promoteInput(
+      request.value as import("@natalia/contracts").InputTarget,
+    );
   }
   if (request.method === "interactive.pending") {
     if (!client.pendingInteractive)

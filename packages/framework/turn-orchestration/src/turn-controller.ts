@@ -6,8 +6,12 @@ import type {
 import {
   admissionCutoff,
   admittedInputs,
+  promoteInputToStep,
   promoteNextSteps,
   promoteNextTurn,
+  removeAdmittedInput,
+  replaceAdmittedInput,
+  type AdmittedSessionInput,
   type SessionRecord,
 } from "@natalia/session";
 import type {
@@ -128,9 +132,48 @@ export function createTurnController(
     await persistInboxPromotion(sessionID);
   }
 
+  async function removeInput(sessionID: string, id: string) {
+    assertActive();
+    const session = input.sessionFor(sessionID);
+    if (!session) return undefined;
+    const removed = removeAdmittedInput(session, id);
+    if (!removed) return undefined;
+    await persistInboxPromotion(sessionID);
+    return removed;
+  }
+
+  async function replaceInput(sessionID: string, id: string, text: string) {
+    assertActive();
+    const session = input.sessionFor(sessionID);
+    if (!session) return undefined;
+    const replaced = replaceAdmittedInput(session, id, text);
+    if (!replaced) return undefined;
+    await persistInboxPromotion(sessionID);
+    return replaced;
+  }
+
+  async function promoteInput(sessionID: string, id: string) {
+    assertActive();
+    const session = input.sessionFor(sessionID);
+    if (!session) return undefined;
+    const promoted = promoteInputToStep(session, id);
+    if (!promoted) return undefined;
+    await persistInboxPromotion(sessionID);
+    return promoted;
+  }
+
   function dispose() {
     disposed = true;
   }
 
-  return { drain, drainQueue, admit, persistPromotion, dispose };
+  return {
+    drain,
+    drainQueue,
+    admit,
+    persistPromotion,
+    removeInput,
+    replaceInput,
+    promoteInput,
+    dispose,
+  };
 }

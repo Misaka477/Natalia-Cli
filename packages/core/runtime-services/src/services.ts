@@ -36,6 +36,7 @@ import type {
   SessionMetadata,
   SessionRecord,
   StoredContextEpoch,
+  AdmittedSessionInput,
 } from "@natalia/session";
 import type {
   RuntimeTool,
@@ -237,6 +238,22 @@ export interface TurnController {
     signal?: AbortSignal,
   ): Promise<void>;
   persistPromotion(sessionID?: string): Promise<void>;
+  /** Removes a not-yet-promoted inbox input. Returns the removed input. */
+  removeInput(
+    sessionID: string,
+    id: string,
+  ): Promise<AdmittedSessionInput | undefined>;
+  /** Replaces the text of a not-yet-promoted inbox input. */
+  replaceInput(
+    sessionID: string,
+    id: string,
+    text: string,
+  ): Promise<AdmittedSessionInput | undefined>;
+  /** Promotes a queued `next-turn` input to `next-step` in place. */
+  promoteInput(
+    sessionID: string,
+    id: string,
+  ): Promise<AdmittedSessionInput | undefined>;
   dispose(): void;
 }
 

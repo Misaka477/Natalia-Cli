@@ -123,6 +123,61 @@ test("an aborted drain stops admitting further inputs", async () => {
   expect(turns).toEqual(["ran"]);
 });
 
+test("input mutations only touch inputs that have not been claimed", async () => {
+  const session = sessionWithInbox([
+    { id: "q1", text: "queued", delivery: "next-turn" },
+    { id: "s1", text: "steer", delivery: "next-step" },
+  ]);
+  const { controller } = makeController(session);
+  const sessionID = session.id as unknown as string;
+
+  const replaced = await controller.replaceInput(sessionID, "q1", "edited");
+  expect(replaced?.text).toBe("edited");
+  expect(session.inbox?.find((item) => item.id === "q1")?.text).toBe("edited");
+
+  // Promoting turns a queued turn into a step input, but it is still pending
+  // until the provider claims it, so it stays editable/removable.
+  const promoted = await controller.promoteInput(sessionID, "q1");
+  expect(promoted?.delivery).toBe("next-step");
+  expect(await controller.removeInput(sessionID, "q1")).toMatchObject({
+    id: "q1",
+  });
+
+  const removed = await controller.removeInput(sessionID, "s1");
+  expect(removed?.id).toBe("s1");
+  expect(session.inbox?.some((item) => item.id === "s1")).toBe(false);
+});
+
+test("claimed inputs are no longer editable, removable or promotable", async () => {
+  const session = sessionWithInbox([
+    {
+      id: "claimed",
+      text: "already in",
+      delivery: "next-step",
+      promotedAt: new Date().toISOString(),
+    },
+  ]);
+  const { controller } = makeController(session);
+  const sessionID = session.id as unknown as string;
+  expect(await controller.removeInput(sessionID, "claimed")).toBeUndefined();
+  expect(
+    await controller.replaceInput(sessionID, "claimed", "late"),
+  ).toBeUndefined();
+  expect(await controller.promoteInput(sessionID, "claimed")).toBeUndefined();
+});
+
+test("input mutations against an unknown session are refused", async () => {
+  const session = sessionWithInbox([
+    { id: "q1", text: "queued", delivery: "next-turn" },
+  ]);
+  const { controller } = makeController(session);
+  expect(await controller.removeInput("ses_missing", "q1")).toBeUndefined();
+  expect(
+    await controller.replaceInput("ses_missing", "q1", "x"),
+  ).toBeUndefined();
+  expect(await controller.promoteInput("ses_missing", "q1")).toBeUndefined();
+});
+
 test("disposed turn orchestration refuses new work", async () => {
   const session = sessionWithInbox([
     { id: "s1", text: "first", delivery: "next-step" },

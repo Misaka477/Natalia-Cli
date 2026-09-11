@@ -1520,6 +1520,29 @@ export type SubmitInput = {
   /** Target a specific session. When omitted, the runtime uses the active UI session. */
   sessionID?: string;
 };
+
+/** Identifies one durable inbox input for an `input.*` mutation. */
+export type InputTarget = { id: string; sessionID?: string };
+
+/**
+ * Result of an `input.*` mutation. Refusal is a value: a caller that removes an
+ * input which was already claimed (or never existed) learns that instead of
+ * getting a false success.
+ */
+export type InputMutationResult = {
+  ok: boolean;
+  reason?:
+    | "session-not-found"
+    | "input-not-found"
+    | "already-claimed"
+    | "already-step";
+  input?: {
+    id: string;
+    text: string;
+    delivery: "next-turn" | "next-step";
+    promotedAt?: string;
+  };
+};
 export type RuntimeHistoryEvent = { seq: number; event: RuntimeEvent };
 export type RuntimeHistory = {
   events: RuntimeHistoryEvent[];
@@ -2027,6 +2050,21 @@ export type RuntimeClient = {
    */
   submitAndWait?(input: string | SubmitInput): Promise<SubmittedTurn>;
   submitInput?(input: SubmitInput): Promise<SubmittedTurn>;
+  /**
+   * Cancels a durable inbox input that has not been claimed or promoted yet.
+   * Removing an already-started input returns `ok: false`; use `cancel` for the
+   * running turn.
+   */
+  removeInput?(input: InputTarget): Promise<InputMutationResult>;
+  /** Edits the text of a durable inbox input that has not started yet. */
+  replaceInput?(
+    input: InputTarget & { text: string },
+  ): Promise<InputMutationResult>;
+  /**
+   * Promotes a queued `next-turn` input to `next-step` so the running turn
+   * claims it before starting another turn.
+   */
+  promoteInput?(input: InputTarget): Promise<InputMutationResult>;
   history?(options?: {
     sessionID?: string;
     after?: number;

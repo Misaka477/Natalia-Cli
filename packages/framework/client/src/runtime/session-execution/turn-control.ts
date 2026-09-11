@@ -1,7 +1,72 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { InputMutationResult, SessionID } from "@natalia/contracts";
+import {
+  sessionRunCoordinator,
+  type AdmittedSessionInput,
+} from "@natalia/session";
+import {
+  TURN_CONTROLLER_SERVICE,
+  type RuntimeServiceClient,
+  type TurnController,
+} from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
-type Surface = Pick<RuntimeServiceClient, "pause" | "resume">;
+
+type Surface = Pick<
+  RuntimeServiceClient,
+  "pause" | "resume" | "removeInput" | "replaceInput" | "promoteInput"
+>;
+
+function targetSessionID(ctx: RuntimeContext, sessionID?: string): SessionID {
+  return (sessionID ?? ctx.ports.getSessionID()) as SessionID;
+}
+
+function requireTurnController(ctx: RuntimeContext): TurnController {
+  const controller = ctx.ports.resolveService<TurnController>(
+    TURN_CONTROLLER_SERVICE,
+  );
+  if (!controller)
+    throw new Error(
+      "turn orchestration unavailable (natalia-turn-orchestration)",
+    );
+  return controller;
+}
+
+function pendingInput(
+  ctx: RuntimeContext,
+  sessionID: SessionID,
+  id: string,
+): AdmittedSessionInput | undefined {
+  return ctx.ports
+    .getExecutionBySession()
+    .get(sessionID)
+    ?.session.inbox?.find((item) => item.id === id);
+}
+
+function toResult(
+  input: AdmittedSessionInput | undefined,
+  reason: NonNullable<InputMutationResult["reason"]>,
+): InputMutationResult {
+  if (!input) return { ok: false, reason };
+  return {
+    ok: true,
+    input: {
+      id: input.id,
+      text: input.text,
+      delivery: input.delivery,
+      ...(input.promotedAt ? { promotedAt: input.promotedAt } : {}),
+    },
+  };
+}
+
+/** Refusal is a value: callers learn an input was already claimed or is gone. */
+function refuseIfNotPending(
+  existing: AdmittedSessionInput | undefined,
+): InputMutationResult | undefined {
+  if (!existing) return { ok: false, reason: "input-not-found" };
+  if (existing.promotedAt) return { ok: false, reason: "already-claimed" };
+  return undefined;
+}
+
 export function createTurnControlSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
@@ -57,6 +122,48 @@ export function createTurnControlSurface(
         detail: "resumed",
       });
       return { resumed: true };
+    },
+    async removeInput({ id, sessionID }) {
+      const target = targetSessionID(ctx, sessionID);
+      const refusal = refuseIfNotPending(pendingInput(ctx, target, id));
+      if (refusal) return refusal;
+      const controller = requireTurnController(ctx);
+      return toResult(
+        await controller.removeInput(target, id),
+        "input-not-found",
+      );
+    },
+    async replaceInput({ id, text, sessionID }) {
+      const target = targetSessionID(ctx, sessionID);
+      const refusal = refuseIfNotPending(pendingInput(ctx, target, id));
+      if (refusal) return refusal;
+      const controller = requireTurnController(ctx);
+      return toResult(
+        await controller.replaceInput(target, id, text),
+        "input-not-found",
+      );
+    },
+    async promoteInput({ id, sessionID }) {
+      const target = targetSessionID(ctx, sessionID);
+      const existing = pendingInput(ctx, target, id);
+      const refusal = refuseIfNotPending(existing);
+      if (refusal) return refusal;
+      // Only a queued `next-turn` can be promoted; an already-`next-step` input
+      // is waiting for a claim and has nothing to promote.
+      if (existing?.delivery !== "next-turn")
+        return { ok: false, reason: "already-step" };
+      const controller = requireTurnController(ctx);
+      const result = toResult(
+        await controller.promoteInput(target, id),
+        "input-not-found",
+      );
+      // A running turn claims it at the next provider step. An idle session has
+      // no loop to claim it, so wake a drain that will run it as a turn.
+      if (result.ok && !sessionRunCoordinator(target).active)
+        void sessionRunCoordinator(target).wake(
+          ctx.ports.drainSessionFor(target),
+        );
+      return result;
     },
   };
 }

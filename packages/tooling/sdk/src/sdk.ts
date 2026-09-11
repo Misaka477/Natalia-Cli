@@ -21,7 +21,7 @@ export type NataliaSDK = {
   prompt(
     text: string,
     options?: {
-      delivery?: "steer" | "queue";
+      delivery?: "next-turn" | "next-step";
       attachments?: string[];
       resources?: import("@natalia/contracts").PromptResourceMention[];
       agents?: import("@natalia/contracts").PromptAgentMention[];
@@ -706,6 +706,21 @@ export type NataliaSDK = {
   submitInput(
     input: import("@natalia/contracts").SubmitInput,
   ): Promise<import("@natalia/contracts").SubmittedTurn>;
+  /**
+   * Cancels a queued inbox input that has not started. Refusal is a value:
+   * removing something already claimed returns `ok: false`.
+   */
+  removeInput(
+    input: import("@natalia/contracts").InputTarget,
+  ): Promise<import("@natalia/contracts").InputMutationResult>;
+  /** Edits the text of a queued inbox input that has not started. */
+  replaceInput(
+    input: import("@natalia/contracts").InputTarget & { text: string },
+  ): Promise<import("@natalia/contracts").InputMutationResult>;
+  /** Promotes a queued `next-turn` input so the running turn claims it. */
+  promoteInput(
+    input: import("@natalia/contracts").InputTarget,
+  ): Promise<import("@natalia/contracts").InputMutationResult>;
   /** Writes a config patch (the TUI settings menu path) and applies it. */
   updateConfig(input: {
     patch: Record<string, unknown>;
@@ -1198,6 +1213,9 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     sessionSnapshot: async (sessionID) =>
       await call("session.snapshot", sessionID ? { sessionID } : {}),
     submitInput: async (input) => await call("submit.input", input),
+    removeInput: async (input) => await call("input.remove", input),
+    replaceInput: async (input) => await call("input.replace", input),
+    promoteInput: async (input) => await call("input.promote", input),
     updateConfig: async (input) => await call("config.update", input),
     settingsGet: async () => await call("settings.get", {}),
     settingsSet: async (patch, scope) =>

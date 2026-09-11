@@ -96,6 +96,21 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "resumed",
     note: "nothing paused is an ordinary answer",
   },
+  removeInput: {
+    refusal: "value",
+    expressedBy: "ok",
+    note: "an input that is missing or already claimed cannot be removed; the caller learns that from ok:false",
+  },
+  replaceInput: {
+    refusal: "value",
+    expressedBy: "ok",
+    note: "as removeInput",
+  },
+  promoteInput: {
+    refusal: "value",
+    expressedBy: "ok",
+    note: "only a queued next-turn can be promoted; an input already claimed answers ok:false",
+  },
 
   // --- lifecycle ---
   dispose: {

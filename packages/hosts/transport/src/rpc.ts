@@ -270,6 +270,9 @@ export const RPC_ROUTE_MEMBERS = {
   "attachment.upload": "uploadAttachment",
   "attachment.dataUrl": "attachmentDataUrl",
   "submit.input": "submitInput",
+  "input.remove": "removeInput",
+  "input.replace": "replaceInput",
+  "input.promote": "promoteInput",
   // P8 C2: the always-available Live Work Chat conversation (read + rollback).
   "chat.messages": "chatMessages",
   "chat.model.profile": "chatModelProfile",
@@ -322,6 +325,9 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "submit.andWait",
   "cancel",
   "submit.input",
+  "input.remove",
+  "input.replace",
+  "input.promote",
   "approval.respond",
   "question.respond",
   "pause",
@@ -3120,6 +3126,52 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.submitInput?.(input as never),
+      };
+    }
+    // --- P8: durable inbox mutations (cancel / edit / promote a queued input) ---
+    if (
+      body.method === "input.remove" ||
+      body.method === "input.replace" ||
+      body.method === "input.promote"
+    ) {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams(`${body.method}.params must be an object`);
+      const record = params as Record<string, unknown>;
+      if (typeof record.id !== "string")
+        throw invalidParams(`${body.method}.params.id must be a string`);
+      if (
+        record.sessionID !== undefined &&
+        typeof record.sessionID !== "string"
+      )
+        throw invalidParams(`${body.method}.params.sessionID must be a string`);
+      const target = {
+        id: record.id,
+        ...(record.sessionID ? { sessionID: record.sessionID as string } : {}),
+      };
+      if (body.method === "input.replace") {
+        if (typeof record.text !== "string")
+          throw invalidParams("input.replace.params.text must be a string");
+        optionsGuard(client, "replaceInput");
+        return {
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          result: await client.replaceInput({ ...target, text: record.text }),
+        };
+      }
+      if (body.method === "input.remove") {
+        optionsGuard(client, "removeInput");
+        return {
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          result: await client.removeInput(target),
+        };
+      }
+      optionsGuard(client, "promoteInput");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.promoteInput(target),
       };
     }
     if (body.method === "config.reload") {

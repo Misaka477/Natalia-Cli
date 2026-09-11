@@ -92,8 +92,14 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "submitInput",
     "submitAndWait",
   ],
-  /** Pausing and resuming a running turn. */
-  turnControl: ["pause", "resume"],
+  /** Pausing and resuming a running turn, plus editing its queued inputs. */
+  turnControl: [
+    "pause",
+    "resume",
+    "removeInput",
+    "replaceInput",
+    "promoteInput",
+  ],
   /** Lifecycle beyond a single session. */
   lifecycle: [
     "dispose",

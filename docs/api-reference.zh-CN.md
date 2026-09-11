@@ -867,12 +867,12 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (20 groups · 159 optional members)
+### Capability groups (20 groups · 162 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | transcript     | `history` · `messages` · `pendingInteractive` · `submitInput` · `submitAndWait`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| turnControl    | `pause` · `resume`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| turnControl    | `pause` · `resume` · `removeInput` · `replaceInput` · `promoteInput`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | lifecycle      | `dispose` · `canReloadConfig` · `reloadConfig` · `updateConfig` · `configGet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | settings       | `settingsGet` · `settingsSet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | selection      | `agents` · `selectAgent` · `modelCatalog` · `modelSelection` · `selectModel` · `setDefaultModel` · `reasoningEffort` · `setReasoningEffort` · `skills` · `agentCreate` · `agentUpdate` · `agentDelete` · `providerDiscover` · `providerAdd` · `providerRemove`                                                                                                                                                                                                                                                                                                      |
@@ -892,7 +892,7 @@ Deployment notes:
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | chat           | `chatSubmit` · `chatAbort` · `chatMessages` · `chatRollback` · `chatModelProfile` · `setChatModelProfile`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
-### RPC route table (164 methods → members)
+### RPC route table (167 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -1054,6 +1054,9 @@ Deployment notes:
 | `attachment.upload`                  | `uploadAttachment`                  | attachments      | read  |
 | `attachment.dataUrl`                 | `attachmentDataUrl`                 | attachments      | read  |
 | `submit.input`                       | `submitInput`                       | transcript       | write |
+| `input.remove`                       | `removeInput`                       | turnControl      | write |
+| `input.replace`                      | `replaceInput`                      | turnControl      | write |
+| `input.promote`                      | `promoteInput`                      | turnControl      | write |
 | `chat.messages`                      | `chatMessages`                      | chat             | read  |
 | `chat.model.profile`                 | `chatModelProfile`                  | chat             | read  |
 | `chat.model.profile.set`             | `setChatModelProfile`               | chat             | read  |
@@ -1061,12 +1064,15 @@ Deployment notes:
 | `chat.abort`                         | `chatAbort`                         | chat             | read  |
 | `chat.rollback`                      | `chatRollback`                      | chat             | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 60 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 63 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `submit.andWait`
 - `cancel`
 - `submit.input`
+- `input.remove`
+- `input.replace`
+- `input.promote`
 - `approval.respond`
 - `question.respond`
 - `pause`
@@ -1181,12 +1187,15 @@ Deployment notes:
 | `pluginSetEnabled`        | `enabled`            | enables or disables an installed plugin for the workspace                                                                                                          |
 | `pluginUninstall`         | `uninstalled`        | removes a plugin from the plugin store                                                                                                                             |
 | `pluginUnload`            | `unloaded`           | an unknown plugin id is an idempotent success                                                                                                                      |
+| `promoteInput`            | `ok`                 | only a queued next-turn can be promoted; an input already claimed answers ok:false                                                                                 |
 | `providerAdd`             | `saved`              | config write and apply; apply may be blocked by a running turn                                                                                                     |
 | `providerRemove`          | `removed`            | a provider referenced by a model refuses deletion; an unknown name is an idempotent success                                                                        |
 | `recordCompletion`        | `recorded`           | records a completion card; changeSummary is safe prose, never a diff or file content                                                                               |
 | `recordDecision`          | `recorded`           | records a durable decision fact; decision text and rationale are safe prose, never tool output or file content                                                     |
 | `recordValidation`        | `recorded`           | runs a validation command and records the outcome; only the command, outcome, bounded safe summary and duration reach the journal — raw output is redacted         |
 | `reloadConfig`            | `applied`            | the reference case: applying new policy under a running turn is refused, and refusing is normal                                                                    |
+| `removeInput`             | `ok`                 | an input that is missing or already claimed cannot be removed; the caller learns that from ok:false                                                                |
+| `replaceInput`            | `ok`                 | as removeInput                                                                                                                                                     |
 | `requestOverride`         | `requested`          | requests a user-scoped constitution override through the approval pipeline; forbidden rules answer requested:false                                                 |
 | `respondApproval`         | `accepted`           | a response to a request that timed out or was already answered is dropped, and the caller has to be told; it used to answer responded:true either way              |
 | `respondQuestion`         | `accepted`           | same as respondApproval                                                                                                                                            |
@@ -1204,8 +1213,8 @@ Deployment notes:
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 99.
-- view-store projections (`case` labels in `packages/hosts/view-store/src`): 105.
+- Runtime event types (`RuntimeEventData` union): 100.
+- view-store projections (`case` labels in `packages/hosts/view-store/src`): 106.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
 
@@ -1349,6 +1358,7 @@ Deployment notes:
 | `session.ready`                 | `sessionID`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | the runtime's session finished loading (startup)                                    |
 | `turn.submitted`                | `id`: string, `text`: string, `byteLength`: number, `lineCount`: number, `sha256`: string, `delivery?`: "next-turn" | "next-step", `internal?`: boolean, `attachments?`: LocalAttachment[], `resources?`: PromptResourceMention[], `agents?`: PromptAgentMention[]                                                                                                                                                                                                                                                         | a turn was accepted; `id` is the turn id                                            |
 | `turn.started`                  | `id`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | —                                                                                   |
+| `turn.input`                    | `turnID`: string, `inputID`: string, `text`: string, `delivery?`: "next-turn" | "next-step", `internal?`: boolean                                                                                                                                                                                                                                                                                                                                                                                                          | —                                                                                   |
 | `turn.cancelled`                | `id`: string, `reason`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | a turn was cancelled; `reason`                                                      |
 | `turn.paused`                   | `id`: string, `reason`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | a turn is waiting on an approval or question                                        |
 | `turn.resumed`                  | `id`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | a paused turn resumed                                                               |
