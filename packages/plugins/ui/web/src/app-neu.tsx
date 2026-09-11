@@ -31,6 +31,7 @@ import type { UiPanelDefinition } from "@natalia/ui-host";
 import { pendingToolLink } from "@natalia/ui-model";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 import { Composer, type ComposerAttachment } from "./components/Composer";
+import { QueueDock } from "./components/QueueDock";
 import { ReviewPane } from "./components/RightPanel";
 import { SettingsPanel, type RegisteredToolView } from "./settings-panel";
 import {
@@ -3478,6 +3479,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       </button>
                     </div>
                   </Show>
+                  <QueueDock
+                    items={state().pendingInputs}
+                    onRemove={(id) => {
+                      void props.ctx.runtime.removeInput?.({
+                        id,
+                        sessionID: selectedSessionID() || state().sessionID,
+                      });
+                    }}
+                    onReplace={(id, text) => {
+                      void props.ctx.runtime.replaceInput?.({
+                        id,
+                        text,
+                        sessionID: selectedSessionID() || state().sessionID,
+                      });
+                    }}
+                    onPromote={(id) => {
+                      void props.ctx.runtime.promoteInput?.({
+                        id,
+                        sessionID: selectedSessionID() || state().sessionID,
+                      });
+                    }}
+                  />
                   <Composer
                     value={mainDraft()}
                     placeholder="输入消息，使用 @ 提及文件…"

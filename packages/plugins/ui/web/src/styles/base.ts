@@ -1098,6 +1098,99 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   background: var(--neu-error-soft);
   box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
 }
+.neu-pane .natalia-composer-stop {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  margin-right: 6px;
+  background: var(--neu-error-soft);
+  color: var(--neu-error);
+  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+  cursor: pointer;
+}
+.neu-pane .natalia-composer-stop:hover {
+  box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-pane .natalia-composer-stop:active {
+  box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+}
+.neu-pane .natalia-queue-dock {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 12px;
+  background: var(--neu-bg);
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+}
+.neu-pane .natalia-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--neu-muted);
+}
+.neu-pane .natalia-queue-title { font-weight: 600; }
+.neu-pane .natalia-queue-toggle {
+  border: none;
+  background: transparent;
+  color: var(--neu-accent);
+  cursor: pointer;
+  font-size: 12px;
+}
+.neu-pane .natalia-queue-row { display: flex; align-items: center; gap: 6px; }
+.neu-pane .natalia-queue-chip {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--neu-bg-light);
+  color: var(--neu-muted);
+}
+.neu-pane .natalia-queue-row[data-status="steering"] .natalia-queue-chip {
+  color: var(--neu-accent);
+}
+.neu-pane .natalia-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--neu-text);
+}
+.neu-pane .natalia-queue-edit {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: var(--neu-bg-light);
+  color: var(--neu-text);
+  font-family: inherit;
+  font-size: 13px;
+}
+.neu-pane .natalia-queue-actions { flex: none; display: flex; gap: 2px; }
+.neu-pane .natalia-queue-action {
+  border: none;
+  background: transparent;
+  color: var(--neu-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.neu-pane .natalia-queue-action:hover {
+  background: var(--neu-hover-overlay);
+  color: var(--neu-text);
+}
+.neu-pane .natalia-queue-action[data-danger="true"]:hover { color: var(--neu-error); }
 .neu-pane .natalia-attachment-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--neu-bg); border-radius: 12px; font-size: 12px; color: var(--neu-muted); box-shadow: 2px 2px 4px var(--neu-shadow-dark), -2px -2px 4px var(--neu-shadow-light); }
 .neu-pane .natalia-attachment-chip[data-image="true"] {
   padding-right: 6px;

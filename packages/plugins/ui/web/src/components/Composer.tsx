@@ -42,7 +42,9 @@ export function Composer(props: ComposerProps) {
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (props.value.trim() && !props.busy && !props.disabled) {
+      // Enter submits even while busy: app-neu sends that as `next-step`, so
+      // the running turn claims it. Stop is its own control, not this key.
+      if (props.value.trim() && !props.disabled) {
         props.onSubmit();
         setTimeout(() => adjustHeight(), 0);
       }
@@ -50,9 +52,7 @@ export function Composer(props: ComposerProps) {
   }
 
   function handleSubmit() {
-    if (props.busy && props.onStop) {
-      props.onStop();
-    } else if (props.value.trim()) {
+    if (props.value.trim() && !props.disabled) {
       props.onSubmit();
       setTimeout(() => adjustHeight(), 0);
     }
@@ -157,27 +157,13 @@ export function Composer(props: ComposerProps) {
               </svg>
             </button>
           </Show>
-          <button
-            type="button"
-            class="natalia-composer-submit"
-            data-busy={props.busy}
-            onClick={handleSubmit}
-            disabled={props.disabled || (!props.busy && !props.value.trim())}
-            title={props.busy ? "停止" : "发送"}
-          >
-            <Show
-              when={props.busy}
-              fallback={
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <path
-                    d="M16.5 8.5L2.5 15V2L16.5 8.5Z"
-                    fill="currentColor"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              }
+          <Show when={props.busy && props.onStop}>
+            <button
+              type="button"
+              class="natalia-composer-stop"
+              onClick={props.onStop}
+              disabled={props.disabled}
+              title="停止"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <rect
@@ -189,7 +175,25 @@ export function Composer(props: ComposerProps) {
                   fill="currentColor"
                 />
               </svg>
-            </Show>
+            </button>
+          </Show>
+          <button
+            type="button"
+            class="natalia-composer-submit"
+            data-busy={props.busy}
+            onClick={handleSubmit}
+            disabled={props.disabled || !props.value.trim()}
+            title={props.busy ? "发送并注入当前轮" : "发送"}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M16.5 8.5L2.5 15V2L16.5 8.5Z"
+                fill="currentColor"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linejoin="round"
+              />
+            </svg>
           </button>
         </div>
       </div>
