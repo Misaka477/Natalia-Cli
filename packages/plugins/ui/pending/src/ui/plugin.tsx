@@ -89,6 +89,14 @@ export function PendingInboxBadge(props: { ctx: UiPluginContext }) {
   return <PendingBadge count={count()} />;
 }
 
+function ensurePendingStyles() {
+  if (document.querySelector("style[data-natalia-pending]")) return;
+  const style = document.createElement("style");
+  style.setAttribute("data-natalia-pending", "true");
+  style.textContent = pendingInboxStyles;
+  document.head.append(style);
+}
+
 export function createPendingUiPlugin(): UiPlugin {
   return defineUiPlugin({
     id: "natalia.ui.pending-inbox",
@@ -101,12 +109,6 @@ export function createPendingUiPlugin(): UiPlugin {
         title: "待处理",
         region: "side",
         mount(ctx, container) {
-          if (!document.querySelector("style[data-natalia-pending]")) {
-            const style = document.createElement("style");
-            style.setAttribute("data-natalia-pending", "true");
-            style.textContent = pendingInboxStyles;
-            document.head.append(style);
-          }
           container.replaceChildren();
           const disposeRender = render(
             () => <PendingInbox ctx={ctx} />,
@@ -117,6 +119,9 @@ export function createPendingUiPlugin(): UiPlugin {
       },
     ],
     mount(ctx) {
+      // The shell renders the tab badge before the panel is ever mounted, so
+      // the stylesheet must be present as soon as the plugin loads.
+      ensurePendingStyles();
       // Registering here (once per plugin load) instead of in panel.mount keeps
       // a panel remount from churning the presenter registry.
       const disposers = [
