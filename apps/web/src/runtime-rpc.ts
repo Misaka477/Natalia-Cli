@@ -806,13 +806,17 @@ export function createWebRuntimeClient(
     lastSubmission() {
       return undefined;
     },
-    respondApproval(response: ApprovalResponse) {
-      void call("approval.respond", { ...response });
-      return { accepted: true };
+    // Await the runtime's real outcome: `{ accepted: false }` means the request
+    // was already answered/expired, and the caller must not claim success.
+    async respondApproval(response: ApprovalResponse) {
+      return (await call("approval.respond", { ...response })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["respondApproval"]>>
+      >;
     },
-    respondQuestion(response: QuestionResponse) {
-      void call("question.respond", { ...response });
-      return { accepted: true };
+    async respondQuestion(response: QuestionResponse) {
+      return (await call("question.respond", { ...response })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["respondQuestion"]>>
+      >;
     },
     async sessionList() {
       return (await call<RuntimeSessionSummary[]>("session.list")) as never;

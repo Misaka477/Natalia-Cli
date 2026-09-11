@@ -132,6 +132,9 @@ export function createInteractiveWaiter(
         approvalWaiters,
         deps.abortSignal(turnID),
         `approval timed out: ${tool.name}`,
+        expiresAt === undefined
+          ? undefined
+          : Math.max(0, expiresAt - Date.now()),
       );
       if (response.decision !== "reject") return undefined;
       deps.publishForSession(session, {
@@ -147,15 +150,21 @@ export function createInteractiveWaiter(
     } catch (error) {
       // A cancellation is a deliberate stop and still ends the turn. A timeout
       // is not: nobody answered, and discarding the whole turn after a long
-      // wait loses more work than telling the model the request expired.
-      if (deps.abortSignal(turnID)?.aborted) throw error;
+      // wait loses more work than telling the model the request expired. Both
+      // must settle the durable request, or the UI re-opens it forever.
+      const aborted = deps.abortSignal(turnID)?.aborted === true;
+      const reason = aborted
+        ? "turn cancelled before an answer"
+        : "approval expired without an answer";
+      settleApproval(session, approvalID, reason, agentID);
+      if (aborted) throw error;
       deps.publishForSession(session, {
         type: "policy.decision",
         turnID,
         toolName: tool.name,
         toolCallID: call.id,
         decision: "rejected",
-        reason: "approval expired without an answer",
+        reason,
         agentID,
       });
       return { reason: expiredToolMessage(tool.name) };
@@ -182,13 +191,16 @@ export function createInteractiveWaiter(
       }>;
     },
   ) {
+    const session = deps.sessionIDForTurn(turnID);
+    const agentID = deps.agentIDForTurn?.(turnID);
     questionTurnByID.set(requestID, turnID);
-    deps.publishForSession(deps.sessionIDForTurn(turnID), {
+    deps.publishForSession(session, {
       type: "question.request",
       id: requestID,
       ...request,
-      agentID: deps.agentIDForTurn?.(turnID),
+      agentID,
     });
+    let answered = false;
     try {
       const response = await waitForResponse(
         requestID,
@@ -196,10 +208,23 @@ export function createInteractiveWaiter(
         questionWaiters,
         deps.abortSignal(turnID),
         "question timed out",
+        // ask_user has no timeout: it waits for the human until answered or
+        // cancelled. Cancel/abort still exits through the signal.
+        undefined,
       );
+      answered = true;
       if (response.rejected) throw new Error("user rejected question");
       return response.answers;
     } finally {
+      if (!answered)
+        settleQuestion(
+          session,
+          requestID,
+          deps.abortSignal(turnID)?.aborted === true
+            ? "turn cancelled before an answer"
+            : "question wait ended without an answer",
+          agentID,
+        );
       questionTurnByID.delete(requestID);
     }
   }
@@ -237,8 +262,12 @@ export function createInteractiveWaiter(
     response: ApprovalResponse,
   ): InteractiveResponseOutcome {
     const respondGraph = approvalWorkGraphContext.get(response.requestID);
+    // Prefer the live waiter's own session. Only when the request has no live
+    // waiter (recovered/stale) fall back to the client's routing hint, then to
+    // the work-graph turn, then to the attached session.
     const respondSession =
       approvalSessionByID.get(response.requestID) ??
+      (response.sessionID as SessionID | undefined) ??
       (respondGraph
         ? deps.sessionIDForTurn(respondGraph.turnID)
         : deps.sessionID());
@@ -314,9 +343,12 @@ export function createInteractiveWaiter(
     response: QuestionResponse,
   ): InteractiveResponseOutcome {
     const questionTurn = questionTurnByID.get(response.requestID);
-    const questionSession = questionTurn
-      ? deps.sessionIDForTurn(questionTurn)
-      : deps.sessionID();
+    // Prefer the live waiter's own session; fall back to the client's routing
+    // hint for recovered/stale requests, then to the attached session.
+    const questionSession =
+      (questionTurn ? deps.sessionIDForTurn(questionTurn) : undefined) ??
+      (response.sessionID as SessionID | undefined) ??
+      deps.sessionID();
     if (
       !questionTurn &&
       !deps.isPending(questionSession, response.requestID, "question")
@@ -341,6 +373,53 @@ export function createInteractiveWaiter(
     pendingQuestions.set(response.requestID, response);
     questionWaiters.get(response.requestID)?.(response);
     return { accepted: true };
+  }
+
+  /**
+   * Closes a request that will never be answered (cancelled or expired) so the
+   * durable journal stops reporting it as pending. Without this, a dismissed or
+   * timed-out request re-appears on every session re-attach.
+   */
+  function settleApproval(
+    session: SessionID,
+    approvalID: string,
+    reason: string,
+    agentID?: string,
+  ) {
+    if (!deps.isPending(session, approvalID, "approval")) return;
+    deps.publishForSession(session, {
+      type: "approval.response",
+      id: approvalID,
+      decision: "reject",
+      feedback: reason,
+      ...(agentID === undefined ? {} : { agentID }),
+    });
+    publish({
+      type: "diagnostic",
+      level: "warning",
+      message: `approval ${approvalID} closed without an answer: ${reason}`,
+    });
+  }
+
+  function settleQuestion(
+    session: SessionID,
+    requestID: string,
+    reason: string,
+    agentID?: string,
+  ) {
+    if (!deps.isPending(session, requestID, "question")) return;
+    deps.publishForSession(session, {
+      type: "question.response",
+      id: requestID,
+      answers: [],
+      rejected: true,
+      ...(agentID === undefined ? {} : { agentID }),
+    });
+    publish({
+      type: "diagnostic",
+      level: "warning",
+      message: `question ${requestID} closed without an answer: ${reason}`,
+    });
   }
 
   /**
@@ -417,8 +496,17 @@ export function createInteractiveWaiter(
         approvalWaiters,
         input.signal,
         `plan acceptance timed out: ${input.planID}`,
+        // Plan acceptance waits for the human; cancel/abort still exits.
+        undefined,
       );
     } catch (error) {
+      settleApproval(
+        sessionID,
+        input.approvalID,
+        input.signal?.aborted
+          ? "turn cancelled before an answer"
+          : "plan acceptance ended without an answer",
+      );
       if (input.signal?.aborted) throw error;
       return undefined;
     } finally {
@@ -446,6 +534,7 @@ function waitForResponse<T>(
   waiters: Map<string, (response: T) => void>,
   signal: AbortSignal | undefined,
   timeoutMessage: string,
+  timeoutMs: number | undefined,
 ) {
   const existing = responses.get(id);
   if (existing) {
@@ -453,18 +542,22 @@ function waitForResponse<T>(
     return Promise.resolve(existing);
   }
   return new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(
-      () => finish(() => reject(new Error(timeoutMessage))),
-      5 * 60_000,
-    );
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     const abort = () =>
       finish(() => reject(signal?.reason ?? new Error("request cancelled")));
     const finish = (settle: () => void) => {
-      clearTimeout(timeout);
+      if (timeout !== undefined) clearTimeout(timeout);
       waiters.delete(id);
       signal?.removeEventListener("abort", abort);
       settle();
     };
+    // A timeout is optional: questions wait for a human until answered or
+    // cancelled, while approvals/plan acceptance may carry their own expiry.
+    if (timeoutMs !== undefined)
+      timeout = setTimeout(
+        () => finish(() => reject(new Error(timeoutMessage))),
+        timeoutMs,
+      );
     waiters.set(id, (response) => {
       responses.delete(id);
       finish(() => resolve(response));

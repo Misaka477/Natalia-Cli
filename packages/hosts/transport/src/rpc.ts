@@ -1369,6 +1369,8 @@ export async function handleRPCMessage(
         throw invalidParams("approval.respond.params.decision is invalid");
       // An answer to a request that already timed out is dropped by the runtime,
       // and an external UI has to be told: it used to get `responded: true`.
+      // Routing hints must survive the hop: without them the runtime falls back
+      // to the attached session and can journal the answer to the wrong one.
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -1379,6 +1381,12 @@ export async function handleRPCMessage(
             typeof body.params?.feedback === "string"
               ? body.params.feedback
               : undefined,
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
+          ...(optionalStringParam(body.params, "workspaceID")
+            ? { workspaceID: optionalStringParam(body.params, "workspaceID") }
+            : {}),
         }),
       };
     }
@@ -1390,6 +1398,12 @@ export async function handleRPCMessage(
           requestID: stringParam(body.params, "requestID"),
           answers: arrayParam(body.params, "answers"),
           rejected: Boolean(body.params?.rejected),
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID") }
+            : {}),
+          ...(optionalStringParam(body.params, "workspaceID")
+            ? { workspaceID: optionalStringParam(body.params, "workspaceID") }
+            : {}),
         }),
       };
     }
