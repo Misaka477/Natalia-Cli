@@ -165,6 +165,25 @@ export type PendingAction = {
   requiresInput?: boolean;
 };
 
+export type PendingControl =
+  | {
+      kind: "options";
+      label: string;
+      /** Draft field the selected labels are written to. */
+      field: string;
+      /** Position inside an array draft field, when the control is per-question. */
+      index?: number;
+      multiple?: boolean;
+      options: QuestionOption[];
+    }
+  | {
+      kind: "text";
+      label: string;
+      field: string;
+      index?: number;
+      placeholder?: string;
+    };
+
 export type PendingDraft = Record<string, unknown>;
 
 export type PendingPresenter<Response = unknown> = {
@@ -172,6 +191,7 @@ export type PendingPresenter<Response = unknown> = {
   label(item: PendingItem): string;
   fields(item: PendingItem): PendingField[];
   actions(item: PendingItem): PendingAction[];
+  controls(item: PendingItem): PendingControl[];
   validate?(item: PendingItem, draft: PendingDraft): string[];
   buildResponse(item: PendingItem, draft: PendingDraft): Response;
 };
@@ -199,6 +219,14 @@ export const approvalPresenter: PendingPresenter<ApprovalResponse> = {
       });
     return fields;
   },
+  controls: () => [
+    {
+      kind: "text",
+      label: "拒绝原因（可选）",
+      field: "feedback",
+      placeholder: "可选",
+    },
+  ],
   actions: () => [
     { id: "allow-once", label: "允许一次", tone: "primary" },
     { id: "allow-session", label: "允许本次会话" },
@@ -247,6 +275,28 @@ export const questionPresenter: PendingPresenter<QuestionResponse> = {
         ),
       ].join("\n"),
     })),
+  controls: (item) =>
+    normalizeQuestionRequest(item).questions.flatMap((question, index) => {
+      const controls: PendingControl[] = [
+        {
+          kind: "options",
+          label: question.header || `问题 ${index + 1}`,
+          field: "selections",
+          index,
+          multiple: question.multiple,
+          options: question.options,
+        },
+      ];
+      if (question.custom)
+        controls.push({
+          kind: "text",
+          label: "自定义回答",
+          field: "custom",
+          index,
+          placeholder: "输入自定义回答",
+        });
+      return controls;
+    }),
   actions: () => [
     { id: "submit", label: "提交回答", tone: "primary" },
     { id: "reject", label: "拒绝", tone: "danger" },
