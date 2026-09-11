@@ -199,8 +199,8 @@ for (const root of pluginRoots) {
     pluginOutputs.push(resolve(packageOutdir, entry));
 }
 
-if (pluginRoots.length !== 15)
-  throw new Error(`expected 15 release plugins, got ${pluginRoots.length}`);
+if (pluginRoots.length !== 16)
+  throw new Error(`expected 16 release plugins, got ${pluginRoots.length}`);
 for (const artifact of [
   "LICENSE",
   "NOTICE",
