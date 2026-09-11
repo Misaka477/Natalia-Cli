@@ -3540,18 +3540,24 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                               setRollbackNotice(undefined);
                             }
                             console.log("[web-plugin] send", text);
-                            if (paths.length && props.ctx.runtime.submitInput) {
-                              props.ctx.runtime.submitInput?.({
+                            // The Composer opts into mid-turn injection: while a
+                            // turn is running, send as `next-step` so the model
+                            // sees it in the same turn. Idle sends keep the
+                            // runtime default (`next-turn`), which starts at once.
+                            const busy = Boolean(state().natalia.activeTurn);
+                            const sessionID =
+                              selectedSessionID() || state().sessionID;
+                            if (props.ctx.runtime.submitInput) {
+                              props.ctx.runtime.submitInput({
                                 text,
-                                attachments: paths,
-                                sessionID:
-                                  selectedSessionID() || state().sessionID,
+                                ...(paths.length ? { attachments: paths } : {}),
+                                ...(busy
+                                  ? { delivery: "next-step" as const }
+                                  : {}),
+                                sessionID,
                               });
                             } else {
-                              props.ctx.runtime.submit?.(
-                                text,
-                                selectedSessionID() || state().sessionID,
-                              );
+                              props.ctx.runtime.submit?.(text, sessionID);
                             }
                           } finally {
                             setMainDraft("");
