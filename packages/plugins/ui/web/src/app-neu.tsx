@@ -62,14 +62,7 @@ const perfLog = (...args: unknown[]) => {
   }
 };
 
-type RightTab =
-  | "diff"
-  | "plan"
-  | "nia"
-  | "terminal"
-  | "files"
-  | "agent"
-  | "todo";
+type RightTab = string;
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -2683,30 +2676,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return uiPanelRequirementsSatisfied(context, panel.requires);
   }
 
-  const filePanel = () => {
-    panelRevision();
-    return props.ctx.host
-      ?.listPanels()
-      .find((item) => item.panel.id === "files" && panelVisible(item.panel));
-  };
-
-  const terminalPanel = () => {
+  const sidePanels = () => {
     panelRevision();
     return (
-      interactiveTerminalAvailable() &&
       props.ctx.host
         ?.listPanels()
-        .find(
-          (item) => item.panel.id === "terminal" && panelVisible(item.panel),
-        )
+        .filter((item) => {
+          if (!panelVisible(item.panel)) return false;
+          // The terminal panel is also gated on the runtime actually providing
+          // a terminal, which the manifest cannot express.
+          if (item.panel.id === "terminal") return interactiveTerminalAvailable();
+          return true;
+        }) ?? []
     );
-  };
-
-  const todoPanel = () => {
-    panelRevision();
-    return props.ctx.host
-      ?.listPanels()
-      .find((item) => item.panel.id === "todo" && panelVisible(item.panel));
   };
 
   const rightTabs = () => {
@@ -2715,17 +2697,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       { id: "diff", label: "审阅 / Diff" },
       { id: "plan", label: "计划" },
       { id: "nia", label: "Nia" },
-      ...(todoPanel() ? [{ id: "todo" as RightTab, label: "待办" }] : []),
       { id: "agent", label: "协同" },
-      ...(terminalPanel()
-        ? [{ id: "terminal" as RightTab, label: "终端" }]
-        : []),
-      ...(filePanel() ? [{ id: "files" as RightTab, label: "文件" }] : []),
+      ...sidePanels().map((item) => ({
+        id: item.panel.id,
+        label: item.panel.title,
+      })),
     ];
+    const seen = new Set<string>();
+    const unique = tabs.filter((tab) =>
+      seen.has(tab.id) ? false : (seen.add(tab.id), true),
+    );
     const layout = layoutProfile();
     const order = layout?.regions?.right?.order;
     if (order?.length) {
-      tabs.sort((a, b) => {
+      unique.sort((a, b) => {
         const ai = order.indexOf(a.id);
         const bi = order.indexOf(b.id);
         return (
@@ -2733,24 +2718,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         );
       });
     }
-    return tabs;
+    return unique;
   };
-  function mountFilePanel(container: HTMLDivElement) {
-    const panel = filePanel();
-    if (!panel || !props.ctx.host) return;
-    void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
-  }
 
-  function mountTerminalPanel(container: HTMLDivElement) {
-    const panel = terminalPanel();
-    if (!panel || !props.ctx.host) return;
-    void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
-  }
-
-  function mountTodoPanel(container: HTMLDivElement) {
-    const panel = todoPanel();
-    if (!panel || !props.ctx.host) return;
-    void props.ctx.host.mountPanel(panel.pluginId, panel.panel.id, container);
+  function mountSidePanel(
+    item: { pluginId: string; panel: { id: string } },
+    container: HTMLDivElement,
+  ) {
+    if (!props.ctx.host) return;
+    void props.ctx.host.mountPanel(item.pluginId, item.panel.id, container);
   }
 
   const topbarPanels = () => {
@@ -3821,15 +3797,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     sessionID={selectedSessionID() || state().sessionID}
                   />
                 </Show>
-                <Show when={rightTab() === "todo" && todoPanel()}>
-                  <div
-                    class="neu-todo-host"
-                    style="height:100%;"
-                    ref={(element) => {
-                      if (element) mountTodoPanel(element);
-                    }}
-                  />
-                </Show>
                 <Show when={rightTab() === "agent"}>
                   <AgentPanel
                     state={state()}
@@ -3837,23 +3804,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     onOpenTerminal={() => setRightTab("terminal")}
                   />
                 </Show>
-                <Show when={rightTab() === "terminal" && terminalPanel()}>
-                  <div
-                    class="neu-terminal-host"
-                    style="height:100%;"
-                    ref={(element) => {
-                      if (element) mountTerminalPanel(element);
-                    }}
-                  />
-                </Show>
-                <Show when={rightTab() === "files" && filePanel()}>
-                  <div
-                    class="neu-file-editor-host"
-                    ref={(element) => {
-                      if (element) mountFilePanel(element);
-                    }}
-                  />
-                </Show>
+                <For each={sidePanels()}>
+                  {(item) => (
+                    <Show when={rightTab() === item.panel.id}>
+                      <div
+                        class="neu-side-panel-host"
+                        style="height:100%;"
+                        ref={(element) => {
+                          if (element) mountSidePanel(item, element);
+                        }}
+                      />
+                    </Show>
+                  )}
+                </For>
               </div>
             </aside>
           </>
