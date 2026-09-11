@@ -130,6 +130,12 @@ export const modelLimitsSchema = z
       .union([z.literal("auto"), z.number().int().positive()])
       .default("auto"),
     maxOutputTokens: outputTokenLimitSchema,
+    /** Optional provider/model input ceiling; falls back to contextWindow. */
+    inputLimit: z.number().int().positive().optional(),
+    /** Optional per-model output reserve override. */
+    reservedOutputTokens: z.number().int().positive().optional(),
+    /** Optional per-model compaction threshold override. */
+    compactionThresholdPercent: z.number().int().min(50).max(99).optional(),
   })
   .default({});
 

@@ -96,7 +96,9 @@ async function resolveContextStatusConfig(
     knownModelOutputLimit(executingModel);
   mark("discoveredOutput");
   const reserved = resolveReservedOutputTokens({
-    configuredReserved: config.context.reservedOutputTokens,
+    configuredReserved:
+      effective.limits.reservedOutputTokens ??
+      config.context.reservedOutputTokens,
     explicitMaxOutputTokens: selectionMatchesProvider
       ? effective.limits.maxOutputTokens
       : undefined,
@@ -105,11 +107,17 @@ async function resolveContextStatusConfig(
     contextWindow: contextWindow.tokens,
   });
   mark("reserved");
+  const effectiveWindow = Math.min(
+    contextWindow.tokens,
+    effective.limits.inputLimit ?? contextWindow.tokens,
+  );
   return {
-    max: contextWindow.tokens,
-    thresholdPercent: config.context.compactionThresholdPercent,
+    max: effectiveWindow,
+    thresholdPercent:
+      effective.limits.compactionThresholdPercent ??
+      config.context.compactionThresholdPercent,
     reserved: Math.min(
-      contextWindow.tokens,
+      effectiveWindow,
       reserved.source === "config"
         ? reserved.tokens
         : Math.min(20_000, reserved.tokens),
