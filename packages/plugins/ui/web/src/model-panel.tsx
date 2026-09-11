@@ -5,6 +5,7 @@ import {
   onCleanup,
   onMount,
   For,
+  Index,
 } from "solid-js";
 import type {
   ConfigV3,
@@ -775,12 +776,14 @@ export function ModelPanel(props: {
                   {discoveryStatus()}
                 </div>
               </Show>
-              <For each={models()}>
+              {/* <Index> keeps the input DOM per row index, so editing a model
+                  id or context window cannot re-create the row and drop focus. */}
+              <Index each={models()}>
                 {(model, index) => (
                   <div class="neu-model-edit-row">
                     <input
                       class="neu-form-input"
-                      value={model.id}
+                      value={model().id}
                       placeholder="ID"
                       onInput={(event) =>
                         updateModel(index(), { id: event.currentTarget.value })
@@ -792,7 +795,7 @@ export function ModelPanel(props: {
                       min="1"
                       placeholder="上下文窗口"
                       title="上下文窗口 tokens"
-                      value={model.contextWindow ?? ""}
+                      value={model().contextWindow ?? ""}
                       onInput={(event) => {
                         const value = Number(event.currentTarget.value);
                         updateModel(index(), {
@@ -806,9 +809,11 @@ export function ModelPanel(props: {
                     <label class="neu-form-checkbox">
                       <input
                         type="checkbox"
-                        checked={model.reasoning}
+                        checked={model().reasoning}
                         onChange={() =>
-                          updateModel(index(), { reasoning: !model.reasoning })
+                          updateModel(index(), {
+                            reasoning: !model().reasoning,
+                          })
                         }
                       />
                       <span>推理</span>
@@ -816,9 +821,9 @@ export function ModelPanel(props: {
                     <label class="neu-form-checkbox">
                       <input
                         type="checkbox"
-                        checked={model.image}
+                        checked={model().image}
                         onChange={() =>
-                          updateModel(index(), { image: !model.image })
+                          updateModel(index(), { image: !model().image })
                         }
                       />
                       <span>图片</span>
@@ -832,7 +837,7 @@ export function ModelPanel(props: {
                     </button>
                   </div>
                 )}
-              </For>
+              </Index>
               <button
                 type="button"
                 class="neu-model-add neu-model-add-secondary neu-model-add-full"
@@ -842,12 +847,12 @@ export function ModelPanel(props: {
               </button>
 
               <div class="neu-form-section-title">请求头</div>
-              <For each={headers()}>
+              <Index each={headers()}>
                 {(header, index) => (
                   <div class="neu-model-edit-row">
                     <input
                       class="neu-form-input"
-                      value={header.name}
+                      value={header().name}
                       placeholder="Header Name"
                       onInput={(event) =>
                         updateHeader(index(), {
@@ -857,7 +862,7 @@ export function ModelPanel(props: {
                     />
                     <input
                       class="neu-form-input"
-                      value={header.value}
+                      value={header().value}
                       placeholder="Value"
                       onInput={(event) =>
                         updateHeader(index(), {
@@ -874,7 +879,7 @@ export function ModelPanel(props: {
                     </button>
                   </div>
                 )}
-              </For>
+              </Index>
               <button
                 type="button"
                 class="neu-model-add neu-model-add-secondary neu-model-add-full"
