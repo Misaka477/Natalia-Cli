@@ -1,5 +1,6 @@
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import * as viewStore from "@natalia/view-store";
+import type { PendingPresenter } from "@natalia/ui-model";
 import { createUiEventBus } from "./events";
 import { createSilentLogger } from "./logger";
 import { createMemoryPreferenceStore } from "./preferences";
@@ -74,6 +75,10 @@ export async function createUiPluginHost<TContext = unknown>(
   const projectionListeners = new Set<(next: viewStore.AppState) => void>();
   const mounted = new Map<string, MountedPlugin>();
   const mountedPanels = new Map<string, MountedPanel>();
+  const presenters = new Map<
+    string,
+    { pluginId: string; presenter: PendingPresenter }
+  >();
   const panelListeners = new Set<() => void>();
   let started = false;
   let closed = false;
@@ -199,6 +204,36 @@ export async function createUiPluginHost<TContext = unknown>(
       transport,
       logger,
       t,
+      pending: {
+        registerPresenter(presenter) {
+          const existing = presenters.get(presenter.kind);
+          if (existing && existing.pluginId !== plugin.id)
+            throw new Error(
+              `pending presenter for kind "${presenter.kind}" is already owned by ${existing.pluginId}`,
+            );
+          presenters.set(presenter.kind, {
+            pluginId: plugin.id,
+            presenter,
+          });
+          for (const listener of panelListeners) listener();
+          return () => {
+            const current = presenters.get(presenter.kind);
+            if (
+              current?.pluginId === plugin.id &&
+              current.presenter === presenter
+            ) {
+              presenters.delete(presenter.kind);
+              for (const listener of panelListeners) listener();
+            }
+          };
+        },
+        presenters() {
+          const view = new Map<string, PendingPresenter>();
+          for (const [kind, entry] of presenters)
+            view.set(kind, entry.presenter);
+          return view;
+        },
+      },
       extra: options.extra,
       host: {
         listPanels: () =>
@@ -358,6 +393,8 @@ export async function createUiPluginHost<TContext = unknown>(
     const entry = mounted.get(id);
     if (!entry) return;
     mounted.delete(id);
+    for (const [kind, owned] of [...presenters])
+      if (owned.pluginId === id) presenters.delete(kind);
     for (const listener of panelListeners) listener();
     try {
       await entry.lifecycle?.dispose();

@@ -9,6 +9,7 @@ import type {
 } from "@natalia/contracts";
 import type * as ViewStore from "@natalia/view-store";
 import type { AppState } from "@natalia/view-store";
+import type { PendingKind, PendingPresenter } from "@natalia/ui-model";
 
 export type UiPluginLifecycle = {
   dispose(): void | Promise<void>;
@@ -140,6 +141,11 @@ export type UiPluginContext<TContext = unknown> = {
   transport: UiTransport;
   logger: Logger;
   t: (text: string) => string;
+  /** Shared presenter registry so any UI can render a pending request kind. */
+  pending: {
+    registerPresenter(presenter: PendingPresenter): () => void;
+    presenters(): ReadonlyMap<PendingKind, PendingPresenter>;
+  };
   extra?: TContext;
 };
 
