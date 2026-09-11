@@ -735,6 +735,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
       preservedRecentTokens:
         input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
+      maxOverflowRetries:
+        input.tsRuntimeConfig()?.context.maxOverflowRetries ?? 1,
       instruction: "Recover from provider context limit before retrying.",
       signal: input.activeAbort()?.signal,
       onEvent: input.publish,

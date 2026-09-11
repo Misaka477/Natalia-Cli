@@ -254,50 +254,50 @@ export async function recoverContextLimitOnce<T>(input: {
   ledger: ContextLedger;
   compactor: Compactor;
   compact: Omit<CompactionOptions, "trigger" | "force">;
+  maxOverflowRetries?: number;
   runStep: () => Promise<T>;
   onEvent?: (event: RuntimeEvent) => void;
 }) {
-  try {
-    return await input.runStep();
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      (error as ProviderError).kind !== "context_limit"
-    )
-      throw error;
-    input.onEvent?.({
-      type: "context.limit.recovery",
-      id: input.id,
-      step: input.step,
-      attempted: true,
-      compacted: false,
-      reason: "context_limit",
-    });
-    const compacted = await compactContext(input.ledger, input.compactor, {
-      ...input.compact,
-      trigger: "context_limit",
-      force: true,
-      onEvent: input.onEvent,
-    });
-    input.onEvent?.({
-      type: "context.limit.recovery",
-      id: input.id,
-      step: input.step,
-      attempted: true,
-      compacted: compacted.compacted,
-      reason: "context_limit",
-    });
+  const maxRetries = Math.max(0, Math.floor(input.maxOverflowRetries ?? 1));
+  let retries = 0;
+  while (true) {
     try {
       return await input.runStep();
-    } catch (retryError) {
-      if ((retryError as ProviderError).kind === "context_limit") {
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        (error as ProviderError).kind !== "context_limit"
+      )
+        throw error;
+      if (retries >= maxRetries)
         throw providerError({
           kind: "context_limit",
-          message: "context-limit recovery already attempted",
-          cause: retryError,
+          message: `context-limit recovery retries exhausted (${retries})`,
+          cause: error,
         });
-      }
-      throw retryError;
+      retries += 1;
+      input.onEvent?.({
+        type: "context.limit.recovery",
+        id: input.id,
+        step: input.step,
+        attempted: true,
+        compacted: false,
+        reason: "context_limit",
+      });
+      const compacted = await compactContext(input.ledger, input.compactor, {
+        ...input.compact,
+        trigger: "context_limit",
+        force: true,
+        onEvent: input.onEvent,
+      });
+      input.onEvent?.({
+        type: "context.limit.recovery",
+        id: input.id,
+        step: input.step,
+        attempted: true,
+        compacted: compacted.compacted,
+        reason: "context_limit",
+      });
     }
   }
 }

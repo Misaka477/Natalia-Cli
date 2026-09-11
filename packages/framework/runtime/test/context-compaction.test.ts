@@ -679,3 +679,34 @@ test("compaction aborts when the ledger surface changes during summarization", a
     }),
   );
 });
+
+test("recoverContextLimitOnce bounds overflow retries and reports exhaustion", async () => {
+  let calls = 0;
+  await expect(
+    recoverContextLimitOnce({
+      id: "turn_overflow_exhausted",
+      step: 1,
+      ledger: ledgerWithMessages(2),
+      compactor: new FakeCompactor([{ summary: "summary" }]),
+      compact: {
+        id: "cmp_overflow_exhausted",
+        maxTokens: 100,
+        thresholdPercent: 85,
+        reservedTokens: 10,
+        preservedRecentMessages: 0,
+      },
+      maxOverflowRetries: 0,
+      async runStep() {
+        calls += 1;
+        throw providerError({
+          kind: "context_limit",
+          message: "too long",
+        });
+      },
+    }),
+  ).rejects.toMatchObject({
+    kind: "context_limit",
+    message: expect.stringContaining("retries exhausted (0)"),
+  });
+  expect(calls).toBe(1);
+});

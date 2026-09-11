@@ -97,6 +97,8 @@ export const contextConfigSchema = z.object({
   preservedRecentMessages: z.number().int().min(0).default(10),
   /** When > 0, an absolute token budget for the recent tail. */
   preservedRecentTokens: z.number().int().min(0).default(0),
+  /** Bounded overflow recovery attempts before surfacing context_limit. */
+  maxOverflowRetries: z.number().int().min(0).max(3).default(1),
 });
 
 export const checkpointConfigSchema = z

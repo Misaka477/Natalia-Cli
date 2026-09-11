@@ -22,6 +22,7 @@ type CompactionOperation = {
   budget: CompactionBudget;
   preservedRecentMessages: number;
   preservedRecentTokens?: number;
+  maxOverflowRetries?: number;
   instruction: string;
   signal?: AbortSignal;
   onEvent?: (event: RuntimeEvent) => void;
@@ -74,41 +75,46 @@ export function createCompactionService(input: {
       };
     },
     async runWithContextLimitRecovery(operation) {
-      try {
-        return await operation.runStep();
-      } catch (error) {
-        if ((error as { kind?: string }).kind !== "context_limit") throw error;
-        operation.onEvent?.({
-          type: "context.limit.recovery",
-          id: operation.id,
-          step: operation.step,
-          attempted: true,
-          compacted: false,
-          reason: "context_limit",
-        });
-        const outcome = await compact(operation, "context_limit", {
-          force: true,
-        });
-        if (outcome.compacted === true) await operation.onCompacted?.(outcome);
-        operation.onEvent?.({
-          type: "context.limit.recovery",
-          id: operation.id,
-          step: operation.step,
-          attempted: true,
-          compacted: outcome.compacted,
-          reason: "context_limit",
-        });
-        await operation.beforeRetry?.(outcome);
+      const maxRetries = Math.max(
+        0,
+        Math.floor(operation.maxOverflowRetries ?? 1),
+      );
+      let retries = 0;
+      while (true) {
         try {
           return await operation.runStep();
-        } catch (retryError) {
-          if ((retryError as { kind?: string }).kind === "context_limit")
+        } catch (error) {
+          if ((error as { kind?: string }).kind !== "context_limit")
+            throw error;
+          if (retries >= maxRetries)
             throw providerError({
               kind: "context_limit",
-              message: "context-limit recovery already attempted",
-              cause: retryError,
+              message: `context-limit recovery retries exhausted (${retries})`,
+              cause: error,
             });
-          throw retryError;
+          retries += 1;
+          operation.onEvent?.({
+            type: "context.limit.recovery",
+            id: operation.id,
+            step: operation.step,
+            attempted: true,
+            compacted: false,
+            reason: "context_limit",
+          });
+          const outcome = await compact(operation, "context_limit", {
+            force: true,
+          });
+          if (outcome.compacted === true)
+            await operation.onCompacted?.(outcome);
+          operation.onEvent?.({
+            type: "context.limit.recovery",
+            id: operation.id,
+            step: operation.step,
+            attempted: true,
+            compacted: outcome.compacted,
+            reason: "context_limit",
+          });
+          await operation.beforeRetry?.(outcome);
         }
       }
     },

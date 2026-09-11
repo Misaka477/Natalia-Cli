@@ -260,6 +260,8 @@ export async function createSubagentSupport(
           scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
         preservedRecentTokens:
           scope.tsRuntimeConfig?.context.preservedRecentTokens ?? 0,
+        maxOverflowRetries:
+          scope.tsRuntimeConfig?.context.maxOverflowRetries ?? 1,
         instruction: "Recover this subagent from the provider context limit.",
         signal: runner.signal,
         runStep,
