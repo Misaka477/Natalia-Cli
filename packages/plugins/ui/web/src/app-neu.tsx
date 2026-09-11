@@ -10,7 +10,7 @@ import type {
   RuntimeClient,
   WorkspaceSummary,
 } from "@natalia/contracts";
-import { type AppState, cloneState } from "@natalia/view-store";
+import { type AppState, boundTranscript, cloneState } from "@natalia/view-store";
 import { cloneStateInWorker } from "./clone-state-worker-client";
 import {
   createSignal,
@@ -2523,6 +2523,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return messages.slice(0, hiddenAfter);
   });
 
+  // Keep the DOM bounded while streaming: render only the newest window when
+  // the user is following the bottom. Scrolled up, render the whole (already
+  // paged) window so loading older history keeps working.
+  const renderedMainMessages = createMemo<Message[]>(() => {
+    const rows = visibleMainMessages();
+    return followBottom() ? boundTranscript(rows, "newer").messages : rows;
+  });
+
   const naviChatActivity = () => state().navi.activity;
 
   const chatMessageCache = new Map<
@@ -2588,6 +2596,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
   });
 
+  const renderedChatMessages = createMemo<Message[]>(() => {
+    const rows = chatMessages();
+    return chatFollowBottom()
+      ? boundTranscript(rows, "newer").messages
+      : rows;
+  });
   function startResize(
     event: PointerEvent,
     computeWidth: (clientX: number) => number,
@@ -3328,7 +3342,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   >
                     <div class="main-transcript-wrap">
                       <Transcript
-                        messages={visibleMainMessages()}
+                        messages={renderedMainMessages()}
                         emptyTitle="Natalia 已准备好"
                         emptyHint="Natalia 会直接处理工作区任务。"
                         assistantName="Natalia"
@@ -3568,7 +3582,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   >
                     <div class="chat-transcript-wrap">
                       <Transcript
-                        messages={chatMessages()}
+                        messages={renderedChatMessages()}
                         emptyTitle="向 Navi 提问"
                         emptyHint="Navi 用于规划和审查，不直接操作工作区。"
                         assistantName="Navi"

@@ -12,7 +12,7 @@ import type {
   RuntimeNativeTerminalSession,
   RuntimeTeamPR,
 } from "@natalia/contracts";
-import type { AppState, SubagentView } from "@natalia/view-store";
+import { boundTranscript, type AppState, type SubagentView } from "@natalia/view-store";
 import { Transcript } from "@natalia/ui-kit";
 import type { Message } from "./types";
 import { stableRows, type RowSignature } from "./stable-rows";
@@ -297,6 +297,13 @@ export function AgentPanel(props: {
   >();
   const [subFollowBottom, setSubFollowBottom] = createSignal(true);
   const [subShowJumpToBottom, setSubShowJumpToBottom] = createSignal(false);
+  const renderedSubagentMessages = createMemo<Message[]>(() => {
+    const rows = subagentMessages();
+    return subFollowBottom()
+      ? boundTranscript(rows, "newer").messages
+      : rows;
+  });
+
   let subObservedTop = 0;
 
   function handleSubagentTranscriptScroll() {
@@ -524,7 +531,7 @@ export function AgentPanel(props: {
                   }
                 >
                   <Transcript
-                    messages={subagentMessages()}
+                    messages={renderedSubagentMessages()}
                     emptyTitle="子 Agent 暂无消息"
                     emptyHint="子 Agent 运行后这里会展示它的信息流"
                     assistantName={selectedSubagent()?.id ?? "Subagent"}

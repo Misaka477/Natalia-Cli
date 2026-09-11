@@ -11,7 +11,7 @@ import type {
   RuntimeClient,
   RuntimeModelCatalogEntry,
 } from "@natalia/contracts";
-import type { AppState } from "@natalia/view-store";
+import { boundTranscript, type AppState } from "@natalia/view-store";
 import { Transcript } from "@natalia/ui-kit";
 import { Composer } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
@@ -95,6 +95,13 @@ export function NiaPanel(props: {
         };
       }),
     );
+  });
+
+  const renderedMessages = createMemo<Message[]>(() => {
+    const rows = messages();
+    return niaFollowBottom()
+      ? boundTranscript(rows, "newer").messages
+      : rows;
   });
 
   const modelOptions = () =>
@@ -266,7 +273,7 @@ export function NiaPanel(props: {
       <div class="neu-pane-content">
         <div class="nia-transcript-wrap">
           <Transcript
-            messages={messages()}
+            messages={renderedMessages()}
             emptyTitle="向 Nia 提问"
             emptyHint="Nia 用于审计，只读、不写代码、不写 Plan。"
             assistantName="Nia"
