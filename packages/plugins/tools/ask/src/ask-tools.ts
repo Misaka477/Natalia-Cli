@@ -31,7 +31,7 @@ function askUserTool(): RuntimeTool {
       properties: {
         title: { type: "string" },
         question: { type: "string" },
-        options: { type: "array" },
+        options: { type: "array", items: { type: "string" } },
         multiple: { type: "boolean" },
       },
       required: ["question", "options"],
@@ -40,7 +40,12 @@ function askUserTool(): RuntimeTool {
     output: {
       schema: {
         type: "object",
-        properties: { answers: { type: "array" } },
+        properties: {
+          answers: {
+            type: "array",
+            items: { type: "array", items: { type: "string" } },
+          },
+        },
         required: ["answers"],
         additionalProperties: false,
       },

@@ -40,7 +40,7 @@ function globTool(): RuntimeTool {
     output: {
       schema: {
         type: "object",
-        properties: { paths: { type: "array" } },
+        properties: { paths: { type: "array", items: { type: "string" } } },
         required: ["paths"],
         additionalProperties: false,
       },
@@ -118,7 +118,21 @@ function grepTool(): RuntimeTool {
     output: {
       schema: {
         type: "object",
-        properties: { matches: { type: "array" } },
+        properties: {
+          matches: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                path: { type: "string" },
+                line: { type: "number" },
+                text: { type: "string" },
+              },
+              required: ["path", "line", "text"],
+              additionalProperties: false,
+            },
+          },
+        },
         required: ["matches"],
         additionalProperties: false,
       },

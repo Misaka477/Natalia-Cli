@@ -35,7 +35,20 @@ function todoReadTool(): RuntimeTool {
     output: {
       schema: {
         type: "object",
-        properties: { items: { type: "array" } },
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                content: { type: "string" },
+                status: { type: "string", enum: [...TODO_STATUSES] },
+              },
+              required: ["content", "status"],
+              additionalProperties: false,
+            },
+          },
+        },
         required: ["items"],
         additionalProperties: false,
       },
@@ -73,11 +86,36 @@ function todoReadTool(): RuntimeTool {
 function todoWriteTool(): RuntimeTool {
   return {
     name: "todo_write",
-    description: "Replace this session's durable todo items.",
+    description:
+      "Replace this session's durable todo items. Example: " +
+      '{"items":[{"content":"Write the parser","status":"in_progress"},' +
+      '{"content":"Add tests","status":"pending"}]}',
     requiresApproval: false,
     parameters: {
       type: "object",
-      properties: { items: { type: "array" } },
+      properties: {
+        items: {
+          type: "array",
+          description:
+            "The complete replacement list. Pass [] to clear the list.",
+          items: {
+            type: "object",
+            properties: {
+              content: {
+                type: "string",
+                description: "What the item is.",
+              },
+              status: {
+                type: "string",
+                enum: [...TODO_STATUSES],
+                description: "pending, in_progress, or completed.",
+              },
+            },
+            required: ["content", "status"],
+            additionalProperties: false,
+          },
+        },
+      },
       required: ["items"],
       additionalProperties: false,
     },

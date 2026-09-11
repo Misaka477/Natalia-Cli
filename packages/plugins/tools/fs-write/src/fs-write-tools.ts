@@ -199,7 +199,7 @@ function applyEditsTool(): RuntimeTool {
     output: {
       schema: {
         type: "object",
-        properties: { files: { type: "array" } },
+        properties: { files: { type: "array", items: { type: "string" } } },
         required: ["files"],
         additionalProperties: false,
       },
