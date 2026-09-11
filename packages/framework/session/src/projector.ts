@@ -288,6 +288,8 @@ export function projectTurnMessages(events: RuntimeEvent[]) {
 function projectedTurnID(event: RuntimeEvent, messages: Map<string, unknown>) {
   if (event.type === "policy.decision")
     return messages.has(event.turnID) ? event.turnID : undefined;
+  if (event.type === "turn.input")
+    return messages.has(event.turnID) ? event.turnID : undefined;
   if (!("id" in event) || typeof event.id !== "string") return undefined;
   let candidate = event.id;
   while (candidate) {
@@ -307,6 +309,8 @@ function projectedRowKind(
     return event.internal ? "system" : "user";
   if (event.type === "policy.decision" && event.turnID === turnID)
     return "system";
+  if (event.type === "turn.input")
+    return event.internal ? "system" : "user";
   if (!("id" in event) || typeof event.id !== "string") return undefined;
   if (event.id !== turnID && !event.id.startsWith(`${turnID}:`))
     return undefined;
@@ -323,6 +327,8 @@ function projectedRowKind(
 }
 
 function projectedRowID(event: RuntimeEvent, turnID: string) {
+  if (event.type === "turn.input")
+    return `${event.turnID}:user:${event.inputID}`;
   if (event.type === "policy.decision")
     return `${turnID}:policy:${event.toolCallID ?? event.toolName}:${event.decision}`;
   if ("id" in event && typeof event.id === "string")

@@ -9,6 +9,7 @@
 import {
   admittedInputs,
   admitInput,
+  buildSubmittedTurn,
   sessionRunCoordinator,
 } from "@natalia/session";
 import {
@@ -17,7 +18,6 @@ import {
   type AttachmentService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
-import { createHash } from "node:crypto";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -48,8 +48,6 @@ export function createSessionAdmission(
       drainSessionFor,
     } = ctx.ports;
     const { turnSession } = ctx.state;
-    const lineCount = (text: string) =>
-      text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length;
     await getReady();
     if (isDisposed()) throw new Error("runtime disposed");
     const attachmentService =
@@ -90,19 +88,15 @@ export function createSessionAdmission(
     if (isDisposed()) throw new Error("runtime disposed");
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
     const delivery = input.delivery ?? "next-step";
-    const submitted: SubmittedTurn = {
-      type: "turn.submitted",
+    const submitted: SubmittedTurn = buildSubmittedTurn({
       id,
       text,
-      byteLength: new TextEncoder().encode(text).byteLength,
-      lineCount: lineCount(text),
-      sha256: createHash("sha256").update(text).digest("hex"),
-      ...(delivery === "next-turn" ? { delivery } : {}),
-      ...(input.internal ? { internal: true } : {}),
-      attachments: attachments.length ? attachments : undefined,
-      resources: input.resources?.length ? input.resources : undefined,
-      agents: input.agents?.length ? input.agents : undefined,
-    };
+      attachments,
+      resources: input.resources,
+      agents: input.agents,
+      internal: input.internal,
+      delivery,
+    });
     if (attachments.length)
       targetExec?.attachmentReferences.set(`${id}:user`, attachments);
     if (!targetSession)
@@ -128,7 +122,12 @@ export function createSessionAdmission(
     targetExec.lastSubmitted = submitted;
     if (targetExec === getActiveExec()) setLastSubmitted(submitted);
     turnSession.set(id, targetSessionID);
-    publishForSession(targetExec, submitted);
+    // A `next-step` admitted while a turn is running is claimed by that turn's
+    // provider loop and published as `turn.input`; announcing it as its own
+    // turn here would create a phantom turn.
+    const injectable =
+      delivery === "next-step" && targetCoordinator().active;
+    if (!injectable) publishForSession(targetExec, submitted);
     // One Work Graph node per turn. The prompt itself is not recorded: it can
     // contain anything, and the graph is replayable and shareable.
     publishForSession(

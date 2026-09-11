@@ -34,7 +34,11 @@ import { join } from "node:path";
 test("session projector separates completed, active, and unpromoted durable input", () => {
   const session = createSessionRecord("ses_projector", "Projector");
   admitInput(session, { id: "turn_done", text: "done", delivery: "next-step" });
-  admitInput(session, { id: "turn_queue", text: "queue", delivery: "next-turn" });
+  admitInput(session, {
+    id: "turn_queue",
+    text: "queue",
+    delivery: "next-turn",
+  });
   appendSessionEvent(session, {
     type: "turn.submitted",
     id: "turn_done",
@@ -287,6 +291,50 @@ test("projects ordered turn messages without splitting durable rows", () => {
   expect(previous.data.map((message) => message.id)).toEqual([
     "turn_one",
     "turn_two",
+  ]);
+});
+
+test("projected turn inputs attach to the running turn as user rows", () => {
+  const session = createSessionRecord("ses_turn_input", "Turn input");
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_live",
+    text: "start",
+    byteLength: 5,
+    lineCount: 1,
+    sha256: "test",
+  });
+  appendSessionEvent(session, {
+    type: "turn.input",
+    turnID: "turn_live",
+    inputID: "input_1",
+    text: "also do X",
+    delivery: "next-step",
+  });
+  appendSessionEvent(session, {
+    type: "content.done",
+    id: "turn_live",
+    text: "done",
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_live",
+    stopReason: "done",
+  });
+
+  const projected = projectSessionMessages(session, { order: "asc" });
+  expect(projected.data.map((message) => message.id)).toEqual(["turn_live"]);
+  expect(projected.data[0]!.rows.map((row) => row.id)).toEqual([
+    "turn_live:turn.submitted",
+    "turn_live:user:input_1",
+    "turn_live:content.done",
+    "turn_live:turn.finished",
+  ]);
+  expect(projected.data[0]!.rows.map((row) => row.kind)).toEqual([
+    "user",
+    "user",
+    "assistant",
+    "system",
   ]);
 });
 

@@ -43,6 +43,8 @@ function makeHarness(
       source: "user" | "navi";
       text: string;
     }>;
+    takeStepInputs?: (step: number) => Array<{ id: string; text: string }>;
+    hasPendingStepInputs?: () => boolean;
     naviSuggestions?: Array<{
       id: string;
       suggestion: string;
@@ -164,6 +166,8 @@ function makeHarness(
     activeSkill: () => undefined,
     skillsList: () => [],
     takeLiveUserMessages: () => options?.takeLiveUserMessages?.() ?? [],
+    takeStepInputs: (step) => options?.takeStepInputs?.(step) ?? [],
+    hasPendingStepInputs: () => options?.hasPendingStepInputs?.() ?? false,
     naviSuggestions: () => options?.naviSuggestions ?? [],
     naviIntro: () => options?.naviIntro ?? false,
     naviAnswers: () => options?.naviAnswers ?? [],
@@ -872,6 +876,56 @@ test("live user messages inject as ordinary tagged user turns", async () => {
   await runner.runTurn(turn);
   expect(seen[0]).toContain("hello");
   expect(seen[0]).toContain("[user] focus on the docs task first");
+});
+
+test("a next-step that arrives mid-turn keeps the loop alive and lands in the ledger", async () => {
+  const requests: Array<Array<{ role: string; content: string }>> = [];
+  let arrived = false;
+  let injected = false;
+  const { runner, ledger } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        requests.push(
+          request.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        );
+        // Simulate a user submitting `next-step` while the model is answering
+        // the first step.
+        arrived = true;
+        yield content(
+          requests.length === 1 ? "first answer" : "after injection",
+        );
+      },
+    },
+    {
+      takeStepInputs: (step) => {
+        // Nothing was queued before step 0; the input appears at the next step.
+        if (step === 0 || injected) return [];
+        injected = true;
+        return [{ id: "in_1", text: "also do X" }];
+      },
+      hasPendingStepInputs: () => arrived && !injected,
+    },
+  );
+
+  await runner.runTurn(turn);
+
+  expect(requests.length).toBe(2);
+  const secondUserText = requests[1]!
+    .filter((message) => message.role === "user")
+    .map((message) => message.content);
+  expect(secondUserText).toContain("also do X");
+  expect(
+    ledger
+      .snapshot()
+      .entries.some(
+        (entry) => entry.id === "in_1:user" && entry.content === "also do X",
+      ),
+  ).toBe(true);
 });
 
 test("pending Navi chat renders as a required direct reply without becoming user intent", async () => {

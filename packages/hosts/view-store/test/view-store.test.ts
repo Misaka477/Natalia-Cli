@@ -408,6 +408,41 @@ test("a queued turn stays visibly queued without replacing active work", () => {
   expect(state.activeTurn).toBe("t2");
 });
 
+test("a claimed next-step projects inside the running turn, not as its own turn", () => {
+  const state = projectEvents([
+    submitted("t1", "first"),
+    { type: "thinking.delta", id: "t1", text: "working" },
+    // A mid-turn claim publishes `turn.input` only; there is no `turn.submitted`
+    // for an injected input, so it never becomes a phantom turn.
+    {
+      type: "turn.input",
+      turnID: "t1",
+      inputID: "in_1",
+      text: "also do X",
+      delivery: "next-step",
+    },
+  ]);
+
+  expect(state.activeTurn).toBe("t1");
+  const ids = state.messages.map((block) => block.id);
+  expect(ids).toContain("t1:user");
+  expect(ids).toContain("t1:user:in_1");
+  // The injected input belongs to t1: it is ordered after t1's own user row and
+  // never starts a turn of its own.
+  expect(ids.indexOf("t1:user:in_1")).toBeGreaterThan(ids.indexOf("t1:user"));
+  expect(ids.some((id) => id.startsWith("in_1:"))).toBe(false);
+  expect(
+    state.messages.find((block) => block.id === "t1:user:in_1"),
+  ).toMatchObject({ role: "user", text: "also do X", pendingText: "" });
+});
+
+test("admitting a submission does not mark a turn running before it starts", () => {
+  const state = projectEvents([submitted("t1", "first")]);
+  expect(state.activeTurn).toBeUndefined();
+  applyEvent(state, { type: "content.delta", id: "t1", text: "hi" });
+  expect(state.activeTurn).toBe("t1");
+});
+
 test("an internal wake turn projects as system context, not user input", () => {
   const state = projectEvents([
     {

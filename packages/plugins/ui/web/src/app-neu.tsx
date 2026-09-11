@@ -2388,11 +2388,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const mainMessages = createMemo<Message[]>(() => {
     const list = state().natalia.messages;
     const active = state().natalia.activeTurn;
-    const lastIndex = list.length - 1;
+    // The running marker belongs to the last message of the active turn, not to
+    // whatever message happens to be last — a queued or steering input is not
+    // running.
+    let lastActiveIndex = -1;
+    if (active)
+      for (let index = list.length - 1; index >= 0; index -= 1)
+        if (list[index]!.id.startsWith(`${active}:`)) {
+          lastActiveIndex = index;
+          break;
+        }
     return stableRows(
       mainMessageCache,
       list.map((msg, idx) => {
-        const isLast = idx === lastIndex;
+        const isLast = idx === lastActiveIndex;
         const tool = msg.tool;
         if (tool) {
           const status =

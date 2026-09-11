@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import type {
   LocalAttachment,
   PromptAgentMention,
   PromptResourceMention,
+  RuntimeEvent,
   SessionID,
 } from "@natalia/contracts";
 import type { SessionRecord } from "./index";
@@ -40,6 +42,32 @@ export type AdmittedSessionInput = {
   claimedTurnID?: string;
   claimedStep?: number;
 };
+
+/** Builds the durable `turn.submitted` fact for an admitted input. */
+export function buildSubmittedTurn(input: {
+  id: string;
+  text: string;
+  attachments?: LocalAttachment[];
+  resources?: PromptResourceMention[];
+  agents?: PromptAgentMention[];
+  internal?: boolean;
+  delivery?: SessionInputDelivery;
+}): Extract<RuntimeEvent, { type: "turn.submitted" }> {
+  const text = input.text;
+  return {
+    type: "turn.submitted",
+    id: input.id,
+    text,
+    byteLength: new TextEncoder().encode(text).byteLength,
+    lineCount: text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length,
+    sha256: createHash("sha256").update(text).digest("hex"),
+    ...(input.delivery === "next-turn" ? { delivery: input.delivery } : {}),
+    ...(input.internal ? { internal: true } : {}),
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    ...(input.resources?.length ? { resources: input.resources } : {}),
+    ...(input.agents?.length ? { agents: input.agents } : {}),
+  };
+}
 
 export class SessionInputConflictError extends Error {
   constructor(id: string) {

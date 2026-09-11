@@ -637,6 +637,18 @@ type RuntimeEventData =
       agents?: PromptAgentMention[];
     }
   | { type: "turn.started"; id: string }
+  | {
+      type: "turn.input";
+      /** Turn this input was injected into. */
+      turnID: string;
+      /** Admitted inbox input this message came from. */
+      inputID: string;
+      text: string;
+      /** Injection intent. Only `next-step` inputs are claimed mid-turn. */
+      delivery?: "next-turn" | "next-step";
+      /** Runtime-generated input; never human-authored. */
+      internal?: boolean;
+    }
   | { type: "turn.cancelled"; id: string; reason: string }
   | { type: "turn.paused"; id: string; reason: string }
   | { type: "turn.resumed"; id: string }

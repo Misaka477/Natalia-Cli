@@ -176,7 +176,9 @@ export function applyConversationEvent(
         return false;
       if (!state.sessionID && event.sessionID)
         state.sessionID = event.sessionID;
-      if (event.delivery !== "next-turn") state.activeTurn = event.id;
+      // `activeTurn` only tracks a genuinely running turn (`turn.started` or a
+      // stream delta). Submission is merely admission: a `next-step` may be
+      // claimed by the turn that is already running rather than starting one.
       if (!event.internal) state.lastSubmission = event;
       state.lastStopReason = undefined;
       state.streams[streamID(event.id, "thinking")] = newStream();
@@ -190,6 +192,16 @@ export function applyConversationEvent(
         ...(event.attachments?.length
           ? { attachments: event.attachments }
           : {}),
+      });
+      return true;
+    case "turn.input":
+      // A `next-step` input claimed by the running turn becomes a user message
+      // inside that turn, not a turn of its own.
+      state.messages.push({
+        id: `${event.turnID}:user:${event.inputID}`,
+        role: event.internal ? "system" : "user",
+        text: event.text,
+        pendingText: "",
       });
       return true;
     case "turn.started":

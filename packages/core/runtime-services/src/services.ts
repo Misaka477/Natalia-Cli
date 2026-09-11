@@ -397,6 +397,10 @@ export type ProviderRunnerInput = {
     materialized: ToolMaterialization,
   ): Promise<import("@natalia/runtime").ProviderMessage[]>;
   takeLiveUserMessages?(): Array<{ source: "user" | "navi"; text: string }>;
+  /** Claims un-promoted `next-step` inputs for one provider step. */
+  takeStepInputs?(step: number): Array<{ id: string; text: string }>;
+  /** Whether any `next-step` input is still waiting to be claimed. */
+  hasPendingStepInputs?(): boolean;
   reloadConfig(): Promise<{ providerReconfigured: boolean }>;
   runtimeStatusSnapshot(): Promise<RuntimeEvent>;
   effectiveMaxSteps(): number;

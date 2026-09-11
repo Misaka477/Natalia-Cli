@@ -9,7 +9,11 @@
  * call time.
  */
 import { providerForModel } from "@natalia/runtime";
-import { projectedCollabMessages, projectedPlanDocs } from "@natalia/session";
+import {
+  claimNextSteps,
+  projectedCollabMessages,
+  projectedPlanDocs,
+} from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import {
   ATTACHMENT_SERVICE,
@@ -260,6 +264,29 @@ export function createTurnRunner(
         setInFlightOperationFor(exec, operation),
       executeToolCalls,
       takeLiveUserMessages: () => ctx.ports.takeLiveUserMessages(exec),
+      takeStepInputs: (step) => {
+        const claimed = claimNextSteps(
+          exec.session,
+          exec.activeTurnID ?? "",
+          step,
+        );
+        if (!claimed.length) return [];
+        for (const item of claimed)
+          publishForSession(exec, {
+            type: "turn.input",
+            turnID: exec.activeTurnID ?? item.id,
+            inputID: item.id,
+            text: item.text,
+            delivery: "next-step",
+            ...(item.internal ? { internal: true } : {}),
+          });
+        void persistInboxPromotion(exec.session.id);
+        return claimed.map((item) => ({ id: item.id, text: item.text }));
+      },
+      hasPendingStepInputs: () =>
+        exec.session.inbox?.some(
+          (item) => !item.promotedAt && item.delivery === "next-step",
+        ) ?? false,
       reloadConfig: async () => {
         const result = await reloadConfigFromDisk();
         if (result.providerReconfigured) applyAgentProvider(exec);

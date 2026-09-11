@@ -22,7 +22,7 @@ import {
 import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
-import { promoteNextSteps, type SessionRecord } from "@natalia/session";
+import { buildSubmittedTurn, type SessionRecord } from "@natalia/session";
 import { materializeTools } from "@natalia/tools";
 import type {
   ProviderRunnerInput,
@@ -190,8 +190,17 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     input.setActiveAbort(controller);
     input.setActiveTurnID(id);
     const currentSession = input.session();
-    if (currentSession && promoteNextSteps(currentSession).length)
-      await input.persistInboxPromotion(currentSession?.id);
+    // A promoted `next-step` turn was never announced at submit time; publish
+    // its `turn.submitted` now so the transcript and projector see it.
+    if (
+      currentSession &&
+      !currentSession.events.some(
+        (event) => event.type === "turn.submitted" && event.id === id,
+      )
+    )
+      input.publish(
+        buildSubmittedTurn({ id, text, attachments, resources, agents, internal }),
+      );
     input.setLastProviderUsage(undefined);
     let assistant = "";
     try {
@@ -302,6 +311,14 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         await input.waitIfPaused();
         for (const incoming of input.takeLiveUserMessages?.() ?? [])
           messages.push({ role: "user", content: incoming.text });
+        for (const incoming of input.takeStepInputs?.(step) ?? []) {
+          messages.push({ role: "user", content: incoming.text });
+          ledger.add({
+            id: `${incoming.id}:user`,
+            role: "user",
+            content: incoming.text,
+          });
+        }
         const pendingNaviReply = requiredCollabReply();
         const reachedStepLimit =
           Number.isFinite(maxSteps) && step + 1 >= maxSteps;
@@ -376,7 +393,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         }
         step += 1;
         assistant += result.assistant;
-        if (!calledTools || finalOnlyStep) {
+        if (
+          (!calledTools || finalOnlyStep) &&
+          // Input that arrived while the model was answering still needs a step;
+          // the loop claims it at the top of the next iteration.
+          !(input.hasPendingStepInputs?.() ?? false)
+        ) {
           finalResponse = result.assistant;
           break;
         }
