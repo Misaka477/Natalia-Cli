@@ -174,6 +174,25 @@ export function createCoreSurface(
           (event) => event.type === "turn.submitted" && event.id === id,
         );
         if (submittedIndex < 0) {
+          // A `next-step` injected into a turn already running is announced as
+          // `turn.input`, never as its own `turn.submitted`. It settles with
+          // that turn: return once the injected turn has terminalized and left
+          // the active slot. If the running turn ends without claiming it, it
+          // is drained as its own turn and the `turn.submitted` path above
+          // takes over.
+          const injected = events.find(
+            (event): event is Extract<RuntimeEvent, { type: "turn.input" }> =>
+              event.type === "turn.input" && event.inputID === id,
+          );
+          if (injected) {
+            const settled = events.some(
+              (event) =>
+                (event.type === "turn.finished" ||
+                  event.type === "turn.cancelled") &&
+                event.id === injected.turnID,
+            );
+            if (settled && exec?.activeTurnID !== injected.turnID) return;
+          }
           await new Promise((resolve) => setTimeout(resolve, 10));
           continue;
         }

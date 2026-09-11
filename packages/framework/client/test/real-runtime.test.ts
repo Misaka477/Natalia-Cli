@@ -4242,7 +4242,9 @@ test("runtime agent selection applies only at the next provider turn boundary", 
   );
   release();
   await first;
-  await client.submitAndWait!("second");
+  // The pending agent switch applies at the next turn boundary, so the second
+  // message is queued as its own turn rather than injected into the running one.
+  await client.submitAndWait!({ text: "second", delivery: "next-turn" });
   expect(String(requests[0]?.messages[0]?.content)).toContain("first system");
   expect(String(requests[1]?.messages[0]?.content)).toContain("second system");
   expect(events).toContainEqual(
@@ -4537,9 +4539,7 @@ test("runtime exposes contained workspace filesystem APIs", async () => {
     content: "const needle = true\n",
     encoding: "utf8",
   });
-  expect(
-    await client.workspaceSearch?.({ query: "needle" }),
-  ).toEqual(
+  expect(await client.workspaceSearch?.({ query: "needle" })).toEqual(
     expect.arrayContaining([
       { path: "src/main.ts", line: 1, text: "const needle = true" },
     ]),

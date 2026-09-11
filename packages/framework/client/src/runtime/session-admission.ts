@@ -119,25 +119,35 @@ export function createSessionAdmission(
         void targetCoordinator().wake(drainSessionFor(targetSessionID));
       return submitted;
     }
-    targetExec.lastSubmitted = submitted;
-    if (targetExec === getActiveExec()) setLastSubmitted(submitted);
-    turnSession.set(id, targetSessionID);
-    // A `next-step` admitted while a turn is running is claimed by that turn's
-    // provider loop and published as `turn.input`; announcing it as its own
-    // turn here would create a phantom turn.
+    // A `next-step` admitted while a provider turn is running is claimed by
+    // that turn's provider loop and published as `turn.input`. Announcing it as
+    // its own turn would create a phantom turn, and it must not replace the
+    // running turn as `lastSubmitted`: pause/cancel route by that id.
+    //
+    // `coordinator.active` alone is not enough to call it injectable:
+    // initialization and command drains are active too, and a command turn has
+    // no provider step to claim the input. Requiring an actual active provider
+    // turn keeps `/doctor`-style commands announced and runnable.
     const injectable =
-      delivery === "next-step" && targetCoordinator().active;
-    if (!injectable) publishForSession(targetExec, submitted);
-    // One Work Graph node per turn. The prompt itself is not recorded: it can
-    // contain anything, and the graph is replayable and shareable.
-    publishForSession(
-      targetExec,
-      workLedger.agentActionNode({
-        turnID: id,
-        sessionID: targetSessionID,
-        agent: targetExec?.selectedAgent?.name,
-      }),
-    );
+      delivery === "next-step" &&
+      targetCoordinator().active &&
+      Boolean(targetExec?.activeTurnID);
+    if (!injectable) {
+      targetExec.lastSubmitted = submitted;
+      if (targetExec === getActiveExec()) setLastSubmitted(submitted);
+      turnSession.set(id, targetSessionID);
+      publishForSession(targetExec, submitted);
+      // One Work Graph node per turn. The prompt itself is not recorded: it can
+      // contain anything, and the graph is replayable and shareable.
+      publishForSession(
+        targetExec,
+        workLedger.agentActionNode({
+          turnID: id,
+          sessionID: targetSessionID,
+          agent: targetExec?.selectedAgent?.name,
+        }),
+      );
+    }
     if (!input.internal) {
       rememberTitleInput(targetSessionID, text);
       ctx.state.initialize?.scheduleTitleGeneration?.(targetSessionID);
