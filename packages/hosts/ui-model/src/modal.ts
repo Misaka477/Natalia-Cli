@@ -51,126 +51,302 @@ export type QuestionResponse = {
   workspaceID?: string;
 };
 
-export type ModalRequest =
-  | ({ kind: "approval"; priority: number; sequence: number } & ApprovalRequest)
-  | ({
-      kind: "question";
-      priority: number;
-      sequence: number;
-    } & QuestionRequest);
+// ---------------------------------------------------------------------------
+// Pending interactive items (approval / question / future kinds)
+// ---------------------------------------------------------------------------
 
-export type ModalControllerState = {
-  activeID?: string;
-  queue: ModalRequest[];
+export type PendingKind = "approval" | "question" | (string & {});
+
+export type PendingToolLink = {
+  turnID: string;
+  callID: string;
+  messageID: string;
+};
+
+export type PendingItem = {
+  id: string;
+  kind: PendingKind;
+  title: string;
+  summary?: string;
+  priority: number;
   sequence: number;
-  resolved: Array<ApprovalResponse | QuestionResponse>;
+  request: ApprovalRequest | QuestionRequest | Record<string, unknown>;
+  /** Transcript tool card this request belongs to, when derivable. */
+  tool?: PendingToolLink;
+  expiresAt?: number;
 };
 
-export const initialModalState: ModalControllerState = {
-  queue: [],
-  sequence: 0,
-  resolved: [],
-};
-
-export function enqueueApproval(
-  state: ModalControllerState,
-  request: ApprovalRequest,
-) {
-  enqueue(state, { ...request, kind: "approval", priority: 10 });
-}
-
-export function enqueueQuestion(
-  state: ModalControllerState,
-  request: QuestionRequest,
-) {
-  enqueue(state, { ...request, kind: "question", priority: 20 });
-}
-
-export function activeModal(state: ModalControllerState) {
-  return state.queue.find((request) => request.id === state.activeID);
-}
-
-export function resolveApproval(
-  state: ModalControllerState,
-  response: ApprovalResponse,
-) {
-  resolveModal(state, response.requestID, response);
-}
-
-export function resolveQuestion(
-  state: ModalControllerState,
-  response: QuestionResponse,
-) {
-  resolveModal(state, response.requestID, response);
-}
-
-export function cancelPendingModals(
-  state: ModalControllerState,
-  reason: string,
-) {
-  for (const request of state.queue) {
-    if (request.kind === "approval") {
-      state.resolved.push({
-        requestID: request.id,
-        decision: "reject",
-        feedback: reason,
-      });
-      continue;
-    }
-    state.resolved.push({
-      requestID: request.id,
-      answers: [],
-      rejected: true,
-    });
-  }
-  state.queue = [];
-  state.activeID = undefined;
-}
-
-export function normalizeQuestionRequest(input: {
+/** A request as projected from the runtime event stream. */
+export type PendingApprovalSource = ApprovalRequest;
+export type PendingQuestionSource = {
   id: string;
   title: string;
-  options?: string[];
   questions?: QuestionItem[];
-}): QuestionRequest {
-  if (input.questions?.length)
-    return { id: input.id, title: input.title, questions: input.questions };
+  options?: string[];
+};
+
+/**
+ * Best-effort link from a request id back to its transcript tool card.
+ * An approval id is `${turnID}:${callID}`; a question id adds `:question`.
+ * Only `turn_*` ids are claimed, so plan-acceptance ids are left alone.
+ */
+export function pendingToolLink(id: string): PendingToolLink | undefined {
+  const base = id.endsWith(":question")
+    ? id.slice(0, -":question".length)
+    : id;
+  const sep = base.lastIndexOf(":");
+  if (sep <= 0 || sep === base.length - 1) return undefined;
+  const turnID = base.slice(0, sep);
+  const callID = base.slice(sep + 1);
+  if (!turnID.startsWith("turn_")) return undefined;
+  return { turnID, callID, messageID: `${turnID}:tool:${callID}` };
+}
+
+export function normalizePendingItems(input: {
+  approvals?: readonly PendingApprovalSource[];
+  questions?: readonly PendingQuestionSource[];
+}): PendingItem[] {
+  const items: PendingItem[] = [];
+  let sequence = 0;
+  for (const approval of input.approvals ?? []) {
+    sequence += 1;
+    const tool = pendingToolLink(approval.id);
+    const expiresAt =
+      approval.expiresAt === undefined
+        ? undefined
+        : Date.parse(approval.expiresAt);
+    items.push({
+      id: approval.id,
+      kind: "approval",
+      title: approval.title,
+      summary: approval.preview,
+      priority: 10,
+      sequence,
+      request: approval,
+      ...(tool ? { tool } : {}),
+      ...(expiresAt !== undefined && Number.isFinite(expiresAt)
+        ? { expiresAt }
+        : {}),
+    });
+  }
+  for (const question of input.questions ?? []) {
+    sequence += 1;
+    const tool = pendingToolLink(question.id);
+    items.push({
+      id: question.id,
+      kind: "question",
+      title: question.title,
+      priority: 20,
+      sequence,
+      request: question,
+      ...(tool ? { tool } : {}),
+    });
+  }
+  return items.sort((left, right) => {
+    const priority = left.priority - right.priority;
+    return priority !== 0 ? priority : left.sequence - right.sequence;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Presenter protocol (pure data, no JSX — any UI can render it)
+// ---------------------------------------------------------------------------
+
+export type PendingField = {
+  label: string;
+  value: string;
+  kind?: "text" | "pre" | "list";
+};
+
+export type PendingAction = {
+  id: string;
+  label: string;
+  tone?: "default" | "primary" | "danger";
+  requiresInput?: boolean;
+};
+
+export type PendingDraft = Record<string, unknown>;
+
+export type PendingPresenter<Response = unknown> = {
+  kind: PendingKind;
+  label(item: PendingItem): string;
+  fields(item: PendingItem): PendingField[];
+  actions(item: PendingItem): PendingAction[];
+  validate?(item: PendingItem, draft: PendingDraft): string[];
+  buildResponse(item: PendingItem, draft: PendingDraft): Response;
+};
+
+export const approvalPresenter: PendingPresenter<ApprovalResponse> = {
+  kind: "approval",
+  label: (item) => item.title,
+  fields: (item) => {
+    const request = item.request as ApprovalRequest;
+    const fields: PendingField[] = [
+      { label: "预览", value: request.preview ?? "", kind: "pre" },
+    ];
+    if (request.detail) fields.push({ label: "详情", value: request.detail });
+    if (request.keyArguments?.length)
+      fields.push({
+        label: "参数",
+        value: request.keyArguments.join("\n"),
+        kind: "list",
+      });
+    if (request.risk) fields.push({ label: "风险", value: request.risk });
+    if (item.expiresAt !== undefined)
+      fields.push({
+        label: "过期",
+        value: new Date(item.expiresAt).toLocaleTimeString(),
+      });
+    return fields;
+  },
+  actions: () => [
+    { id: "allow-once", label: "允许一次", tone: "primary" },
+    { id: "allow-session", label: "允许本次会话" },
+    { id: "reject", label: "拒绝", tone: "danger", requiresInput: true },
+  ],
+  buildResponse: (item, draft) => {
+    const action = String(draft.action ?? "reject");
+    const decision: ApprovalDecision =
+      action === "allow-once"
+        ? "once"
+        : action === "allow-session"
+          ? "session"
+          : "reject";
+    const feedback =
+      typeof draft.feedback === "string" && draft.feedback.trim()
+        ? draft.feedback.trim()
+        : undefined;
+    return {
+      requestID: item.id,
+      decision,
+      ...(feedback ? { feedback } : {}),
+    };
+  },
+};
+
+export type QuestionDraft = {
+  /** Selected option labels per question. */
+  selections?: string[][];
+  /** Free-form text per question. */
+  custom?: string[];
+  rejected?: boolean;
+};
+
+export const questionPresenter: PendingPresenter<QuestionResponse> = {
+  kind: "question",
+  label: (item) => item.title,
+  fields: (item) =>
+    normalizeQuestionRequest(item).questions.map((question) => ({
+      label: question.header || "问题",
+      value: [
+        question.question,
+        ...question.options.map((option) =>
+          option.description
+            ? `• ${option.label} — ${option.description}`
+            : `• ${option.label}`,
+        ),
+      ].join("\n"),
+    })),
+  actions: () => [
+    { id: "submit", label: "提交回答", tone: "primary" },
+    { id: "reject", label: "拒绝", tone: "danger" },
+  ],
+  buildResponse: (item, draft) => {
+    const questionDraft = draft as QuestionDraft;
+    if (questionDraft.rejected)
+      return { requestID: item.id, answers: [], rejected: true };
+    const answers = normalizeQuestionRequest(item).questions.map(
+      (question, index) => {
+        const selected = questionDraft.selections?.[index] ?? [];
+        const custom = (questionDraft.custom?.[index] ?? "").trim();
+        const merged = custom
+          ? question.multiple
+            ? [...selected, custom]
+            : [custom]
+          : selected;
+        return [...new Set(merged.filter((answer) => answer !== ""))];
+      },
+    );
+    return { requestID: item.id, answers };
+  },
+};
+
+function normalizeQuestionRequest(item: PendingItem): QuestionRequest {
+  const request = item.request as Partial<QuestionRequest> & {
+    options?: Array<string | { label: string }>;
+  };
+  if (request.questions?.length)
+    return { id: item.id, title: item.title, questions: request.questions };
   return {
-    id: input.id,
-    title: input.title,
+    id: item.id,
+    title: item.title,
     questions: [
       {
-        id: `${input.id}:q0`,
-        header: input.title,
-        question: input.title,
-        options: (input.options ?? []).map((label) => ({ label })),
+        id: `${item.id}:q0`,
+        header: item.title,
+        question: item.title,
+        options: (request.options ?? []).map((option) =>
+          typeof option === "string" ? { label: option } : option,
+        ),
         custom: true,
       },
     ],
   };
 }
 
-function enqueue(
-  state: ModalControllerState,
-  request: Omit<ModalRequest, "sequence">,
-) {
-  state.sequence += 1;
-  const next = { ...request, sequence: state.sequence } as ModalRequest;
-  state.queue = [...state.queue, next].sort((left, right) => {
-    const priority = left.priority - right.priority;
-    if (priority !== 0) return priority;
-    return left.sequence - right.sequence;
-  });
-  state.activeID = state.activeID ?? state.queue[0]?.id;
-}
+// ---------------------------------------------------------------------------
+// UI-only controller: which item is open + which were dismissed
+// ---------------------------------------------------------------------------
+// The pending facts live in the projection (`pendingApprovals` /
+// `pendingQuestions`) and are normalized with `normalizePendingItems`; the
+// controller only owns the dialog stack state, which must not enter view-store.
 
-function resolveModal(
-  state: ModalControllerState,
-  requestID: string,
-  response: ApprovalResponse | QuestionResponse,
-) {
-  state.queue = state.queue.filter((request) => request.id !== requestID);
-  state.resolved.push(response);
-  if (state.activeID !== requestID) return;
-  state.activeID = state.queue[0]?.id;
+export type PendingController = {
+  activeID(): string | undefined;
+  isDismissed(id: string): boolean;
+  focus(id: string): void;
+  clearActive(): void;
+  dismiss(id: string): void;
+  prune(liveIDs: ReadonlySet<string>): void;
+};
+
+export function createPendingController(
+  onChange?: () => void,
+): PendingController {
+  let active: string | undefined;
+  const dismissed = new Set<string>();
+  const changed = () => onChange?.();
+  return {
+    activeID: () => active,
+    isDismissed: (id) => dismissed.has(id),
+    focus(id) {
+      dismissed.delete(id);
+      if (active === id) return;
+      active = id;
+      changed();
+    },
+    clearActive() {
+      if (active === undefined) return;
+      active = undefined;
+      changed();
+    },
+    dismiss(id) {
+      dismissed.add(id);
+      if (active === id) active = undefined;
+      changed();
+    },
+    prune(liveIDs) {
+      let changedState = false;
+      for (const id of [...dismissed])
+        if (!liveIDs.has(id)) {
+          dismissed.delete(id);
+          changedState = true;
+        }
+      if (active !== undefined && !liveIDs.has(active)) {
+        active = undefined;
+        changedState = true;
+      }
+      if (changedState) changed();
+    },
+  };
 }
