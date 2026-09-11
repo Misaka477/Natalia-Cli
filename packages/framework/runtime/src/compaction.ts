@@ -5,6 +5,7 @@ import {
   estimateTokens,
   largeToolResultContext,
   preserveRecentWithToolPairs,
+  preserveRecentWithToolPairsByTokens,
   type ContextEntry,
 } from "./context";
 import { runWithRetry, type RetryRunnerOptions } from "./retry";
@@ -104,6 +105,7 @@ export type CompactionOptions = {
   thresholdPercent: number;
   reservedTokens: number;
   preservedRecentMessages: number;
+  preservedRecentTokens?: number;
   beforeTokens?: number;
   instruction?: string;
   enabled?: boolean;
@@ -126,10 +128,16 @@ export async function compactContext(
     return { compacted: false, skipped: "disabled" as const };
   }
   const snapshot = ledger.snapshot();
-  const preserved = preserveRecentWithToolPairs(
-    snapshot.entries,
-    options.preservedRecentMessages,
-  );
+  const preserved =
+    options.preservedRecentTokens && options.preservedRecentTokens > 0
+      ? preserveRecentWithToolPairsByTokens(
+          snapshot.entries,
+          options.preservedRecentTokens,
+        )
+      : preserveRecentWithToolPairs(
+          snapshot.entries,
+          options.preservedRecentMessages,
+        );
   const preservedIDs = new Set(preserved.map((entry) => entry.id));
   const retained = preserved.filter((entry) => entry.role !== "resource");
   const compactedEntries = snapshot.entries.filter(

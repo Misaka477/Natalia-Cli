@@ -298,11 +298,10 @@ export function contextStatusEvent(status: ContextStatus): RuntimeEvent {
   return { type: "context.status", ...status };
 }
 
-export function preserveRecentWithToolPairs(
+function closeToolPairs(
   entries: ContextEntry[],
-  recentCount: number,
-) {
-  const preserved = entries.slice(Math.max(0, entries.length - recentCount));
+  preserved: ContextEntry[],
+): ContextEntry[] {
   const pairIDs = new Set(
     preserved.map((entry) => entry.pairID).filter(Boolean) as string[],
   );
@@ -313,6 +312,39 @@ export function preserveRecentWithToolPairs(
       !preserved.some((item) => item.id === entry.id),
   );
   return [...missingPairs, ...preserved];
+}
+
+export function preserveRecentWithToolPairs(
+  entries: ContextEntry[],
+  recentCount: number,
+) {
+  return closeToolPairs(
+    entries,
+    entries.slice(Math.max(0, entries.length - recentCount)),
+  );
+}
+
+/**
+ * Retains the newest suffix that fits a token budget. At least the newest
+ * entry is retained even when it alone exceeds the budget, so compaction never
+ * drops the current step's context. Tool-call/result pairs are closed after the
+ * budget cut, which may add a bounded number of older entries.
+ */
+export function preserveRecentWithToolPairsByTokens(
+  entries: ContextEntry[],
+  tokenBudget: number,
+): ContextEntry[] {
+  if (tokenBudget <= 0) return [];
+  let start = entries.length;
+  let tokens = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    const entryTokens = entry.tokens ?? estimateTokens(entry.content);
+    if (start < entries.length && tokens + entryTokens > tokenBudget) break;
+    tokens += entryTokens;
+    start = index;
+  }
+  return closeToolPairs(entries, entries.slice(start));
 }
 
 export function largeToolResultContext(

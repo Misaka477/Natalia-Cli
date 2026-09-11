@@ -95,6 +95,8 @@ export const contextConfigSchema = z.object({
     .union([z.literal("auto"), z.number().int().positive()])
     .default("auto"),
   preservedRecentMessages: z.number().int().min(0).default(10),
+  /** When > 0, an absolute token budget for the recent tail. */
+  preservedRecentTokens: z.number().int().min(0).default(0),
 });
 
 export const checkpointConfigSchema = z

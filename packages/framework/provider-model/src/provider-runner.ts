@@ -721,6 +721,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       budget: contextConfig,
       preservedRecentMessages:
         input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
+      preservedRecentTokens:
+        input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
       instruction: "Recover from provider context limit before retrying.",
       signal: input.activeAbort()?.signal,
       onEvent: input.publish,
@@ -766,6 +768,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       enabled: input.tsRuntimeConfig()?.context.compactionEnabled ?? true,
       preservedRecentMessages:
         input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
+      preservedRecentTokens:
+        input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
       instruction:
         "Compact before the next provider request while preserving the active task.",
       signal: input.activeAbort()?.signal,

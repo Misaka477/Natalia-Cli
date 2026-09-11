@@ -21,6 +21,7 @@ type CompactionOperation = {
   provider: StreamingProvider;
   budget: CompactionBudget;
   preservedRecentMessages: number;
+  preservedRecentTokens?: number;
   instruction: string;
   signal?: AbortSignal;
   onEvent?: (event: RuntimeEvent) => void;
@@ -44,6 +45,9 @@ export function createCompactionService(input: {
         thresholdPercent: operation.budget.thresholdPercent,
         reservedTokens: operation.budget.reserved,
         preservedRecentMessages: operation.preservedRecentMessages,
+        ...(operation.preservedRecentTokens === undefined
+          ? {}
+          : { preservedRecentTokens: operation.preservedRecentTokens }),
         instruction: operation.instruction,
         onEvent: operation.onEvent,
         retry: { policy: input.retry.policy(), signal: operation.signal },

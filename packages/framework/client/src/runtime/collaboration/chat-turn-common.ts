@@ -178,6 +178,8 @@ export async function compactChatBeforeProviderStep(
     enabled: ctx.ports.getTsRuntimeConfig()?.context.compactionEnabled ?? true,
     preservedRecentMessages:
       ctx.ports.getTsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
+    preservedRecentTokens:
+      ctx.ports.getTsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
     instruction: stream.instruction,
     signal,
     onEvent: stream.publishCompactionEvent,

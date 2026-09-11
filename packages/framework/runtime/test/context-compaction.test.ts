@@ -6,6 +6,7 @@ import {
   ContextLedger,
   largeToolResultContext,
   preserveRecentWithToolPairs,
+  preserveRecentWithToolPairsByTokens,
   providerCompactor,
   providerError,
   recoverContextLimitOnce,
@@ -534,4 +535,56 @@ test("preserveRecentWithToolPairs restores missing paired call", () => {
   expect(
     preserveRecentWithToolPairs(entries, 1).map((entry) => entry.id),
   ).toEqual(["call", "result"]);
+});
+
+test("preserveRecentWithToolPairsByTokens keeps the newest suffix and closes tool pairs", () => {
+  const entries: ContextEntry[] = [
+    { id: "call", role: "tool_call", content: "call", pairID: "p", tokens: 10 },
+    {
+      id: "middle",
+      role: "assistant",
+      content: "middle",
+      tokens: 10,
+    },
+    {
+      id: "result",
+      role: "tool_result",
+      content: "result",
+      pairID: "p",
+      tokens: 10,
+    },
+    { id: "newest", role: "assistant", content: "newest", tokens: 10 },
+  ];
+  expect(
+    preserveRecentWithToolPairsByTokens(entries, 20).map((entry) => entry.id),
+  ).toEqual(["call", "result", "newest"]);
+  expect(
+    preserveRecentWithToolPairsByTokens(entries, 5).map((entry) => entry.id),
+  ).toEqual(["newest"]);
+  expect(preserveRecentWithToolPairsByTokens(entries, 0)).toEqual([]);
+});
+
+test("compaction prefers an explicit preservedRecentTokens budget over message count", async () => {
+  const ledger = ledgerWithMessages(4);
+  let compactedIDs: string[] = [];
+  const compactor: Compactor = {
+    async compact(input) {
+      compactedIDs = input.entries.map((entry) => entry.id);
+      return { summary: "budgeted summary" };
+    },
+  };
+  await compactContext(ledger, compactor, {
+    id: "cmp_budget",
+    trigger: "ratio",
+    maxTokens: 100,
+    thresholdPercent: 85,
+    reservedTokens: 10,
+    preservedRecentMessages: 2,
+    preservedRecentTokens: 15,
+  });
+  expect(compactedIDs).toEqual(["m0", "m1", "m2"]);
+  expect(ledger.snapshot().entries.map((entry) => entry.id)).toEqual([
+    "cmp_budget:summary",
+    "m3",
+  ]);
 });

@@ -242,6 +242,8 @@ export async function createSubagentSupport(
         enabled: scope.tsRuntimeConfig?.context.compactionEnabled ?? true,
         preservedRecentMessages:
           scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
+        preservedRecentTokens:
+          scope.tsRuntimeConfig?.context.preservedRecentTokens ?? 0,
         instruction:
           "Compact before this subagent provider request while preserving the active task.",
         signal: runner.signal,
@@ -256,6 +258,8 @@ export async function createSubagentSupport(
         budget: activeContextConfig,
         preservedRecentMessages:
           scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
+        preservedRecentTokens:
+          scope.tsRuntimeConfig?.context.preservedRecentTokens ?? 0,
         instruction: "Recover this subagent from the provider context limit.",
         signal: runner.signal,
         runStep,
