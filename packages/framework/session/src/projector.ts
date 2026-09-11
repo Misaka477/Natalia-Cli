@@ -309,8 +309,7 @@ function projectedRowKind(
     return event.internal ? "system" : "user";
   if (event.type === "policy.decision" && event.turnID === turnID)
     return "system";
-  if (event.type === "turn.input")
-    return event.internal ? "system" : "user";
+  if (event.type === "turn.input") return event.internal ? "system" : "user";
   if (!("id" in event) || typeof event.id !== "string") return undefined;
   if (event.id !== turnID && !event.id.startsWith(`${turnID}:`))
     return undefined;

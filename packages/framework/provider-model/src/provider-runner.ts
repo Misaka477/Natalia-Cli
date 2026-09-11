@@ -199,7 +199,14 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       )
     )
       input.publish(
-        buildSubmittedTurn({ id, text, attachments, resources, agents, internal }),
+        buildSubmittedTurn({
+          id,
+          text,
+          attachments,
+          resources,
+          agents,
+          internal,
+        }),
       );
     input.setLastProviderUsage(undefined);
     let assistant = "";

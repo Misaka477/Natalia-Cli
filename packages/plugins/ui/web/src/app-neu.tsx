@@ -10,7 +10,11 @@ import type {
   RuntimeClient,
   WorkspaceSummary,
 } from "@natalia/contracts";
-import { type AppState, boundTranscript, cloneState } from "@natalia/view-store";
+import {
+  type AppState,
+  boundTranscript,
+  cloneState,
+} from "@natalia/view-store";
 import { cloneStateInWorker } from "./clone-state-worker-client";
 import {
   createSignal,
@@ -2405,9 +2409,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const tool = msg.tool;
         if (tool) {
           const status =
-            active && isLast
-              ? "running"
-              : (tool.status as Message["status"]);
+            active && isLast ? "running" : (tool.status as Message["status"]);
           const pendingRequestID = pendingByMessageID().get(msg.id);
           return {
             id: msg.id,
@@ -2593,9 +2595,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   const renderedChatMessages = createMemo<Message[]>(() => {
     const rows = chatMessages();
-    return chatFollowBottom()
-      ? boundTranscript(rows, "newer").messages
-      : rows;
+    return chatFollowBottom() ? boundTranscript(rows, "newer").messages : rows;
   });
   function startResize(
     event: PointerEvent,

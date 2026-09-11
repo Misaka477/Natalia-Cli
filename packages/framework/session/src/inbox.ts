@@ -103,9 +103,7 @@ export function admitInput(
   >,
   now = new Date(),
 ) {
-  const existing = admittedInputs(session).find(
-    (item) => item.id === input.id,
-  );
+  const existing = admittedInputs(session).find((item) => item.id === input.id);
   if (existing) {
     if (
       existing.sessionID === session.id &&
