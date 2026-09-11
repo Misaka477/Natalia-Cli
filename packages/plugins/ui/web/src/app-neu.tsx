@@ -2731,6 +2731,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const list = props.ctx.host?.listPanels() ?? [];
     const rows = list
       .filter((item) => item.panel.region === "side")
+      // Metadata-only panels (e.g. the shell's own `chat`) have no mount and
+      // cannot be rendered into the rail.
+      .filter((item) => typeof item.panel.mount === "function")
       .filter((item) => panelVisible(item.panel))
       .filter(
         (item) =>
