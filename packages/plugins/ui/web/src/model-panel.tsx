@@ -786,7 +786,7 @@ export function ModelPanel(props: {
                       value={model().id}
                       placeholder="ID"
                       onInput={(event) =>
-                        updateModel(index(), { id: event.currentTarget.value })
+                        updateModel(index, { id: event.currentTarget.value })
                       }
                     />
                     <input
@@ -798,7 +798,7 @@ export function ModelPanel(props: {
                       value={model().contextWindow ?? ""}
                       onInput={(event) => {
                         const value = Number(event.currentTarget.value);
-                        updateModel(index(), {
+                        updateModel(index, {
                           contextWindow:
                             Number.isFinite(value) && value > 0
                               ? value
@@ -811,7 +811,7 @@ export function ModelPanel(props: {
                         type="checkbox"
                         checked={model().reasoning}
                         onChange={() =>
-                          updateModel(index(), {
+                          updateModel(index, {
                             reasoning: !model().reasoning,
                           })
                         }
@@ -823,7 +823,7 @@ export function ModelPanel(props: {
                         type="checkbox"
                         checked={model().image}
                         onChange={() =>
-                          updateModel(index(), { image: !model().image })
+                          updateModel(index, { image: !model().image })
                         }
                       />
                       <span>图片</span>
@@ -831,7 +831,7 @@ export function ModelPanel(props: {
                     <button
                       type="button"
                       class="neu-model-remove"
-                      onClick={() => removeModel(index())}
+                      onClick={() => removeModel(index)}
                     >
                       删除
                     </button>
@@ -855,7 +855,7 @@ export function ModelPanel(props: {
                       value={header().name}
                       placeholder="Header Name"
                       onInput={(event) =>
-                        updateHeader(index(), {
+                        updateHeader(index, {
                           name: event.currentTarget.value,
                         })
                       }
@@ -865,7 +865,7 @@ export function ModelPanel(props: {
                       value={header().value}
                       placeholder="Value"
                       onInput={(event) =>
-                        updateHeader(index(), {
+                        updateHeader(index, {
                           value: event.currentTarget.value,
                         })
                       }
@@ -873,7 +873,7 @@ export function ModelPanel(props: {
                     <button
                       type="button"
                       class="neu-model-remove"
-                      onClick={() => removeHeaderRow(index())}
+                      onClick={() => removeHeaderRow(index)}
                     >
                       删除
                     </button>
