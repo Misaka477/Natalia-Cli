@@ -1982,3 +1982,25 @@ test("a late snapshot retains a live delta for the same message ID", () => {
   ]);
   expect(state.navi.messages.map(displayText)).toEqual(["durable live"]);
 });
+
+test("generic interactive requests project and clear on response", () => {
+  const state = projectEvents([
+    {
+      type: "interactive.request",
+      id: "ix1",
+      kind: "custom.kind",
+      title: "Pick one",
+      payload: { options: ["a", "b"] },
+    },
+  ]);
+  expect(state.pendingInteractives).toEqual([
+    expect.objectContaining({ id: "ix1", kind: "custom.kind" }),
+  ]);
+  applyEvent(state, {
+    type: "interactive.response",
+    id: "ix1",
+    kind: "custom.kind",
+    response: "a",
+  });
+  expect(state.pendingInteractives).toEqual([]);
+});

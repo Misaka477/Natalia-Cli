@@ -6757,6 +6757,7 @@ test("restart projects unresolved interactive requests from durable events", asy
   expect(await client.pendingInteractive!()).toEqual({
     approvals: [],
     questions: [],
+    interactives: [],
   });
   await waitForAsync(async () => {
     const history = await client.history!({ limit: 500 });
@@ -6843,6 +6844,7 @@ test("restart durably rejects orphaned interactive requests from a crashed turn"
   expect(await client.pendingInteractive!()).toEqual({
     approvals: [expect.objectContaining({ id: "independent_approval" })],
     questions: [],
+    interactives: [],
   });
   const history = await client.history!({ limit: 500 });
   expect(history.events.map((entry) => entry.event)).toEqual(
@@ -13685,5 +13687,60 @@ test("input.remove/replace/promote mutate the durable queue and emit events", as
     5000,
     "the promoted input to be claimed by the running turn",
   );
+  await client.dispose?.();
+}, 30_000);
+
+test("a generic interactive kind round-trips through projection and response", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-generic-interactive-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_generic_interactive",
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() => events.some((event) => event.type === "session.ready"));
+  const waiter = await client.service<
+    import("@natalia/runtime-services").InteractiveWaiter
+  >("collaboration.waiter");
+  expect(waiter).toBeDefined();
+
+  const pending = waiter!.requireInteractive({
+    requestID: "custom_1",
+    turnID: "turn_custom",
+    kind: "custom.kind",
+    title: "Pick one",
+    payload: { options: ["a", "b"] },
+    validate: (response) => (response === "a" ? undefined : ["must be a"]),
+  });
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "interactive.request" && event.id === "custom_1",
+    ),
+  );
+
+  const projection = await client.pendingInteractive!();
+  expect(projection.interactives).toEqual([
+    expect.objectContaining({ id: "custom_1", kind: "custom.kind" }),
+  ]);
+
+  expect(
+    await client.respondInteractive!({
+      requestID: "custom_1",
+      kind: "custom.kind",
+      response: "a",
+      sessionID: "ses_generic_interactive",
+    }),
+  ).toEqual({ accepted: true });
+  await expect(pending).resolves.toEqual({
+    response: "a",
+    rejected: undefined,
+  });
+  expect(
+    events.some(
+      (event) =>
+        event.type === "interactive.response" && event.id === "custom_1",
+    ),
+  ).toBe(true);
   await client.dispose?.();
 }, 30_000);

@@ -78,6 +78,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "accepted",
     note: "same as respondApproval",
   },
+  respondInteractive: {
+    refusal: "value",
+    expressedBy: "accepted",
+    note: "an answer to a generic request that is no longer pending is dropped, and the caller learns from accepted:false",
+  },
 
   // --- transcript ---
   history: { refusal: "none", note: "pure read" },

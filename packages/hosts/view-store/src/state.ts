@@ -77,6 +77,11 @@ export type ToolBlock = {
  * `next-turn` waiting for its turn and `steering` for a `next-step` waiting to
  * be claimed by the running one.
  */
+export type PendingInteractiveView = Extract<
+  RuntimeEvent,
+  { type: "interactive.request" }
+>;
+
 export type PendingInputView = {
   id: string;
   text: string;
@@ -255,6 +260,8 @@ export type AppState = {
   pendingQuestions: PendingQuestion[];
   /** Durable admissions that have not started a turn or been claimed yet. */
   pendingInputs: PendingInputView[];
+  /** Plugin/tool-defined interactive requests waiting for a response. */
+  pendingInteractives: PendingInteractiveView[];
   /** All currently live work; settled activities are removed by the projection. */
   activities: Record<string, ActivityView>;
 
@@ -348,6 +355,7 @@ export function initialState(): AppState {
   const pendingApprovals: PendingApproval[] = [];
   const pendingQuestions: PendingQuestion[] = [];
   const pendingInputs: PendingInputView[] = [];
+  const pendingInteractives: PendingInteractiveView[] = [];
   const activities: Record<string, ActivityView> = {};
   const subagents: Record<string, SubagentView> = {};
   const subagentHistory: Record<string, SubagentView[]> = {};
@@ -371,6 +379,7 @@ export function initialState(): AppState {
     pendingApprovals,
     pendingQuestions,
     pendingInputs,
+    pendingInteractives,
     activities,
     natalia: {
       messages,
@@ -437,6 +446,9 @@ export function cloneState(state: AppState): AppState {
     pendingApprovals: [...state.pendingApprovals],
     pendingQuestions: [...state.pendingQuestions],
     pendingInputs: state.pendingInputs.map((input) => ({ ...input })),
+    pendingInteractives: state.pendingInteractives.map((input) => ({
+      ...input,
+    })),
     activities: mapRecord(state.activities, (value) => ({ ...value })),
     natalia: cloneNataliaStream(state.natalia),
     navi: cloneAgentStream(state.navi),

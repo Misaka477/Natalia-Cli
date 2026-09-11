@@ -89,6 +89,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "history",
     "messages",
     "pendingInteractive",
+    "respondInteractive",
     "submitInput",
     "submitAndWait",
   ],

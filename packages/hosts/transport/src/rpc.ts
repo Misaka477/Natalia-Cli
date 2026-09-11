@@ -116,6 +116,7 @@ export const RPC_ROUTE_MEMBERS = {
   "approval.respond": "respondApproval",
   "question.respond": "respondQuestion",
   "interactive.pending": "pendingInteractive",
+  "interactive.respond": "respondInteractive",
   "session.history": "history",
   "session.messages": "messages",
   pause: "pause",
@@ -330,6 +331,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "input.promote",
   "approval.respond",
   "question.respond",
+  "interactive.respond",
   "pause",
   "resume",
   "agent.select",
@@ -1404,6 +1406,43 @@ export async function handleRPCMessage(
             : {}),
           ...(optionalStringParam(body.params, "workspaceID")
             ? { workspaceID: optionalStringParam(body.params, "workspaceID") }
+            : {}),
+        }),
+      };
+    }
+    if (body.method === "interactive.respond") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("interactive.respond.params must be an object");
+      const record = params as Record<string, unknown>;
+      if (typeof record.requestID !== "string" || !record.requestID)
+        throw invalidParams(
+          "interactive.respond.params.requestID must be a non-empty string",
+        );
+      if (typeof record.kind !== "string" || !record.kind)
+        throw invalidParams(
+          "interactive.respond.params.kind must be a non-empty string",
+        );
+      if (record.response === undefined)
+        throw invalidParams("interactive.respond.params.response is required");
+      if (
+        record.sessionID !== undefined &&
+        typeof record.sessionID !== "string"
+      )
+        throw invalidParams(
+          "interactive.respond.params.sessionID must be a string",
+        );
+      optionsGuard(client, "respondInteractive");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.respondInteractive({
+          requestID: record.requestID,
+          kind: record.kind,
+          response: record.response as never,
+          ...(record.rejected === true ? { rejected: true } : {}),
+          ...(record.sessionID
+            ? { sessionID: record.sessionID as string }
             : {}),
         }),
       };

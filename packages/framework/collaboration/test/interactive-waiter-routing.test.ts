@@ -20,7 +20,11 @@ type Published = { session: SessionID; event: RuntimeEvent };
 
 function harness(options: {
   attached?: SessionID;
-  isPending?: (session: SessionID, id: string, kind: "approval" | "question") => boolean;
+  isPending?: (
+    session: SessionID,
+    id: string,
+    kind: "approval" | "question",
+  ) => boolean;
   signal?: AbortSignal;
 }) {
   const attached = options.attached ?? ("ses_attached" as SessionID);
@@ -105,4 +109,75 @@ test("cancelling a question settles the durable journal", async () => {
   expect(settled?.session).toBe("ses_a" as SessionID);
   if (settled?.event.type === "question.response")
     expect(settled.event.rejected).toBe(true);
+});
+
+test("a generic interactive request publishes, waits and settles by kind", async () => {
+  const h = harness({});
+  const pending = h.waiter.requireInteractive({
+    requestID: "x1",
+    turnID: "turn_a",
+    kind: "custom.kind",
+    title: "Pick one",
+    payload: { options: ["a", "b"] },
+    validate: (response) => (response === "a" ? undefined : ["must be a"]),
+  });
+  expect(
+    h.published.some(
+      ({ event }) =>
+        event.type === "interactive.request" &&
+        event.id === "x1" &&
+        event.kind === "custom.kind",
+    ),
+  ).toBe(true);
+  expect(
+    h.waiter.respondInteractive({
+      requestID: "x1",
+      kind: "custom.kind",
+      response: "a",
+    }),
+  ).toEqual({ accepted: true });
+  await expect(pending).resolves.toEqual({
+    response: "a",
+    rejected: undefined,
+  });
+  expect(
+    h.published.some(
+      ({ event }) =>
+        event.type === "interactive.response" &&
+        event.id === "x1" &&
+        event.kind === "custom.kind",
+    ),
+  ).toBe(true);
+});
+
+test("a generic interactive validate failure rejects the wait", async () => {
+  const h = harness({});
+  const pending = h.waiter.requireInteractive({
+    requestID: "x2",
+    turnID: "turn_a",
+    kind: "custom.kind",
+    title: "Pick",
+    payload: {},
+    validate: () => ["bad value"],
+  });
+  h.waiter.respondInteractive({
+    requestID: "x2",
+    kind: "custom.kind",
+    response: 1,
+  });
+  await expect(pending).rejects.toThrow("invalid interactive response");
+});
+
+test("a response to a non-pending generic interactive is refused", () => {
+  const h = harness({});
+  expect(
+    h.waiter.respondInteractive({
+      requestID: "gone",
+      kind: "custom.kind",
+      response: null,
+    }),
+  ).toEqual({
+    accepted: false,
+    reason: "the interactive request is no longer pending",
+  });
 });

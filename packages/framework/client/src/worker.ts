@@ -34,6 +34,7 @@ export const WORKER_ROUTE_MEMBERS = {
   approval: "respondApproval",
   question: "respondQuestion",
   "interactive.pending": "pendingInteractive",
+  "interactive.respond": "respondInteractive",
   "config.reload": "reloadConfig",
   "config.update": "updateConfig",
   "config.get": "configGet",
@@ -158,6 +159,7 @@ type WorkerRequest = {
     | "approval"
     | "question"
     | "interactive.pending"
+    | "interactive.respond"
     | "config.reload"
     | "config.update"
     | "config.get"
@@ -406,6 +408,11 @@ export function createWorkerRuntimeClient(
     async pendingInteractive(input) {
       return (await request("interactive.pending", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["pendingInteractive"]>>
+      >;
+    },
+    async respondInteractive(response) {
+      return (await request("interactive.respond", response)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["respondInteractive"]>>
       >;
     },
     async reloadConfig() {
@@ -1144,6 +1151,13 @@ export async function handleWorkerRequest(
     if (!client.pendingInteractive)
       throw new Error("RuntimeClient does not support interactive.pending");
     return await client.pendingInteractive(request.value as never);
+  }
+  if (request.method === "interactive.respond") {
+    if (!client.respondInteractive)
+      throw new Error("RuntimeClient does not support interactive.respond");
+    return await client.respondInteractive(
+      request.value as import("@natalia/contracts").InteractiveResponse,
+    );
   }
   if (request.method === "runtime.status")
     return await client.runtimeStatus?.(

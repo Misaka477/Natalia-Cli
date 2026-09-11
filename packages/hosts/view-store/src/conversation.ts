@@ -374,6 +374,19 @@ export function applyConversationEvent(
         (item) => item.id !== event.id,
       );
       return true;
+    case "interactive.request":
+      if (!acceptsSession(state, event.sessionID)) return false;
+      state.pendingInteractives = [
+        ...state.pendingInteractives.filter((item) => item.id !== event.id),
+        event,
+      ];
+      return true;
+    case "interactive.response":
+      if (!acceptsSession(state, event.sessionID)) return false;
+      state.pendingInteractives = state.pendingInteractives.filter(
+        (item) => item.id !== event.id,
+      );
+      return true;
     case "turn.cancelled":
       if (state.activeTurn === event.id) state.activeTurn = undefined;
       markTurnCancelled(state, event.id);

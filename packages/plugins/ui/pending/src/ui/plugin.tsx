@@ -1,4 +1,10 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import {
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+} from "solid-js";
 import { render } from "solid-js/web";
 import type { ApprovalResponse, QuestionResponse } from "@natalia/contracts";
 import {
@@ -33,14 +39,13 @@ function PendingInbox(props: { ctx: UiPluginContext }) {
     return normalizePendingItems({
       approvals: state.pendingApprovals,
       questions: state.pendingQuestions,
+      interactives: state.pendingInteractives,
     });
   });
 
   // Forget dismissed/active ids whose request is no longer pending.
   createEffect(() => {
-    props.ctx.pending.controller.prune(
-      new Set(items().map((item) => item.id)),
-    );
+    props.ctx.pending.controller.prune(new Set(items().map((item) => item.id)));
   });
 
   const presenterFor = (kind: string): PendingPresenter | undefined =>
@@ -56,6 +61,13 @@ function PendingInbox(props: { ctx: UiPluginContext }) {
       void props.ctx.runtime.respondApproval?.(payload as ApprovalResponse);
     else if (item.kind === "question")
       void props.ctx.runtime.respondQuestion?.(payload as QuestionResponse);
+    else
+      void props.ctx.runtime.respondInteractive?.({
+        requestID: item.id,
+        kind: item.kind,
+        response: response as import("@natalia/contracts").JsonValue,
+        ...(sessionID ? { sessionID } : {}),
+      });
     props.ctx.pending.controller.dismiss(item.id);
   }
 
@@ -84,7 +96,11 @@ export function PendingInboxBadge(props: { ctx: UiPluginContext }) {
   const count = createMemo(() => {
     revision();
     const state = props.ctx.projection.getState();
-    return state.pendingApprovals.length + state.pendingQuestions.length;
+    return (
+      state.pendingApprovals.length +
+      state.pendingQuestions.length +
+      state.pendingInteractives.length
+    );
   });
   return <PendingBadge count={count()} />;
 }

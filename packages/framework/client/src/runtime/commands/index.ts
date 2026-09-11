@@ -39,7 +39,7 @@ export function createCommands(ctx: RuntimeContext) {
   function isPendingInteractiveRequest(
     forSessionID: SessionID,
     id: string,
-    kind: "approval" | "question",
+    kind: string,
   ) {
     const { getExecutionBySession } = ctx.ports;
     // D2: the request lives in the session whose turn issued it. A response
@@ -47,9 +47,13 @@ export function createCommands(ctx: RuntimeContext) {
     // against that session's journal, never the attached one's.
     const target = getExecutionBySession().get(forSessionID)?.session;
     const pending = projectInteractiveRequests(target?.events ?? []);
-    return kind === "approval"
-      ? pending.approvals.some((request) => request.id === id)
-      : pending.questions.some((request) => request.id === id);
+    if (kind === "approval")
+      return pending.approvals.some((request) => request.id === id);
+    if (kind === "question")
+      return pending.questions.some((request) => request.id === id);
+    return pending.interactives.some(
+      (request) => request.id === id && request.kind === kind,
+    );
   }
 
   function commandCatalogEntries(): PluginCommand[] {

@@ -107,6 +107,7 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
           },
         ],
         questions: [],
+        interactives: [],
       };
     },
     async plugins() {

@@ -412,6 +412,21 @@ export type ToolExecutionContext = {
       custom?: boolean;
     }>;
   }) => Promise<string[][]>;
+  /**
+   * Issues a plugin/tool-defined interactive request and waits for its answer.
+   * The runtime treats payload/response as opaque JSON; `validate` is the tool's
+   * own authoritative business check.
+   */
+  askInteractive?: (input: {
+    kind: string;
+    title: string;
+    payload: unknown;
+    responseSchema?: Record<string, unknown>;
+    expiresAt?: string;
+    priority?: number;
+    requestID?: string;
+    validate?(response: unknown): string[] | void;
+  }) => Promise<{ response: unknown; rejected?: boolean }>;
   subagents?: SubagentToolService;
   terminal?: TerminalToolService;
   sandboxes?: SandboxToolService;

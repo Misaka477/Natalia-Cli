@@ -18,7 +18,7 @@ export type RuntimePortsExtra = {
   isPendingInteractiveRequest: (
     sessionID: SessionID,
     id: string,
-    kind: "approval" | "question",
+    kind: string,
   ) => boolean;
   scheduleCollabSnapshot?: (exec: SessionExecutionState) => void;
   setLastSubmitted: (

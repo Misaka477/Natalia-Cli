@@ -93,6 +93,37 @@ export function buildToolExecutionContext(input: BuildContextInput) {
         turnID,
         input,
       ),
+    askInteractive: async (input: {
+      kind: string;
+      title: string;
+      payload: unknown;
+      responseSchema?: Record<string, unknown>;
+      expiresAt?: string;
+      priority?: number;
+      requestID?: string;
+      validate?(response: unknown): string[] | void;
+    }) =>
+      await getInteractive().requireInteractive({
+        requestID: input.requestID ?? `${toolID}:interactive`,
+        turnID,
+        kind: input.kind,
+        title: input.title,
+        payload: input.payload as import("@natalia/contracts").JsonValue,
+        ...(input.responseSchema
+          ? {
+              responseSchema:
+                input.responseSchema as import("@natalia/contracts").JsonSchema,
+            }
+          : {}),
+        ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+        ...(input.priority === undefined ? {} : { priority: input.priority }),
+        ...(input.validate
+          ? {
+              validate: (response) =>
+                input.validate?.(response) as string[] | void,
+            }
+          : {}),
+      }),
     subagents,
     terminal,
     sandboxes,

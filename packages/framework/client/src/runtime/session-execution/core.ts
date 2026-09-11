@@ -19,6 +19,7 @@ type Surface = Pick<
   | "lastSubmission"
   | "respondApproval"
   | "respondQuestion"
+  | "respondInteractive"
 >;
 export function createCoreSurface(
   ctx: RuntimeContext,
@@ -168,6 +169,10 @@ export function createCoreSurface(
     async respondQuestion(response) {
       await ctx.ports.getReady();
       return ctx.ports.getInteractive().respondQuestion(response);
+    },
+    async respondInteractive(response) {
+      await ctx.ports.getReady();
+      return ctx.ports.getInteractive().respondInteractive(response);
     },
   };
 

@@ -769,6 +769,7 @@ export function createWorkspaceRuntimeClient(
     "workGraphEdges",
     "respondApproval",
     "respondQuestion",
+    "respondInteractive",
   ]);
 
   const workspaceScopedMethods = new Set([

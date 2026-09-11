@@ -23,7 +23,9 @@
  */
 import type {
   ApprovalResponse,
+  InteractiveResponse,
   InteractiveResponseOutcome,
+  JsonValue,
   QuestionResponse,
   RuntimeEvent,
   SessionID,
@@ -74,6 +76,12 @@ export function createInteractiveWaiter(
   const questionWaiters = new Map<
     string,
     (response: QuestionResponse) => void
+  >();
+  const pendingInteractives = new Map<string, InteractiveResponse>();
+  const interactiveSessionByID = new Map<string, SessionID>();
+  const interactiveWaiters = new Map<
+    string,
+    (response: InteractiveResponse) => void
   >();
 
   async function requireApproval(
@@ -229,14 +237,146 @@ export function createInteractiveWaiter(
     }
   }
 
+  /**
+   * Issues a generic interactive request and waits for the human/UI response.
+   * The runtime publishes an opaque `interactive.request`; `validate` is the
+   * in-process business authority and runs after the answer arrives.
+   */
+  async function requireInteractive(input: {
+    requestID: string;
+    turnID: string;
+    kind: string;
+    title: string;
+    payload: JsonValue;
+    responseSchema?: import("@natalia/contracts").JsonSchema;
+    expiresAt?: string;
+    priority?: number;
+    validate?(response: JsonValue): string[] | void;
+  }) {
+    const session = deps.sessionIDForTurn(input.turnID);
+    const agentID = deps.agentIDForTurn?.(input.turnID);
+    interactiveSessionByID.set(input.requestID, session);
+    deps.publishForSession(session, {
+      type: "interactive.request",
+      id: input.requestID,
+      kind: input.kind,
+      title: input.title,
+      payload: input.payload,
+      ...(input.responseSchema ? { responseSchema: input.responseSchema } : {}),
+      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+      ...(input.priority === undefined ? {} : { priority: input.priority }),
+      agentID,
+    });
+    let answered = false;
+    try {
+      const response = await waitForResponse(
+        input.requestID,
+        pendingInteractives,
+        interactiveWaiters,
+        deps.abortSignal(input.turnID),
+        "interactive request timed out",
+        input.expiresAt === undefined
+          ? undefined
+          : Math.max(0, Date.parse(input.expiresAt) - Date.now()),
+      );
+      answered = true;
+      if (response.rejected)
+        throw new Error("user rejected interactive request");
+      const errors = input.validate?.(response.response);
+      if (errors && errors.length)
+        throw new Error(`invalid interactive response: ${errors.join("; ")}`);
+      return { response: response.response, rejected: response.rejected };
+    } finally {
+      if (!answered)
+        settleInteractive(
+          session,
+          input.requestID,
+          input.kind,
+          deps.abortSignal(input.turnID)?.aborted === true
+            ? "turn cancelled before an answer"
+            : "interactive wait ended without an answer",
+          agentID,
+        );
+      interactiveSessionByID.delete(input.requestID);
+    }
+  }
+
+  /**
+   * Answers a generic interactive request. The runtime validates the envelope
+   * (id/kind) only; business validation happened in the initiator's `validate`.
+   */
+  function respondInteractive(
+    response: InteractiveResponse,
+  ): InteractiveResponseOutcome {
+    const respondSession =
+      interactiveSessionByID.get(response.requestID) ??
+      (response.sessionID as SessionID | undefined) ??
+      deps.sessionID();
+    if (
+      !interactiveWaiters.has(response.requestID) &&
+      !pendingInteractives.has(response.requestID) &&
+      !deps.isPending(respondSession, response.requestID, response.kind)
+    ) {
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: "ignored interactive response for a non-pending request",
+      });
+      return {
+        accepted: false,
+        reason: "the interactive request is no longer pending",
+      };
+    }
+    deps.publishForSession(respondSession, {
+      type: "interactive.response",
+      id: response.requestID,
+      kind: response.kind,
+      response: response.response,
+      ...(response.rejected ? { rejected: true } : {}),
+    });
+    pendingInteractives.set(response.requestID, response);
+    interactiveWaiters.get(response.requestID)?.(response);
+    return { accepted: true };
+  }
+
+  function settleInteractive(
+    session: SessionID,
+    requestID: string,
+    kind: string,
+    reason: string,
+    agentID?: string,
+  ) {
+    if (!deps.isPending(session, requestID, kind)) return;
+    deps.publishForSession(session, {
+      type: "interactive.response",
+      id: requestID,
+      kind,
+      response: null,
+      rejected: true,
+      ...(agentID === undefined ? {} : { agentID }),
+    });
+    publish({
+      type: "diagnostic",
+      level: "warning",
+      message: `interactive ${requestID} closed without an answer: ${reason}`,
+    });
+  }
+
   function restoreInteractiveState(events: RuntimeEvent[]) {
     const pending = projectInteractiveRequests(events);
-    restoreRecoveredInteractiveState(pending.approvals, pending.questions);
+    restoreRecoveredInteractiveState(
+      pending.approvals,
+      pending.questions,
+      pending.interactives,
+    );
   }
 
   function restoreRecoveredInteractiveState(
     approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>,
     questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>,
+    interactives: Array<
+      Extract<RuntimeEvent, { type: "interactive.request" }>
+    > = [],
   ) {
     for (const request of approvals) {
       pendingApprovalRequests.add(request.id);
@@ -251,6 +391,12 @@ export function createInteractiveWaiter(
         type: "diagnostic",
         level: "warning",
         message: `Recovered unresolved question record ${request.id}; active tool execution was not replayed and must be resubmitted after an answer.`,
+      });
+    for (const request of interactives)
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `Recovered unresolved interactive record ${request.id} (${request.kind}); active tool execution was not replayed and must be resubmitted after a response.`,
       });
   }
 
@@ -444,7 +590,11 @@ export function createInteractiveWaiter(
 
   /** Whether anyone is still waiting on a human, which teardown has to know. */
   function hasPendingWaiters() {
-    return approvalWaiters.size > 0 || questionWaiters.size > 0;
+    return (
+      approvalWaiters.size > 0 ||
+      questionWaiters.size > 0 ||
+      interactiveWaiters.size > 0
+    );
   }
 
   async function requirePlanAcceptance(input: {
@@ -518,9 +668,11 @@ export function createInteractiveWaiter(
   return {
     requireApproval,
     requireQuestion,
+    requireInteractive,
     requirePlanAcceptance,
     respondApproval,
     respondQuestion,
+    respondInteractive,
     restoreInteractiveState,
     restoreRecoveredInteractiveState,
     revokeTerminalApprovalScope,

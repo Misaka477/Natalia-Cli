@@ -91,9 +91,7 @@ export type PendingQuestionSource = {
  * Only `turn_*` ids are claimed, so plan-acceptance ids are left alone.
  */
 export function pendingToolLink(id: string): PendingToolLink | undefined {
-  const base = id.endsWith(":question")
-    ? id.slice(0, -":question".length)
-    : id;
+  const base = id.endsWith(":question") ? id.slice(0, -":question".length) : id;
   const sep = base.lastIndexOf(":");
   if (sep <= 0 || sep === base.length - 1) return undefined;
   const turnID = base.slice(0, sep);
@@ -102,9 +100,24 @@ export function pendingToolLink(id: string): PendingToolLink | undefined {
   return { turnID, callID, messageID: `${turnID}:tool:${callID}` };
 }
 
+/**
+ * Structural shape of a generic `interactive.request`. Kept local so ui-model
+ * stays free of a package dependency on the runtime contracts.
+ */
+export type PendingInteractiveSource = {
+  id: string;
+  kind: string;
+  title: string;
+  payload: unknown;
+  responseSchema?: unknown;
+  expiresAt?: string;
+  priority?: number;
+};
+
 export function normalizePendingItems(input: {
   approvals?: readonly PendingApprovalSource[];
   questions?: readonly PendingQuestionSource[];
+  interactives?: readonly PendingInteractiveSource[];
 }): PendingItem[] {
   const items: PendingItem[] = [];
   let sequence = 0;
@@ -140,6 +153,25 @@ export function normalizePendingItems(input: {
       sequence,
       request: question,
       ...(tool ? { tool } : {}),
+    });
+  }
+  for (const interactive of input.interactives ?? []) {
+    sequence += 1;
+    const expiresAt =
+      interactive.expiresAt === undefined
+        ? undefined
+        : Date.parse(interactive.expiresAt);
+    items.push({
+      id: interactive.id,
+      // The wire `kind` *is* the presenter kind; no legacy shim in between.
+      kind: interactive.kind,
+      title: interactive.title,
+      priority: interactive.priority ?? 30,
+      sequence,
+      request: interactive,
+      ...(expiresAt !== undefined && Number.isFinite(expiresAt)
+        ? { expiresAt }
+        : {}),
     });
   }
   return items.sort((left, right) => {

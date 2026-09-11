@@ -101,3 +101,34 @@ test("approval.respond forwards session routing hints to the runtime", async () 
     workspaceID: "ws_y",
   });
 });
+
+test("interactive.respond forwards the id, kind, response and routing hint", async () => {
+  let received: unknown;
+  const client = stubClient({
+    respondInteractive(input) {
+      received = input;
+      return { accepted: true };
+    },
+  });
+  const response = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "interactive.respond",
+      params: {
+        requestID: "ix1",
+        kind: "custom.kind",
+        response: { a: 1 },
+        sessionID: "ses_1",
+      },
+    },
+    client,
+  );
+  expect(response.result).toEqual({ accepted: true });
+  expect(received).toEqual({
+    requestID: "ix1",
+    kind: "custom.kind",
+    response: { a: 1 },
+    sessionID: "ses_1",
+  });
+});

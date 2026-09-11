@@ -226,6 +226,10 @@ export type NataliaSDK = {
   respondQuestion(
     response: QuestionResponse,
   ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
+  /** Answers a generic interactive request; response stays opaque to the runtime. */
+  respondInteractive(
+    response: import("@natalia/contracts").InteractiveResponse,
+  ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
   pendingInteractive(input?: {
     sessionID?: string;
     workspaceID?: string;
@@ -940,6 +944,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         "question.respond",
         response as unknown as Record<string, unknown>,
       ),
+    respondInteractive: async (response) =>
+      await call("interactive.respond", response),
     pendingInteractive: async (input) =>
       await call("interactive.pending", input ?? {}),
     checkpoint: async () =>

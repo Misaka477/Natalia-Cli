@@ -1393,6 +1393,29 @@ type RuntimeEventData =
       answers: string[][];
       rejected?: boolean;
     }
+  | {
+      /**
+       * A plugin/tool-defined interactive request. The runtime treats `payload`
+       * and `response` as opaque JSON: it validates the envelope (kind non-empty,
+       * id match, size) and leaves business validation to the initiator's
+       * in-process `validate` callback.
+       */
+      type: "interactive.request";
+      id: string;
+      kind: string;
+      title: string;
+      payload: JsonValue;
+      responseSchema?: JsonSchema;
+      expiresAt?: string;
+      priority?: number;
+    }
+  | {
+      type: "interactive.response";
+      id: string;
+      kind: string;
+      response: JsonValue;
+      rejected?: boolean;
+    }
   | { type: "snapshot.created"; id: string; files: string[] }
   | {
       type: "turn.finished";
@@ -1613,6 +1636,31 @@ export type RuntimeMessagePage = {
 export type PendingInteractiveRequests = {
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
+  interactives: Array<Extract<RuntimeEvent, { type: "interactive.request" }>>;
+};
+
+/** Serialisable JSON, the only shape an `interactive.*` payload may use. */
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+/** An opaque JSON Schema for a generic interactive response (hint, not kernel). */
+export type JsonSchema = { readonly [key: string]: unknown };
+
+/**
+ * A reply to an `interactive.request`. `response` stays opaque to the runtime;
+ * the initiator's in-process `validate` callback is the business authority.
+ */
+export type InteractiveResponse = {
+  requestID: string;
+  kind: string;
+  response: JsonValue;
+  rejected?: boolean;
+  sessionID?: string;
 };
 export type MCPPromptCatalog = {
   server: string;
@@ -2983,6 +3031,10 @@ export type RuntimeClient = {
   /** Answers a pending question. Refusal is a value, as with `respondApproval`. */
   respondQuestion(
     response: QuestionResponse,
+  ): InteractiveResponseOutcome | Promise<InteractiveResponseOutcome>;
+  /** Answers a generic `interactive.request` by id + kind. */
+  respondInteractive?(
+    response: InteractiveResponse,
   ): InteractiveResponseOutcome | Promise<InteractiveResponseOutcome>;
   constitutionRules?(sessionID?: string): Promise<
     Array<{

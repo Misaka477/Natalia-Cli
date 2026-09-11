@@ -867,11 +867,11 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (20 groups · 162 optional members)
+### Capability groups (20 groups · 163 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| transcript     | `history` · `messages` · `pendingInteractive` · `submitInput` · `submitAndWait`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| transcript     | `history` · `messages` · `pendingInteractive` · `respondInteractive` · `submitInput` · `submitAndWait`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | turnControl    | `pause` · `resume` · `removeInput` · `replaceInput` · `promoteInput`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | lifecycle      | `dispose` · `canReloadConfig` · `reloadConfig` · `updateConfig` · `configGet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | settings       | `settingsGet` · `settingsSet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -892,7 +892,7 @@ Deployment notes:
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | chat           | `chatSubmit` · `chatAbort` · `chatMessages` · `chatRollback` · `chatModelProfile` · `setChatModelProfile`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
-### RPC route table (167 methods → members)
+### RPC route table (168 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -903,6 +903,7 @@ Deployment notes:
 | `approval.respond`                   | `respondApproval`                   | required         | write |
 | `question.respond`                   | `respondQuestion`                   | required         | write |
 | `interactive.pending`                | `pendingInteractive`                | transcript       | read  |
+| `interactive.respond`                | `respondInteractive`                | transcript       | write |
 | `session.history`                    | `history`                           | transcript       | read  |
 | `session.messages`                   | `messages`                          | transcript       | read  |
 | `pause`                              | `pause`                             | turnControl      | write |
@@ -1064,7 +1065,7 @@ Deployment notes:
 | `chat.abort`                         | `chatAbort`                         | chat             | read  |
 | `chat.rollback`                      | `chatRollback`                      | chat             | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 63 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 64 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `submit.andWait`
@@ -1075,6 +1076,7 @@ Deployment notes:
 - `input.promote`
 - `approval.respond`
 - `question.respond`
+- `interactive.respond`
 - `pause`
 - `resume`
 - `agent.select`
@@ -1198,6 +1200,7 @@ Deployment notes:
 | `replaceInput`            | `ok`                 | as removeInput                                                                                                                                                     |
 | `requestOverride`         | `requested`          | requests a user-scoped constitution override through the approval pipeline; forbidden rules answer requested:false                                                 |
 | `respondApproval`         | `accepted`           | a response to a request that timed out or was already answered is dropped, and the caller has to be told; it used to answer responded:true either way              |
+| `respondInteractive`      | `accepted`           | an answer to a generic request that is no longer pending is dropped, and the caller learns from accepted:false                                                     |
 | `respondQuestion`         | `accepted`           | same as respondApproval                                                                                                                                            |
 | `resume`                  | `resumed`            | nothing paused is an ordinary answer                                                                                                                               |
 | `selectAgent`             | `outcome`            | three real outcomes exist in the runtime — applied, deferred until the turn ends, unknown agent — and the caller could see none of them                            |
@@ -1213,8 +1216,8 @@ Deployment notes:
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 104.
-- view-store projections (`case` labels in `packages/hosts/view-store/src`): 110.
+- Runtime event types (`RuntimeEventData` union): 106.
+- view-store projections (`case` labels in `packages/hosts/view-store/src`): 112.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
 
@@ -1443,6 +1446,8 @@ Deployment notes:
 | `approval.response`             | `id`: string, `decision`: ApprovalResponse["decision"], `feedback?`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                | an approval was answered or timed out; `accepted: false` means it was too late      |
 | `question.request`              | `id`: string, `title`: string, `options?`: string[], `questions?`: QuestionItem[]                                                                                                                                                                                                                                                                                                                                                                                                                                          | a question needs an answer; carries the interactive request                         |
 | `question.response`             | `id`: string, `answers`: string[][], `rejected?`: boolean                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | a question was answered                                                             |
+| `interactive.request`           | `id`: string, `kind`: string, `title`: string, `payload`: JsonValue, `responseSchema?`: JsonSchema, `expiresAt?`: string, `priority?`: number                                                                                                                                                                                                                                                                                                                                                                              | —                                                                                   |
+| `interactive.response`          | `id`: string, `kind`: string, `response`: JsonValue, `rejected?`: boolean                                                                                                                                                                                                                                                                                                                                                                                                                                                  | —                                                                                   |
 | `snapshot.created`              | `id`: string, `files`: string[]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | the `snapshot` member was called (a named snapshot id is minted)                    |
 | `turn.finished`                 | `id`: string, `stopReason`: "done" | "cancelled" | "error" | "waiting_human", `reason?`: "missing_final_response", `model?`: string, `profile?`: string, `durationMs?`: number, `inputTokens?`: number, `outputTokens?`: number                                                                                                                                                                                                                                                                                            | a turn ended; `stopReason`: done, cancelled or error                                |
 | `collab.suggestion`             | `id`: string, `from`: "live_chat", `to`: "main_agent", `suggestion`: string, `rationale?`: string, `priority`: "normal" | "high", `status`: "proposed", `at`: string                                                                                                                                                                                                                                                                                                                                                       | —                                                                                   |

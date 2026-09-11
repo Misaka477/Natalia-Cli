@@ -36,6 +36,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   respondApproval: "approval.respond",
   respondQuestion: "question.respond",
   pendingInteractive: "interactive.pending",
+  respondInteractive: "interactive.respond",
   history: "session.history",
   messages: "session.messages",
   pause: "pause",

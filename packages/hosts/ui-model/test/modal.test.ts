@@ -85,7 +85,10 @@ test("question presenter keeps selections and custom text separate", () => {
       selections: [["a", "b"]],
       custom: ["other"],
     }),
-  ).toEqual({ requestID: "turn_a:call_1:question", answers: [["a", "b", "other"]] });
+  ).toEqual({
+    requestID: "turn_a:call_1:question",
+    answers: [["a", "b", "other"]],
+  });
   // Custom text alone still submits even when no option was selected.
   expect(
     questionPresenter.buildResponse(item, {
@@ -126,4 +129,26 @@ test("pending controller dismisses, focuses and prunes live ids", () => {
   expect(controller.isDismissed("b")).toBe(false);
   expect(controller.activeID()).toBe("b");
   expect(revisions).toBeGreaterThan(0);
+});
+
+test("normalizePendingItems carries a generic interactive kind through", () => {
+  const items = normalizePendingItems({
+    interactives: [
+      {
+        id: "ix1",
+        kind: "custom.kind",
+        title: "Pick one",
+        payload: { options: ["a"] },
+        priority: 5,
+      },
+    ],
+  });
+  expect(items).toEqual([
+    expect.objectContaining({
+      id: "ix1",
+      kind: "custom.kind",
+      title: "Pick one",
+      priority: 5,
+    }),
+  ]);
 });

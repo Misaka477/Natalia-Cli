@@ -162,6 +162,7 @@ export type StoredRecoveryProjection = {
   activeTurnIDs: string[];
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
+  interactives: Array<Extract<RuntimeEvent, { type: "interactive.request" }>>;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
@@ -645,6 +646,15 @@ export class SqliteSessionStore {
               { type: "question.request" }
             >,
         ),
+      interactives: interactive
+        .filter((row) => row.kind.startsWith("interactive:"))
+        .map(
+          (row) =>
+            JSON.parse(row.event) as Extract<
+              RuntimeEvent,
+              { type: "interactive.request" }
+            >,
+        ),
       selectedAgent: selection?.agent_name,
       selectedModel:
         selection?.model_id || selection?.model_variant
@@ -1106,23 +1116,26 @@ export class SqliteSessionStore {
     }
     if (
       event.type === "approval.request" ||
-      event.type === "question.request"
+      event.type === "question.request" ||
+      event.type === "interactive.request"
     ) {
+      const kind =
+        event.type === "approval.request"
+          ? "approval"
+          : event.type === "question.request"
+            ? "question"
+            : `interactive:${event.kind}`;
       this.run(
         `INSERT INTO recovery_interactive(session_id, request_id, kind, event) VALUES (?, ?, ?, ?)
          ON CONFLICT(session_id, request_id) DO UPDATE SET kind = excluded.kind, event = excluded.event`,
-        [
-          sessionID,
-          event.id,
-          event.type === "approval.request" ? "approval" : "question",
-          JSON.stringify(event),
-        ],
+        [sessionID, event.id, kind, JSON.stringify(event)],
       );
       return;
     }
     if (
       event.type === "approval.response" ||
-      event.type === "question.response"
+      event.type === "question.response" ||
+      event.type === "interactive.response"
     ) {
       this.run(
         `DELETE FROM recovery_interactive WHERE session_id = ? AND request_id = ?`,

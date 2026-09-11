@@ -23,7 +23,8 @@ export async function finalizeInitialize(
   const scope = createInitializeRuntime(ctx);
   const start = performance.now();
   const mark = (name: string) =>
-    perfLog(`[perf] finalizeInitialize.${name} +${(performance.now() - start).toFixed(1)}ms`,
+    perfLog(
+      `[perf] finalizeInitialize.${name} +${(performance.now() - start).toFixed(1)}ms`,
     );
   const governanceLedgerController =
     scope.resolveService<GovernanceLedgerController>(
@@ -67,6 +68,13 @@ export async function finalizeInitialize(
           !interrupted.some(
             (event) =>
               event.type === "question.response" && event.id === request.id,
+          ),
+      ),
+      sqliteRecovery.interactives.filter(
+        (request) =>
+          !interrupted.some(
+            (event) =>
+              event.type === "interactive.response" && event.id === request.id,
           ),
       ),
     );
