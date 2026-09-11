@@ -9,7 +9,11 @@ import type {
 } from "@natalia/contracts";
 import type * as ViewStore from "@natalia/view-store";
 import type { AppState } from "@natalia/view-store";
-import type { PendingKind, PendingPresenter } from "@natalia/ui-model";
+import type {
+  PendingController,
+  PendingKind,
+  PendingPresenter,
+} from "@natalia/ui-model";
 
 export type UiPluginLifecycle = {
   dispose(): void | Promise<void>;
@@ -145,6 +149,8 @@ export type UiPluginContext<TContext = unknown> = {
   pending: {
     registerPresenter(presenter: PendingPresenter): () => void;
     presenters(): ReadonlyMap<PendingKind, PendingPresenter>;
+    /** Shared UI-only selection state; the host owns dialog-stack truth. */
+    controller: PendingController;
   };
   extra?: TContext;
 };

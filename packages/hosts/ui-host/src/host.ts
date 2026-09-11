@@ -1,6 +1,9 @@
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import * as viewStore from "@natalia/view-store";
-import type { PendingPresenter } from "@natalia/ui-model";
+import {
+  createPendingController,
+  type PendingPresenter,
+} from "@natalia/ui-model";
 import { createUiEventBus } from "./events";
 import { createSilentLogger } from "./logger";
 import { createMemoryPreferenceStore } from "./preferences";
@@ -80,6 +83,9 @@ export async function createUiPluginHost<TContext = unknown>(
     { pluginId: string; presenter: PendingPresenter }
   >();
   const panelListeners = new Set<() => void>();
+  const pendingController = createPendingController(() => {
+    for (const listener of panelListeners) listener();
+  });
   let started = false;
   let closed = false;
 
@@ -233,6 +239,7 @@ export async function createUiPluginHost<TContext = unknown>(
             view.set(kind, entry.presenter);
           return view;
         },
+        controller: pendingController,
       },
       extra: options.extra,
       host: {

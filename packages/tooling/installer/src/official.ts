@@ -23,6 +23,11 @@ export const OFFICIAL_PLUGIN_PACKAGES = [
     directory: "natalia-file-editor",
   },
   {
+    id: "natalia-pending-inbox",
+    packageName: "@natalia/plugin-pending-inbox",
+    directory: "natalia-pending-inbox",
+  },
+  {
     id: "natalia-browser",
     packageName: "@natalia/plugin-browser",
     directory: "natalia-browser",

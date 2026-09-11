@@ -41,6 +41,7 @@ type PackageManifest = {
 const pluginRoots = [
   "packages/plugins/local-tools",
   "packages/plugins/ui/file-editor",
+  "packages/plugins/ui/pending",
   "packages/plugins/browser",
   "packages/plugins/native-terminal",
   "packages/plugins/skills",
