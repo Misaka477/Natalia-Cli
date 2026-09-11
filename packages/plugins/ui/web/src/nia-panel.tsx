@@ -16,6 +16,7 @@ import { Transcript } from "@natalia/ui-kit";
 import { Composer } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
 import type { Message } from "./types";
+import { stableRows, type RowSignature } from "./stable-rows";
 
 export function NiaPanel(props: {
   state: AppState;
@@ -34,36 +35,67 @@ export function NiaPanel(props: {
   const [niaShowJumpToBottom, setNiaShowJumpToBottom] = createSignal(false);
   let profileLoadToken = 0;
 
-  const messages = createMemo<Message[]>(() =>
-    props.state.nia.messages.map((msg, idx) => {
-      if (msg.tool) {
+  const niaMessageCache = new Map<
+    string,
+    { signature: RowSignature; value: Message }
+  >();
+
+  const messages = createMemo<Message[]>(() => {
+    const list = props.state.nia.messages;
+    const activity = Boolean(props.state.nia.activity);
+    const lastIndex = list.length - 1;
+    return stableRows(
+      niaMessageCache,
+      list.map((msg, idx) => {
+        const isLast = idx === lastIndex;
+        const tool = msg.tool;
+        if (tool) {
+          return {
+            id: msg.id,
+            signature: [tool.name, tool.result, tool.summary, tool.status],
+            create: () => ({
+              id: msg.id,
+              role: "assistant",
+              content: "",
+              toolCalls: [
+                {
+                  name: tool.name,
+                  output: tool.result ?? tool.summary,
+                  status: tool.status,
+                  summary: tool.summary,
+                },
+              ],
+            }),
+          };
+        }
+        const role =
+          msg.role === "user" ? ("user" as const) : ("assistant" as const);
+        const content = msg.text + (msg.pendingText ?? "");
+        const streaming = Boolean(activity && isLast && msg.role !== "user");
         return {
           id: msg.id,
-          role: "assistant",
-          content: "",
-          toolCalls: [
-            {
-              name: msg.tool.name,
-              output: msg.tool.result ?? msg.tool.summary,
-              status: msg.tool.status,
-              summary: msg.tool.summary,
-            },
+          signature: [
+            role,
+            msg.role,
+            msg.text,
+            msg.pendingText ?? "",
+            msg.reasoningVisible,
+            content,
+            streaming,
+            isLast,
+            activity,
           ],
+          create: () => ({
+            id: msg.id,
+            role,
+            thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+            content,
+            streaming,
+          }),
         };
-      }
-      return {
-        id: msg.id,
-        role: msg.role === "user" ? "user" : "assistant",
-        thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
-        content: msg.text + (msg.pendingText ?? ""),
-        streaming: Boolean(
-          props.state.nia.activity &&
-            idx === props.state.nia.messages.length - 1 &&
-            msg.role !== "user",
-        ),
-      };
-    }),
-  );
+      }),
+    );
+  });
 
   const modelOptions = () =>
     props.catalog.map((entry) => ({

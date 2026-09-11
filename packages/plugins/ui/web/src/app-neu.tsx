@@ -51,6 +51,7 @@ import { SandboxPanel } from "./sandbox-panel";
 import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
+import { stableRows, type RowSignature } from "./stable-rows";
 
 const perfLog = (...args: unknown[]) => {
   if (
@@ -2409,67 +2410,111 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return state().natalia.activeTurn ? "Working" : "Ready";
   }
 
-  const mainMessages = createMemo<Message[]>(() =>
-    state().natalia.messages.map((msg, idx) => {
-      if (msg.tool) {
-        return {
-          id: msg.id,
-          role: "assistant",
-          content: "",
-          status:
-            state().natalia.activeTurn &&
-            idx === state().natalia.messages.length - 1
+  const mainMessageCache = new Map<
+    string,
+    { signature: RowSignature; value: Message }
+  >();
+
+  const mainMessages = createMemo<Message[]>(() => {
+    const list = state().natalia.messages;
+    const active = state().natalia.activeTurn;
+    const lastIndex = list.length - 1;
+    return stableRows(
+      mainMessageCache,
+      list.map((msg, idx) => {
+        const isLast = idx === lastIndex;
+        const tool = msg.tool;
+        if (tool) {
+          const status =
+            active && isLast
               ? "running"
-              : (msg.tool.status as Message["status"]),
-          toolCalls: [
-            {
-              name: msg.tool.name,
-              output: formatToolOutput(
-                msg.tool.name,
-                msg.tool.result ?? msg.tool.summary,
-              ),
-              status: msg.tool.status,
-              summary: msg.tool.summary,
-            },
-          ],
-        };
-      }
-      return {
-        id: msg.id,
-        role:
+              : (tool.status as Message["status"]);
+          return {
+            id: msg.id,
+            signature: [
+              tool.name,
+              tool.result,
+              tool.summary,
+              tool.status,
+              status,
+              Boolean(active),
+              isLast,
+            ],
+            create: () => ({
+              id: msg.id,
+              role: "assistant",
+              content: "",
+              status,
+              toolCalls: [
+                {
+                  name: tool.name,
+                  output: formatToolOutput(
+                    tool.name,
+                    tool.result ?? tool.summary,
+                  ),
+                  status: tool.status,
+                  summary: tool.summary,
+                },
+              ],
+            }),
+          };
+        }
+        const role =
           msg.role === "user"
             ? "user"
             : msg.role === "system"
               ? "system"
-              : "assistant",
-        thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
-        ...(msg.role === "user" && msg.attachments?.length
-          ? (() => {
-              console.warn("[msg-attachments]", msg.id, msg.attachments.length);
-              return {
-                attachments: msg.attachments.map((attachment) => ({
-                  path: attachment.path,
-                  name: attachment.filename,
-                  mediaType: attachment.mediaType,
-                })),
-              };
-            })()
-          : {}),
-        content: msg.text + (msg.pendingText || ""),
-        status:
-          state().natalia.activeTurn &&
-          idx === state().natalia.messages.length - 1
-            ? "running"
-            : undefined,
-        streaming: Boolean(
-          state().natalia.activeTurn &&
-            idx === state().natalia.messages.length - 1 &&
+              : "assistant";
+        // The attachment array reference survives cloneState, so comparing it
+        // by reference is both cheap and correct.
+        const attachments =
+          msg.role === "user" && msg.attachments?.length
+            ? msg.attachments
+            : undefined;
+        const content = msg.text + (msg.pendingText || "");
+        const status = active && isLast ? "running" : undefined;
+        const streaming = Boolean(
+          active &&
+            isLast &&
             msg.role !== "user" &&
             (msg.pendingText ?? "").length > 0,
-        ),
-      };
-    }),
-  );
+        );
+        return {
+          id: msg.id,
+          signature: [
+            role,
+            msg.role,
+            msg.text,
+            msg.pendingText ?? "",
+            msg.reasoningVisible,
+            content,
+            status,
+            streaming,
+            Boolean(active),
+            isLast,
+            attachments,
+          ],
+          create: () => ({
+            id: msg.id,
+            role,
+            thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+            ...(attachments
+              ? {
+                  attachments: attachments.map((attachment) => ({
+                    path: attachment.path,
+                    name: attachment.filename,
+                    mediaType: attachment.mediaType,
+                  })),
+                }
+              : {}),
+            content,
+            status,
+            streaming,
+          }),
+        };
+      }),
+    );
+  });
 
   const visibleMainMessages = createMemo<Message[]>(() => {
     const hiddenAfter = pendingRollback()?.hiddenAfter;
@@ -2480,37 +2525,68 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   const naviChatActivity = () => state().navi.activity;
 
-  const chatMessages = createMemo<Message[]>(() =>
-    state().navi.messages.map((msg, idx) => {
-      if (msg.tool) {
+  const chatMessageCache = new Map<
+    string,
+    { signature: RowSignature; value: Message }
+  >();
+
+  const chatMessages = createMemo<Message[]>(() => {
+    const list = state().navi.messages;
+    const activity = naviChatActivity();
+    const lastIndex = list.length - 1;
+    return stableRows(
+      chatMessageCache,
+      list.map((msg, idx) => {
+        const isLast = idx === lastIndex;
+        const tool = msg.tool;
+        if (tool) {
+          return {
+            id: msg.id,
+            signature: [tool.name, tool.result, tool.summary, tool.status],
+            create: () => ({
+              id: msg.id,
+              role: "assistant",
+              content: "",
+              toolCalls: [
+                {
+                  name: tool.name,
+                  output: formatToolOutput(
+                    tool.name,
+                    tool.result ?? tool.summary,
+                  ),
+                },
+              ],
+            }),
+          };
+        }
+        const role =
+          msg.role === "user" ? ("user" as const) : ("assistant" as const);
+        const content = msg.text + (msg.pendingText || "");
+        const streaming = Boolean(activity && isLast && msg.role !== "user");
         return {
           id: msg.id,
-          role: "assistant",
-          content: "",
-          toolCalls: [
-            {
-              name: msg.tool.name,
-              output: formatToolOutput(
-                msg.tool.name,
-                msg.tool.result ?? msg.tool.summary,
-              ),
-            },
+          signature: [
+            role,
+            msg.role,
+            msg.text,
+            msg.pendingText ?? "",
+            msg.reasoningVisible,
+            content,
+            streaming,
+            isLast,
+            Boolean(activity),
           ],
+          create: () => ({
+            id: msg.id,
+            role,
+            thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+            content,
+            streaming,
+          }),
         };
-      }
-      return {
-        id: msg.id,
-        role: msg.role === "user" ? "user" : "assistant",
-        thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
-        content: msg.text + (msg.pendingText || ""),
-        streaming: Boolean(
-          naviChatActivity() &&
-            idx === state().navi.messages.length - 1 &&
-            msg.role !== "user",
-        ),
-      };
-    }),
-  );
+      }),
+    );
+  });
 
   function startResize(
     event: PointerEvent,

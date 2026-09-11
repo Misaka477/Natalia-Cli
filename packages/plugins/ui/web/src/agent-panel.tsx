@@ -15,6 +15,7 @@ import type {
 import type { AppState, SubagentView } from "@natalia/view-store";
 import { Transcript } from "@natalia/ui-kit";
 import type { Message } from "./types";
+import { stableRows, type RowSignature } from "./stable-rows";
 
 function subagentToolCallsFromText(
   text: string,
@@ -164,80 +165,131 @@ export function AgentPanel(props: {
     terminals().filter((terminal) => terminal.agentID === selectedID()),
   );
 
+  const subagentMessageCache = new Map<
+    string,
+    { signature: RowSignature; value: Message }
+  >();
+
   const subagentMessages = createMemo<Message[]>(() => {
     const id = selectedID();
     if (!id) return [];
     const child = props.state.subagentStream.states[id];
     if (child?.messages?.length) {
-      return child.messages.map((msg, index) => {
-        if (msg.tool) {
-          return {
-            id: `sub-${id}-${index}`,
-            role: "assistant",
-            content: "",
-            status: (msg.tool.status as Message["status"]) ?? "completed",
-            toolCalls: [
-              {
-                name: msg.tool.name,
-                output: msg.tool.result ?? msg.tool.summary,
-                status: msg.tool.status,
-                summary: msg.tool.summary,
-              },
-            ],
-          } satisfies Message;
-        }
-        return {
-          id: `sub-${id}-${index}`,
-          role:
+      return stableRows(
+        subagentMessageCache,
+        child.messages.map((msg, index) => {
+          const rowID = `sub-${id}-${index}`;
+          const tool = msg.tool;
+          if (tool) {
+            const status =
+              (tool.status as Message["status"]) ?? "completed";
+            return {
+              id: rowID,
+              signature: [
+                id,
+                tool.name,
+                tool.result,
+                tool.summary,
+                status,
+              ],
+              create: () =>
+                ({
+                  id: rowID,
+                  role: "assistant",
+                  content: "",
+                  status,
+                  toolCalls: [
+                    {
+                      name: tool.name,
+                      output: tool.result ?? tool.summary,
+                      status: tool.status,
+                      summary: tool.summary,
+                    },
+                  ],
+                }) satisfies Message,
+            };
+          }
+          const role =
             msg.role === "user"
               ? "user"
               : msg.role === "system"
                 ? "system"
-                : "assistant",
-          thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
-          content: msg.text + (msg.pendingText || ""),
-          status: msg.status as Message["status"],
-          streaming: Boolean(
+                : "assistant";
+          const content = msg.text + (msg.pendingText || "");
+          const status = msg.status as Message["status"];
+          const streaming = Boolean(
             (msg.pendingText ?? "").length > 0 && msg.role !== "user",
-          ),
-        } satisfies Message;
-      });
+          );
+          return {
+            id: rowID,
+            signature: [
+              id,
+              role,
+              msg.role,
+              msg.text,
+              msg.pendingText ?? "",
+              msg.reasoningVisible,
+              status,
+              streaming,
+            ],
+            create: () =>
+              ({
+                id: rowID,
+                role,
+                thinking:
+                  msg.role === "thinking" && msg.reasoningVisible !== false,
+                content,
+                status,
+                streaming,
+              }) satisfies Message,
+          };
+        }),
+      );
     }
     const history = props.state.subagentStream.history[id] ?? [];
-    return history.map((event, index) => {
-      const text =
-        event.text || event.activityDetail || event.task || event.event;
-      const status =
-        event.status === "running"
-          ? "running"
-          : event.status === "failed"
-            ? "error"
-            : event.status === "completed"
-              ? "done"
-              : undefined;
-      const toolCalls = subagentToolCallsFromText(text);
-      if (toolCalls) {
-        return {
-          id: `${event.id}:${event.event}:${index}`,
-          role: "assistant",
-          content: "",
-          toolCalls,
-          status: "done",
-          timestamp: event.lastActivityAt
-            ? new Date(event.lastActivityAt).toLocaleTimeString()
-            : undefined,
-        } satisfies Message;
-      }
-      return {
-        id: `${event.id}:${event.event}:${index}`,
-        role: event.event === "log" ? "assistant" : "system",
-        content: text,
-        timestamp: event.lastActivityAt
+    return stableRows(
+      subagentMessageCache,
+      history.map((event, index) => {
+        const rowID = `${event.id}:${event.event}:${index}`;
+        const text =
+          event.text || event.activityDetail || event.task || event.event;
+        const status =
+          event.status === "running"
+            ? "running"
+            : event.status === "failed"
+              ? "error"
+              : event.status === "completed"
+                ? "done"
+                : undefined;
+        const timestamp = event.lastActivityAt
           ? new Date(event.lastActivityAt).toLocaleTimeString()
-          : undefined,
-        status,
-      } satisfies Message;
-    });
+          : undefined;
+        return {
+          id: rowID,
+          signature: [id, rowID, text, status, event.event, timestamp],
+          // Parse the tool-call shape only when the row is actually rebuilt.
+          create: () => {
+            const toolCalls = subagentToolCallsFromText(text);
+            if (toolCalls)
+              return {
+                id: rowID,
+                role: "assistant",
+                content: "",
+                toolCalls,
+                status: "done",
+                timestamp,
+              } satisfies Message;
+            return {
+              id: rowID,
+              role: event.event === "log" ? "assistant" : "system",
+              content: text,
+              timestamp,
+              status,
+            } satisfies Message;
+          },
+        };
+      }),
+    );
   });
 
   const [subTranscriptEl, setSubTranscriptEl] = createSignal<
