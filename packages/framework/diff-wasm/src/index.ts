@@ -141,11 +141,10 @@ export async function diffWasm(
       new_.len,
       outLenPtr,
     );
-    const outLen = new DataView(
-      exports.memory.buffer,
-      outLenPtr,
-      8,
-    ).getBigUint64(0, true);
+    const outLen = new DataView(exports.memory.buffer, outLenPtr, 8).getUint32(
+      0,
+      true,
+    );
     const length = Number(outLen);
     patch = new TextDecoder().decode(
       new Uint8Array(exports.memory.buffer, patchPtr, length),
@@ -271,11 +270,10 @@ export async function diffWasmBinary(
       options?.ignoreWhitespace ? 1 : 0,
       outLenPtr,
     );
-    const outLen = new DataView(
-      exports.memory.buffer,
-      outLenPtr,
-      8,
-    ).getBigUint64(0, true);
+    const outLen = new DataView(exports.memory.buffer, outLenPtr, 8).getUint32(
+      0,
+      true,
+    );
     const len = Number(outLen);
     if (!len) return;
     binary = new Uint8Array(

@@ -17,6 +17,9 @@ export type ApprovalResponse = {
   requestID: string;
   decision: ApprovalDecision;
   feedback?: string;
+  /** Optional routing hints for multi-workspace clients. */
+  sessionID?: string;
+  workspaceID?: string;
 };
 
 export type QuestionOption = {
@@ -43,6 +46,9 @@ export type QuestionResponse = {
   requestID: string;
   answers: string[][];
   rejected?: boolean;
+  /** Optional routing hints for multi-workspace clients. */
+  sessionID?: string;
+  workspaceID?: string;
 };
 
 export type ModalRequest =

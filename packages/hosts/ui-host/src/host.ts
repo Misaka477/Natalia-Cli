@@ -124,12 +124,11 @@ export async function createUiPluginHost<TContext = unknown>(
     },
     activateSession(sessionID, workspaceID) {
       const preferredKey = `${workspaceID ?? "default"}:${sessionID}`;
-      const existingKey =
-        sessionStates.has(preferredKey)
-          ? preferredKey
-          : [...sessionStates.keys()].find((key) =>
-              key.endsWith(`:${sessionID}`),
-            );
+      const existingKey = sessionStates.has(preferredKey)
+        ? preferredKey
+        : [...sessionStates.keys()].find((key) =>
+            key.endsWith(`:${sessionID}`),
+          );
       activeKey = existingKey ?? preferredKey;
       state = sessionStates.get(activeKey) ?? viewStore.initialState();
       state.sessionID ??= sessionID as never;
@@ -186,6 +185,17 @@ export async function createUiPluginHost<TContext = unknown>(
         },
       },
       preferences,
+      resources: {
+        async read(input) {
+          if (!options.runtime.resourceRead)
+            throw new Error("runtime does not provide resourceRead");
+          return await options.runtime.resourceRead({
+            resource: input.resource,
+            ...(input.params ? { params: input.params } : {}),
+            reader: plugin.id,
+          });
+        },
+      },
       transport,
       logger,
       t,

@@ -12,7 +12,7 @@
   "conflicts": [],
   "dependencies": [],
   "hooks": {},
-  "integrationPoints": ["tools"],
+  "integrationPoints": ["tools", "resources"],
   "ui": {
     "entry": "src/ui/plugin.tsx",
     "panels": [

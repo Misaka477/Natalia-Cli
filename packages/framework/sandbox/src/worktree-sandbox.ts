@@ -17,6 +17,13 @@
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+  ensureNataliaIgnoreFile,
+  isSnapshotIgnored,
+  loadNataliaIgnore,
+  NATALIA_IGNORE_FILE,
+  type SnapshotIgnoreRule,
+} from "@natalia/platform";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import {
   WorkspaceSandboxManager,
@@ -121,6 +128,69 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
     return git(this.hostRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
   }
 
+  private async snapshotIgnoreRules(): Promise<readonly SnapshotIgnoreRule[]> {
+    await ensureNataliaIgnoreFile(this.hostRoot);
+    return (await loadNataliaIgnore(this.hostRoot)).rules;
+  }
+
+  private isInternalCandidatePath(rel: string): boolean {
+    return (
+      rel === NATALIA_IGNORE_FILE ||
+      rel === ".gitignore" ||
+      rel === ".natalia-manifest.json" ||
+      rel === ".git" ||
+      rel.startsWith(".git/") ||
+      rel === ".natalia" ||
+      rel.startsWith(".natalia/")
+    );
+  }
+
+  /**
+   * Git normally hides ignored untracked files from `status`. The sandbox's
+   * ignore contract is .nataliaignore, not .gitignore, so forced-add every
+   * changed path that .nataliaignore did not exclude.
+   */
+  private async commitPendingChanges(id: string): Promise<void> {
+    const root = resolve(this["baseRoot"], id);
+    const rules = await this.snapshotIgnoreRules();
+    const paths = new Set<string>();
+    const status = await gitRaw(root, [
+      "status",
+      "--porcelain",
+      "-z",
+      "--untracked-files=all",
+      "--",
+      ".",
+      ":(exclude).gitignore",
+      ":(exclude).natalia-manifest.json",
+    ]).catch(() => "");
+    for (const record of status.split("\0").filter(Boolean)) {
+      const path = record.slice(3);
+      if (path) paths.add(path);
+    }
+    const ignored = await gitRaw(root, [
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "-z",
+      "--",
+      ".",
+      ":(exclude).gitignore",
+      ":(exclude).natalia-manifest.json",
+    ]).catch(() => "");
+    for (const path of ignored.split("\0").filter(Boolean)) paths.add(path);
+    const changed = [...paths].filter(
+      (path) =>
+        path &&
+        !this.isInternalCandidatePath(path) &&
+        !isSnapshotIgnored(path, false, rules),
+    );
+    if (!changed.length) return;
+    await git(root, ["add", "-f", "--", ...changed]);
+    await git(root, ["commit", "-m", `sandbox ${id} changes`]);
+  }
+
   /** Creates a sandbox as a worktree on a candidate branch off the system head. */
   override async create(id: string) {
     const branch = `candidate/${id}`;
@@ -165,6 +235,7 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
   override async previewMerge(id: string): Promise<SandboxChange[]> {
     const base = await this.baseFor(id);
     const root = resolve(this["baseRoot"], id);
+    await this.commitPendingChanges(id);
     const names = await git(root, ["diff", "--name-status", base]);
     const rawDiff = await gitRaw(root, [
       "diff",
@@ -248,36 +319,9 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
     const root = resolve(this["baseRoot"], id);
     const base = await this.baseFor(id);
     const lastKnownGood = await this.systemHead();
-    // The sandbox tools' write model records changes in the worktree without
-    // committing; promotion works on commits, so pending worktree changes are
-    // committed to the candidate branch first. The manifest and the ignore
-    // rule stay out of the commit.
-    const status = await gitRaw(root, [
-      "status",
-      "--porcelain",
-      "-z",
-      "--",
-      ".",
-      ":(exclude).gitignore",
-      ":(exclude).natalia-manifest.json",
-    ]).catch(() => "");
-    if (status) {
-      // `-z` yields `XY path` records (renames split across two records, the
-      // second being the new path). Add exactly the changed paths so the
-      // ignored manifest and the ignore rule never enter a commit.
-      const changed: string[] = [];
-      const records = status.split("\0").filter(Boolean);
-      for (let index = 0; index < records.length; index++) {
-        const path = records[index]!.slice(3);
-        if (path.startsWith("R  ")) {
-          changed.push(records[++index] ?? "");
-          continue;
-        }
-        if (path) changed.push(path);
-      }
-      await git(root, ["add", "--", ...changed.filter(Boolean)]);
-      await git(root, ["commit", "-m", `sandbox ${id} changes`]);
-    }
+    // Promotion works on commits. Commit pending worktree changes first,
+    // forcing in files .gitignore hides but .nataliaignore allows.
+    await this.commitPendingChanges(id);
     const ahead = await git(this.hostRoot, [
       "rev-list",
       "--count",

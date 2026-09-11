@@ -15,6 +15,7 @@ import {
   createWorkspaceFilesController,
   createWorkspaceWriteLock,
   findWorkspaceFiles,
+  invalidateWorkspaceFiles,
   type WorkspaceMutationIdentity,
 } from "../src";
 
@@ -67,6 +68,9 @@ test("workspace framework services construct and release their resources", async
     expect(mutations.pendingCount()).toBe(0);
 
     await writeFile(join(root, "main.ts"), "const needle = true\n");
+    // The service init warms the catalog cache; make the direct read
+    // deterministic instead of depending on fs.watch delivery timing.
+    invalidateWorkspaceFiles(root);
     const found = await findWorkspaceFiles({ workspaceRoot: root, limit: 50 });
     expect(found.map((file) => file.path)).toContain("main.ts");
 

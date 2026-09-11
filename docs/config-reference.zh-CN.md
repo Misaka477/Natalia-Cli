@@ -134,6 +134,7 @@
 | `modelOverrideSchema`                 | `requestDefaults`              | modelOverrideRequestDefaultsSchema                                               |          |                                                                                  |
 | `modelOverrideSchema`                 | `requestOptions`               | Record<string, unknown>                                                          |          | {}                                                                               |
 | `modelOverrideSchema`                 | `headers`                      | Record<string, string>                                                           |          | {}                                                                               |
+| `modelOverrideSchema`                 | `limits`                       | modelLimitsSchema                                                                | yes      |                                                                                  |
 | `modelOverrideRequestDefaultsSchema`  | `temperature`                  | number                                                                           |          | null                                                                             |
 | `modelOverrideRequestDefaultsSchema`  | `topP`                         | number                                                                           |          | null                                                                             |
 | `modelOverrideRequestDefaultsSchema`  | `stream`                       | boolean                                                                          | yes      |                                                                                  |
@@ -592,3 +593,9 @@ atomically, and announces the change with a `settings.updated` event
 据此重新读取而非盲目缓存。
 
 <!-- /config-reference:tui-settings -->
+
+## `.nataliaignore`
+
+工作区根目录可以包含 `.nataliaignore`。它默认生成、用户可编辑，只控制
+checkpoint 和 sandbox 的快照成员；不会隐藏文件树、读写 API、搜索或模型工具中的
+文件。旧的 `checkpoint.ignore` 配置会一次性迁移到该文件，运行时不再读取。

@@ -326,6 +326,7 @@ export function createChatTools(ctx: RuntimeContext) {
             pattern: { type: "string" },
             path: { type: "string" },
             limit: { type: "number" },
+            offset: { type: "number" },
           },
           required: ["pattern"],
           additionalProperties: false,
@@ -335,16 +336,19 @@ export function createChatTools(ctx: RuntimeContext) {
             pattern?: string;
             path?: string;
             limit?: number;
+            offset?: number;
           };
           if (typeof args.pattern !== "string") return "glob requires pattern";
           try {
+            const offset = Math.max(0, args.offset ?? 0);
+            const limit = Math.max(1, args.limit ?? 200);
             const result = await globWorkspaceFiles({
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
               pattern: args.pattern,
               ...(args.path ? { path: args.path } : {}),
-              ...(args.limit ? { limit: args.limit } : {}),
+              limit: Math.min(200, offset + limit),
             });
-            return JSON.stringify(result);
+            return JSON.stringify(offset ? result.slice(offset) : result);
           } catch (cause) {
             return cause instanceof Error ? cause.message : String(cause);
           }
@@ -360,25 +364,30 @@ export function createChatTools(ctx: RuntimeContext) {
         parameters: {
           type: "object",
           properties: {
-            query: { type: "string" },
+            pattern: { type: "string" },
+            path: { type: "string" },
             include: { type: "string" },
             limit: { type: "number" },
           },
-          required: ["query"],
+          required: ["pattern"],
           additionalProperties: false,
         },
         async execute(parsed) {
           const args = parsed as {
-            query?: string;
+            pattern?: string;
+            path?: string;
             include?: string;
             limit?: number;
           };
-          if (typeof args.query !== "string") return "grep requires query";
+          if (typeof args.pattern !== "string") return "grep requires pattern";
+          const scopedInclude = args.path
+            ? `${args.path.replace(/\/+$/u, "")}/**/*`
+            : args.include;
           try {
             const result = await searchWorkspaceFiles({
               workspaceRoot: ctx.ports.getWorkspaceRoot(),
-              query: args.query,
-              ...(args.include ? { include: args.include } : {}),
+              query: args.pattern,
+              ...(scopedInclude ? { include: scopedInclude } : {}),
               ...(args.limit ? { limit: args.limit } : {}),
             });
             return JSON.stringify(result);

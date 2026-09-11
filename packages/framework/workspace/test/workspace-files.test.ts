@@ -35,7 +35,7 @@ async function probeSymlinkSupport(): Promise<boolean> {
 }
 
 symlinkTest(
-  "workspace files stay contained and exclude internal directories",
+  "workspace files stay contained without hiding internal directories",
   async () => {
     const root = await mkdtemp(join(tmpdir(), "natalia-workspace-files-"));
     const outside = await mkdtemp(
@@ -48,13 +48,19 @@ symlinkTest(
     await writeFile(join(outside, "secret.ts"), "secret\n");
     await symlink(outside, join(root, "outside"));
     expect(
-      await findWorkspaceFiles({ workspaceRoot: root, query: "mod" }),
-    ).toEqual([{ path: "src/model.ts", type: "file" }]);
-    expect(await findWorkspaceFiles({ workspaceRoot: root })).not.toEqual(
+      await findWorkspaceFiles({ workspaceRoot: root, query: "model.ts" }),
+    ).toEqual(
+      expect.arrayContaining([{ path: "src/model.ts", type: "file" }]),
+    );
+    expect(await findWorkspaceFiles({ workspaceRoot: root })).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           path: expect.stringContaining("node_modules"),
         }),
+      ]),
+    );
+    expect(await findWorkspaceFiles({ workspaceRoot: root })).not.toEqual(
+      expect.arrayContaining([
         expect.objectContaining({ path: expect.stringContaining("outside") }),
       ]),
     );
@@ -130,7 +136,31 @@ test("workspace content search is text-only and line-aware", async () => {
   ).rejects.toThrow("workspace search query is required");
 });
 
-test("workspace list, read, and glob retain containment and ignore policy", async () => {
+test("workspace content search reaches past the first catalog page", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-search-deep-"));
+  await mkdir(join(root, "short"), { recursive: true });
+  for (let index = 0; index < 220; index++)
+    await writeFile(
+      join(root, "short", `file-${index.toString().padStart(3, "0")}.ts`),
+      "no match here\n",
+    );
+  await mkdir(join(root, "deep", "nested"), { recursive: true });
+  await writeFile(
+    join(root, "deep", "nested", "target.ts"),
+    "the needle is here\n",
+  );
+  expect(
+    await searchWorkspaceFiles({
+      workspaceRoot: root,
+      query: "needle",
+      include: "deep/**/*.ts",
+    }),
+  ).toEqual([
+    { path: "deep/nested/target.ts", line: 1, text: "the needle is here" },
+  ]);
+});
+
+test("workspace list, read, and glob retain containment without hiding ignored files", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-api-"));
   await mkdir(join(root, "src"), { recursive: true });
   await mkdir(join(root, "node_modules", "pkg"), { recursive: true });
@@ -138,12 +168,18 @@ test("workspace list, read, and glob retain containment and ignore policy", asyn
   await writeFile(join(root, "src", "data.bin"), "\0binary");
   await writeFile(join(root, "node_modules", "pkg", "hidden.ts"), "hidden\n");
   expect(await listWorkspaceFiles({ workspaceRoot: root })).toEqual({
-    entries: [{ path: "src/", type: "directory" }],
+    entries: [
+      { path: "node_modules/", type: "directory" },
+      { path: "src/", type: "directory" },
+    ],
     truncated: false,
   });
   expect(
     await globWorkspaceFiles({ workspaceRoot: root, pattern: "**/*.ts" }),
-  ).toEqual([{ path: "src/model.ts", type: "file" }]);
+  ).toEqual([
+    { path: "node_modules/pkg/hidden.ts", type: "file" },
+    { path: "src/model.ts", type: "file" },
+  ]);
   expect(
     await readWorkspaceFile({ workspaceRoot: root, path: "src/model.ts" }),
   ).toMatchObject({
@@ -157,9 +193,10 @@ test("workspace list, read, and glob retain containment and ignore policy", asyn
   ).toMatchObject({
     encoding: "base64",
   });
-  await expect(
-    listWorkspaceFiles({ workspaceRoot: root, path: "node_modules" }),
-  ).rejects.toThrow("workspace path is ignored by filesystem policy");
+  expect(
+    (await listWorkspaceFiles({ workspaceRoot: root, path: "node_modules" }))
+      .entries,
+  ).toEqual([{ path: "node_modules/pkg/", type: "directory" }]);
   await expect(
     readWorkspaceFile({ workspaceRoot: root, path: "../outside" }),
   ).rejects.toThrow("workspace path must remain inside workspace");
@@ -247,150 +284,47 @@ test("workspace directory lists use stable direct-child pagination", async () =>
   });
 });
 
-test("workspace filesystem APIs honor root and nested gitignore rules", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-gitignore-"));
+test("workspace access does not treat .gitignore as a visibility policy", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-gitignore-free-"));
   await mkdir(join(root, "src", "generated"), { recursive: true });
-  await mkdir(join(root, "nested"), { recursive: true });
-  await mkdir(join(root, "keep"), { recursive: true });
+  await mkdir(join(root, "node_modules", "pkg"), { recursive: true });
   await writeFile(
     join(root, ".gitignore"),
-    [
-      "*.secret",
-      "/root-only.txt",
-      "generated/",
-      "keep/*",
-      "!keep/visible.txt",
-    ].join("\n"),
+    ["*.secret", "/root-only.txt", "generated/", "node_modules/"].join("\n"),
   );
   await writeFile(join(root, "visible.ts"), "visible\n");
   await writeFile(join(root, "root-only.txt"), "hidden\n");
-  await mkdir(join(root, "nested", "root-only.txt"));
-  await writeFile(
-    join(root, "nested", "root-only.txt", "visible.ts"),
-    "visible\n",
-  );
   await writeFile(join(root, "visible.secret"), "hidden\n");
   await writeFile(join(root, "src", "generated", "code.ts"), "hidden\n");
-  await writeFile(join(root, "nested", ".gitignore"), "private/\n");
-  await mkdir(join(root, "nested", "private"));
-  await writeFile(join(root, "nested", "private", "hidden.ts"), "hidden\n");
-  await writeFile(join(root, "keep", "hidden.txt"), "hidden\n");
-  await writeFile(join(root, "keep", "visible.txt"), "visible\n");
+  await writeFile(join(root, "node_modules", "pkg", "hidden.ts"), "hidden\n");
 
   expect(await findWorkspaceFiles({ workspaceRoot: root, limit: 200 })).toEqual(
-    expect.arrayContaining([
-      { path: ".gitignore", type: "file" },
-      { path: "visible.ts", type: "file" },
-      { path: "nested/", type: "directory" },
-      { path: "nested/root-only.txt/", type: "directory" },
-      { path: "nested/root-only.txt/visible.ts", type: "file" },
-      { path: "keep/", type: "directory" },
-      { path: "keep/visible.txt", type: "file" },
-    ]),
-  );
-  expect(
-    await findWorkspaceFiles({ workspaceRoot: root, limit: 200 }),
-  ).not.toEqual(
     expect.arrayContaining([
       expect.objectContaining({ path: "root-only.txt" }),
       expect.objectContaining({ path: "visible.secret" }),
       expect.objectContaining({ path: "src/generated/code.ts" }),
-      expect.objectContaining({ path: "nested/private/hidden.ts" }),
-      expect.objectContaining({ path: "keep/hidden.txt" }),
+      expect.objectContaining({ path: "node_modules/pkg/hidden.ts" }),
     ]),
   );
   expect(
     await globWorkspaceFiles({ workspaceRoot: root, pattern: "**/*.ts" }),
-  ).toEqual([
-    { path: "nested/root-only.txt/visible.ts", type: "file" },
-    { path: "visible.ts", type: "file" },
-  ]);
-  expect(
-    await searchWorkspaceFiles({ workspaceRoot: root, query: "visible" }),
-  ).toEqual([
-    { path: ".gitignore", line: 5, text: "!keep/visible.txt" },
-    { path: "visible.ts", line: 1, text: "visible" },
-    { path: "keep/visible.txt", line: 1, text: "visible" },
-    {
-      path: "nested/root-only.txt/visible.ts",
-      line: 1,
-      text: "visible",
-    },
-  ]);
+  ).toEqual(
+    expect.arrayContaining([
+      { path: "node_modules/pkg/hidden.ts", type: "file" },
+      { path: "src/generated/code.ts", type: "file" },
+      { path: "visible.ts", type: "file" },
+    ]),
+  );
   await expect(
     readWorkspaceFile({ workspaceRoot: root, path: "root-only.txt" }),
-  ).rejects.toThrow("workspace path is ignored by filesystem policy");
+  ).resolves.toMatchObject({ path: "root-only.txt", content: "hidden\n" });
   await expect(
-    listWorkspaceFiles({ workspaceRoot: root, path: "nested/private" }),
-  ).rejects.toThrow("workspace path is ignored by filesystem policy");
+    listWorkspaceFiles({ workspaceRoot: root, path: "node_modules" }),
+  ).resolves.toMatchObject({
+    entries: [{ path: "node_modules/pkg/", type: "directory" }],
+  });
 });
 
-test("ignore-rule collection does not descend into ignored directories", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-pruned-"));
-  await mkdir(join(root, "vendor"), { recursive: true });
-  await writeFile(join(root, ".gitignore"), "vendor/\n");
-  // A negated rule inside an ignored directory must never be read: the
-  // parent rule already excludes the whole subtree, and git semantics say a
-  // negation cannot re-include through an excluded directory. If the rule
-  // walk descends into `vendor` anyway, `!visible.txt` is collected and
-  // vendor/visible.txt leaks back into the catalog.
-  await writeFile(join(root, "vendor", ".gitignore"), "!visible.txt\n");
-  await writeFile(join(root, "vendor", "visible.txt"), "visible\n");
-  expect(
-    await findWorkspaceFiles({ workspaceRoot: root, limit: 100 }),
-  ).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ path: "vendor/visible.txt" }),
-    ]),
-  );
-});
-
-test("a foreign negated rule does not disable pruning of ignored subtrees", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-negated-"));
-  await mkdir(join(root, "vendor"), { recursive: true });
-  await mkdir(join(root, "keep"), { recursive: true });
-  await writeFile(join(root, ".gitignore"), "vendor/\n");
-  // The vendored tree carries its own negated rule. It must not disable
-  // pruning of `vendor` for the whole workspace (that is the wezterm/devref
-  // failure shape: one vendored `!` pattern lands the watcher on every
-  // ignored directory). The negated rule inside `vendor` is never read, so
-  // vendor/leak.txt stays excluded.
-  await writeFile(join(root, "vendor", ".gitignore"), "!leak.txt\n");
-  await writeFile(join(root, "vendor", "leak.txt"), "leak\n");
-  // A negated rule inside a *kept* directory still works within its own
-  // base: keep/visible.txt is re-included while keep/hidden.txt is not.
-  await writeFile(join(root, "keep", ".gitignore"), "!visible.txt\n");
-  await writeFile(join(root, "keep", "hidden.txt"), "hidden\n");
-  await writeFile(join(root, "keep", "visible.txt"), "visible\n");
-  const entries = await findWorkspaceFiles({ workspaceRoot: root, limit: 200 });
-  expect(entries).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ path: "keep/visible.txt" }),
-    ]),
-  );
-  expect(entries).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ path: "vendor/leak.txt" }),
-      expect.objectContaining({ path: "keep/hidden.txt" }),
-    ]),
-  );
-});
-
-test("workspace gitignore changes apply after catalog invalidation", async () => {
-  const root = await mkdtemp(
-    join(tmpdir(), "natalia-workspace-gitignore-cache-"),
-  );
-  await writeFile(join(root, "artifact.log"), "first\n");
-  await writeFile(join(root, ".gitignore"), "*.log\n");
-  expect(await findWorkspaceFiles({ workspaceRoot: root })).not.toEqual(
-    expect.arrayContaining([expect.objectContaining({ path: "artifact.log" })]),
-  );
-  await writeFile(join(root, ".gitignore"), "");
-  invalidateWorkspaceFiles(root);
-  expect(await findWorkspaceFiles({ workspaceRoot: root })).toEqual(
-    expect.arrayContaining([{ path: "artifact.log", type: "file" }]),
-  );
-});
 
 symlinkTest("workspace catalog ignores symlink cycles", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-cycle-"));
@@ -472,28 +406,23 @@ watcherTest(
 );
 
 watcherTest(
-  "workspace watcher does not land on gitignore-excluded subtrees",
+  "workspace watcher prunes known-heavy internal directories",
   async () => {
     const root = await mkdtemp(
       join(tmpdir(), "natalia-workspace-watch-excluded-"),
     );
-    await mkdir(join(root, "vendor", "deep"), { recursive: true });
-    await mkdir(join(root, "keep"), { recursive: true });
-    await writeFile(join(root, ".gitignore"), "vendor/\n");
-    // A foreign negated rule must not disable pruning of `vendor` (the
-    // vendored-subtree failure shape). Without pruning the watcher lands on
-    // vendor/deep and the write below triggers a catalog invalidation.
-    await writeFile(join(root, "keep", ".gitignore"), "!visible.txt\n");
-    await writeFile(join(root, "keep", "visible.txt"), "visible\n");
+    await mkdir(join(root, "node_modules", "deep"), { recursive: true });
     let changes = 0;
     const stop = await watchWorkspaceFiles(root, () => changes++);
-    await writeFile(join(root, "vendor", "deep", "leak.txt"), "leak\n");
+    await writeFile(
+      join(root, "node_modules", "deep", "hidden.js"),
+      "module.exports = {}\n",
+    );
     await Bun.sleep(200);
     expect(changes).toBe(0);
     stop();
   },
 );
-
 watcherTest("workspace watcher ignores Natalia runtime writes", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-watch-ignore-"));
   await mkdir(join(root, ".natalia", "perf"), { recursive: true });
@@ -503,4 +432,24 @@ watcherTest("workspace watcher ignores Natalia runtime writes", async () => {
   await Bun.sleep(150);
   expect(changes).toBe(0);
   stop();
+});
+
+test("read policy no longer blocks ignored workspace paths", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-workspace-resource-policy-"),
+  );
+  const relativePath = ".natalia/todos/ses_current.json";
+  await mkdir(join(root, ".natalia", "todos"), { recursive: true });
+  await writeFile(join(root, relativePath), '{"items":[]}\n');
+
+  await expect(
+    readWorkspaceFile({ workspaceRoot: root, path: relativePath }),
+  ).resolves.toMatchObject({ path: relativePath, content: '{"items":[]}\n' });
+
+  await expect(
+    readWorkspaceFile({
+      workspaceRoot: root,
+      path: "../outside.json",
+    }),
+  ).rejects.toThrow("workspace path must remain inside workspace");
 });

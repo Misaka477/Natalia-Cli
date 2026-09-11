@@ -193,6 +193,7 @@ export function NiaPanel(props: {
       await props.runtime?.chatSubmit?.({
         text,
         channel: "nia",
+        sessionID: props.sessionID,
         ...(profile?.normal?.modelID
           ? {
               model: {
@@ -304,7 +305,7 @@ export function NiaPanel(props: {
           placeholder="向 Nia 提问…"
           busy={Boolean(active()) || busy()}
           onInput={setDraft}
-          onStop={() => void props.runtime?.chatAbort?.("nia")}
+          onStop={() => void props.runtime?.chatAbort?.("nia", props.sessionID)}
           onSubmit={() => void submit()}
         />
       </div>

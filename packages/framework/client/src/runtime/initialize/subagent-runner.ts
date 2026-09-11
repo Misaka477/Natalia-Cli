@@ -181,10 +181,9 @@ export async function installSubagents(
   await subagentsController.init(async (task, runner) => {
     try {
       const record = subagentsController.get(runner.agentId);
-      const exec = scope.executionBySession.get(
-        record?.parentSessionID as SessionID,
-      );
-      if (!exec) throw new Error("parent session unavailable for subagent");
+      const parentSessionID = record?.parentSessionID;
+      if (!parentSessionID) throw new Error("subagent has no parent session");
+      const exec = await scope.ensureExecution(parentSessionID as SessionID);
       const activeProvider = exec.provider;
       if (!activeProvider) throw new Error("provider unavailable for subagent");
       // `mode: "sandbox"` routes to the sub-agent's own worktree; everything

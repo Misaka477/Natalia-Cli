@@ -152,9 +152,16 @@ test("a consumer can drive a turn and render it from the public surface alone", 
           row.role === "assistant" && row.text.includes("Wrote notes.md"),
       ),
     ).toBe(true);
-    // Order must survive replay: the tool card sits between the two messages.
+    // Order must survive replay: thinking precedes the first answer, and the
+    // tool card sits between the two assistant messages.
     const order = transcript.map((row) => row.role);
-    expect(order).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(order).toEqual([
+      "user",
+      "thinking",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
 
     // A tool call has to be visible as structured data, not only as prose, or a
     // consumer cannot build a tool card.
@@ -165,9 +172,10 @@ test("a consumer can drive a turn and render it from the public surface alone", 
     expect(state.activeTurn).toBeUndefined();
     expect(state.lastStopReason).toBe("done");
 
-    // Resource and status surfaces must be readable from the projection too, or
-    // a UI still has to parse raw events to render anything but the transcript.
-    expect(Object.keys(state.capabilities).length).toBeGreaterThan(0);
+    // Resource and status surfaces must be readable from the public surface
+    // too. Capability declarations are live-only bootstrap facts, so they come
+    // from the query API; durable projections carry the journal-backed slices.
+    expect((await sdk.capabilities()).length).toBeGreaterThan(0);
     expect(state.checkpoints.length).toBeGreaterThan(0);
     expect(state.policyDecisions.length).toBeGreaterThan(0);
     expect(state.statusSegments.some((s) => s.startsWith("model:"))).toBe(true);
@@ -176,7 +184,6 @@ test("a consumer can drive a turn and render it from the public surface alone", 
     expect(state.sandboxes).toBeDefined();
     expect(state.subagents).toBeDefined();
     expect(state.mcp).toBeDefined();
-    expect(state.todos).toBeDefined();
 
     // Work Graph is a public integration surface, not only an internal
     // projector. The same turn and tool must be causally connected over HTTP.

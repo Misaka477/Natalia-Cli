@@ -1,4 +1,4 @@
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   RuntimeClient,
   WorkspacePermissionSettings,
@@ -25,26 +25,40 @@ export function WorkspaceSettingsPanel(props: {
   const [enabledText, setEnabledText] = createSignal("");
   const [disabledText, setDisabledText] = createSignal("");
 
+  let loadToken = 0;
+
+  createEffect(() => {
+    if (!props.open) return;
+    const workspaceID = props.workspaceID;
+    if (!workspaceID) return;
+    const token = ++loadToken;
+    setPermission({ permissionProfile: "default", approval: "ask" });
+    setTools({ enabledTools: [], disabledTools: [] });
+    setEnabledText("");
+    setDisabledText("");
+    void props.runtime
+      ?.workspacePermissionGet?.(workspaceID)
+      .then((value) => {
+        if (token === loadToken && value) setPermission(value);
+      })
+      .catch(() => undefined);
+    void props.runtime
+      ?.workspaceToolGet?.(workspaceID)
+      .then((value) => {
+        if (token !== loadToken || !value) return;
+        setTools(value);
+        setEnabledText(value.enabledTools.join("\n"));
+        setDisabledText(value.disabledTools.join("\n"));
+      })
+      .catch(() => undefined);
+  });
+
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
       if (event.key === "Escape") props.onClose();
     };
     window.addEventListener("keydown", handleKeydown);
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
-
-    if (!props.workspaceID) return;
-    void props.runtime
-      ?.workspacePermissionGet?.(props.workspaceID)
-      .then((value) => {
-        if (value) setPermission(value);
-      });
-    void props.runtime?.workspaceToolGet?.(props.workspaceID).then((value) => {
-      if (value) {
-        setTools(value);
-        setEnabledText(value.enabledTools.join("\n"));
-        setDisabledText(value.disabledTools.join("\n"));
-      }
-    });
   });
 
   function save() {

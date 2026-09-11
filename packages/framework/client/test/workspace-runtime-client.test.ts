@@ -2,11 +2,17 @@ import { expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { JsonSessionStore, SqliteSessionStore, createSessionRecord } from "@natalia/session";
+import {
+  JsonSessionStore,
+  SqliteSessionStore,
+  createSessionRecord,
+} from "@natalia/session";
+import type { SessionID } from "@natalia/contracts";
 import {
   createWorkspaceManager,
   createWorkspaceRuntimeClient,
   type WorkspaceManager,
+  type WorkspaceRuntime,
 } from "../src/workspace-manager";
 import {
   officialPluginWorkspace,
@@ -18,6 +24,13 @@ function emptyManager(): WorkspaceManager {
     async list() {
       return [];
     },
+    async listSessions() {
+      return [];
+    },
+    async findWorkspaceForSession() {
+      return undefined;
+    },
+    invalidateSessionCache() {},
     async add() {
       throw new Error("unused");
     },
@@ -167,6 +180,226 @@ for (const useSqliteStore of [false, true]) {
   });
 }
 
+test("session-scoped runtime calls route to the owning workspace", async () => {
+  const calls: string[] = [];
+  const firstClient = {
+    start() {},
+    async subagents() {
+      calls.push("first:subagents");
+      return [];
+    },
+    async submit() {
+      calls.push("first:submit");
+      return {} as never;
+    },
+    async history() {
+      calls.push("first:history");
+      return { events: [], next: undefined } as never;
+    },
+  };
+  const secondClient = {
+    start() {},
+    async subagents(sessionID: string) {
+      calls.push(`second:subagents:${sessionID}`);
+      return [];
+    },
+    async submit(_text: string, sessionID: string) {
+      calls.push(`second:submit:${sessionID}`);
+      return {} as never;
+    },
+    async history(input: { sessionID?: string }) {
+      calls.push(`second:history:${input.sessionID}`);
+      return { events: [], next: undefined } as never;
+    },
+    async selectModel(_model: string, _variant: string, sessionID: string) {
+      calls.push(`second:selectModel:${sessionID}`);
+      return undefined;
+    },
+    async workspaceRead(input: { workspaceID?: string; path: string }) {
+      calls.push(`second:workspaceRead:${input.workspaceID}:${input.path}`);
+      return { path: input.path, content: "", encoding: "utf8" } as never;
+    },
+    async agents(input: { workspaceID?: string }) {
+      calls.push(`second:agents:${input.workspaceID}`);
+      return [] as never;
+    },
+    async snapshot(input?: { sessionID?: string; workspaceID?: string }) {
+      calls.push(`second:snapshot:${input?.workspaceID}`);
+      return { type: "snapshot.created", id: "s1", files: [] } as never;
+    },
+    async pendingInteractive(input?: {
+      sessionID?: string;
+      workspaceID?: string;
+    }) {
+      calls.push(
+        `second:pendingInteractive:${input?.workspaceID}:${input?.sessionID}`,
+      );
+      return { approvals: [], questions: [] } as never;
+    },
+    async checkpointListByKind(kind: string, sessionID?: string) {
+      calls.push(`second:checkpointListByKind:${kind}:${sessionID}`);
+      return [] as never;
+    },
+    async mailboxDeliver(messageID: string, sessionID?: string) {
+      calls.push(`second:mailboxDeliver:${messageID}:${sessionID}`);
+      return { delivered: true } as never;
+    },
+    async mailboxDefer(messageID: string, reason?: string, sessionID?: string) {
+      calls.push(`second:mailboxDefer:${messageID}:${reason}:${sessionID}`);
+      return { deferred: true } as never;
+    },
+    async planDocDelete(planID: string, sessionID?: string) {
+      calls.push(`second:planDocDelete:${planID}:${sessionID}`);
+      return { deleted: true } as never;
+    },
+    async planDocStatus(planID: string, sessionID?: string) {
+      calls.push(`second:planDocStatus:${planID}:${sessionID}`);
+      return { status: "marked" } as never;
+    },
+    async auditRounds(planID?: string, workspaceID?: string) {
+      calls.push(`second:auditRounds:${planID}:${workspaceID}`);
+      return [] as never;
+    },
+    async readMcpResource(server: string, uri: string, workspaceID?: string) {
+      calls.push(`second:readMcpResource:${server}:${uri}:${workspaceID}`);
+      return null as never;
+    },
+    async getMcpPrompt(
+      server: string,
+      name: string,
+      _args: Record<string, string> | undefined,
+      workspaceID?: string,
+    ) {
+      calls.push(`second:getMcpPrompt:${server}:${name}:${workspaceID}`);
+      return null as never;
+    },
+    async agentDelete(name: string, workspaceID?: string) {
+      calls.push(`second:agentDelete:${name}:${workspaceID}`);
+      return { deleted: true } as never;
+    },
+    async respondApproval(response: {
+      requestID: string;
+      sessionID?: string;
+      workspaceID?: string;
+    }) {
+      calls.push(
+        `second:respondApproval:${response.requestID}:${response.sessionID}:${response.workspaceID}`,
+      );
+      return { accepted: true } as never;
+    },
+  };
+  const first = {
+    workspaceID: "ws_first",
+    root: "/tmp/first",
+    title: "First",
+    client: firstClient as never,
+    status: "active",
+    permissionSettings: { permissionProfile: "default", approval: "ask" },
+    toolSettings: { enabledTools: [], disabledTools: [] },
+  } satisfies WorkspaceRuntime;
+  const second = {
+    workspaceID: "ws_second",
+    root: "/tmp/second",
+    title: "Second",
+    client: secondClient as never,
+    status: "idle",
+    permissionSettings: { permissionProfile: "default", approval: "ask" },
+    toolSettings: { enabledTools: [], disabledTools: [] },
+  } satisfies WorkspaceRuntime;
+  const manager = {
+    ...emptyManager(),
+    getActive: () => first,
+    get: (workspaceID: string) =>
+      workspaceID === first.workspaceID
+        ? first
+        : workspaceID === second.workspaceID
+          ? second
+          : undefined,
+    findWorkspaceForSession: async (sessionID: string) =>
+      sessionID.startsWith("ses_second") ? second : first,
+  } as WorkspaceManager;
+  const client = createWorkspaceRuntimeClient(manager);
+
+  const sessionID = "ses_second" as SessionID;
+  await client.subagents!(sessionID);
+  await client.submit!("hello", sessionID);
+  await client.history!({ sessionID });
+  await client.selectModel!("model", "default", sessionID);
+  await client.workspaceRead!({
+    workspaceID: second.workspaceID,
+    path: "src/index.ts",
+  });
+  await client.agents!({ workspaceID: second.workspaceID });
+  await client.snapshot!({ workspaceID: second.workspaceID });
+  await client.pendingInteractive!({
+    sessionID,
+    workspaceID: second.workspaceID,
+  });
+  await client.checkpointListByKind!("manual", sessionID);
+  await client.mailboxDeliver!("msg_1", sessionID);
+  await client.mailboxDefer!("msg_1", "later", sessionID);
+  await client.planDocDelete!("plan_1", sessionID);
+  await client.planDocStatus!("plan_1", sessionID);
+  await client.auditRounds!("plan_1", second.workspaceID);
+  await client.readMcpResource!("demo", "demo://resource", second.workspaceID);
+  await client.getMcpPrompt!("demo", "lookup", undefined, second.workspaceID);
+  await client.agentDelete!("build", second.workspaceID);
+  await client.respondApproval!({
+    requestID: "apr_1",
+    decision: "once",
+    sessionID,
+    workspaceID: second.workspaceID,
+  });
+
+  expect(calls).toEqual([
+    `second:subagents:${sessionID}`,
+    `second:submit:${sessionID}`,
+    `second:history:${sessionID}`,
+    `second:selectModel:${sessionID}`,
+    `second:workspaceRead:${second.workspaceID}:src/index.ts`,
+    `second:agents:${second.workspaceID}`,
+    `second:snapshot:${second.workspaceID}`,
+    `second:pendingInteractive:${second.workspaceID}:${sessionID}`,
+    `second:checkpointListByKind:manual:${sessionID}`,
+    `second:mailboxDeliver:msg_1:${sessionID}`,
+    `second:mailboxDefer:msg_1:later:${sessionID}`,
+    `second:planDocDelete:plan_1:${sessionID}`,
+    `second:planDocStatus:plan_1:${sessionID}`,
+    `second:auditRounds:plan_1:${second.workspaceID}`,
+    `second:readMcpResource:demo:demo://resource:${second.workspaceID}`,
+    `second:getMcpPrompt:demo:lookup:${second.workspaceID}`,
+    `second:agentDelete:build:${second.workspaceID}`,
+    `second:respondApproval:apr_1:${sessionID}:${second.workspaceID}`,
+  ]);
+
+  await expect(
+    client.pendingInteractive!({
+      sessionID,
+      workspaceID: first.workspaceID,
+    }),
+  ).rejects.toThrow("does not belong to workspace");
+  expect(calls).toEqual([
+    `second:subagents:${sessionID}`,
+    `second:submit:${sessionID}`,
+    `second:history:${sessionID}`,
+    `second:selectModel:${sessionID}`,
+    `second:workspaceRead:${second.workspaceID}:src/index.ts`,
+    `second:agents:${second.workspaceID}`,
+    `second:snapshot:${second.workspaceID}`,
+    `second:pendingInteractive:${second.workspaceID}:${sessionID}`,
+    `second:checkpointListByKind:manual:${sessionID}`,
+    `second:mailboxDeliver:msg_1:${sessionID}`,
+    `second:mailboxDefer:msg_1:later:${sessionID}`,
+    `second:planDocDelete:plan_1:${sessionID}`,
+    `second:planDocStatus:plan_1:${sessionID}`,
+    `second:auditRounds:plan_1:${second.workspaceID}`,
+    `second:readMcpResource:demo:demo://resource:${second.workspaceID}`,
+    `second:getMcpPrompt:demo:lookup:${second.workspaceID}`,
+    `second:agentDelete:build:${second.workspaceID}`,
+    `second:respondApproval:apr_1:${sessionID}:${second.workspaceID}`,
+  ]);
+});
+
 test("workspace falls back to last access, ignores pins/archive/stale selection, then uses seed for an empty workspace", async () => {
   const root = await officialPluginWorkspace("workspace-recent");
   const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
@@ -230,23 +463,153 @@ test("SQLite restore uses last access instead of pins or deleted legacy JSON", a
     useSqliteStore: true,
   });
   try {
-    const database = new SqliteSessionStore(join(root, ".natalia", "sessions.db"));
+    const database = new SqliteSessionStore(
+      join(root, ".natalia", "sessions.db"),
+    );
     database.create("ses_pinned", "Pinned");
-    database.updateMetadata("ses_pinned", { pinned: true, lastAccessedAt: "2026-01-01T00:00:00Z" });
+    database.updateMetadata("ses_pinned", {
+      pinned: true,
+      lastAccessedAt: "2026-01-01T00:00:00Z",
+    });
     database.create("ses_recent", "Recent");
-    database.updateMetadata("ses_recent", { lastAccessedAt: "2026-08-01T00:00:00Z" });
+    database.updateMetadata("ses_recent", {
+      lastAccessedAt: "2026-08-01T00:00:00Z",
+    });
     database.close();
     const legacy = createSessionRecord("ses_deleted", "Deleted JSON leftover");
     legacy.metadata = { lastAccessedAt: "2026-09-01T00:00:00Z" };
     await new JsonSessionStore(join(root, ".natalia", "sessions")).save(legacy);
-    await writeFile(join(root, ".natalia", "workspace-settings.json"), JSON.stringify({ activeSessionID: legacy.id }));
+    await writeFile(
+      join(root, ".natalia", "workspace-settings.json"),
+      JSON.stringify({ activeSessionID: legacy.id }),
+    );
     const workspace = await manager.add({ path: root });
     const client = manager.get(workspace.workspaceID)!.client;
     expect((await client.runtimeStatus?.())?.sessionID).toBe("ses_recent");
-    expect((await client.sessionList?.())?.some((row) => row.id === legacy.id)).toBe(false);
+    expect(
+      (await client.sessionList?.())?.some((row) => row.id === legacy.id),
+    ).toBe(false);
   } finally {
     await manager.dispose();
-    if (previousRegistry === undefined) delete process.env.NATALIA_WORKSPACES_FILE;
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
+test("workspaceAdd updates the title for an already-registered root", async () => {
+  const root = await officialPluginWorkspace("workspace-title-update");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  const registryPath = join(root, "workspaces.json");
+  process.env.NATALIA_WORKSPACES_FILE = registryPath;
+  const manager = createWorkspaceManager({
+    pluginStoreRoot: officialPluginStoreRoot(root),
+    globalConfigPath: join(root, "global-config.json"),
+  });
+  try {
+    const created = await manager.workspaceAdd({ path: root });
+    expect(created.title).toBe(root.split("/").pop()!);
+    const renamed = await manager.workspaceAdd({
+      path: root,
+      title: "Renamed workspace",
+    });
+    expect(renamed.workspaceID).toBe(created.workspaceID);
+    expect(renamed.title).toBe("Renamed workspace");
+    expect(JSON.parse(await readFile(registryPath, "utf8"))).toEqual([
+      { path: root, title: "Renamed workspace", active: true },
+    ]);
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
+test("sessions aggregate across workspaces and attach routes to the owner", async () => {
+  const firstRoot = await officialPluginWorkspace("workspace-routing-a");
+  const secondRoot = await officialPluginWorkspace("workspace-routing-b");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  const registryPath = join(firstRoot, "workspaces.json");
+  process.env.NATALIA_WORKSPACES_FILE = registryPath;
+  const firstStore = new JsonSessionStore(
+    join(firstRoot, ".natalia", "sessions"),
+  );
+  const secondStore = new JsonSessionStore(
+    join(secondRoot, ".natalia", "sessions"),
+  );
+  const firstSession = createSessionRecord(
+    "ses_first_workspace",
+    "First workspace session",
+  );
+  const secondSession = createSessionRecord(
+    "ses_second_workspace",
+    "Second workspace session",
+  );
+  await firstStore.save(firstSession);
+  await secondStore.save(secondSession);
+  const manager = createWorkspaceManager({
+    pluginStoreRoot: officialPluginStoreRoot(firstRoot),
+    globalConfigPath: join(firstRoot, "global-config.json"),
+  });
+  try {
+    const first = await manager.workspaceAdd({ path: firstRoot });
+    const second = await manager.workspaceAdd({ path: secondRoot });
+    const client = createWorkspaceRuntimeClient(manager);
+    client.start?.(() => undefined);
+    let sessions = (await client.sessionList?.()) ?? [];
+    for (
+      let attempt = 0;
+      attempt < 50 &&
+      !(
+        sessions.some((session) => session.workspaceID === first.workspaceID) &&
+        sessions.some((session) => session.workspaceID === second.workspaceID)
+      );
+      attempt++
+    ) {
+      await Bun.sleep(20);
+      sessions = (await client.sessionList?.()) ?? [];
+    }
+    expect(sessions.map((session) => session.workspaceID)).toEqual(
+      expect.arrayContaining([first.workspaceID, second.workspaceID]),
+    );
+    await client.sessionAttach?.(secondSession.id);
+    expect(manager.getActive()?.workspaceID).toBe(second.workspaceID);
+    expect(await manager.workspaceSessionGet(second.workspaceID)).toBe(
+      secondSession.id,
+    );
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
+test("load restores the persisted active workspace", async () => {
+  const firstRoot = await officialPluginWorkspace("workspace-active-a");
+  const secondRoot = await officialPluginWorkspace("workspace-active-b");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  const registryPath = join(firstRoot, "workspaces.json");
+  process.env.NATALIA_WORKSPACES_FILE = registryPath;
+  await writeFile(
+    registryPath,
+    JSON.stringify([
+      { path: firstRoot, title: "A", active: false },
+      { path: secondRoot, title: "B", active: true },
+    ]),
+  );
+  const manager = createWorkspaceManager({
+    pluginStoreRoot: officialPluginStoreRoot(firstRoot),
+    globalConfigPath: join(firstRoot, "global-config.json"),
+  });
+  try {
+    await manager.load();
+    expect(manager.getActive()?.root).toBe(secondRoot);
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
     else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
   }
 });

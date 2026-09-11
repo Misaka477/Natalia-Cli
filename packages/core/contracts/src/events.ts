@@ -1296,6 +1296,15 @@ type RuntimeEventData =
       owner?: string;
     }
   | {
+      type: "resource.read";
+      id: string;
+      resource: string;
+      owner: string;
+      reader?: string;
+      path: string;
+      at: string;
+    }
+  | {
       type: "dialog.open";
       dialog:
         | "palette"
@@ -1563,6 +1572,7 @@ export type ContributedCommand = {
   category?: string;
 };
 export type ContributedCommandExecution = {
+  workspaceID?: string;
   name: string;
   raw: string;
   args: string[];
@@ -1911,6 +1921,7 @@ export function runtimeEventDurability(
     case "capability.failed":
     case "tool.registered":
     case "plugin.update":
+    case "resource.read":
       return "live";
     case "tool.update":
       return ["succeeded", "failed", "rejected", "cancelled"].includes(
@@ -1974,6 +1985,22 @@ export type CapabilityRecordView = {
   contributions: Array<{ kind: string; name: string }>;
 };
 
+export type RuntimeWorkspaceResourceReadInput = {
+  /** Optional routing hint for multi-workspace clients. */
+  workspaceID?: string;
+  /** Resource contribution name declared by a plugin. */
+  resource: string;
+  /** Template parameters such as sessionID or workspaceID. */
+  params?: Record<string, string>;
+  /**
+   * Optional reader plugin id used by reader allowlists.
+   *
+   * The in-process UI host supplies its plugin id. The runtime treats this as
+   * attribution for the trusted plugin model, not as a sandbox boundary.
+   */
+  reader?: string;
+};
+
 export type RuntimeClient = {
   start(
     onEvent: (event: RuntimeEvent) => void,
@@ -2005,15 +2032,20 @@ export type RuntimeClient = {
    * returns a durable LocalAttachment path usable in submit attachments.
    */
   uploadAttachment?(input: {
+    workspaceID?: string;
     name: string;
     mediaType: string;
     data: string;
   }): Promise<LocalAttachment>;
   attachmentDataUrl?(input: {
+    workspaceID?: string;
     path: string;
     mediaType: string;
   }): Promise<string>;
-  pendingInteractive?(): Promise<PendingInteractiveRequests>;
+  pendingInteractive?(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): Promise<PendingInteractiveRequests>;
   /**
    * Reconcile the workspace watcher hints against the current workspace and
    * return the confirmed changes (WG4 Phase 3 read surface). Confirmed changes
@@ -2050,6 +2082,7 @@ export type RuntimeClient = {
    * including manual edits and edits made before the runtime noticed them.
    */
   workspaceDiff?(input?: {
+    workspaceID?: string;
     includePatch?: boolean;
   }): Promise<RuntimeWorkspaceDiffChange[]>;
   /**
@@ -2058,6 +2091,7 @@ export type RuntimeClient = {
    * workspaces should use `workspaceDiff`.
    */
   workspaceGitDiff?(input?: {
+    workspaceID?: string;
     from?: string;
     to?: string;
     path?: string;
@@ -2068,12 +2102,13 @@ export type RuntimeClient = {
   /**
    * Lists git refs (branches, tags and worktrees) for the Git diff tab.
    */
-  gitRefs?(): Promise<RuntimeGitRef[]>;
+  gitRefs?(input?: { workspaceID?: string }): Promise<RuntimeGitRef[]>;
   /**
    * Computes a structural AST diff in the runtime. The runtime owns the
    * tree-sitter grammars; renderer only receives AstChange summaries.
    */
   astDiff?(input: {
+    workspaceID?: string;
     oldText: string;
     newText: string;
     language: string;
@@ -2094,6 +2129,7 @@ export type RuntimeClient = {
    * not discard the rest of the batch.
    */
   astDiffBatch?(input: {
+    workspaceID?: string;
     files: Array<{
       path?: string;
       oldText: string;
@@ -2125,6 +2161,7 @@ export type RuntimeClient = {
    * (agent/tool/IDE) and submitted here for a safe AST-level preview.
    */
   astRefactorPreview?(input: {
+    workspaceID?: string;
     operation: "rename" | "extract" | "inline" | "move" | "custom";
     files: Array<{
       path?: string;
@@ -2155,6 +2192,7 @@ export type RuntimeClient = {
    * analysis and agent planning. It is a pure read surface.
    */
   astService?(input: {
+    workspaceID?: string;
     operation: "index" | "query";
     files: Array<{
       path?: string;
@@ -2185,6 +2223,7 @@ export type RuntimeClient = {
    * plan can be sent to `astRefactorPreview` for final review.
    */
   astRefactorPlan?(input: {
+    workspaceID?: string;
     operation: "rename" | "extract" | "inline" | "move" | "custom";
     files: Array<{
       path?: string;
@@ -2222,6 +2261,7 @@ export type RuntimeClient = {
    * `dryRun` returns the would-be edits without touching disk.
    */
   astApplyRefactor?(input: {
+    workspaceID?: string;
     operation: "rename" | "extract" | "inline" | "move" | "custom";
     files: Array<{
       path?: string;
@@ -2324,8 +2364,12 @@ export type RuntimeClient = {
     name?: string,
     sessionID?: string,
   ): AgentSelectionOutcome | Promise<AgentSelectionOutcome>;
-  agents?(): Promise<RuntimeAgentCatalogEntry[]>;
-  modelCatalog?(): Promise<RuntimeModelCatalogEntry[]>;
+  agents?(input?: {
+    workspaceID?: string;
+  }): Promise<RuntimeAgentCatalogEntry[]>;
+  modelCatalog?(input?: {
+    workspaceID?: string;
+  }): Promise<RuntimeModelCatalogEntry[]>;
   modelSelection?(sessionID?: string): Promise<RuntimeModelSelection>;
   selectModel?(
     modelID?: string,
@@ -2343,35 +2387,52 @@ export type RuntimeClient = {
     effort?: RuntimeReasoningEffort,
     sessionID?: string,
   ): Promise<void>;
-  skills?(): Promise<RuntimeSkillCatalogEntry[]>;
+  skills?(input?: {
+    workspaceID?: string;
+  }): Promise<RuntimeSkillCatalogEntry[]>;
   workspaceFiles?(input?: {
+    workspaceID?: string;
     query?: string;
     type?: "file" | "directory";
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
   workspaceSearch?(input: {
+    workspaceID?: string;
     query: string;
     include?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceMatch[]>;
   workspaceList?(input?: {
+    workspaceID?: string;
     path?: string;
     offset?: number;
     limit?: number;
   }): Promise<RuntimeWorkspaceListPage>;
   workspaceRead?(input: {
+    workspaceID?: string;
     path: string;
     offset?: number;
     limit?: number;
   }): Promise<RuntimeWorkspaceContent>;
+  /**
+   * Reads a plugin-declared workspace resource by contribution name.
+   *
+   * This is the named counterpart to `workspaceRead`: callers describe the
+   * resource, not the plugin's private directory layout.
+   */
+  resourceRead?(
+    input: RuntimeWorkspaceResourceReadInput,
+  ): Promise<RuntimeWorkspaceContent>;
   /** Writes a file inside the active workspace. */
   workspaceWrite?(input: {
+    workspaceID?: string;
     path: string;
     content: string;
     encoding?: "utf8" | "base64";
   }): Promise<{ written: boolean }>;
   /** Creates a new file or directory inside the active workspace. */
   workspaceCreate?(input: {
+    workspaceID?: string;
     path: string;
     content?: string;
     encoding?: "utf8" | "base64";
@@ -2379,18 +2440,20 @@ export type RuntimeClient = {
   }): Promise<{ created: boolean }>;
   /** Renames a file or directory inside the active workspace. */
   workspaceRename?(input: {
+    workspaceID?: string;
     path: string;
     newPath: string;
   }): Promise<{ renamed: boolean }>;
   /** Moves a file or directory to the system trash/recycle bin. */
   workspaceDelete?(input: {
+    workspaceID?: string;
     path: string;
   }): Promise<{ deleted: boolean; trash: boolean }>;
   /**
    * Returns the current workspace write-lock activity: which sessions are
    * currently writing (or waiting to write) which paths. Read-only.
    */
-  workspaceWriteConflicts?(): Promise<
+  workspaceWriteConflicts?(input?: { workspaceID?: string }): Promise<
     Array<{
       sessionID?: string;
       paths: string[];
@@ -2401,8 +2464,14 @@ export type RuntimeClient = {
   >;
   /** Lists all workspace roots managed by this runtime host. */
   workspaceRoots?(): Promise<WorkspaceSummary[]>;
-  /** Adds a workspace root to the runtime host. */
-  workspaceAdd?(input: { path: string }): Promise<WorkspaceSummary>;
+  /**
+   * Adds a workspace root to the runtime host. When the root is already
+   * registered, a provided `title` updates that workspace's display title.
+   */
+  workspaceAdd?(input: {
+    path: string;
+    title?: string;
+  }): Promise<WorkspaceSummary>;
   /** Removes a workspace root from the runtime host. */
   workspaceRemove?(workspaceID: string): Promise<{ removed: boolean }>;
   /** Makes a workspace root the active target for runtime operations. */
@@ -2420,6 +2489,7 @@ export type RuntimeClient = {
     settings: WorkspaceToolSettings,
   ): Promise<WorkspaceToolSettings>;
   workspaceGlob?(input: {
+    workspaceID?: string;
     pattern: string;
     path?: string;
     limit?: number;
@@ -2506,8 +2576,12 @@ export type RuntimeClient = {
     kind?: CheckpointKind,
     sessionID?: string,
   ): Promise<RuntimeCheckpoint[]>;
-  auditRounds?(planID?: string): Promise<AuditRoundRecord[]>;
+  auditRounds?(
+    planID?: string,
+    workspaceID?: string,
+  ): Promise<AuditRoundRecord[]>;
   roundDiff?(input: {
+    workspaceID?: string;
     from: CheckpointRef;
     to: CheckpointRef;
     paths?: string[];
@@ -2625,7 +2699,7 @@ export type RuntimeClient = {
    * this runtime presents to its UI and direct calls.
    */
   sessionAttach?(id: string): Promise<{ sessionID: string }>;
-  mcpCatalog?(): Promise<MCPCatalogSnapshot>;
+  mcpCatalog?(input?: { workspaceID?: string }): Promise<MCPCatalogSnapshot>;
   /**
    * Lists permission profiles with the active default. Read-only.
    */
@@ -2659,6 +2733,7 @@ export type RuntimeClient = {
    * diagnostics. A write.
    */
   mcpServerAdd?(input: {
+    workspaceID?: string;
     name: string;
     config: MCPServerConfig;
   }): Promise<{ saved: boolean }>;
@@ -2666,12 +2741,16 @@ export type RuntimeClient = {
    * Removes an MCP server. Idempotent: an unknown name answers
    * `removed: true`. The runtime writes the config and disconnects. A write.
    */
-  mcpServerRemove?(name: string): Promise<{ removed: boolean }>;
+  mcpServerRemove?(
+    name: string,
+    workspaceID?: string,
+  ): Promise<{ removed: boolean }>;
   /**
    * Creates an agent definition. A write; creating an existing name answers
    * `created: false` with a reason.
    */
   agentCreate?(input: {
+    workspaceID?: string;
     name: string;
     config: AgentConfig;
   }): Promise<{ created: boolean; reason?: string }>;
@@ -2680,6 +2759,7 @@ export type RuntimeClient = {
    * error.
    */
   agentUpdate?(input: {
+    workspaceID?: string;
     name: string;
     config: AgentConfig;
   }): Promise<{ updated: boolean }>;
@@ -2687,7 +2767,10 @@ export type RuntimeClient = {
    * Deletes an agent definition. A write; idempotent (unknown answers
    * `deleted: true`); the default agent refuses deletion.
    */
-  agentDelete?(name: string): Promise<{
+  agentDelete?(
+    name: string,
+    workspaceID?: string,
+  ): Promise<{
     deleted: boolean;
     reason?: string;
   }>;
@@ -2730,6 +2813,8 @@ export type RuntimeClient = {
   providerRemove?(name: string): Promise<{
     removed: boolean;
     reason?: string;
+    /** Set when the deleted provider supplied the global default model. */
+    defaultModel?: string;
   }>;
   /**
    * Unloads a plugin. A write; idempotent (unknown answers `unloaded: true`).
@@ -2752,8 +2837,13 @@ export type RuntimeClient = {
     server: string,
     name: string,
     arguments_?: Record<string, string>,
+    workspaceID?: string,
   ): Promise<unknown>;
-  readMcpResource?(server: string, uri: string): Promise<unknown>;
+  readMcpResource?(
+    server: string,
+    uri: string,
+    workspaceID?: string,
+  ): Promise<unknown>;
   plugins?(): Promise<PluginStatus[]>;
   pluginInstall?(input: { spec: string }): Promise<{
     installed: boolean;
@@ -2782,16 +2872,21 @@ export type RuntimeClient = {
    * Commands contributed by capabilities and plugins, so a UI can render them
    * without knowing which extension produced each one.
    */
-  commandCatalog?(): Promise<ContributedCommand[]>;
+  commandCatalog?(input?: {
+    workspaceID?: string;
+  }): Promise<ContributedCommand[]>;
   commandExecute?(input: ContributedCommandExecution): Promise<void>;
   runtimeStatus?(sessionID?: string): Promise<RuntimeStatusSnapshot>;
   diagnostics?(
     limit?: number,
     sessionID?: string,
   ): Promise<RuntimeDiagnostic[]>;
-  snapshot(): RuntimeEvent;
+  snapshot(input?: { sessionID?: string; workspaceID?: string }): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
-  lastSubmission(): SubmittedTurn | undefined;
+  lastSubmission(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): SubmittedTurn | undefined;
   /**
    * Answers a pending approval. Refusal is a value: a request that timed out or
    * was already answered is dropped, which an external UI has to know about —
@@ -3126,10 +3221,20 @@ export type RuntimeClient = {
       requiresApproval: boolean;
     }>
   >;
-  capabilities?(): Promise<CapabilityRecordView[]>;
-  projectionContributions?(): Promise<ProjectionContribution[]>;
-  workGraphNodes?(): Promise<WorkGraphNodeView[]>;
-  workGraphEdges?(): Promise<WorkGraphEdgeView[]>;
+  capabilities?(input?: {
+    workspaceID?: string;
+  }): Promise<CapabilityRecordView[]>;
+  projectionContributions?(input?: {
+    workspaceID?: string;
+  }): Promise<ProjectionContribution[]>;
+  workGraphNodes?(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): Promise<WorkGraphNodeView[]>;
+  workGraphEdges?(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): Promise<WorkGraphEdgeView[]>;
   /**
    * Sends the user's message into the Live Work Chat conversation (P8 C2). The
    * Chat is a long-lived, always-available collaborator with the full safe

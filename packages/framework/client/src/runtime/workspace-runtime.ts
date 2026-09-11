@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { ObjectStore } from "@natalia/object-store";
@@ -14,12 +14,14 @@ import {
   writeWorkspaceFile,
 } from "@natalia/platform";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import type {
-  RuntimeAstNode,
-  RuntimeGitRef,
-  RuntimeWorkspaceDiffChange,
+import {
+  RuntimeRefusal,
+  type RuntimeAstNode,
+  type RuntimeGitRef,
+  type RuntimeWorkspaceDiffChange,
 } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
+import { resolveNamedPluginWorkspaceResource } from "./plugin-workspace-resources";
 
 type WorkspaceRuntime = Pick<
   RuntimeServiceClient,
@@ -27,6 +29,7 @@ type WorkspaceRuntime = Pick<
   | "workspaceSearch"
   | "workspaceList"
   | "workspaceRead"
+  | "resourceRead"
   | "workspaceGlob"
   | "workspaceWrite"
   | "workspaceCreate"
@@ -137,6 +140,36 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         ...input,
       });
+    },
+    async resourceRead(input) {
+      await ctx.ports.getReady();
+      const resource = resolveNamedPluginWorkspaceResource({
+        registry: ctx.ports.getCapabilityRegistry(),
+        resource: input.resource,
+        params: input.params ?? {},
+        sessionID: ctx.ports.getSessionID(),
+        reader: input.reader,
+      });
+      if (!resource)
+        throw new RuntimeRefusal(
+          "plugin resource is unavailable or not authorized",
+        );
+      const result = await readWorkspaceFile({
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        path: resource.relativePath,
+      });
+      if (resource.audit) {
+        ctx.ports.publish({
+          type: "resource.read",
+          id: `resource:${resource.pluginID}:${randomUUID()}`,
+          resource: resource.contributionName,
+          owner: resource.pluginID,
+          ...(input.reader ? { reader: input.reader } : {}),
+          path: resource.relativePath,
+          at: new Date().toISOString(),
+        });
+      }
+      return result;
     },
     async workspaceGlob(input) {
       await ctx.ports.getReady();
@@ -955,9 +988,7 @@ export async function collectWorkspaceGitDiff(
             after = afterBuffer.toString("utf8");
         }
       }
-      const patchResult = patch
-        ? await structuredForPatch(patch)
-        : undefined;
+      const patchResult = patch ? await structuredForPatch(patch) : undefined;
       const counts = patchResult?.counts ?? { additions: 0, deletions: 0 };
       const structured = patchResult?.structured;
       changes.push({

@@ -919,6 +919,38 @@ test("store uses session-scoped path when sessionID is provided", async () => {
   );
 });
 
+test("session-scoped store backfills missing parentSessionID for legacy records", async () => {
+  const dir = await tempDir();
+  const store = new SubagentStore(dir, "ses_legacy");
+  const now = Date.now();
+  await store.save([
+    {
+      id: "a1" as any,
+      task: "legacy",
+      mode: "code",
+      status: "failed",
+      attached: true,
+      modelProfile: "",
+      allowedTools: [],
+      excludeTools: [],
+      outputs: [{ step: 1, text: "old failure", timestamp: now }],
+      createdAt: now,
+      updatedAt: now,
+      phase: "finalizing",
+      lastActivityAt: now,
+      activityDetail: "old failure",
+      startedAt: now,
+    },
+  ]);
+
+  const loaded = await store.load();
+  expect(loaded[0]!.parentSessionID).toBe("ses_legacy");
+  const persisted = JSON.parse(
+    await readFile(join(store.dir, "manifest.json"), "utf8"),
+  ) as Array<{ parentSessionID?: string }>;
+  expect(persisted[0]!.parentSessionID).toBe("ses_legacy");
+});
+
 test("registry without sessionID uses the legacy shared store path", async () => {
   const dir = await tempDir();
   const reg = new SubagentRegistry({

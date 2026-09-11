@@ -134,6 +134,7 @@
 | `modelOverrideSchema`                 | `requestDefaults`              | modelOverrideRequestDefaultsSchema                                               |          |                                                                                  |
 | `modelOverrideSchema`                 | `requestOptions`               | Record<string, unknown>                                                          |          | {}                                                                               |
 | `modelOverrideSchema`                 | `headers`                      | Record<string, string>                                                           |          | {}                                                                               |
+| `modelOverrideSchema`                 | `limits`                       | modelLimitsSchema                                                                | yes      |                                                                                  |
 | `modelOverrideRequestDefaultsSchema`  | `temperature`                  | number                                                                           |          | null                                                                             |
 | `modelOverrideRequestDefaultsSchema`  | `topP`                         | number                                                                           |          | null                                                                             |
 | `modelOverrideRequestDefaultsSchema`  | `stream`                       | boolean                                                                          | yes      |                                                                                  |
@@ -592,3 +593,11 @@ atomically, and announces the change with a `settings.updated` event
 据此重新读取而非盲目缓存。
 
 <!-- /config-reference:tui-settings -->
+
+## `.nataliaignore`
+
+Workspace roots may contain a `.nataliaignore` file. It is generated with
+build/runtime defaults, is user-editable, and controls only checkpoint and
+sandbox snapshot membership. It never hides files from the file explorer,
+read/write APIs, searches, or model tools. The older `checkpoint.ignore`
+configuration is migrated into this file once and is no longer read at runtime.

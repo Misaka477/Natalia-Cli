@@ -30,10 +30,6 @@ function formatToolDetail(tool: ToolBlock): string {
         parts.push(parsed.text);
       if (typeof parsed.command === "string" && parsed.command)
         parts.push(parsed.command);
-      if (Array.isArray(parsed.items) || Array.isArray(parsed.todos))
-        parts.push(
-          `todo 数量: ${((parsed.items as unknown[] | undefined) ?? (parsed.todos as unknown[] | undefined))!.length}`,
-        );
       if (parts.length) return parts.join("\n");
       return Object.entries(parsed)
         .map(
@@ -64,9 +60,7 @@ function shortToolLabel(tool: ToolBlock): string {
           ? parsed.text
           : typeof parsed.command === "string"
             ? parsed.command
-            : Array.isArray(parsed.items) || Array.isArray(parsed.todos)
-              ? `${((parsed.items as unknown[] | undefined) ?? (parsed.todos as unknown[] | undefined))!.length} items`
-              : JSON.stringify(parsed);
+            : JSON.stringify(parsed);
     return candidate.length > 96 ? `${candidate.slice(0, 96)}…` : candidate;
   } catch {
     const fallback = raw || tool.summary || "";
@@ -98,11 +92,13 @@ export function StatusPanel(props: {
 
     if (props.runtime) {
       void props.runtime
-        .runtimeStatus?.()
+        .runtimeStatus?.(props.state.sessionID)
         .then((value) => setStatusData(value));
-      void props.runtime.diagnostics?.().then((value) => {
-        if (value) setDiagRows(value);
-      });
+      void props.runtime
+        .diagnostics?.(undefined, props.state.sessionID)
+        .then((value) => {
+          if (value) setDiagRows(value);
+        });
     }
   });
 

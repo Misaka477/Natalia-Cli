@@ -45,10 +45,12 @@ export type NataliaSDK = {
     name?: string,
     sessionID?: string,
   ): Promise<import("@natalia/contracts").AgentSelectionOutcome>;
-  agents(): Promise<import("@natalia/contracts").RuntimeAgentCatalogEntry[]>;
-  modelCatalog(): Promise<
-    import("@natalia/contracts").RuntimeModelCatalogEntry[]
-  >;
+  agents(input?: {
+    workspaceID?: string;
+  }): Promise<import("@natalia/contracts").RuntimeAgentCatalogEntry[]>;
+  modelCatalog(input?: {
+    workspaceID?: string;
+  }): Promise<import("@natalia/contracts").RuntimeModelCatalogEntry[]>;
   modelSelection(
     sessionID?: string,
   ): Promise<import("@natalia/contracts").RuntimeModelSelection>;
@@ -67,31 +69,46 @@ export type NataliaSDK = {
     effort?: import("@natalia/contracts").RuntimeReasoningEffort,
     sessionID?: string,
   ): Promise<void>;
-  skills(): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
+  skills(input?: {
+    workspaceID?: string;
+  }): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
   workspaceFiles(input?: {
+    workspaceID?: string;
     query?: string;
     type?: "file" | "directory";
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
   workspaceSearch(input: {
+    workspaceID?: string;
     query: string;
     include?: string;
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceMatch[]>;
   workspaceList(input?: {
+    workspaceID?: string;
     path?: string;
     offset?: number;
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceListPage>;
   workspaceRead(input: {
+    workspaceID?: string;
     path: string;
     offset?: number;
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceContent>;
-  workspaceWriteConflicts(): Promise<
+  resourceRead(input: {
+    workspaceID?: string;
+    resource: string;
+    params?: Record<string, string>;
+    reader?: string;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceContent>;
+  workspaceWriteConflicts(input?: {
+    workspaceID?: string;
+  }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["workspaceWriteConflicts"]>>>
   >;
   workspaceGlob(input: {
+    workspaceID?: string;
     pattern: string;
     path?: string;
     limit?: number;
@@ -158,6 +175,7 @@ export type NataliaSDK = {
   /** Removes an MCP server and disconnects it. A write; idempotent. */
   mcpServerRemove(
     name: string,
+    workspaceID?: string,
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mcpServerRemove"]>>>
   >;
@@ -172,6 +190,7 @@ export type NataliaSDK = {
   /** Deletes an agent definition. A write; idempotent; the default refuses. */
   deleteAgent(
     name: string,
+    workspaceID?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["agentDelete"]>>>>;
   /** Discovers the models a provider endpoint offers. Read-only. */
   discoverProvider(
@@ -207,7 +226,10 @@ export type NataliaSDK = {
   respondQuestion(
     response: QuestionResponse,
   ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
-  pendingInteractive(): Promise<{
+  pendingInteractive(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): Promise<{
     approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
     questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
   }>;
@@ -226,8 +248,10 @@ export type NataliaSDK = {
   ): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
   auditRounds(
     planID?: string,
+    workspaceID?: string,
   ): Promise<import("@natalia/contracts").AuditRoundRecord[]>;
   roundDiff(input: {
+    workspaceID?: string;
     from: import("@natalia/contracts").CheckpointRef;
     to: import("@natalia/contracts").CheckpointRef;
     paths?: string[];
@@ -267,6 +291,7 @@ export type NataliaSDK = {
     id: string;
     resourceID: string;
     maxBytes?: number;
+    sessionID?: string;
   }): Promise<string>;
   sandboxMerge(
     id: string,
@@ -282,24 +307,41 @@ export type NataliaSDK = {
   sandboxResourceStop(input: {
     id: string;
     resourceID: string;
+    sessionID?: string;
   }): Promise<import("@natalia/contracts").RuntimeSandboxResource>;
-  snapshot(): Promise<RuntimeEvent>;
-  history(options?: { after?: number; limit?: number }): Promise<{
+  snapshot(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): Promise<RuntimeEvent>;
+  history(options?: {
+    sessionID?: string;
+    after?: number;
+    offset?: number;
+    limit?: number;
+  }): Promise<{
     events: Array<{ seq: number; event: RuntimeEvent }>;
     hasMore: boolean;
   }>;
   messages(options?: {
+    sessionID?: string;
     limit?: number;
     order?: "asc" | "desc";
     cursor?: string;
   }): Promise<import("@natalia/contracts").RuntimeMessagePage>;
-  mcpCatalog(): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
+  mcpCatalog(input?: {
+    workspaceID?: string;
+  }): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
   mcpPrompt(
     server: string,
     name: string,
     arguments_?: Record<string, string>,
+    workspaceID?: string,
   ): Promise<unknown>;
-  mcpResource(server: string, uri: string): Promise<unknown>;
+  mcpResource(
+    server: string,
+    uri: string,
+    workspaceID?: string,
+  ): Promise<unknown>;
   plugins(): Promise<import("@natalia/contracts").PluginStatus[]>;
   pluginInstall(input: {
     spec: string;
@@ -323,13 +365,21 @@ export type NataliaSDK = {
    * failing the whole list, so a broken document does not blank the view.
    */
   /** Commands contributed by capabilities and plugins. */
-  commandCatalog(): Promise<import("@natalia/contracts").ContributedCommand[]>;
+  commandCatalog(input?: {
+    workspaceID?: string;
+  }): Promise<import("@natalia/contracts").ContributedCommand[]>;
   commandExecute(
     input: import("@natalia/contracts").ContributedCommandExecution,
   ): Promise<void>;
   /** Replayable causal facts, including the existing epi_* correlation id. */
-  workGraphNodes(): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
-  workGraphEdges(): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
+  workGraphNodes(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
+  workGraphEdges(input?: {
+    sessionID?: string;
+    workspaceID?: string;
+  }): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
   /** The native terminal host. P0-D scopes the secure-input members. */
   nativeTerminalList(
     sessionID?: string,
@@ -530,6 +580,7 @@ export type NataliaSDK = {
   planDocRead(input: {
     planID?: string;
     path?: string;
+    sessionID?: string;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocRead"]>>>>;
   /** Writes a Markdown plan document inside `.natalia/plans/`. */
   planDocWrite(input: {
@@ -537,11 +588,13 @@ export type NataliaSDK = {
     content: string;
     title?: string;
     planID?: string;
+    sessionID?: string;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocWrite"]>>>>;
   /** Marks a plan document as a formal Plan and returns its stable planID. */
   planDocMark(input: {
     path: string;
     title?: string;
+    sessionID?: string;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocMark"]>>>>;
   /** Deletes a plan registry record (does not delete the Markdown file). */
   planDocDelete(
@@ -557,6 +610,7 @@ export type NataliaSDK = {
   planDocUpdateStatus(input: {
     planID: string;
     status: string;
+    sessionID?: string;
   }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>>
   >;
@@ -598,10 +652,12 @@ export type NataliaSDK = {
   >;
   /** Returns the object-store backed global workspace diff. */
   workspaceDiff(input?: {
+    workspaceID?: string;
     includePatch?: boolean;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["workspaceDiff"]>>>>;
   /** Returns the git backed workspace diff for optional ref/worktree ranges. */
   workspaceGitDiff(input?: {
+    workspaceID?: string;
     from?: string;
     to?: string;
     path?: string;
@@ -609,9 +665,9 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["workspaceGitDiff"]>>>
   >;
   /** Lists branches, tags and worktrees for Git diff selection. */
-  gitRefs(): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["gitRefs"]>>>
-  >;
+  gitRefs(input?: {
+    workspaceID?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["gitRefs"]>>>>;
   /** Lists the current session's sandboxed sub-agent PRs. */
   teamPRList(
     sessionID?: string,
@@ -621,7 +677,9 @@ export type NataliaSDK = {
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
   >;
-  projectionContributions(): Promise<
+  projectionContributions(input?: {
+    workspaceID?: string;
+  }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["projectionContributions"]>>>
   >;
   requestOverride(
@@ -636,9 +694,9 @@ export type NataliaSDK = {
     Awaited<ReturnType<NonNullable<RuntimeClient["approveOverride"]>>>
   >;
   /** Loaded capability records, distinct from `availability()` (what is implemented). */
-  capabilities(): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["capabilities"]>>>
-  >;
+  capabilities(input?: {
+    workspaceID?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["capabilities"]>>>>;
   sessionSnapshot(
     sessionID?: string,
   ): Promise<
@@ -783,8 +841,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         ...(name === undefined ? {} : { name }),
         ...(sessionID ? { sessionID } : {}),
       }),
-    agents: async () => await call("agent.list", {}),
-    modelCatalog: async () => await call("model.catalog", {}),
+    agents: async (input) => await call("agent.list", input ?? {}),
+    modelCatalog: async (input) => await call("model.catalog", input ?? {}),
     modelSelection: async (sessionID) =>
       await call("model.selection", sessionID ? { sessionID } : {}),
     setDefaultModel: async (modelID) =>
@@ -805,14 +863,15 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         ...(sessionID ? { sessionID } : {}),
       });
     },
-    skills: async () => await call("skills.list", {}),
+    skills: async (input) => await call("skills.list", input ?? {}),
     workspaceFiles: async (input = {}) => await call("workspace.files", input),
     workspaceSearch: async (input) => await call("workspace.search", input),
     workspaceList: async (input = {}) => await call("workspace.list", input),
     workspaceRead: async (input) => await call("workspace.read", input),
+    resourceRead: async (input) => await call("resource.read", input),
     workspaceGlob: async (input) => await call("workspace.glob", input),
-    workspaceWriteConflicts: async () =>
-      await call("workspace.writeConflicts", {}),
+    workspaceWriteConflicts: async (input) =>
+      await call("workspace.writeConflicts", input ?? {}),
     sessions: async () => await call("session.list", {}),
     touchSession: async (id) => {
       await call("session.touch", { id });
@@ -827,10 +886,18 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     permissionSave: async (input) => await call("permission.save", input),
     permissionDelete: async (name) => await call("permission.delete", { name }),
     mcpServerAdd: async (input) => await call("mcp.server.add", input),
-    mcpServerRemove: async (name) => await call("mcp.server.remove", { name }),
+    mcpServerRemove: async (name, workspaceID) =>
+      await call("mcp.server.remove", {
+        name,
+        ...(workspaceID ? { workspaceID } : {}),
+      }),
     createAgent: async (input) => await call("agent.create", input),
     updateAgent: async (input) => await call("agent.update", input),
-    deleteAgent: async (name) => await call("agent.delete", { name }),
+    deleteAgent: async (name, workspaceID) =>
+      await call("agent.delete", {
+        name,
+        ...(workspaceID ? { workspaceID } : {}),
+      }),
     discoverProvider: async (input) => await call("provider.discover", input),
     addProvider: async (input) => await call("provider.add", input),
     removeProvider: async (name) => await call("provider.remove", { name }),
@@ -858,7 +925,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         "question.respond",
         response as unknown as Record<string, unknown>,
       ),
-    pendingInteractive: async () => await call("interactive.pending", {}),
+    pendingInteractive: async (input) =>
+      await call("interactive.pending", input ?? {}),
     checkpoint: async () =>
       await call<SubmittedTurn>("prompt", { text: "/checkpoint" }),
     checkpoints: async (limit) =>
@@ -876,8 +944,11 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         ...(kind ? { kind } : {}),
         ...(sessionID ? { sessionID } : {}),
       }),
-    auditRounds: async (planID) =>
-      await call("audit.rounds", planID ? { planID } : {}),
+    auditRounds: async (planID, workspaceID) =>
+      await call("audit.rounds", {
+        ...(planID ? { planID } : {}),
+        ...(workspaceID ? { workspaceID } : {}),
+      }),
     roundDiff: async (input) => await call("workspace.round.diff", input),
     checkpointPreview: async (id, sessionID, options) =>
       await call("checkpoint.preview", {
@@ -909,27 +980,37 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("sandbox.delete", { id, ...(sessionID ? { sessionID } : {}) }),
     sandboxResourceStop: async (input) =>
       await call("sandbox.resource.stop", input),
-    snapshot: async () => await call<RuntimeEvent>("snapshot", {}),
+    snapshot: async (input) =>
+      await call<RuntimeEvent>("snapshot", input ?? {}),
     history: async (historyOptions = {}) =>
       await call("session.history", historyOptions),
     messages: async (messageOptions = {}) =>
       await call("session.messages", messageOptions),
-    mcpCatalog: async () => await call("mcp.catalog", {}),
-    mcpPrompt: async (server, name, arguments_ = {}) =>
-      await call("mcp.prompt", { server, name, arguments: arguments_ }),
-    mcpResource: async (server, uri) =>
-      await call("mcp.resource", { server, uri }),
+    mcpCatalog: async (input) => await call("mcp.catalog", input ?? {}),
+    mcpPrompt: async (server, name, arguments_ = {}, workspaceID) =>
+      await call("mcp.prompt", {
+        server,
+        name,
+        arguments: arguments_,
+        ...(workspaceID ? { workspaceID } : {}),
+      }),
+    mcpResource: async (server, uri, workspaceID) =>
+      await call("mcp.resource", {
+        server,
+        uri,
+        ...(workspaceID ? { workspaceID } : {}),
+      }),
     plugins: async () => await call("plugin.list", {}),
     pluginInstall: async (input) => await call("plugin.install", input),
     pluginUninstall: async (input) => await call("plugin.uninstall", input),
     pluginSetEnabled: async (input) => await call("plugin.set-enabled", input),
     pluginCatalog: async () => await call("plugin.catalog", {}),
-    commandCatalog: async () => await call("command.catalog", {}),
+    commandCatalog: async (input) => await call("command.catalog", input ?? {}),
     commandExecute: async (input) => {
       await call("command.execute", input);
     },
-    workGraphNodes: async () => await call("workgraph.nodes", {}),
-    workGraphEdges: async () => await call("workgraph.edges", {}),
+    workGraphNodes: async (input) => await call("workgraph.nodes", input ?? {}),
+    workGraphEdges: async (input) => await call("workgraph.edges", input ?? {}),
     nativeTerminalList: async (sessionID) =>
       await call("nativeTerminal.list", sessionID ? { sessionID } : {}),
     nativeTerminalRead: async (id) => await call("nativeTerminal.read", { id }),
@@ -1014,6 +1095,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         safeSummary: input.safeSummary,
         relatedPlanID: input.relatedPlanID,
         deliveryPolicy: input.deliveryPolicy,
+        ...(input.sessionID ? { sessionID: input.sessionID } : {}),
       }),
     mailboxDeliver: async (messageID, sessionID) =>
       await call("mailbox.deliver", {
@@ -1043,6 +1125,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("planDoc.read", {
         planID: input.planID,
         path: input.path,
+        ...(input.sessionID ? { sessionID: input.sessionID } : {}),
       }),
     planDocWrite: async (input) =>
       await call("planDoc.write", {
@@ -1050,11 +1133,13 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         content: input.content,
         title: input.title,
         planID: input.planID,
+        ...(input.sessionID ? { sessionID: input.sessionID } : {}),
       }),
     planDocMark: async (input) =>
       await call("planDoc.mark", {
         path: input.path,
         title: input.title,
+        ...(input.sessionID ? { sessionID: input.sessionID } : {}),
       }),
     planDocDelete: async (planID, sessionID) =>
       await call("planDoc.delete", {
@@ -1070,6 +1155,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("planDoc.updateStatus", {
         planID: input.planID,
         status: input.status,
+        ...(input.sessionID ? { sessionID: input.sessionID } : {}),
       }),
     driftFindings: async (sessionID) =>
       await call("drift.findings", sessionID ? { sessionID } : {}),
@@ -1094,12 +1180,13 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     workspaceDiff: async (input) => await call("workspace.diff", input ?? {}),
     workspaceGitDiff: async (input) =>
       await call("workspace.git.diff", input ?? {}),
-    gitRefs: async () => await call("git.refs", {}),
+    gitRefs: async (input) => await call("git.refs", input ?? {}),
     teamPRList: async (sessionID) =>
       await call("team.pr.list", sessionID ? { sessionID } : {}),
     registeredTools: async (sessionID) =>
       await call("tools.registered", sessionID ? { sessionID } : {}),
-    projectionContributions: async () => await call("projections.list", {}),
+    projectionContributions: async (input) =>
+      await call("projections.list", input ?? {}),
     requestOverride: async (input, sessionID) =>
       await call("constitution.override.request", {
         ...input,
@@ -1107,7 +1194,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       }),
     approveOverride: async (input) =>
       await call("constitution.override.approve", input),
-    capabilities: async () => await call("capabilities", {}),
+    capabilities: async (input) => await call("capabilities", input ?? {}),
     sessionSnapshot: async (sessionID) =>
       await call("session.snapshot", sessionID ? { sessionID } : {}),
     submitInput: async (input) => await call("submit.input", input),

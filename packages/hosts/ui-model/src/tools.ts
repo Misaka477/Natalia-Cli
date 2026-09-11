@@ -11,7 +11,6 @@ export type ToolStatus =
 export type ToolKind =
   | "generic"
   | "diff"
-  | "todo"
   | "workflow"
   | "background"
   | "subagent"
@@ -107,11 +106,6 @@ export type ParsedToolArguments = {
   redactedJson?: string;
 };
 
-export type TodoView = {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-};
-
 const sensitiveKey =
   /(?:api[_-]?key|token|secret|password|passphrase|credential|authorization|cookie)/iu;
 
@@ -129,8 +123,6 @@ export function classifyTool(
     lower === "edit"
   )
     return "diff";
-  if (kind === "todo" || lower === "todowrite" || lower.includes("todo"))
-    return "todo";
   if (kind === "workflow" || lower.includes("workflow")) return "workflow";
   if (kind === "background" || lower.includes("background"))
     return "background";
@@ -412,20 +404,6 @@ export function stripAnsiOutput(value: string) {
     /[\u001b\u009b](?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu,
     "",
   );
-}
-
-export function parseTodoItems(value: unknown): TodoView[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!isRecord(item)) return [];
-    if (typeof item.content !== "string" || typeof item.status !== "string")
-      return [];
-    if (!["pending", "in_progress", "completed"].includes(item.status))
-      return [];
-    return [
-      { content: item.content, status: item.status as TodoView["status"] },
-    ];
-  });
 }
 
 export function providerSafeThinkingSummary(

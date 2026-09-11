@@ -47,11 +47,16 @@ let testNataliaInstance: string;
 const previousNodeEnvironment = process.env.NODE_ENV;
 const previousTestPluginDistribution =
   process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION;
+const previousNpmCache = process.env.npm_config_cache;
 
 beforeAll(async () => {
   testNataliaInstance = await createTemporaryDirectory(
     join(tmpdir(), "natalia-cli-instance-"),
   );
+  // Plugin installation shells out to npm. Point its cache at the test temp
+  // directory so a read-only or unavailable user cache cannot fail the suite.
+  process.env.npm_config_cache = join(testNataliaInstance, "npm-cache");
+  await mkdir(process.env.npm_config_cache, { recursive: true });
   testPluginDistribution = join(testNataliaInstance, "plugins");
   await cp(
     join(import.meta.dir, "../../../dist/ts/plugins"),
@@ -116,6 +121,8 @@ afterAll(async () => {
   else
     process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION =
       previousTestPluginDistribution;
+  if (previousNpmCache === undefined) delete process.env.npm_config_cache;
+  else process.env.npm_config_cache = previousNpmCache;
 });
 
 async function isolateGlobalModelConfig(root: string) {

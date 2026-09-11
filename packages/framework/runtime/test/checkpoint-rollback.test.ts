@@ -286,6 +286,29 @@ symlinkTest(
   },
 );
 
+test("checkpoint structurally excludes its own stores even without .natalia/ ignore", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  await writeFile(join(root, ".nataliaignore"), "# no .natalia rule\n");
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "src", "main.ts"), "export {}\n");
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_checkpoint_self_exclusion",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  const [baseline] = await store.list();
+  const paths = Object.keys(baseline!.manifest.entries);
+  expect(paths).toContain("src/main.ts");
+  expect(paths.some((path) => path.startsWith(".natalia/objects/"))).toBe(
+    false,
+  );
+  expect(
+    paths.some((path) => path.startsWith(".natalia/checkpoints/")),
+  ).toBe(false);
+  expect(paths).not.toContain(".nataliaignore");
+});
+
 symlinkTest(
   "large ignored workspace fixtures do not make a durable checkpoint incomplete",
   async () => {
@@ -299,7 +322,7 @@ symlinkTest(
     > = [];
     await mkdir(join(root, "source"), { recursive: true });
     await mkdir(join(root, "fixture-output"), { recursive: true });
-    await writeFile(join(root, ".gitignore"), "/fixture-output\n");
+    await writeFile(join(root, ".nataliaignore"), "/fixture-output\n");
     await Promise.all(
       Array.from({ length: 750 }, (_, index) =>
         writeFile(join(root, "source", `${index}.txt`), `entry ${index}\n`),

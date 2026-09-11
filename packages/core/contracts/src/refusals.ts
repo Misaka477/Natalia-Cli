@@ -166,6 +166,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "path policy and the size limit refuse",
   },
+  resourceRead: {
+    refusal: "error",
+    note: "resource ownership, reader ACL, path policy and size limits refuse",
+  },
   workspaceWrite: {
     refusal: "value",
     expressedBy: "written",

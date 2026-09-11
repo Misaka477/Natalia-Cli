@@ -360,7 +360,11 @@ test("collaboration routing is strictly by sender, not by recipient", () => {
   ).toBe(false);
 });
 
-test("todo_write result projects the todo list without live argument deltas", () => {
+test("tool results remain available on the generic transcript block", () => {
+  const result = JSON.stringify({
+    saved: 1,
+    items: [{ content: "ship todo projection", status: "in_progress" }],
+  });
   const state = projectEvents([
     {
       type: "tool.update",
@@ -369,16 +373,16 @@ test("todo_write result projects the todo list without live argument deltas", ()
       callID: "call_todo",
       status: "succeeded",
       summary: "saved 1 todo items",
-      result: JSON.stringify({
-        saved: 1,
-        items: [{ content: "ship todo projection", status: "in_progress" }],
-      }),
+      result,
       endedAt: 1,
     },
   ]);
-  expect(state.todos).toEqual([
-    { content: "ship todo projection", status: "in_progress" },
-  ]);
+  expect(Object.values(state.tools)[0]).toMatchObject({
+    name: "todo_write",
+    status: "succeeded",
+    result,
+  });
+  expect(state.messages.find((block) => block.tool)?.tool?.result).toBe(result);
 });
 
 test("a queued turn stays visibly queued without replacing active work", () => {
@@ -789,12 +793,10 @@ test("closing a segment confirms only what markdown had completed", () => {
   const assistant = state.messages.filter(
     (block) => block.role === "assistant",
   );
-  expect(assistant).toHaveLength(2);
+  expect(assistant).toHaveLength(1);
   expect(assistant[0]?.text).toBe(paragraph);
-  expect(assistant[0]?.pendingText).toBe("");
-  expect(assistant[1]?.text).toBe("");
-  expect(assistant[1]?.pendingText).toBe(unfinished);
-  expect(assistant.map(displayText).join("")).toBe(paragraph + unfinished);
+  expect(assistant[0]?.pendingText).toBe(unfinished);
+  expect(displayText(assistant[0]!)).toBe(paragraph + unfinished);
 });
 
 test("an announced retry whose resend is attempt-stamped keeps the whole answer", () => {
@@ -1120,7 +1122,7 @@ test("status snapshot and diagnostics project to the status surfaces", () => {
   expect(state.footer).toBe("warning: slow provider");
 });
 
-test("a long response segments instead of growing one unbounded block", () => {
+test("a long response stays in one contiguous assistant block", () => {
   const chunk = "x".repeat(2500);
   const state = projectEvents([
     submitted("t1", "long"),
@@ -1130,9 +1132,8 @@ test("a long response segments instead of growing one unbounded block", () => {
     { type: "content.delta", id: "t1", text: chunk },
   ]);
   const assistant = state.messages.filter((b) => b.role === "assistant");
-  expect(assistant.length).toBeGreaterThan(1);
-  // No text is lost across the segment boundary.
-  expect(assistant.map(displayText).join("")).toBe(chunk.repeat(4));
+  expect(assistant).toHaveLength(1);
+  expect(displayText(assistant[0]!)).toBe(chunk.repeat(4));
 });
 
 test("provider-hidden reasoning is never retained anywhere in the projection", () => {
@@ -1178,6 +1179,20 @@ test("visible reasoning is still projected in full", () => {
   ]);
   const thinking = state.messages.find((block) => block.role === "thinking");
   expect(displayText(thinking!)).toBe("step one, step two");
+  expect(thinking?.reasoningVisible).toBe(true);
+});
+
+test("durable done-only reasoning is restored on session reload", () => {
+  // `turn.submitted` creates an empty thinking stream. Durable replay has no
+  // deltas, so the done event's full text still has to materialize the block.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "thinking.done", id: "t1", text: "restored reasoning" },
+    { type: "content.done", id: "t1", text: "answer" },
+    { type: "turn.finished", id: "t1", stopReason: "done" },
+  ]);
+  const thinking = state.messages.find((block) => block.role === "thinking");
+  expect(displayText(thinking!)).toBe("restored reasoning");
   expect(thinking?.reasoningVisible).toBe(true);
 });
 
@@ -1331,13 +1346,10 @@ test("a long response does not split a fenced code block across segments", () =>
   const assistant = state.messages.filter(
     (block) => block.role === "assistant",
   );
-  expect(assistant.length).toBeGreaterThan(1);
-  for (const block of assistant) {
-    const fences = (displayText(block).match(/```/gu) ?? []).length;
-    expect(fences % 2).toBe(0);
-  }
-  // No text is lost or duplicated by moving the split.
-  expect(assistant.map(displayText).join("")).toBe(body + rest);
+  expect(assistant).toHaveLength(1);
+  const fences = (displayText(assistant[0]!).match(/```/gu) ?? []).length;
+  expect(fences % 2).toBe(0);
+  expect(displayText(assistant[0]!)).toBe(body + rest);
 });
 
 test("a fence still open at the threshold is not split", () => {
@@ -1356,7 +1368,7 @@ test("a fence still open at the threshold is not split", () => {
   expect(assistant).toHaveLength(1);
   expect(displayText(assistant[0]!)).toBe(open);
 
-  // Once the fence closes, later output can segment normally again.
+  // Once the fence closes, later output stays in the same contiguous block.
   const closed = projectEvents(
     [
       { type: "content.delta", id: "t1", text: "```\n" },
@@ -1365,15 +1377,11 @@ test("a fence still open at the threshold is not split", () => {
     state,
   );
   const blocks = closed.messages.filter((block) => block.role === "assistant");
-  expect(blocks.length).toBeGreaterThan(1);
-  for (const block of blocks) {
-    const fences = (displayText(block).match(/```/gu) ?? []).length;
-    expect(fences % 2).toBe(0);
-  }
+  expect(blocks).toHaveLength(1);
+  expect((displayText(blocks[0]!).match(/```/gu) ?? []).length % 2).toBe(0);
 });
 
-test("plain long prose still segments", () => {
-  // The bound must still do its job when there is no markdown to protect.
+test("plain long prose stays in one contiguous assistant block", () => {
   const prose = "sentence. ".repeat(2000);
   const state = projectEvents([
     submitted("t1", "q"),
@@ -1382,8 +1390,8 @@ test("plain long prose still segments", () => {
   const assistant = state.messages.filter(
     (block) => block.role === "assistant",
   );
-  expect(assistant.length).toBeGreaterThan(1);
-  expect(assistant.map(displayText).join("")).toBe(prose);
+  expect(assistant).toHaveLength(1);
+  expect(displayText(assistant[0]!)).toBe(prose);
 });
 
 test("chat tool calls render in event order with post-tool text below the card", () => {
@@ -1797,6 +1805,26 @@ test("boundTranscript trims an internal-heavy transcript without wiping it", () 
   expect(bounded.messages.length).toBeGreaterThan(0);
   expect(bounded.messages.length).toBeLessThan(messages.length);
   expect(bounded.evicted).toBe(true);
+});
+
+test("boundTranscript newer keeps the newest end", () => {
+  const messages = Array.from({ length: 400 }, (_, index) => ({
+    id: `row:${index}`,
+    role: index % 20 === 0 ? "user" : "tool",
+    text: "x",
+  }));
+  const bounded = boundTranscript(messages, "newer");
+  expect(bounded.evicted).toBe(true);
+  expect(bounded.messages.at(-1)).toBe(messages.at(-1));
+
+  const internalOnly = Array.from({ length: 400 }, (_, index) => ({
+    id: `internal:${index}`,
+    role: index % 2 === 0 ? "system" : "tool",
+    text: "x",
+  }));
+  const fallback = boundTranscript(internalOnly, "newer");
+  expect(fallback.evicted).toBe(true);
+  expect(fallback.messages.at(-1)).toBe(internalOnly.at(-1));
 });
 
 test("empty explicit stream hydration clears durable rows without losing live output", () => {

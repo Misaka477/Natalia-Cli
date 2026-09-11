@@ -26,7 +26,7 @@ import { Transcript } from "@natalia/ui-kit";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { ReviewPane } from "./components/RightPanel";
-import { SettingsPanel } from "./settings-panel";
+import { SettingsPanel, type RegisteredToolView } from "./settings-panel";
 import {
   createUiPanelRequirementContext,
   uiPanelRequirementsSatisfied,
@@ -140,31 +140,35 @@ function TreeRow(props: {
               <span class="neu-badge neu-badge-running">并行中</span>
             ) : null}
             {props.badge ? <span class="neu-badge">{props.badge}</span> : null}
-            <Show when={!props.bulkMode && props.onAction}>
-              <button
-                type="button"
-                class="neu-tree-edit"
-                title={props.actionTitle}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onAction?.();
-                }}
-              >
-                {props.actionIcon}
-              </button>
-            </Show>
-            <Show when={!props.bulkMode && props.onEdit}>
-              <button
-                type="button"
-                class="neu-tree-edit"
-                title="重命名"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onEdit?.();
-                }}
-              >
-                ✎
-              </button>
+            <Show when={!props.bulkMode && (props.onAction || props.onEdit)}>
+              <span class="neu-tree-actions">
+                <Show when={props.onAction}>
+                  <button
+                    type="button"
+                    class="neu-tree-edit"
+                    title={props.actionTitle}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      props.onAction?.();
+                    }}
+                  >
+                    {props.actionIcon}
+                  </button>
+                </Show>
+                <Show when={props.onEdit}>
+                  <button
+                    type="button"
+                    class="neu-tree-edit"
+                    title="重命名"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      props.onEdit?.();
+                    }}
+                  >
+                    ✎
+                  </button>
+                </Show>
+              </span>
             </Show>
           </>
         }
@@ -197,6 +201,9 @@ function SessionTree(props: {
   onSelect: (id: string, name: string) => void;
   onRename?: (id: string, title: string) => unknown;
   onRemoveWorkspace?: (workspaceID: string) => void;
+  onWorkspaceSettings?: (workspaceID: string) => void;
+  onRenameWorkspace?: (workspaceID: string, title: string) => void;
+  onCreateSessionInWorkspace?: (workspaceID: string) => void;
   onRestore?: (sessionID: string) => void;
   onArchive?: (sessionID: string) => void;
   bulkMode?: boolean;
@@ -205,6 +212,18 @@ function SessionTree(props: {
 }) {
   const [editingID, setEditingID] = createSignal<string | null>(null);
   const [draftName, setDraftName] = createSignal("");
+  const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
+  const [expandedSessionGroups, setExpandedSessionGroups] = createSignal<
+    Set<string>
+  >(new Set());
+  const [activeWorkspaceMenu, setActiveWorkspaceMenu] = createSignal<
+    string | null
+  >(null);
+  const [editingWorkspaceID, setEditingWorkspaceID] = createSignal<
+    string | null
+  >(null);
+  const [draftWorkspaceName, setDraftWorkspaceName] = createSignal("");
+
   const groups = createMemo(() => {
     const byWorkspace = new Map<string, RuntimeSessionSummary[]>();
     const activeID = props.workspaces.find(
@@ -254,6 +273,81 @@ function SessionTree(props: {
       .filter((session) => session.status === "running"),
   );
 
+  const isCollapsed = (id: string) => collapsed().has(id);
+  const isSessionsExpanded = (id: string) => expandedSessionGroups().has(id);
+  const isWorkspaceMenuOpen = (id: string) => activeWorkspaceMenu() === id;
+
+  const toggleCollapse = (id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const expandWorkspace = (id: string) => {
+    setCollapsed((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleSessionGroup = (id: string) => {
+    setExpandedSessionGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleWorkspaceMenu = (id: string, event: MouseEvent) => {
+    event.stopPropagation();
+    setActiveWorkspaceMenu((prev) => (prev === id ? null : id));
+  };
+
+  const beginWorkspaceRename = (id: string, title: string) => {
+    setEditingWorkspaceID(id);
+    setDraftWorkspaceName(title);
+    setActiveWorkspaceMenu(null);
+  };
+
+  const cancelWorkspaceRename = () => {
+    setEditingWorkspaceID(null);
+    setDraftWorkspaceName("");
+  };
+
+  const commitWorkspaceRename = (id: string, currentTitle: string) => {
+    const title = draftWorkspaceName().trim();
+    cancelWorkspaceRename();
+    if (!title || title === currentTitle) return;
+    props.onRenameWorkspace?.(id, title);
+  };
+
+  createEffect(() => {
+    if (!activeWorkspaceMenu()) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        !target.closest(".neu-workspace-popup") &&
+        !target.closest(".neu-workspace-menu-btn")
+      ) {
+        setActiveWorkspaceMenu(null);
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener("click", handler);
+    }, 0);
+    onCleanup(() => {
+      clearTimeout(timer);
+      document.removeEventListener("click", handler);
+    });
+  });
+
   return (
     <div class="neu-tree">
       <Show when={runningSessions().length > 0}>
@@ -267,90 +361,291 @@ function SessionTree(props: {
               label={session.name}
               selected={props.selected === session.id}
               status={session.status}
-              depth={0}
+              depth={1}
               onClick={() => props.onSelect(session.id, session.name)}
             />
           )}
         </For>
       </Show>
       <For each={groups()}>
-        {(group) => (
-          <>
-            <div class="neu-workspace-row">
-              <span class="neu-workspace-name">{group.workspace}</span>
-              <span class="neu-count">{group.sessions.length}</span>
-              <Show when={props.onRemoveWorkspace}>
-                <button
-                  type="button"
-                  class="neu-workspace-remove"
-                  title="移除工作区"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    props.onRemoveWorkspace?.(group.workspaceID);
-                  }}
+        {(group) => {
+          const open = () => !isCollapsed(group.workspaceID);
+          const menuForThis = () => isWorkspaceMenuOpen(group.workspaceID);
+          const displayedSessions = createMemo(() =>
+            isSessionsExpanded(group.workspaceID)
+              ? group.sessions
+              : group.sessions.slice(0, 5),
+          );
+          return (
+            <div class="neu-workspace-group">
+              <div
+                class="neu-workspace-folder"
+                data-menu-open={menuForThis()}
+                onClick={() => {
+                  if (editingWorkspaceID() === group.workspaceID) return;
+                  toggleCollapse(group.workspaceID);
+                }}
+              >
+                <span class="neu-workspace-folder-icon">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M1 4.5A2.5 2.5 0 013.5 2H6l1.2 1.2H12.5A2.5 2.5 0 0115 6v6.5a2.5 2.5 0 01-2.5 2.5h-9A2.5 2.5 0 011 12.5v-8z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span class="neu-workspace-chevron" data-open={open()}>
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M5 3L11 8L5 13"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+                <Show
+                  when={editingWorkspaceID() === group.workspaceID}
+                  fallback={
+                    <span class="neu-workspace-name">{group.workspace}</span>
+                  }
                 >
-                  ×
-                </button>
-              </Show>
-            </div>
-            <For each={group.sessions}>
-              {(session) => (
-                <TreeRow
-                  label={session.name}
-                  selected={props.selected === session.id}
-                  status={session.status}
-                  badge={session.archived ? "点击恢复" : undefined}
-                  depth={1}
-                  onClick={() => {
-                    if (session.archived && props.onRestore) {
-                      props.onRestore(session.id);
-                    } else {
-                      props.onSelect(session.id, session.name);
+                  <input
+                    class="neu-workspace-rename-input"
+                    value={draftWorkspaceName()}
+                    autofocus
+                    onInput={(event) =>
+                      setDraftWorkspaceName(event.currentTarget.value)
                     }
-                  }}
-                  onAction={
-                    session.archived
-                      ? props.onRestore
-                        ? () => props.onRestore?.(session.id)
-                        : undefined
-                      : props.onArchive
-                        ? () => props.onArchive?.(session.id)
-                        : undefined
-                  }
-                  actionTitle={session.archived ? "恢复会话" : "归档会话"}
-                  actionIcon={session.archived ? "↩" : "↓"}
-                  bulkMode={props.bulkMode}
-                  bulkSelected={props.bulkSelected?.(session.id)}
-                  onBulkToggle={
-                    props.onBulkToggle
-                      ? () => props.onBulkToggle?.(session.id)
-                      : undefined
-                  }
-                  onEdit={() => {
-                    setEditingID(session.id);
-                    setDraftName(session.name);
-                  }}
-                  editValue={
-                    editingID() === session.id ? draftName() : undefined
-                  }
-                  onEditChange={setDraftName}
-                  onEditCommit={() => {
-                    const title = draftName().trim();
-                    if (
-                      editingID() === session.id &&
-                      title &&
-                      title !== session.name
-                    ) {
-                      void props.onRename?.(session.id, title);
+                    onClick={(event) => event.stopPropagation()}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onBlur={() =>
+                      commitWorkspaceRename(group.workspaceID, group.workspace)
                     }
-                    setEditingID(null);
-                  }}
-                  onEditCancel={() => setEditingID(null)}
-                />
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.stopPropagation();
+                        commitWorkspaceRename(
+                          group.workspaceID,
+                          group.workspace,
+                        );
+                      } else if (event.key === "Escape") {
+                        event.stopPropagation();
+                        cancelWorkspaceRename();
+                      }
+                    }}
+                  />
+                </Show>
+                <span
+                  class="neu-workspace-actions"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    class="neu-workspace-menu-btn"
+                    title="工作区操作"
+                    onClick={(event) =>
+                      toggleWorkspaceMenu(group.workspaceID, event)
+                    }
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="3.5" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="12.5" r="1.3" fill="currentColor" />
+                    </svg>
+                  </button>
+                  <Show when={props.onCreateSessionInWorkspace}>
+                    <button
+                      type="button"
+                      class="neu-workspace-menu-btn"
+                      title="新建会话"
+                      onClick={() => {
+                        expandWorkspace(group.workspaceID);
+                        props.onCreateSessionInWorkspace?.(group.workspaceID);
+                      }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                      >
+                        <path
+                          d="M8 3v10M3 8h10"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </Show>
+                  {menuForThis() && (
+                    <div
+                      class="neu-workspace-popup"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          beginWorkspaceRename(
+                            group.workspaceID,
+                            group.workspace,
+                          )
+                        }
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                        >
+                          <path
+                            d="M11.5 2.5l2 2L6 12H4v-2l7.5-7.5z"
+                            stroke="currentColor"
+                            stroke-width="1.3"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                        重命名
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveWorkspaceMenu(null);
+                          props.onWorkspaceSettings?.(group.workspaceID);
+                        }}
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                        >
+                          <path
+                            d="M8 2.2l.7 1.5 1.6.2-.3 1.6 1.2 1.1-1.2 1.1.3 1.6-1.6.2L8 11l-.7-1.5-1.6-.2.3-1.6L4.8 6.6 6 5.5l-.3-1.6 1.6-.2L8 2.2z"
+                            stroke="currentColor"
+                            stroke-width="1.1"
+                            stroke-linejoin="round"
+                          />
+                          <circle
+                            cx="8"
+                            cy="6.6"
+                            r="1.2"
+                            stroke="currentColor"
+                            stroke-width="1.1"
+                          />
+                        </svg>
+                        工作区设置
+                      </button>
+                      <button
+                        type="button"
+                        class="neu-workspace-popup-danger"
+                        onClick={() => {
+                          setActiveWorkspaceMenu(null);
+                          props.onRemoveWorkspace?.(group.workspaceID);
+                        }}
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                        >
+                          <path
+                            d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.6 8h5.8l.6-8"
+                            stroke="currentColor"
+                            stroke-width="1.3"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                        删除工作区
+                      </button>
+                    </div>
+                  )}
+                </span>
+              </div>
+              {open() && (
+                <>
+                  <For each={displayedSessions()}>
+                    {(session) => (
+                      <TreeRow
+                        label={session.name}
+                        selected={props.selected === session.id}
+                        status={session.status}
+                        badge={session.archived ? "点击恢复" : undefined}
+                        depth={1}
+                        onClick={() => {
+                          if (session.archived && props.onRestore) {
+                            props.onRestore(session.id);
+                          } else {
+                            props.onSelect(session.id, session.name);
+                          }
+                        }}
+                        onAction={
+                          session.archived
+                            ? props.onRestore
+                              ? () => props.onRestore?.(session.id)
+                              : undefined
+                            : props.onArchive
+                              ? () => props.onArchive?.(session.id)
+                              : undefined
+                        }
+                        actionTitle={session.archived ? "恢复会话" : "归档会话"}
+                        actionIcon={session.archived ? "↩" : "↓"}
+                        bulkMode={props.bulkMode}
+                        bulkSelected={props.bulkSelected?.(session.id)}
+                        onBulkToggle={
+                          props.onBulkToggle
+                            ? () => props.onBulkToggle?.(session.id)
+                            : undefined
+                        }
+                        onEdit={() => {
+                          setEditingID(session.id);
+                          setDraftName(session.name);
+                        }}
+                        editValue={
+                          editingID() === session.id ? draftName() : undefined
+                        }
+                        onEditChange={setDraftName}
+                        onEditCommit={() => {
+                          const title = draftName().trim();
+                          if (
+                            editingID() === session.id &&
+                            title &&
+                            title !== session.name
+                          ) {
+                            void props.onRename?.(session.id, title);
+                          }
+                          setEditingID(null);
+                        }}
+                        onEditCancel={() => setEditingID(null)}
+                      />
+                    )}
+                  </For>
+                  <Show when={group.sessions.length > 5}>
+                    <button
+                      type="button"
+                      class="neu-session-overflow"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleSessionGroup(group.workspaceID);
+                      }}
+                    >
+                      {isSessionsExpanded(group.workspaceID)
+                        ? "收起"
+                        : `展开其余 ${group.sessions.length - 5} 个会话`}
+                    </button>
+                  </Show>
+                </>
               )}
-            </For>
-          </>
-        )}
+            </div>
+          );
+        }}
       </For>
     </div>
   );
@@ -371,6 +666,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ? 440
       : Math.max(MIN_RIGHT_WIDTH, Math.floor(window.innerWidth / 3)),
   );
+  const [resizing, setResizing] = createSignal(false);
   const [leftVisible, setLeftVisible] = createSignal(true);
   const [rightVisible, setRightVisible] = createSignal(true);
   const [layoutMode, setLayoutMode] = createSignal<"wide" | "compact" | "tiny">(
@@ -391,7 +687,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     [],
   );
   const [workspaces, setWorkspaces] = createSignal<WorkspaceSummary[]>([]);
-  const [registeredTools, setRegisteredTools] = createSignal<string[]>([]);
+  const [registeredTools, setRegisteredTools] = createSignal<
+    RegisteredToolView[]
+  >([]);
   const [panelRequirementContext, setPanelRequirementContext] = createSignal<
     UiPanelRequirementContext | undefined
   >(undefined);
@@ -424,6 +722,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [bulkSelected, setBulkSelected] = createSignal<Set<string>>(new Set());
   const [workspaceOpen, setWorkspaceOpen] = createSignal(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = createSignal(false);
+  const [settingsWorkspaceID, setSettingsWorkspaceID] = createSignal<
+    string | undefined
+  >(undefined);
   const [workspaceError, setWorkspaceError] = createSignal<string>("");
   const [reviewRequestedTab, setReviewRequestedTab] = createSignal<
     "git" | "sandbox" | "checkpoint"
@@ -513,7 +814,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     panelId: string;
   } | null>(null);
   const [moreOpen, setMoreOpen] = createSignal(false);
-  const { confirm, dialog } = useConfirmDialog();
+  const { confirm, alert, dialog } = useConfirmDialog();
   const [viewOpen, setViewOpen] = createSignal(false);
   let topbarPanelRef: HTMLDivElement | undefined;
 
@@ -568,7 +869,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           perfLog(
             `[perf] renderer projection frame messages=${projected.messages.length} navi=${projected.navi.messages.length} nia=${projected.nia.messages.length} set=${setMs.toFixed(1)}ms`,
           );
-          if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+          if (projected.workspaces.length)
+            mergeProjectedWorkspaces(projected.workspaces);
           if (mainForceScroll) {
             mainForceScroll = false;
             requestAnimationFrame(() => {
@@ -676,6 +978,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       workspacesRefreshInFlight = undefined;
     });
     return workspacesRefreshInFlight;
+  }
+
+  function mergeProjectedWorkspaces(projected: WorkspaceSummary[]) {
+    setWorkspaces((current) => {
+      const byID = new Map(
+        current.map((workspace) => [workspace.workspaceID, workspace]),
+      );
+      for (const workspace of projected) {
+        const existing = byID.get(workspace.workspaceID);
+        byID.set(
+          workspace.workspaceID,
+          existing ? { ...existing, ...workspace } : workspace,
+        );
+      }
+      return [...byID.values()];
+    });
   }
 
   function markStartup(phase: string) {
@@ -851,7 +1169,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     });
   };
 
-  async function createSession() {
+  async function createSession(workspaceID?: string) {
+    if (workspaceID) {
+      if (!props.ctx.runtime.workspaceActivate) {
+        await alert({
+          title: "新建会话",
+          message: "当前 runtime 不支持切换工作区。",
+        });
+        return;
+      }
+      await props.ctx.runtime.workspaceActivate(workspaceID);
+    }
     const created = await props.ctx.runtime.sessionNew?.();
     if (created?.sessionID) {
       userSelectedSession = true;
@@ -860,10 +1188,60 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       setSelectedSession("新会话");
       void loadPerSessionModelConfig(created.sessionID);
     }
+    await refreshWorkspaces();
     await refreshSessions();
   }
 
+  async function renameWorkspace(workspaceID: string, title: string) {
+    const workspace = workspaces().find(
+      (entry) => entry.workspaceID === workspaceID,
+    );
+    const nextTitle = title.trim();
+    if (!workspace || !nextTitle) return;
+    if (
+      workspaces().some(
+        (entry) =>
+          entry.workspaceID !== workspaceID && entry.title === nextTitle,
+      )
+    ) {
+      await alert({
+        title: "重命名工作区",
+        message: `已存在名为“${nextTitle}”的工作区。`,
+      });
+      return;
+    }
+    if (!props.ctx.runtime.workspaceAdd) {
+      await alert({
+        title: "重命名工作区",
+        message: "当前 runtime 不支持重命名工作区。",
+      });
+      return;
+    }
+    try {
+      await props.ctx.runtime.workspaceAdd({
+        path: workspace.root,
+        title: nextTitle,
+      });
+      await refreshWorkspaces();
+    } catch (error: unknown) {
+      await alert({
+        title: "重命名失败",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async function removeWorkspace(workspaceID: string) {
+    const workspace = workspaces().find(
+      (entry) => entry.workspaceID === workspaceID,
+    );
+    const confirmed = await confirm({
+      title: "删除工作区",
+      message: `将把“${workspace?.title ?? workspaceID}”从工作区列表中移除。工作区中的文件和会话不会被删除。`,
+      confirmLabel: "删除工作区",
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       await props.ctx.runtime.workspaceRemove?.(workspaceID);
       await refreshWorkspaces();
@@ -1098,14 +1476,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
     );
     if (!page?.data.length) {
-      props.ctx.projection.hydrateMessages?.([], "older", options);
+      props.ctx.projection.hydrateMessages?.([], "newer", options);
       historyCursor = undefined;
       newerHistoryCursor = undefined;
       return;
     }
+    // The first page is the newest baseline. `"newer"` keeps the newest end
+    // when the row budget forces eviction; `"older"` is only for paging older
+    // history in front of the current transcript.
     props.ctx.projection.hydrateMessages?.(
       [...page.data].reverse(),
-      "older",
+      "newer",
       options,
     );
     historyCursor = page.cursor.next;
@@ -1133,6 +1514,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     try {
       await props.ctx.runtime.checkpointRollback?.({
         id: notice.safetyCheckpointID,
+        sessionID: selectedSessionID() || state().sessionID,
       });
       await refreshTranscript();
     } catch (error: unknown) {
@@ -1246,6 +1628,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
         event.preventDefault();
         setRightVisible((value) => !value);
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "p"
+      ) {
+        event.preventDefault();
+        setSearchOpen(true);
       }
     };
     window.addEventListener("keydown", handleKeydown);
@@ -1525,7 +1915,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         const cloneStart = performance.now();
         setState(projected);
-        if (projected.workspaces.length) setWorkspaces(projected.workspaces);
+        if (projected.workspaces.length)
+          mergeProjectedWorkspaces(projected.workspaces);
         perfLog(
           `[perf] openUnresolvedInteractives hydrate/state clone +${(performance.now() - cloneStart).toFixed(1)}ms`,
         );
@@ -1560,7 +1951,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         settleToBottom();
         setTimeout(scrollToBottom, 250);
         const interactiveStart = performance.now();
-        const interactive = await props.ctx.runtime.pendingInteractive?.();
+        const interactive = await props.ctx.runtime.pendingInteractive?.({
+          sessionID: selectedSessionID() || state().sessionID,
+        });
         if (isStaleLoad()) return;
         const approvals = interactive?.approvals ?? [];
         if (approvals.length) {
@@ -1667,7 +2060,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           () => undefined,
         ),
         props.ctx.runtime.modelCatalog?.().catch(() => undefined),
-        props.ctx.runtime.registeredTools?.().catch(() => undefined),
+        props.ctx.runtime
+          .registeredTools?.(selectedSessionID() || state().sessionID)
+          .catch(() => undefined),
         props.ctx.runtime.configGet?.().catch(() => undefined),
         props.ctx.runtime.plugins?.().catch(() => undefined),
       ]).then(([requirementContext, catalog, tools, nextConfig, plugins]) => {
@@ -1676,7 +2071,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           if (requirementContext)
             setPanelRequirementContext(requirementContext);
           if (catalog) setModelCatalog(catalog);
-          if (tools) setRegisteredTools(tools.map((tool) => tool.name));
+          if (tools) setRegisteredTools(tools);
           if (nextConfig) setConfig(nextConfig);
           setInteractiveTerminalAvailable(
             Boolean(
@@ -1705,6 +2100,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       value: entry.id,
       label: entry.id,
     }));
+
+  const workspaceIDForSelectedSession = () =>
+    sessionList().find(
+      (session) => session.id === (selectedSessionID() || state().sessionID),
+    )?.workspaceID ?? state().activeWorkspaceID;
 
   const permissionOptions = () =>
     Object.entries(config()?.agentModes ?? {}).map(([name, mode]) => ({
@@ -1838,6 +2238,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       const page = await props.ctx.runtime.messages?.({
         cursor: historyCursor,
         limit: 100,
+        sessionID: selectedSessionID() || state().sessionID,
       });
       if (!page) return;
       const evicted = props.ctx.projection.hydrateMessages?.(
@@ -1866,6 +2267,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       const page = await props.ctx.runtime.messages?.({
         cursor: newerHistoryCursor,
         limit: 100,
+        sessionID: selectedSessionID() || state().sessionID,
       });
       if (!page) return;
       const evicted = props.ctx.projection.hydrateMessages?.(
@@ -2110,52 +2512,69 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }),
   );
 
-  function startLeftResize(event: PointerEvent) {
+  function startResize(
+    event: PointerEvent,
+    computeWidth: (clientX: number) => number,
+    applyWidth: (width: number) => void,
+  ) {
     event.preventDefault();
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture?.(event.pointerId);
-    const startX = event.clientX;
-    const startWidth = leftWidth();
-    const move = (next: PointerEvent) =>
-      setLeftWidth(
-        Math.max(
-          MIN_SIDEBAR_WIDTH,
-          Math.min(MAX_SIDEBAR_WIDTH, startWidth + next.clientX - startX),
-        ),
-      );
+    setResizing(true);
+    let frame: number | undefined;
+    let latest: number | undefined;
+    const flush = () => {
+      frame = undefined;
+      if (latest !== undefined) applyWidth(latest);
+    };
+    const move = (next: PointerEvent) => {
+      latest = computeWidth(next.clientX);
+      if (frame === undefined) frame = requestAnimationFrame(flush);
+    };
     const finish = (next: PointerEvent) => {
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+        frame = undefined;
+      }
+      if (latest !== undefined) applyWidth(latest);
       target.releasePointerCapture?.(next.pointerId);
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", finish);
       target.removeEventListener("pointercancel", finish);
+      setResizing(false);
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", finish);
     target.addEventListener("pointercancel", finish);
   }
 
+  function startLeftResize(event: PointerEvent) {
+    const startX = event.clientX;
+    const startWidth = leftWidth();
+    startResize(
+      event,
+      (clientX) =>
+        Math.max(
+          MIN_SIDEBAR_WIDTH,
+          Math.min(MAX_SIDEBAR_WIDTH, startWidth + clientX - startX),
+        ),
+      setLeftWidth,
+    );
+  }
+
   function startRightResize(event: PointerEvent) {
-    event.preventDefault();
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture?.(event.pointerId);
     const startX = event.clientX;
     const startWidth = rightWidth();
-    const move = (next: PointerEvent) =>
-      setRightWidth(
+    const maxRight = rightPanelMaxWidth();
+    startResize(
+      event,
+      (clientX) =>
         Math.max(
           MIN_RIGHT_WIDTH,
-          Math.min(rightPanelMaxWidth(), startWidth - (next.clientX - startX)),
+          Math.min(maxRight, startWidth - (clientX - startX)),
         ),
-      );
-    const finish = (next: PointerEvent) => {
-      target.releasePointerCapture?.(next.pointerId);
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", finish);
-      target.removeEventListener("pointercancel", finish);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", finish);
-    target.addEventListener("pointercancel", finish);
+      setRightWidth,
+    );
   }
 
   function cycleThemeMode() {
@@ -2334,6 +2753,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       data-left-open={leftVisible()}
       data-left-wide={leftWidth() >= 230}
       data-right-open={rightVisible()}
+      data-resizing={resizing()}
     >
       <header class="neu-topbar">
         <div class="neu-topbar-left">
@@ -2639,6 +3059,32 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       />
                     </svg>
                   </button>
+                  <button
+                    type="button"
+                    class="neu-icon-btn neu-new-workspace-btn"
+                    data-tooltip="添加工作区"
+                    aria-label="添加工作区"
+                    onClick={() => {
+                      setSidebarMenuOpen(false);
+                      setWorkspaceOpen(true);
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M2 4h4l1-2h5l3 3v9a2 2 0 01-2 2H4a2 2 0 01-2-2V4z"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M8 7v6M6 9h4"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
                 </div>
               </div>
               <Show when={sessionSearchOpen()}>
@@ -2712,26 +3158,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   </button>
                   <button
                     type="button"
-                    class="neu-sidebar-menu-item"
-                    onClick={() => {
-                      setSidebarMenuOpen(false);
-                      setWorkspaceOpen(true);
-                    }}
-                  >
-                    工作区管理
-                  </button>
-                  <button
-                    type="button"
-                    class="neu-sidebar-menu-item"
-                    onClick={() => {
-                      setSidebarMenuOpen(false);
-                      setWorkspaceSettingsOpen(true);
-                    }}
-                  >
-                    工作区设置
-                  </button>
-                  <button
-                    type="button"
                     class="neu-sidebar-menu-item neu-sidebar-menu-toggle"
                     data-active={showArchived()}
                     onClick={() => setShowArchived((value) => !value)}
@@ -2754,13 +3180,26 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     userSelectedSession = true;
                     setSelectedSessionID(id);
                     setSelectedSession(name);
-                    void props.ctx.runtime.sessionAttach?.(id).then(() => {
-                      refreshSessions();
-                      void loadPerSessionModelConfig(id);
-                    });
+                    void props.ctx.runtime
+                      .sessionAttach?.(id)
+                      .then(async () => {
+                        await refreshWorkspaces();
+                        await refreshSessions();
+                        void loadPerSessionModelConfig(id);
+                      });
                   }}
                   onRemoveWorkspace={(workspaceID) => {
                     void removeWorkspace(workspaceID);
+                  }}
+                  onWorkspaceSettings={(workspaceID) => {
+                    setSettingsWorkspaceID(workspaceID);
+                    setWorkspaceSettingsOpen(true);
+                  }}
+                  onRenameWorkspace={(workspaceID, title) => {
+                    void renameWorkspace(workspaceID, title);
+                  }}
+                  onCreateSessionInWorkspace={(workspaceID) => {
+                    void createSession(workspaceID);
                   }}
                   onRestore={(sessionID) => {
                     void restoreSession(sessionID);
@@ -2979,6 +3418,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                               const preview = rollback.checkpointID
                                 ? await props.ctx.runtime.checkpointRollback?.({
                                     id: rollback.checkpointID,
+                                    sessionID,
                                   })
                                 : undefined;
                               await refreshTranscript();
@@ -3006,9 +3446,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                               props.ctx.runtime.submitInput?.({
                                 text,
                                 attachments: paths,
+                                sessionID:
+                                  selectedSessionID() || state().sessionID,
                               });
                             } else {
-                              props.ctx.runtime.submit?.(text);
+                              props.ctx.runtime.submit?.(
+                                text,
+                                selectedSessionID() || state().sessionID,
+                              );
                             }
                           } finally {
                             setMainDraft("");
@@ -3162,7 +3607,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     placeholder="向 Navi 提问…"
                     busy={Boolean(naviChatActivity())}
                     onInput={setChatDraft}
-                    onStop={() => void props.ctx.runtime.chatAbort?.()}
+                    onStop={() =>
+                      void props.ctx.runtime.chatAbort?.(
+                        "navi",
+                        selectedSessionID() || state().sessionID,
+                      )
+                    }
                     attachments={chatAttachments()}
                     onRemoveAttachment={(path) =>
                       setChatAttachments(
@@ -3187,6 +3637,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         });
                         const result = props.ctx.runtime.chatSubmit?.({
                           text,
+                          sessionID: selectedSessionID() || state().sessionID,
                           ...(chatAttachments().length
                             ? {
                                 attachments: chatAttachments().map(
@@ -3255,6 +3706,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     requestedTab={reviewRequestedTab()}
                     requestedCheckpointID={reviewRequestedCheckpointID()}
                     sessionID={selectedSessionID() || state().sessionID}
+                    workspaceID={workspaceIDForSelectedSession()}
                   />
                 </Show>
                 <Show when={rightTab() === "plan"}>
@@ -3330,6 +3782,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={permissionOpen()}
         approval={currentApproval()}
         runtime={props.ctx.runtime}
+        sessionID={selectedSessionID() || state().sessionID}
+        workspaceID={workspaceIDForSelectedSession()}
         onClose={() => {
           setPermissionOpen(false);
           setCurrentApproval(null);
@@ -3339,6 +3793,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={questionOpen()}
         request={currentQuestion()}
         runtime={props.ctx.runtime}
+        sessionID={selectedSessionID() || state().sessionID}
+        workspaceID={workspaceIDForSelectedSession()}
         onClose={() => {
           setQuestionOpen(false);
           setCurrentQuestion(null);
@@ -3347,6 +3803,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       <WorkspaceSettingsPanel
         open={workspaceSettingsOpen()}
         workspaceID={
+          settingsWorkspaceID() ??
           workspaces().find((entry) => entry.status === "active")?.workspaceID
         }
         runtime={props.ctx.runtime}
@@ -3356,7 +3813,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={workspaceOpen()}
         onClose={() => setWorkspaceOpen(false)}
         error={workspaceError()}
-        workspaces={workspaces()}
         onAdd={async (path) => {
           setWorkspaceError("");
           try {
@@ -3386,18 +3842,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             throw error;
           }
         }}
-        onActivate={async (workspaceID) => {
-          try {
-            await props.ctx.runtime.workspaceActivate?.(workspaceID);
-            await refreshWorkspaces();
-            await refreshSessions();
-          } catch (error: unknown) {
-            setWorkspaceError(
-              error instanceof Error ? error.message : String(error),
-            );
-          }
-        }}
-        onRemove={(workspaceID) => removeWorkspace(workspaceID)}
       />
       <SessionActionsPanel
         open={sessionMenuOpen()}
@@ -3418,6 +3862,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onRollback={() =>
           props.ctx.runtime.checkpointRollback?.({
             id: state().checkpoints[state().checkpoints.length - 1]?.id ?? "",
+            sessionID: selectedSessionID() || state().sessionID,
           })
         }
         onDelete={() => physicallyDeleteSelectedSession()}
@@ -3432,6 +3877,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         open={sandboxOpen()}
         onClose={() => setSandboxOpen(false)}
         sandboxes={state().sandboxes}
+        sessionID={selectedSessionID() || state().sessionID}
         runtime={props.ctx.runtime}
       />
       <StashPanel open={stashOpen()} onClose={() => setStashOpen(false)} />
@@ -3441,10 +3887,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         onClose={() => setSearchOpen(false)}
         onSearch={(query) =>
           props.ctx.runtime.workspaceSearch?.({
+            workspaceID: workspaceIDForSelectedSession(),
             query,
             limit: 50,
           })
         }
+        onSelect={(result) => {
+          window.dispatchEvent(
+            new CustomEvent("natalia:open-file", {
+              detail: { path: result.path, line: result.line },
+            }),
+          );
+          setSearchOpen(false);
+        }}
       />
       <ModelPanel
         open={modelOpen()}

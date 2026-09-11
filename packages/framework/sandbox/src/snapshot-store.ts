@@ -35,7 +35,7 @@ export type SnapshotIndex = Map<string, IndexedFile>;
 
 async function walkFiles(
   root: string,
-  ignore?: (relPath: string) => boolean,
+  ignore?: (relPath: string, directory: boolean) => boolean,
 ): Promise<string[]> {
   const files: string[] = [];
   const stack = [root];
@@ -45,7 +45,7 @@ async function walkFiles(
     for (const entry of entries) {
       const path = join(dir, entry.name);
       const rel = relative(root, path).split("/").join("/");
-      if (ignore?.(rel)) continue;
+      if (ignore?.(rel, entry.isDirectory())) continue;
       if (entry.isDirectory()) stack.push(path);
       else if (entry.isFile()) files.push(path);
     }
@@ -67,7 +67,7 @@ export class SnapshotStore {
   async capture(
     root: string,
     previous?: SnapshotIndex,
-    ignore?: (relPath: string) => boolean,
+    ignore?: (relPath: string, directory: boolean) => boolean,
   ): Promise<SnapshotIndex> {
     const index: SnapshotIndex = new Map();
     for (const path of await walkFiles(root, ignore)) {

@@ -16,11 +16,13 @@ import {
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-
-type TodoItem = {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-};
+import {
+  TODO_RESOURCE_NAME,
+  TODO_STATUSES,
+  TODO_UI_PLUGIN_ID,
+  todoRelativePath,
+  type TodoItem,
+} from "./todo-item";
 
 export const TODO_PLUGIN_ID = "natalia-tool-todo";
 
@@ -85,12 +87,12 @@ function todoWriteTool(): RuntimeTool {
       const items = args.items.map((item) => {
         const value = requireObject(item);
         const status = requireString(value.status, "items.status");
-        if (!["pending", "in_progress", "completed"].includes(status))
+        if (!(TODO_STATUSES as readonly string[]).includes(status))
           throw new Error("items.status is invalid");
         return {
           content: requireString(value.content, "items.content"),
-          status,
-        } as TodoItem;
+          status: status as TodoItem["status"],
+        };
       });
       const path = todoPath(
         context.workspaceRoot,
@@ -128,12 +130,7 @@ function requireSessionID(sessionID: string | undefined) {
 }
 
 function todoPath(workspaceRoot: string, sessionID: string) {
-  return resolve(
-    workspaceRoot,
-    ".natalia",
-    "todos",
-    `${encodeURIComponent(sessionID)}.json`,
-  );
+  return resolve(workspaceRoot, todoRelativePath(sessionID));
 }
 
 export const todoTools: RuntimeTool[] = [todoReadTool(), todoWriteTool()];
@@ -166,7 +163,7 @@ export const TODO_PLUGIN_MANIFEST: PluginManifest = {
   conflicts: [],
   dependencies: [],
   hooks: {},
-  integrationPoints: ["tools"],
+  integrationPoints: ["tools", "resources"],
   ui: {
     entry: "ui/plugin.js",
     panels: [
@@ -184,6 +181,16 @@ export function createTodoPlugin(): Plugin {
     manifest: TODO_PLUGIN_MANIFEST,
     setup(api) {
       for (const tool of todoTools) api.tools.register(tool);
+      api.resources.register({
+        name: TODO_RESOURCE_NAME,
+        kind: "workspace-file",
+        access: "read",
+        scope: "session",
+        path: ".natalia/todos/{sessionID}.json",
+        readers: [TODO_UI_PLUGIN_ID],
+        audit: true,
+        description: "Durable todo list for the current session",
+      });
     },
   };
 }

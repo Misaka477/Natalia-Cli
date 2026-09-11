@@ -46,13 +46,17 @@ export function createTranscriptSurface(
         throw new Error("session store unavailable (natalia-session-store)");
       const start = performance.now();
       const page = await sessionStore.messages(requestedID, session, options);
-      perfLog(`[perf] session.messages ${requestedID} ${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] session.messages ${requestedID} ${(performance.now() - start).toFixed(1)}ms`,
       );
       return page;
     },
-    async pendingInteractive() {
+    async pendingInteractive(input = {}) {
       await ctx.ports.getReady();
-      return projectInteractiveRequests(ctx.ports.getSession()?.events ?? []);
+      const requestedID = (input.sessionID ??
+        ctx.ports.getSessionID()) as SessionID;
+      const exec = await ctx.ports.ensureExecution(requestedID);
+      return projectInteractiveRequests(exec.session.events ?? []);
     },
   };
 }

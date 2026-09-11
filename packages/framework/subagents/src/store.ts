@@ -6,8 +6,10 @@ const MANIFEST = "manifest.json";
 
 export class SubagentStore {
   readonly dir: string;
+  private readonly sessionID?: string;
 
   constructor(workDir?: string, sessionID?: string) {
+    this.sessionID = sessionID;
     if (sessionID) {
       this.dir = resolve(
         workDir ?? ".",
@@ -22,24 +24,27 @@ export class SubagentStore {
   }
 
   async load(): Promise<SubagentRecord[]> {
+    let records: SubagentRecord[];
+    let migratedLegacy = false;
     try {
       const content = await readFile(this.path(), "utf8");
       const raw = JSON.parse(content);
-      if (!Array.isArray(raw)) return [];
-      return raw
-        .filter((r: unknown): r is SubagentRecord => isValidRecord(r))
-        .map((record) => ({
-          ...record,
-          continuation: record.continuation ?? 0,
-        }));
+      records = Array.isArray(raw)
+        ? raw
+            .filter((r: unknown): r is SubagentRecord => isValidRecord(r))
+            .map((record) => ({
+              ...record,
+              continuation: record.continuation ?? 0,
+            }))
+        : [];
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-      const entries = await this.loadLegacy();
-      if (entries.length > 0) {
-        await this.save(entries);
-      }
-      return entries;
+      records = await this.loadLegacy();
+      migratedLegacy = records.length > 0;
     }
+    const repaired = this.backfillParentSession(records);
+    if (repaired.changed || migratedLegacy) await this.save(repaired.records);
+    return repaired.records;
   }
 
   async save(records: SubagentRecord[]): Promise<void> {
@@ -47,6 +52,20 @@ export class SubagentStore {
     await writeFile(this.path(), `${JSON.stringify(records, null, 2)}\n`, {
       mode: 0o600,
     });
+  }
+
+  private backfillParentSession(records: SubagentRecord[]): {
+    records: SubagentRecord[];
+    changed: boolean;
+  } {
+    if (!this.sessionID) return { records, changed: false };
+    let changed = false;
+    const repaired = records.map((record) => {
+      if (record.parentSessionID) return record;
+      changed = true;
+      return { ...record, parentSessionID: this.sessionID };
+    });
+    return { records: repaired, changed };
   }
 
   private async loadLegacy(): Promise<SubagentRecord[]> {

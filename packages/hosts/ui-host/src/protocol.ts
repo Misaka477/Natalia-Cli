@@ -4,6 +4,7 @@ import type {
   RuntimeEvent,
   RuntimeProjectedMessage,
   RuntimeSubagentView,
+  RuntimeWorkspaceContent,
   UiPanelMeta,
 } from "@natalia/contracts";
 import type * as ViewStore from "@natalia/view-store";
@@ -75,6 +76,13 @@ export type TerminalHandle = {
   close(): Promise<void>;
 };
 
+export type UiResources = {
+  read(input: {
+    resource: string;
+    params?: Record<string, string>;
+  }): Promise<RuntimeWorkspaceContent>;
+};
+
 export type UiTransport = {
   readFile(path: string): Promise<Uint8Array>;
   writeFile(path: string, data: Uint8Array): Promise<void>;
@@ -128,6 +136,7 @@ export type UiPluginContext<TContext = unknown> = {
   projection: UiProjection;
   events: UiEventBus;
   preferences: PreferenceStore;
+  resources: UiResources;
   transport: UiTransport;
   logger: Logger;
   t: (text: string) => string;

@@ -12,19 +12,37 @@
  */
 import { resolve } from "node:path";
 import {
+  ensureNataliaIgnoreFile,
+  isSnapshotIgnored,
+  loadNataliaIgnore,
+  NATALIA_IGNORE_FILE,
+  type SnapshotIgnoreRule,
+} from "@natalia/platform";
+import {
   WorkspaceSandboxManager,
   type SandboxChange,
 } from "./workspace-manager";
 import { ObjectStore } from "@natalia/object-store";
 import { SnapshotStore, type SnapshotIndex } from "./snapshot-store";
 
-/** Paths under a candidate that must never count as a change. */
-const IGNORED_IN_CANDIDATE = (rel: string) =>
-  rel === ".git" ||
-  rel.startsWith(".git/") ||
-  rel === ".natalia" ||
-  rel.startsWith(".natalia/") ||
-  rel === ".natalia-manifest.json";
+/**
+ * Structural exclusions for a snapshot candidate: these are the sandbox's own
+ * stores, not user content. They cannot be disabled through .nataliaignore.
+ */
+function isSnapshotInternalPath(rel: string): boolean {
+  return (
+    rel === NATALIA_IGNORE_FILE ||
+    rel === ".natalia-manifest.json" ||
+    rel === ".natalia/sandboxes" ||
+    rel.startsWith(".natalia/sandboxes/") ||
+    rel === ".natalia/snapshots" ||
+    rel.startsWith(".natalia/snapshots/") ||
+    rel === ".natalia/objects" ||
+    rel.startsWith(".natalia/objects/") ||
+    rel === ".natalia/checkpoints" ||
+    rel.startsWith(".natalia/checkpoints/")
+  );
+}
 
 export class SnapshotSandboxManager extends WorkspaceSandboxManager {
   private readonly hostRoot: string;
@@ -39,6 +57,19 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
     );
   }
 
+  private async snapshotIgnoreRules(): Promise<readonly SnapshotIgnoreRule[]> {
+    await ensureNataliaIgnoreFile(this.hostRoot);
+    return (await loadNataliaIgnore(this.hostRoot)).rules;
+  }
+
+  private candidateIgnore(
+    rules: readonly SnapshotIgnoreRule[],
+  ): (rel: string, directory: boolean) => boolean {
+    return (rel, directory) =>
+      isSnapshotInternalPath(rel) ||
+      isSnapshotIgnored(rel, directory, rules);
+  }
+
   /**
    * Creates the isolated worktree, captures the host as its base, then checks
    * that base out into the candidate. The candidate index records the checkout
@@ -46,10 +77,11 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
    */
   override async create(id: string) {
     const manifest = await super.create(id);
+    const rules = await this.snapshotIgnoreRules();
     const base = await this.store.capture(
       this.hostRoot,
       undefined,
-      IGNORED_IN_CANDIDATE,
+      this.candidateIgnore(rules),
     );
     await this.store.saveIndex(id, base);
     const candidate = await this.store.materialize(manifest.root, base);
@@ -134,10 +166,11 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
 
   /** The candidate's current index, reusing the previous one by size/mtime. */
   private async captureCandidate(id: string): Promise<SnapshotIndex> {
+    const rules = await this.snapshotIgnoreRules();
     return await this.store.capture(
       this.candidateRoot(id),
       await this.store.loadCandidateIndex(id),
-      IGNORED_IN_CANDIDATE,
+      this.candidateIgnore(rules),
     );
   }
 

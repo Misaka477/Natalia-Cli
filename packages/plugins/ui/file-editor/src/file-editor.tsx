@@ -249,8 +249,34 @@ export function FileEditor(props: {
   } | null>(null);
   let cmContainer: HTMLDivElement | undefined;
   let cmView: EditorView | undefined;
+  let pendingJump: { path: string; line: number } | undefined;
   const languageCompartment = new Compartment();
-  onMount(() => {
+
+  function jumpToLine(line: number) {
+    if (!cmView) return false;
+    const target = Math.min(Math.max(1, line), cmView.state.doc.lines);
+    const info = cmView.state.doc.line(target);
+    cmView.dispatch({
+      selection: { anchor: info.from },
+      scrollIntoView: true,
+    });
+    cmView.focus();
+    return true;
+  }
+
+  function attachEditor(element: HTMLDivElement) {
+    cmContainer = element;
+    if (cmView) {
+      element.replaceChildren(cmView.dom);
+      updateEditor(selectedPath(), selectedContent());
+      cmView.requestMeasure();
+      if (pendingJump && pendingJump.path === selectedPath()) {
+        const line = pendingJump.line;
+        pendingJump = undefined;
+        jumpToLine(line);
+      }
+      return;
+    }
     cmView = new EditorView({
       doc: selectedContent(),
       extensions: [
@@ -278,8 +304,40 @@ export function FileEditor(props: {
           },
         }),
       ],
-      parent: cmContainer!,
+      parent: element,
     });
+    if (pendingJump && pendingJump.path === selectedPath()) {
+      const line = pendingJump.line;
+      pendingJump = undefined;
+      jumpToLine(line);
+    }
+  }
+  onCleanup(() => {
+    cmView?.destroy();
+    cmView = undefined;
+  });
+
+  function openPathAt(path: string, line?: number) {
+    selectFile(path);
+    setPreview(false);
+    pendingJump = line ? { path, line } : undefined;
+    if (line && cmView) {
+      pendingJump = undefined;
+      jumpToLine(line);
+    }
+  }
+
+  onMount(() => {
+    const handleOpenFile = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string; line?: number }>)
+        .detail;
+      if (!detail?.path) return;
+      openPathAt(detail.path, detail.line);
+    };
+    window.addEventListener("natalia:open-file", handleOpenFile);
+    onCleanup(() =>
+      window.removeEventListener("natalia:open-file", handleOpenFile),
+    );
     void props.runtime?.workspaceList?.().then((page) => {
       if (page?.entries?.length) {
         setEntries(page.entries);
@@ -948,12 +1006,7 @@ export function FileEditor(props: {
                 innerHTML={renderMarkdown(selectedContent())}
               />
             ) : (
-              <div
-                class="neu-file-codemirror"
-                ref={(element) => {
-                  cmContainer = element;
-                }}
-              />
+              <div class="neu-file-codemirror" ref={attachEditor} />
             )}
           </div>
         </div>

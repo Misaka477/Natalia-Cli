@@ -128,6 +128,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "workspaceSearch",
     "workspaceList",
     "workspaceRead",
+    "resourceRead",
     "workspaceWrite",
     "workspaceCreate",
     "workspaceRename",

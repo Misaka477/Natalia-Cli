@@ -14,13 +14,11 @@ export function applyWorkspaceEvent(
 ): boolean {
   if (event.type === "workspace.added") {
     const workspace = event.workspace;
-    if (
-      !state.workspaces.some(
-        (entry) => entry.workspaceID === workspace.workspaceID,
-      )
-    ) {
-      state.workspaces.push({ ...workspace });
-    }
+    const existing = state.workspaces.find(
+      (entry) => entry.workspaceID === workspace.workspaceID,
+    );
+    if (existing) Object.assign(existing, workspace);
+    else state.workspaces.push({ ...workspace });
     if (workspace.status === "active") {
       state.activeWorkspaceID = workspace.workspaceID;
       for (const entry of state.workspaces) {

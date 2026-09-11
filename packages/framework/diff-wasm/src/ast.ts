@@ -285,7 +285,7 @@ export async function diffWasmAst(
         exports.memory.buffer,
         outLenPtr,
         8,
-      ).getBigUint64(0, true);
+      ).getUint32(0, true);
       resultLen = Number(outLen);
       const binary = new Uint8Array(
         exports.memory.buffer.slice(resultPtr, resultPtr + resultLen),
@@ -370,7 +370,7 @@ export async function indexWasmAst(
         exports.memory.buffer,
         outLenPtr,
         8,
-      ).getBigUint64(0, true);
+      ).getUint32(0, true);
       resultLen = Number(outLen);
       const binary = new Uint8Array(
         exports.memory.buffer.slice(resultPtr, resultPtr + resultLen),

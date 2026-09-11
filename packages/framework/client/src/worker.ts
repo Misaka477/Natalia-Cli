@@ -53,6 +53,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "workspace.search": "workspaceSearch",
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
+  "resource.read": "resourceRead",
   "workspace.glob": "workspaceGlob",
   "workspace.write": "workspaceWrite",
   "workspace.create": "workspaceCreate",
@@ -173,6 +174,7 @@ type WorkerRequest = {
     | "workspace.search"
     | "workspace.list"
     | "workspace.read"
+    | "resource.read"
     | "workspace.glob"
     | "workspace.write"
     | "workspace.create"
@@ -380,8 +382,8 @@ export function createWorkerRuntimeClient(
     async submitInput(input) {
       return (await request("submit", input)) as SubmittedTurn;
     },
-    async pendingInteractive() {
-      return (await request("interactive.pending")) as Awaited<
+    async pendingInteractive(input) {
+      return (await request("interactive.pending", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["pendingInteractive"]>>
       >;
     },
@@ -406,13 +408,13 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["messages"]>>
       >;
     },
-    async agents() {
-      return (await request("agents")) as Awaited<
+    async agents(input) {
+      return (await request("agents", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["agents"]>>
       >;
     },
-    async modelCatalog() {
-      return (await request("model.catalog")) as Awaited<
+    async modelCatalog(input) {
+      return (await request("model.catalog", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["modelCatalog"]>>
       >;
     },
@@ -452,8 +454,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["permissionDelete"]>>
       >;
     },
-    async skills() {
-      return (await request("skills")) as Awaited<
+    async skills(input) {
+      return (await request("skills", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["skills"]>>
       >;
     },
@@ -475,6 +477,11 @@ export function createWorkerRuntimeClient(
     async workspaceRead(input) {
       return (await request("workspace.read", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["workspaceRead"]>>
+      >;
+    },
+    async resourceRead(input) {
+      return (await request("resource.read", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["resourceRead"]>>
       >;
     },
     async workspaceGlob(input) {
@@ -502,30 +509,33 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceDelete"]>>
       >;
     },
-    async workspaceWriteConflicts() {
-      return (await request("workspace.writeConflicts")) as Awaited<
+    async workspaceWriteConflicts(input) {
+      return (await request("workspace.writeConflicts", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["workspaceWriteConflicts"]>>
       >;
     },
-    async mcpCatalog() {
-      return (await request("mcp.catalog")) as Awaited<
+    async mcpCatalog(input) {
+      return (await request("mcp.catalog", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["mcpCatalog"]>>
       >;
     },
-    async getMcpPrompt(server, name, arguments_) {
+    async getMcpPrompt(server, name, arguments_, workspaceID) {
       return (await request("mcp.prompt", {
         server,
         name,
         arguments_,
+        workspaceID,
       })) as Awaited<ReturnType<NonNullable<RuntimeClient["getMcpPrompt"]>>>;
     },
-    async readMcpResource(server, uri) {
-      return (await request("mcp.resource", { server, uri })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["readMcpResource"]>>
-      >;
+    async readMcpResource(server, uri, workspaceID) {
+      return (await request("mcp.resource", {
+        server,
+        uri,
+        workspaceID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["readMcpResource"]>>>;
     },
-    async commandCatalog() {
-      return (await request("command.catalog")) as Awaited<
+    async commandCatalog(input) {
+      return (await request("command.catalog", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["commandCatalog"]>>
       >;
     },
@@ -619,11 +629,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["checkpointListByKind"]>>
       >;
     },
-    async auditRounds(planID) {
-      return (await request(
-        "audit.rounds",
-        planID ? { planID } : undefined,
-      )) as Awaited<ReturnType<NonNullable<RuntimeClient["auditRounds"]>>>;
+    async auditRounds(planID, workspaceID) {
+      return (await request("audit.rounds", {
+        ...(planID ? { planID } : {}),
+        ...(workspaceID ? { workspaceID } : {}),
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["auditRounds"]>>>;
     },
     async roundDiff(input) {
       return (await request("workspace.round.diff", input)) as Awaited<
@@ -640,8 +650,8 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceGitDiff"]>>
       >;
     },
-    async gitRefs() {
-      return (await request("git.refs")) as Awaited<
+    async gitRefs(input) {
+      return (await request("git.refs", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["gitRefs"]>>
       >;
     },
@@ -854,8 +864,8 @@ export function createWorkerRuntimeClient(
         sessionID ? { sessionID } : undefined,
       )) as Awaited<ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>>;
     },
-    async projectionContributions() {
-      return (await request("projections.list")) as Awaited<
+    async projectionContributions(input) {
+      return (await request("projections.list", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["projectionContributions"]>>
       >;
     },
@@ -1089,7 +1099,7 @@ export async function handleWorkerRequest(
   if (request.method === "interactive.pending") {
     if (!client.pendingInteractive)
       throw new Error("RuntimeClient does not support interactive.pending");
-    return await client.pendingInteractive();
+    return await client.pendingInteractive(request.value as never);
   }
   if (request.method === "runtime.status")
     return await client.runtimeStatus?.(
@@ -1099,8 +1109,14 @@ export async function handleWorkerRequest(
     return await client.history?.(request.value as never);
   if (request.method === "messages")
     return await client.messages?.(request.value as never);
-  if (request.method === "agents") return await client.agents?.();
-  if (request.method === "model.catalog") return await client.modelCatalog?.();
+  if (request.method === "agents")
+    return await client.agents?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
+  if (request.method === "model.catalog")
+    return await client.modelCatalog?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
   if (request.method === "model.selection")
     return await client.modelSelection?.();
   if (request.method === "model.setDefault") {
@@ -1123,7 +1139,10 @@ export async function handleWorkerRequest(
     return await client.permissionSave?.(request.value as never);
   if (request.method === "permission.delete")
     return await client.permissionDelete?.(request.value as string);
-  if (request.method === "skills") return await client.skills?.();
+  if (request.method === "skills")
+    return await client.skills?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
   if (request.method === "workspace.files")
     return await client.workspaceFiles?.(request.value as never);
   if (request.method === "workspace.search")
@@ -1132,6 +1151,8 @@ export async function handleWorkerRequest(
     return await client.workspaceList?.(request.value as never);
   if (request.method === "workspace.read")
     return await client.workspaceRead?.(request.value as never);
+  if (request.method === "resource.read")
+    return await client.resourceRead?.(request.value as never);
   if (request.method === "workspace.glob")
     return await client.workspaceGlob?.(request.value as never);
   if (request.method === "workspace.write")
@@ -1143,18 +1164,25 @@ export async function handleWorkerRequest(
   if (request.method === "workspace.delete")
     return await client.workspaceDelete?.(request.value as never);
   if (request.method === "workspace.writeConflicts")
-    return await client.workspaceWriteConflicts?.();
-  if (request.method === "mcp.catalog") return await client.mcpCatalog?.();
+    return await client.workspaceWriteConflicts?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
+  if (request.method === "mcp.catalog")
+    return await client.mcpCatalog?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
   if (request.method === "mcp.prompt")
     return await client.getMcpPrompt?.(
       (request.value as { server: string }).server,
       (request.value as { name: string }).name,
       (request.value as { arguments_?: Record<string, string> }).arguments_,
+      (request.value as { workspaceID?: string }).workspaceID,
     );
   if (request.method === "mcp.resource")
     return await client.readMcpResource?.(
       (request.value as { server: string }).server,
       (request.value as { uri: string }).uri,
+      (request.value as { workspaceID?: string }).workspaceID,
     );
   if (request.method === "native-terminal.list")
     return await client.nativeTerminalList?.(
@@ -1216,10 +1244,12 @@ export async function handleWorkerRequest(
     const value = request.value as { kind?: any; sessionID?: string };
     return await client.checkpointListByKind?.(value.kind, value.sessionID);
   }
-  if (request.method === "audit.rounds")
-    return await client.auditRounds?.(
-      (request.value as { planID?: string } | undefined)?.planID,
-    );
+  if (request.method === "audit.rounds") {
+    const value = request.value as
+      | { planID?: string; workspaceID?: string }
+      | undefined;
+    return await client.auditRounds?.(value?.planID, value?.workspaceID);
+  }
   if (request.method === "workspace.round.diff")
     return await client.roundDiff?.(
       request.value as Parameters<NonNullable<RuntimeClient["roundDiff"]>>[0],
@@ -1234,7 +1264,10 @@ export async function handleWorkerRequest(
         | { from?: string; to?: string; path?: string; includePatch?: boolean }
         | undefined,
     );
-  if (request.method === "git.refs") return await client.gitRefs?.();
+  if (request.method === "git.refs")
+    return await client.gitRefs?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
   if (request.method === "team.pr.list")
     return await client.teamPRList?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
@@ -1418,7 +1451,9 @@ export async function handleWorkerRequest(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
     );
   if (request.method === "projections.list")
-    return await client.projectionContributions?.();
+    return await client.projectionContributions?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
   if (request.method === "constitution.override.request")
     return await client.requestOverride?.(request.value as never);
   if (request.method === "constitution.override.approve")
@@ -1496,7 +1531,9 @@ export async function handleWorkerRequest(
       routedMembers: WORKER_ROUTED_MEMBERS,
     });
   if (request.method === "command.catalog")
-    return await client.commandCatalog?.();
+    return await client.commandCatalog?.(
+      request.value as { workspaceID?: string } | undefined,
+    );
   if (request.method === "command.execute")
     return await client.commandExecute?.(request.value as never);
   throw new Error(`worker channel does not route ${request.method}`);

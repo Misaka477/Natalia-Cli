@@ -10,6 +10,7 @@ export function SandboxPanel(props: {
   open: boolean;
   onClose: () => void;
   sandboxes: Record<string, SandboxView>;
+  sessionID?: string;
   runtime?: Pick<
     RuntimeClient,
     | "sandboxMerge"
@@ -28,7 +29,7 @@ export function SandboxPanel(props: {
     };
     window.addEventListener("keydown", handleKeydown);
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
-    void props.runtime?.sandboxList?.().then((value) => {
+    void props.runtime?.sandboxList?.(props.sessionID).then((value) => {
       if (value) setList(value);
     });
   });
@@ -120,7 +121,12 @@ export function SandboxPanel(props: {
                 <button
                   type="button"
                   class="neu-form-btn neu-form-cancel"
-                  onClick={() => props.runtime?.sandboxMerge?.(selected()!.id)}
+                  onClick={() =>
+                    props.runtime?.sandboxMerge?.(
+                      selected()!.id,
+                      props.sessionID,
+                    )
+                  }
                 >
                   合并变更
                 </button>
@@ -130,7 +136,12 @@ export function SandboxPanel(props: {
                 <button
                   type="button"
                   class="neu-form-btn neu-form-primary"
-                  onClick={() => props.runtime?.sandboxDelete?.(selected()!.id)}
+                  onClick={() =>
+                    props.runtime?.sandboxDelete?.(
+                      selected()!.id,
+                      props.sessionID,
+                    )
+                  }
                 >
                   删除沙箱
                 </button>

@@ -283,28 +283,92 @@ Using an undeclared API fails activation with `plugin capability denied`.
 Registration methods return an idempotent disposer and the registry also calls
 all remaining disposers in reverse registration order during unload.
 
-| Manifest point   | API                                                    | Contract                                                                                                          |
-| ---------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `tools`          | `api.tools.register(tool)`                             | Registers a globally named `RuntimeTool`; duplicate names fail.                                                   |
-| `tools`          | `api.tools.registerAlias(alias, target)`               | Registers a tool alias and returns its disposer.                                                                  |
-| `commands`       | `api.commands.register(command)`                       | Registers a globally named command; duplicate names fail.                                                         |
-| `events`         | `api.events.on(listener)`                              | Receives every event dispatched through the plugin registry.                                                      |
-| `events`         | `api.events.on(type, listener)`                        | Receives events whose object `type` equals the supplied string.                                                   |
-| `services`       | `api.services.provide(name, value)`                    | Provides a service listed in manifest `provides`; every declared service must be provided before setup completes. |
-| none             | `api.services.get<T>(name)`                            | Reads a currently available host service.                                                                         |
-| none             | `api.services.on<T>(name, listener)`                   | Watches a service provider change; the listener is called on changes, not immediately at registration.            |
-| `resources`      | `api.resources.register({ name, ... })`                | Registers a host-defined named resource contribution.                                                             |
-| `projections`    | `api.projections.register({ name, ... })`              | Registers a host-defined named projection contribution.                                                           |
-| `workflows`      | `api.workflows.register({ name, ... })`                | Registers a host-defined named workflow contribution.                                                             |
-| `settingsSchema` | `api.settingsSchema.register({ name, ... })`           | Registers a host-defined named settings-schema contribution.                                                      |
-| `adapters`       | `api.adapters.register({ name, adapterType, create })` | Registers a lazy adapter factory whose instance has `dispose()`.                                                  |
-| `adapters`       | `api.adapters.registerUi({ kind, mount, dispose })`    | Convenience API for a UI adapter; the contribution name is `kind`.                                                |
-| `schedulerJobs`  | `api.scheduler.add({ name, ... })`                     | Registers a host-defined named scheduler job.                                                                     |
+| Manifest point   | API                                                    | Contract                                                                                                               |
+| ---------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `tools`          | `api.tools.register(tool)`                             | Registers a globally named `RuntimeTool`; duplicate names fail.                                                        |
+| `tools`          | `api.tools.registerAlias(alias, target)`               | Registers a tool alias and returns its disposer.                                                                       |
+| `commands`       | `api.commands.register(command)`                       | Registers a globally named command; duplicate names fail.                                                              |
+| `events`         | `api.events.on(listener)`                              | Receives every event dispatched through the plugin registry.                                                           |
+| `events`         | `api.events.on(type, listener)`                        | Receives events whose object `type` equals the supplied string.                                                        |
+| `services`       | `api.services.provide(name, value)`                    | Provides a service listed in manifest `provides`; every declared service must be provided before setup completes.      |
+| none             | `api.services.get<T>(name)`                            | Reads a currently available host service.                                                                              |
+| none             | `api.services.on<T>(name, listener)`                   | Watches a service provider change; the listener is called on changes, not immediately at registration.                 |
+| `resources`      | `api.resources.register({ name, ... })`                | Registers a host-defined named resource contribution; `workspace-file` is the stable read-only shape documented below. |
+| `projections`    | `api.projections.register({ name, ... })`              | Registers a host-defined named projection contribution.                                                                |
+| `workflows`      | `api.workflows.register({ name, ... })`                | Registers a host-defined named workflow contribution.                                                                  |
+| `settingsSchema` | `api.settingsSchema.register({ name, ... })`           | Registers a host-defined named settings-schema contribution.                                                           |
+| `adapters`       | `api.adapters.register({ name, adapterType, create })` | Registers a lazy adapter factory whose instance has `dispose()`.                                                       |
+| `adapters`       | `api.adapters.registerUi({ kind, mount, dispose })`    | Convenience API for a UI adapter; the contribution name is `kind`.                                                     |
+| `schedulerJobs`  | `api.scheduler.add({ name, ... })`                     | Registers a host-defined named scheduler job.                                                                          |
 
 `resources`, `projections`, `workflows`, `settingsSchema`, and scheduler jobs
 share only the stable `{ name: string }` ownership contract. Their additional
 payload is defined by the host that consumes that contribution; do not assume a
 universal payload shape that is not exported by that host.
+
+### Plugin-owned workspace resources
+
+`resources` has one stable host-defined shape today: a read-only workspace file.
+Declare `resources` in `integrationPoints`, register the resource in `setup`,
+and read it through the generic workspace surface. The framework does not learn
+the plugin's business directory.
+
+```js
+// natalia.plugin.json
+"integrationPoints": ["tools", "resources"]
+
+// src/index.js
+api.resources.register({
+  name: "session-artifact-store",
+  kind: "workspace-file",
+  access: "read",
+  scope: "session",
+  path: ".natalia/artifacts/{sessionID}.json",
+  description: "Durable artifacts for the current session",
+});
+```
+
+Rules:
+
+- `path` is workspace-relative, uses `/`, and supports the built-in
+  `{sessionID}` / `{workspaceID}` placeholders. Each placeholder is resolved
+  from trusted runtime context and must expand to a single safe path segment.
+- `params` optionally declares additional single-segment placeholders owned by
+  the plugin, for example:
+  ```js
+  params: ["artifactID"],
+  path: ".natalia/artifacts/{artifactID}.json",
+  ```
+  The framework treats those names as opaque data. It validates syntax,
+  uniqueness, and single-segment safety; it does not interpret the business
+  meaning.
+- Wildcards, `..`, absolute paths, and unknown placeholders are rejected.
+- The first version allows plugin-owned resources only under `.natalia/`.
+  Reserved paths such as `.natalia/config.json` and `.natalia/sessions/**` are
+  refused even if a plugin declares them.
+- The declaration is read-only and is removed when the owning plugin unloads.
+- Read through `runtime.workspaceRead({ path })`. The runtime matches the exact
+  declared path and asks the platform to allow only that exact ignored path;
+  containment, symlink, and size policy still apply.
+- Keep `natalia.plugin.json` and the exported manifest in sync. Run
+  `ts:build`/plugin install so both carry the same `integrationPoints`.
+
+Reader-scoped resources use the named read API. A resource may declare
+`readers: ["yourco.web"]` and `audit: true`; the UI host then passes its plugin
+id for you:
+
+```js
+const contents = await ctx.resources.read({
+  resource: "session-artifact-store",
+  params: { sessionID },
+});
+```
+
+External consumers can call `runtime.resourceRead({ resource, params, reader })`.
+The runtime resolves the declaration, verifies the `readers` allowlist, reads the
+exact declared path, and publishes a live `resource.read` event when `audit` is
+true. Resources with a `readers` list are intentionally not available through the
+path-based `workspaceRead` route.
 
 The APIs below do not require an `integrationPoints` declaration:
 
@@ -322,7 +386,6 @@ string. `context` includes `workspaceRoot`, optional `sessionID` and
 `AbortSignal`, plus host services appropriate to the current runtime. A command
 requires `name`, `title`, and `run(invocation?)`; invocation contains `raw`,
 `args`, `workspaceRoot`, optional `sessionID`, and optional `signal`.
-
 
 ### Renderer-side UI manifests
 
@@ -1060,27 +1123,84 @@ export default definePlugin({
 失败并报告 `plugin capability denied`。所有注册方法都返回幂等 disposer；卸载时，
 registry 还会按注册顺序的逆序调用尚未执行的 disposer。
 
-| Manifest point   | API                                                    | 契约                                                                          |
-| ---------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `tools`          | `api.tools.register(tool)`                             | 注册全局命名的 `RuntimeTool`；重复名称会失败。                                |
-| `tools`          | `api.tools.registerAlias(alias, target)`               | 注册工具别名并返回 disposer。                                                 |
-| `commands`       | `api.commands.register(command)`                       | 注册全局命名命令；重复名称会失败。                                            |
-| `events`         | `api.events.on(listener)`                              | 接收经插件 registry 分发的所有事件。                                          |
-| `events`         | `api.events.on(type, listener)`                        | 只接收对象 `type` 等于指定字符串的事件。                                      |
-| `services`       | `api.services.provide(name, value)`                    | 提供 manifest `provides` 中声明的服务；`setup` 结束前必须提供所有已声明服务。 |
-| 无               | `api.services.get<T>(name)`                            | 读取当前可用的 host service。                                                 |
-| 无               | `api.services.on<T>(name, listener)`                   | 监听 service provider 变化；注册时不会立即调用 listener。                     |
-| `resources`      | `api.resources.register({ name, ... })`                | 注册由 host 定义的具名 resource contribution。                                |
-| `projections`    | `api.projections.register({ name, ... })`              | 注册由 host 定义的具名 projection contribution。                              |
-| `workflows`      | `api.workflows.register({ name, ... })`                | 注册由 host 定义的具名 workflow contribution。                                |
-| `settingsSchema` | `api.settingsSchema.register({ name, ... })`           | 注册由 host 定义的具名设置 schema contribution。                              |
-| `adapters`       | `api.adapters.register({ name, adapterType, create })` | 注册惰性 adapter factory，创建的实例必须有 `dispose()`。                      |
-| `adapters`       | `api.adapters.registerUi({ kind, mount, dispose })`    | UI adapter 便捷 API；贡献名就是 `kind`。                                      |
-| `schedulerJobs`  | `api.scheduler.add({ name, ... })`                     | 注册由 host 定义的具名 scheduler job。                                        |
+| Manifest point   | API                                                    | 契约                                                                                        |
+| ---------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `tools`          | `api.tools.register(tool)`                             | 注册全局命名的 `RuntimeTool`；重复名称会失败。                                              |
+| `tools`          | `api.tools.registerAlias(alias, target)`               | 注册工具别名并返回 disposer。                                                               |
+| `commands`       | `api.commands.register(command)`                       | 注册全局命名命令；重复名称会失败。                                                          |
+| `events`         | `api.events.on(listener)`                              | 接收经插件 registry 分发的所有事件。                                                        |
+| `events`         | `api.events.on(type, listener)`                        | 只接收对象 `type` 等于指定字符串的事件。                                                    |
+| `services`       | `api.services.provide(name, value)`                    | 提供 manifest `provides` 中声明的服务；`setup` 结束前必须提供所有已声明服务。               |
+| 无               | `api.services.get<T>(name)`                            | 读取当前可用的 host service。                                                               |
+| 无               | `api.services.on<T>(name, listener)`                   | 监听 service provider 变化；注册时不会立即调用 listener。                                   |
+| `resources`      | `api.resources.register({ name, ... })`                | 注册由 host 定义的具名 resource contribution；`workspace-file` 是下方文档化的稳定只读形态。 |
+| `projections`    | `api.projections.register({ name, ... })`              | 注册由 host 定义的具名 projection contribution。                                            |
+| `workflows`      | `api.workflows.register({ name, ... })`                | 注册由 host 定义的具名 workflow contribution。                                              |
+| `settingsSchema` | `api.settingsSchema.register({ name, ... })`           | 注册由 host 定义的具名设置 schema contribution。                                            |
+| `adapters`       | `api.adapters.register({ name, adapterType, create })` | 注册惰性 adapter factory，创建的实例必须有 `dispose()`。                                    |
+| `adapters`       | `api.adapters.registerUi({ kind, mount, dispose })`    | UI adapter 便捷 API；贡献名就是 `kind`。                                                    |
+| `schedulerJobs`  | `api.scheduler.add({ name, ... })`                     | 注册由 host 定义的具名 scheduler job。                                                      |
 
 `resources`、`projections`、`workflows`、`settingsSchema` 和 scheduler job 的
 稳定通用契约只有 `{ name: string }` 及生命周期归属。其他 payload 由消费该贡献的 host
 定义；如果 host 没有导出通用格式，不应自行假定字段结构。
+
+### 插件自有工作区资源
+
+`resources` 目前有一个稳定的 host 定义形态：只读工作区文件。插件在
+`integrationPoints` 声明 `resources`，在 `setup` 注册资源，再通过通用工作区读取
+面读取。framework 不需要知道插件的业务目录。
+
+```js
+// natalia.plugin.json
+"integrationPoints": ["tools", "resources"]
+
+// src/index.js
+api.resources.register({
+  name: "session-artifact-store",
+  kind: "workspace-file",
+  access: "read",
+  scope: "session",
+  path: ".natalia/artifacts/{sessionID}.json",
+  description: "Durable artifacts for the current session",
+});
+```
+
+规则：
+
+- `path` 必须是 workspace 相对路径并使用 `/`；支持内置的 `{sessionID}` /
+  `{workspaceID}` 占位符。占位符由可信 runtime context 解析，展开后必须是单个安全
+  路径段。
+- `params` 可以声明额外的插件自有单段占位符，例如：
+  ```js
+  params: ["artifactID"],
+  path: ".natalia/artifacts/{artifactID}.json",
+  ```
+  framework 只把这些名字当作不透明数据，校验语法、唯一性和单段安全；不会解释其业务
+  含义。
+- 通配符、`..`、绝对路径和未知占位符会被拒绝。
+- 第一版只允许 `.natalia/` 下的插件自有资源；即使插件声明，
+  `.natalia/config.json`、`.natalia/sessions/**` 等保留路径也会被拒绝。
+- 资源声明是只读的；所属插件卸载后声明立即失效。
+- 调用方仍通过 `runtime.workspaceRead({ path })` 读取。runtime 会匹配精确的声明路径，
+  只让 platform 放行该精确 ignored path；containment、symlink 和大小限制仍全部生效。
+- 保持 `natalia.plugin.json` 与导出的 manifest 一致；执行 `ts:build`/plugin install，
+  确保两者携带相同的 `integrationPoints`。
+
+带 reader 限制的资源使用具名读取 API。资源可以声明
+`readers: ["yourco.web"]` 和 `audit: true`；UI host 会自动传入你的插件 id：
+
+```js
+const contents = await ctx.resources.read({
+  resource: "session-artifact-store",
+  params: { sessionID },
+});
+```
+
+外部消费者可以调用 `runtime.resourceRead({ resource, params, reader })`。runtime 会解析
+声明、校验 `readers` allowlist、读取精确声明路径；`audit` 为 true 时发布 live
+`resource.read` 事件。带 `readers` 列表的资源故意不暴露给基于路径的
+`workspaceRead`。
 
 以下 API 不要求 `integrationPoints` 声明：
 
@@ -1097,7 +1217,6 @@ registry 还会按注册顺序的逆序调用尚未执行的 disposer。
 `workspaceRoot`、可选 `sessionID`、`AbortSignal`，以及当前 runtime 可用的 host service。
 命令必须包含 `name`、`title` 和 `run(invocation?)`；invocation 包含 `raw`、`args`、
 `workspaceRoot`、可选 `sessionID` 和可选 `signal`。
-
 
 ### Renderer UI 清单
 

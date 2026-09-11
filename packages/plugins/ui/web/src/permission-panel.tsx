@@ -10,6 +10,8 @@ export function PermissionPanel(props: {
     detail?: string;
   } | null;
   runtime?: Pick<RuntimeClient, "respondApproval">;
+  sessionID?: string;
+  workspaceID?: string;
   onClose: () => void;
 }) {
   const [rejecting, setRejecting] = createSignal(false);
@@ -29,6 +31,8 @@ export function PermissionPanel(props: {
       requestID: props.approval.id,
       decision,
       ...(feedback ? { feedback } : {}),
+      ...(props.sessionID ? { sessionID: props.sessionID } : {}),
+      ...(props.workspaceID ? { workspaceID: props.workspaceID } : {}),
     });
     props.onClose();
   }

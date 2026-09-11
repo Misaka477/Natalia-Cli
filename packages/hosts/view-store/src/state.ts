@@ -13,10 +13,12 @@ import type {
   SubmittedTurn,
   WorkspaceSummary,
 } from "@natalia/contracts";
-import type { TodoView } from "@natalia/ui-model";
-
-/** How many characters a single streamed block accumulates before it segments. */
-export const streamSegmentChars = 6000;
+/**
+ * Character budget for forced segmentation. Semantic boundaries (tools,
+ * thinking phases, durable content.done) still split; a long contiguous answer
+ * no longer splits just because it crossed an arbitrary character count.
+ */
+export const streamSegmentChars = Number.POSITIVE_INFINITY;
 /**
  * Bounds on the histories a long session accumulates. A projection that grows
  * without limit is a leak in every consumer that holds it.
@@ -186,7 +188,6 @@ export type NataliaStreamState = AgentStreamState & {
   activeTurn?: string;
   paused: boolean;
   tools: Record<string, ToolBlock>;
-  todos: TodoView[];
   pendingApprovals: PendingApproval[];
   pendingQuestions: PendingQuestion[];
   activities: Record<string, ActivityView>;
@@ -234,7 +235,6 @@ export type AppState = {
   streams: Record<string, StreamState>;
   streamPhases: Record<string, "thinking" | "assistant">;
   tools: Record<string, ToolBlock>;
-  todos: TodoView[];
   pendingApprovals: PendingApproval[];
   pendingQuestions: PendingQuestion[];
   /** All currently live work; settled activities are removed by the projection. */
@@ -327,7 +327,6 @@ export function initialState(): AppState {
   const streams: Record<string, StreamState> = {};
   const streamPhases: Record<string, "thinking" | "assistant"> = {};
   const tools: Record<string, ToolBlock> = {};
-  const todos: TodoView[] = [];
   const pendingApprovals: PendingApproval[] = [];
   const pendingQuestions: PendingQuestion[] = [];
   const activities: Record<string, ActivityView> = {};
@@ -350,7 +349,6 @@ export function initialState(): AppState {
     streams,
     streamPhases,
     tools,
-    todos,
     pendingApprovals,
     pendingQuestions,
     activities,
@@ -359,7 +357,6 @@ export function initialState(): AppState {
       streams,
       streamPhases,
       tools,
-      todos,
       pendingApprovals,
       pendingQuestions,
       activities,
@@ -417,7 +414,6 @@ export function cloneState(state: AppState): AppState {
     streams: mapRecord(state.streams, (value) => ({ ...value })),
     streamPhases: { ...state.streamPhases },
     tools: mapRecord(state.tools, (value) => ({ ...value })),
-    todos: [...state.todos],
     pendingApprovals: [...state.pendingApprovals],
     pendingQuestions: [...state.pendingQuestions],
     activities: mapRecord(state.activities, (value) => ({ ...value })),
@@ -466,7 +462,6 @@ function cloneNataliaStream(state: NataliaStreamState): NataliaStreamState {
     ...cloneAgentStream(state),
     paused: state.paused,
     tools: mapRecord(state.tools, (value) => ({ ...value })),
-    todos: [...state.todos],
     pendingApprovals: [...state.pendingApprovals],
     pendingQuestions: [...state.pendingQuestions],
     activities: mapRecord(state.activities, (value) => ({ ...value })),
@@ -482,7 +477,6 @@ export function synchronizeStreamSlices(state: AppState): void {
     activeTurn: state.activeTurn,
     paused: state.paused,
     tools: state.tools,
-    todos: state.todos,
     pendingApprovals: state.pendingApprovals,
     pendingQuestions: state.pendingQuestions,
     activities: state.activities,
@@ -611,7 +605,7 @@ export function boundTranscript<T extends { role: string }>(
   }
   if (end === messages.length && removed === messages.length)
     return {
-      messages: messages.slice(0, Math.min(watermark, messages.length)),
+      messages: messages.slice(Math.max(0, messages.length - watermark)),
       evicted: true,
     };
   return { messages: messages.slice(end), evicted: true };

@@ -192,6 +192,22 @@ test("bad arguments are invalid params, and only bad arguments are", async () =>
   // A missing required argument is the same kind, and the member is never called.
   const missing = await fail("workspace.read", {}, withRead);
   expect(missing.error.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
+
+  const withResourceRead: Partial<RuntimeClient> = {
+    async resourceRead() {
+      throw new Error("must not be reached");
+    },
+  };
+  const badResource = await fail(
+    "resource.read",
+    { resource: "demo", params: { sessionID: 1 } },
+    withResourceRead,
+  );
+  expect(badResource.error.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
+  const missingResource = await fail("resource.read", {}, withResourceRead);
+  expect(missingResource.error.code).toBe(
+    RUNTIME_RPC_ERROR_CODES.invalidParams,
+  );
 });
 
 test("an envelope that is not a request is invalid request", async () => {

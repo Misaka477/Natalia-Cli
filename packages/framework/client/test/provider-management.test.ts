@@ -46,6 +46,8 @@ async function harness() {
       getTsRuntimeConfig: () => config,
       getWorkspaceRoot: () => root,
       getExecutionBySession: () => executions,
+      getActiveExec: () => undefined,
+      getSelectedModel: () => undefined,
       applyConfigFromDisk: async () => {
         config = (await resolveConfig({ workspaceRoot: root, globalPath }))
           .config;
@@ -147,15 +149,35 @@ test.each(["default", "agent", "mode", "session", "navi", "nia"])(
           session: { id: "background" },
           ...(reference === "session"
             ? { selectedModel: { modelID: "target/model" } }
-            : {
-                chatModelProfile: {
-                  [reference]: { normal: { modelID: "target/model" } },
-                },
-              }),
+            : reference === "navi"
+              ? {
+                  naviChatModelProfile: {
+                    normal: { modelID: "target/model" },
+                  },
+                }
+              : {
+                  niaChatModelProfile: {
+                    normal: { modelID: "target/model" },
+                  },
+                }),
         } as unknown as SessionExecutionState);
       }
       const before = await readFile(h.globalPath, "utf8");
       const result = await h.surface.providerRemove!("target");
+      if (reference === "default") {
+        // Removing the provider that supplies the global default is allowed;
+        // the runtime switches the default to the first remaining model.
+        expect(result.removed).toBe(true);
+        expect(result.defaultModel).toBe("keep/model");
+        const after = JSON.parse(await readFile(h.globalPath, "utf8")) as {
+          defaultModel?: { provider: string; model: string };
+        };
+        expect(after.defaultModel).toEqual({
+          provider: "keep",
+          model: "model",
+        });
+        return;
+      }
       expect(result.removed).toBe(false);
       expect(result.reason).toContain("referenced");
       expect(await readFile(h.globalPath, "utf8")).toBe(before);

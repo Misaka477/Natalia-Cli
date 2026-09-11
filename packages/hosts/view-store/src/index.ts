@@ -21,7 +21,7 @@
  * reports them; the runtime decides them.
  *
  * Projections live in three modules so adding a surface is a local edit:
- * `conversation.ts` (turns, streaming, tools, todos, interactive),
+ * `conversation.ts` (turns, streaming, tools, interactive),
  * `resources.ts` (terminals, sandboxes, subagents, checkpoints, rollback, MCP,
  * plugins, capabilities) and `status.ts` (context, compaction, retries,
  * selections, policy, intelligence).

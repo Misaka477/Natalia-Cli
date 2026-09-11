@@ -4523,7 +4523,11 @@ test("runtime exposes contained workspace filesystem APIs", async () => {
   });
   client.start(() => undefined);
   expect(await client.workspaceList?.()).toEqual({
-    entries: [{ path: "src/", type: "directory" }],
+    entries: [
+      { path: ".natalia/", type: "directory" },
+      { path: "src/", type: "directory" },
+      { path: ".nataliaignore", type: "file" },
+    ],
     truncated: false,
   });
   expect(await client.workspaceGlob?.({ pattern: "**/*.ts" })).toEqual([
@@ -4533,9 +4537,65 @@ test("runtime exposes contained workspace filesystem APIs", async () => {
     content: "const needle = true\n",
     encoding: "utf8",
   });
-  expect(await client.workspaceSearch?.({ query: "needle" })).toEqual([
-    { path: "src/main.ts", line: 1, text: "const needle = true" },
-  ]);
+  expect(
+    await client.workspaceSearch?.({ query: "needle" }),
+  ).toEqual(
+    expect.arrayContaining([
+      { path: "src/main.ts", line: 1, text: "const needle = true" },
+    ]),
+  );
+});
+
+test("runtime named resource reads enforce declarations and audit events", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-runtime-plugin-resource-"),
+  );
+  const sessionID = "ses_runtime_plugin_resource";
+  const relativePath = `.natalia/todos/${sessionID}.json`;
+  await mkdir(join(root, ".natalia", "todos"), { recursive: true });
+  await writeFile(join(root, relativePath), '{"items":[]}\n');
+  await writeFile(
+    join(root, ".natalia", "todos", "ses_other.json"),
+    '{"items":[{"content":"other","status":"pending"}]}\n',
+  );
+
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("unused"),
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() => events.some((event) => event.type === "session.ready"));
+
+  expect(
+    await client.resourceRead!({
+      resource: "session-todo-store",
+      params: { sessionID },
+      reader: "natalia.ui.todo",
+    }),
+  ).toMatchObject({
+    path: relativePath,
+    content: '{"items":[]}\n',
+  });
+  await expect(
+    client.resourceRead!({
+      resource: "session-todo-store",
+      params: { sessionID },
+      reader: "other.plugin",
+    }),
+  ).rejects.toThrow("plugin resource is unavailable or not authorized");
+  await expect(
+    client.workspaceRead!({ path: relativePath }),
+  ).resolves.toMatchObject({ path: relativePath, content: '{"items":[]}\n' });
+  await expect(
+    client.workspaceRead!({ path: ".natalia/todos/ses_other.json" }),
+  ).resolves.toMatchObject({
+    path: ".natalia/todos/ses_other.json",
+    content: '{"items":[{"content":"other","status":"pending"}]}\n',
+  });
+  expect(events.some((event) => event.type === "resource.read")).toBe(true);
+  await client.dispose?.();
 });
 
 test("runtime session management uses durable metadata and protects the active session", async () => {
@@ -4704,11 +4764,12 @@ test("runtime filesystem slash commands use the protected catalog", async () => 
   client.start((event) => events.push(event));
   await client.submitAndWait!("/files main");
   await client.submitAndWait!("/search needle");
-  expect(
-    events
-      .filter((event) => event.type === "content.delta")
-      .map((event) => event.text),
-  ).toEqual(["src/main.ts", "src/main.ts:1:const needle = true"]);
+  const output = events
+    .filter((event) => event.type === "content.delta")
+    .map((event) => event.text)
+    .join("\n");
+  expect(output).toContain("src/main.ts");
+  expect(output).toContain("src/main.ts:1:const needle = true");
 });
 
 test("sessions slash command reports durable event counts", async () => {

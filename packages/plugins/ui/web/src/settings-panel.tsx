@@ -1,6 +1,7 @@
 import {
   createSignal,
   createEffect,
+  createMemo,
   For,
   Show,
   onCleanup,
@@ -18,21 +19,145 @@ import { useConfirmDialog } from "./components/ConfirmDialog";
 
 const BUILTIN_PERMISSION_PROFILES = ["ask", "auto", "read_only"];
 
-const TOOL_FAMILIES = [
-  "read_file",
-  "glob",
-  "grep",
-  "read_media_file",
-  "interactive_terminal_*",
-  "terminal_observe",
-  "run_shell",
-  "write_file",
-  "edit_file",
-  "web_fetch",
-  "web_search",
-  "skill_load",
-  "agent_*",
-];
+export type RegisteredToolView = Awaited<
+  ReturnType<NonNullable<RuntimeClient["registeredTools"]>>
+>[number];
+
+type ToolFamilyGroup = {
+  id: string;
+  label: string;
+  tools: string[];
+};
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildToolFamilyGroups(
+  registered: readonly RegisteredToolView[],
+  selected: string,
+): ToolFamilyGroup[] {
+  const selectedValues = new Set(splitCsv(selected));
+  const registeredNames = new Set<string>();
+  const byOwner = new Map<string, Set<string>>();
+  for (const tool of registered) {
+    const owner = tool.owner || "未归属";
+    const tools = byOwner.get(owner) ?? new Set<string>();
+    tools.add(tool.name);
+    byOwner.set(owner, tools);
+    registeredNames.add(tool.name);
+  }
+
+  const groups = [...byOwner.entries()]
+    .map(([owner, tools]) => ({
+      id: owner,
+      label: owner,
+      tools: [...tools].sort(),
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+
+  const missing = [...selectedValues].filter(
+    (name) => !registeredNames.has(name),
+  );
+  if (missing.length)
+    groups.push({
+      id: "__configured__",
+      label: "已配置（未注册）",
+      tools: missing.sort(),
+    });
+  return groups;
+}
+
+function ToolFamilyChecklist(props: {
+  registered: readonly RegisteredToolView[];
+  selected: string;
+  onToggle(tools: readonly string[], selected: boolean): void;
+}) {
+  const selectedSet = createMemo(() => new Set(splitCsv(props.selected)));
+  const groups = createMemo(() =>
+    buildToolFamilyGroups(props.registered, props.selected),
+  );
+  return (
+    <Show
+      when={groups().length}
+      fallback={<div class="neu-tool-family-empty">暂无可选工具</div>}
+    >
+      <div class="neu-tool-family-list">
+        <For each={groups()}>
+          {(group) =>
+            group.id === "__configured__" ? (
+              <div class="neu-tool-family">
+                <div class="neu-tool-family-title">{group.label}</div>
+                <div class="neu-tool-select-grid">
+                  <For each={group.tools}>
+                    {(tool) => (
+                      <label class="neu-form-checkbox neu-tool-check">
+                        <input
+                          type="checkbox"
+                          checked={selectedSet().has(tool)}
+                          onChange={() =>
+                            props.onToggle([tool], !selectedSet().has(tool))
+                          }
+                        />
+                        <span>{tool}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              </div>
+            ) : (
+              <ToolFamilyRow
+                group={group}
+                selectedSet={selectedSet()}
+                onToggle={props.onToggle}
+              />
+            )
+          }
+        </For>
+      </div>
+    </Show>
+  );
+}
+
+function ToolFamilyRow(props: {
+  group: ToolFamilyGroup;
+  selectedSet: ReadonlySet<string>;
+  onToggle(tools: readonly string[], selected: boolean): void;
+}) {
+  let checkbox: HTMLInputElement | undefined;
+  const selectedCount = createMemo(
+    () =>
+      props.group.tools.filter((tool) => props.selectedSet.has(tool)).length,
+  );
+  const allSelected = createMemo(
+    () =>
+      props.group.tools.length > 0 &&
+      selectedCount() === props.group.tools.length,
+  );
+  const partiallySelected = createMemo(
+    () => selectedCount() > 0 && !allSelected(),
+  );
+  createEffect(() => {
+    if (checkbox) checkbox.indeterminate = partiallySelected();
+  });
+  return (
+    <label class="neu-form-checkbox neu-tool-family-check">
+      <input
+        ref={checkbox}
+        type="checkbox"
+        checked={allSelected()}
+        onChange={() => props.onToggle(props.group.tools, !allSelected())}
+      />
+      <span class="neu-tool-family-name">{props.group.label}</span>
+      <span class="neu-tool-family-count">
+        {selectedCount()}/{props.group.tools.length}
+      </span>
+    </label>
+  );
+}
 
 type CategoryId =
   | "model"
@@ -62,22 +187,12 @@ const categories: Category[] = [
       {
         label: "Providers & Models",
         description: "配置 provider 并导入模型",
-        value: "3 个 provider",
+        value: "",
       },
       {
         label: "Default Model",
         description: "默认使用的模型",
         value: "Opus 4",
-      },
-      {
-        label: "默认 Agent",
-        description: "当前 agent / 默认使用的 agent",
-        value: "默认",
-      },
-      {
-        label: "自定义 Agent Mode",
-        description: "创建、编辑并选择自定义 agent 运行模式",
-        value: "code",
       },
       {
         label: "子 Agent 并发数",
@@ -95,11 +210,6 @@ const categories: Category[] = [
         description: "选择、新增、编辑权限配置",
         value: "ask",
       },
-      {
-        label: "Web & Network",
-        description: "搜索、浏览器、网络规则",
-        value: "已配置",
-      },
     ],
   },
   {
@@ -112,7 +222,11 @@ const categories: Category[] = [
         value: "unlimited",
       },
       { label: "Max Retry", description: "单步最大重试次数", value: "3" },
-      { label: "Request Timeout", description: "模型请求超时", value: "120s" },
+      {
+        label: "Request Timeout",
+        description: "模型请求超时（0 表示不设置）",
+        value: "不设置",
+      },
       { label: "Compaction", description: "上下文压缩", value: "开启" },
       {
         label: "Compaction Threshold",
@@ -133,22 +247,9 @@ const categories: Category[] = [
   },
   {
     id: "interface",
-    label: "界面与服务",
+    label: "界面",
     items: [
       { label: "Theme Mode", description: "切换浅色 / 深色", value: "浅色" },
-      { label: "Density", description: "界面信息密度", value: "comfortable" },
-      { label: "Diff Style", description: "diff 展示风格", value: "auto" },
-      {
-        label: "Tool Details",
-        description: "工具卡默认展开状态",
-        value: "expanded",
-      },
-      {
-        label: "GPU 加速",
-        description: "启用/关闭硬件加速（需重启 Desktop 生效）",
-        value: "关闭",
-      },
-      { label: "Keybinds", description: "快捷键覆盖", value: "12 个" },
     ],
   },
   {
@@ -181,34 +282,17 @@ export function SettingsPanel(props: {
     get<T>(key: string): T | undefined;
     set<T>(key: string, value: T): void;
   };
-  registeredTools?: string[];
+  registeredTools?: RegisteredToolView[];
   onUpdateConfig?: (patch: Record<string, unknown>) => unknown;
   runtime?: RuntimeClient;
   host?: import("@natalia/ui-host").UiPluginContext["host"];
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
   const { alert, dialog } = useConfirmDialog();
-  const [density, setDensity] = createSignal(
-    props.preferences?.get<string>("density") ?? "comfortable",
-  );
-  const [diffStyle, setDiffStyle] = createSignal(
-    props.preferences?.get<string>("diffStyle") ?? "auto",
-  );
-  const [toolDetails, setToolDetails] = createSignal(
-    props.preferences?.get<string>("toolDetails") ?? "expanded",
-  );
   const [uiWriteScope, setUiWriteScope] = createSignal(
     props.preferences?.get<string>("uiWriteScope") ?? "project",
   );
-  const [gpuAcceleration, setGpuAcceleration] = createSignal<boolean>(
-    props.preferences?.get<boolean>("gpuAcceleration") ?? false,
-  );
 
-  const desktopElectron = (
-    globalThis as {
-      electron?: { invoke<T>(channel: string, args?: unknown): Promise<T> };
-    }
-  ).electron;
   const [settingsPanel, setSettingsPanel] = createSignal<{
     pluginId: string;
     panelId: string;
@@ -295,52 +379,6 @@ export function SettingsPanel(props: {
         ]
       : categories;
 
-  async function syncGpuAccelerationFromDesktop() {
-    if (!desktopElectron) return;
-    try {
-      const value = await desktopElectron.invoke<{ gpuEnabled?: boolean }>(
-        "desktop_get_setting",
-        "gpuEnabled",
-      );
-      // Desktop settings file is the source of truth. When the key is absent
-      // the actual Electron mode is hardware acceleration disabled, so do not
-      // let a stale localStorage preference keep showing “开启”.
-      const enabled =
-        typeof value?.gpuEnabled === "boolean" ? value.gpuEnabled : false;
-      setGpuAcceleration(enabled);
-      props.preferences?.set("gpuAcceleration", enabled);
-    } catch {
-      // If IPC is unavailable (e.g. plain web shell), keep the local pref.
-    }
-  }
-
-  async function setGpuAccelerationPersisted(next: boolean) {
-    if (!desktopElectron) {
-      props.preferences?.set("gpuAcceleration", next);
-      return;
-    }
-    const previous = gpuAcceleration();
-    setGpuAcceleration(next);
-    try {
-      await desktopElectron.invoke("desktop_set_setting", {
-        key: "gpuEnabled",
-        value: next,
-      });
-      props.preferences?.set("gpuAcceleration", next);
-    } catch (error) {
-      console.warn(
-        "[settings] failed to persist GPU acceleration",
-        error instanceof Error ? error.message : String(error),
-      );
-      // Revert the optimistic UI value so it cannot lie about the actual
-      // Electron setting.
-      setGpuAcceleration(previous);
-    }
-  }
-
-  createEffect(() => {
-    if (props.open) void syncGpuAccelerationFromDesktop();
-  });
   const [runtimeWriteScope, setRuntimeWriteScope] = createSignal(
     props.preferences?.get<string>("runtimeWriteScope") ?? "global",
   );
@@ -372,15 +410,6 @@ export function SettingsPanel(props: {
   >();
   const [editFieldValue, setEditFieldValue] = createSignal("");
   let editFieldAction: ((value: string) => void) | undefined;
-  const [modeEditorOpen, setModeEditorOpen] = createSignal(false);
-  const [modeName, setModeName] = createSignal("code");
-  const [modeDescription, setModeDescription] = createSignal("");
-  const [modeSystemPrompt, setModeSystemPrompt] = createSignal("");
-  const [modeModel, setModeModel] = createSignal("");
-  const [modePermission, setModePermission] = createSignal("");
-  const [modeAllowedTools, setModeAllowedTools] = createSignal("");
-  const [modeExcludedTools, setModeExcludedTools] = createSignal("");
-  const [modeMcpServers, setModeMcpServers] = createSignal("");
   const [permissionEditorOpen, setPermissionEditorOpen] = createSignal(false);
   const [permissionListOpen, setPermissionListOpen] = createSignal(false);
   const [permissionName, setPermissionName] = createSignal("ask");
@@ -392,8 +421,6 @@ export function SettingsPanel(props: {
   const [permissionCommandMode, setPermissionCommandMode] =
     createSignal("none");
   const [permissionCommandRules, setPermissionCommandRules] = createSignal("");
-  const [permissionSkills, setPermissionSkills] = createSignal(true);
-  const [permissionMcp, setPermissionMcp] = createSignal(true);
   const [permissionInteractiveAny, setPermissionInteractiveAny] =
     createSignal(false);
   const [permissionInteractiveAllow, setPermissionInteractiveAllow] =
@@ -419,8 +446,6 @@ export function SettingsPanel(props: {
     setPermissionExcludedTools((profile?.excludedTools ?? []).join(", "));
     setPermissionCommandMode(profile?.commandRules?.mode ?? "none");
     setPermissionCommandRules((profile?.commandRules?.rules ?? []).join(", "));
-    setPermissionSkills(profile?.skills !== false);
-    setPermissionMcp(true);
     setPermissionInteractiveAny(
       Boolean(profile?.interactivePrograms?.allowAny),
     );
@@ -440,34 +465,12 @@ export function SettingsPanel(props: {
     setPermissionExcludedTools("");
     setPermissionCommandMode("none");
     setPermissionCommandRules("");
-    setPermissionSkills(true);
-    setPermissionMcp(true);
     setPermissionInteractiveAny(false);
     setPermissionInteractiveAllow("");
     setPermissionEditorOpen(true);
   }
 
   const editableActions: Record<string, () => void> = {
-    "默认 Agent": () => {
-      const current = props.config?.defaultAgent ?? "";
-      openEdit("默认 Agent（defaultAgent）", current, (next) => {
-        if (next) props.onUpdateConfig?.({ defaultAgent: next });
-      });
-    },
-    "自定义 Agent Mode": () => {
-      const config = props.config;
-      const name = config?.defaultAgentMode ?? "code";
-      const mode = config?.agentModes?.[name];
-      setModeName(name);
-      setModeDescription(mode?.description ?? "");
-      setModeSystemPrompt(mode?.systemPrompt ?? "");
-      setModeModel(mode?.model ?? "");
-      setModePermission(mode?.approval ?? "ask");
-      setModeAllowedTools((mode?.allowedTools ?? []).join(", "));
-      setModeExcludedTools((mode?.excludedTools ?? []).join(", "));
-      setModeMcpServers((mode?.mcpServers ?? []).join(", "));
-      setModeEditorOpen(true);
-    },
     "子 Agent 并发数": () => {
       const current = String(props.config?.team?.maxConcurrent ?? 4);
       openEdit("子 Agent 最大并发数", current, (raw) => {
@@ -480,14 +483,6 @@ export function SettingsPanel(props: {
     },
     "Permission Profile": () => {
       setPermissionListOpen(true);
-    },
-    "Web & Network": () => {
-      const current = props.config?.webSearch?.endpoint ?? "";
-      openEdit("Web Search Endpoint", current, (next) => {
-        props.onUpdateConfig?.({
-          webSearch: { ...props.config?.webSearch, endpoint: next || null },
-        });
-      });
     },
     "Max Steps": () => {
       const current = props.config?.runtime?.maxStepsPerTurn
@@ -513,12 +508,10 @@ export function SettingsPanel(props: {
       });
     },
     "Request Timeout": () => {
-      const current = String(
-        props.config?.runtime?.timeouts?.requestSec ?? 120,
-      );
-      openEdit("请求超时（秒）", current, (raw) => {
+      const current = String(props.config?.runtime?.timeouts?.requestSec ?? 0);
+      openEdit("请求超时（秒，0 表示不设置）", current, (raw) => {
         const value = Number(raw);
-        if (Number.isInteger(value) && value > 0)
+        if (Number.isInteger(value) && value >= 0)
           props.onUpdateConfig?.({
             runtime: {
               ...props.config?.runtime,
@@ -561,40 +554,6 @@ export function SettingsPanel(props: {
         });
       });
     },
-    Density: () => {
-      cyclePreference(
-        "density",
-        density(),
-        ["comfortable", "compact"],
-        setDensity,
-      );
-    },
-    "Diff Style": () => {
-      cyclePreference(
-        "diffStyle",
-        diffStyle(),
-        ["auto", "unified", "split"],
-        setDiffStyle,
-      );
-    },
-    "Tool Details": () => {
-      cyclePreference(
-        "toolDetails",
-        toolDetails(),
-        ["expanded", "collapsed"],
-        setToolDetails,
-      );
-    },
-    "GPU 加速": () => {
-      void setGpuAccelerationPersisted(!gpuAcceleration());
-    },
-    Keybinds: () => {
-      void alert({
-        title: "快捷键配置",
-        message: "当前版本快捷键覆盖请通过 TUI 快捷键配置。",
-        confirmLabel: "知道了",
-      });
-    },
     界面偏好保存范围: () => {
       cyclePreference(
         "uiWriteScope",
@@ -613,47 +572,6 @@ export function SettingsPanel(props: {
     },
   };
 
-  const modeModelOptions = () => {
-    const config = props.config;
-    if (!config) return [];
-    const options: Array<{ value: string; label: string }> = [];
-    for (const [providerID, provider] of Object.entries(
-      config.catalog?.providers ?? {},
-    )) {
-      for (const modelID of Object.keys(provider?.models ?? {})) {
-        options.push({
-          value: `${providerID}/${modelID}`,
-          label: `${providerID}/${modelID}`,
-        });
-      }
-    }
-    return options;
-  };
-
-  const modePermissionOptions = () => [
-    { value: "", label: "默认" },
-    ...Object.keys(props.config?.agentModes ?? {}).map((name) => ({
-      value: name,
-      label: name,
-    })),
-  ];
-
-  const modeToolOptions = () => {
-    const current = new Set([
-      ...modeAllowedTools()
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-      ...modeExcludedTools()
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ]);
-    return [...new Set([...TOOL_FAMILIES, ...current])].sort();
-  };
-
-  const modeMcpOptions = () => Object.keys(props.config?.mcpServers ?? {});
-
   function toggleCsv(
     current: string,
     value: string,
@@ -669,32 +587,48 @@ export function SettingsPanel(props: {
     setter(next.join(", "));
   }
 
+  function toggleFamily(
+    current: string,
+    tools: readonly string[],
+    selected: boolean,
+    setter: (next: string) => void,
+  ) {
+    const next = new Set(splitCsv(current));
+    for (const tool of tools) {
+      if (selected) next.add(tool);
+      else next.delete(tool);
+    }
+    setter([...next].join(", "));
+  }
+
+  const toolChecklist = (selected: string, setter: (next: string) => void) => (
+    <ToolFamilyChecklist
+      registered={props.registeredTools ?? []}
+      selected={selected}
+      onToggle={(tools, select) =>
+        toggleFamily(selected, tools, select, setter)
+      }
+    />
+  );
+
   function runtimeValue(label: string): string | undefined {
     const config = props.config;
     if (!config) return undefined;
     switch (label) {
-      case "Providers & Models":
-        return `${Object.keys(config.providers ?? {}).length} 个 provider`;
       case "Default Model":
         return modelLabel(config);
-      case "默认 Agent":
-        return (
-          (props.state?.agentSelection?.name ?? config.defaultAgent) || "默认"
-        );
-      case "自定义 Agent Mode":
-        return config.defaultAgentMode || "code";
       case "子 Agent 并发数":
         return String(config.team?.maxConcurrent ?? 4);
       case "Permission Profile":
         return config.defaultAgentMode ?? "ask";
-      case "Web & Network":
-        return config.webSearch?.endpoint ? "已配置" : "默认";
       case "Max Steps":
         return String(config.runtime?.maxStepsPerTurn ?? "unlimited");
       case "Max Retry":
         return String(config.runtime?.maxAttemptsPerStep ?? 3);
-      case "Request Timeout":
-        return `${config.runtime?.timeouts?.requestSec ?? 120}s`;
+      case "Request Timeout": {
+        const seconds = config.runtime?.timeouts?.requestSec ?? 0;
+        return seconds > 0 ? `${seconds}s` : "不设置";
+      }
       case "Compaction":
         return config.context?.compactionEnabled ? "开启" : "关闭";
       case "Compaction Threshold":
@@ -703,20 +637,10 @@ export function SettingsPanel(props: {
         return `${(config.checkpoint?.additionalDirs ?? []).length} 个`;
       case "Terminal Window Mode":
         return String(config.runtime?.terminal?.windowMode ?? "auto");
-      case "Density":
-        return density();
-      case "Diff Style":
-        return diffStyle();
-      case "Tool Details":
-        return toolDetails();
-      case "GPU 加速":
-        return gpuAcceleration() ? "开启" : "关闭";
       case "界面偏好保存范围":
         return uiWriteScope();
       case "运行时配置保存范围":
         return runtimeWriteScope();
-      case "Keybinds":
-        return "默认";
     }
     return undefined;
   }
@@ -867,9 +791,6 @@ export function SettingsPanel(props: {
                                 {item.description}
                               </span>
                             </div>
-                            <span class="neu-settings-item-value">
-                              {item.value}
-                            </span>
                           </button>
                         );
                       }
@@ -968,31 +889,6 @@ export function SettingsPanel(props: {
                               </span>
                             </div>
                             <span class="neu-settings-item-value">{value}</span>
-                          </button>
-                        );
-                      }
-                      if (item.label === "GPU 加速") {
-                        return (
-                          <button
-                            type="button"
-                            class="neu-settings-item neu-settings-item-button"
-                            onClick={() => {
-                              const next = !gpuAcceleration();
-                              console.log("[settings] GPU 加速 toggle", next);
-                              void setGpuAccelerationPersisted(next);
-                            }}
-                          >
-                            <div class="neu-settings-item-main">
-                              <span class="neu-settings-item-label">
-                                {item.label}
-                              </span>
-                              <span class="neu-settings-item-description">
-                                {item.description}
-                              </span>
-                            </div>
-                            <span class="neu-settings-item-value">
-                              {gpuAcceleration() ? "开启" : "关闭"}
-                            </span>
                           </button>
                         );
                       }
@@ -1220,55 +1116,17 @@ export function SettingsPanel(props: {
                 <label class="neu-form-label">
                   Allowed Tools（允许列表，留空不限制）
                 </label>
-                <div class="neu-tool-select-grid">
-                  <For each={modeToolOptions()}>
-                    {(tool) => (
-                      <label class="neu-form-checkbox neu-tool-check">
-                        <input
-                          type="checkbox"
-                          checked={permissionAllowedTools()
-                            .split(",")
-                            .map((item) => item.trim())
-                            .includes(tool)}
-                          onChange={() =>
-                            toggleCsv(
-                              permissionAllowedTools(),
-                              tool,
-                              setPermissionAllowedTools,
-                            )
-                          }
-                        />
-                        <span>{tool}</span>
-                      </label>
-                    )}
-                  </For>
-                </div>
+                {toolChecklist(
+                  permissionAllowedTools(),
+                  setPermissionAllowedTools,
+                )}
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Excluded Tools（黑名单）</label>
-                <div class="neu-tool-select-grid">
-                  <For each={modeToolOptions()}>
-                    {(tool) => (
-                      <label class="neu-form-checkbox neu-tool-check">
-                        <input
-                          type="checkbox"
-                          checked={permissionExcludedTools()
-                            .split(",")
-                            .map((item) => item.trim())
-                            .includes(tool)}
-                          onChange={() =>
-                            toggleCsv(
-                              permissionExcludedTools(),
-                              tool,
-                              setPermissionExcludedTools,
-                            )
-                          }
-                        />
-                        <span>{tool}</span>
-                      </label>
-                    )}
-                  </For>
-                </div>
+                {toolChecklist(
+                  permissionExcludedTools(),
+                  setPermissionExcludedTools,
+                )}
               </div>
               <div class="neu-form-field">
                 <label class="neu-form-label">Command Rules Mode</label>
@@ -1315,27 +1173,6 @@ export function SettingsPanel(props: {
                   }
                 />
               </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">Extensions</label>
-                <div class="neu-checkbox-list">
-                  <label class="neu-form-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={permissionSkills()}
-                      onChange={() => setPermissionSkills((v) => !v)}
-                    />
-                    <span>skills</span>
-                  </label>
-                  <label class="neu-form-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={permissionMcp()}
-                      onChange={() => setPermissionMcp((v) => !v)}
-                    />
-                    <span>mcp</span>
-                  </label>
-                </div>
-              </div>
               <div class="neu-form-actions">
                 <button
                   type="button"
@@ -1350,49 +1187,21 @@ export function SettingsPanel(props: {
                   onClick={() => {
                     const name = permissionName().trim();
                     if (!name) return;
+                    const previousMode = props.config?.agentModes?.[name];
                     const split = (value: string) =>
                       value
                         .split(",")
                         .map((item) => item.trim())
                         .filter(Boolean);
                     props.onUpdateConfig?.({
-                      permissionProfiles: {
-                        ...props.config?.agentModes,
-                        [name]: {
-                          description: permissionDescription(),
-                          approval: permissionApproval(),
-                          permissions: {
-                            tools: {
-                              allow: split(permissionAllowedTools()),
-                              exclude: split(permissionExcludedTools()),
-                            },
-                          },
-                          commandRules: {
-                            mode: permissionCommandMode() as
-                              | "none"
-                              | "blacklist"
-                              | "whitelist",
-                            rules: split(permissionCommandRules()),
-                          },
-                          interactivePrograms: {
-                            allowAny: permissionInteractiveAny(),
-                            allow: split(permissionInteractiveAllow()).map(
-                              (command) => ({ command }),
-                            ),
-                          },
-                          extensions: {
-                            skills: permissionSkills(),
-                            mcp: permissionMcp(),
-                          },
-                        },
-                      },
                       agentModes: {
                         ...props.config?.agentModes,
                         [name]: {
                           description: permissionDescription(),
                           approval: permissionApproval(),
-                          systemPrompt: "",
-                          model: undefined,
+                          // Not edited here; retain existing main-agent fields.
+                          systemPrompt: previousMode?.systemPrompt ?? "",
+                          model: previousMode?.model,
                           allowedTools: split(permissionAllowedTools()),
                           excludedTools: split(permissionExcludedTools()),
                           commandRules: {
@@ -1408,228 +1217,14 @@ export function SettingsPanel(props: {
                               (command) => ({ command }),
                             ),
                           },
-                          skills: permissionSkills(),
-                          mcpServers: [],
+                          mcpServers: previousMode?.mcpServers ?? [],
+                          skills: previousMode?.skills ?? true,
                         },
                       },
                       defaultAgentMode: name,
                       defaultPermission: name,
                     });
                     setPermissionEditorOpen(false);
-                  }}
-                >
-                  保存
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Show>
-      <Show when={modeEditorOpen()}>
-        <div
-          class="neu-settings-backdrop"
-          onClick={() => setModeEditorOpen(false)}
-        >
-          <div
-            class="neu-settings-window neu-edit-window"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div class="neu-settings-header">
-              <span class="neu-settings-title">自定义 Agent Mode</span>
-              <button
-                type="button"
-                class="neu-settings-close"
-                onClick={() => setModeEditorOpen(false)}
-                aria-label="关闭"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M3 3l10 10M13 3L3 13"
-                    stroke="currentColor"
-                    stroke-width="1.4"
-                    stroke-linecap="round"
-                  />
-                </svg>
-              </button>
-            </div>
-            <div class="neu-settings-body neu-edit-body">
-              <div class="neu-form-field">
-                <label class="neu-form-label">Mode 名称</label>
-                <input
-                  class="neu-form-input"
-                  value={modeName()}
-                  onInput={(e) => setModeName(e.currentTarget.value)}
-                />
-              </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">描述</label>
-                <input
-                  class="neu-form-input"
-                  value={modeDescription()}
-                  onInput={(e) => setModeDescription(e.currentTarget.value)}
-                />
-              </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">System Prompt</label>
-                <textarea
-                  class="neu-form-input neu-stash-textarea"
-                  value={modeSystemPrompt()}
-                  onInput={(e) => setModeSystemPrompt(e.currentTarget.value)}
-                />
-              </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">Model（可选）</label>
-                <NeuSelect
-                  value={modeModel()}
-                  options={modeModelOptions()}
-                  onChange={setModeModel}
-                />
-              </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">Approval Mode</label>
-                <NeuSelect
-                  value={modePermission()}
-                  options={modePermissionOptions()}
-                  onChange={setModePermission}
-                />
-              </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">
-                  Allowed Tools（允许列表，留空表示不限制）
-                </label>
-                <div class="neu-tool-select-grid">
-                  <For each={modeToolOptions()}>
-                    {(tool) => (
-                      <label class="neu-form-checkbox neu-tool-check">
-                        <input
-                          type="checkbox"
-                          checked={modeAllowedTools()
-                            .split(",")
-                            .map((item) => item.trim())
-                            .includes(tool)}
-                          onChange={() =>
-                            toggleCsv(
-                              modeAllowedTools(),
-                              tool,
-                              setModeAllowedTools,
-                            )
-                          }
-                        />
-                        <span>{tool}</span>
-                      </label>
-                    )}
-                  </For>
-                </div>
-              </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">
-                  Excluded Tools（黑名单，选中即禁止使用）
-                </label>
-                <div class="neu-tool-select-grid">
-                  <For each={modeToolOptions()}>
-                    {(tool) => (
-                      <label class="neu-form-checkbox neu-tool-check">
-                        <input
-                          type="checkbox"
-                          checked={modeExcludedTools()
-                            .split(",")
-                            .map((item) => item.trim())
-                            .includes(tool)}
-                          onChange={() =>
-                            toggleCsv(
-                              modeExcludedTools(),
-                              tool,
-                              setModeExcludedTools,
-                            )
-                          }
-                        />
-                        <span>{tool}</span>
-                      </label>
-                    )}
-                  </For>
-                </div>
-              </div>
-              <div class="neu-form-field">
-                <label class="neu-form-label">
-                  MCP Servers（从已配置的 MCP
-                  中选择此模式启用的服务，不影响全局配置）
-                </label>
-                <Show
-                  when={modeMcpOptions().length}
-                  fallback={
-                    <div class="neu-settings-item">
-                      <div class="neu-settings-item-main">
-                        <span class="neu-settings-item-label">
-                          暂无已配置的 MCP Server
-                        </span>
-                        <span class="neu-settings-item-description">
-                          请先在“MCP”里添加
-                        </span>
-                      </div>
-                    </div>
-                  }
-                >
-                  <div class="neu-checkbox-list">
-                    <For each={modeMcpOptions()}>
-                      {(server) => (
-                        <label class="neu-form-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={modeMcpServers()
-                              .split(",")
-                              .map((item) => item.trim())
-                              .includes(server)}
-                            onChange={() =>
-                              toggleCsv(
-                                modeMcpServers(),
-                                server,
-                                setModeMcpServers,
-                              )
-                            }
-                          />
-                          <span>{server}</span>
-                        </label>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </div>
-              <div class="neu-form-actions">
-                <button
-                  type="button"
-                  class="neu-form-btn neu-form-cancel"
-                  onClick={() => setModeEditorOpen(false)}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  class="neu-form-btn neu-form-primary"
-                  onClick={() => {
-                    const name = modeName().trim();
-                    if (!name) return;
-                    const split = (value: string) =>
-                      value
-                        .split(",")
-                        .map((item) => item.trim())
-                        .filter(Boolean);
-                    props.onUpdateConfig?.({
-                      agentModes: {
-                        ...props.config?.agentModes,
-                        [name]: {
-                          description: modeDescription(),
-                          systemPrompt: modeSystemPrompt(),
-                          model: modeModel().trim() || undefined,
-                          approval: modePermission().trim() || "ask",
-                          allowedTools: split(modeAllowedTools()),
-                          excludedTools: split(modeExcludedTools()),
-                          mcpServers: split(modeMcpServers()),
-                          skills: true,
-                        },
-                      },
-                      defaultAgentMode: name,
-                    });
-                    setModeEditorOpen(false);
                   }}
                 >
                   保存

@@ -18,8 +18,13 @@ import {
 } from "node:fs/promises";
 import {
   createSymlink,
+  ensureNataliaIgnoreFile,
   forceRemove,
+  isSnapshotIgnored,
+  loadNataliaIgnore,
+  NATALIA_IGNORE_FILE,
   normalizeLinkTarget,
+  type SnapshotIgnoreRule,
 } from "@natalia/platform";
 import {
   basename,
@@ -181,16 +186,6 @@ export type CheckpointCommandResult = {
   event?: RuntimeEvent;
 };
 
-const DEFAULT_IGNORES = [
-  ".git",
-  ".natalia",
-  "node_modules",
-  "dist",
-  "devref",
-  ".kilo/sessions",
-  ".kilo/agent-manager.json",
-];
-
 export class CheckpointStore {
   readonly workspaceRoot: string;
   readonly storeDir: string;
@@ -201,7 +196,8 @@ export class CheckpointStore {
   private readonly enabled: boolean;
   private readonly maxFiles: number;
   private readonly maxBytes: number;
-  private readonly ignore: string[];
+  /** Legacy checkpoint.ignore patterns, migrated once into .nataliaignore. */
+  private readonly legacyIgnore: string[];
   private readonly additionalDirs: string[];
   private readonly now: () => Date;
   private readonly onEvent?: (event: RuntimeEvent) => void;
@@ -222,7 +218,7 @@ export class CheckpointStore {
     this.enabled = options.enabled ?? true;
     this.maxFiles = options.maxFiles ?? 20000;
     this.maxBytes = options.maxBytes ?? 512 * 1024 * 1024;
-    this.ignore = [...DEFAULT_IGNORES, ...(options.ignore ?? [])];
+    this.legacyIgnore = [...(options.ignore ?? [])];
     this.additionalDirs = options.additionalDirs ?? [];
     this.now = options.now ?? (() => new Date());
     this.onEvent = options.onEvent;
@@ -856,7 +852,8 @@ export class CheckpointStore {
     options: { writeObjects?: boolean } = {},
   ): Promise<WorkspaceManifest> {
     const writeObjects = options.writeObjects ?? true;
-    const gitIgnore = await rootGitIgnoreRules(this.workspaceRoot);
+    await ensureNataliaIgnoreFile(this.workspaceRoot, this.legacyIgnore);
+    const ignoreRules = (await loadNataliaIgnore(this.workspaceRoot)).rules;
     const manifest: WorkspaceManifest = {
       root: this.workspaceRoot,
       entries: {},
@@ -877,7 +874,7 @@ export class CheckpointStore {
       }
     }
     for (const root of roots)
-      await this.scanDirectory(root, manifest, writeObjects, gitIgnore);
+      await this.scanDirectory(root, manifest, writeObjects, ignoreRules);
     return manifest;
   }
 
@@ -885,13 +882,13 @@ export class CheckpointStore {
     dir: string,
     manifest: WorkspaceManifest,
     writeObjects: boolean,
-    gitIgnore: string[],
+    ignoreRules: readonly SnapshotIgnoreRule[],
   ): Promise<void> {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const full = join(dir, entry.name);
       const rel = normalizeManifestPath(relative(this.workspaceRoot, full));
-      if (!rel || this.shouldIgnore(rel, full, gitIgnore)) {
+      if (!rel || this.shouldIgnore(rel, full, entry.isDirectory(), ignoreRules)) {
         manifest.ignoredFiles += 1;
         continue;
       }
@@ -905,7 +902,7 @@ export class CheckpointStore {
       try {
         const info = await lstat(full);
         if (info.isDirectory()) {
-          await this.scanDirectory(full, manifest, writeObjects, gitIgnore);
+          await this.scanDirectory(full, manifest, writeObjects, ignoreRules);
           continue;
         }
         if (info.isSymbolicLink()) {
@@ -1057,12 +1054,24 @@ export class CheckpointStore {
     }
   }
 
-  private shouldIgnore(rel: string, full: string, gitIgnore: string[]) {
-    if (isContained(this.storeDir, full) || full === this.storeDir) return true;
-    return (
-      this.ignore.some((pattern) => matchesIgnore(rel, pattern)) ||
-      gitIgnore.some((pattern) => matchesGitIgnore(rel, pattern))
-    );
+  private shouldIgnore(
+    rel: string,
+    full: string,
+    directory: boolean,
+    ignoreRules: readonly SnapshotIgnoreRule[],
+  ): boolean {
+    // Structural self-exclusion: a snapshot must never include its own store
+    // or the shared object library, even if the user removes .natalia/ from
+    // .nataliaignore.
+    if (
+      full === this.storeDir ||
+      isContained(this.storeDir, full) ||
+      full === this.objectRoot() ||
+      isContained(this.objectRoot(), full)
+    )
+      return true;
+    if (full === resolve(this.workspaceRoot, NATALIA_IGNORE_FILE)) return true;
+    return isSnapshotIgnored(rel, directory, ignoreRules);
   }
 
   private assertAvailable() {
@@ -1479,53 +1488,6 @@ function additionalDirWarnings(root: string, dirs: string[]) {
     .map(
       () => "checkpoint additional directory is outside the managed workspace",
     );
-}
-
-function matchesIgnore(rel: string, pattern: string) {
-  const normalized = normalizeManifestPath(pattern.replace(/^\/+|\/+$/gu, ""));
-  if (!normalized) return false;
-  if (normalized.includes("*")) {
-    const regex = new RegExp(
-      `^${normalized
-        .replace(/[.+?^${}()|[\]\\]/gu, "\\$&")
-        .replace(/\*\*/gu, ".*")
-        .replace(/\*/gu, "[^/]*")}$`,
-      "u",
-    );
-    return regex.test(rel) || regex.test(basename(rel));
-  }
-  return (
-    rel === normalized ||
-    rel.startsWith(`${normalized}/`) ||
-    basename(rel) === normalized ||
-    rel.includes(`/${normalized}/`)
-  );
-}
-
-async function rootGitIgnoreRules(root: string) {
-  try {
-    return (await readFile(join(root, ".gitignore"), "utf8"))
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#") && !line.startsWith("!"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-function matchesGitIgnore(rel: string, rule: string) {
-  const directoryOnly = rule.endsWith("/");
-  const pattern = normalizeManifestPath(rule.replace(/^\/+|\/+$/gu, ""));
-  if (!pattern) return false;
-  const anchored = rule.startsWith("/") || pattern.includes("/");
-  const expression = pattern
-    .replace(/[.+?^${}()|[\]\\]/gu, "\\$&")
-    .replace(/\*\*/gu, ".*")
-    .replace(/\*/gu, "[^/]*");
-  const prefix = anchored ? "^" : "(?:^|.*/)";
-  const suffix = directoryOnly ? "(?:/.*)?$" : "$";
-  return new RegExp(`${prefix}${expression}${suffix}`, "u").test(rel);
 }
 
 function entryKey(entry: ManifestEntry | undefined) {

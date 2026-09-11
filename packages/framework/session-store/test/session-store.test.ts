@@ -219,8 +219,10 @@ test("session store controller rolls messages back to a turn boundary", async ()
       sha256: "test",
     },
   ]);
-  const result = await controller.messageRollback("ses_rollback", "turn_one");
-  expect(result).toEqual({ id: "ses_rollback", rolledBackTo: "turn_one" });
+  // Roll back from the second turn: the selected turn and everything after it
+  // are removed, so the first turn's boundary remains.
+  const result = await controller.messageRollback("ses_rollback", "turn_two");
+  expect(result).toEqual({ id: "ses_rollback", rolledBackTo: "turn_two" });
   const after = await controller.load("ses_rollback" as SessionID);
   expect(after.session.events.map((event) => event.type)).toEqual([
     "turn.submitted",

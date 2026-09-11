@@ -488,40 +488,8 @@ test("task.selection projects selectedTaskID", () => {
   });
 });
 
-test("todos project from the todo tool's own arguments", () => {
-  const args = JSON.stringify({
-    todos: [
-      { content: "first", status: "completed" },
-      { content: "second", status: "in_progress" },
-    ],
-  });
-  const state = projectEvents([
-    {
-      type: "turn.submitted",
-      id: "t1",
-      text: "plan",
-      byteLength: 4,
-      lineCount: 1,
-      sha256: "x",
-    },
-    {
-      type: "tool.update",
-      id: "t1",
-      name: "todowrite",
-      callID: "c1",
-      status: "succeeded",
-      summary: "2 todos",
-      argumentsDelta: args,
-    },
-  ]);
-  expect(state.todos).toEqual([
-    { content: "first", status: "completed" },
-    { content: "second", status: "in_progress" },
-  ]);
-});
-
-test("streamed tool arguments are reassembled before being parsed", () => {
-  const args = JSON.stringify({ todos: [{ content: "x", status: "pending" }] });
+test("streamed tool arguments are reassembled in generic tool state", () => {
+  const args = JSON.stringify({ items: [{ content: "x", status: "pending" }] });
   const half = Math.floor(args.length / 2);
   const state = projectEvents([
     {
@@ -535,7 +503,7 @@ test("streamed tool arguments are reassembled before being parsed", () => {
     {
       type: "tool.update",
       id: "t1",
-      name: "todowrite",
+      name: "todo_write",
       callID: "c1",
       status: "running",
       summary: "…",
@@ -544,7 +512,7 @@ test("streamed tool arguments are reassembled before being parsed", () => {
     {
       type: "tool.update",
       id: "t1",
-      name: "todowrite",
+      name: "todo_write",
       callID: "c1",
       status: "succeeded",
       summary: "1 todo",
@@ -552,47 +520,9 @@ test("streamed tool arguments are reassembled before being parsed", () => {
     },
   ]);
   // A half-received argument string must not be parsed or discarded.
-  expect(state.todos).toEqual([{ content: "x", status: "pending" }]);
   const tool = Object.values(state.tools)[0];
   expect(tool?.argumentsRaw).toBe(args);
-});
-
-test("todos only change after a successful write and can be cleared", () => {
-  const state = projectEvents([
-    {
-      type: "tool.update",
-      id: "t1",
-      name: "todo_write",
-      callID: "c1",
-      status: "succeeded",
-      summary: "saved",
-      argumentsDelta: JSON.stringify({
-        items: [{ content: "old", status: "completed" }],
-      }),
-    },
-    {
-      type: "tool.update",
-      id: "t1",
-      name: "todo_write",
-      callID: "c2",
-      status: "rejected",
-      summary: "rejected",
-      argumentsDelta: JSON.stringify({
-        items: [{ content: "not written", status: "pending" }],
-      }),
-    },
-  ]);
-  expect(state.todos).toEqual([{ content: "old", status: "completed" }]);
-  applyEvent(state, {
-    type: "tool.update",
-    id: "t1",
-    name: "todo_write",
-    callID: "c3",
-    status: "succeeded",
-    summary: "cleared",
-    argumentsDelta: JSON.stringify({ items: [] }),
-  });
-  expect(state.todos).toEqual([]);
+  expect(tool?.status).toBe("succeeded");
 });
 
 test("session intelligence snapshot projects", () => {
@@ -841,7 +771,6 @@ test("initialState has every slice a consumer will read", () => {
   expect(state.policyDecisions).toEqual([]);
   expect(state.workGraphNodes).toEqual({});
   expect(state.workGraphEdges).toEqual({});
-  expect(state.todos).toEqual([]);
   expect(state.paused).toBe(false);
   expect(state.rollback).toBeUndefined();
   expect(state.context).toBeUndefined();

@@ -137,6 +137,38 @@ test("a candidate that fails validation is refused promotion with its build outp
   expect(await readFile(join(root, "file.txt"), "utf8")).toBe("good\n");
 });
 
+
+test("worktree sandbox sees files .gitignore hides but .nataliaignore allows", async () => {
+  const root = await scratchRepo();
+  await writeFile(join(root, ".gitignore"), "/plan/\n");
+  await git(root, ["add", ".gitignore"]);
+  await git(root, ["commit", "-m", "ignore plan"]);
+  const manager = new WorktreeSandboxManager(root);
+  const sandbox = await manager.create("sbx.ignored");
+  await mkdir(join(sandbox.root, "plan"), { recursive: true });
+  await writeFile(join(sandbox.root, "plan", "note.md"), "planned\n");
+  const changes = await manager.previewMerge("sbx.ignored");
+  expect(changes.map((change) => change.path)).toContain("plan/note.md");
+  expect(changes.find((change) => change.path === "plan/note.md")?.kind).toBe(
+    "add",
+  );
+  await manager.delete("sbx.ignored");
+});
+
+test("worktree sandbox still excludes paths ignored by .nataliaignore", async () => {
+  const root = await scratchRepo();
+  await writeFile(join(root, ".nataliaignore"), "ignored-output/\n");
+  const manager = new WorktreeSandboxManager(root);
+  const sandbox = await manager.create("sbx.nataliaignore");
+  await mkdir(join(sandbox.root, "ignored-output"), { recursive: true });
+  await writeFile(join(sandbox.root, "ignored-output", "data.txt"), "skip\n");
+  const changes = await manager.previewMerge("sbx.nataliaignore");
+  expect(changes.map((change) => change.path)).not.toContain(
+    "ignored-output/data.txt",
+  );
+  await manager.delete("sbx.nataliaignore");
+});
+
 test("governance skips the human approval for a low-risk promotion", async () => {
   const root = await scratchRepo();
   const manager = new WorktreeSandboxManager(root);

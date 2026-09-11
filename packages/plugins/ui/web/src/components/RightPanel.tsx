@@ -95,6 +95,7 @@ export function ReviewPane(
     requestedTab?: ReviewSubTab;
     requestedCheckpointID?: string;
     sessionID?: string;
+    workspaceID?: string;
     events?: {
       subscribe(listener: (event: RuntimeEvent) => void): () => void;
     };
@@ -273,7 +274,8 @@ export function ReviewPane(
     else if (tab() === "sandbox") void loadSandboxDiff(selectedSandbox() ?? "");
     else if (tab() === "checkpoint") {
       void (async () => {
-        const checkpointList = (await props.runtime?.checkpointList?.()) ?? [];
+        const checkpointList =
+          (await props.runtime?.checkpointList?.(props.sessionID)) ?? [];
         setCheckpoints(checkpointList);
         if (selectedCheckpoint())
           await loadCheckpointPreview(selectedCheckpoint()!, {
@@ -302,7 +304,9 @@ export function ReviewPane(
 
   onMount(() => {
     void (async () => {
-      const refs = (await props.runtime?.gitRefs?.()) ?? [];
+      const refs =
+        (await props.runtime?.gitRefs?.({ workspaceID: props.workspaceID })) ??
+        [];
       setGitRefs(refs);
       const currentBranch = refs.find(
         (ref) => ref.kind === "branch" && ref.current,
@@ -321,8 +325,9 @@ export function ReviewPane(
   async function loadSandboxTab() {
     if (sandboxLoaded()) return;
     setSandboxLoaded(true);
-    const sandboxList = (await props.runtime?.sandboxList?.()) ?? [];
-    const prList = (await props.runtime?.teamPRList?.()) ?? [];
+    const sandboxList =
+      (await props.runtime?.sandboxList?.(props.sessionID)) ?? [];
+    const prList = (await props.runtime?.teamPRList?.(props.sessionID)) ?? [];
     setSandboxes(sandboxList);
     setTeamPRs(prList);
     const firstSandboxID = prList[0]?.sandboxID ?? sandboxList[0]?.id ?? null;
@@ -335,7 +340,8 @@ export function ReviewPane(
   async function loadCheckpointTab() {
     if (checkpointLoaded()) return;
     setCheckpointLoaded(true);
-    const checkpointList = (await props.runtime?.checkpointList?.()) ?? [];
+    const checkpointList =
+      (await props.runtime?.checkpointList?.(props.sessionID)) ?? [];
     setCheckpoints(checkpointList);
     if (checkpointList.length) {
       const latest = checkpointList[checkpointList.length - 1]!.id;
@@ -384,7 +390,10 @@ export function ReviewPane(
     } catch {
       // Fall through to the object-store global diff.
     }
-    const workspace = (await props.runtime?.workspaceDiff?.()) ?? [];
+    const workspace =
+      (await props.runtime?.workspaceDiff?.({
+        workspaceID: props.workspaceID,
+      })) ?? [];
     const mapped = workspace
       .map(toDiffItem)
       .filter((change) => !sessionPaths || sessionPaths.has(change.path));
@@ -429,7 +438,8 @@ export function ReviewPane(
     const start = performance.now();
     try {
       const changes =
-        (await props.runtime?.sandboxDiff?.(id, undefined, options)) ?? [];
+        (await props.runtime?.sandboxDiff?.(id, props.sessionID, options)) ??
+        [];
       const mapped = changes.map(toDiffItem);
       setSandboxChanges(mapped);
       if (mapped.length) setSandboxSelected(mapped[0]!.path);
@@ -494,7 +504,7 @@ export function ReviewPane(
     const start = performance.now();
     const preview = await props.runtime?.checkpointPreview?.(
       id,
-      undefined,
+      props.sessionID,
       options,
     );
     if (!preview) return;
@@ -512,7 +522,8 @@ export function ReviewPane(
   }
 
   async function refreshCheckpoints() {
-    const checkpointList = (await props.runtime?.checkpointList?.()) ?? [];
+    const checkpointList =
+      (await props.runtime?.checkpointList?.(props.sessionID)) ?? [];
     setCheckpoints(checkpointList);
     return checkpointList;
   }
@@ -534,7 +545,11 @@ export function ReviewPane(
     if (!id || !name) return;
     const current = checkpoints().find((checkpoint) => checkpoint.id === id);
     if (current?.name === name) return;
-    await props.runtime?.checkpointRename?.({ id, name });
+    await props.runtime?.checkpointRename?.({
+      id,
+      name,
+      sessionID: props.sessionID,
+    });
     await refreshCheckpoints();
   }
 
@@ -656,6 +671,7 @@ export function ReviewPane(
       }> = [];
       for (const change of changes) {
         const detail = await props.runtime.workspaceGitDiff({
+          workspaceID: props.workspaceID,
           from: gitFrom(),
           to: gitTo(),
           path: change.path,
@@ -682,7 +698,10 @@ export function ReviewPane(
       props.runtime?.sandboxDiff
     ) {
       const details =
-        (await props.runtime.sandboxDiff(selectedSandbox()!)) ?? [];
+        (await props.runtime.sandboxDiff(
+          selectedSandbox()!,
+          props.sessionID,
+        )) ?? [];
       return details
         .filter((change) => change.after || change.before)
         .map((change) => ({
@@ -698,6 +717,7 @@ export function ReviewPane(
     ) {
       const preview = await props.runtime.checkpointPreview(
         selectedCheckpoint()!,
+        props.sessionID,
       );
       const details = preview?.changes ?? [];
       return details
@@ -759,6 +779,7 @@ export function ReviewPane(
     if (tab() === "git" && props.runtime?.workspaceGitDiff) {
       for (const change of changes) {
         const detail = await props.runtime.workspaceGitDiff({
+          workspaceID: props.workspaceID,
           from: gitFrom(),
           to: gitTo(),
           path: change.path,
@@ -790,7 +811,10 @@ export function ReviewPane(
       props.runtime?.sandboxDiff
     ) {
       const details =
-        (await props.runtime.sandboxDiff(selectedSandbox()!)) ?? [];
+        (await props.runtime.sandboxDiff(
+          selectedSandbox()!,
+          props.sessionID,
+        )) ?? [];
       files = details
         .filter((change) => change.before || change.after)
         .map((change) => ({
@@ -806,6 +830,7 @@ export function ReviewPane(
     ) {
       const preview = await props.runtime.checkpointPreview(
         selectedCheckpoint()!,
+        props.sessionID,
       );
       const details = preview?.changes ?? [];
       files = details

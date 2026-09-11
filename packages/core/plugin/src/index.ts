@@ -9,5 +9,6 @@ export * from "./installed";
 export * from "./loading";
 export * from "./manifest";
 export * from "./registry";
+export * from "./resources";
 export * from "./types";
 export * from "./ui-adapter";

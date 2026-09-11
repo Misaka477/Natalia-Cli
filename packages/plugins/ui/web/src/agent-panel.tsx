@@ -70,7 +70,8 @@ export function AgentPanel(props: {
   async function refreshData() {
     let teamSeen = false;
     try {
-      const prs = (await props.runtime?.teamPRList?.()) ?? [];
+      const prs =
+        (await props.runtime?.teamPRList?.(props.state.sessionID)) ?? [];
       setTeamPRs(prs);
       teamSeen = true;
     } catch {
@@ -90,7 +91,9 @@ export function AgentPanel(props: {
     }
     setTeamAvailable(teamSeen);
     try {
-      const list = (await props.runtime?.nativeTerminalList?.()) ?? [];
+      const list =
+        (await props.runtime?.nativeTerminalList?.(props.state.sessionID)) ??
+        [];
       setTerminals(list);
     } catch {
       setTerminals([]);

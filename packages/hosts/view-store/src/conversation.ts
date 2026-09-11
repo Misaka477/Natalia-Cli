@@ -1,5 +1,5 @@
 /**
- * Conversation projection: turns, streaming text, tool cards, todos and the
+ * Conversation projection: turns, streaming text, tool cards and the
  * interactive requests the runtime is waiting on.
  *
  * Streaming is the subtle part. Live consumers receive `content.delta` and watch
@@ -17,9 +17,6 @@ import type {
 import {
   appendWithRetrySkip,
   splitMarkdownAtSafeBoundary,
-  parseToolArguments,
-  parseTodoItems,
-  classifyTool,
   providerSafeThinkingSummary,
 } from "@natalia/ui-model";
 import {
@@ -226,10 +223,17 @@ export function applyConversationEvent(
       return true;
     case "thinking.done": {
       const key = streamID(event.id, "thinking");
+      if (event.visible === false) {
+        recordHiddenThinking(state, key);
+        markBlockStatus(state, key, "completed");
+        return true;
+      }
       // Thinking deltas are live-only; on durable replay only the done event
-      // is present. Materialize the thinking block from its full text so the
-      // main transcript keeps THINKING across reloads.
-      if (!state.streams[key] && event.text) {
+      // is present. `turn.submitted` already created an empty thinking stream,
+      // so "no stream" is not enough to detect replay: materialize the full
+      // text whenever the stream holds no text yet.
+      const stream = state.streams[key];
+      if (event.text && (!stream || (!stream.committed && !stream.tail))) {
         appendStream(state, {
           id: key,
           role: "thinking",
@@ -400,35 +404,6 @@ function upsertTool(
   };
   state.tools[stateID] = tool;
   upsertBlock(state, stateID, "tool", event.summary, event.status, { tool });
-
-  // The todo list is a projection of the todo tool's own arguments; there is no
-  // separate event for it.
-  if (
-    classifyTool(event.name, event.metadata) !== "todo" ||
-    event.status !== "succeeded"
-  )
-    return;
-  if (event.result) {
-    try {
-      const result = JSON.parse(event.result) as Record<string, unknown>;
-      const resultItems = result.items ?? result.todos;
-      if (Array.isArray(resultItems)) {
-        state.todos = parseTodoItems(resultItems);
-        return;
-      }
-    } catch {
-      // Older tool results were prose; fall through to argument parsing.
-    }
-  }
-  const parsed = parseToolArguments(argumentsRaw);
-  if (!parsed.complete || !parsed.redactedJson) return;
-  try {
-    const input = JSON.parse(parsed.redactedJson) as Record<string, unknown>;
-    const candidate = input.items ?? input.todos;
-    if (Array.isArray(candidate)) state.todos = parseTodoItems(candidate);
-  } catch {
-    // Partial or redacted arguments simply leave the previous list in place.
-  }
 }
 
 /**

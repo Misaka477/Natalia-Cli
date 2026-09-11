@@ -4,6 +4,17 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
 export {
+  DEFAULT_NATALIA_IGNORE_CONTENT,
+  DEFAULT_NATALIA_IGNORE_PATTERNS,
+  ensureNataliaIgnoreFile,
+  isSnapshotIgnored,
+  loadNataliaIgnore,
+  NATALIA_IGNORE_FILE,
+  parseSnapshotIgnore,
+  parseSnapshotIgnoreLine,
+  type SnapshotIgnoreRule,
+} from "./natalia-ignore";
+export {
   createWorkspaceFile,
   deleteWorkspaceFile,
   findWorkspaceFiles,

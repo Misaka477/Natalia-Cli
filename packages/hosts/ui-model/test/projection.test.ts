@@ -29,7 +29,6 @@ test("interaction tools classify into dedicated presentation kinds", () => {
   expect(classifyTool("web_search")).toBe("websearch");
   expect(classifyTool("ask_user")).toBe("question");
   expect(classifyTool("agent_spawn")).toBe("subagent");
-  expect(classifyTool("todo_write")).toBe("todo");
   expect(classifyTool("skill_load")).toBe("skill");
 });
 

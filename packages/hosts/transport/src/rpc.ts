@@ -139,6 +139,7 @@ export const RPC_ROUTE_MEMBERS = {
   "workspace.search": "workspaceSearch",
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
+  "resource.read": "resourceRead",
   "workspace.write": "workspaceWrite",
   "workspace.create": "workspaceCreate",
   "workspace.rename": "workspaceRename",
@@ -666,18 +667,22 @@ export async function handleRPCMessage(
     }
     if (body.method === "agent.list") {
       optionsGuard(client, "agents");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.agents(),
+        result: await client.agents(workspaceID ? { workspaceID } : undefined),
       };
     }
     if (body.method === "model.catalog") {
       optionsGuard(client, "modelCatalog");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.modelCatalog(),
+        result: await client.modelCatalog(
+          workspaceID ? { workspaceID } : undefined,
+        ),
       };
     }
     if (body.method === "model.selection") {
@@ -753,10 +758,11 @@ export async function handleRPCMessage(
     }
     if (body.method === "skills.list") {
       optionsGuard(client, "skills");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.skills(),
+        result: await client.skills(workspaceID ? { workspaceID } : undefined),
       };
     }
     if (body.method === "workspace.files") {
@@ -882,6 +888,40 @@ export async function handleRPCMessage(
         }),
       };
     }
+    if (body.method === "resource.read") {
+      optionsGuard(client, "resourceRead");
+      const resource = stringParam(body.params, "resource");
+      const rawParams = body.params?.params;
+      if (
+        rawParams !== undefined &&
+        (!rawParams ||
+          typeof rawParams !== "object" ||
+          Array.isArray(rawParams))
+      )
+        throw invalidParams("resource.read.params.params must be an object");
+      const params = rawParams
+        ? Object.fromEntries(
+            Object.entries(rawParams).map(([key, value]) => {
+              if (typeof value !== "string")
+                throw invalidParams(
+                  "resource.read.params.params values must be strings",
+                );
+              return [key, value];
+            }),
+          )
+        : undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.resourceRead({
+          resource,
+          ...(params ? { params } : {}),
+          ...(optionalStringParam(body.params, "reader")
+            ? { reader: optionalStringParam(body.params, "reader")! }
+            : {}),
+        }),
+      };
+    }
     if (body.method === "workspace.write") {
       optionsGuard(client, "workspaceWrite");
       const params = body.params;
@@ -976,10 +1016,14 @@ export async function handleRPCMessage(
     }
     if (body.method === "workspace.writeConflicts") {
       optionsGuard(client, "workspaceWriteConflicts");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: (await client.workspaceWriteConflicts?.()) ?? [],
+        result:
+          (await client.workspaceWriteConflicts?.(
+            workspaceID ? { workspaceID } : undefined,
+          )) ?? [],
       };
     }
     if (body.method === "workspace.glob") {
@@ -1019,10 +1063,14 @@ export async function handleRPCMessage(
     if (body.method === "workspace.add") {
       optionsGuard(client, "workspaceAdd");
       const path = stringParam(body.params, "path");
+      const title = optionalStringParam(body.params, "title");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.workspaceAdd?.({ path }),
+        result: await client.workspaceAdd?.({
+          path,
+          ...(title !== undefined ? { title } : {}),
+        }),
       };
     }
     if (body.method === "workspace.remove") {
@@ -1193,6 +1241,7 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.auditRounds?.(
           optionalStringParam(body.params, "planID"),
+          optionalStringParam(body.params, "workspaceID"),
         ),
       };
     }
@@ -1346,10 +1395,15 @@ export async function handleRPCMessage(
     }
     if (body.method === "interactive.pending") {
       optionsGuard(client, "pendingInteractive");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.pendingInteractive(),
+        result: await client.pendingInteractive({
+          ...(sessionID ? { sessionID } : {}),
+          ...(workspaceID ? { workspaceID } : {}),
+        }),
       };
     }
     if (body.method === "snapshot")
@@ -1592,10 +1646,13 @@ export async function handleRPCMessage(
     }
     if (body.method === "command.catalog") {
       optionsGuard(client, "commandCatalog");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.commandCatalog(),
+        result: await client.commandCatalog(
+          workspaceID ? { workspaceID } : undefined,
+        ),
       };
     }
     if (body.method === "command.execute") {
@@ -1611,7 +1668,15 @@ export async function handleRPCMessage(
         throw invalidParams(
           "command.execute.params.args must be an array of strings",
         );
-      await client.commandExecute({ name, raw, args });
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
+      await client.commandExecute({
+        name,
+        raw,
+        args,
+        ...(sessionID ? { sessionID } : {}),
+        ...(workspaceID ? { workspaceID } : {}),
+      });
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -1620,18 +1685,28 @@ export async function handleRPCMessage(
     }
     if (body.method === "workgraph.nodes") {
       optionsGuard(client, "workGraphNodes");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.workGraphNodes(),
+        result: await client.workGraphNodes({
+          ...(sessionID ? { sessionID } : {}),
+          ...(workspaceID ? { workspaceID } : {}),
+        }),
       };
     }
     if (body.method === "workgraph.edges") {
       optionsGuard(client, "workGraphEdges");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.workGraphEdges(),
+        result: await client.workGraphEdges({
+          ...(sessionID ? { sessionID } : {}),
+          ...(workspaceID ? { workspaceID } : {}),
+        }),
       };
     }
     // --- P0-C: native terminal host ---
@@ -2117,18 +2192,21 @@ export async function handleRPCMessage(
         throw invalidParams(
           "workspace.diff.params.includePatch must be a boolean",
         );
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.workspaceDiff?.(
-          includePatch === undefined ? undefined : { includePatch },
-        ),
+        result: await client.workspaceDiff?.({
+          ...(workspaceID ? { workspaceID } : {}),
+          ...(includePatch === undefined ? {} : { includePatch }),
+        }),
       };
     }
     if (body.method === "workspace.git.diff") {
       optionsGuard(client, "workspaceGitDiff");
       const input = body.params as
         | {
+            workspaceID?: string;
             from?: string;
             to?: string;
             path?: string;
@@ -2379,10 +2457,13 @@ export async function handleRPCMessage(
     }
     if (body.method === "git.refs") {
       optionsGuard(client, "gitRefs");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.gitRefs?.(),
+        result: await client.gitRefs?.(
+          workspaceID ? { workspaceID } : undefined,
+        ),
       };
     }
     if (body.method === "team.pr.list") {
@@ -2407,10 +2488,13 @@ export async function handleRPCMessage(
     }
     if (body.method === "projections.list") {
       optionsGuard(client, "projectionContributions");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.projectionContributions(),
+        result: await client.projectionContributions(
+          workspaceID ? { workspaceID } : undefined,
+        ),
       };
     }
     if (body.method === "constitution.override.request") {
@@ -2713,10 +2797,13 @@ export async function handleRPCMessage(
     }
     if (body.method === "capabilities") {
       optionsGuard(client, "capabilities");
+      const workspaceID = optionalStringParam(body.params, "workspaceID");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.capabilities(),
+        result: await client.capabilities(
+          workspaceID ? { workspaceID } : undefined,
+        ),
       };
     }
     if (body.method === "session.snapshot") {
@@ -2768,7 +2855,14 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.uploadAttachment?.({ name, mediaType, data }),
+        result: await client.uploadAttachment?.({
+          name,
+          mediaType,
+          data,
+          ...(optionalStringParam(body.params, "workspaceID")
+            ? { workspaceID: optionalStringParam(body.params, "workspaceID")! }
+            : {}),
+        }),
       };
     }
     if (body.method === "attachment.dataUrl") {
@@ -2785,7 +2879,13 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.attachmentDataUrl?.({ path, mediaType }),
+        result: await client.attachmentDataUrl?.({
+          path,
+          mediaType,
+          ...(optionalStringParam(body.params, "workspaceID")
+            ? { workspaceID: optionalStringParam(body.params, "workspaceID")! }
+            : {}),
+        }),
       };
     }
     if (body.method === "chat.model.profile") {
@@ -3087,6 +3187,7 @@ export async function handleRPCMessage(
           stringParam(body.params, "server"),
           stringParam(body.params, "name"),
           arguments_ as Record<string, string> | undefined,
+          optionalStringParam(body.params, "workspaceID"),
         ),
       };
     }
@@ -3098,6 +3199,7 @@ export async function handleRPCMessage(
         result: await client.readMcpResource(
           stringParam(body.params, "server"),
           stringParam(body.params, "uri"),
+          optionalStringParam(body.params, "workspaceID"),
         ),
       };
     }
@@ -3120,6 +3222,9 @@ export async function handleRPCMessage(
         result: await client.mcpServerAdd?.({
           name,
           config: config as never,
+          ...(optionalStringParam(body.params, "workspaceID")
+            ? { workspaceID: optionalStringParam(body.params, "workspaceID")! }
+            : {}),
         }),
       };
     }
@@ -3128,7 +3233,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.mcpServerRemove(stringParam(body.params, "name")),
+        result: await client.mcpServerRemove(
+          stringParam(body.params, "name"),
+          optionalStringParam(body.params, "workspaceID"),
+        ),
       };
     }
     if (body.method === "permission.list") {
@@ -3193,8 +3301,30 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result:
           body.method === "agent.create"
-            ? await client.agentCreate?.({ name, config })
-            : await client.agentUpdate?.({ name, config }),
+            ? await client.agentCreate?.({
+                name,
+                config,
+                ...(optionalStringParam(body.params, "workspaceID")
+                  ? {
+                      workspaceID: optionalStringParam(
+                        body.params,
+                        "workspaceID",
+                      )!,
+                    }
+                  : {}),
+              })
+            : await client.agentUpdate?.({
+                name,
+                config,
+                ...(optionalStringParam(body.params, "workspaceID")
+                  ? {
+                      workspaceID: optionalStringParam(
+                        body.params,
+                        "workspaceID",
+                      )!,
+                    }
+                  : {}),
+              }),
       };
     }
     if (body.method === "agent.delete") {
@@ -3204,6 +3334,7 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.agentDelete(
           managementName(body.params, "agent.delete"),
+          optionalStringParam(body.params, "workspaceID"),
         ),
       };
     }

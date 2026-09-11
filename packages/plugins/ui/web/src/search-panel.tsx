@@ -11,27 +11,50 @@ export function SearchPanel(props: {
   open: boolean;
   onClose: () => void;
   onSearch?: (query: string) => Promise<RuntimeWorkspaceMatch[]> | void;
+  onSelect?: (result: SearchResult) => void;
 }) {
   const [query, setQuery] = createSignal("");
   const [results, setResults] = createSignal<RuntimeWorkspaceMatch[]>([]);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal<string>();
+  let searchSequence = 0;
+  let debounce: ReturnType<typeof setTimeout> | undefined;
 
   function runSearch(value: string) {
     setQuery(value);
-    if (!value.trim()) {
+    const trimmed = value.trim();
+    const sequence = ++searchSequence;
+    if (debounce) clearTimeout(debounce);
+    if (!trimmed) {
       setResults([]);
+      setError(undefined);
+      setLoading(false);
       return;
     }
-    if (props.onSearch) {
-      const promise = props.onSearch(value.trim());
-      if (
-        promise &&
-        typeof (promise as Promise<RuntimeWorkspaceMatch[]>).then === "function"
-      ) {
-        void (promise as Promise<RuntimeWorkspaceMatch[]>).then(setResults);
-      }
-    } else {
+    if (!props.onSearch) {
       setResults([]);
+      setError("当前 runtime 不支持工作区搜索");
+      setLoading(false);
+      return;
     }
+    debounce = setTimeout(() => {
+      setLoading(true);
+      setError(undefined);
+      void Promise.resolve(props.onSearch?.(trimmed))
+        .then((next) => {
+          if (sequence !== searchSequence) return;
+          setResults(next ?? []);
+        })
+        .catch((reason: unknown) => {
+          if (sequence !== searchSequence) return;
+          setResults([]);
+          setError(reason instanceof Error ? reason.message : String(reason));
+        })
+        .finally(() => {
+          if (sequence !== searchSequence) return;
+          setLoading(false);
+        });
+    }, 180);
   }
 
   onMount(() => {
@@ -40,6 +63,9 @@ export function SearchPanel(props: {
     };
     window.addEventListener("keydown", handleKeydown);
     onCleanup(() => window.removeEventListener("keydown", handleKeydown));
+  });
+  onCleanup(() => {
+    if (debounce) clearTimeout(debounce);
   });
 
   return (
@@ -69,15 +95,36 @@ export function SearchPanel(props: {
           </div>
           <div class="neu-search-body">
             <input
+              ref={(element) => queueMicrotask(() => element.focus())}
               class="neu-form-input neu-search-input"
               value={query()}
               placeholder="正则表达式搜索，例如 createSignal|FileEditor"
               onInput={(event) => runSearch(event.currentTarget.value)}
             />
-            <div class="neu-search-results">
+            <div class="neu-search-results" aria-live="polite">
+              <Show when={loading()}>
+                <div class="neu-search-status">搜索中…</div>
+              </Show>
+              <Show when={!loading() && error()}>
+                <div class="neu-search-status neu-search-error">{error()}</div>
+              </Show>
+              <Show
+                when={
+                  !loading() &&
+                  !error() &&
+                  query().trim() &&
+                  results().length === 0
+                }
+              >
+                <div class="neu-search-status">没有匹配结果</div>
+              </Show>
               <For each={results()}>
                 {(result) => (
-                  <button type="button" class="neu-search-result">
+                  <button
+                    type="button"
+                    class="neu-search-result"
+                    onClick={() => props.onSelect?.(result)}
+                  >
                     <span class="neu-search-path">
                       {result.path}:{result.line}
                     </span>

@@ -11,11 +11,12 @@ import {
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { createLocalSessionService } from "@natalia/session-store";
-import type {
-  RuntimeSessionSummary,
-  WorkspaceSummary,
-  WorkspacePermissionSettings,
-  WorkspaceToolSettings,
+import {
+  RuntimeRefusal,
+  type RuntimeSessionSummary,
+  type WorkspaceSummary,
+  type WorkspacePermissionSettings,
+  type WorkspaceToolSettings,
 } from "@natalia/contracts";
 import { createRealRuntimeClient } from "./runtime/main";
 import type { RealRuntimeClientOptions } from "./runtime/options";
@@ -38,6 +39,8 @@ export type WorkspaceRuntime = {
   status: WorkspaceSummary["status"];
   permissionSettings: WorkspacePermissionSettings;
   toolSettings: WorkspaceToolSettings;
+  /** Set when the facade starts this workspace's runtime client. */
+  started?: boolean;
 };
 
 function workspaceSettingsPath(root: string) {
@@ -138,23 +141,29 @@ function workspaceRegistryPath() {
   );
 }
 
-async function readWorkspaceRegistry(): Promise<
-  Array<{ path: string; title?: string }>
-> {
+type WorkspaceRegistryEntry = {
+  path: string;
+  title?: string;
+  /** Persisted across manager restarts so the last active workspace reopens. */
+  active?: boolean;
+};
+
+async function readWorkspaceRegistry(): Promise<WorkspaceRegistryEntry[]> {
   try {
     const raw = JSON.parse(
       await readFile(workspaceRegistryPath(), "utf8"),
     ) as unknown;
     if (!Array.isArray(raw)) return [];
-    return raw.filter((entry) => typeof entry === "object" && entry !== null);
+    return raw.filter(
+      (entry): entry is WorkspaceRegistryEntry =>
+        typeof entry === "object" && entry !== null,
+    );
   } catch {
     return [];
   }
 }
 
-async function writeWorkspaceRegistry(
-  entries: Array<{ path: string; title?: string }>,
-) {
+async function writeWorkspaceRegistry(entries: WorkspaceRegistryEntry[]) {
   const path = workspaceRegistryPath();
   await mkdir(join(homedir(), ".config", "natalia-cli"), {
     recursive: true,
@@ -179,6 +188,11 @@ function workspaceCheckpointDir(root: string, base?: string) {
 
 export type WorkspaceManager = {
   list(): Promise<WorkspaceSummary[]>;
+  listSessions(): Promise<RuntimeSessionSummary[]>;
+  findWorkspaceForSession(
+    sessionID: string,
+  ): Promise<WorkspaceRuntime | undefined>;
+  invalidateSessionCache(workspaceID?: string): void;
   add(input: { path: string; title?: string }): Promise<WorkspaceSummary>;
   remove(workspaceID: string): Promise<{ removed: boolean }>;
   activate(workspaceID: string): Promise<WorkspaceSummary>;
@@ -259,14 +273,162 @@ export function createWorkspaceManager(
   const runtimes = new Map<string, WorkspaceRuntime>();
   let activeWorkspaceID: string | undefined;
 
-  async function summary(ws: WorkspaceRuntime): Promise<WorkspaceSummary> {
-    let sessions: RuntimeSessionSummary[] = [];
-    try {
-      sessions = (await ws.client.sessionList?.()) ?? [];
-    } catch {
-      // A workspace may still be initializing; list failure should not hide the
-      // workspace row from the UI.
+  function registryEntries(): WorkspaceRegistryEntry[] {
+    return [...runtimes.values()].map((runtime) => ({
+      path: runtime.root,
+      title: runtime.title,
+      active: runtime.workspaceID === activeWorkspaceID,
+    }));
+  }
+
+  const SESSION_CACHE_TTL_MS = 1_000;
+  const sessionCache = new Map<
+    string,
+    { sessions: RuntimeSessionSummary[]; loadedAt: number }
+  >();
+  /** session id -> owning workspace id, the manager-level membership index. */
+  const sessionWorkspaceIndex = new Map<string, string>();
+
+  function replaceSessionIndex(
+    workspaceID: string,
+    sessions: readonly RuntimeSessionSummary[],
+  ) {
+    for (const [sessionID, owner] of sessionWorkspaceIndex) {
+      if (owner === workspaceID) sessionWorkspaceIndex.delete(sessionID);
     }
+    for (const session of sessions) {
+      sessionWorkspaceIndex.set(session.id, workspaceID);
+    }
+  }
+
+  function invalidateSessionCache(workspaceID?: string) {
+    if (!workspaceID) {
+      sessionCache.clear();
+      sessionWorkspaceIndex.clear();
+      return;
+    }
+    sessionCache.delete(workspaceID);
+    for (const [sessionID, owner] of sessionWorkspaceIndex) {
+      if (owner === workspaceID) sessionWorkspaceIndex.delete(sessionID);
+    }
+  }
+
+  async function readLocalSessions(
+    runtime: WorkspaceRuntime,
+  ): Promise<RuntimeSessionSummary[]> {
+    const rows = await createLocalSessionService(runtime.root).list({
+      useSqliteStore: options.useSqliteStore ?? false,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      workspaceID: runtime.workspaceID,
+      title: row.title,
+      createdAt: row.createdAt,
+      ...(row.lastAccessedAt ? { lastAccessedAt: row.lastAccessedAt } : {}),
+      pinned: row.pinned,
+      ...(row.archived !== undefined ? { archived: row.archived } : {}),
+      events: row.events,
+      pendingInputs: row.pendingInputs,
+      cancelled: false,
+      resumable: true,
+      status: row.pendingInputs > 0 ? "running" : "idle",
+    }));
+  }
+
+  async function listRuntimeSessions(
+    runtime: WorkspaceRuntime,
+    options?: { force?: boolean },
+  ): Promise<RuntimeSessionSummary[]> {
+    const cached = sessionCache.get(runtime.workspaceID);
+    // A started runtime has the live, status-aware mirror. An inactive or
+    // not-yet-started workspace is read from its local session store and
+    // cached, so listing never initializes every workspace at once and
+    // repeated refreshes do not re-scan every store.
+    if (runtime.started && runtime.client.sessionList) {
+      try {
+        const rows = await runtime.client.sessionList();
+        const sessions = rows.map((session) => ({
+          ...session,
+          workspaceID: runtime.workspaceID,
+        }));
+        sessionCache.set(runtime.workspaceID, {
+          sessions,
+          loadedAt: Date.now(),
+        });
+        replaceSessionIndex(runtime.workspaceID, sessions);
+        return sessions;
+      } catch {
+        // Fall through to the cached/local mirror below.
+      }
+    }
+    if (
+      !options?.force &&
+      cached &&
+      Date.now() - cached.loadedAt < SESSION_CACHE_TTL_MS
+    ) {
+      return cached.sessions;
+    }
+    try {
+      const sessions = await readLocalSessions(runtime);
+      sessionCache.set(runtime.workspaceID, {
+        sessions,
+        loadedAt: Date.now(),
+      });
+      replaceSessionIndex(runtime.workspaceID, sessions);
+      return sessions;
+    } catch {
+      return cached?.sessions ?? [];
+    }
+  }
+
+  async function listSessions(): Promise<RuntimeSessionSummary[]> {
+    const groups = await Promise.all(
+      [...runtimes.values()].map((runtime) => listRuntimeSessions(runtime)),
+    );
+    return groups.flat();
+  }
+
+  async function findWorkspaceForSession(
+    sessionID: string,
+  ): Promise<WorkspaceRuntime | undefined> {
+    const indexed = sessionWorkspaceIndex.get(sessionID);
+    if (indexed) {
+      const runtime = runtimes.get(indexed);
+      if (runtime) return runtime;
+    }
+    // The index can predate an externally-created session. Force one local
+    // refresh per workspace before giving up.
+    for (const runtime of runtimes.values()) {
+      const sessions = await listRuntimeSessions(runtime, { force: true });
+      if (sessions.some((session) => session.id === sessionID)) return runtime;
+    }
+    return undefined;
+  }
+
+  async function activeSessionRecency(ws: WorkspaceRuntime): Promise<number> {
+    try {
+      const settings = await readSettings(ws.root);
+      const rows = await createLocalSessionService(ws.root).list({
+        useSqliteStore: options.useSqliteStore ?? false,
+      });
+      const active =
+        rows.find((row) => row.id === settings.activeSessionID) ??
+        [...rows].sort((left, right) =>
+          (right.lastAccessedAt ?? right.createdAt).localeCompare(
+            left.lastAccessedAt ?? left.createdAt,
+          ),
+        )[0];
+      const value = Date.parse(
+        active?.lastAccessedAt ?? active?.createdAt ?? "",
+      );
+      return Number.isFinite(value) ? value : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async function summary(ws: WorkspaceRuntime): Promise<WorkspaceSummary> {
+    const sessions = await listRuntimeSessions(ws);
     return {
       workspaceID: ws.workspaceID,
       root: ws.root,
@@ -274,7 +436,7 @@ export function createWorkspaceManager(
       status: ws.status,
       sessionCount: sessions.length,
       runningSessionCount: sessions.filter(
-        (session) => session.pendingInputs > 0 || !session.cancelled,
+        (session) => session.pendingInputs > 0 || session.status === "running",
       ).length,
     };
   }
@@ -288,13 +450,21 @@ export function createWorkspaceManager(
       if (other.workspaceID !== workspaceID && other.status === "active")
         other.status = "idle";
     }
+    await writeWorkspaceRegistry(registryEntries());
     return await summary(ws);
   }
 
   async function addWorkspace(input: { path: string; title?: string }) {
     const root = resolve(input.path);
     const existing = [...runtimes.values()].find((ws) => ws.root === root);
-    if (existing) return await summary(existing);
+    if (existing) {
+      const nextTitle = input.title?.trim();
+      if (nextTitle && nextTitle !== existing.title) {
+        existing.title = nextTitle;
+        await writeWorkspaceRegistry(registryEntries());
+      }
+      return await summary(existing);
+    }
 
     await migrateLegacyWorkspaceSessions(root, options.sessionDir);
     const settings = await readSettings(root);
@@ -329,12 +499,7 @@ export function createWorkspaceManager(
     };
     runtimes.set(ws.workspaceID, ws);
     if (!activeWorkspaceID) await activate(ws.workspaceID);
-    await writeWorkspaceRegistry(
-      [...runtimes.values()].map((runtime) => ({
-        path: runtime.root,
-        title: runtime.title,
-      })),
-    );
+    await writeWorkspaceRegistry(registryEntries());
     return await summary(ws);
   }
 
@@ -343,17 +508,13 @@ export function createWorkspaceManager(
     if (!ws) return { removed: true };
     await ws.client.dispose?.();
     runtimes.delete(workspaceID);
+    invalidateSessionCache(workspaceID);
     if (activeWorkspaceID === workspaceID) {
       const next = runtimes.values().next().value;
       activeWorkspaceID = next?.workspaceID;
       if (next) next.status = "active";
     }
-    await writeWorkspaceRegistry(
-      [...runtimes.values()].map((runtime) => ({
-        path: runtime.root,
-        title: runtime.title,
-      })),
-    );
+    await writeWorkspaceRegistry(registryEntries());
     return { removed: true };
   }
 
@@ -368,7 +529,33 @@ export function createWorkspaceManager(
           await addWorkspace({ path: entry.path, title: entry.title });
         }
       }
+      const preferredEntry = entries.find((entry) => entry.active);
+      const preferredWorkspace = preferredEntry
+        ? [...runtimes.values()].find(
+            (runtime) => runtime.root === resolve(preferredEntry.path),
+          )
+        : undefined;
+      if (preferredWorkspace) {
+        await activate(preferredWorkspace.workspaceID);
+        return;
+      }
+      if (runtimes.size <= 1) return;
+      // Older registries had no active marker. Recover the workspace whose
+      // selected session was touched most recently, matching what the user was
+      // last looking at before the app closed.
+      let newest:
+        | { workspace: WorkspaceRuntime; timestamp: number }
+        | undefined;
+      for (const workspace of runtimes.values()) {
+        const timestamp = await activeSessionRecency(workspace);
+        if (!newest || timestamp > newest.timestamp)
+          newest = { workspace, timestamp };
+      }
+      if (newest) await activate(newest.workspace.workspaceID);
     },
+    listSessions,
+    findWorkspaceForSession,
+    invalidateSessionCache,
     async list() {
       return Promise.all([...runtimes.values()].map(summary));
     },
@@ -470,11 +657,15 @@ export function createWorkspaceRuntimeClient(
   }
 
   function startWorkspaceClient(workspace: WorkspaceRuntime) {
+    workspace.started = true;
     if (startedClients.has(workspace.workspaceID)) return;
     startedClients.add(workspace.workspaceID);
-    workspace.client.start((event) =>
-      emit({ ...event, workspaceID: workspace.workspaceID }),
-    );
+    workspace.client.start((event) => {
+      if (event.type.startsWith("session.")) {
+        manager.invalidateSessionCache(workspace.workspaceID);
+      }
+      emit({ ...event, workspaceID: workspace.workspaceID });
+    });
   }
 
   function startActiveClient() {
@@ -484,6 +675,223 @@ export function createWorkspaceRuntimeClient(
 
   function emitWorkspace(event: import("@natalia/contracts").RuntimeEvent) {
     emit(event);
+  }
+
+  const sessionIDFirstArg = new Set([
+    "confirmedWorkspaceChanges",
+    "teamPRList",
+    "resume",
+    "modelSelection",
+    "reasoningEffort",
+    "nativeTerminalList",
+    "checkpointList",
+    "sandboxList",
+    "runtimeStatus",
+    "constitutionRules",
+    "decisionRecords",
+    "mailboxList",
+    "planDocList",
+    "evidenceRecords",
+    "completions",
+    "sessionSnapshot",
+    "driftFindings",
+    "registeredTools",
+    "subagents",
+    "subagentHistory",
+  ]);
+
+  const sessionIDSecondArg = new Set([
+    "submit",
+    "cancel",
+    "pause",
+    "selectAgent",
+    "setReasoningEffort",
+    "diagnostics",
+    "recordDecision",
+    "recordValidation",
+    "recordCompletion",
+    "evaluateDrift",
+    "acknowledgeDriftFinding",
+    "requestOverride",
+    "nativeTerminalRead",
+    "nativeTerminalClaimHumanInput",
+    "nativeTerminalRevokeApprovalScope",
+    "nativeTerminalReleaseHumanControl",
+    "nativeTerminalBeginSecureInput",
+    "nativeTerminalEndSecureInput",
+    "nativeTerminalStop",
+    "checkpointListByKind",
+    "checkpointPreview",
+    "sandboxDiff",
+    "sandboxResources",
+    "sandboxMerge",
+    "sandboxDelete",
+    "mailboxDeliver",
+    "mailboxAcknowledge",
+    "planDocDelete",
+    "planDocStatus",
+    "chatAbort",
+    "chatModelProfile",
+    "chatMessages",
+  ]);
+
+  const sessionIDThirdArg = new Set([
+    "selectModel",
+    "setChatModelProfile",
+    "chatRollback",
+    "mailboxDefer",
+    "mailboxSupersede",
+  ]);
+
+  const objectSessionArg = new Set([
+    "submitAndWait",
+    "submitInput",
+    "history",
+    "messages",
+    "nativeTerminalStart",
+    "nativeTerminalWrite",
+    "nativeTerminalResize",
+    "checkpointRollback",
+    "checkpointRename",
+    "sandboxResourceOutput",
+    "sandboxResourceStop",
+    "mailboxSend",
+    "planDocRead",
+    "planDocWrite",
+    "planDocMark",
+    "planDocUpdateStatus",
+    "chatSubmit",
+    "pendingInteractive",
+    "commandExecute",
+    "snapshot",
+    "lastSubmission",
+    "workGraphNodes",
+    "workGraphEdges",
+    "respondApproval",
+    "respondQuestion",
+  ]);
+
+  const workspaceScopedMethods = new Set([
+    "workspaceFiles",
+    "workspaceSearch",
+    "workspaceList",
+    "workspaceRead",
+    "resourceRead",
+    "workspaceWrite",
+    "workspaceCreate",
+    "workspaceRename",
+    "workspaceDelete",
+    "workspaceGlob",
+    "workspaceDiff",
+    "workspaceGitDiff",
+    "gitRefs",
+    "roundDiff",
+    "workspaceWriteConflicts",
+    "astDiff",
+    "astDiffBatch",
+    "astRefactorPreview",
+    "astService",
+    "astRefactorPlan",
+    "astApplyRefactor",
+    "mcpCatalog",
+    "mcpServerAdd",
+    "agents",
+    "modelCatalog",
+    "skills",
+    "agentCreate",
+    "agentUpdate",
+    "commandCatalog",
+    "uploadAttachment",
+    "attachmentDataUrl",
+    "capabilities",
+    "projectionContributions",
+  ]);
+
+  const workspaceIDSecondArg = new Set([
+    "auditRounds",
+    "mcpServerRemove",
+    "agentDelete",
+  ]);
+  const workspaceIDThirdArg = new Set(["readMcpResource"]);
+  const workspaceIDFourthArg = new Set(["getMcpPrompt"]);
+
+  const sessionScopedMethods = new Set([
+    ...sessionIDFirstArg,
+    ...sessionIDSecondArg,
+    ...sessionIDThirdArg,
+    ...objectSessionArg,
+  ]);
+
+  const routableMethods = new Set([
+    ...sessionScopedMethods,
+    ...workspaceScopedMethods,
+    ...workspaceIDSecondArg,
+    ...workspaceIDThirdArg,
+    ...workspaceIDFourthArg,
+  ]);
+
+  function workspaceIDFromArgs(
+    prop: string,
+    args: unknown[],
+  ): string | undefined {
+    if (workspaceIDSecondArg.has(prop) && typeof args[1] === "string")
+      return args[1];
+    if (workspaceIDThirdArg.has(prop) && typeof args[2] === "string")
+      return args[2];
+    if (workspaceIDFourthArg.has(prop) && typeof args[3] === "string")
+      return args[3];
+    const first = args[0];
+    if (first && typeof first === "object" && !Array.isArray(first)) {
+      const value = (first as { workspaceID?: unknown }).workspaceID;
+      if (typeof value === "string") return value;
+    }
+    return undefined;
+  }
+
+  function sessionIDFromArgs(
+    prop: string,
+    args: unknown[],
+  ): string | undefined {
+    const stringAt = (index: number) =>
+      typeof args[index] === "string" ? (args[index] as string) : undefined;
+    if (sessionIDFirstArg.has(prop)) return stringAt(0);
+    if (sessionIDSecondArg.has(prop)) return stringAt(1);
+    if (sessionIDThirdArg.has(prop)) return stringAt(2);
+    const first = args[0];
+    if (first && typeof first === "object" && !Array.isArray(first)) {
+      const value = (first as { sessionID?: unknown }).sessionID;
+      if (typeof value === "string") return value;
+    }
+    return undefined;
+  }
+
+  async function resolveRoutedWorkspace(
+    prop: string,
+    args: unknown[],
+  ): Promise<WorkspaceRuntime | undefined> {
+    const explicitWorkspaceID = workspaceIDFromArgs(prop, args);
+    const requestedSessionID = sessionIDFromArgs(prop, args);
+    if (explicitWorkspaceID) {
+      const owner = manager.get(explicitWorkspaceID);
+      if (!owner) return undefined;
+      if (requestedSessionID) {
+        const sessionOwner =
+          await manager.findWorkspaceForSession(requestedSessionID);
+        if (!sessionOwner || sessionOwner.workspaceID !== owner.workspaceID) {
+          throw new RuntimeRefusal(
+            `session ${requestedSessionID} does not belong to workspace ${explicitWorkspaceID}`,
+          );
+        }
+      }
+      return owner;
+    }
+    if (requestedSessionID) {
+      return (
+        (await manager.findWorkspaceForSession(requestedSessionID)) ??
+        manager.getActive()
+      );
+    }
+    return manager.getActive();
   }
 
   const handler: ProxyHandler<object> = {
@@ -545,30 +953,57 @@ export function createWorkspaceRuntimeClient(
           return result;
         };
       }
+      if (prop === "sessionList") {
+        return async () => {
+          const sessions = await manager.listSessions();
+          return sessions.map((session) => {
+            const owner = session.workspaceID
+              ? manager.get(session.workspaceID)
+              : undefined;
+            return owner ? decorateSession(session, owner) : session;
+          });
+        };
+      }
       if (
-        prop === "sessionList" ||
         prop === "sessionRename" ||
         prop === "sessionPin" ||
         prop === "sessionDuplicate" ||
         prop === "sessionFork" ||
+        prop === "sessionRollbackMessages" ||
         prop === "sessionDelete" ||
-        prop === "sessionAttach"
+        prop === "sessionArchive" ||
+        prop === "sessionRestore" ||
+        prop === "sessionExport" ||
+        prop === "sessionAttach" ||
+        prop === "sessionTouch"
       ) {
-        const activeForSession = manager.getActive();
-        if (!activeForSession) return undefined;
-        const fn = (
-          activeForSession.client as unknown as Record<PropertyKey, unknown>
-        )[prop];
-        if (typeof fn !== "function") return undefined;
         return async (...args: unknown[]) => {
+          const sessionID = args[0];
+          if (typeof sessionID !== "string") return undefined;
+          const owner =
+            (await manager.findWorkspaceForSession(sessionID)) ??
+            manager.getActive();
+          if (!owner) return undefined;
+          const fn = (owner.client as unknown as Record<PropertyKey, unknown>)[
+            prop
+          ];
+          if (typeof fn !== "function") return undefined;
+          if (prop === "sessionAttach") {
+            await manager.workspaceActivate(owner.workspaceID);
+            startWorkspaceClient(owner);
+            if (started)
+              emitWorkspace({
+                type: "workspace.activated",
+                workspace: await manager.summaryFor(owner),
+                workspaceID: owner.workspaceID,
+              });
+          } else {
+            startWorkspaceClient(owner);
+          }
           const result = await (
             fn as (...call: unknown[]) => Promise<unknown>
-          ).apply(activeForSession.client, args);
-          if (prop === "sessionList" && Array.isArray(result)) {
-            return result.map((item) =>
-              decorateSession(item as RuntimeSessionSummary, activeForSession),
-            );
-          }
+          ).apply(owner.client, args);
+          manager.invalidateSessionCache(owner.workspaceID);
           if (
             prop === "sessionAttach" &&
             result &&
@@ -577,7 +1012,7 @@ export function createWorkspaceRuntimeClient(
             typeof result.sessionID === "string"
           ) {
             await manager.workspaceSessionSet(
-              activeForSession.workspaceID,
+              owner.workspaceID,
               result.sessionID,
             );
           }
@@ -588,12 +1023,53 @@ export function createWorkspaceRuntimeClient(
             "title" in result &&
             !("workspaceID" in result)
           ) {
-            return decorateSession(
-              result as RuntimeSessionSummary,
-              activeForSession,
-            );
+            return decorateSession(result as RuntimeSessionSummary, owner);
           }
           return result;
+        };
+      }
+      if (prop === "sessionNew") {
+        return async (input?: {
+          id?: string;
+          title?: string;
+          workspaceID?: string;
+        }) => {
+          const workspaceID = input?.workspaceID;
+          const owner = workspaceID
+            ? manager.get(workspaceID)
+            : manager.getActive();
+          if (!owner) return undefined;
+          const fn = (owner.client as unknown as Record<PropertyKey, unknown>)[
+            prop
+          ];
+          if (typeof fn !== "function") return undefined;
+          startWorkspaceClient(owner);
+          const result = await (
+            fn as (...call: unknown[]) => Promise<unknown>
+          ).apply(owner.client, [input]);
+          manager.invalidateSessionCache(owner.workspaceID);
+          return result;
+        };
+      }
+      if (typeof prop === "string" && routableMethods.has(prop)) {
+        return async (...args: unknown[]) => {
+          const owner = await resolveRoutedWorkspace(prop, args);
+          if (!owner) {
+            if (prop.startsWith("nativeTerminal"))
+              throw new Error(
+                "no active workspace: open or activate a workspace before using the terminal",
+              );
+            return undefined;
+          }
+          const fn = (owner.client as unknown as Record<PropertyKey, unknown>)[
+            prop
+          ];
+          if (typeof fn !== "function") return undefined;
+          startWorkspaceClient(owner);
+          return await (fn as (...call: unknown[]) => Promise<unknown>).apply(
+            owner.client,
+            args,
+          );
         };
       }
       if (prop in manager) {

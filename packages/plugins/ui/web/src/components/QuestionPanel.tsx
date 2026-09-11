@@ -18,6 +18,8 @@ export function QuestionPanel(props: {
     questions?: QuestionItem[];
   } | null;
   runtime?: Pick<RuntimeClient, "respondQuestion">;
+  sessionID?: string;
+  workspaceID?: string;
   onClose: () => void;
 }) {
   const [answers, setAnswers] = createSignal<string[][]>([]);
@@ -47,6 +49,8 @@ export function QuestionPanel(props: {
     props.runtime?.respondQuestion?.({
       requestID: props.request.id,
       answers: answers(),
+      ...(props.sessionID ? { sessionID: props.sessionID } : {}),
+      ...(props.workspaceID ? { workspaceID: props.workspaceID } : {}),
     });
     props.onClose();
   }
@@ -57,6 +61,8 @@ export function QuestionPanel(props: {
       requestID: props.request.id,
       answers: [],
       rejected: true,
+      ...(props.sessionID ? { sessionID: props.sessionID } : {}),
+      ...(props.workspaceID ? { workspaceID: props.workspaceID } : {}),
     });
     props.onClose();
   }

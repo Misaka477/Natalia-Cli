@@ -24,6 +24,7 @@ export type {
   UiPluginContext,
   UiPluginLifecycle,
   UiProjection,
+  UiResources,
   UiTransport,
 } from "./protocol";
 export { createMemoryTransport, createWebTransport } from "./transport";

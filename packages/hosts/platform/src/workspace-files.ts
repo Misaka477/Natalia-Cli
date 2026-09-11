@@ -11,6 +11,7 @@ import { watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import fuzzysort from "fuzzysort";
 import { RuntimeInvalidParams, RuntimeRefusal } from "@natalia/contracts";
+import { NATALIA_IGNORE_FILE } from "./natalia-ignore";
 import type {
   RuntimeWorkspaceContent,
   RuntimeWorkspaceFileEntry,
@@ -51,6 +52,12 @@ const maxSearchFileBytes = 1024 * 1024;
 const maxReadFileBytes = 1024 * 1024;
 const maxMediaIngestBytes = 20 * 1024 * 1024;
 const maxReadPageBytes = 50 * 1024;
+/**
+ * Content search is user-initiated and should reach past the first page of the
+ * workspace catalog. The cap only protects against pathological trees; normal
+ * repositories are fully walked before the result limit is reached.
+ */
+const maxSearchFiles = 50_000;
 const maxReadLines = 2_000;
 const maxReadLineChars = 2_000;
 
@@ -96,7 +103,6 @@ export async function listWorkspaceFiles(input: {
   limit?: number;
 }): Promise<RuntimeWorkspaceListPage> {
   const root = await realpath(input.workspaceRoot);
-  const catalog = await workspaceCatalog(root);
   const directory = await resolveWorkspacePath(root, input.path ?? ".");
   if (!(await stat(directory)).isDirectory())
     throw new RuntimeInvalidParams(
@@ -106,11 +112,6 @@ export async function listWorkspaceFiles(input: {
   const entries = (
     await Promise.all(
       children.map(async (child) => {
-        const candidatePath = relative(root, resolve(directory, child.name))
-          .split(sep)
-          .join("/");
-        if (isIgnored(candidatePath, child.isDirectory(), catalog.ignoreRules))
-          return;
         const path = resolve(directory, child.name);
         const real = await realpath(path).catch(() => undefined);
         if (!real || !contains(root, real)) return;
@@ -248,21 +249,12 @@ export async function globWorkspaceFiles(input: {
       `workspace path is not a directory: ${input.path ?? "."}`,
     );
   const limit = Math.min(200, Math.max(1, input.limit ?? 50));
-  const catalog = await workspaceCatalog(root);
   const entries: RuntimeWorkspaceFileEntry[] = [];
   for await (const relativePath of new Bun.Glob(input.pattern).scan({
     cwd: directory,
     onlyFiles: true,
   })) {
     if (entries.length >= limit) break;
-    if (
-      isIgnored(
-        relative(root, resolve(directory, relativePath)).split(sep).join("/"),
-        false,
-        catalog.ignoreRules,
-      )
-    )
-      continue;
     const path = resolve(directory, relativePath);
     const real = await realpath(path).catch(() => undefined);
     if (!real || !contains(root, real)) continue;
@@ -285,14 +277,17 @@ export async function watchWorkspaceFiles(
   let watchers: FSWatcher[] = [];
   let closed = false;
   const watchedDirectories = new Set([root]);
-  const catalog = await workspaceCatalog(root);
+  // Watcher pruning is a scheduling optimization for runtime-internal and
+  // known-heavy directories. It never hides files from access APIs.
+  const ignoreRules: IgnoreRule[] = [];
   const trigger = (directory: string, eventType: string, filename?: string) => {
     if (closed) return;
     const changedPath = filename
       ? resolve(directory, filename.toString())
       : directory;
     const relativePath = relative(root, changedPath).split(sep).join("/");
-    if (relativePath && isIgnored(relativePath, false, catalog.ignoreRules))
+    if (relativePath === NATALIA_IGNORE_FILE) return;
+    if (relativePath && isIgnored(relativePath, false, ignoreRules))
       return;
     invalidateWorkspaceFiles(root);
     // The change detail is a hint: the auditor reconciles it into a confirmed
@@ -316,7 +311,7 @@ export async function watchWorkspaceFiles(
     if (
       !real ||
       !contains(root, real) ||
-      isIgnored(relativePath, true, catalog.ignoreRules)
+      isIgnored(relativePath, true, ignoreRules)
     )
       return;
     if (watchedDirectories.has(real)) return;
@@ -326,7 +321,7 @@ export async function watchWorkspaceFiles(
         root,
         real,
         trigger,
-        catalog.ignoreRules,
+        ignoreRules,
         watchedDirectories,
       )),
     );
@@ -335,7 +330,7 @@ export async function watchWorkspaceFiles(
     root,
     root,
     trigger,
-    catalog.ignoreRules,
+    ignoreRules,
     watchedDirectories,
   );
   return () => {
@@ -363,12 +358,28 @@ export async function searchWorkspaceFiles(input: {
   }
   const root = await realpath(input.workspaceRoot);
   const limit = Math.min(200, Math.max(1, input.limit ?? 50));
-  const files = await findWorkspaceFiles({ workspaceRoot: root, limit: 200 });
+  // Access/search intentionally does not apply .gitignore or the snapshot
+  // ignore file. Those rules are not a visibility policy for users or tools.
+  const ignoreRules: IgnoreRule[] = [];
+  const entries: RuntimeWorkspaceFileEntry[] = [];
+  await collectSearchFiles(
+    root,
+    root,
+    entries,
+    maxSearchFiles,
+    ignoreRules,
+    new Set([root]),
+  );
+  const files = entries
+    .filter((entry) => matchesInclude(entry.path, input.include))
+    .sort(
+      (left, right) =>
+        left.path.length - right.path.length ||
+        left.path.localeCompare(right.path),
+    );
   const matches: Array<{ path: string; line: number; text: string }> = [];
   for (const file of files) {
     if (matches.length >= limit) break;
-    if (file.type !== "file" || !matchesInclude(file.path, input.include))
-      continue;
     const content = await readSearchText(resolve(root, file.path));
     if (content === undefined) continue;
     for (const [index, line] of content.split(/\r?\n/u).entries()) {
@@ -385,11 +396,48 @@ export async function searchWorkspaceFiles(input: {
   return matches;
 }
 
+async function collectSearchFiles(
+  root: string,
+  directory: string,
+  output: RuntimeWorkspaceFileEntry[],
+  maxFiles: number,
+  ignoreRules: IgnoreRule[],
+  visited: Set<string>,
+) {
+  if (output.length >= maxFiles) return;
+  const children = await readdir(directory, { withFileTypes: true }).catch(
+    () => [],
+  );
+  for (const child of children) {
+    if (output.length >= maxFiles) return;
+    const path = resolve(directory, child.name);
+    const real = await realpath(path).catch(() => undefined);
+    if (!real || !contains(root, real)) continue;
+    const relativePath = relative(root, path).split(sep).join("/");
+    if (!relativePath) continue;
+    if (child.isDirectory()) {
+      if (visited.has(real)) continue;
+      visited.add(real);
+      await collectSearchFiles(
+        root,
+        real,
+        output,
+        maxFiles,
+        ignoreRules,
+        visited,
+      );
+      continue;
+    }
+    if (child.isFile()) output.push({ path: relativePath, type: "file" });
+  }
+}
+
 async function refreshWorkspaceFiles(root: string) {
-  const ignoreRules = await loadIgnoreRules(root);
+  // The access catalog is intentionally ignore-free. Watchers may still prune
+  // expensive subtrees for scheduling reasons, but that is not visibility.
   const entries: RuntimeWorkspaceFileEntry[] = [];
-  await collect(root, root, entries, 10_000, ignoreRules, new Set([root]));
-  const catalog = { entries, expiresAt: Date.now() + 1_000, ignoreRules };
+  await collect(root, root, entries, 10_000, [], new Set([root]));
+  const catalog = { entries, expiresAt: Date.now() + 1_000, ignoreRules: [] };
   catalogs.set(root, catalog);
   return catalog;
 }
@@ -419,12 +467,9 @@ async function collect(
     if (!real || !contains(root, real)) continue;
     const relativePath = relative(root, path).split(sep).join("/");
     if (!relativePath) continue;
-    const ignored = isIgnored(relativePath, child.isDirectory(), ignoreRules);
-    if (ignored && !child.isDirectory()) continue;
     if (child.isDirectory()) {
-      if (!ignored)
-        output.push({ path: `${relativePath}/`, type: "directory" });
-      if (!ignored && !visited.has(real)) {
+      output.push({ path: `${relativePath}/`, type: "directory" });
+      if (!visited.has(real)) {
         visited.add(real);
         await collect(root, real, output, maxEntries, ignoreRules, visited);
       }
@@ -611,18 +656,15 @@ async function resolveWorkspacePath(root: string, input: string) {
   }
   if (!contains(root, real))
     throw new RuntimeRefusal("workspace path must remain inside workspace");
-  const catalog = await workspaceCatalog(root);
-  const info = await stat(real).catch(() => undefined);
-  if (
-    info &&
-    isIgnored(relative(root, real), info.isDirectory(), catalog.ignoreRules)
-  )
-    throw new RuntimeRefusal("workspace path is ignored by filesystem policy");
   return real;
 }
 
+function normalizeWorkspacePathForPolicy(path: string) {
+  return path.split(/[\\/]/u).join("/");
+}
+
 function isIgnored(path: string, directory: boolean, rules: IgnoreRule[]) {
-  const normalized = path.split(/[\\/]/u).join("/");
+  const normalized = normalizeWorkspacePathForPolicy(path);
   if (
     normalized === ".natalia/plans" ||
     normalized.startsWith(".natalia/plans/")
@@ -646,96 +688,6 @@ function isIgnored(path: string, directory: boolean, rules: IgnoreRule[]) {
     if (!rule.pattern.test(relativePath)) return ignored;
     return !rule.negated;
   }, false);
-}
-
-async function loadIgnoreRules(root: string) {
-  const rules: IgnoreRule[] = [];
-  await collectIgnoreRules(root, root, rules, new Set([root]));
-  return rules;
-}
-
-async function collectIgnoreRules(
-  root: string,
-  directory: string,
-  rules: IgnoreRule[],
-  visited: Set<string>,
-): Promise<void> {
-  const relativeDirectory = relative(root, directory).split(sep).join("/");
-  const ignorePath = resolve(directory, ".gitignore");
-  const contents = await readFile(ignorePath, "utf8").catch(() => undefined);
-  if (contents !== undefined) {
-    for (const line of contents.split(/\r?\n/u)) {
-      const rule = parseIgnoreRule(line, relativeDirectory);
-      if (rule) rules.push(rule);
-    }
-  }
-  const children = await readdir(directory, { withFileTypes: true }).catch(
-    () => [],
-  );
-  for (const child of children) {
-    if (!child.isDirectory() || ignoredDirectories.has(child.name)) continue;
-    const childPath = resolve(directory, child.name);
-    const relativePath = relative(root, childPath).split(sep).join("/");
-    // Prune the walk with the rules collected so far, exactly like the
-    // watcher tree does: without this, rule collection descends into every
-    // .gitignore-excluded subtree (a vendored dependency, a devref tree) and
-    // a runtime start turns into a full-tree realpath walk.
-    if (isIgnored(relativePath, true, rules)) continue;
-    const real = await realpath(childPath).catch(() => undefined);
-    if (!real || !contains(root, real) || visited.has(real)) continue;
-    visited.add(real);
-    await collectIgnoreRules(root, real, rules, visited);
-  }
-}
-
-function parseIgnoreRule(line: string, base: string): IgnoreRule | undefined {
-  const value = line.trimEnd();
-  if (!value || value.startsWith("#")) return;
-  const negated = value.startsWith("!") && !value.startsWith("\\!");
-  const rawPattern = (negated ? value.slice(1) : value).replace(
-    /^\\([#!])/u,
-    "$1",
-  );
-  const directoryOnly = rawPattern.endsWith("/");
-  const anchored = rawPattern.startsWith("/");
-  const pattern = rawPattern.replace(/^\//u, "").replace(/\/$/u, "");
-  if (!pattern) return;
-  const body = globExpression(pattern);
-  const prefix = anchored || pattern.includes("/") ? "^" : "^(?:.*/)?";
-  return {
-    base,
-    directoryOnly,
-    negated,
-    pattern: new RegExp(`${prefix}${body}(?:/.*)?$`, "u"),
-  };
-}
-
-function globExpression(pattern: string) {
-  let expression = "";
-  for (let index = 0; index < pattern.length; index++) {
-    const character = pattern[index];
-    const next = pattern[index + 1];
-    if (character === "*" && next === "*") {
-      index++;
-      if (pattern[index + 1] === "/") {
-        index++;
-        expression += "(?:.*/)?";
-        continue;
-      }
-      expression += ".*";
-      continue;
-    }
-    if (character === "*") {
-      expression += "[^/]*";
-      continue;
-    }
-    if (character === "?") {
-      expression += "[^/]";
-      continue;
-    }
-    expression += character.replace(/[|\\{}()[\]^$+?.]/gu, "\\$&");
-  }
-  return expression;
 }
 
 function decodeUtf8(bytes: Uint8Array) {
@@ -779,11 +731,45 @@ function startsWith(bytes: Uint8Array, prefix: number[]) {
 }
 
 async function readSearchText(path: string) {
-  const file = Bun.file(path);
-  if ((await file.size) > maxSearchFileBytes) return undefined;
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  if (bytes.includes(0)) return undefined;
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  try {
+    const file = Bun.file(path);
+    if ((await file.size) > maxSearchFileBytes) return undefined;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes.includes(0)) return undefined;
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    // Binary/invalid-UTF-8 files and files removed during the walk are simply
+    // not searchable; one bad entry must not abort the whole query.
+    return undefined;
+  }
+}
+
+function globExpression(pattern: string) {
+  let expression = "";
+  for (let index = 0; index < pattern.length; index++) {
+    const character = pattern[index];
+    const next = pattern[index + 1];
+    if (character === "*" && next === "*") {
+      index++;
+      if (pattern[index + 1] === "/") {
+        index++;
+        expression += "(?:.*/)?";
+        continue;
+      }
+      expression += ".*";
+      continue;
+    }
+    if (character === "*") {
+      expression += "[^/]*";
+      continue;
+    }
+    if (character === "?") {
+      expression += "[^/]";
+      continue;
+    }
+    expression += character.replace(/[|\\{}()[\]^$+?.]/gu, "\\$&");
+  }
+  return expression;
 }
 
 function matchesInclude(path: string, include?: string) {

@@ -519,11 +519,11 @@ test("the worker channel routes the MCP surface", async () => {
     async mcpCatalog() {
       return catalog;
     },
-    async getMcpPrompt(server, name) {
-      return { server, name };
+    async getMcpPrompt(server, name, _arguments, workspaceID) {
+      return { server, name, workspaceID };
     },
-    async readMcpResource(server, uri) {
-      return { server, uri };
+    async readMcpResource(server, uri, workspaceID) {
+      return { server, uri, workspaceID };
     },
     respondApproval() {
       return { accepted: true };
@@ -538,13 +538,19 @@ test("the worker channel routes the MCP surface", async () => {
 
   expect(typeof client.mcpCatalog).toBe("function");
   expect(await client.mcpCatalog!()).toEqual(catalog);
-  expect(await client.getMcpPrompt!("fixture", "review")).toEqual({
+  expect(
+    await client.getMcpPrompt!("fixture", "review", undefined, "ws_remote"),
+  ).toEqual({
     server: "fixture",
     name: "review",
+    workspaceID: "ws_remote",
   });
-  expect(await client.readMcpResource!("fixture", "x://y")).toEqual({
+  expect(
+    await client.readMcpResource!("fixture", "x://y", "ws_remote"),
+  ).toEqual({
     server: "fixture",
     uri: "x://y",
+    workspaceID: "ws_remote",
   });
   await client.dispose?.();
 });
