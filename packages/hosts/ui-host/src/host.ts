@@ -213,6 +213,14 @@ export async function createUiPluginHost<TContext = unknown>(
       pending: {
         registerPresenter(presenter) {
           const existing = presenters.get(presenter.kind);
+          if (
+            existing &&
+            existing.pluginId === plugin.id &&
+            existing.presenter === presenter
+          )
+            // Re-registering the same presenter is a no-op; notifying here
+            // would make a remounting panel fight the panel revision.
+            return () => {};
           if (existing && existing.pluginId !== plugin.id)
             throw new Error(
               `pending presenter for kind "${presenter.kind}" is already owned by ${existing.pluginId}`,

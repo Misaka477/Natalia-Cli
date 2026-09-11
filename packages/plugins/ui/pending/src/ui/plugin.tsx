@@ -101,10 +101,6 @@ export function createPendingUiPlugin(): UiPlugin {
         title: "待处理",
         region: "side",
         mount(ctx, container) {
-          const disposers = [
-            ctx.pending.registerPresenter(approvalPresenter),
-            ctx.pending.registerPresenter(questionPresenter),
-          ];
           if (!document.querySelector("style[data-natalia-pending]")) {
             const style = document.createElement("style");
             style.setAttribute("data-natalia-pending", "true");
@@ -116,15 +112,22 @@ export function createPendingUiPlugin(): UiPlugin {
             () => <PendingInbox ctx={ctx} />,
             container,
           );
-          return () => {
-            disposeRender();
-            for (const disposer of disposers) disposer();
-          };
+          return () => disposeRender();
         },
       },
     ],
-    mount() {
-      return undefined;
+    mount(ctx) {
+      // Registering here (once per plugin load) instead of in panel.mount keeps
+      // a panel remount from churning the presenter registry.
+      const disposers = [
+        ctx.pending.registerPresenter(approvalPresenter),
+        ctx.pending.registerPresenter(questionPresenter),
+      ];
+      return {
+        dispose() {
+          for (const disposer of disposers) disposer();
+        },
+      };
     },
   });
 }

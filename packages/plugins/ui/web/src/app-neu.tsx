@@ -23,6 +23,7 @@ import {
   Show,
 } from "solid-js";
 import { PendingBadge, Transcript } from "@natalia/ui-kit";
+import type { UiPanelDefinition } from "@natalia/ui-host";
 import { pendingToolLink } from "@natalia/ui-model";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 import { Composer, type ComposerAttachment } from "./components/Composer";
@@ -2710,20 +2711,46 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return uiPanelRequirementsSatisfied(context, panel.requires);
   }
 
-  const sidePanels = () => {
+  // `listPanels()` returns fresh wrapper objects every call, and Solid's
+  // <For> keys by identity. Keep stable descriptors so a panelRevision bump
+  // does not destroy/recreate the mounted panel (which would remount it and
+  // bump the revision again forever).
+  const sidePanelCache = new Map<
+    string,
+    {
+      signature: RowSignature;
+      value: {
+        id: string;
+        item: { pluginId: string; panel: UiPanelDefinition };
+      };
+    }
+  >();
+
+  const sidePanels = createMemo(() => {
     panelRevision();
-    return (
-      props.ctx.host
-        ?.listPanels()
-        .filter((item) => {
-          if (!panelVisible(item.panel)) return false;
-          // The terminal panel is also gated on the runtime actually providing
-          // a terminal, which the manifest cannot express.
-          if (item.panel.id === "terminal") return interactiveTerminalAvailable();
-          return true;
-        }) ?? []
-    );
-  };
+    const list = props.ctx.host?.listPanels() ?? [];
+    const rows = list
+      .filter((item) => item.panel.region === "side")
+      .filter((item) => panelVisible(item.panel))
+      .filter(
+        (item) =>
+          item.panel.id !== "terminal" || interactiveTerminalAvailable(),
+      )
+      .map((item) => {
+        const id = `${item.pluginId}:${item.panel.id}`;
+        return {
+          id,
+          signature: [
+            item.pluginId,
+            item.panel.id,
+            item.panel.title,
+            item.panel.order,
+          ] as RowSignature,
+          create: () => ({ id, item }),
+        };
+      });
+    return stableRows(sidePanelCache, rows).map((entry) => entry.item);
+  });
 
   const rightTabs = () => {
     panelRevision();
