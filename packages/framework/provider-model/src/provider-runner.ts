@@ -190,8 +190,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     input.setActiveAbort(controller);
     input.setActiveTurnID(id);
     const currentSession = input.session();
-    // A promoted `next-step` turn was never announced at submit time; publish
-    // its `turn.submitted` now so the transcript and projector see it.
+    // Admission published `input.admitted`, not a turn. A turn that is actually
+    // starting now announces `turn.submitted`; the guard keeps replay/recovery
+    // idempotent when an older journal already has it.
     if (
       currentSession &&
       !currentSession.events.some(

@@ -2,13 +2,15 @@
  * Input admission — runtime/session-admission.ts.
  *
  * `submitInput` admits a user turn to a session: it applies the team-mode
- * directive, stores attachments, builds the durable `turn.submitted` fact,
- * admits the input, wakes and runs the session's drain, and records the work
- * graph agent node. Reads host state through `RuntimeContext` at call time.
+ * directive, stores attachments, publishes the durable `input.admitted` fact,
+ * wakes and runs the session's drain, and records the work graph agent node.
+ * `turn.submitted` is published later, when a turn actually starts. Reads host
+ * state through `RuntimeContext` at call time.
  */
 import {
   admittedInputs,
   admitInput,
+  buildInputAdmission,
   buildSubmittedTurn,
   sessionRunCoordinator,
 } from "@natalia/session";
@@ -87,7 +89,9 @@ export function createSessionAdmission(
       : [];
     if (isDisposed()) throw new Error("runtime disposed");
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
-    const delivery = input.delivery ?? "next-step";
+    // The runtime API defaults to a separate turn; only the Composer opts into
+    // mid-turn injection with an explicit `next-step`.
+    const delivery = input.delivery ?? "next-turn";
     const submitted: SubmittedTurn = buildSubmittedTurn({
       id,
       text,
@@ -95,7 +99,6 @@ export function createSessionAdmission(
       resources: input.resources,
       agents: input.agents,
       internal: input.internal,
-      delivery,
     });
     if (attachments.length)
       targetExec?.attachmentReferences.set(`${id}:user`, attachments);
@@ -104,7 +107,7 @@ export function createSessionAdmission(
     const existing = admittedInputs(targetSession).find(
       (item) => item.id === id,
     );
-    admitInput(targetSession, {
+    const admitted = admitInput(targetSession, {
       id,
       text,
       delivery,
@@ -120,25 +123,35 @@ export function createSessionAdmission(
       return submitted;
     }
     // A `next-step` admitted while a provider turn is running is claimed by
-    // that turn's provider loop and published as `turn.input`. Announcing it as
-    // its own turn would create a phantom turn, and it must not replace the
-    // running turn as `lastSubmitted`: pause/cancel route by that id.
-    //
-    // `coordinator.active` alone is not enough to call it injectable:
-    // initialization and command drains are active too, and a command turn has
-    // no provider step to claim the input. Requiring an actual active provider
-    // turn keeps `/doctor`-style commands announced and runnable.
+    // that turn's provider loop and published as `turn.input`. `coordinator
+    // .active` alone is not enough: initialization and command drains are
+    // active too, and a command turn has no provider step to claim the input.
     const injectable =
       delivery === "next-step" &&
       targetCoordinator().active &&
       Boolean(targetExec?.activeTurnID);
-    if (!injectable) {
-      targetExec.lastSubmitted = submitted;
-      if (targetExec === getActiveExec()) setLastSubmitted(submitted);
-      turnSession.set(id, targetSessionID);
-      publishForSession(targetExec, submitted);
-      // One Work Graph node per turn. The prompt itself is not recorded: it can
-      // contain anything, and the graph is replayable and shareable.
+    targetExec.lastSubmitted = submitted;
+    if (targetExec === getActiveExec()) setLastSubmitted(submitted);
+    turnSession.set(id, targetSessionID);
+    // Admission is durable and observable whether the input will be injected
+    // or start its own turn; `turn.submitted` is published when a turn begins.
+    publishForSession(
+      targetExec,
+      buildInputAdmission({
+        id,
+        text,
+        attachments,
+        resources: input.resources,
+        agents: input.agents,
+        internal: input.internal,
+        delivery,
+        admittedAt: admitted.admittedAt,
+        admittedSeq: admitted.admittedSeq,
+      }),
+    );
+    // One Work Graph node per turn. An injected input never starts a turn, so
+    // it gets no node of its own.
+    if (!injectable)
       publishForSession(
         targetExec,
         workLedger.agentActionNode({
@@ -147,7 +160,6 @@ export function createSessionAdmission(
           agent: targetExec?.selectedAgent?.name,
         }),
       );
-    }
     if (!input.internal) {
       rememberTitleInput(targetSessionID, text);
       ctx.state.initialize?.scheduleTitleGeneration?.(targetSessionID);

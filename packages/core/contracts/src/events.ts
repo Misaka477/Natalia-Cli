@@ -638,6 +638,39 @@ type RuntimeEventData =
     }
   | { type: "turn.started"; id: string }
   | {
+      /**
+       * Durable admission of a user/injected input. It is *not* a turn: a
+       * `next-turn` (or a `next-step` admitted while idle) becomes one when the
+       * turn actually starts, at which point `turn.submitted` is published with
+       * the same id. A `next-step` claimed by a running turn is instead
+       * announced as `turn.input`.
+       */
+      type: "input.admitted";
+      id: string;
+      text: string;
+      byteLength: number;
+      lineCount: number;
+      sha256: string;
+      delivery: "next-turn" | "next-step";
+      /** Runtime-generated wake boundary; never human-authored input. */
+      internal?: boolean;
+      attachments?: LocalAttachment[];
+      resources?: PromptResourceMention[];
+      agents?: PromptAgentMention[];
+      admittedAt: string;
+      admittedSeq: number;
+    }
+  | {
+      type: "input.updated";
+      id: string;
+      text: string;
+      byteLength: number;
+      lineCount: number;
+      sha256: string;
+    }
+  | { type: "input.removed"; id: string }
+  | { type: "input.promoted"; id: string }
+  | {
       type: "turn.input";
       /** Turn this input was injected into. */
       turnID: string;

@@ -44,6 +44,26 @@ const submitted = (
   sha256: "x",
 });
 
+const admitted = (
+  id: string,
+  body: string,
+  delivery: "next-turn" | "next-step",
+): Extract<RuntimeEvent, { type: "input.admitted" }> => ({
+  type: "input.admitted",
+  id,
+  text: body,
+  byteLength: body.length,
+  lineCount: 1,
+  sha256: "x",
+  delivery,
+  admittedAt: "2026-01-01T00:00:00.000Z",
+  admittedSeq: 1,
+});
+
+function takeTurn(state: AppState, turnID: string) {
+  applyEvent(state, { type: "turn.started", id: turnID });
+}
+
 test("a whole turn projects to user text, assistant text and a stop reason", () => {
   const events: RuntimeEvent[] = [
     { type: "session.created", sessionID: "ses_1" as SessionID, title: "Work" },
@@ -385,33 +405,44 @@ test("tool results remain available on the generic transcript block", () => {
   expect(state.messages.find((block) => block.tool)?.tool?.result).toBe(result);
 });
 
-test("a queued turn stays visibly queued without replacing active work", () => {
+test("a queued input waits in the queue slice without replacing active work", () => {
   const state = projectEvents([
     submitted("t1", "first"),
     { type: "thinking.delta", id: "t1", text: "working" },
-    { ...submitted("t2", "next"), delivery: "next-turn" },
+    admitted("t2", "next", "next-turn"),
   ]);
 
-  expect(state.messages.find((block) => block.id === "t2:user")?.status).toBe(
-    "queued",
-  );
+  expect(state.pendingInputs).toEqual([
+    expect.objectContaining({
+      id: "t2",
+      text: "next",
+      delivery: "next-turn",
+      status: "queued",
+    }),
+  ]);
+  // The queue is not part of the transcript until the turn actually starts.
+  expect(state.messages.some((block) => block.id === "t2:user")).toBe(false);
   expect(state.activeTurn).toBe("t1");
   expect(selectPrimaryActivity(state)).toMatchObject({
     turnID: "t1",
     kind: "thinking",
   });
 
-  applyEvent(state, { type: "turn.started", id: "t2" });
-  expect(
-    state.messages.find((block) => block.id === "t2:user")?.status,
-  ).toBeUndefined();
+  // When the turn starts it leaves the queue and becomes the turn's user row.
+  applyEvent(state, submitted("t2", "next"));
+  expect(state.pendingInputs).toEqual([]);
+  expect(state.messages.find((block) => block.id === "t2:user")?.text).toBe(
+    "next",
+  );
+  takeTurn(state, "t2");
   expect(state.activeTurn).toBe("t2");
 });
 
-test("a claimed next-step projects inside the running turn, not as its own turn", () => {
+test("a claimed next-step leaves the queue and lands inside the running turn", () => {
   const state = projectEvents([
     submitted("t1", "first"),
     { type: "thinking.delta", id: "t1", text: "working" },
+    admitted("in_1", "also do X", "next-step"),
     // A mid-turn claim publishes `turn.input` only; there is no `turn.submitted`
     // for an injected input, so it never becomes a phantom turn.
     {
@@ -423,6 +454,7 @@ test("a claimed next-step projects inside the running turn, not as its own turn"
     },
   ]);
 
+  expect(state.pendingInputs).toEqual([]);
   expect(state.activeTurn).toBe("t1");
   const ids = state.messages.map((block) => block.id);
   expect(ids).toContain("t1:user");
@@ -461,16 +493,44 @@ test("an internal wake turn projects as system context, not user input", () => {
   expect(state.lastSubmission).toBeUndefined();
 });
 
-test("cancelling a queued turn clears its queued marker", () => {
+test("removing a queued input clears it from the queue slice", () => {
   const state = projectEvents([
-    { ...submitted("t1", "next"), delivery: "next-turn" },
-    { type: "turn.cancelled", id: "t1", reason: "removed" },
+    admitted("t1", "next", "next-turn"),
+    { type: "input.removed", id: "t1" },
   ]);
-  expect(state.messages.find((block) => block.id === "t1:user")?.status).toBe(
-    "cancelled",
-  );
-  expect(state.status).toBe("ready");
-  expect(state.activeTurn).toBeUndefined();
+  expect(state.pendingInputs).toEqual([]);
+  expect(state.messages.some((block) => block.id === "t1:user")).toBe(false);
+});
+
+test("editing and promoting a queued input update the queue slice in place", () => {
+  const state = projectEvents([
+    admitted("t1", "next", "next-turn"),
+    {
+      type: "input.updated",
+      id: "t1",
+      text: "edited",
+      byteLength: 6,
+      lineCount: 1,
+      sha256: "y",
+    },
+    { type: "input.promoted", id: "t1" },
+  ]);
+  expect(state.pendingInputs).toEqual([
+    expect.objectContaining({
+      id: "t1",
+      text: "edited",
+      delivery: "next-step",
+      status: "steering",
+    }),
+  ]);
+});
+
+test("an internal wake admission stays out of the user-editable queue", () => {
+  const state = projectEvents([
+    { ...admitted("wake", "internal", "next-turn"), internal: true },
+  ]);
+  expect(state.pendingInputs).toEqual([]);
+  expect(state.messages.some((block) => block.id === "wake:user")).toBe(false);
 });
 
 test("content.done does not duplicate a response that already streamed", () => {

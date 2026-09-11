@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import type { AdmittedSessionInput } from "../src";
 import {
   admitInput,
+  buildInputAdmission,
+  buildInputUpdated,
   claimNextSteps,
   createSessionRecord,
   normalizeInbox,
@@ -157,4 +159,32 @@ test("normalizeInbox maps legacy steer/queue to next-turn", () => {
     "next-turn",
     "next-step",
   ]);
+});
+
+test("admission and update facts carry the text digest", () => {
+  const admission = buildInputAdmission({
+    id: "in_1",
+    text: "hello",
+    delivery: "next-step",
+    admittedAt: "2026-01-01T00:00:00.000Z",
+    admittedSeq: 3,
+  });
+  expect(admission).toMatchObject({
+    type: "input.admitted",
+    id: "in_1",
+    text: "hello",
+    delivery: "next-step",
+    admittedAt: "2026-01-01T00:00:00.000Z",
+    admittedSeq: 3,
+  });
+  expect(admission.sha256).toHaveLength(64);
+  expect(admission.byteLength).toBe(5);
+
+  const updated = buildInputUpdated("in_1", "hello there");
+  expect(updated).toMatchObject({
+    type: "input.updated",
+    id: "in_1",
+    text: "hello there",
+  });
+  expect(updated.sha256).not.toBe(admission.sha256);
 });

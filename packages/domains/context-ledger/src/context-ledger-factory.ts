@@ -30,6 +30,16 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           });
           continue;
         }
+        if (event.type === "turn.input") {
+          // A `next-step` injected into a running turn is a first-class user
+          // message; replay must reconstruct it or the resumed context loses it.
+          add({
+            id: `${event.inputID}:user`,
+            role: event.internal ? "system" : "user",
+            content: event.text,
+          });
+          continue;
+        }
         if (event.type === "content.delta") {
           assistantByID.set(
             event.id,
@@ -104,7 +114,8 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           }
         }
       }
-      perfLog(`[perf] contextLedgerFactory.restore events=${events.length} entries=${context.snapshot().entries.length} add=${addMs.toFixed(1)}ms total=${(performance.now() - restoreStart).toFixed(1)}ms`,
+      perfLog(
+        `[perf] contextLedgerFactory.restore events=${events.length} entries=${context.snapshot().entries.length} add=${addMs.toFixed(1)}ms total=${(performance.now() - restoreStart).toFixed(1)}ms`,
       );
     },
   };

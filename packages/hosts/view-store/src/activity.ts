@@ -57,7 +57,8 @@ export function selectPrimaryActivity(
 export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
   switch (event.type) {
     case "turn.submitted":
-      if (event.delivery === "next-turn") return;
+      // A submitted turn is always a genuinely starting turn now; queued inputs
+      // live in the pending-inputs slice, not here.
       upsertActivity(state, {
         id: turnActivityID(event.id),
         turnID: event.id,

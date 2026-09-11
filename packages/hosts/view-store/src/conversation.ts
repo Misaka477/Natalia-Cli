@@ -26,6 +26,7 @@ import {
   type AgentStreamState,
   type StreamActivityView,
   type MessageBlock,
+  type PendingInputView,
   type StreamState,
   type ToolBlock,
 } from "./state";
@@ -167,6 +168,43 @@ export function applyConversationEvent(
       if (!state.sessionID) state.sessionID = event.sessionID;
       state.status = "ready";
       return true;
+    case "input.admitted":
+      if (!acceptsSession(state, event.sessionID)) return false;
+      // Admission is not a turn: the input waits in the queue slice until a
+      // `turn.submitted` starts it or a `turn.input` claims it. Internal wakes
+      // are runtime-generated and never belong in the user-editable queue.
+      if (event.internal) return true;
+      upsertPendingInput(state, {
+        id: event.id,
+        text: event.text,
+        delivery: event.delivery,
+        internal: false,
+        admittedAt: event.admittedAt,
+        admittedSeq: event.admittedSeq,
+        status: event.delivery === "next-step" ? "steering" : "queued",
+      });
+      return true;
+    case "input.updated": {
+      if (!acceptsSession(state, event.sessionID)) return false;
+      const input = state.pendingInputs.find((item) => item.id === event.id);
+      if (input) input.text = event.text;
+      return true;
+    }
+    case "input.removed":
+      if (!acceptsSession(state, event.sessionID)) return false;
+      state.pendingInputs = state.pendingInputs.filter(
+        (item) => item.id !== event.id,
+      );
+      return true;
+    case "input.promoted": {
+      if (!acceptsSession(state, event.sessionID)) return false;
+      const input = state.pendingInputs.find((item) => item.id === event.id);
+      if (input) {
+        input.delivery = "next-step";
+        input.status = "steering";
+      }
+      return true;
+    }
     case "turn.submitted":
       if (
         state.sessionID &&
@@ -176,11 +214,13 @@ export function applyConversationEvent(
         return false;
       if (!state.sessionID && event.sessionID)
         state.sessionID = event.sessionID;
-      // `activeTurn` only tracks a genuinely running turn (`turn.started` or a
-      // stream delta). Submission is merely admission: a `next-step` may be
-      // claimed by the turn that is already running rather than starting one.
+      // `turn.submitted` now means a turn is actually starting: it leaves the
+      // queue and becomes the first user row of the transcript.
       if (!event.internal) state.lastSubmission = event;
       state.lastStopReason = undefined;
+      state.pendingInputs = state.pendingInputs.filter(
+        (item) => item.id !== event.id,
+      );
       state.streams[streamID(event.id, "thinking")] = newStream();
       state.streams[streamID(event.id, "assistant")] = newStream();
       state.messages.push({
@@ -188,15 +228,18 @@ export function applyConversationEvent(
         role: event.internal ? "system" : "user",
         text: userText(event),
         pendingText: "",
-        status: event.delivery === "next-turn" ? "queued" : undefined,
         ...(event.attachments?.length
           ? { attachments: event.attachments }
           : {}),
       });
       return true;
     case "turn.input":
+      if (!acceptsSession(state, event.sessionID)) return false;
       // A `next-step` input claimed by the running turn becomes a user message
       // inside that turn, not a turn of its own.
+      state.pendingInputs = state.pendingInputs.filter(
+        (item) => item.id !== event.inputID,
+      );
       state.messages.push({
         id: `${event.turnID}:user:${event.inputID}`,
         role: event.internal ? "system" : "user",
@@ -379,6 +422,22 @@ export function applyConversationEvent(
     default:
       return false;
   }
+}
+
+function acceptsSession(
+  state: AppState,
+  sessionID: import("@natalia/contracts").SessionID | undefined,
+): boolean {
+  if (state.sessionID && sessionID && state.sessionID !== sessionID)
+    return false;
+  if (!state.sessionID && sessionID) state.sessionID = sessionID;
+  return true;
+}
+
+function upsertPendingInput(state: AppState, input: PendingInputView) {
+  const index = state.pendingInputs.findIndex((item) => item.id === input.id);
+  if (index >= 0) state.pendingInputs[index] = input;
+  else state.pendingInputs.push(input);
 }
 
 function markTurnStarted(state: AppState, turnID: string) {

@@ -43,7 +43,56 @@ export type AdmittedSessionInput = {
   claimedStep?: number;
 };
 
-/** Builds the durable `turn.submitted` fact for an admitted input. */
+function inputDigest(text: string) {
+  return {
+    byteLength: new TextEncoder().encode(text).byteLength,
+    lineCount: text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length,
+    sha256: createHash("sha256").update(text).digest("hex"),
+  };
+}
+
+/**
+ * Builds the durable `input.admitted` fact. Admission is separate from starting
+ * a turn: `turn.submitted` is published when the turn actually begins.
+ */
+export function buildInputAdmission(input: {
+  id: string;
+  text: string;
+  attachments?: LocalAttachment[];
+  resources?: PromptResourceMention[];
+  agents?: PromptAgentMention[];
+  internal?: boolean;
+  delivery: SessionInputDelivery;
+  admittedAt: string;
+  admittedSeq: number;
+}): Extract<RuntimeEvent, { type: "input.admitted" }> {
+  return {
+    type: "input.admitted",
+    id: input.id,
+    text: input.text,
+    ...inputDigest(input.text),
+    delivery: input.delivery,
+    ...(input.internal ? { internal: true } : {}),
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    ...(input.resources?.length ? { resources: input.resources } : {}),
+    ...(input.agents?.length ? { agents: input.agents } : {}),
+    admittedAt: input.admittedAt,
+    admittedSeq: input.admittedSeq,
+  };
+}
+
+/** Builds the durable `input.updated` fact for an edited queued input. */
+export function buildInputUpdated(
+  id: string,
+  text: string,
+): Extract<RuntimeEvent, { type: "input.updated" }> {
+  return { type: "input.updated", id, text, ...inputDigest(text) };
+}
+
+/**
+ * Builds the `turn.submitted` fact for a turn that is actually starting. The
+ * id matches the admitted input that produced it.
+ */
 export function buildSubmittedTurn(input: {
   id: string;
   text: string;
@@ -51,17 +100,12 @@ export function buildSubmittedTurn(input: {
   resources?: PromptResourceMention[];
   agents?: PromptAgentMention[];
   internal?: boolean;
-  delivery?: SessionInputDelivery;
 }): Extract<RuntimeEvent, { type: "turn.submitted" }> {
-  const text = input.text;
   return {
     type: "turn.submitted",
     id: input.id,
-    text,
-    byteLength: new TextEncoder().encode(text).byteLength,
-    lineCount: text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length,
-    sha256: createHash("sha256").update(text).digest("hex"),
-    ...(input.delivery === "next-turn" ? { delivery: input.delivery } : {}),
+    text: input.text,
+    ...inputDigest(input.text),
     ...(input.internal ? { internal: true } : {}),
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     ...(input.resources?.length ? { resources: input.resources } : {}),

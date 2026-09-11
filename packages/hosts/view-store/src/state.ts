@@ -71,6 +71,22 @@ export type ToolBlock = {
   argumentsRaw: string;
 };
 
+/**
+ * An admitted-but-unstarted input, projected from the `input.*` events and
+ * cleared by `turn.submitted`/`turn.input`. `status` is `queued` for a
+ * `next-turn` waiting for its turn and `steering` for a `next-step` waiting to
+ * be claimed by the running one.
+ */
+export type PendingInputView = {
+  id: string;
+  text: string;
+  delivery: "next-turn" | "next-step";
+  internal: boolean;
+  admittedAt: string;
+  admittedSeq: number;
+  status: "queued" | "steering";
+};
+
 export type StreamState = {
   /** Text already confirmed into a block. */
   committed: string;
@@ -237,6 +253,8 @@ export type AppState = {
   tools: Record<string, ToolBlock>;
   pendingApprovals: PendingApproval[];
   pendingQuestions: PendingQuestion[];
+  /** Durable admissions that have not started a turn or been claimed yet. */
+  pendingInputs: PendingInputView[];
   /** All currently live work; settled activities are removed by the projection. */
   activities: Record<string, ActivityView>;
 
@@ -329,6 +347,7 @@ export function initialState(): AppState {
   const tools: Record<string, ToolBlock> = {};
   const pendingApprovals: PendingApproval[] = [];
   const pendingQuestions: PendingQuestion[] = [];
+  const pendingInputs: PendingInputView[] = [];
   const activities: Record<string, ActivityView> = {};
   const subagents: Record<string, SubagentView> = {};
   const subagentHistory: Record<string, SubagentView[]> = {};
@@ -351,6 +370,7 @@ export function initialState(): AppState {
     tools,
     pendingApprovals,
     pendingQuestions,
+    pendingInputs,
     activities,
     natalia: {
       messages,
@@ -416,6 +436,7 @@ export function cloneState(state: AppState): AppState {
     tools: mapRecord(state.tools, (value) => ({ ...value })),
     pendingApprovals: [...state.pendingApprovals],
     pendingQuestions: [...state.pendingQuestions],
+    pendingInputs: state.pendingInputs.map((input) => ({ ...input })),
     activities: mapRecord(state.activities, (value) => ({ ...value })),
     natalia: cloneNataliaStream(state.natalia),
     navi: cloneAgentStream(state.navi),

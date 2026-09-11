@@ -97,3 +97,45 @@ test("context ledger factory is provided under the shared service key", () => {
   expect(factory.create).toBeTypeOf("function");
   expect(factory.restore).toBeTypeOf("function");
 });
+
+test("context ledger restores an injected next-step message", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "turn.submitted",
+      id: "turn-1",
+      text: "start",
+      byteLength: 5,
+      lineCount: 1,
+      sha256: "x",
+    },
+    {
+      type: "turn.input",
+      turnID: "turn-1",
+      inputID: "in-1",
+      text: "also do X",
+      delivery: "next-step",
+    },
+    { type: "content.done", id: "turn-1", text: "done" },
+    { type: "turn.finished", id: "turn-1", stopReason: "done" },
+  ];
+  const factory = createContextLedgerFactory();
+  const context = factory.create();
+  factory.restore(context, events);
+  expect(context.snapshot().entries).toEqual([
+    expect.objectContaining({
+      id: "turn-1:user",
+      role: "user",
+      content: "start",
+    }),
+    expect.objectContaining({
+      id: "in-1:user",
+      role: "user",
+      content: "also do X",
+    }),
+    expect.objectContaining({
+      id: "turn-1:assistant",
+      role: "assistant",
+      content: "done",
+    }),
+  ]);
+});

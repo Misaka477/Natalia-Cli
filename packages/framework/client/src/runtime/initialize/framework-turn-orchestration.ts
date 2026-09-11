@@ -6,6 +6,7 @@
  * directly and contributes it as the `turn.controller` service. It depends on
  * the session-store subsystem, which is wired before it.
  */
+import { buildSubmittedTurn, type SessionRecord } from "@natalia/session";
 import { createTurnController } from "@natalia/turn-orchestration";
 import type { SessionID } from "@natalia/contracts";
 import {
@@ -17,6 +18,29 @@ import {
 import type { RuntimeContext } from "../context";
 
 export type TurnOrchestrationHandle = { close(): void };
+
+/**
+ * The `turn.submitted` fact for a turn that is actually starting, unless the
+ * journal already has one (recovery/replay). The admitted input record carries
+ * the attachments/resources/agents that a command otherwise never sees.
+ */
+function buildAnnouncedTurn(session: SessionRecord, id: string, text: string) {
+  if (
+    session.events.some(
+      (event) => event.type === "turn.submitted" && event.id === id,
+    )
+  )
+    return undefined;
+  const input = session.inbox?.find((item) => item.id === id);
+  return buildSubmittedTurn({
+    id,
+    text,
+    attachments: input?.attachments,
+    resources: input?.resources,
+    agents: input?.agents,
+    internal: input?.internal,
+  });
+}
 
 export function wireTurnOrchestration(
   ctx: RuntimeContext,
@@ -65,6 +89,9 @@ export function wireTurnOrchestration(
     },
     runCommand: async (id, text, signal, ownerID) => {
       const owner = await ctx.ports.ensureExecution(ownerID as SessionID);
+      // Commands start a real turn too, so they announce it before it runs.
+      const submitted = buildAnnouncedTurn(owner.session, id, text);
+      if (submitted) ctx.ports.publishForSession(owner, submitted);
       ctx.ports.publishForSession(owner, { type: "turn.started", id });
       try {
         return await deps.handleCommand(id, text, signal, owner);

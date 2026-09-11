@@ -5855,10 +5855,18 @@ test("submit after cancel returns without waiting for the next turn to finish", 
     provider: {
       provider: "test",
       model: "test",
-      async *stream() {
+      async *stream(request) {
         streamCalls += 1;
         if (streamCalls === 1) {
-          await new Promise(() => undefined);
+          // Hold the turn open but honor abort: a provider that ignored the
+          // signal would keep the interrupted drain from ever settling.
+          await new Promise<void>((resolve) => {
+            if (request.signal?.aborted) resolve();
+            else
+              request.signal?.addEventListener("abort", () => resolve(), {
+                once: true,
+              });
+          });
           return;
         }
         yield { type: "content" as const, text: "continued" };
@@ -5930,7 +5938,7 @@ test("provider admission is persisted before the provider turn begins", async ()
     {
       id: submitted.id,
       text: "persist me first",
-      delivery: "next-step",
+      delivery: "next-turn",
       promotedAt: expect.any(String),
     },
   ]);
@@ -6093,18 +6101,18 @@ test("cancelling after admission but before execution does not start the turn", 
   });
   client.start((event) => {
     events.push(event);
-    if (event.type === "turn.submitted") client.cancel("cancel admission");
+    // Admission (`input.admitted`) still precedes execution (`turn.submitted`),
+    // so cancelling here removes the queued input before any provider call.
+    if (event.type === "input.admitted") client.cancel("cancel admission");
   });
   await client.submitAndWait!("do not start");
   await Bun.sleep(20);
 
   expect(providerCalls).toBe(0);
   expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "turn.cancelled",
-      reason: "cancel admission",
-    }),
+    expect.objectContaining({ type: "input.removed" }),
   );
+  expect(events.some((event) => event.type === "turn.submitted")).toBe(false);
   await client.dispose?.();
 });
 
@@ -9941,26 +9949,43 @@ test("pause, resume and agent selection answer what the runtime did", async () =
   // Each of these used to return nothing, so the RPC route replied with a
   // hard-coded success. A caller could pause a runtime with no turn and be told
   // the turn was held; it could select an agent that does not exist and be told
-  // it was selected.
+  // it was selected. Pause/resume now only answer for a genuinely running turn.
   const root = await mkdtemp(join(tmpdir(), "natalia-turn-control-"));
+  let release: (() => void) | undefined;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_turn_control",
     permissionMode: "auto",
-    provider: scriptedProvider("done"),
+    provider: {
+      provider: "scripted",
+      model: "scripted",
+      async *stream() {
+        await new Promise<void>((resolve) => (release = resolve));
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
   });
   client.start(() => undefined);
 
   expect(await client.pause?.()).toEqual({
     paused: false,
-    reason: "no turn has been submitted",
+    reason: "no turn is running",
   });
   expect(await client.resume?.()).toEqual({
     resumed: false,
-    reason: "no turn has been submitted",
+    reason: "no turn is running",
   });
 
-  await client.submitAndWait!("hello");
+  const unknown = await client.selectAgent?.("no-such-agent");
+  expect(unknown).toEqual({
+    outcome: "rejected",
+    reason: "agent not found: no-such-agent",
+  });
+  expect((await client.selectAgent?.())?.outcome).toBe("applied");
+
+  const turn = client.submit("hold the turn open");
+  await waitFor(() => release !== undefined, 3000, "the provider to start");
   expect(await client.pause?.("user pause")).toEqual({ paused: true });
   expect(await client.pause?.("user pause")).toEqual({
     paused: true,
@@ -9972,12 +9997,8 @@ test("pause, resume and agent selection answer what the runtime did", async () =
     reason: "the turn is not paused",
   });
 
-  const unknown = await client.selectAgent?.("no-such-agent");
-  expect(unknown).toEqual({
-    outcome: "rejected",
-    reason: "agent not found: no-such-agent",
-  });
-  expect((await client.selectAgent?.())?.outcome).toBe("applied");
+  release?.();
+  await turn;
   await client.dispose?.();
 }, 30_000);
 
@@ -13579,3 +13600,90 @@ test("/team has no product behavior when the team plugin is disabled", async () 
   expect(sawLiteralInput).toBe(true);
   await client.dispose?.();
 }, 60_000);
+
+test("input.remove/replace/promote mutate the durable queue and emit events", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-input-mutations-"));
+  const events: RuntimeEvent[] = [];
+  let release: (() => void) | undefined;
+  let calls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_input_mutations",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        calls += 1;
+        if (calls === 1) {
+          await new Promise<void>((resolve) => (release = resolve));
+          yield { type: "content" as const, text: "first" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield { type: "content" as const, text: "later" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  const first = client.submit("hold");
+  await waitFor(() => release !== undefined, 3000, "the provider to start");
+
+  const removable = await client.submitInput!({
+    text: "remove me",
+    delivery: "next-turn",
+  });
+  expect(events).toContainEqual(
+    expect.objectContaining({ type: "input.admitted", id: removable.id }),
+  );
+  expect(await client.removeInput!({ id: removable.id })).toEqual({
+    ok: true,
+    input: { id: removable.id, text: "remove me", delivery: "next-turn" },
+  });
+  expect(events).toContainEqual(
+    expect.objectContaining({ type: "input.removed", id: removable.id }),
+  );
+
+  const editable = await client.submitInput!({
+    text: "edit me",
+    delivery: "next-turn",
+  });
+  expect(
+    await client.replaceInput!({ id: editable.id, text: "edited" }),
+  ).toEqual({
+    ok: true,
+    input: { id: editable.id, text: "edited", delivery: "next-turn" },
+  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "input.updated",
+      id: editable.id,
+      text: "edited",
+    }),
+  );
+
+  const promotable = await client.submitInput!({
+    text: "promote me",
+    delivery: "next-turn",
+  });
+  expect(await client.promoteInput!({ id: promotable.id })).toMatchObject({
+    ok: true,
+    input: { id: promotable.id, delivery: "next-step" },
+  });
+  expect(events).toContainEqual(
+    expect.objectContaining({ type: "input.promoted", id: promotable.id }),
+  );
+
+  release?.();
+  await first;
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "turn.input" && event.inputID === promotable.id,
+      ),
+    5000,
+    "the promoted input to be claimed by the running turn",
+  );
+  await client.dispose?.();
+}, 30_000);

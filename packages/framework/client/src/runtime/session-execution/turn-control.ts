@@ -1,5 +1,6 @@
 import type { InputMutationResult, SessionID } from "@natalia/contracts";
 import {
+  buildInputUpdated,
   sessionRunCoordinator,
   type AdmittedSessionInput,
 } from "@natalia/session";
@@ -58,6 +59,15 @@ function toResult(
   };
 }
 
+function publishInputEvent(
+  ctx: RuntimeContext,
+  sessionID: SessionID,
+  event: import("@natalia/contracts").RuntimeEvent,
+): void {
+  const exec = ctx.ports.getExecutionBySession().get(sessionID);
+  if (exec) ctx.ports.publishForSession(exec, event);
+}
+
 /** Refusal is a value: callers learn an input was already claimed or is gone. */
 function refuseIfNotPending(
   existing: AdmittedSessionInput | undefined,
@@ -80,14 +90,14 @@ export function createTurnControlSurface(
             .getExecutionBySession()
             .get(sessionID as import("@natalia/contracts").SessionID)
         : ctx.ports.getActiveExec();
-      if (!exec?.lastSubmitted)
-        return { paused: false, reason: "no turn has been submitted" };
+      const turnID = exec?.activeTurnID;
+      if (!turnID) return { paused: false, reason: "no turn is running" };
       if (exec.paused) return { paused: true, reason: "already paused" };
       exec.paused = true;
       ctx.ports.setPaused(true);
       ctx.ports.publishForSession(exec, {
         type: "turn.paused",
-        id: exec.lastSubmitted.id,
+        id: turnID,
         reason,
       });
       ctx.ports.publishForSession(exec, {
@@ -103,8 +113,8 @@ export function createTurnControlSurface(
             .getExecutionBySession()
             .get(sessionID as import("@natalia/contracts").SessionID)
         : ctx.ports.getActiveExec();
-      if (!exec?.lastSubmitted)
-        return { resumed: false, reason: "no turn has been submitted" };
+      const turnID = exec?.activeTurnID;
+      if (!turnID) return { resumed: false, reason: "no turn is running" };
       if (!exec.paused)
         return { resumed: false, reason: "the turn is not paused" };
       exec.paused = false;
@@ -114,7 +124,7 @@ export function createTurnControlSurface(
       for (const resolveWaiter of waiters) resolveWaiter();
       ctx.ports.publishForSession(exec, {
         type: "turn.resumed",
-        id: exec.lastSubmitted.id,
+        id: turnID,
       });
       ctx.ports.publishForSession(exec, {
         type: "status.update",
@@ -128,20 +138,26 @@ export function createTurnControlSurface(
       const refusal = refuseIfNotPending(pendingInput(ctx, target, id));
       if (refusal) return refusal;
       const controller = requireTurnController(ctx);
-      return toResult(
+      const result = toResult(
         await controller.removeInput(target, id),
         "input-not-found",
       );
+      if (result.ok)
+        publishInputEvent(ctx, target, { type: "input.removed", id });
+      return result;
     },
     async replaceInput({ id, text, sessionID }) {
       const target = targetSessionID(ctx, sessionID);
       const refusal = refuseIfNotPending(pendingInput(ctx, target, id));
       if (refusal) return refusal;
       const controller = requireTurnController(ctx);
-      return toResult(
+      const result = toResult(
         await controller.replaceInput(target, id, text),
         "input-not-found",
       );
+      if (result.ok)
+        publishInputEvent(ctx, target, buildInputUpdated(id, text));
+      return result;
     },
     async promoteInput({ id, sessionID }) {
       const target = targetSessionID(ctx, sessionID);
@@ -157,6 +173,8 @@ export function createTurnControlSurface(
         await controller.promoteInput(target, id),
         "input-not-found",
       );
+      if (result.ok)
+        publishInputEvent(ctx, target, { type: "input.promoted", id });
       // A running turn claims it at the next provider step. An idle session has
       // no loop to claim it, so wake a drain that will run it as a turn.
       if (result.ok && !sessionRunCoordinator(target).active)

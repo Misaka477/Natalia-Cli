@@ -307,6 +307,8 @@ export {
 export {
   admitInput,
   admissionCutoff,
+  buildInputAdmission,
+  buildInputUpdated,
   buildSubmittedTurn,
   admittedInputs,
   claimNextSteps,

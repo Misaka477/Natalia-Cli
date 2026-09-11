@@ -1641,7 +1641,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         ).__nataliaReplayingHistory;
         if (replaying) return;
         const currentSession = selectedSessionID() || state().sessionID;
-        if (event.type === "turn.submitted" && event.delivery !== "next-turn") {
+        if (event.type === "turn.submitted" || event.type === "turn.input") {
+          // A turn that starts (or an input injected into one) should be visible.
           mainForceScroll = true;
           setFollowBottom(true);
         }

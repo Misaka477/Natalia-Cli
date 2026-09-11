@@ -290,6 +290,9 @@ function projectedTurnID(event: RuntimeEvent, messages: Map<string, unknown>) {
     return messages.has(event.turnID) ? event.turnID : undefined;
   if (event.type === "turn.input")
     return messages.has(event.turnID) ? event.turnID : undefined;
+  // `input.*` events describe a durable admission, not a turn row. Without this
+  // they would attach to the started turn carrying the same id.
+  if (event.type.startsWith("input.")) return undefined;
   if (!("id" in event) || typeof event.id !== "string") return undefined;
   let candidate = event.id;
   while (candidate) {

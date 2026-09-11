@@ -95,16 +95,30 @@ export function createCoreSurface(
       else ctx.ports.setPauseWaiters([]);
       for (const resolveWaiter of waiters) resolveWaiter();
       cancelledExec?.activeAbort?.abort(reason);
-      const cancelledTurnID =
-        runningTurnID ??
-        pendingInput?.id ??
-        (coordinator.active ? cancelledExec?.lastSubmitted?.id : undefined);
-      if (cancelledTurnID)
+      if (runningTurnID) {
         ctx.ports.publish({
           type: "turn.cancelled",
-          id: cancelledTurnID,
+          id: runningTurnID,
           reason,
         });
+      } else if (pendingInput) {
+        // A pending input never started a turn, so it is removed from the queue
+        // slice rather than cancelled as a turn.
+        const pendingExec = pendingSessionID
+          ? ctx.ports.getExecutionBySession().get(pendingSessionID)
+          : undefined;
+        if (pendingExec)
+          ctx.ports.publishForSession(pendingExec, {
+            type: "input.removed",
+            id: pendingInput.id,
+          });
+      } else if (coordinator.active && cancelledExec?.lastSubmitted) {
+        ctx.ports.publish({
+          type: "turn.cancelled",
+          id: cancelledExec.lastSubmitted.id,
+          reason,
+        });
+      }
       void (async () => {
         if (pendingInput) {
           const turnController = ctx.ports.resolveService<TurnController>(
@@ -174,6 +188,14 @@ export function createCoreSurface(
           (event) => event.type === "turn.submitted" && event.id === id,
         );
         if (submittedIndex < 0) {
+          // A queued input removed before it ever started a turn settles here;
+          // there is no turn event to wait for.
+          if (
+            events.some(
+              (event) => event.type === "input.removed" && event.id === id,
+            )
+          )
+            return;
           // A `next-step` injected into a turn already running is announced as
           // `turn.input`, never as its own `turn.submitted`. It settles with
           // that turn: return once the injected turn has terminalized and left
