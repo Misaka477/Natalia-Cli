@@ -11,8 +11,13 @@
   "dependencies": {
     "@natalia/contracts": "workspace:*",
     "@natalia/diff-wasm": "workspace:*",
+    "@natalia/framework-diff": "workspace:*",
+    "@natalia/plugin": "workspace:*",
     "@natalia/ui-host": "workspace:*",
+    "@natalia/ui-kit": "workspace:*",
+    "@natalia/ui-model": "workspace:*",
     "@natalia/view-store": "workspace:*",
+    "@vscode/tree-sitter-wasm": "*",
     "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "0.10.0",
     "@xterm/addon-search": "^0.16.0",
@@ -22,9 +27,6 @@
     "@xterm/xterm": "5.5.0",
     "marked": "17.0.1",
     "solid-js": "1.9.12",
-    "@vscode/tree-sitter-wasm": "*",
-    "web-tree-sitter": "*",
-    "@natalia/framework-diff": "workspace:*",
-    "@natalia/plugin": "workspace:*"
+    "web-tree-sitter": "*"
   }
 }

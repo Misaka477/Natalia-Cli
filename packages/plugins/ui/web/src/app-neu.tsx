@@ -22,7 +22,8 @@ import {
   For,
   Show,
 } from "solid-js";
-import { Transcript } from "@natalia/ui-kit";
+import { PendingBadge, Transcript } from "@natalia/ui-kit";
+import { pendingToolLink } from "@natalia/ui-model";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { ReviewPane } from "./components/RightPanel";
@@ -2403,6 +2404,23 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return state().natalia.activeTurn ? "Working" : "Ready";
   }
 
+  const pendingByMessageID = createMemo(() => {
+    const map = new Map<string, string>();
+    for (const approval of state().pendingApprovals) {
+      const link = pendingToolLink(approval.id);
+      if (link) map.set(link.messageID, approval.id);
+    }
+    for (const question of state().pendingQuestions) {
+      const link = pendingToolLink(question.id);
+      if (link) map.set(link.messageID, question.id);
+    }
+    return map;
+  });
+
+  const pendingCount = createMemo(
+    () => state().pendingApprovals.length + state().pendingQuestions.length,
+  );
+
   const mainMessageCache = new Map<
     string,
     { signature: RowSignature; value: Message }
@@ -2422,6 +2440,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             active && isLast
               ? "running"
               : (tool.status as Message["status"]);
+          const pendingRequestID = pendingByMessageID().get(msg.id);
           return {
             id: msg.id,
             signature: [
@@ -2432,12 +2451,27 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               status,
               Boolean(active),
               isLast,
+              pendingRequestID,
             ],
             create: () => ({
               id: msg.id,
               role: "assistant",
               content: "",
               status,
+              ...(pendingRequestID
+                ? {
+                    actions: [
+                      {
+                        label: "处理",
+                        primary: true,
+                        onClick: () => {
+                          setRightTab("pending");
+                          props.ctx.pending.controller.focus(pendingRequestID);
+                        },
+                      },
+                    ],
+                  }
+                : {}),
               toolCalls: [
                 {
                   name: tool.name,
@@ -3760,6 +3794,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       onClick={() => setRightTab(tab.id)}
                     >
                       {tab.label}
+                      <Show when={tab.id === "pending"}>
+                        <PendingBadge count={pendingCount()} />
+                      </Show>
                     </button>
                   )}
                 </For>
