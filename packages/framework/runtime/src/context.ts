@@ -117,6 +117,12 @@ export class ContextLedger {
   private resources: ResourceSnapshot[] = [];
   private journalOffset = 0;
   private compactionGeneration = 0;
+  private revision = 0;
+
+  /** Monotonic entry-surface revision used to detect concurrent appends. */
+  surfaceRevision(): number {
+    return this.revision;
+  }
 
   add(entry: ContextEntry) {
     this.entries.push({
@@ -124,6 +130,7 @@ export class ContextLedger {
       tokens: entry.tokens ?? estimateTokens(entry.content),
     });
     this.journalOffset += 1;
+    this.revision += 1;
   }
 
   addMany(entries: ContextEntry[]) {
@@ -190,6 +197,7 @@ export class ContextLedger {
       tokens,
       source: "estimate",
     };
+    this.revision += 1;
     return {
       pruned,
       beforeTokens,
@@ -258,6 +266,7 @@ export class ContextLedger {
       typeof snapshot.compactionGeneration === "number"
     )
       this.compactionGeneration = snapshot.compactionGeneration;
+    this.revision += 1;
   }
 
   restoreDurableCheckpoint(checkpoint: DurableContextCheckpoint) {
@@ -279,7 +288,10 @@ export class ContextLedger {
     summary: ContextEntry,
     preserved: ContextEntry[],
     estimatedTokens?: number,
+    expectedRevision?: number,
   ) {
+    if (expectedRevision !== undefined && this.revision !== expectedRevision)
+      throw new Error("context surface changed during compaction");
     this.entries = [
       summary,
       ...preserved,
@@ -294,6 +306,7 @@ export class ContextLedger {
     };
     this.compactionGeneration += 1;
     this.journalOffset += 1;
+    this.revision += 1;
   }
 }
 

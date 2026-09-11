@@ -128,6 +128,7 @@ export async function compactContext(
     return { compacted: false, skipped: "disabled" as const };
   }
   const snapshot = ledger.snapshot();
+  const expectedRevision = ledger.surfaceRevision();
   const preserved =
     options.preservedRecentTokens && options.preservedRecentTokens > 0
       ? preserveRecentWithToolPairsByTokens(
@@ -183,6 +184,22 @@ export async function compactContext(
         }),
       { ...options.retry, onEvent },
     );
+    if (ledger.surfaceRevision() !== expectedRevision) {
+      options.onEvent?.({
+        type: "compaction.end",
+        id: options.id,
+        trigger: options.trigger,
+        success: false,
+        beforeTokens,
+        durationMs: Math.max(
+          0,
+          (options.now?.() ?? new Date()).getTime() - started.getTime(),
+        ),
+        attempts,
+        error: "surface_changed",
+      });
+      return { compacted: false, skipped: "surface_changed" as const };
+    }
     const content = buildCompactionPrompt(result.summary, options.instruction);
     const summary: ContextEntry = {
       id: `${options.id}:summary`,
@@ -190,7 +207,12 @@ export async function compactContext(
       content,
       tokens: result.tokens ?? estimateTokens(content),
     };
-    ledger.replaceAfterCompaction(summary, retained, undefined);
+    ledger.replaceAfterCompaction(
+      summary,
+      retained,
+      undefined,
+      expectedRevision,
+    );
     const afterTokens = ledger.effectiveTokens();
     options.onEvent?.({
       type: "compaction.end",

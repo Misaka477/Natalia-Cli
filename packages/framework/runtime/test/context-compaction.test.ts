@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { RuntimeEvent } from "@natalia/contracts";
 import { FakeCompactor } from "./fixtures";
 import {
   compactContext,
@@ -637,4 +638,44 @@ test("ContextLedger pruneToolResults protects the newest entry and lowers effect
   expect(
     ledger.status({ max: 1000, thresholdPercent: 85, reserved: 10 }).source,
   ).toBe("pending_estimate");
+});
+
+test("compaction aborts when the ledger surface changes during summarization", async () => {
+  const ledger = ledgerWithMessages(4);
+  const events: RuntimeEvent[] = [];
+  const compactor: Compactor = {
+    async compact() {
+      ledger.add({
+        id: "late-arrival",
+        role: "user",
+        content: "arrived while the summary ran",
+        tokens: 5,
+      });
+      return { summary: "stale summary" };
+    },
+  };
+  const result = await compactContext(ledger, compactor, {
+    id: "cmp_surface_changed",
+    trigger: "manual",
+    maxTokens: 100,
+    thresholdPercent: 85,
+    reservedTokens: 10,
+    preservedRecentMessages: 2,
+    onEvent: (event) => events.push(event),
+  });
+  expect(result).toEqual({ compacted: false, skipped: "surface_changed" });
+  expect(ledger.snapshot().entries.map((entry) => entry.id)).toEqual([
+    "m0",
+    "m1",
+    "m2",
+    "m3",
+    "late-arrival",
+  ]);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "compaction.end",
+      success: false,
+      error: "surface_changed",
+    }),
+  );
 });
