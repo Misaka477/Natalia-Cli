@@ -4,10 +4,7 @@ import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ObjectStore } from "../src";
-import {
-  NativePackIndex,
-  nativePackIndexAvailable,
-} from "../src/native-index";
+import { NativePackIndex, nativePackIndexAvailable } from "../src/native-index";
 
 const sha256 = (content: Buffer | string) =>
   createHash("sha256").update(content).digest("hex");
@@ -27,7 +24,11 @@ test("content-addressed store deduplicates identical blobs", async () => {
   expect(id1).toBe(sha256("same content"));
   expect(id2).toBe(id1);
   expect(await objects.has(id1)).toBe(true);
-  expect(await objects.has("0000000000000000000000000000000000000000000000000000000000000000")).toBe(false);
+  expect(
+    await objects.has(
+      "0000000000000000000000000000000000000000000000000000000000000000",
+    ),
+  ).toBe(false);
   expect((await objects.get(id1)).toString("utf8")).toBe("same content");
   expect(await objects.list()).toEqual([id1]);
   await objects.delete(id1);
@@ -39,9 +40,9 @@ test("batch APIs roundtrip content and metadata", async () => {
   const ids = await objects.batchPut(["alpha", "beta", "gamma"]);
   expect(ids).toHaveLength(3);
   expect(await objects.batchHas(ids)).toEqual([true, true, true]);
-  expect(
-    (await objects.batchGet(ids)).map((b) => b?.toString("utf8")),
-  ).toEqual(["alpha", "beta", "gamma"]);
+  expect((await objects.batchGet(ids)).map((b) => b?.toString("utf8"))).toEqual(
+    ["alpha", "beta", "gamma"],
+  );
 
   await objects.putMeta("key:one", { ok: true, n: 1 });
   expect(await objects.getMeta<{ ok: boolean; n: number }>("key:one")).toEqual({
@@ -88,9 +89,9 @@ test("compact packs loose objects and keeps random reads working", async () => {
   expect(packs.some((name) => name.endsWith(".pack"))).toBe(true);
   expect(packs.some((name) => name.endsWith(".idx"))).toBe(true);
   expect(await objects.batchHas(ids)).toEqual(ids.map(() => true));
-  expect(
-    (await objects.batchGet(ids)).map((b) => b?.toString("utf8")),
-  ).toEqual(contents);
+  expect((await objects.batchGet(ids)).map((b) => b?.toString("utf8"))).toEqual(
+    contents,
+  );
 });
 
 test("delta-packed similar objects survive a round trip", async () => {

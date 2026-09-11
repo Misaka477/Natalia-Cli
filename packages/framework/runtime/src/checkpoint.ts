@@ -888,7 +888,10 @@ export class CheckpointStore {
     for (const entry of entries) {
       const full = join(dir, entry.name);
       const rel = normalizeManifestPath(relative(this.workspaceRoot, full));
-      if (!rel || this.shouldIgnore(rel, full, entry.isDirectory(), ignoreRules)) {
+      if (
+        !rel ||
+        this.shouldIgnore(rel, full, entry.isDirectory(), ignoreRules)
+      ) {
         manifest.ignoredFiles += 1;
         continue;
       }

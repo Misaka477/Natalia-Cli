@@ -113,7 +113,10 @@ export function patchToStructured(patch: string): {
   return { hunks, additions, deletions };
 }
 
-export function countPatch(patch: string): { additions: number; deletions: number } {
+export function countPatch(patch: string): {
+  additions: number;
+  deletions: number;
+} {
   let additions = 0;
   let deletions = 0;
   for (const line of patch.split("\n")) {

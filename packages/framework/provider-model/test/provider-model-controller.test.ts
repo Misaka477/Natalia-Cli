@@ -186,9 +186,9 @@ test.each(["navi", "nia"] as const)(
     const task =
       stream === "nia"
         ? controller.runNiaChatTurn({
-      sessionID,
-      responseMessageID: stream,
-      text: "work",
+            sessionID,
+            responseMessageID: stream,
+            text: "work",
           })
         : controller.runNaviChatTurn({
             sessionID,
@@ -327,17 +327,17 @@ test.each(["navi", "nia"] as const)(
     const controller = createProviderModelController(input);
     const sessionID = "ses_publish_fail" as never;
     await expect(
-      (stream === "nia"
+      stream === "nia"
         ? controller.runNiaChatTurn({
-        sessionID,
-        text: "work",
-        responseMessageID: "test",
+            sessionID,
+            text: "work",
+            responseMessageID: "test",
           })
         : controller.runNaviChatTurn({
             sessionID,
             text: "work",
             responseMessageID: "test",
-          })),
+          }),
     ).rejects.toThrow("publish failed");
     expect(bodies).toBe(0);
     expect(

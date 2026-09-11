@@ -1,7 +1,4 @@
-import type {
-  AstDiffResult,
-  AstIndexResult,
-} from "@natalia/diff-wasm/ast";
+import type { AstDiffResult, AstIndexResult } from "@natalia/diff-wasm/ast";
 import type {
   AstComputeRequest,
   AstComputeResponse,
@@ -45,14 +42,17 @@ function ensurePool(): RuntimeWorkerPool<Worker> {
     defaultRuntimeWorkerPoolSize(),
   );
   for (const worker of pool.all()) {
-    worker.addEventListener("message", (event: MessageEvent<AstComputeResponse>) => {
-      const response = event.data;
-      const entry = pending.get(response.id);
-      if (!entry) return;
-      pending.delete(response.id);
-      if (response.ok) entry.resolve(response.result);
-      else entry.reject(new Error(response.error));
-    });
+    worker.addEventListener(
+      "message",
+      (event: MessageEvent<AstComputeResponse>) => {
+        const response = event.data;
+        const entry = pending.get(response.id);
+        if (!entry) return;
+        pending.delete(response.id);
+        if (response.ok) entry.resolve(response.result);
+        else entry.reject(new Error(response.error));
+      },
+    );
     worker.addEventListener("error", () => {
       for (const { reject } of pending.values())
         reject(new Error("AST worker failed"));

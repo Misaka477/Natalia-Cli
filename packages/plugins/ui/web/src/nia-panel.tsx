@@ -99,9 +99,7 @@ export function NiaPanel(props: {
 
   const renderedMessages = createMemo<Message[]>(() => {
     const rows = messages();
-    return niaFollowBottom()
-      ? boundTranscript(rows, "newer").messages
-      : rows;
+    return niaFollowBottom() ? boundTranscript(rows, "newer").messages : rows;
   });
 
   const modelOptions = () =>

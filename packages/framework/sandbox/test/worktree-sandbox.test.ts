@@ -137,7 +137,6 @@ test("a candidate that fails validation is refused promotion with its build outp
   expect(await readFile(join(root, "file.txt"), "utf8")).toBe("good\n");
 });
 
-
 test("worktree sandbox sees files .gitignore hides but .nataliaignore allows", async () => {
   const root = await scratchRepo();
   await writeFile(join(root, ".gitignore"), "/plan/\n");

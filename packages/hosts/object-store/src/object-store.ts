@@ -573,11 +573,13 @@ export class ObjectStore {
   }
 
   private async tryMaintenance<T>(
-    request: { op: "compact"; root: string } | {
-      op: "collectGarbage";
-      root: string;
-      reachable: string[];
-    },
+    request:
+      | { op: "compact"; root: string }
+      | {
+          op: "collectGarbage";
+          root: string;
+          reachable: string[];
+        },
   ): Promise<T | undefined> {
     if (objectStoreWorkerDisabled()) return undefined;
     try {

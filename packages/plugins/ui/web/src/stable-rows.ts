@@ -26,7 +26,10 @@ export function stableRows<T extends { id: string }>(
   for (const row of rows) {
     seen.add(row.id);
     const cached = cache.get(row.id);
-    if (cached !== undefined && sameSignature(cached.signature, row.signature)) {
+    if (
+      cached !== undefined &&
+      sameSignature(cached.signature, row.signature)
+    ) {
       out.push(cached.value);
       continue;
     }

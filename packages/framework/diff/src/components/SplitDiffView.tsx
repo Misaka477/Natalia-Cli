@@ -163,10 +163,7 @@ export function buildSplitRows(result: StructuredDiffResult): SplitRow[] {
   }
 }
 
-export function SplitDiffView(props: {
-  rows: SplitRow[];
-  language?: string;
-}) {
+export function SplitDiffView(props: { rows: SplitRow[]; language?: string }) {
   let container: HTMLDivElement | undefined;
   const [scrollTop, setScrollTop] = createSignal(0);
   const [viewportHeight, setViewportHeight] = createSignal(0);

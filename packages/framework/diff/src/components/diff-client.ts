@@ -1,10 +1,7 @@
 import type { RuntimeStructuredDiffHunk } from "@natalia/contracts";
 import type { StructuredDiffResult } from "@natalia/diff-wasm";
 import type { DiffWorkerRequest, DiffWorkerResponse } from "./diff-worker";
-import {
-  createWebWorkerPool,
-  defaultWorkerPoolSize,
-} from "./worker-pool";
+import { createWebWorkerPool, defaultWorkerPoolSize } from "./worker-pool";
 
 let nextID = 1;
 const pending = new Map<
@@ -81,8 +78,9 @@ function ensureWorkers(): void {
     if (!("__nataliaDiffListener" in worker)) {
       worker.addEventListener("message", handleWorkerMessage);
       worker.addEventListener("error", handleWorkerError);
-      (worker as Worker & { __nataliaDiffListener?: boolean }).__nataliaDiffListener =
-        true;
+      (
+        worker as Worker & { __nataliaDiffListener?: boolean }
+      ).__nataliaDiffListener = true;
     }
   }
 }

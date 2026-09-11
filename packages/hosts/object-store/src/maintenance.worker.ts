@@ -25,7 +25,8 @@ export type MaintenanceWorkerResponse =
   | { id: number; ok: false; error: string };
 
 const port = parentPort;
-if (!port) throw new Error("object-store maintenance worker requires parentPort");
+if (!port)
+  throw new Error("object-store maintenance worker requires parentPort");
 
 port.on("message", (request: MaintenanceWorkerRequest) => {
   void (async () => {
@@ -40,7 +41,11 @@ port.on("message", (request: MaintenanceWorkerRequest) => {
         request.op === "compact"
           ? await store.compact()
           : await store.collectGarbage(new Set(request.reachable));
-      const response: MaintenanceWorkerResponse = { id: request.id, ok: true, result };
+      const response: MaintenanceWorkerResponse = {
+        id: request.id,
+        ok: true,
+        result,
+      };
       port.postMessage(response);
     } catch (error) {
       const response: MaintenanceWorkerResponse = {

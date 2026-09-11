@@ -66,8 +66,7 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
     rules: readonly SnapshotIgnoreRule[],
   ): (rel: string, directory: boolean) => boolean {
     return (rel, directory) =>
-      isSnapshotInternalPath(rel) ||
-      isSnapshotIgnored(rel, directory, rules);
+      isSnapshotInternalPath(rel) || isSnapshotIgnored(rel, directory, rules);
   }
 
   /**

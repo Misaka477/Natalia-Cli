@@ -303,9 +303,9 @@ test("checkpoint structurally excludes its own stores even without .natalia/ ign
   expect(paths.some((path) => path.startsWith(".natalia/objects/"))).toBe(
     false,
   );
-  expect(
-    paths.some((path) => path.startsWith(".natalia/checkpoints/")),
-  ).toBe(false);
+  expect(paths.some((path) => path.startsWith(".natalia/checkpoints/"))).toBe(
+    false,
+  );
   expect(paths).not.toContain(".nataliaignore");
 });
 

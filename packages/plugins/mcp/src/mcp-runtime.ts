@@ -681,7 +681,11 @@ function mcpPromptRuntimeTool(
       type: "object",
       properties: {
         name: { type: "string" },
-        arguments: { type: "object" },
+        arguments: {
+          type: "object",
+          properties: {},
+          additionalProperties: true,
+        },
       },
       required: ["name"],
       additionalProperties: false,

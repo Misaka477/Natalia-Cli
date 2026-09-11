@@ -12,7 +12,11 @@ import type {
   RuntimeNativeTerminalSession,
   RuntimeTeamPR,
 } from "@natalia/contracts";
-import { boundTranscript, type AppState, type SubagentView } from "@natalia/view-store";
+import {
+  boundTranscript,
+  type AppState,
+  type SubagentView,
+} from "@natalia/view-store";
 import { Transcript } from "@natalia/ui-kit";
 import type { Message } from "./types";
 import { stableRows, type RowSignature } from "./stable-rows";
@@ -181,17 +185,10 @@ export function AgentPanel(props: {
           const rowID = `sub-${id}-${index}`;
           const tool = msg.tool;
           if (tool) {
-            const status =
-              (tool.status as Message["status"]) ?? "completed";
+            const status = (tool.status as Message["status"]) ?? "completed";
             return {
               id: rowID,
-              signature: [
-                id,
-                tool.name,
-                tool.result,
-                tool.summary,
-                status,
-              ],
+              signature: [id, tool.name, tool.result, tool.summary, status],
               create: () =>
                 ({
                   id: rowID,
@@ -299,9 +296,7 @@ export function AgentPanel(props: {
   const [subShowJumpToBottom, setSubShowJumpToBottom] = createSignal(false);
   const renderedSubagentMessages = createMemo<Message[]>(() => {
     const rows = subagentMessages();
-    return subFollowBottom()
-      ? boundTranscript(rows, "newer").messages
-      : rows;
+    return subFollowBottom() ? boundTranscript(rows, "newer").messages : rows;
   });
 
   let subObservedTop = 0;

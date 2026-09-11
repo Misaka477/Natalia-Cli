@@ -242,7 +242,8 @@ export async function createSubagentSupport(
         enabled: scope.tsRuntimeConfig?.context.compactionEnabled ?? true,
         preservedRecentMessages:
           scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
-        instruction: "Compact before this subagent provider request while preserving the active task.",
+        instruction:
+          "Compact before this subagent provider request while preserving the active task.",
         signal: runner.signal,
         onEvent: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
       });

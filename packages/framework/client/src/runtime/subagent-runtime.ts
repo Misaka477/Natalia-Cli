@@ -53,7 +53,8 @@ export function createSubagentRuntime(
       } catch {
         result = records.map((record) => toSubagentView(record, subagents));
       }
-      perfLog(`[perf] subagents done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] subagents done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return result;
     },
@@ -79,7 +80,8 @@ export function createSubagentRuntime(
             event.type === "subagent.update",
         );
       }
-      perfLog(`[perf] subagentHistory done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] subagentHistory done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return result;
     },

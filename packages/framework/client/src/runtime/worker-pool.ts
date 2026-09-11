@@ -38,7 +38,8 @@ export function createRuntimeWorkerPool<TWorker extends Worker = Worker>(
 }
 
 export function defaultRuntimeWorkerPoolSize(): number {
-  const cpus = typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 0;
+  const cpus =
+    typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 0;
   const cpuCount = cpus || 2;
   return Math.max(2, Math.min(4, cpuCount));
 }

@@ -35,7 +35,11 @@ worker.onmessage = (event: MessageEvent<AstComputeRequest>) => {
     try {
       const result =
         request.op === "diff"
-          ? await diffWasmAst(request.oldText, request.newText, request.language)
+          ? await diffWasmAst(
+              request.oldText,
+              request.newText,
+              request.language,
+            )
           : await indexWasmAst(request.source, request.language);
       const response: AstComputeResponse = { id: request.id, ok: true, result };
       worker.postMessage(response);

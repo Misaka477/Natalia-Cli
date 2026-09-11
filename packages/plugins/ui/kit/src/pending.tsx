@@ -153,7 +153,9 @@ export function PendingDetail(props: {
                       control.kind === "text" ? control.placeholder : undefined
                     }
                     value={String(value(control) ?? "")}
-                    onInput={(event) => write(control, event.currentTarget.value)}
+                    onInput={(event) =>
+                      write(control, event.currentTarget.value)
+                    }
                   />
                 }
               >

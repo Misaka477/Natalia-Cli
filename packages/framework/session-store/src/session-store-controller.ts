@@ -229,7 +229,8 @@ export function createSessionStoreController(input: {
   }> {
     const loadStart = performance.now();
     const mark = (name: string) =>
-      perfLog(`[perf] sessionStore.load.${name} id=${id} +${(performance.now() - loadStart).toFixed(1)}ms`,
+      perfLog(
+        `[perf] sessionStore.load.${name} id=${id} +${(performance.now() - loadStart).toFixed(1)}ms`,
       );
     perfLog(`[perf] sessionStore.load start id=${id}`);
     const store = sqliteStore;
@@ -438,11 +439,7 @@ export function createSessionStoreController(input: {
     options: { limit?: number; order?: "asc" | "desc"; cursor?: string } = {},
   ): Promise<RuntimeMessagePage> {
     if (sqliteStore) {
-      if (
-        !options.cursor &&
-        !options.order &&
-        options.limit === 100
-      ) {
+      if (!options.cursor && !options.order && options.limit === 100) {
         const cached = messagePageCache.get(id);
         if (cached) return cached;
         const pending = messagePagePromises.get(id);

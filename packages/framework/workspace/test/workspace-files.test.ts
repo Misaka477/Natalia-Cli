@@ -49,9 +49,7 @@ symlinkTest(
     await symlink(outside, join(root, "outside"));
     expect(
       await findWorkspaceFiles({ workspaceRoot: root, query: "model.ts" }),
-    ).toEqual(
-      expect.arrayContaining([{ path: "src/model.ts", type: "file" }]),
-    );
+    ).toEqual(expect.arrayContaining([{ path: "src/model.ts", type: "file" }]));
     expect(await findWorkspaceFiles({ workspaceRoot: root })).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -285,7 +283,9 @@ test("workspace directory lists use stable direct-child pagination", async () =>
 });
 
 test("workspace access does not treat .gitignore as a visibility policy", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-gitignore-free-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-workspace-gitignore-free-"),
+  );
   await mkdir(join(root, "src", "generated"), { recursive: true });
   await mkdir(join(root, "node_modules", "pkg"), { recursive: true });
   await writeFile(
@@ -324,7 +324,6 @@ test("workspace access does not treat .gitignore as a visibility policy", async 
     entries: [{ path: "node_modules/pkg/", type: "directory" }],
   });
 });
-
 
 symlinkTest("workspace catalog ignores symlink cycles", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-cycle-"));

@@ -29,7 +29,8 @@ export function createSessionAttach(ctx: RuntimeContext) {
   async function attachSession(id: string) {
     const start = performance.now();
     const mark = (name: string) =>
-      perfLog(`[perf] attachSession.${name} target=${id} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] attachSession.${name} target=${id} +${(performance.now() - start).toFixed(1)}ms`,
       );
     perfLog(`[perf] attachSession start target=${id}`);
     const {
@@ -84,7 +85,8 @@ export function createSessionAttach(ctx: RuntimeContext) {
     const sessionID = getSessionID();
     const nextID = id as SessionID;
     if (nextID === sessionID) {
-      perfLog(`[perf] attachSession same target=${id} +${(performance.now() - start).toFixed(1)}ms`,
+      perfLog(
+        `[perf] attachSession same target=${id} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return { sessionID: nextID };
     }
@@ -179,7 +181,8 @@ export function createSessionAttach(ctx: RuntimeContext) {
       }),
     );
     mark("status");
-    perfLog(`[perf] attachSession done target=${id} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
+    perfLog(
+      `[perf] attachSession done target=${id} events=${exec.session.events.length} +${(performance.now() - start).toFixed(1)}ms`,
     );
     return { sessionID: exec.session.id };
   }

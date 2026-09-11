@@ -16,7 +16,8 @@ export function createInitialize(
   async function initialize() {
     const initStart = performance.now();
     const mark = (name: string) =>
-      perfLog(`[perf] initialize ${name} +${(performance.now() - initStart).toFixed(1)}ms`,
+      perfLog(
+        `[perf] initialize ${name} +${(performance.now() - initStart).toFixed(1)}ms`,
       );
     mark("start");
     try {

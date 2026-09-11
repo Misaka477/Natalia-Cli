@@ -37,7 +37,9 @@ test("ensureNataliaIgnoreFile migrates checkpoint.ignore patterns once", async (
 });
 
 test("snapshot ignore rules are directory-aware and support negation", () => {
-  const rules = parseSnapshotIgnore(`build/\n!build/keep/\n*.tmp\n/root-only\n`);
+  const rules = parseSnapshotIgnore(
+    `build/\n!build/keep/\n*.tmp\n/root-only\n`,
+  );
   expect(isSnapshotIgnored("build/generated.js", false, rules)).toBe(true);
   expect(isSnapshotIgnored("build/keep/note.md", false, rules)).toBe(false);
   expect(isSnapshotIgnored("src/a.tmp", false, rules)).toBe(true);

@@ -33,7 +33,9 @@ test("diffWasmStructured decodes hunks and line numbers", async () => {
   expect(types).toContain("delete");
   expect(types).toContain("add");
   expect(hunk.lines.find((line) => line.type === "add")?.newLineNumber).toBe(2);
-  expect(hunk.lines.find((line) => line.type === "delete")?.oldLineNumber).toBe(2);
+  expect(hunk.lines.find((line) => line.type === "delete")?.oldLineNumber).toBe(
+    2,
+  );
 });
 
 test("diffWasmBinary round-trips through parseDiffBinary", async () => {
@@ -75,7 +77,11 @@ test("AST index returns parseable nodes for supported languages", async () => {
 test("AST binary helpers parse generated blobs", async () => {
   // Use internal cache through a fresh call; just verify the high-level AST
   // helpers still return parsed structures.
-  const astDiff = await diffWasmAst("let a = 1;\n", "let a = 2;\n", "javascript");
+  const astDiff = await diffWasmAst(
+    "let a = 1;\n",
+    "let a = 2;\n",
+    "javascript",
+  );
   expect(astDiff.changes.length).toBeGreaterThan(0);
 
   const astIndex = await indexWasmAst("let x = 1;\n", "javascript");

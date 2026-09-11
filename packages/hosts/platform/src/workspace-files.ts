@@ -287,8 +287,7 @@ export async function watchWorkspaceFiles(
       : directory;
     const relativePath = relative(root, changedPath).split(sep).join("/");
     if (relativePath === NATALIA_IGNORE_FILE) return;
-    if (relativePath && isIgnored(relativePath, false, ignoreRules))
-      return;
+    if (relativePath && isIgnored(relativePath, false, ignoreRules)) return;
     invalidateWorkspaceFiles(root);
     // The change detail is a hint: the auditor reconciles it into a confirmed
     // change (§56.9). `rename` is mapped to the coarse operation the watcher

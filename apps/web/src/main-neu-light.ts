@@ -13,9 +13,10 @@ import { loadPluginUiBundles, syncPluginUiBundles } from "./plugin-ui-loader";
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
 const startupStart = performance.now();
-((globalThis as unknown as { __nataliaStartupStart?: number }).__nataliaStartupStart ??= startupStart);
+(
+  globalThis as unknown as { __nataliaStartupStart?: number }
+).__nataliaStartupStart ??= startupStart;
 perfLog(`[perf] renderer boot start +0.0ms`);
-
 
 // Observability: log every main-thread long task during startup and runtime.
 // This is the primary signal for the "silent gap" / interaction jank issue.

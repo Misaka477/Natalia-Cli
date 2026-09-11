@@ -37,7 +37,8 @@ export function highlightLine(text: string, language?: string): SyntaxPart[] {
   try {
     // highlightAuto is extremely expensive on long/generated lines. When no
     // language hint is available, render plain text instead of blocking the UI.
-    if (!language && text.length > MAX_AUTO_HIGHLIGHT_LENGTH) return [{ text, cls: "" }];
+    if (!language && text.length > MAX_AUTO_HIGHLIGHT_LENGTH)
+      return [{ text, cls: "" }];
     const tree =
       language && lowlight.registered(language)
         ? lowlight.highlight(language, text)

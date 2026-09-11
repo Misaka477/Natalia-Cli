@@ -32,7 +32,9 @@ function highlightedText(
     cls: string;
   }> = [];
   if (!line.highlights?.length) {
-    for (const part of line.syntax ?? precomputed ?? highlightLine(line.text, language))
+    for (const part of line.syntax ??
+      precomputed ??
+      highlightLine(line.text, language))
       parts.push({ ...part, highlight: false, kind: "" });
     return parts;
   }
@@ -105,10 +107,7 @@ function collapseRows(rows: DiffRow[]): DiffRow[] {
  * structured diff (or a fallback patch diff) can scroll without creating tens
  * of thousands of DOM nodes.
  */
-export function UnifiedDiffView(props: {
-  rows: DiffRow[];
-  language?: string;
-}) {
+export function UnifiedDiffView(props: { rows: DiffRow[]; language?: string }) {
   let container: HTMLDivElement | undefined;
   const [scrollTop, setScrollTop] = createSignal(0);
   const [viewportHeight, setViewportHeight] = createSignal(0);
@@ -306,7 +305,13 @@ export function UnifiedDiffView(props: {
                 {isHunk && collapsedHunks().has(hunkIndex) ? "+" : row.sign}
               </span>
               <span class="review-diff-text">
-                <For each={highlightedText(row, props.language, syntaxCache().get(rowKey(row)))}>
+                <For
+                  each={highlightedText(
+                    row,
+                    props.language,
+                    syntaxCache().get(rowKey(row)),
+                  )}
+                >
                   {(part) =>
                     part.highlight ? (
                       <span
