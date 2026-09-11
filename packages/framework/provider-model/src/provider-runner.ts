@@ -22,7 +22,7 @@ import {
 import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
-import { promoteSteers, type SessionRecord } from "@natalia/session";
+import { promoteNextSteps, type SessionRecord } from "@natalia/session";
 import { materializeTools } from "@natalia/tools";
 import type {
   ProviderRunnerInput,
@@ -190,7 +190,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     input.setActiveAbort(controller);
     input.setActiveTurnID(id);
     const currentSession = input.session();
-    if (currentSession && promoteSteers(currentSession).length)
+    if (currentSession && promoteNextSteps(currentSession).length)
       await input.persistInboxPromotion(currentSession?.id);
     input.setLastProviderUsage(undefined);
     let assistant = "";

@@ -389,7 +389,7 @@ test("a queued turn stays visibly queued without replacing active work", () => {
   const state = projectEvents([
     submitted("t1", "first"),
     { type: "thinking.delta", id: "t1", text: "working" },
-    { ...submitted("t2", "next"), delivery: "queue" },
+    { ...submitted("t2", "next"), delivery: "next-turn" },
   ]);
 
   expect(state.messages.find((block) => block.id === "t2:user")?.status).toBe(
@@ -428,7 +428,7 @@ test("an internal wake turn projects as system context, not user input", () => {
 
 test("cancelling a queued turn clears its queued marker", () => {
   const state = projectEvents([
-    { ...submitted("t1", "next"), delivery: "queue" },
+    { ...submitted("t1", "next"), delivery: "next-turn" },
     { type: "turn.cancelled", id: "t1", reason: "removed" },
   ]);
   expect(state.messages.find((block) => block.id === "t1:user")?.status).toBe(

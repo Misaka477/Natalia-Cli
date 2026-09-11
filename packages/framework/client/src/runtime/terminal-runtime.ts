@@ -152,7 +152,7 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
     await submitInput(
       {
         text: `[automated continuation] The human finished providing input on terminal ${terminalID}. Check the terminal output and continue the original task.`,
-        delivery: "steer",
+        delivery: "next-turn",
       },
       exec.session.id,
     );

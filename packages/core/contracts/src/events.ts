@@ -629,7 +629,7 @@ type RuntimeEventData =
       lineCount: number;
       sha256: string;
       /** Admission intent. Queued turns are durable but have not started yet. */
-      delivery?: "steer" | "queue";
+      delivery?: "next-turn" | "next-step";
       /** Runtime-generated wake boundary; never human-authored input. */
       internal?: boolean;
       attachments?: LocalAttachment[];
@@ -1500,7 +1500,7 @@ export type PromptResourceMention = {
 export type PromptAgentMention = { name: string };
 export type SubmitInput = {
   text: string;
-  delivery?: "steer" | "queue";
+  delivery?: "next-turn" | "next-step";
   id?: string;
   attachments?: string[];
   resources?: PromptResourceMention[];

@@ -192,7 +192,7 @@ test("CLI session helpers list and delete local durable sessions", async () => {
       id: "input",
       sessionID: record.id,
       text: "pending",
-      delivery: "queue",
+      delivery: "next-turn",
       admittedAt: "2026-01-01T00:00:00.000Z",
       admittedSeq: 1,
     },

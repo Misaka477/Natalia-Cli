@@ -5930,7 +5930,7 @@ test("provider admission is persisted before the provider turn begins", async ()
     {
       id: submitted.id,
       text: "persist me first",
-      delivery: "steer",
+      delivery: "next-step",
       promotedAt: expect.any(String),
     },
   ]);
@@ -5954,7 +5954,7 @@ test("queued input wakes an idle session after durable admission", async () => {
   client.start(() => undefined);
   const submitted = await client.submitInput!({
     text: "wait for idle",
-    delivery: "queue",
+    delivery: "next-turn",
   });
   await waitFor(() => started, 5000, "the queued input to start streaming");
   expect(started).toBe(true);
@@ -5965,7 +5965,7 @@ test("queued input wakes an idle session after durable admission", async () => {
     ),
   ) as { inbox?: Array<Record<string, unknown>> };
   expect(stored.inbox).toMatchObject([
-    { id: submitted.id, text: "wait for idle", delivery: "queue" },
+    { id: submitted.id, text: "wait for idle", delivery: "next-turn" },
   ]);
   expect(stored.inbox?.[0]?.promotedAt).toEqual(expect.any(String));
   await client.dispose?.();
@@ -5996,7 +5996,7 @@ test("queued inputs promote in FIFO order after the active turn becomes idle", a
   while (!release) await Bun.sleep(1);
   const queued = await Promise.all(
     ["queued one", "queued two", "queued three"].map((text) =>
-      client.submitInput!({ text, delivery: "queue" }),
+      client.submitInput!({ text, delivery: "next-turn" }),
     ),
   );
   release();
@@ -6058,14 +6058,14 @@ test("a queued input survives cancellation and drains on the next prompt", async
   client.start(() => undefined);
   const first = client.submit("first");
   await waitFor(() => requests.length === 1, 5000, "the first turn to start");
-  await client.submitInput!({ text: "queued", delivery: "queue" });
+  await client.submitInput!({ text: "queued", delivery: "next-turn" });
   client.cancel("stop mid-turn");
   await first;
   // Stop interrupts the running drain and leaves durable inbox work alone:
   // nothing auto-promotes until the next admission wakes the session.
   await Bun.sleep(30);
   expect(requests).toEqual(["first"]);
-  await client.submitInput!({ text: "resume please", delivery: "steer" });
+  await client.submitInput!({ text: "resume please", delivery: "next-step" });
   await waitFor(
     () => requests.includes("queued"),
     5000,
@@ -6127,19 +6127,19 @@ test("exact input retry does not duplicate a completed provider turn", async () 
   await client.submitAndWait!({
     id: "turn_retry",
     text: "same",
-    delivery: "steer",
+    delivery: "next-step",
   });
   await client.submitAndWait!({
     id: "turn_retry",
     text: "same",
-    delivery: "steer",
+    delivery: "next-step",
   });
   expect(calls).toBe(1);
   await expect(
     client.submitInput!({
       id: "turn_retry",
       text: "different",
-      delivery: "steer",
+      delivery: "next-step",
     }),
   ).rejects.toThrow("session input conflicts");
 });
@@ -6177,7 +6177,7 @@ test("restart resumes a pending queued input but does not replay interrupted pro
           id: "turn_queued",
           sessionID: "ses_ts7_restart_queue",
           text: "safe queued",
-          delivery: "queue",
+          delivery: "next-turn",
           admittedAt: "2026-07-21T00:00:00.000Z",
         },
       ],
@@ -6279,7 +6279,7 @@ test("restart safely settles a durable tool execution window without replaying i
           id: "turn_queued_after_tool",
           sessionID: "ses_ts7_restart_tool_window",
           text: "safe queued",
-          delivery: "queue",
+          delivery: "next-turn",
           admittedAt: "2026-07-21T00:00:00.000Z",
         },
       ],

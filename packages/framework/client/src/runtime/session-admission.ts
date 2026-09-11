@@ -89,7 +89,7 @@ export function createSessionAdmission(
       : [];
     if (isDisposed()) throw new Error("runtime disposed");
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
-    const delivery = input.delivery ?? "steer";
+    const delivery = input.delivery ?? "next-step";
     const submitted: SubmittedTurn = {
       type: "turn.submitted",
       id,
@@ -97,7 +97,7 @@ export function createSessionAdmission(
       byteLength: new TextEncoder().encode(text).byteLength,
       lineCount: lineCount(text),
       sha256: createHash("sha256").update(text).digest("hex"),
-      ...(delivery === "queue" ? { delivery } : {}),
+      ...(delivery === "next-turn" ? { delivery } : {}),
       ...(input.internal ? { internal: true } : {}),
       attachments: attachments.length ? attachments : undefined,
       resources: input.resources?.length ? input.resources : undefined,
@@ -121,7 +121,7 @@ export function createSessionAdmission(
     });
     const targetCoordinator = () => sessionRunCoordinator(targetSessionID);
     if (existing) {
-      if (!existing.promotedAt && delivery === "steer")
+      if (!existing.promotedAt && delivery === "next-step")
         void targetCoordinator().wake(drainSessionFor(targetSessionID));
       return submitted;
     }

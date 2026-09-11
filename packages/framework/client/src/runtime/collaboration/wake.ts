@@ -34,7 +34,8 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   ) {
     if (ctx.ports.isDisposed()) return;
     const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
-    const delivery = coordinator.active ? "queue" : "steer";
+    // Internal wakes are separate turns, never user steering.
+    const delivery = "next-turn";
     console.log("[collab-wake-main]", {
       source,
       kind,

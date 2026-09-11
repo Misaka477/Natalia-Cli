@@ -8,7 +8,7 @@ import type {
   SessionID,
 } from "@natalia/contracts";
 import type { SessionRecord } from "./index";
-import type { AdmittedSessionInput } from "./inbox";
+import { normalizeDelivery, type AdmittedSessionInput } from "./inbox";
 import {
   decodeMessageCursor,
   encodeMessageCursor,
@@ -707,7 +707,7 @@ export class SqliteSessionStore {
       attachments: parseOptionalJSON(row.attachments),
       resources: parseOptionalJSON(row.resources),
       agents: parseOptionalJSON(row.agents),
-      delivery: row.delivery as AdmittedSessionInput["delivery"],
+      delivery: normalizeDelivery(row.delivery),
       admittedAt: row.admitted_at as string,
       admittedSeq: row.admitted_seq as number,
       promotedAt: (row.promoted_at as string | null) ?? undefined,

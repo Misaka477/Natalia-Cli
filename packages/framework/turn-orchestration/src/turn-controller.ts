@@ -6,8 +6,8 @@ import type {
 import {
   admissionCutoff,
   admittedInputs,
-  promoteNextQueued,
-  promoteSteers,
+  promoteNextSteps,
+  promoteNextTurn,
   type SessionRecord,
 } from "@natalia/session";
 import type {
@@ -40,7 +40,7 @@ export function createTurnController(
     signal.addEventListener("abort", abort, { once: true });
     try {
       if (signal.aborted) throw signal.reason;
-      const inputs = promoteSteers(session, admissionCutoff(session));
+      const inputs = promoteNextSteps(session, admissionCutoff(session));
       if (inputs.length) await persistInboxPromotion(sessionID);
       for (const item of inputs) {
         if (signal.aborted) throw signal.reason;
@@ -57,7 +57,7 @@ export function createTurnController(
       }
       if (
         !admittedInputs(session).some(
-          (entry) => !entry.promotedAt && entry.delivery === "steer",
+          (entry) => !entry.promotedAt && entry.delivery === "next-step",
         )
       )
         await drainQueue(signal, sessionID);
@@ -77,11 +77,11 @@ export function createTurnController(
       if (signal?.aborted) throw signal.reason;
       if (
         admittedInputs(session).some(
-          (entry) => !entry.promotedAt && entry.delivery === "steer",
+          (entry) => !entry.promotedAt && entry.delivery === "next-step",
         )
       )
         return;
-      const [next] = promoteNextQueued(session);
+      const [next] = promoteNextTurn(session);
       if (!next) return;
       await persistInboxPromotion(sessionID);
       if (signal?.aborted) throw signal.reason;

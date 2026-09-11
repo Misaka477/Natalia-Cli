@@ -320,7 +320,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       scheduleInternalWake(owner, {
         id: `turn_mailbox_${messageID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
         text: `(internal mailbox wake: read pending user intents, including message ${messageID}. This is not a user message.)`,
-        delivery: "steer",
+        delivery: "next-turn",
       });
     }
     return { queued: true as const, messageID };

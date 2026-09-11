@@ -6,7 +6,7 @@ function sessionWithInbox(
   inbox: Array<{
     id: string;
     text: string;
-    delivery: "steer" | "queue";
+    delivery: "next-turn" | "next-step";
     promotedAt?: string;
   }>,
 ): SessionRecord {
@@ -51,9 +51,9 @@ function makeController(session: SessionRecord) {
 
 test("steer inputs drain in admission order, queued only after steers", async () => {
   const session = sessionWithInbox([
-    { id: "s1", text: "first", delivery: "steer" },
-    { id: "q1", text: "queued", delivery: "queue" },
-    { id: "s2", text: "second", delivery: "steer" },
+    { id: "s1", text: "first", delivery: "next-step" },
+    { id: "q1", text: "queued", delivery: "next-turn" },
+    { id: "s2", text: "second", delivery: "next-step" },
   ]);
   const { controller, turns } = makeController(session);
   await controller.drain(
@@ -65,9 +65,9 @@ test("steer inputs drain in admission order, queued only after steers", async ()
 
 test("one drain promotes every queued input in FIFO order", async () => {
   const session = sessionWithInbox([
-    { id: "q1", text: "first", delivery: "queue" },
-    { id: "q2", text: "second", delivery: "queue" },
-    { id: "q3", text: "third", delivery: "queue" },
+    { id: "q1", text: "first", delivery: "next-turn" },
+    { id: "q2", text: "second", delivery: "next-turn" },
+    { id: "q3", text: "third", delivery: "next-turn" },
   ]);
   const { controller, turns } = makeController(session);
   await controller.drain(
@@ -79,8 +79,8 @@ test("one drain promotes every queued input in FIFO order", async () => {
 
 test("commands short-circuit turns and flush persistence", async () => {
   const session = sessionWithInbox([
-    { id: "c1", text: "/help", delivery: "steer" },
-    { id: "s1", text: "real", delivery: "steer" },
+    { id: "c1", text: "/help", delivery: "next-step" },
+    { id: "s1", text: "real", delivery: "next-step" },
   ]);
   const { controller, turns, commands, persisted } = makeController(session);
   await controller.drain(
@@ -94,9 +94,9 @@ test("commands short-circuit turns and flush persistence", async () => {
 
 test("an aborted drain stops admitting further inputs", async () => {
   const session = sessionWithInbox([
-    { id: "s1", text: "first", delivery: "steer" },
-    { id: "s2", text: "second", delivery: "steer" },
-    { id: "s3", text: "third", delivery: "steer" },
+    { id: "s1", text: "first", delivery: "next-step" },
+    { id: "s2", text: "second", delivery: "next-step" },
+    { id: "s3", text: "third", delivery: "next-step" },
   ]);
   const turns: string[] = [];
   const controller = createTurnController({
@@ -125,7 +125,7 @@ test("an aborted drain stops admitting further inputs", async () => {
 
 test("disposed turn orchestration refuses new work", async () => {
   const session = sessionWithInbox([
-    { id: "s1", text: "first", delivery: "steer" },
+    { id: "s1", text: "first", delivery: "next-step" },
   ]);
   const { controller } = makeController(session);
   controller.dispose();

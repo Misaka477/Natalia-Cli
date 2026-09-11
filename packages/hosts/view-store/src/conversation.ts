@@ -176,7 +176,7 @@ export function applyConversationEvent(
         return false;
       if (!state.sessionID && event.sessionID)
         state.sessionID = event.sessionID;
-      if (event.delivery !== "queue") state.activeTurn = event.id;
+      if (event.delivery !== "next-turn") state.activeTurn = event.id;
       if (!event.internal) state.lastSubmission = event;
       state.lastStopReason = undefined;
       state.streams[streamID(event.id, "thinking")] = newStream();
@@ -186,7 +186,7 @@ export function applyConversationEvent(
         role: event.internal ? "system" : "user",
         text: userText(event),
         pendingText: "",
-        status: event.delivery === "queue" ? "queued" : undefined,
+        status: event.delivery === "next-turn" ? "queued" : undefined,
         ...(event.attachments?.length
           ? { attachments: event.attachments }
           : {}),

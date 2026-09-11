@@ -18,7 +18,7 @@ export const PENDING_INBOX_PLUGIN_MANIFEST: PluginManifest = {
   hooks: {},
   integrationPoints: [],
   ui: {
-    entry: "src/ui/plugin.tsx",
+    entry: "ui/plugin.js",
     panels: [
       {
         id: "pending",

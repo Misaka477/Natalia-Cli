@@ -98,7 +98,7 @@ export async function handleRuntimeCommand(argv: string[]) {
         if (!line.trim()) continue;
         const request = JSON.parse(line) as {
           prompt?: string;
-          delivery?: "steer" | "queue";
+          delivery?: "next-turn" | "next-step";
           attachments?: string[];
           cancel?: string;
           pause?: string;
@@ -110,7 +110,7 @@ export async function handleRuntimeCommand(argv: string[]) {
         if (
           request.prompt &&
           client.submitInput &&
-          (request.delivery === "queue" || request.attachments?.length)
+          (request.delivery === "next-turn" || request.attachments?.length)
         )
           await client.submitInput({
             text: request.prompt,

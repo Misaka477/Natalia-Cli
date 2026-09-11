@@ -6,7 +6,21 @@ import type {
 } from "@natalia/contracts";
 import type { SessionRecord } from "./index";
 
-export type SessionInputDelivery = "steer" | "queue";
+/**
+ * Where an admitted input is delivered.
+ *
+ * `next-turn` runs as its own turn after the current one; `next-step` is
+ * injected into the running turn's next step. Legacy journals store `steer` /
+ * `queue`; `normalizeDelivery` maps them to `next-turn` on read, because the old
+ * values only ever meant "a separate turn, earlier/later".
+ */
+export type SessionInputDelivery = "next-turn" | "next-step";
+
+export function normalizeDelivery(value: unknown): SessionInputDelivery {
+  // Legacy `steer` only meant "run before queued turns", never "inject into the
+  // running turn", so it must not become `next-step`.
+  return value === "next-step" ? "next-step" : "next-turn";
+}
 
 export type AdmittedSessionInput = {
   id: string;
@@ -21,6 +35,10 @@ export type AdmittedSessionInput = {
   admittedSeq: number;
   promotedAt?: string;
   promotedSeq?: number;
+  /** Set when a `next-step` input is claimed by a provider step. */
+  claimedAt?: string;
+  claimedTurnID?: string;
+  claimedStep?: number;
 };
 
 export class SessionInputConflictError extends Error {
@@ -33,15 +51,33 @@ export function admittedInputs(session: SessionRecord) {
   return session.inbox ?? [];
 }
 
+/** Normalizes legacy `steer` / `queue` values in place; idempotent. */
+export function normalizeInbox(session: SessionRecord): AdmittedSessionInput[] {
+  const inbox = session.inbox ?? [];
+  for (const item of inbox)
+    if (item.delivery !== "next-turn" && item.delivery !== "next-step")
+      item.delivery = normalizeDelivery(item.delivery);
+  return inbox;
+}
+
 export function admitInput(
   session: SessionRecord,
   input: Omit<
     AdmittedSessionInput,
-    "sessionID" | "admittedAt" | "admittedSeq" | "promotedAt" | "promotedSeq"
+    | "sessionID"
+    | "admittedAt"
+    | "admittedSeq"
+    | "promotedAt"
+    | "promotedSeq"
+    | "claimedAt"
+    | "claimedTurnID"
+    | "claimedStep"
   >,
   now = new Date(),
 ) {
-  const existing = admittedInputs(session).find((item) => item.id === input.id);
+  const existing = admittedInputs(session).find(
+    (item) => item.id === input.id,
+  );
   if (existing) {
     if (
       existing.sessionID === session.id &&
@@ -73,7 +109,7 @@ export function admitInput(
   return admitted;
 }
 
-/** Promotes every pending steer admitted before this provider-turn boundary. */
+/** Highest admission sequence currently in the inbox. */
 export function admissionCutoff(session: SessionRecord) {
   return admittedInputs(session).reduce(
     (latest, item, index) => Math.max(latest, item.admittedSeq ?? index + 1),
@@ -81,7 +117,12 @@ export function admissionCutoff(session: SessionRecord) {
   );
 }
 
-export function promoteSteers(
+/**
+ * Promotes every un-promoted `next-step` admitted before this turn boundary.
+ * These run as their own turn when the session is idle; while a turn is already
+ * running, the provider loop claims them in place before a drain can.
+ */
+export function promoteNextSteps(
   session: SessionRecord,
   cutoff = admissionCutoff(session),
   now = new Date(),
@@ -91,19 +132,84 @@ export function promoteSteers(
     admittedInputs(session).filter(
       (item, index) =>
         !item.promotedAt &&
-        item.delivery === "steer" &&
+        item.delivery === "next-step" &&
         (item.admittedSeq ?? index + 1) <= cutoff,
     ),
     now,
   );
 }
 
-/** Promotes one queued input only when the session would otherwise be idle. */
-export function promoteNextQueued(session: SessionRecord, now = new Date()) {
+/** Promotes one `next-turn` input at a turn boundary. */
+export function promoteNextTurn(session: SessionRecord, now = new Date()) {
   const next = admittedInputs(session).find(
-    (item) => !item.promotedAt && item.delivery === "queue",
+    (item) => !item.promotedAt && item.delivery === "next-turn",
   );
   return next ? promote(session, [next], now) : [];
+}
+
+/**
+ * Claims every un-promoted `next-step` for one provider step. Claiming marks the
+ * input promoted, so a later drain will not also run it as a turn.
+ */
+export function claimNextSteps(
+  session: SessionRecord,
+  turnID: string,
+  step: number,
+  now = new Date(),
+) {
+  const claimed = admittedInputs(session).filter(
+    (item) => !item.promotedAt && item.delivery === "next-step",
+  );
+  if (!claimed.length) return [];
+  const ids = new Set(claimed.map((item) => item.id));
+  const claimedAt = now.toISOString();
+  const promotedSeq = admissionCutoff(session);
+  session.inbox = admittedInputs(session).map((item) =>
+    ids.has(item.id)
+      ? {
+          ...item,
+          promotedAt: claimedAt,
+          promotedSeq,
+          claimedAt,
+          claimedTurnID: turnID,
+          claimedStep: step,
+        }
+      : item,
+  );
+  return session.inbox.filter((item) => ids.has(item.id));
+}
+
+/** Removes one not-yet-promoted input. Promoting means it can no longer be cancelled. */
+export function removeAdmittedInput(session: SessionRecord, id: string) {
+  const existing = admittedInputs(session).find((item) => item.id === id);
+  if (!existing || existing.promotedAt) return undefined;
+  session.inbox = admittedInputs(session).filter((item) => item.id !== id);
+  return existing;
+}
+
+/** Replaces the text of one not-yet-promoted input. */
+export function replaceAdmittedInput(
+  session: SessionRecord,
+  id: string,
+  text: string,
+) {
+  const existing = admittedInputs(session).find((item) => item.id === id);
+  if (!existing || existing.promotedAt) return undefined;
+  session.inbox = admittedInputs(session).map((item) =>
+    item.id === id ? { ...item, text } : item,
+  );
+  return session.inbox.find((item) => item.id === id);
+}
+
+/** Promotes one queued `next-turn` input to `next-step` so the running turn takes it. */
+export function promoteInputToStep(session: SessionRecord, id: string) {
+  const existing = admittedInputs(session).find((item) => item.id === id);
+  if (!existing || existing.promotedAt || existing.delivery !== "next-turn")
+    return undefined;
+  session.inbox = admittedInputs(session).map((item) =>
+    item.id === id ? { ...item, delivery: "next-step" } : item,
+  );
+  return session.inbox.find((item) => item.id === id);
 }
 
 function promote(

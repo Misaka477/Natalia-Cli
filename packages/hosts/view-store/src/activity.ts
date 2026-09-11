@@ -57,7 +57,7 @@ export function selectPrimaryActivity(
 export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
   switch (event.type) {
     case "turn.submitted":
-      if (event.delivery === "queue") return;
+      if (event.delivery === "next-turn") return;
       upsertActivity(state, {
         id: turnActivityID(event.id),
         turnID: event.id,

@@ -524,13 +524,25 @@ export async function handleRPCMessage(
       const text = request.params?.text;
       if (typeof text !== "string")
         throw invalidParams("prompt.params.text must be a string");
-      const delivery = request.params?.delivery;
+      const rawDelivery = request.params?.delivery;
       if (
-        delivery !== undefined &&
-        delivery !== "steer" &&
-        delivery !== "queue"
+        rawDelivery !== undefined &&
+        rawDelivery !== "next-turn" &&
+        rawDelivery !== "next-step" &&
+        rawDelivery !== "steer" &&
+        rawDelivery !== "queue"
       )
-        throw invalidParams("prompt.params.delivery must be steer or queue");
+        throw invalidParams(
+          "prompt.params.delivery must be next-turn or next-step",
+        );
+      // Legacy `steer`/`queue` both meant "a separate turn"; only `next-step`
+      // injects into the running turn.
+      const delivery =
+        rawDelivery === undefined
+          ? undefined
+          : rawDelivery === "next-step"
+            ? ("next-step" as const)
+            : ("next-turn" as const);
       const attachments = request.params?.attachments;
       if (
         attachments !== undefined &&

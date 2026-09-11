@@ -33,8 +33,8 @@ import { join } from "node:path";
 
 test("session projector separates completed, active, and unpromoted durable input", () => {
   const session = createSessionRecord("ses_projector", "Projector");
-  admitInput(session, { id: "turn_done", text: "done", delivery: "steer" });
-  admitInput(session, { id: "turn_queue", text: "queue", delivery: "queue" });
+  admitInput(session, { id: "turn_done", text: "done", delivery: "next-step" });
+  admitInput(session, { id: "turn_queue", text: "queue", delivery: "next-turn" });
   appendSessionEvent(session, {
     type: "turn.submitted",
     id: "turn_done",

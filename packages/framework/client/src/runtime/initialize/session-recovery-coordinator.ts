@@ -445,7 +445,7 @@ export class SessionRecoveryCoordinator {
       scope.attachmentReferences.set(`${turnID}:user`, attachments);
 
     const [queued] = projection.pendingInputs.filter(
-      (input) => input.delivery === "queue",
+      (input) => input.delivery === "next-turn",
     );
     if (queued) void scope.turnCoordinator().wake(scope.drainSession);
 

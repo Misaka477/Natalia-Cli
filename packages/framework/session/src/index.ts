@@ -1,4 +1,5 @@
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import { normalizeInbox } from "./inbox";
 import {
   mkdir,
   readFile,
@@ -80,7 +81,11 @@ export class JsonSessionStore {
 
   async load(id: SessionID) {
     try {
-      return JSON.parse(await readFile(this.path(id), "utf8")) as SessionRecord;
+      const session = JSON.parse(
+        await readFile(this.path(id), "utf8"),
+      ) as SessionRecord;
+      normalizeInbox(session);
+      return session;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
@@ -303,8 +308,14 @@ export {
   admitInput,
   admissionCutoff,
   admittedInputs,
-  promoteNextQueued,
-  promoteSteers,
+  claimNextSteps,
+  normalizeDelivery,
+  normalizeInbox,
+  promoteInputToStep,
+  promoteNextSteps,
+  promoteNextTurn,
+  removeAdmittedInput,
+  replaceAdmittedInput,
   SessionInputConflictError,
 } from "./inbox";
 export type { AdmittedSessionInput, SessionInputDelivery } from "./inbox";

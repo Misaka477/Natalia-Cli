@@ -486,7 +486,7 @@ export function createEventSink(
         ctx.ports.scheduleInternalWake(exec, {
           id: wakeID,
           text: `(internal Nia audit result: ${auditSummary}. This is internal context for you and the user. Do not forward it to Navi; act on the findings directly.)`,
-          delivery: "steer",
+          delivery: "next-turn",
         });
       }
       // If Nia did not call audit_report, fall back to known audit phrasing so

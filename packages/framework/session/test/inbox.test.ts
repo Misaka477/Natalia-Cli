@@ -1,15 +1,25 @@
 import { expect, test } from "bun:test";
+import type { AdmittedSessionInput } from "../src";
 import {
   admitInput,
+  claimNextSteps,
   createSessionRecord,
-  promoteNextQueued,
-  promoteSteers,
+  normalizeInbox,
+  promoteInputToStep,
+  promoteNextSteps,
+  promoteNextTurn,
+  removeAdmittedInput,
+  replaceAdmittedInput,
   SessionInputConflictError,
 } from "../src";
 
 test("session inbox exact retry is idempotent and conflicting reuse is rejected", () => {
   const session = createSessionRecord("ses_inbox", "Inbox");
-  const input = { id: "turn_one", text: "hello", delivery: "steer" as const };
+  const input = {
+    id: "turn_one",
+    text: "hello",
+    delivery: "next-step" as const,
+  };
   const first = admitInput(
     session,
     input,
@@ -19,9 +29,9 @@ test("session inbox exact retry is idempotent and conflicting reuse is rejected"
   expect(() => admitInput(session, { ...input, text: "different" })).toThrow(
     SessionInputConflictError,
   );
-  expect(() => admitInput(session, { ...input, delivery: "queue" })).toThrow(
-    SessionInputConflictError,
-  );
+  expect(() =>
+    admitInput(session, { ...input, delivery: "next-turn" }),
+  ).toThrow(SessionInputConflictError);
 });
 
 test("session inbox treats structured mentions as part of admission identity", () => {
@@ -29,7 +39,7 @@ test("session inbox treats structured mentions as part of admission identity", (
   const input = {
     id: "turn_mentions",
     text: "inspect",
-    delivery: "steer" as const,
+    delivery: "next-step" as const,
     resources: [{ server: "docs", uri: "docs://guide", name: "Guide" }],
     agents: [{ name: "review" }],
   };
@@ -40,36 +50,111 @@ test("session inbox treats structured mentions as part of admission identity", (
   ).toThrow(SessionInputConflictError);
 });
 
-test("session inbox promotes all steers but one queued input at an idle boundary", () => {
+test("next-step inputs are promoted before next-turn inputs", () => {
   const session = createSessionRecord("ses_promote", "Promote");
-  admitInput(session, { id: "steer_a", text: "a", delivery: "steer" });
-  admitInput(session, { id: "queue_a", text: "b", delivery: "queue" });
-  admitInput(session, { id: "steer_b", text: "c", delivery: "steer" });
-  admitInput(session, { id: "queue_b", text: "d", delivery: "queue" });
+  admitInput(session, { id: "step_a", text: "a", delivery: "next-step" });
+  admitInput(session, { id: "turn_a", text: "b", delivery: "next-turn" });
+  admitInput(session, { id: "step_b", text: "c", delivery: "next-step" });
+  admitInput(session, { id: "turn_b", text: "d", delivery: "next-turn" });
 
-  expect(promoteSteers(session).map((item) => item.id)).toEqual([
-    "steer_a",
-    "steer_b",
+  expect(promoteNextSteps(session).map((item) => item.id)).toEqual([
+    "step_a",
+    "step_b",
   ]);
-  expect(promoteNextQueued(session).map((item) => item.id)).toEqual([
-    "queue_a",
-  ]);
-  expect(promoteNextQueued(session).map((item) => item.id)).toEqual([
-    "queue_b",
-  ]);
-  expect(promoteNextQueued(session)).toEqual([]);
+  expect(promoteNextTurn(session).map((item) => item.id)).toEqual(["turn_a"]);
+  expect(promoteNextTurn(session).map((item) => item.id)).toEqual(["turn_b"]);
+  expect(promoteNextTurn(session)).toEqual([]);
 });
 
-test("steer promotion honors a captured admission cutoff", () => {
+test("next-step promotion honors a captured admission cutoff", () => {
   const session = createSessionRecord("ses_cutoff", "Cutoff");
-  admitInput(session, { id: "before", text: "before", delivery: "steer" });
+  admitInput(session, {
+    id: "before",
+    text: "before",
+    delivery: "next-step",
+  });
   const cutoff = session.inbox![0]!.admittedSeq;
-  admitInput(session, { id: "after", text: "after", delivery: "steer" });
+  admitInput(session, { id: "after", text: "after", delivery: "next-step" });
 
-  expect(promoteSteers(session, cutoff).map((item) => item.id)).toEqual([
+  expect(promoteNextSteps(session, cutoff).map((item) => item.id)).toEqual([
     "before",
   ]);
   expect(
     session.inbox?.find((item) => item.id === "after")?.promotedAt,
   ).toBeUndefined();
+});
+
+test("claimNextSteps takes every pending next-step and marks it promoted", () => {
+  const session = createSessionRecord("ses_claim", "Claim");
+  admitInput(session, { id: "s1", text: "a", delivery: "next-step" });
+  admitInput(session, { id: "q1", text: "b", delivery: "next-turn" });
+  admitInput(session, { id: "s2", text: "c", delivery: "next-step" });
+
+  const claimed = claimNextSteps(session, "turn_1", 3);
+  expect(claimed.map((item) => item.id)).toEqual(["s1", "s2"]);
+  expect(claimed[0]!.claimedTurnID).toBe("turn_1");
+  expect(claimed[0]!.claimedStep).toBe(3);
+  // Claimed steps are no longer promotable by a drain.
+  expect(promoteNextSteps(session)).toEqual([]);
+  expect(promoteNextTurn(session).map((item) => item.id)).toEqual(["q1"]);
+});
+
+test("remove and replace only touch not-yet-promoted inputs", () => {
+  const session = createSessionRecord("ses_mutate", "Mutate");
+  admitInput(session, { id: "a", text: "first", delivery: "next-turn" });
+  admitInput(session, { id: "b", text: "second", delivery: "next-turn" });
+
+  expect(replaceAdmittedInput(session, "a", "edited")?.text).toBe("edited");
+  expect(removeAdmittedInput(session, "b")?.id).toBe("b");
+  expect(session.inbox?.map((item) => item.id)).toEqual(["a"]);
+
+  promoteNextTurn(session);
+  expect(removeAdmittedInput(session, "a")).toBeUndefined();
+  expect(replaceAdmittedInput(session, "a", "late")).toBeUndefined();
+});
+
+test("promoteInputToStep moves a queued turn into the running turn", () => {
+  const session = createSessionRecord("ses_steer", "Steer");
+  admitInput(session, { id: "a", text: "next", delivery: "next-turn" });
+  expect(promoteInputToStep(session, "a")?.delivery).toBe("next-step");
+  expect(claimNextSteps(session, "turn_1", 1).map((item) => item.id)).toEqual([
+    "a",
+  ]);
+  expect(promoteInputToStep(session, "a")).toBeUndefined();
+});
+
+test("normalizeInbox maps legacy steer/queue to next-turn", () => {
+  const session = createSessionRecord("ses_legacy", "Legacy");
+  session.inbox = [
+    {
+      id: "s",
+      sessionID: session.id,
+      text: "old steer",
+      delivery: "steer" as never,
+      admittedAt: new Date(0).toISOString(),
+      admittedSeq: 1,
+    },
+    {
+      id: "q",
+      sessionID: session.id,
+      text: "old queue",
+      delivery: "queue" as never,
+      admittedAt: new Date(0).toISOString(),
+      admittedSeq: 2,
+    },
+    {
+      id: "n",
+      sessionID: session.id,
+      text: "new step",
+      delivery: "next-step",
+      admittedAt: new Date(0).toISOString(),
+      admittedSeq: 3,
+    },
+  ] as AdmittedSessionInput[];
+  normalizeInbox(session);
+  expect(session.inbox.map((item) => item.delivery)).toEqual([
+    "next-turn",
+    "next-turn",
+    "next-step",
+  ]);
 });
