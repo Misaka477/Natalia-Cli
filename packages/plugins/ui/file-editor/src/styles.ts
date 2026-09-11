@@ -152,7 +152,7 @@ export const fileEditorStyles =
 .neu-file-editor-tab:hover {
   background: var(--neu-bg-light);
 }
-.neu-file-editor-tab-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.neu-file-editor-tab-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .neu-file-editor-tab .neu-tab-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--neu-accent); }
 .neu-file-editor-tab .neu-tab-close { width: 20px; height: 20px; background: transparent; border: none; color: var(--neu-muted); border-radius: 8px; cursor: pointer; }
 .neu-file-breadcrumbs {
