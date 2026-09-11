@@ -789,6 +789,57 @@ test("provider steps compact proactively before dispatching an oversized request
   );
 });
 
+test("provider steps prune old oversized tool results before dispatch", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  const { runner, ledger, events } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        requests.push(request);
+        yield content("done");
+      },
+    },
+    {
+      runtimeContextConfig: {
+        max: 200_000,
+        thresholdPercent: 85,
+        reserved: 8_192,
+      },
+    },
+  );
+  ledger.add({
+    id: "call",
+    role: "tool_call",
+    content: "read_big {}",
+    pairID: "p1",
+    tokens: 10,
+  });
+  ledger.add({
+    id: "old-big",
+    role: "tool_result",
+    content: "x".repeat(9_000),
+    pairID: "p1",
+    tokens: 2_250,
+  });
+  ledger.add({
+    id: "recent",
+    role: "assistant",
+    content: "recent context",
+    tokens: 10,
+  });
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(1);
+  const old = requests[0]?.messages.find((message) =>
+    message.content.includes("tool result truncated for context"),
+  );
+  expect(old).toBeDefined();
+  expect(old?.content).toContain("originalChars=9000");
+  expect(events.some((event) => event.type === "compaction.begin")).toBe(false);
+});
+
 test("provider message estimates exclude binary data URLs", () => {
   const base = estimateProviderMessages([{ role: "user", content: "read it" }]);
   const encoded = "A".repeat(2_000_000);

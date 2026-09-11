@@ -755,6 +755,13 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     config: { max: number; thresholdPercent: number; reserved: number },
   ) {
     const ledger = input.context();
+    const pruned = ledger.pruneToolResults();
+    if (pruned.pruned > 0) {
+      rebuildMessagesAfterCompaction(messages, ledger, {
+        preserveToolMessages: false,
+      });
+      input.publish(contextStatusEvent(ledger.status(config)));
+    }
     const used = Math.max(
       ledger.effectiveTokens(),
       estimateProviderMessages(messages),
@@ -788,6 +795,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
   function rebuildMessagesAfterCompaction(
     messages: ProviderMessage[],
     ledger: ContextLedger,
+    options?: { preserveToolMessages?: boolean },
   ) {
     const runtimeInstruction =
       messages[0]?.role === "system" ? messages[0] : undefined;
@@ -814,11 +822,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     );
     if (originalUser && recoveredUser)
       Object.assign(recoveredUser, originalUser);
-    for (const message of compacted) {
-      if (message.role !== "tool" || !message.toolCallID) continue;
-      const original = originalTools.get(message.toolCallID);
-      if (original) Object.assign(message, original);
-    }
+    if (options?.preserveToolMessages !== false)
+      for (const message of compacted) {
+        if (message.role !== "tool" || !message.toolCallID) continue;
+        const original = originalTools.get(message.toolCallID);
+        if (original) Object.assign(message, original);
+      }
     // This array remains authoritative for later tool steps in the same turn.
     messages.splice(0, messages.length, ...compacted);
   }

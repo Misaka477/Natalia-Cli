@@ -8,6 +8,7 @@ import {
   preserveRecentWithToolPairs,
   preserveRecentWithToolPairsByTokens,
   providerCompactor,
+  pruneToolResultEntry,
   providerError,
   recoverContextLimitOnce,
   resolveReservedOutputTokens,
@@ -587,4 +588,53 @@ test("compaction prefers an explicit preservedRecentTokens budget over message c
     "cmp_budget:summary",
     "m3",
   ]);
+});
+
+test("pruneToolResultEntry shrinks old oversized tool output and is idempotent", () => {
+  const entry: ContextEntry = {
+    id: "big",
+    role: "tool_result",
+    content: "x".repeat(9_000),
+    tokens: 2_250,
+  };
+  const pruned = pruneToolResultEntry(entry);
+  expect(pruned).not.toBe(entry);
+  expect(pruned.content.length).toBeLessThan(entry.content.length);
+  expect(pruned.content).toContain("tool result truncated for context");
+  expect(pruned.content).toContain("originalChars=9000");
+  expect(pruneToolResultEntry(pruned)).toBe(pruned);
+
+  const small: ContextEntry = {
+    id: "small",
+    role: "tool_result",
+    content: "short output",
+  };
+  expect(pruneToolResultEntry(small)).toBe(small);
+});
+
+test("ContextLedger pruneToolResults protects the newest entry and lowers effectiveTokens", () => {
+  const ledger = new ContextLedger();
+  ledger.add({
+    id: "old-big",
+    role: "tool_result",
+    content: "x".repeat(9_000),
+    tokens: 2_250,
+  });
+  ledger.add({
+    id: "newest",
+    role: "assistant",
+    content: "newest turn",
+    tokens: 10,
+  });
+  const before = ledger.effectiveTokens();
+  const outcome = ledger.pruneToolResults();
+  expect(outcome.pruned).toBe(1);
+  expect(outcome.afterTokens).toBeLessThan(before);
+  expect(ledger.snapshot().entries[0]?.content).toContain(
+    "tool result truncated for context",
+  );
+  expect(ledger.snapshot().entries[1]?.content).toBe("newest turn");
+  expect(
+    ledger.status({ max: 1000, thresholdPercent: 85, reserved: 10 }).source,
+  ).toBe("pending_estimate");
 });

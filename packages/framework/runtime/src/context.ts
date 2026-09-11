@@ -68,6 +68,30 @@ export type ResourceSnapshot = {
   summary: string;
 };
 
+export type ToolResultPruneOptions = {
+  thresholdChars: number;
+  headChars: number;
+  tailChars: number;
+  /**
+   * Number of newest entries exempt from pruning. The default keeps the most
+   * recent tool result intact while old tool output is reduced.
+   */
+  protectRecentEntries: number;
+};
+
+export const DEFAULT_TOOL_RESULT_PRUNE_OPTIONS: ToolResultPruneOptions = {
+  thresholdChars: 8192,
+  headChars: 4096,
+  tailChars: 1024,
+  protectRecentEntries: 1,
+};
+
+export type ToolResultPruneOutcome = {
+  pruned: number;
+  beforeTokens: number;
+  afterTokens: number;
+};
+
 export type ReservedResolverInput = {
   contextWindow: number;
   explicitMaxOutputTokens?: number | null;
@@ -134,6 +158,43 @@ export class ContextLedger {
       .slice(this.checkpoint.messageCount)
       .reduce((sum, entry) => sum + (entry.tokens ?? 0), 0);
     return this.checkpoint.tokens + pending;
+  }
+
+  /**
+   * Deterministically trims old large tool results in-place before a provider
+   * request. Journal events remain untouched; only this live ledger surface is
+   * replaced, and the exact provider checkpoint is degraded to an estimate
+   * because the prior usage no longer describes this transformed surface.
+   */
+  pruneToolResults(
+    options: Partial<ToolResultPruneOptions> = {},
+  ): ToolResultPruneOutcome {
+    const resolved = { ...DEFAULT_TOOL_RESULT_PRUNE_OPTIONS, ...options };
+    const beforeTokens = this.effectiveTokens();
+    const protect = Math.max(0, Math.floor(resolved.protectRecentEntries));
+    const cutoff = Math.max(0, this.entries.length - protect);
+    let pruned = 0;
+    this.entries = this.entries.map((entry, index) => {
+      if (index >= cutoff) return entry;
+      const candidate = pruneToolResultEntry(entry, resolved);
+      if (candidate !== entry) pruned += 1;
+      return candidate;
+    });
+    if (!pruned) return { pruned: 0, beforeTokens, afterTokens: beforeTokens };
+    const tokens = this.entries.reduce(
+      (sum, entry) => sum + (entry.tokens ?? estimateTokens(entry.content)),
+      0,
+    );
+    this.checkpoint = {
+      messageCount: this.entries.length,
+      tokens,
+      source: "estimate",
+    };
+    return {
+      pruned,
+      beforeTokens,
+      afterTokens: this.effectiveTokens(),
+    };
   }
 
   status(input: {
@@ -345,6 +406,26 @@ export function preserveRecentWithToolPairsByTokens(
     start = index;
   }
   return closeToolPairs(entries, entries.slice(start));
+}
+
+const TOOL_RESULT_PRUNE_MARKER = "tool result truncated for context";
+
+export function pruneToolResultEntry(
+  entry: ContextEntry,
+  options: ToolResultPruneOptions = DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+): ContextEntry {
+  if (
+    entry.role !== "tool_result" ||
+    entry.content.length <= options.thresholdChars ||
+    entry.content.includes(TOOL_RESULT_PRUNE_MARKER)
+  )
+    return entry;
+  const head = entry.content.slice(0, options.headChars);
+  const tail = entry.content.slice(-options.tailChars);
+  const omittedChars = entry.content.length - head.length - tail.length;
+  const content = `${head}\n\n[${TOOL_RESULT_PRUNE_MARKER}; originalChars=${entry.content.length}; omittedChars=${omittedChars}]\n\n${tail}`;
+  if (content.length >= entry.content.length) return entry;
+  return { ...entry, content, tokens: undefined };
 }
 
 export function largeToolResultContext(
