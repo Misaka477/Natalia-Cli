@@ -43,8 +43,6 @@ import { NiaPanel } from "./nia-panel";
 import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { NeuSelect } from "./components/NeuSelect";
-import { PermissionPanel } from "./permission-panel";
-import { QuestionPanel } from "./components/QuestionPanel";
 import { StatusPanel } from "./status-panel";
 import { SearchPanel } from "./search-panel";
 import { HelpPanel } from "./help-panel";
@@ -765,16 +763,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let chatPagingAnchor: ScrollAnchor | undefined;
   let mainForceScroll = false;
   let chatForceScroll = false;
-  const [permissionOpen, setPermissionOpen] = createSignal(false);
-  const [currentApproval, setCurrentApproval] = createSignal<Extract<
-    RuntimeEvent,
-    { type: "approval.request" }
-  > | null>(null);
-  const [currentQuestion, setCurrentQuestion] = createSignal<Extract<
-    RuntimeEvent,
-    { type: "question.request" }
-  > | null>(null);
-  const [questionOpen, setQuestionOpen] = createSignal(false);
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
   const transcriptRef = createSignal<HTMLDivElement | undefined>(undefined);
@@ -1649,14 +1637,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         ).__nataliaReplayingHistory;
         if (replaying) return;
         const currentSession = selectedSessionID() || state().sessionID;
-        if (event.type === "approval.request" && historyReplayDone) {
-          setCurrentApproval(event);
-          setPermissionOpen(true);
-        }
-        if (event.type === "question.request" && historyReplayDone) {
-          setCurrentQuestion(event);
-          setQuestionOpen(true);
-        }
         if (event.type === "turn.submitted" && event.delivery !== "queue") {
           mainForceScroll = true;
           setFollowBottom(true);
@@ -1701,10 +1681,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       setChatDraft("");
       setMainAttachments([]);
       setChatAttachments([]);
-      setCurrentApproval(null);
-      setPermissionOpen(false);
-      setCurrentQuestion(null);
-      setQuestionOpen(false);
       const projected = cloneState(props.ctx.projection.getState());
       setState(projected);
     };
@@ -1946,24 +1922,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         };
         settleToBottom();
         setTimeout(scrollToBottom, 250);
-        const interactiveStart = performance.now();
-        const interactive = await props.ctx.runtime.pendingInteractive?.({
-          sessionID: selectedSessionID() || state().sessionID,
-        });
-        if (isStaleLoad()) return;
-        const approvals = interactive?.approvals ?? [];
-        if (approvals.length) {
-          setCurrentApproval(approvals[0]);
-          setPermissionOpen(true);
-        }
-        const questions = interactive?.questions ?? [];
-        if (questions.length) {
-          setCurrentQuestion(questions[0]);
-          setQuestionOpen(true);
-        }
-        perfLog(
-          `[perf] pendingInteractive applied approvals=${approvals.length} questions=${questions.length} +${(performance.now() - interactiveStart).toFixed(1)}ms`,
-        );
         perfLog(
           `[perf] openUnresolvedInteractives done +${(performance.now() - openStart).toFixed(1)}ms`,
         );
@@ -3898,28 +3856,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           </button>
         )}
       </div>
-      <PermissionPanel
-        open={permissionOpen()}
-        approval={currentApproval()}
-        runtime={props.ctx.runtime}
-        sessionID={selectedSessionID() || state().sessionID}
-        workspaceID={workspaceIDForSelectedSession()}
-        onClose={() => {
-          setPermissionOpen(false);
-          setCurrentApproval(null);
-        }}
-      />
-      <QuestionPanel
-        open={questionOpen()}
-        request={currentQuestion()}
-        runtime={props.ctx.runtime}
-        sessionID={selectedSessionID() || state().sessionID}
-        workspaceID={workspaceIDForSelectedSession()}
-        onClose={() => {
-          setQuestionOpen(false);
-          setCurrentQuestion(null);
-        }}
-      />
       <WorkspaceSettingsPanel
         open={workspaceSettingsOpen()}
         workspaceID={
