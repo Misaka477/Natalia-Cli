@@ -14,6 +14,42 @@ function escapeHtml(value: string): string {
 const renderer = new marked.Renderer();
 renderer.html = ({ text }) => escapeHtml(text);
 
+function tableDelimiter(line: string | undefined) {
+  return (
+    typeof line === "string" &&
+    line.includes("|") &&
+    /^\s*\|?[\s:|-]+\|?\s*$/u.test(line) &&
+    line.includes("-")
+  );
+}
+
+function tableHeader(line: string | undefined) {
+  return typeof line === "string" && line.includes("|");
+}
+
+/**
+ * GFM tables must start a fresh block. README files often put the table
+ * immediately after the preceding sentence, which marked otherwise treats as
+ * ordinary paragraph text. Insert the required blank line before the header.
+ */
+function normalizeGfmTables(text: string) {
+  const lines = text.split(/\r?\n/u);
+  const normalized: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const next = lines[index + 1];
+    if (
+      tableHeader(line) &&
+      tableDelimiter(next) &&
+      normalized.length > 0 &&
+      normalized.at(-1)!.trim() !== ""
+    )
+      normalized.push("");
+    normalized.push(line);
+  }
+  return normalized.join("\n");
+}
+
 /**
  * Renders GitHub-flavoured markdown to HTML with a small revision cache. Shared
  * by the transcript and the file editor so both render tables and code alike.
@@ -21,7 +57,7 @@ renderer.html = ({ text }) => escapeHtml(text);
 export function renderMarkdownHtml(text: string): string {
   const cached = markdownCache.get(text);
   if (cached !== undefined) return cached;
-  const html = marked.parse(text, {
+  const html = marked.parse(normalizeGfmTables(text), {
     gfm: true,
     breaks: true,
     renderer,
