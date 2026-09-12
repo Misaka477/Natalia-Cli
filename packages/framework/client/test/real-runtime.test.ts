@@ -12767,12 +12767,8 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
           isCollabMessageEvent(event) && event.message.kind === "answer",
       ),
     );
-    await waitForAsync(async () =>
-      events.some(
-        (event) =>
-          event.type === "turn.finished" && event.id.startsWith("turn_collab_"),
-      ),
-    );
+    // An active main turn receives the answer as a next-step injection, so
+    // there is no guaranteed separate `turn_collab_` turn to wait for.
     await client.submitAndWait!("check");
     await waitForAsync(async () =>
       inboxToolResults.some((result) => result.includes("yes, echo is safe")),

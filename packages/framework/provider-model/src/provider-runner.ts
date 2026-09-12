@@ -126,6 +126,21 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     return undefined;
   }
 
+  /**
+   * A collaboration reply can land in the same tick as the provider result
+   * that ends a step. Its wake is admitted asynchronously, so before treating
+   * the missing direct reply as a protocol failure, give the next-step input a
+   * short window to appear in the inbox; the loop will claim it at the top of
+   * the next iteration.
+   */
+  async function waitForPendingStepInput(timeoutMs = 250) {
+    if (!input.hasPendingStepInputs) return;
+    const deadline = Date.now() + timeoutMs;
+    while (!input.hasPendingStepInputs() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
   async function runTurn(input: {
     id: string;
     text: string;
@@ -293,9 +308,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       }
       const agent = input.selectedAgent();
       const config = input.tsRuntimeConfig();
-      messages.unshift({
-        role: "system",
-        content: runtimeSystemPrompt({
+      const runtimeInstruction = () =>
+        runtimeSystemPrompt({
           workspaceRoot: input.workspaceRoot(),
           permissionMode: activePermissionMode,
           agentName: agent?.name,
@@ -313,7 +327,10 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           niaChats: input.niaChats?.() ?? [],
           niaIntro: input.niaIntro?.() ?? false,
           activePlan: input.activePlan(),
-        }),
+        });
+      messages.unshift({
+        role: "system",
+        content: runtimeInstruction(),
       });
       let usedTools = false;
       let finalResponse = "";
@@ -321,12 +338,16 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       let step = 0;
       let protocolCorrections = 0;
       const maxSteps = input.effectiveMaxSteps();
-      while (step < maxSteps) {
+      // A next-step input that arrived while the final provider step was in
+      // flight must still be claimed before the turn can finish; otherwise the
+      // input would be stranded as promoted-but-never-run.
+      while (step < maxSteps || (input.hasPendingStepInputs?.() ?? false)) {
         input.activeAbort()?.signal.throwIfAborted();
         await input.waitIfPaused();
         for (const incoming of input.takeLiveUserMessages?.() ?? [])
           messages.push({ role: "user", content: incoming.text });
-        for (const incoming of input.takeStepInputs?.(step) ?? []) {
+        const stepInputs = input.takeStepInputs?.(step) ?? [];
+        for (const incoming of stepInputs) {
           messages.push({ role: "user", content: incoming.text });
           ledger.add({
             id: `${incoming.id}:user`,
@@ -334,6 +355,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
             content: incoming.text,
           });
         }
+        // The routed instruction is assembled once per turn, but collaboration
+        // can arrive mid-turn. Refresh it when a next-step input is claimed so
+        // <navi_chat> / <nia_collaborations> carry the new reply, not a stale
+        // snapshot from the start of the turn.
+        if (stepInputs.length && messages[0]?.role === "system")
+          messages[0].content = runtimeInstruction();
         const pendingNaviReply = requiredCollabReply();
         const reachedStepLimit =
           Number.isFinite(maxSteps) && step + 1 >= maxSteps;
@@ -389,6 +416,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         usedTools ||= result.hadToolCalls;
         const stillPendingNaviReply = requiredCollabReply();
         if (!calledTools && stillPendingNaviReply && !input.waitingHuman()) {
+          await waitForPendingStepInput();
           protocolCorrections += 1;
           if (protocolCorrections > maxProtocolCorrections)
             throw new Error(

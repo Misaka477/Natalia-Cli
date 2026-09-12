@@ -6,7 +6,11 @@
  * and Navi's own wake turn. Reads live state through `RuntimeContext` at call
  * time.
  */
-import { sessionRunCoordinator } from "@natalia/session";
+import {
+  admitInput,
+  buildInputAdmission,
+  sessionRunCoordinator,
+} from "@natalia/session";
 import {
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   type ProviderModelController,
@@ -34,8 +38,16 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   ) {
     if (ctx.ports.isDisposed()) return;
     const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
-    // Internal wakes are separate turns, never user steering.
-    const delivery = "next-turn";
+    // A collaboration message for a main turn that is actually running is
+    // injected into its next provider step synchronously: the provider loop can
+    // claim it before the current step's correction/error path decides the
+    // model ignored the reply. An idle main agent gets a durable separate turn.
+    const delivery = exec.activeTurnID ? "next-step" : "next-turn";
+    const id = `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
+    const text =
+      source === "Nia"
+        ? `(internal collaboration wake: Nia sent a ${kind}; read her audit findings in <nia_collaborations>, perform the required remediation work now, then reply to Nia with what you changed. Do not acknowledge with chat alone. This is not a user message.)`
+        : `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`;
     console.log("[collab-wake-main]", {
       source,
       kind,
@@ -44,14 +56,32 @@ export function createCollaborationWake(ctx: RuntimeContext) {
       delivery,
       coordinatorActive: coordinator.active,
     });
-    scheduleInternalWake(exec, {
-      id: `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`,
-      text:
-        source === "Nia"
-          ? `(internal collaboration wake: Nia sent a ${kind}; read her audit findings in <nia_collaborations>, perform the required remediation work now, then reply to Nia with what you changed. Do not acknowledge with chat alone. This is not a user message.)`
-          : `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`,
-      delivery,
-    });
+    if (delivery === "next-step") {
+      const admitted = admitInput(exec.session, {
+        id,
+        text,
+        delivery: "next-step",
+        internal: true,
+      });
+      ctx.ports.publishForSession(
+        exec,
+        buildInputAdmission({
+          id: admitted.id,
+          text: admitted.text,
+          internal: true,
+          delivery: admitted.delivery,
+          admittedAt: admitted.admittedAt,
+          admittedSeq: admitted.admittedSeq,
+        }),
+      );
+      console.log("[collab-wake-inject]", {
+        id,
+        sessionID: exec.session.id,
+        admittedSeq: admitted.admittedSeq,
+      });
+      return;
+    }
+    scheduleInternalWake(exec, { id, text, delivery });
   }
 
   function scheduleInternalWake(
