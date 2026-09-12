@@ -6,6 +6,7 @@ import type { Attachment, Message } from "./message";
 
 const VIRTUALIZE_THRESHOLD = 80;
 const VIRTUAL_OVERSCAN = 8;
+const VIRTUAL_ROW_GAP = 6;
 
 function uiDebugEnabled() {
   try {
@@ -49,6 +50,7 @@ export function Transcript(props: TranscriptProps) {
     getScrollElement: () => scrollEl() ?? null,
     estimateSize: (index) => estimateMessageHeight(props.messages[index]!),
     getItemKey: (index) => props.messages[index]?.id ?? index,
+    gap: VIRTUAL_ROW_GAP,
     overscan: VIRTUAL_OVERSCAN,
   });
 
@@ -62,6 +64,15 @@ export function Transcript(props: TranscriptProps) {
   // produced a window, render the ordinary list so long histories are never
   // blank and the first scroll cannot jump against a zero-height spacer.
   const useVirtual = () => virtualize() && virtualItems().length > 0;
+  const topSpacer = () => {
+    const first = virtualItems()[0];
+    return first ? Math.max(0, first.start) : 0;
+  };
+  const bottomSpacer = () => {
+    const items = virtualItems();
+    const last = items.at(-1);
+    return last ? Math.max(0, virtualizer.getTotalSize() - last.end) : 0;
+  };
 
   onMount(() => {
     console.log("[natalia-ui] transcript mounted", {
@@ -121,17 +132,7 @@ export function Transcript(props: TranscriptProps) {
 
   return (
     <div class="natalia-transcript" ref={setScrollRef} onScroll={handleScroll}>
-      <div
-        class="natalia-transcript-content"
-        style={
-          useVirtual()
-            ? {
-                position: "relative",
-                height: `${virtualizer.getTotalSize()}px`,
-              }
-            : undefined
-        }
-      >
+      <div class="natalia-transcript-content">
         <Show
           when={props.messages.length > 0}
           fallback={
@@ -172,6 +173,13 @@ export function Transcript(props: TranscriptProps) {
               </For>
             }
           >
+            <Show when={topSpacer() > 0}>
+              <div
+                aria-hidden="true"
+                data-virtual-spacer="top"
+                style={{ height: `${topSpacer()}px` }}
+              />
+            </Show>
             <For each={virtualItems()}>
               {(item) => (
                 <MessageGroup
@@ -182,16 +190,16 @@ export function Transcript(props: TranscriptProps) {
                   onFork={props.onFork}
                   onRollback={props.onRollback}
                   rowRef={virtualizer.measureElement}
-                  style={{
-                    position: "absolute",
-                    top: "0",
-                    left: "0",
-                    width: "100%",
-                    transform: `translateY(${item.start}px)`,
-                  }}
                 />
               )}
             </For>
+            <Show when={bottomSpacer() > 0}>
+              <div
+                aria-hidden="true"
+                data-virtual-spacer="bottom"
+                style={{ height: `${bottomSpacer()}px` }}
+              />
+            </Show>
           </Show>
         </Show>
       </div>
