@@ -27,7 +27,11 @@ import {
   type ProviderToolCall,
   type ProviderMessage,
 } from "@natalia/runtime";
-import type { ProviderReasoningBlock, RuntimeEvent } from "@natalia/contracts";
+import type {
+  ProviderContentPart,
+  ProviderReasoningBlock,
+  RuntimeEvent,
+} from "@natalia/contracts";
 import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -237,6 +241,7 @@ export function createExecuteCalls(
       signature?: string;
       redacted?: boolean;
       blocks?: ProviderReasoningBlock[];
+      parts?: ProviderContentPart[];
       textSignature?: string;
     },
   ): Promise<ProviderMessage[]> {
@@ -323,6 +328,7 @@ export function createExecuteCalls(
       ...(reasoning?.blocks?.length
         ? { reasoningBlocks: reasoning.blocks }
         : {}),
+      ...(reasoning?.parts?.length ? { contentParts: reasoning.parts } : {}),
       ...(reasoning?.textSignature
         ? { textSignature: reasoning.textSignature }
         : {}),
@@ -352,6 +358,9 @@ export function createExecuteCalls(
           : {}),
         ...(index === 0 && reasoning?.blocks?.length
           ? { reasoningBlocks: reasoning.blocks }
+          : {}),
+        ...(index === 0 && reasoning?.parts?.length
+          ? { contentParts: reasoning.parts }
           : {}),
         ...(index === 0 && reasoning?.textSignature
           ? { textSignature: reasoning.textSignature }

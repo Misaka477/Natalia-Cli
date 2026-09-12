@@ -1,6 +1,7 @@
 import type {
   LocalAttachment,
   ModelCapabilities,
+  ProviderContentPart,
   ProviderReasoningBlock,
   RuntimeEvent,
 } from "@natalia/contracts";
@@ -585,6 +586,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           thinkingSignature?: string;
           thinkingRedacted?: boolean;
           thinkingBlocks?: ProviderReasoningBlock[];
+          contentParts?: ProviderContentPart[];
           calls: ProviderToolCall[];
           finishReason?: ProviderFinishReason;
           protocolViolation?: string;
@@ -595,6 +597,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           calls: [],
         };
         const thinkingBlocks = new Map<number, ProviderReasoningBlock>();
+        const contentParts: ProviderContentPart[] = [];
+        const thinkingPartIndex = new Map<number, number>();
         try {
           if (process.env.NATALIA_DEBUG_PROVIDER === "1") {
             console.log("[provider-runner] stream", {
@@ -648,6 +652,20 @@ export function createProviderRunner(input: ProviderRunnerInput) {
                 if (chunk.signature) block.signature = chunk.signature;
                 if (chunk.redacted) block.redacted = true;
                 thinkingBlocks.set(chunk.blockIndex, block);
+
+                let partIndex = thinkingPartIndex.get(chunk.blockIndex);
+                if (partIndex === undefined) {
+                  partIndex = contentParts.length;
+                  thinkingPartIndex.set(chunk.blockIndex, partIndex);
+                  contentParts.push({ type: "thinking", text: "" });
+                }
+                const part = contentParts[partIndex];
+                if (part?.type === "thinking") {
+                  if (chunk.text) part.text = `${part.text ?? ""}${chunk.text}`;
+                  if (chunk.field) part.field = chunk.field;
+                  if (chunk.signature) part.signature = chunk.signature;
+                  if (chunk.redacted) part.redacted = true;
+                }
               }
               if (chunk.field) result.thinkingField = chunk.field;
               if (chunk.signature) result.thinkingSignature = chunk.signature;
@@ -663,10 +681,38 @@ export function createProviderRunner(input: ProviderRunnerInput) {
                   attempt,
                 });
               }
+              if (chunk.text || chunk.textSignature) {
+                const previous = contentParts.at(-1);
+                if (previous?.type === "text") {
+                  previous.text += chunk.text;
+                  if (chunk.textSignature)
+                    previous.textSignature = chunk.textSignature;
+                } else {
+                  contentParts.push({
+                    type: "text",
+                    text: chunk.text,
+                    ...(chunk.textSignature
+                      ? { textSignature: chunk.textSignature }
+                      : {}),
+                  });
+                }
+              }
               if (chunk.textSignature)
                 result.contentSignature = chunk.textSignature;
             }
-            if (chunk.type === "tool_call") result.calls.push(...chunk.calls);
+            if (chunk.type === "tool_call") {
+              result.calls.push(...chunk.calls);
+              for (const call of chunk.calls)
+                contentParts.push({
+                  type: "tool_call",
+                  id: call.id,
+                  name: call.name,
+                  arguments: call.arguments,
+                  ...(call.thoughtSignature
+                    ? { thoughtSignature: call.thoughtSignature }
+                    : {}),
+                });
+            }
             if (chunk.type === "tool_protocol_violation")
               result.protocolViolation = chunk.text;
             if (chunk.type === "done") result.finishReason = chunk.finishReason;
@@ -680,6 +726,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
             result.thinkingBlocks = [...thinkingBlocks.entries()]
               .sort(([left], [right]) => left - right)
               .map(([, block]) => block);
+          if (contentParts.length) result.contentParts = contentParts;
         } finally {
           await input.setInFlightOperation(undefined);
         }
@@ -785,6 +832,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           ...(output.thinkingBlocks?.length
             ? { blocks: output.thinkingBlocks }
             : {}),
+          ...(output.contentParts?.length
+            ? { parts: output.contentParts }
+            : {}),
           ...(output.contentSignature
             ? { textSignature: output.contentSignature }
             : {}),
@@ -797,6 +847,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       messages.push({
         role: "assistant",
         content: output.assistant,
+        ...(output.contentParts?.length
+          ? { contentParts: output.contentParts }
+          : {}),
         ...(output.contentSignature
           ? { textSignature: output.contentSignature }
           : {}),

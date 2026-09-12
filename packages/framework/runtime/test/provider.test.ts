@@ -1666,6 +1666,70 @@ test("Gemini preserves multiple thought signatures in order", async () => {
   ]);
 });
 
+test("Gemini replays content parts in provider order", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for await (const _chunk of new GeminiProvider({
+    apiKey: "key",
+    model: "gemini-3-pro",
+    fetch: fetchImpl,
+  }).stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "fallback text",
+        textSignature: "text-sig",
+        contentParts: [
+          { type: "thinking", text: "plan A", signature: "sig-A" },
+          { type: "text", text: "visible", textSignature: "text-sig" },
+          {
+            type: "tool_call",
+            id: "call_1",
+            name: "read_file",
+            arguments: "{}",
+            thoughtSignature: "call-sig",
+          },
+        ],
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: "{}",
+            thoughtSignature: "call-sig",
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  const contents = body?.contents as Array<{
+    parts: Array<Record<string, unknown>>;
+  }>;
+  expect(contents[0]?.parts).toEqual([
+    { thought: true, text: "plan A", thoughtSignature: "sig-A" },
+    { text: "visible", thoughtSignature: "text-sig" },
+    {
+      functionCall: { name: "read_file", args: {} },
+      thoughtSignature: "call-sig",
+    },
+  ]);
+});
+
 test("Anthropic parser exposes signature deltas for replay", async () => {
   const sse = [
     {
@@ -1804,6 +1868,63 @@ test("Anthropic replays multiple signed thinking blocks in order", async () => {
       name: "read_file",
       input: {},
     },
+  ]);
+});
+
+test("Anthropic replays content parts in provider order", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for await (const _chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "claude-thinking",
+    fetch: fetchImpl,
+  }).stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "fallback text",
+        contentParts: [
+          { type: "thinking", text: "plan", signature: "sig-A" },
+          { type: "text", text: "visible" },
+          {
+            type: "tool_call",
+            id: "toolu_1",
+            name: "read_file",
+            arguments: "{}",
+            thoughtSignature: "call-sig",
+          },
+        ],
+        toolCalls: [
+          {
+            id: "toolu_1",
+            name: "read_file",
+            arguments: "{}",
+            thoughtSignature: "call-sig",
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "toolu_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<{ content: unknown }>)[0]?.content).toEqual([
+    { type: "thinking", thinking: "plan", signature: "sig-A" },
+    { type: "text", text: "visible" },
+    { type: "tool_use", id: "toolu_1", name: "read_file", input: {} },
   ]);
 });
 

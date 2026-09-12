@@ -95,6 +95,23 @@ export type ProviderReasoningBlock = {
   redacted?: boolean;
 };
 
+export type ProviderContentPart =
+  | { type: "text"; text: string; textSignature?: string }
+  | {
+      type: "thinking";
+      text?: string;
+      field?: string;
+      signature?: string;
+      redacted?: boolean;
+    }
+  | {
+      type: "tool_call";
+      id: string;
+      name: string;
+      arguments: string;
+      thoughtSignature?: string;
+    };
+
 export type DurableContextCheckpointRecord = {
   entries: Array<{
     id: string;
@@ -118,6 +135,8 @@ export type DurableContextCheckpointRecord = {
     reasoningRedacted?: boolean;
     /** Ordered Anthropic thinking blocks, including per-block signatures. */
     reasoningBlocks?: ProviderReasoningBlock[];
+    /** Ordered provider-native assistant content parts. */
+    contentParts?: ProviderContentPart[];
     /** Gemini thought signature attached to a non-thought text part. */
     textSignature?: string;
     thoughtSignature?: string;

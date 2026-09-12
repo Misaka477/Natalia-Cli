@@ -15,6 +15,7 @@ import {
   modelRefKey,
   type LocalAttachment,
   type ModelCapabilities,
+  type ProviderContentPart,
 } from "@natalia/contracts";
 import {
   ATTACHMENT_SERVICE,
@@ -392,6 +393,8 @@ export async function compactChatBeforeProviderStep(
     if (original.reasoningRedacted) message.reasoningRedacted = true;
     if (original.reasoningBlocks?.length)
       message.reasoningBlocks = original.reasoningBlocks;
+    if (original.contentParts?.length)
+      message.contentParts = original.contentParts;
     if (original.textSignature) message.textSignature = original.textSignature;
   }
   if (runtimeInstruction && rebuilt[0]?.content !== runtimeInstruction.content)
@@ -431,6 +434,7 @@ function reasoningLedgerFields(message: ProviderMessage): {
   reasoningSignature?: string;
   reasoningRedacted?: boolean;
   reasoningBlocks?: import("@natalia/contracts").ProviderReasoningBlock[];
+  contentParts?: ProviderContentPart[];
   textSignature?: string;
 } {
   return {
@@ -447,6 +451,9 @@ function reasoningLedgerFields(message: ProviderMessage): {
     ...(message.reasoningBlocks?.length
       ? { reasoningBlocks: message.reasoningBlocks }
       : {}),
+    ...(message.contentParts?.length
+      ? { contentParts: message.contentParts }
+      : {}),
     ...(message.textSignature ? { textSignature: message.textSignature } : {}),
   };
 }
@@ -459,6 +466,7 @@ function providerMessageKey(message: ProviderMessage): string {
     toolName: message.toolName,
     toolCalls: message.toolCalls,
     reasoningBlocks: message.reasoningBlocks,
+    contentParts: message.contentParts,
     textSignature: message.textSignature,
   });
 }

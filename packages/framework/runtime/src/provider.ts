@@ -6,6 +6,7 @@ import {
   type LocalAttachment,
   type ModelCapabilities,
   type ModelRef,
+  type ProviderContentPart,
   type ProviderReasoningBlock,
 } from "@natalia/contracts";
 import { providerError, providerErrorFromHttp } from "./errors";
@@ -53,6 +54,9 @@ export type ProviderMessage = {
   /** Ordered provider-native reasoning blocks for providers that emit more
    * than one signed thinking block in a single assistant turn. */
   reasoningBlocks?: ProviderReasoningBlock[];
+  /** Ordered provider-native assistant content parts. When present, adapters
+   * use this to preserve the provider's original part order on replay. */
+  contentParts?: ProviderContentPart[];
   /**
    * Gemini thought signature attached to a non-thought text part. The
    * signature must be replayed on the same text part, not moved onto a
@@ -1167,6 +1171,7 @@ function reasoningFromContextEntries(
   | "reasoningSignature"
   | "reasoningRedacted"
   | "reasoningBlocks"
+  | "contentParts"
   | "textSignature"
 > {
   for (const entry of entries) {
@@ -1176,6 +1181,7 @@ function reasoningFromContextEntries(
       !entry.reasoningSignature &&
       !entry.reasoningRedacted &&
       !entry.reasoningBlocks?.length &&
+      !entry.contentParts?.length &&
       !entry.textSignature
     )
       continue;
@@ -1190,6 +1196,9 @@ function reasoningFromContextEntries(
       ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
       ...(entry.reasoningBlocks?.length
         ? { reasoningBlocks: entry.reasoningBlocks }
+        : {}),
+      ...(entry.contentParts?.length
+        ? { contentParts: entry.contentParts }
         : {}),
       ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
@@ -1293,6 +1302,9 @@ function contextEntryToProviderMessage(
       ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
       ...(entry.reasoningBlocks?.length
         ? { reasoningBlocks: entry.reasoningBlocks }
+        : {}),
+      ...(entry.contentParts?.length
+        ? { contentParts: entry.contentParts }
         : {}),
       ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
@@ -2367,6 +2379,38 @@ function anthropicReasoningBlocks(
   ];
 }
 
+function anthropicContentParts(
+  message: ProviderMessage,
+): Array<Record<string, unknown>> | undefined {
+  if (!message.contentParts?.length) return undefined;
+  return message.contentParts.flatMap(
+    (part): Array<Record<string, unknown>> => {
+      if (part.type === "text") return [{ type: "text", text: part.text }];
+      if (part.type === "thinking") {
+        if (part.redacted && part.signature)
+          return [{ type: "redacted_thinking", data: part.signature }];
+        if (part.signature)
+          return [
+            {
+              type: "thinking",
+              thinking: part.text ?? "",
+              signature: part.signature,
+            },
+          ];
+        return part.text ? [{ type: "text", text: part.text }] : [];
+      }
+      return [
+        {
+          type: "tool_use",
+          id: part.id,
+          name: part.name,
+          input: safeJSON(part.arguments),
+        },
+      ];
+    },
+  );
+}
+
 function toAnthropicMessage(message: ProviderMessage) {
   if (message.role === "tool")
     return {
@@ -2379,11 +2423,12 @@ function toAnthropicMessage(message: ProviderMessage) {
         },
       ],
     };
+  const contentParts = anthropicContentParts(message);
   if (message.toolCalls?.length) {
     const reasoning = anthropicReasoningBlocks(message);
     return {
       role: "assistant",
-      content: [
+      content: contentParts ?? [
         ...reasoning,
         ...(message.content ? [{ type: "text", text: message.content }] : []),
         ...message.toolCalls.map((call) => ({
@@ -2396,26 +2441,48 @@ function toAnthropicMessage(message: ProviderMessage) {
     };
   }
   const reasoning = anthropicReasoningBlocks(message);
+  const content = contentParts ?? [
+    ...reasoning,
+    ...(message.content ? [{ type: "text", text: message.content }] : []),
+    ...(message.images ?? []).map((image) => ({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: image.mediaType,
+        data: dataURLPayload(materializedDataURL(image)),
+      },
+    })),
+  ];
   return {
     role: message.role === "assistant" ? "assistant" : "user",
     content:
-      message.images?.length || reasoning.length
-        ? [
-            ...reasoning,
-            ...(message.content
-              ? [{ type: "text", text: message.content }]
-              : []),
-            ...(message.images ?? []).map((image) => ({
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: image.mediaType,
-                data: dataURLPayload(materializedDataURL(image)),
-              },
-            })),
-          ]
-        : message.content,
+      message.images?.length || content.length ? content : message.content,
   };
+}
+
+function geminiContentParts(
+  message: ProviderMessage,
+): Array<Record<string, unknown>> | undefined {
+  if (!message.contentParts?.length) return undefined;
+  return message.contentParts.map((part) => {
+    if (part.type === "text")
+      return {
+        text: part.text,
+        ...(part.textSignature ? { thoughtSignature: part.textSignature } : {}),
+      };
+    if (part.type === "thinking")
+      return {
+        thought: true,
+        text: part.text ?? "",
+        ...(part.signature ? { thoughtSignature: part.signature } : {}),
+      };
+    return {
+      functionCall: { name: part.name, args: safeJSON(part.arguments) },
+      ...(part.thoughtSignature
+        ? { thoughtSignature: part.thoughtSignature }
+        : {}),
+    };
+  });
 }
 
 function geminiReasoningParts(
@@ -2444,10 +2511,11 @@ function geminiReasoningParts(
 
 function toGeminiContent(message: ProviderMessage) {
   const role = message.role === "assistant" ? "model" : "user";
+  const contentParts = geminiContentParts(message);
   if (message.toolCalls?.length)
     return {
       role: "model",
-      parts: [
+      parts: contentParts ?? [
         ...geminiReasoningParts(message),
         ...(message.content || message.textSignature
           ? [
@@ -2482,17 +2550,19 @@ function toGeminiContent(message: ProviderMessage) {
   return {
     role,
     parts: [
-      ...geminiReasoningParts(message),
-      ...(message.content || message.textSignature
-        ? [
-            {
-              text: message.content,
-              ...(message.textSignature
-                ? { thoughtSignature: message.textSignature }
-                : {}),
-            },
-          ]
-        : []),
+      ...(contentParts ?? [
+        ...geminiReasoningParts(message),
+        ...(message.content || message.textSignature
+          ? [
+              {
+                text: message.content,
+                ...(message.textSignature
+                  ? { thoughtSignature: message.textSignature }
+                  : {}),
+              },
+            ]
+          : []),
+      ]),
       ...(message.images?.map((image) => ({
         inlineData: {
           mimeType: image.mediaType,

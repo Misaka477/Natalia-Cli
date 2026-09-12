@@ -214,6 +214,9 @@ function makeHarness(
           ...(reasoning?.blocks?.length
             ? { reasoningBlocks: reasoning.blocks }
             : {}),
+          ...(reasoning?.parts?.length
+            ? { contentParts: reasoning.parts }
+            : {}),
           ...(reasoning?.textSignature
             ? { textSignature: reasoning.textSignature }
             : {}),
@@ -560,6 +563,52 @@ test("multiple signed thinking blocks survive the tool-call follow-up", async ()
   expect(assistant?.reasoningBlocks).toEqual([
     { text: "plan A", signature: "sig-A" },
     { text: "plan B", signature: "sig-B" },
+  ]);
+});
+
+test("provider content parts survive the tool-call follow-up in order", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  let streamCalls = 0;
+  const { runner } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream(request) {
+      streamCalls += 1;
+      requests.push(request);
+      if (streamCalls === 1) {
+        yield { type: "thinking", text: "plan", blockIndex: 0 };
+        yield { type: "content", text: "visible " };
+        yield { type: "content", text: "answer" };
+        yield toolCall([
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: '{"path":"a.txt"}',
+            thoughtSignature: "call-sig",
+          },
+        ]);
+        return;
+      }
+      yield content("done");
+    },
+  });
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(2);
+  const assistant = requests[1]?.messages.find(
+    (message) => message.role === "assistant" && message.toolCalls?.length,
+  );
+  expect(assistant?.contentParts).toEqual([
+    { type: "thinking", text: "plan" },
+    { type: "text", text: "visible answer" },
+    {
+      type: "tool_call",
+      id: "call_1",
+      name: "read_file",
+      arguments: '{"path":"a.txt"}',
+      thoughtSignature: "call-sig",
+    },
   ]);
 });
 
