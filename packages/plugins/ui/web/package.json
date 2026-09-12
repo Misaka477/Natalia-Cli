@@ -28,5 +28,8 @@
     "marked": "17.0.1",
     "solid-js": "1.9.12",
     "web-tree-sitter": "*"
+  },
+  "devDependencies": {
+    "@tanstack/solid-virtual": "3.13.37"
   }
 }
