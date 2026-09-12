@@ -63,6 +63,14 @@ export function Transcript(props: TranscriptProps) {
   // blank and the first scroll cannot jump against a zero-height spacer.
   const useVirtual = () => virtualize() && virtualItems().length > 0;
 
+  onMount(() => {
+    console.log("[natalia-ui] transcript mounted", {
+      messages: props.messages.length,
+      debug: uiDebugEnabled(),
+      virtualizeThreshold: VIRTUALIZE_THRESHOLD,
+    });
+  });
+
   let lastVirtualScrollEl: HTMLDivElement | undefined;
   let lastVirtualEnabled = false;
   createEffect(() => {
