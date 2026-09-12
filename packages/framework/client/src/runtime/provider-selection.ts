@@ -143,7 +143,6 @@ export function createProviderSelection(
 ) {
   return {
     currentModelImageInput,
-    currentModelPdfInput,
     modelCapabilitiesForExecution,
     mediaTypeForImage,
     applyAgentProvider,
@@ -177,25 +176,6 @@ export function createProviderSelection(
     );
   }
 
-  function currentModelPdfInput(
-    exec: SessionExecutionState | undefined,
-  ): boolean {
-    const { getTsRuntimeConfig, getSelectedAgent, getSelectedModel } =
-      ctx.ports;
-    if (exec?.activeModelCapabilities)
-      return exec.activeModelCapabilities.pdfInput;
-    const ref = modelRefKeyForSelection(
-      exec ? exec.selectedAgent : getSelectedAgent(),
-      exec ? exec.selectedModel : getSelectedModel(),
-    );
-    const tsRuntimeConfig = getTsRuntimeConfig();
-    if (!ref || !tsRuntimeConfig) return false;
-    return (
-      resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities.pdfInput ??
-      false
-    );
-  }
-
   function modelCapabilitiesForExecution(
     exec: SessionExecutionState | undefined,
   ): ModelCapabilities {
@@ -212,7 +192,6 @@ export function createProviderSelection(
         reasoning: true,
         thinking: true,
         imageInput: false,
-        pdfInput: false,
         videoInput: false,
       }
     );
@@ -220,12 +199,13 @@ export function createProviderSelection(
 
   function mediaTypeForImage(
     path: string,
-  ): "image/png" | "image/jpeg" | "image/webp" | "image/gif" {
+  ): "image/png" | "image/jpeg" | "image/webp" | "image/gif" | undefined {
     const ext = path.split(".").pop()?.toLowerCase() ?? "";
+    if (ext === "png") return "image/png";
     if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
     if (ext === "webp") return "image/webp";
     if (ext === "gif") return "image/gif";
-    return "image/png";
+    return undefined;
   }
 
   function applyAgentProvider(exec: SessionExecutionState | undefined) {

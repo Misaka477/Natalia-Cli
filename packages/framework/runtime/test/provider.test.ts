@@ -410,7 +410,6 @@ test("configured provider resolution preserves the adapter provider identity", (
           reasoning: false,
           thinking: false,
           imageInput: false,
-          pdfInput: false,
           videoInput: false,
         },
         limits: { contextWindow: "auto", maxOutputTokens: null },
@@ -507,10 +506,63 @@ test("OpenAI-compatible provider preserves content and usage from the same SSE f
   expect(chunks).toEqual(
     expect.arrayContaining([
       { type: "usage", inputTokens: 3, outputTokens: 2 },
-      { type: "thinking", text: "think" },
+      { type: "thinking", text: "think", field: "reasoning_content" },
       { type: "content", text: "hello" },
     ]),
   );
+});
+
+test("OpenAI-compatible keeps reasoning_content when it shares a delta with tool_calls", async () => {
+  const sse =
+    `data: ${JSON.stringify({
+      choices: [
+        {
+          delta: {
+            reasoning_content: "final thought",
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_1",
+                function: { name: "read_file", arguments: "{}" },
+              },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+    })}\n\n` + "data: [DONE]\n\n";
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "deepseek-thinking",
+    fetch: Object.assign(
+      async () =>
+        new Response(sse, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch,
+  }).stream({ messages: [{ role: "user", content: "go" }] })) {
+    chunks.push(chunk);
+  }
+  expect(chunks).toEqual([
+    {
+      type: "thinking",
+      text: "final thought",
+      field: "reasoning_content",
+    },
+    {
+      type: "tool_call",
+      calls: [
+        {
+          id: "call_1",
+          name: "read_file",
+          arguments: "{}",
+        },
+      ],
+    },
+    { type: "done", finishReason: "tool_calls" },
+  ]);
 });
 
 test("OpenAI-compatible provider maps legacy function and recipient streaming calls", async () => {
@@ -864,71 +916,295 @@ test("provider adapters materialize durable attachment refs through the resolver
   });
 });
 
-test("Anthropic and Gemini lower PDF documents while OpenAI-compatible declares no PDF support", async () => {
-  const request = {
+test("OpenAI-compatible forwards assistant reasoning_content on tool-call follow-up", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "deepseek-thinking",
+    fetch: fetchImpl,
+  });
+  for await (const _chunk of provider.stream({
     messages: [
       {
-        role: "user" as const,
-        content: "read",
-        pdfs: [
+        role: "assistant",
+        content: "",
+        reasoningContent: "I should call the tool first.",
+        toolCalls: [{ id: "call_1", name: "read_file", arguments: "{}" }],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
+    role: "assistant",
+    reasoning_content: "I should call the tool first.",
+    tool_calls: [
+      {
+        id: "call_1",
+        type: "function",
+        function: { name: "read_file", arguments: "{}" },
+      },
+    ],
+  });
+});
+
+test("OpenAI-compatible keeps the provider reasoning field on assistant replay", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "gateway-thinking",
+    fetch: fetchImpl,
+  });
+  for await (const _chunk of provider.stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        reasoningContent: "plan",
+        reasoningField: "reasoning",
+        toolCalls: [{ id: "call_1", name: "read_file", arguments: "{}" }],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
+    role: "assistant",
+    reasoning: "plan",
+  });
+  expect(
+    (body?.messages as Array<Record<string, unknown>>)[0],
+  ).not.toHaveProperty("reasoning_content");
+});
+
+test("Anthropic forwards signed thinking blocks on assistant tool-call replay", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for await (const _chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "claude-thinking",
+    fetch: fetchImpl,
+  }).stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        reasoningContent: "inspect the workspace",
+        reasoningSignature: "signed-thinking",
+        toolCalls: [{ id: "toolu_1", name: "read_file", arguments: "{}" }],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "toolu_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<{ content: unknown }>)[0]?.content).toEqual([
+    {
+      type: "thinking",
+      thinking: "inspect the workspace",
+      signature: "signed-thinking",
+    },
+    {
+      type: "tool_use",
+      id: "toolu_1",
+      name: "read_file",
+      input: {},
+    },
+  ]);
+});
+
+test("Gemini forwards thought signatures on assistant tool-call replay", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for await (const _chunk of new GeminiProvider({
+    apiKey: "key",
+    model: "gemini-3-pro",
+    fetch: fetchImpl,
+  }).stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        reasoningContent: "internal thought",
+        reasoningSignature: "thought-sig",
+        toolCalls: [
           {
-            mediaType: "application/pdf" as const,
-            dataURL: "data:application/pdf;base64,cGRm",
+            id: "call_1",
+            name: "read_file",
+            arguments: "{}",
+            thoughtSignature: "call-sig",
           },
         ],
       },
-    ],
-  };
-  const bodies: Record<string, Record<string, unknown>> = {};
-  const fetchFor = (name: string) =>
-    Object.assign(
-      async (_input: URL | RequestInfo, init?: RequestInit) => {
-        bodies[name] = JSON.parse(String(init?.body)) as Record<
-          string,
-          unknown
-        >;
-        return new Response("data: [DONE]\n\n", {
-          headers: { "content-type": "text/event-stream" },
-        });
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
       },
+    ],
+  })) {
+    // Drain.
+  }
+  const contents = body?.contents as Array<{
+    parts: Array<Record<string, unknown>>;
+  }>;
+  expect(contents[0]?.parts).toEqual([
+    {
+      thought: true,
+      text: "internal thought",
+      thoughtSignature: "thought-sig",
+    },
+    {
+      functionCall: { name: "read_file", args: {} },
+      thoughtSignature: "call-sig",
+    },
+  ]);
+});
+
+test("Anthropic parser exposes signature deltas for replay", async () => {
+  const sse = [
+    {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "thinking", thinking: "" },
+    },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "thinking_delta", thinking: "plan" },
+    },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "signature_delta", signature: "sig" },
+    },
+    { type: "message_delta", delta: { stop_reason: "end_turn" } },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "claude-thinking",
+    fetch: Object.assign(
+      async () =>
+        new Response(sse, {
+          headers: { "content-type": "text/event-stream" },
+        }),
       { preconnect: fetch.preconnect },
-    ) as typeof fetch;
-  const openai = new OpenAICompatibleProvider({
-    apiKey: "key",
-    model: "model",
-  });
-  expect(openai.pdfInput).toBe(false);
-  for await (const _chunk of new AnthropicProvider({
-    apiKey: "key",
-    model: "model",
-    fetch: fetchFor("anthropic"),
-  }).stream(request)) {
-    // Drain.
+    ) as typeof fetch,
+  }).stream({ messages: [{ role: "user", content: "go" }] })) {
+    chunks.push(chunk);
   }
-  for await (const _chunk of new GeminiProvider({
+  expect(chunks).toEqual([
+    { type: "thinking", text: "plan" },
+    { type: "thinking", text: "", signature: "sig" },
+    { type: "done", finishReason: "stop" },
+  ]);
+});
+
+test("Gemini parser exposes thought signatures on thinking and tool-call parts", async () => {
+  const sse = [
+    {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { thought: true, text: "plan", thoughtSignature: "thought-sig" },
+              {
+                functionCall: { name: "read_file", args: {} },
+                thoughtSignature: "call-sig",
+              },
+            ],
+          },
+        },
+      ],
+    },
+    { candidates: [{ finishReason: "STOP" }] },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of new GeminiProvider({
     apiKey: "key",
-    model: "model",
-    fetch: fetchFor("gemini"),
-  }).stream(request)) {
-    // Drain.
+    model: "gemini-3-pro",
+    fetch: Object.assign(
+      async () =>
+        new Response(sse, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch,
+  }).stream({ messages: [{ role: "user", content: "go" }] })) {
+    chunks.push(chunk);
   }
-  const anthropic = bodies.anthropic.messages as Array<{
-    content: Array<{
-      type?: string;
-      source?: { data?: string; media_type?: string };
-    }>;
-  }>;
-  const gemini = bodies.gemini.contents as Array<{
-    parts: Array<{ inlineData?: { mimeType?: string; data?: string } }>;
-  }>;
-  expect(
-    anthropic[0]?.content.find((part) => part.type === "document"),
-  ).toMatchObject({
-    source: { type: "base64", media_type: "application/pdf", data: "cGRm" },
-  });
-  expect(gemini[0]?.parts.find((part) => part.inlineData)).toMatchObject({
-    inlineData: { mimeType: "application/pdf", data: "cGRm" },
-  });
+  expect(chunks).toEqual([
+    { type: "thinking", text: "plan", signature: "thought-sig" },
+    {
+      type: "tool_call",
+      calls: [
+        {
+          id: "gemini_0",
+          name: "read_file",
+          arguments: "{}",
+          thoughtSignature: "call-sig",
+        },
+      ],
+    },
+    { type: "done", finishReason: "stop" },
+  ]);
 });
 
 test("Gemini lowers videos while Anthropic and OpenAI-compatible declare no video support", async () => {
@@ -1107,6 +1383,39 @@ test("durable tool result context preserves its tool_call_id for the next turn",
     },
     { role: "tool", toolCallID: "provider_call_1", content: "hello" },
   ]);
+});
+
+test("durable context restores reasoning and tool thought signatures", () => {
+  const messages = contextEntriesToProviderMessages([
+    {
+      id: "call_1",
+      role: "tool_call",
+      content: 'read_file {"path":"hello.txt"}',
+      pairID: "provider_call_1",
+      reasoningContent: "need to inspect",
+      reasoningField: "reasoning_content",
+      thoughtSignature: "tool-sig",
+    },
+    {
+      id: "result_1",
+      role: "tool_result",
+      content: "hello",
+      pairID: "provider_call_1",
+    },
+  ]);
+  expect(messages[0]).toMatchObject({
+    role: "assistant",
+    reasoningContent: "need to inspect",
+    reasoningField: "reasoning_content",
+    toolCalls: [
+      {
+        id: "provider_call_1",
+        name: "read_file",
+        arguments: '{"path":"hello.txt"}',
+        thoughtSignature: "tool-sig",
+      },
+    ],
+  });
 });
 
 test("durable parallel tool calls are grouped before all tool results", () => {
@@ -1482,7 +1791,6 @@ test("providerForModel forwards Anthropic thinking settings", async () => {
           reasoning: true,
           thinking: true,
           imageInput: false,
-          pdfInput: false,
           videoInput: false,
         },
         limits: { contextWindow: "auto", maxOutputTokens: 4096 },

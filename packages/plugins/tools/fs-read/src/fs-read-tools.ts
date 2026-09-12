@@ -156,7 +156,6 @@ function mediaKind(data: Uint8Array) {
     .join("");
   if (hex.startsWith("89504e47")) return "png";
   if (hex.startsWith("ffd8ff")) return "jpeg";
-  if (hex.startsWith("25504446")) return "pdf";
   if (hex.startsWith("47494638")) return "gif";
   return "binary";
 }

@@ -473,14 +473,6 @@ function mediaTypeForBytes(
     bytes[3] === 0xa3
   )
     return "video/webm";
-  if (
-    bytes[0] === 0x25 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x44 &&
-    bytes[3] === 0x46 &&
-    bytes[4] === 0x2d
-  )
-    return "application/pdf";
   try {
     if (
       !/\.(txt|md|markdown|json|csv|log|yaml|yml|ts|tsx|js|jsx|py|go|rs|java|css|html|xml)$/iu.test(

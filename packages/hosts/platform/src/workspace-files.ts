@@ -339,6 +339,305 @@ export async function watchWorkspaceFiles(
   };
 }
 
+const DEFAULT_GREP_IGNORED_DIRECTORIES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".natalia",
+  ".next",
+  ".turbo",
+  "__pycache__",
+  "build",
+  "coverage",
+  "devref",
+  "dist",
+  "node_modules",
+  "target",
+]);
+
+const maxGrepScannedFiles = 500;
+const maxGrepScannedBytes = 4 * 1024 * 1024;
+const maxGrepDeadlineMs = 8_000;
+
+export type WorkspaceGrepMatch = {
+  path: string;
+  line: number;
+  text: string;
+};
+
+export type WorkspaceGrepResult = {
+  matches: WorkspaceGrepMatch[];
+  truncated: boolean;
+  nextCursor?: string;
+  scannedFiles: number;
+  scannedBytes: number;
+  timedOut?: boolean;
+};
+
+export type WorkspaceGrepInput = {
+  workspaceRoot: string;
+  pattern: string;
+  path?: string;
+  include?: string;
+  limit?: number;
+  cursor?: string;
+  maxScannedFiles?: number;
+  maxScannedBytes?: number;
+  deadlineMs?: number;
+  signal?: AbortSignal;
+  authorize?: (input: { toolName: "grep"; paths: string[] }) => Promise<void>;
+};
+
+type GrepFrame = { path: string; index: number };
+
+type GrepCursorState = {
+  v: 1;
+  root: string;
+  pattern: string;
+  scope: string;
+  include: string;
+  stack: GrepFrame[];
+  file?: { path: string; line: number };
+  scannedFiles: number;
+  scannedBytes: number;
+};
+
+function grepCursorQueryMatches(
+  state: GrepCursorState,
+  input: { root: string; pattern: string; scope: string; include: string },
+) {
+  return (
+    state.v === 1 &&
+    state.root === input.root &&
+    state.pattern === input.pattern &&
+    state.scope === input.scope &&
+    state.include === input.include
+  );
+}
+
+function encodeGrepCursor(state: GrepCursorState): string {
+  return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
+}
+
+function decodeGrepCursor(cursor: string): GrepCursorState {
+  try {
+    return JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as GrepCursorState;
+  } catch {
+    throw new RuntimeInvalidParams("grep cursor is invalid");
+  }
+}
+
+function throwIfGrepAborted(signal?: AbortSignal) {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new Error("grep aborted");
+}
+
+/**
+ * Bounded, cursor-paginated grep.
+ *
+ * Traversal is deterministic DFS: each directory's children are sorted by
+ * name before walking, and the cursor stores that frame's next child index
+ * plus an optional in-file line offset. Heavy/derived directories are skipped
+ * by default; pointing `path` at the workspace root cannot be skipped away.
+ */
+export async function grepWorkspaceFilesBounded(
+  input: WorkspaceGrepInput,
+): Promise<WorkspaceGrepResult> {
+  if (!input.pattern)
+    throw new RuntimeInvalidParams("grep pattern is required");
+  let expression: RegExp;
+  try {
+    expression = new RegExp(input.pattern, "u");
+  } catch {
+    throw new RuntimeInvalidParams(
+      "grep pattern must be a valid regular expression",
+    );
+  }
+
+  const root = await realpath(input.workspaceRoot);
+  const scopeArg = input.path?.trim() || ".";
+  const scopeAbs = await realpath(resolve(root, scopeArg)).catch(() => {
+    throw new RuntimeInvalidParams(`grep path does not exist: ${scopeArg}`);
+  });
+  if (!contains(root, scopeAbs))
+    throw new RuntimeInvalidParams("grep path must remain inside workspace");
+  if (!(await stat(scopeAbs)).isDirectory())
+    throw new RuntimeInvalidParams(`grep path is not a directory: ${scopeArg}`);
+  const scope = relative(root, scopeAbs).split(sep).join("/");
+  const include = input.include?.trim() || "**/*";
+  const limit = Math.min(1_000, Math.max(1, input.limit ?? 200));
+  const maxScannedFiles = Math.max(
+    1,
+    input.maxScannedFiles ?? maxGrepScannedFiles,
+  );
+  const maxScannedBytes = Math.max(
+    1,
+    input.maxScannedBytes ?? maxGrepScannedBytes,
+  );
+  const deadline =
+    Date.now() + Math.max(1, input.deadlineMs ?? maxGrepDeadlineMs);
+
+  let state: GrepCursorState;
+  if (input.cursor) {
+    state = decodeGrepCursor(input.cursor);
+    if (
+      !grepCursorQueryMatches(state, {
+        root,
+        pattern: input.pattern,
+        scope,
+        include,
+      })
+    )
+      throw new RuntimeInvalidParams("grep cursor does not match the query");
+  } else {
+    state = {
+      v: 1,
+      root,
+      pattern: input.pattern,
+      scope,
+      include,
+      stack: [{ path: scope, index: 0 }],
+      scannedFiles: 0,
+      scannedBytes: 0,
+    };
+  }
+
+  const matches: WorkspaceGrepMatch[] = [];
+  let timedOut = false;
+
+  const result = (truncated: boolean, nextState?: GrepCursorState) => ({
+    matches,
+    truncated,
+    ...(truncated && nextState
+      ? { nextCursor: encodeGrepCursor(nextState) }
+      : {}),
+    scannedFiles: state.scannedFiles,
+    scannedBytes: state.scannedBytes,
+    ...(timedOut ? { timedOut } : {}),
+  });
+
+  const budgetReached = () =>
+    matches.length >= limit ||
+    state.scannedFiles >= maxScannedFiles ||
+    state.scannedBytes >= maxScannedBytes;
+
+  const saveCursorAfterStop = () =>
+    result(true, {
+      ...state,
+      stack: state.stack.map((frame) => ({ ...frame })),
+      ...(state.file ? { file: { ...state.file } } : {}),
+    });
+
+  const processFile = async (
+    displayPath: string,
+    startLine: number,
+    countBytes: boolean,
+  ): Promise<{ done: boolean; nextLine: number }> => {
+    const absolutePath = resolve(root, displayPath);
+    const info = await stat(absolutePath).catch(() => undefined);
+    if (!info?.isFile() || info.size > maxSearchFileBytes)
+      return { done: true, nextLine: startLine };
+    await input.authorize?.({ toolName: "grep", paths: [displayPath] });
+    throwIfGrepAborted(input.signal);
+    const bytes = new Uint8Array(await readFile(absolutePath));
+    if (countBytes) state.scannedBytes += bytes.byteLength;
+    if (bytes.includes(0)) return { done: true, nextLine: startLine };
+    let text: string;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      return { done: true, nextLine: startLine };
+    }
+    const lines = text.split(/\r?\n/u);
+    if (text.endsWith("\n") && lines.at(-1) === "") lines.pop();
+    for (let index = startLine; index < lines.length; index += 1) {
+      throwIfGrepAborted(input.signal);
+      if (Date.now() >= deadline) {
+        timedOut = true;
+        state.file = { path: displayPath, line: index };
+        return { done: false, nextLine: index };
+      }
+      if (budgetReached()) {
+        state.file = { path: displayPath, line: index };
+        return { done: false, nextLine: index };
+      }
+      const line = lines[index] ?? "";
+      expression.lastIndex = 0;
+      if (expression.test(line)) {
+        matches.push({
+          path: displayPath,
+          line: index + 1,
+          text: line.length > 2_000 ? `${line.slice(0, 2_000)}...` : line,
+        });
+        if (matches.length >= limit) {
+          if (index + 1 < lines.length) {
+            state.file = { path: displayPath, line: index + 1 };
+            return { done: false, nextLine: index + 1 };
+          }
+          return { done: true, nextLine: lines.length };
+        }
+      }
+    }
+    return { done: true, nextLine: lines.length };
+  };
+
+  while (state.stack.length > 0) {
+    throwIfGrepAborted(input.signal);
+    if (Date.now() >= deadline) {
+      timedOut = true;
+      return saveCursorAfterStop();
+    }
+    if (state.file) {
+      const file = state.file;
+      const outcome = await processFile(file.path, file.line, false);
+      if (!outcome.done) return saveCursorAfterStop();
+      state.file = undefined;
+      continue;
+    }
+
+    const frame = state.stack[state.stack.length - 1]!;
+    const directory = resolve(root, frame.path || ".");
+    const children = await readdir(directory, { withFileTypes: true }).catch(
+      () => [],
+    );
+    children.sort((left, right) => left.name.localeCompare(right.name));
+    if (frame.index >= children.length) {
+      state.stack.pop();
+      continue;
+    }
+    if (budgetReached()) return saveCursorAfterStop();
+    const child = children[frame.index]!;
+    frame.index += 1;
+    const childRelative = frame.path
+      ? `${frame.path}/${child.name}`
+      : child.name;
+    const childAbsolute = resolve(directory, child.name);
+
+    if (child.isDirectory()) {
+      if (
+        DEFAULT_GREP_IGNORED_DIRECTORIES.has(child.name) &&
+        childRelative !== scope
+      )
+        continue;
+      const real = await realpath(childAbsolute).catch(() => undefined);
+      if (!real || !contains(root, real)) continue;
+      state.stack.push({ path: childRelative, index: 0 });
+      continue;
+    }
+    if (!child.isFile()) continue;
+    if (!matchesInclude(childRelative, include)) continue;
+    state.scannedFiles += 1;
+    const outcome = await processFile(childRelative, 0, true);
+    if (!outcome.done) return saveCursorAfterStop();
+  }
+
+  return result(false);
+}
+
 export async function searchWorkspaceFiles(input: {
   workspaceRoot: string;
   query: string;

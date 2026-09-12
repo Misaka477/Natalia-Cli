@@ -23,6 +23,12 @@ export type ContextEntry = {
   pairID?: string;
   artifactRef?: string;
   attachments?: LocalAttachment[];
+  reasoningContent?: string;
+  reasoningField?: string;
+  reasoningSignature?: string;
+  reasoningRedacted?: boolean;
+  /** Gemini thought signature attached to a tool_call entry. */
+  thoughtSignature?: string;
 };
 
 export type ExactUsageCheckpoint = {

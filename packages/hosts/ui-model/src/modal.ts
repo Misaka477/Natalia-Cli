@@ -11,6 +11,8 @@ export type ApprovalRequest = {
   scope?: string;
   expiresAt?: string;
   revocable?: boolean;
+  /** False hides the session-wide grant action for forced approvals. */
+  allowSession?: boolean;
 };
 
 export type ApprovalResponse = {
@@ -259,11 +261,16 @@ export const approvalPresenter: PendingPresenter<ApprovalResponse> = {
       placeholder: "可选",
     },
   ],
-  actions: () => [
-    { id: "allow-once", label: "允许一次", tone: "primary" },
-    { id: "allow-session", label: "允许本次会话" },
-    { id: "reject", label: "拒绝", tone: "danger", requiresInput: true },
-  ],
+  actions: (item) => {
+    const request = item.request as ApprovalRequest;
+    return [
+      { id: "allow-once", label: "允许一次", tone: "primary" },
+      ...(request.allowSession === false
+        ? []
+        : [{ id: "allow-session", label: "允许本次会话" }]),
+      { id: "reject", label: "拒绝", tone: "danger", requiresInput: true },
+    ];
+  },
   buildResponse: (item, draft) => {
     const action = String(draft.action ?? "reject");
     const decision: ApprovalDecision =

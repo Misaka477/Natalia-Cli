@@ -1,5 +1,15 @@
 export { validateToolParameters, assertValidToolParameters } from "./validate";
+export {
+  grepWorkspaceFilesBounded,
+  type WorkspaceGrepInput,
+  type WorkspaceGrepMatch,
+  type WorkspaceGrepResult,
+} from "@natalia/platform";
 export { assertNetworkURL } from "./network";
+export {
+  requiresForcedGitApproval,
+  type ForcedApproval,
+} from "./forced-approval";
 export { runShell } from "./run-shell";
 export {
   commandHasPrefix,

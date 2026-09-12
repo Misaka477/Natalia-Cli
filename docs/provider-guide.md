@@ -22,7 +22,6 @@ export type StreamingProvider = {
   provider: string;        // stable identity, e.g. "openai", "my-gateway"
   model: string;           // the model id this instance talks to
   imageInput?: boolean;    // can lower image attachments (default false)
-  pdfInput?: boolean;      // can lower PDF attachments
   videoInput?: boolean;    // can lower video attachments
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
@@ -69,7 +68,6 @@ format:
 - `content`: plain text.
 - `images`: `{ mediaType, dataURL }` — `image/png`, `image/jpeg`,
   `image/webp`, `image/gif`.
-- `pdfs`: `{ mediaType: "application/pdf", dataURL }`.
 - `videos`: `{ mediaType, dataURL }` — `video/mp4`, `video/webm`.
 - `toolCalls`: the assistant's calls, when this message is an assistant turn.
 
@@ -80,16 +78,13 @@ reference implementations for OpenAI-compatible, Anthropic and Gemini shapes
 ## 4. Attachment lowering and the double gate
 
 Attachments are gated twice before they ever reach you: the **selected
-model's declared capabilities** (`imageInput`, `pdfInput`, `videoInput` in
-the model catalog) and **your adapter's declarations** must both accept the
-attachment, or the turn is refused with a message naming the missing side.
-Declare exactly what you can lower:
+model's declared capabilities** (`imageInput`, `videoInput` in the model
+catalog) and **your adapter's declarations** must both accept the attachment,
+or the turn degrades to a text marker. Declare exactly what you can lower:
 
 - `imageInput: true` — you turn `images` into your native image content block
   (Anthropic `image`/`base64`, Gemini `inlineData`, OpenAI-compatible
   `image_url`).
-- `pdfInput: true` — you turn `pdfs` into your native document block
-  (Anthropic `document`, Gemini `inlineData`, OpenAI-compatible `file`).
 - `videoInput: true` — you turn `videos` into inline video (Gemini
   `inlineData` is the only built-in today):
 
@@ -138,7 +133,7 @@ web/desktop UI's "add provider" flow to list your models.
 - Yields `thinking`/`content` in order, ends with `done`, respects `signal`.
 - Returns tool results as `role: "tool"` messages and accepts the follow-up
   `stream` call.
-- Declares `imageInput`/`pdfInput`/`videoInput` exactly as implemented.
+- Declares `imageInput`/`videoInput` exactly as implemented.
 - Throws `providerError`/`providerErrorFromHttp`, never a raw string.
 - Reports `usage` so the journal records tokens.
 - Tests mirror `packages/framework/runtime/test/provider.test.ts`: stream parsing,
@@ -162,7 +157,6 @@ export type StreamingProvider = {
   provider: string;        // 稳定标识，如 "openai"、"my-gateway"
   model: string;           // 本实例对话的模型 id
   imageInput?: boolean;    // 能否降级图片附件（默认 false）
-  pdfInput?: boolean;      // 能否降级 PDF 附件
   videoInput?: boolean;    // 能否降级视频附件
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
@@ -205,7 +199,6 @@ export type ProviderStreamRequest = {
 - `content`：纯文本。
 - `images`：`{ mediaType, dataURL }`——`image/png`、`image/jpeg`、
   `image/webp`、`image/gif`。
-- `pdfs`：`{ mediaType: "application/pdf", dataURL }`。
 - `videos`：`{ mediaType, dataURL }`——`video/mp4`、`video/webm`。
 - `toolCalls`：assistant 回合时的工具调用。
 
@@ -215,13 +208,11 @@ Gemini 形状，`packages/framework/runtime/src/provider.ts`）是参考实现�
 ## 4. 附件降级与双层门控
 
 附件在到达你之前被门控两次：**所选模型的声明能力**（模型 catalog 的
-`imageInput`、`pdfInput`、`videoInput`）与**你的适配器声明**必须都接受该附件，
-否则回合被拒并点名缺失侧。只声明你能降级的：
+`imageInput`、`videoInput`）与**你的适配器声明**必须都接受该附件，
+否则会降级为文本标记。只声明你能降级的：
 
 - `imageInput: true` — 你把 `images` 转成原生图片内容块（Anthropic
   `image`/`base64`、Gemini `inlineData`、OpenAI 兼容 `image_url`）。
-- `pdfInput: true` — 你把 `pdfs` 转成原生文档块（Anthropic `document`、
-  Gemini `inlineData`、OpenAI 兼容 `file`）。
 - `videoInput: true` — 你把 `videos` 转成 inline 视频（今天只有 Gemini
   内建）：
 
@@ -264,7 +255,7 @@ runtime 对 provider 错误分类，让消费者拿到机器可读的失败而�
 
 - 按序产出 `thinking`/`content`，以 `done` 结束，尊重 `signal`。
 - 工具结果以 `role: "tool"` 消息返回，并接受后续 `stream` 调用。
-- `imageInput`/`pdfInput`/`videoInput` 与实现完全一致。
+- `imageInput`/`videoInput` 与实现完全一致。
 - 抛 `providerError`/`providerErrorFromHttp`，绝不抛裸字符串。
 - 报 `usage` 让 journal 记录 token。
 - 测试对照 `packages/framework/runtime/test/provider.test.ts`：流解析、附件降级到原生

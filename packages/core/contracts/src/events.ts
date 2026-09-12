@@ -105,6 +105,11 @@ export type DurableContextCheckpointRecord = {
     pairID?: string;
     artifactRef?: string;
     attachments?: LocalAttachment[];
+    reasoningContent?: string;
+    reasoningField?: string;
+    reasoningSignature?: string;
+    reasoningRedacted?: boolean;
+    thoughtSignature?: string;
   }>;
   checkpoint?: {
     messageCount: number;
@@ -398,6 +403,7 @@ type ChatEventData<Namespace extends ChatEventNamespace> =
       role: "user" | "chat";
       text: string;
       at: string;
+      attachments?: LocalAttachment[];
     }
   | {
       type: `${Namespace}.chat.message.delta`;
@@ -500,6 +506,7 @@ type LegacyChatEventData =
       role: "user" | "chat";
       text: string;
       at: string;
+      attachments?: LocalAttachment[];
       channel?: ChatChannel;
     }
   | {
@@ -698,6 +705,12 @@ type RuntimeEventData =
       text?: string;
       visible?: boolean;
       attempt?: number;
+      /** Provider-native reasoning field, e.g. reasoning_content. */
+      reasoningField?: string;
+      /** Anthropic thinking signature or Gemini thought signature. */
+      reasoningSignature?: string;
+      /** Anthropic redacted_thinking payload. */
+      reasoningRedacted?: boolean;
     }
   | { type: "content.delta"; id: string; text: string; attempt?: number }
   | { type: "content.done"; id: string; text?: string; attempt?: number }
@@ -756,6 +769,8 @@ type RuntimeEventData =
       argumentsDelta?: string;
       result?: string;
       metadata?: Record<string, unknown>;
+      /** Gemini thought signature that must be replayed with this tool call. */
+      thoughtSignature?: string;
       startedAt?: number;
       endedAt?: number;
     }
@@ -1012,6 +1027,8 @@ type RuntimeEventData =
       ruleID: string;
       statement?: string;
       priority?: "critical" | "high" | "medium" | "low";
+      enforcement?: "deny" | "approval" | "warn";
+      overridePolicy?: "forbidden" | "user_scoped" | "user_explicit";
     }
   | {
       type: "decision.recorded";
@@ -1372,6 +1389,8 @@ type RuntimeEventData =
       scope?: string;
       expiresAt?: string;
       revocable?: boolean;
+      /** False when the approval cannot be granted for the whole session. */
+      allowSession?: boolean;
       permissionFamily?: import("./permission-families").PermissionFamily;
     }
   | {
@@ -1551,7 +1570,6 @@ export type LocalAttachment = {
     | "image/gif"
     | "video/mp4"
     | "video/webm"
-    | "application/pdf"
     | "text/plain"
     | "text/markdown"
     | "application/json"
@@ -3452,6 +3470,7 @@ export type ChatMessageRow = {
   role: "user" | "chat" | "system";
   text: string;
   at: string;
+  attachments?: LocalAttachment[];
   channel?: ChatChannel;
   kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
   tool?: {

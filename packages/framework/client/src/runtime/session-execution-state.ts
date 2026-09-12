@@ -62,8 +62,16 @@ export type SessionExecutionState = {
    * loaded journal and extended as turns are announced.
    */
   announcedTurnIDs: Set<string>;
-  naviPendingQueue: Array<{ messageID: string; text: string }>;
-  niaPendingQueue: Array<{ messageID: string; text: string }>;
+  naviPendingQueue: Array<{
+    messageID: string;
+    text: string;
+    attachments?: LocalAttachment[];
+  }>;
+  niaPendingQueue: Array<{
+    messageID: string;
+    text: string;
+    attachments?: LocalAttachment[];
+  }>;
   naviAbortWakePending?: boolean;
   niaAbortWakePending?: boolean;
 };

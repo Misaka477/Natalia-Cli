@@ -54,8 +54,6 @@ export function estimateProviderMessages(messages: ProviderMessage[]) {
         estimateTokens(call.arguments);
     for (const attachment of message.images ?? [])
       tokens += estimateProviderAttachment(attachment);
-    for (const attachment of message.pdfs ?? [])
-      tokens += estimateProviderAttachment(attachment);
     for (const attachment of message.videos ?? [])
       tokens += estimateProviderAttachment(attachment);
   }
@@ -581,6 +579,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         const result: {
           assistant: string;
           thinking: string;
+          thinkingField?: string;
+          thinkingSignature?: string;
+          thinkingRedacted?: boolean;
           calls: ProviderToolCall[];
           finishReason?: ProviderFinishReason;
           protocolViolation?: string;
@@ -627,13 +628,18 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               );
             }
             if (chunk.type === "thinking") {
-              result.thinking += chunk.text;
-              input.publish({
-                type: "thinking.delta",
-                id,
-                text: chunk.text,
-                attempt,
-              });
+              if (chunk.text) {
+                result.thinking += chunk.text;
+                input.publish({
+                  type: "thinking.delta",
+                  id,
+                  text: chunk.text,
+                  attempt,
+                });
+              }
+              if (chunk.field) result.thinkingField = chunk.field;
+              if (chunk.signature) result.thinkingSignature = chunk.signature;
+              if (chunk.redacted) result.thinkingRedacted = true;
             }
             if (chunk.type === "content") {
               result.assistant += chunk.text;
@@ -671,8 +677,20 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         outputTokens: (previous?.outputTokens ?? 0) + output.usage.outputTokens,
       });
     }
-    if (output.thinking)
-      input.publish({ type: "thinking.done", id, text: output.thinking });
+    if (output.thinking || output.thinkingSignature) {
+      input.publish({
+        type: "thinking.done",
+        id,
+        ...(output.thinking ? { text: output.thinking } : {}),
+        ...(output.thinkingField
+          ? { reasoningField: output.thinkingField }
+          : {}),
+        ...(output.thinkingSignature
+          ? { reasoningSignature: output.thinkingSignature }
+          : {}),
+        ...(output.thinkingRedacted ? { reasoningRedacted: true } : {}),
+      });
+    }
     if (
       output.finishReason === "length" ||
       output.finishReason === "content_filter" ||
@@ -723,6 +741,14 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         calls,
         output.assistant,
         materialized,
+        {
+          ...(output.thinking ? { content: output.thinking } : {}),
+          ...(output.thinkingField ? { field: output.thinkingField } : {}),
+          ...(output.thinkingSignature
+            ? { signature: output.thinkingSignature }
+            : {}),
+          ...(output.thinkingRedacted ? { redacted: true } : {}),
+        },
       );
       toolMessages.push(...produced);
       messages.push(...produced);
@@ -753,7 +779,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         reasoning: true,
         thinking: true,
         imageInput: false,
-        pdfInput: false,
         videoInput: false,
       }
     );
@@ -853,6 +878,16 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     input.publish(contextStatusEvent(ledger.status(config)));
   }
 
+  function providerMessageStateKey(message: ProviderMessage): string {
+    return JSON.stringify({
+      role: message.role,
+      content: message.content,
+      toolCallID: message.toolCallID,
+      toolName: message.toolName,
+      toolCalls: message.toolCalls,
+    });
+  }
+
   function rebuildMessagesAfterCompaction(
     messages: ProviderMessage[],
     ledger: ContextLedger,
@@ -873,6 +908,22 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     const compacted = contextEntriesToProviderMessages(
       ledger.snapshot().entries,
     );
+    const originalByKey = new Map(
+      messages.map((message) => [providerMessageStateKey(message), message]),
+    );
+    for (const message of compacted) {
+      const original = originalByKey.get(providerMessageStateKey(message));
+      if (!original) continue;
+      if (original.images?.length) message.images = original.images;
+      if (original.videos?.length) message.videos = original.videos;
+      if (original.reasoningContent !== undefined)
+        message.reasoningContent = original.reasoningContent;
+      if (original.reasoningField)
+        message.reasoningField = original.reasoningField;
+      if (original.reasoningSignature)
+        message.reasoningSignature = original.reasoningSignature;
+      if (original.reasoningRedacted) message.reasoningRedacted = true;
+    }
     if (
       runtimeInstruction &&
       compacted[0]?.content !== runtimeInstruction.content
@@ -922,13 +973,13 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       const textAttachments = attachments.filter(input.attachments.isText);
       const imageAttachments = attachments.filter(
         (attachment) =>
-          !input.attachments.isText(attachment) &&
-          attachment.mediaType !== "application/pdf" &&
-          attachment.mediaType !== "video/mp4" &&
-          attachment.mediaType !== "video/webm",
+          attachment.mediaType === "image/png" ||
+          attachment.mediaType === "image/jpeg" ||
+          attachment.mediaType === "image/webp" ||
+          attachment.mediaType === "image/gif",
       );
       const pdfAttachments = attachments.filter(
-        (attachment) => attachment.mediaType === "application/pdf",
+        (attachment) => (attachment.mediaType as string) === "application/pdf",
       );
       const videoAttachments = attachments.filter(
         (attachment) =>
@@ -959,18 +1010,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         user.images = imageAttachments;
       }
 
-      const pdfSupported =
-        activeModelCapabilities.pdfInput && activeProvider.pdfInput;
-      if (pdfAttachments.length && !pdfSupported) {
-        contentAdditions.push(
-          ...pdfAttachments.map(
-            (attachment) =>
-              `[Attached ${attachment.mediaType}: ${attachment.filename}]`,
-          ),
-        );
-      } else {
-        user.pdfs = pdfAttachments;
-      }
+      if (pdfAttachments.length)
+        input.publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `PDF attachments are no longer supported and were ignored: ${pdfAttachments.map((attachment) => attachment.filename).join(", ")}`,
+        });
 
       const videoSupported =
         activeModelCapabilities.videoInput && activeProvider.videoInput;

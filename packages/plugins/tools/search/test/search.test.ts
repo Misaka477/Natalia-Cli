@@ -57,7 +57,57 @@ test("grep matches a line with its path and number", async () => {
   const result = await tools
     .get("grep")!
     .execute({ pattern: "needle" }, { workspaceRoot: root });
-  expect(result).toContain("x.txt:2:needle here");
+  expect(JSON.parse(result).matches).toContainEqual({
+    path: "x.txt",
+    line: 2,
+    text: "needle here",
+  });
+});
+
+test("grep returns a cursor and resumes the next page deterministically", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-search-pages-"));
+  await writeFile(join(root, "b.txt"), "needle b\n");
+  await writeFile(join(root, "a.txt"), "needle a\n");
+  const tools = new Map(
+    searchToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const first = JSON.parse(
+    await tools
+      .get("grep")!
+      .execute({ pattern: "needle", limit: 1 }, { workspaceRoot: root }),
+  );
+  expect(first.matches).toEqual([{ path: "a.txt", line: 1, text: "needle a" }]);
+  expect(first.nextCursor).toBeString();
+  const second = JSON.parse(
+    await tools
+      .get("grep")!
+      .execute(
+        { pattern: "needle", limit: 1, cursor: first.nextCursor },
+        { workspaceRoot: root },
+      ),
+  );
+  expect(second.matches).toEqual([
+    { path: "b.txt", line: 1, text: "needle b" },
+  ]);
+  expect(second.nextCursor).toBeUndefined();
+});
+
+test("grep skips derived directories by default", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-search-ignore-"));
+  await writeFile(join(root, "visible.txt"), "needle visible\n");
+  await Bun.write(join(root, "node_modules", "hidden.txt"), "needle hidden\n");
+  await Bun.write(join(root, "devref", "hidden.txt"), "needle hidden\n");
+  const tools = new Map(
+    searchToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const result = JSON.parse(
+    await tools
+      .get("grep")!
+      .execute({ pattern: "needle" }, { workspaceRoot: root }),
+  );
+  expect(result.matches).toEqual([
+    { path: "visible.txt", line: 1, text: "needle visible" },
+  ]);
 });
 
 test("glob and grep preflight every exposed or read workspace path", async () => {

@@ -450,8 +450,6 @@ export type ToolExecutionContext = {
    * capability; absent = images cannot be attached.
    */
   attachImage?: (path: string) => Promise<void>;
-  /** Attaches a PDF to the next provider step for native model understanding. */
-  attachPdf?: (path: string) => Promise<void>;
   sandboxMergeAuthorize?: (input: {
     id: string;
     paths: string[];

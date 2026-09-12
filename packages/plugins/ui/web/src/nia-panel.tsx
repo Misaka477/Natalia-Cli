@@ -13,9 +13,9 @@ import type {
 } from "@natalia/contracts";
 import { boundTranscript, type AppState } from "@natalia/view-store";
 import { Transcript } from "@natalia/ui-kit";
-import { Composer } from "./components/Composer";
+import { Composer, type ComposerAttachment } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
-import type { Message } from "./types";
+import type { Attachment, Message } from "./types";
 import { stableRows, type RowSignature } from "./stable-rows";
 
 export function NiaPanel(props: {
@@ -23,17 +23,29 @@ export function NiaPanel(props: {
   runtime?: RuntimeClient;
   sessionID?: string;
   catalog: RuntimeModelCatalogEntry[];
+  loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
 }) {
   const [draft, setDraft] = createSignal("");
+  const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([]);
   const [modelID, setModelID] = createSignal("");
   const [reasoning, setReasoning] = createSignal("medium");
   const [busy, setBusy] = createSignal(false);
+  const [elapsedMs, setElapsedMs] = createSignal(0);
   let niaObservedTop = 0;
   const niaTranscriptRef = createSignal<HTMLDivElement | undefined>(undefined);
   const [niaTranscriptEl, setNiaTranscriptEl] = niaTranscriptRef;
   const [niaFollowBottom, setNiaFollowBottom] = createSignal(true);
   const [niaShowJumpToBottom, setNiaShowJumpToBottom] = createSignal(false);
   let profileLoadToken = 0;
+
+  function formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes < 1) return `${seconds}s`;
+    return `${minutes}m ${seconds}s`;
+  }
 
   const niaMessageCache = new Map<
     string,
@@ -72,6 +84,10 @@ export function NiaPanel(props: {
           msg.role === "user" ? ("user" as const) : ("assistant" as const);
         const content = msg.text + (msg.pendingText ?? "");
         const streaming = Boolean(activity && isLast && msg.role !== "user");
+        const attachments =
+          msg.role === "user" && msg.attachments?.length
+            ? msg.attachments
+            : undefined;
         return {
           id: msg.id,
           signature: [
@@ -81,6 +97,7 @@ export function NiaPanel(props: {
             msg.pendingText ?? "",
             msg.reasoningVisible,
             content,
+            attachments,
             streaming,
             isLast,
             activity,
@@ -89,6 +106,18 @@ export function NiaPanel(props: {
             id: msg.id,
             role,
             thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+            ...(attachments
+              ? {
+                  attachments: attachments.map((attachment) => ({
+                    id: attachment.id,
+                    path: attachment.path,
+                    name: attachment.filename,
+                    mediaType: attachment.mediaType,
+                    ...(attachment.width ? { width: attachment.width } : {}),
+                    ...(attachment.height ? { height: attachment.height } : {}),
+                  })),
+                }
+              : {}),
             content,
             streaming,
           }),
@@ -215,13 +244,54 @@ export function NiaPanel(props: {
     );
   }
 
+  function handlePaste(event: ClipboardEvent) {
+    const files = Array.from(event.clipboardData?.items ?? [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (!files.length) return;
+    event.preventDefault();
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result ?? "");
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        void props.runtime
+          ?.uploadAttachment?.({
+            name: file.name || "attachment",
+            mediaType: file.type || "application/octet-stream",
+            data: base64,
+          })
+          .then((attachment) => {
+            setAttachments([
+              ...attachments(),
+              {
+                path: attachment.path,
+                name: attachment.filename,
+                ...(file.type.startsWith("image/")
+                  ? { previewUrl: dataUrl }
+                  : {}),
+              },
+            ]);
+          })
+          .catch((cause) =>
+            console.error("[nia-ui] attachment upload failed", cause),
+          );
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
   async function submit() {
     const text = draft();
-    if (!text.trim() || busy()) return;
+    const pendingAttachments = attachments();
+    if ((!text.trim() && !pendingAttachments.length) || busy()) return;
     setBusy(true);
     // Match the Navi composer: clear immediately on send, not after the whole
     // chat turn finishes.
     setDraft("");
+    setAttachments([]);
     try {
       const profile = await props.runtime?.chatModelProfile?.(
         "nia",
@@ -231,6 +301,9 @@ export function NiaPanel(props: {
         text,
         channel: "nia",
         sessionID: props.sessionID,
+        ...(pendingAttachments.length
+          ? { attachments: pendingAttachments.map((item) => item.path) }
+          : {}),
         ...(profile?.normal?.modelID
           ? {
               model: {
@@ -258,6 +331,35 @@ export function NiaPanel(props: {
 
   const active = () => props.state.nia.activity;
 
+  createEffect(() => {
+    const activity = active();
+    if (!activity?.startedAt) {
+      setElapsedMs(0);
+      return;
+    }
+    const startedAt = activity.startedAt;
+    const update = () => setElapsedMs(Date.now() - startedAt);
+    update();
+    const timer = setInterval(update, 1000);
+    onCleanup(() => clearInterval(timer));
+  });
+
+  const activityLabel = () => {
+    const activity = active();
+    if (!activity) return "idle";
+    const phase =
+      activity.phase === "using_tool"
+        ? activity.toolName
+          ? `Using ${activity.toolName}`
+          : "Using a tool"
+        : activity.phase === "thinking"
+          ? "Thinking"
+          : activity.phase === "generating"
+            ? "Generating"
+            : "Waiting";
+    return `${phase} · ${formatDuration(elapsedMs())}`;
+  };
+
   return (
     <div class="neu-pane nia-flat-pane">
       <div class="neu-pane-header">
@@ -278,6 +380,7 @@ export function NiaPanel(props: {
             assistantInitial="N"
             scrollRef={setNiaTranscriptEl}
             onScroll={handleNiaScroll}
+            loadAttachmentUrl={props.loadAttachmentUrl}
           />
           <Show when={niaShowJumpToBottom()}>
             <button
@@ -292,15 +395,7 @@ export function NiaPanel(props: {
         </div>
         <div class="neu-activity-bar" data-running={Boolean(active())}>
           <span class="neu-activity-pulse" />
-          <span class="neu-activity-label">
-            {active()
-              ? active()?.phase === "using_tool"
-                ? `使用 ${active()?.toolName ?? ""}`
-                : active()?.phase === "thinking"
-                  ? "思考中"
-                  : "生成中"
-              : "idle"}
-          </span>
+          <span class="neu-activity-label">{activityLabel()}</span>
         </div>
         <div class="neu-main-toolbar">
           <NeuSelect
@@ -343,6 +438,11 @@ export function NiaPanel(props: {
           busy={Boolean(active()) || busy()}
           onInput={setDraft}
           onStop={() => void props.runtime?.chatAbort?.("nia", props.sessionID)}
+          attachments={attachments()}
+          onRemoveAttachment={(path) =>
+            setAttachments(attachments().filter((item) => item.path !== path))
+          }
+          onPaste={handlePaste}
           onSubmit={() => void submit()}
         />
       </div>

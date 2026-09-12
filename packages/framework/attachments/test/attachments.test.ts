@@ -82,14 +82,15 @@ test("local attachment store derives a private data URL from validated bytes", a
   );
 });
 
-test("local attachment store recognizes PDF signatures", async () => {
+test("local attachment store rejects PDF attachments", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-attachment-pdf-"));
   await writeFile(join(root, "doc.pdf"), "%PDF-1.7 fake");
-  const [attachment] = await storeLocalAttachments({
-    workspaceRoot: root,
-    paths: ["doc.pdf"],
-  });
-  expect(attachment.mediaType).toBe("application/pdf");
+  await expect(
+    storeLocalAttachments({
+      workspaceRoot: root,
+      paths: ["doc.pdf"],
+    }),
+  ).rejects.toThrow(/unsupported/u);
 });
 
 test("local attachment store recognizes webp, gif, mp4 and webm signatures", async () => {

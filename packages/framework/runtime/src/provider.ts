@@ -30,8 +30,25 @@ export type ProviderAttachment =
 export type ProviderMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /**
+   * Provider-native reasoning text that some OpenAI-compatible thinking
+   * models require in the assistant tool-call message on the next request
+   * (DeepSeek's `reasoning_content` is the canonical example). Anthropic
+   * carries the opaque signature separately in `reasoningSignature`.
+   */
+  reasoningContent?: string;
+  /** OpenAI-compatible reasoning field this content came from. */
+  reasoningField?: string;
+  /**
+   * Provider-native reasoning signature/encrypted payload. Anthropic needs it
+   * on the thinking block; Gemini carries it as a sibling of its functionCall
+   * part. OpenAI-compatible gateways generally do not use this field.
+   */
+  reasoningSignature?: string;
+  /** True when `reasoningSignature` is Anthropic redacted_thinking rather than
+   * a normal thinking block. */
+  reasoningRedacted?: boolean;
   images?: ProviderAttachment[];
-  pdfs?: ProviderAttachment[];
   videos?: ProviderAttachment[];
   toolCallID?: string;
   toolName?: string;
@@ -48,6 +65,8 @@ export type ProviderToolCall = {
   id: string;
   name: string;
   arguments: string;
+  /** Gemini thought signature that must accompany this functionCall part. */
+  thoughtSignature?: string;
 };
 
 /**
@@ -96,7 +115,16 @@ export type ProviderFinishReason =
 
 export type ProviderStreamChunk =
   | { type: "content"; text: string }
-  | { type: "thinking"; text: string }
+  | {
+      type: "thinking";
+      text: string;
+      /** OpenAI-compatible field name, e.g. reasoning_content or reasoning. */
+      field?: string;
+      /** Anthropic signature_delta payload, or Gemini thought signature. */
+      signature?: string;
+      /** Anthropic redacted_thinking payload rather than displayable text. */
+      redacted?: boolean;
+    }
   | { type: "tool_call"; calls: ProviderToolCall[] }
   | { type: "tool_protocol_violation"; text: string }
   | { type: "usage"; inputTokens: number; outputTokens: number }
@@ -506,16 +534,14 @@ async function materializeMessage(
           ),
         )
       : undefined;
-  const [images, pdfs, videos] = await Promise.all([
+  const [images, videos] = await Promise.all([
     materializeList(message.images),
-    materializeList(message.pdfs),
     materializeList(message.videos),
   ]);
-  if (!images && !pdfs && !videos) return message;
+  if (!images && !videos) return message;
   return {
     ...message,
     ...(images ? { images } : {}),
-    ...(pdfs ? { pdfs } : {}),
     ...(videos ? { videos } : {}),
   };
 }
@@ -530,10 +556,7 @@ export async function materializeProviderMessages(
 ): Promise<ProviderStreamRequest> {
   if (
     !request.messages.some(
-      (message) =>
-        message.images?.length ||
-        message.pdfs?.length ||
-        message.videos?.length,
+      (message) => message.images?.length || message.videos?.length,
     )
   )
     return request;
@@ -551,7 +574,6 @@ export type StreamingProvider = {
   provider: string;
   model: string;
   imageInput?: boolean;
-  pdfInput?: boolean;
   videoInput?: boolean;
   listModels?: ModelMetadataProvider["listModels"];
   modelDetail?: ModelMetadataProvider["modelDetail"];
@@ -607,7 +629,6 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   readonly provider: string;
   readonly model: string;
   readonly imageInput = true;
-  readonly pdfInput = false;
   readonly videoInput = false;
   private readonly apiKey: string;
   private readonly baseURL: string;
@@ -815,7 +836,6 @@ export class AnthropicProvider implements StreamingProvider {
   readonly provider: string;
   readonly model: string;
   readonly imageInput = true;
-  readonly pdfInput = true;
   readonly videoInput = false;
   private readonly apiKey: string;
   private readonly baseURL: string;
@@ -1007,7 +1027,6 @@ export class GeminiProvider implements StreamingProvider {
   readonly provider: string;
   readonly model: string;
   readonly imageInput = true;
-  readonly pdfInput = true;
   readonly videoInput = true;
   private readonly apiKey: string;
   private readonly baseURL: string;
@@ -1099,6 +1118,37 @@ export class GeminiProvider implements StreamingProvider {
   }
 }
 
+function reasoningFromContextEntries(
+  entries: ContextEntry[],
+): Pick<
+  ProviderMessage,
+  | "reasoningContent"
+  | "reasoningField"
+  | "reasoningSignature"
+  | "reasoningRedacted"
+> {
+  for (const entry of entries) {
+    if (
+      entry.reasoningContent === undefined &&
+      !entry.reasoningField &&
+      !entry.reasoningSignature &&
+      !entry.reasoningRedacted
+    )
+      continue;
+    return {
+      ...(entry.reasoningContent !== undefined
+        ? { reasoningContent: entry.reasoningContent }
+        : {}),
+      ...(entry.reasoningField ? { reasoningField: entry.reasoningField } : {}),
+      ...(entry.reasoningSignature
+        ? { reasoningSignature: entry.reasoningSignature }
+        : {}),
+      ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
+    };
+  }
+  return {};
+}
+
 export function contextEntriesToProviderMessages(
   entries: ContextEntry[],
 ): ProviderMessage[] {
@@ -1142,13 +1192,22 @@ export function contextEntriesToProviderMessages(
       if (!calls.length) continue;
       const preceding = entries[index - transaction.length];
       const previousMessage = messages.at(-1);
+      const reasoning = reasoningFromContextEntries(transaction);
       if (
         preceding?.role === "assistant" &&
         previousMessage?.role === "assistant" &&
         previousMessage.toolCalls === undefined
-      )
+      ) {
         previousMessage.toolCalls = calls;
-      else messages.push({ role: "assistant", content: "", toolCalls: calls });
+        Object.assign(previousMessage, reasoning);
+      } else {
+        messages.push({
+          role: "assistant",
+          content: "",
+          ...reasoning,
+          toolCalls: calls,
+        });
+      }
       for (const call of calls) {
         messages.push({
           role: "tool",
@@ -1173,7 +1232,18 @@ function contextEntryToProviderMessage(
     entry.role === "user" ||
     entry.role === "assistant"
   )
-    return { role: entry.role, content: entry.content };
+    return {
+      role: entry.role,
+      content: entry.content,
+      ...(entry.reasoningContent !== undefined
+        ? { reasoningContent: entry.reasoningContent }
+        : {}),
+      ...(entry.reasoningField ? { reasoningField: entry.reasoningField } : {}),
+      ...(entry.reasoningSignature
+        ? { reasoningSignature: entry.reasoningSignature }
+        : {}),
+      ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
+    };
   if (entry.role === "summary")
     return { role: "system", content: entry.content };
   return undefined;
@@ -1188,6 +1258,9 @@ function parseDurableToolCall(
     id: entry.pairID,
     name: entry.content.slice(0, separator),
     arguments: entry.content.slice(separator + 1),
+    ...(entry.thoughtSignature
+      ? { thoughtSignature: entry.thoughtSignature }
+      : {}),
   };
 }
 
@@ -1398,6 +1471,7 @@ type AnthropicStreamChunk = {
     text?: string;
     thinking?: string;
     reasoning_content?: string;
+    signature?: string;
     partial_json?: string;
     stop_reason?: string | null;
     type?: string;
@@ -1408,6 +1482,8 @@ type AnthropicStreamChunk = {
     type?: string;
     thinking?: string;
     reasoning_content?: string;
+    data?: string;
+    signature?: string;
   };
   choices?: Array<{
     delta?: { reasoning_content?: string; content?: string };
@@ -1422,6 +1498,9 @@ type GeminiStreamChunk = {
     content?: {
       parts?: Array<{
         text?: string;
+        thought?: boolean;
+        thoughtSignature?: string;
+        thought_signature?: string;
         functionCall?: { name?: string; args?: Record<string, unknown> };
       }>;
     };
@@ -1461,6 +1540,8 @@ type OpenAIStreamChunk = {
     delta?: {
       content?: string;
       reasoning_content?: string;
+      reasoning?: string;
+      reasoning_text?: string;
       // Some OpenAI-compatible gateways use the older single-function shape
       // or the ChatGPT recipient field instead of tool_calls[].function.
       recipient?: string;
@@ -1579,6 +1660,13 @@ function parseAnthropicSSEPart(
       const initialThinking = block?.thinking ?? block?.reasoning_content;
       if (initialThinking)
         chunks.push({ type: "thinking", text: initialThinking });
+      if (block?.type === "redacted_thinking" && block.data)
+        chunks.push({
+          type: "thinking",
+          text: "",
+          signature: block.data,
+          redacted: true,
+        });
     }
 
     const index = parsed.index ?? state.currentBlockIndex;
@@ -1587,6 +1675,12 @@ function parseAnthropicSSEPart(
       parsed.delta?.reasoning_content ??
       parsed.choices?.[0]?.delta?.reasoning_content;
     if (deltaThinking) chunks.push({ type: "thinking", text: deltaThinking });
+    if (parsed.delta?.signature)
+      chunks.push({
+        type: "thinking",
+        text: "",
+        signature: parsed.delta.signature,
+      });
     if (parsed.delta?.text)
       chunks.push({ type: "content", text: parsed.delta.text });
     if (parsed.choices?.[0]?.delta?.content)
@@ -1656,13 +1750,26 @@ async function* streamGeminiSSE(
           );
         const calls: ProviderToolCall[] = [];
         for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
+          if (part.thought) {
+            const signature = part.thoughtSignature ?? part.thought_signature;
+            if (part.text || signature)
+              yield {
+                type: "thinking",
+                text: part.text ?? "",
+                ...(signature ? { signature } : {}),
+              };
+            continue;
+          }
           if (part.text) yield { type: "content", text: part.text };
-          if (part.functionCall?.name)
+          if (part.functionCall?.name) {
+            const signature = part.thoughtSignature ?? part.thought_signature;
             calls.push({
               id: `gemini_${calls.length}`,
               name: part.functionCall.name,
               arguments: JSON.stringify(part.functionCall.args ?? {}),
+              ...(signature ? { thoughtSignature: signature } : {}),
             });
+          }
         }
         if (calls.length) yield { type: "tool_call", calls };
         if (parsed.usageMetadata)
@@ -1699,13 +1806,26 @@ function parseGeminiSSEPart(part: string): {
       );
     const calls: ProviderToolCall[] = [];
     for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
+      if (part.thought) {
+        const signature = part.thoughtSignature ?? part.thought_signature;
+        if (part.text || signature)
+          chunks.push({
+            type: "thinking",
+            text: part.text ?? "",
+            ...(signature ? { signature } : {}),
+          });
+        continue;
+      }
       if (part.text) chunks.push({ type: "content", text: part.text });
-      if (part.functionCall?.name)
+      if (part.functionCall?.name) {
+        const signature = part.thoughtSignature ?? part.thought_signature;
         calls.push({
           id: `gemini_${calls.length}`,
           name: part.functionCall.name,
           arguments: JSON.stringify(part.functionCall.args ?? {}),
+          ...(signature ? { thoughtSignature: signature } : {}),
         });
+      }
     }
     if (calls.length) chunks.push({ type: "tool_call", calls });
     if (parsed.usageMetadata)
@@ -1742,6 +1862,20 @@ function parseSSEChunks(
         toolCalls.size > 0,
       );
     const delta = choice?.delta;
+    const reasoningFields = [
+      ["reasoning_content", delta?.reasoning_content],
+      ["reasoning", delta?.reasoning],
+      ["reasoning_text", delta?.reasoning_text],
+    ] as const;
+    const reasoning = reasoningFields.find(
+      ([, value]) => typeof value === "string" && value.length > 0,
+    );
+    if (reasoning)
+      chunks.push({
+        type: "thinking",
+        text: reasoning[1]!,
+        field: reasoning[0],
+      });
     const legacyRecipient =
       delta?.recipient ?? choice?.recipient ?? choice?.message?.recipient;
     const legacyFunction =
@@ -1799,8 +1933,6 @@ function parseSSEChunks(
       }
       continue;
     }
-    if (delta?.reasoning_content)
-      chunks.push({ type: "thinking", text: delta.reasoning_content });
     if (delta?.content) chunks.push({ type: "content", text: delta.content });
   }
   return chunks;
@@ -1878,6 +2010,12 @@ function toolArgumentsFromGatewayCall(call: {
   return call.function_call?.arguments ?? call.arguments ?? call.input ?? "";
 }
 
+function openAIReasoningField(message: ProviderMessage) {
+  return message.reasoningField && message.reasoningField.length > 0
+    ? message.reasoningField
+    : "reasoning_content";
+}
+
 function toOpenAIMessage(message: ProviderMessage) {
   if (message.role === "tool") {
     return {
@@ -1890,6 +2028,9 @@ function toOpenAIMessage(message: ProviderMessage) {
     return {
       role: "assistant",
       content: message.content || null,
+      ...(message.reasoningContent !== undefined
+        ? { [openAIReasoningField(message)]: message.reasoningContent }
+        : {}),
       tool_calls: message.toolCalls.map((call) => ({
         id: call.id,
         type: "function",
@@ -1897,7 +2038,7 @@ function toOpenAIMessage(message: ProviderMessage) {
       })),
     };
   }
-  if (message.images?.length || message.pdfs?.length)
+  if (message.images?.length)
     return {
       role: message.role,
       content: [
@@ -1906,13 +2047,29 @@ function toOpenAIMessage(message: ProviderMessage) {
           type: "image_url",
           image_url: { url: materializedDataURL(image) },
         })),
-        ...(message.pdfs ?? []).map((pdf) => ({
-          type: "file",
-          file: { file_data: materializedDataURL(pdf) },
-        })),
       ],
     };
-  return { role: message.role, content: message.content };
+  return {
+    role: message.role,
+    content: message.content,
+    ...(message.role === "assistant" && message.reasoningContent !== undefined
+      ? { [openAIReasoningField(message)]: message.reasoningContent }
+      : {}),
+  };
+}
+
+function anthropicReasoningBlock(message: ProviderMessage) {
+  if (!message.reasoningSignature) return undefined;
+  if (message.reasoningRedacted)
+    return {
+      type: "redacted_thinking" as const,
+      data: message.reasoningSignature,
+    };
+  return {
+    type: "thinking" as const,
+    thinking: message.reasoningContent ?? "",
+    signature: message.reasoningSignature,
+  };
 }
 
 function toAnthropicMessage(message: ProviderMessage) {
@@ -1927,10 +2084,12 @@ function toAnthropicMessage(message: ProviderMessage) {
         },
       ],
     };
-  if (message.toolCalls?.length)
+  if (message.toolCalls?.length) {
+    const reasoning = anthropicReasoningBlock(message);
     return {
       role: "assistant",
       content: [
+        ...(reasoning ? [reasoning] : []),
         ...(message.content ? [{ type: "text", text: message.content }] : []),
         ...message.toolCalls.map((call) => ({
           type: "tool_use",
@@ -1940,11 +2099,14 @@ function toAnthropicMessage(message: ProviderMessage) {
         })),
       ],
     };
+  }
+  const reasoning = anthropicReasoningBlock(message);
   return {
     role: message.role === "assistant" ? "assistant" : "user",
     content:
-      message.images?.length || message.pdfs?.length
+      message.images?.length || reasoning
         ? [
+            ...(reasoning ? [reasoning] : []),
             ...(message.content
               ? [{ type: "text", text: message.content }]
               : []),
@@ -1954,14 +2116,6 @@ function toAnthropicMessage(message: ProviderMessage) {
                 type: "base64",
                 media_type: image.mediaType,
                 data: dataURLPayload(materializedDataURL(image)),
-              },
-            })),
-            ...(message.pdfs ?? []).map((pdf) => ({
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: pdf.mediaType,
-                data: dataURLPayload(materializedDataURL(pdf)),
               },
             })),
           ]
@@ -1974,9 +2128,25 @@ function toGeminiContent(message: ProviderMessage) {
   if (message.toolCalls?.length)
     return {
       role: "model",
-      parts: message.toolCalls.map((call) => ({
-        functionCall: { name: call.name, args: safeJSON(call.arguments) },
-      })),
+      parts: [
+        ...(message.reasoningContent || message.reasoningSignature
+          ? [
+              {
+                thought: true,
+                text: message.reasoningContent ?? "",
+                ...(message.reasoningSignature
+                  ? { thoughtSignature: message.reasoningSignature }
+                  : {}),
+              },
+            ]
+          : []),
+        ...message.toolCalls.map((call) => ({
+          functionCall: { name: call.name, args: safeJSON(call.arguments) },
+          ...(call.thoughtSignature
+            ? { thoughtSignature: call.thoughtSignature }
+            : {}),
+        })),
+      ],
     };
   if (message.role === "tool")
     return {
@@ -1998,12 +2168,6 @@ function toGeminiContent(message: ProviderMessage) {
         inlineData: {
           mimeType: image.mediaType,
           data: dataURLPayload(materializedDataURL(image)),
-        },
-      })) ?? []),
-      ...(message.pdfs?.map((pdf) => ({
-        inlineData: {
-          mimeType: pdf.mediaType,
-          data: dataURLPayload(materializedDataURL(pdf)),
         },
       })) ?? []),
       ...(message.videos?.map((video) => ({

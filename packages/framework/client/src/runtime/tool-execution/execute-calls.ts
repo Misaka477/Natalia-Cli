@@ -2,7 +2,7 @@
  * Tool call execution orchestration — runtime/tool-execution/execute-calls.ts.
  *
  * `executeToolCalls` runs a provider's tool-call batch for one turn: it
- * materializes the image/PDF attachments gated by the model's input
+ * materializes image attachments gated by the model's input
  * capabilities, resolves every call against the tool registry, publishes the
  * denial/failure facts, executes each call through `executeOneTool`, and
  * assembles the tool-result provider messages. `toolResultContent` shapes what
@@ -231,6 +231,12 @@ export function createExecuteCalls(
     calls: ProviderToolCall[],
     assistant: string,
     materialized: ToolMaterialization,
+    reasoning?: {
+      content?: string;
+      field?: string;
+      signature?: string;
+      redacted?: boolean;
+    },
   ): Promise<ProviderMessage[]> {
     const {
       getExecutionBySession,
@@ -242,7 +248,6 @@ export function createExecuteCalls(
       publishForSession,
       publishWorkGraphToolCall,
       currentModelImageInput,
-      currentModelPdfInput,
       mediaTypeForImage,
       isToolAllowed,
       extensionToolPermission,
@@ -264,28 +269,19 @@ export function createExecuteCalls(
       mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
       dataURL: string;
     }> = [];
-    const pendingPdfs: Array<{
-      mediaType: "application/pdf";
-      dataURL: string;
-    }> = [];
     const exec = executionBySession.get(turnSession.get(turnID) ?? sessionID);
     if (!exec) throw new Error(`no execution state for turn ${turnID}`);
     const attachImage = currentModelImageInput(exec)
       ? async (path: string) => {
           const mediaType = mediaTypeForImage(path);
+          if (!mediaType)
+            throw new Error(
+              `unsupported image attachment type for ${path}; expected png, jpeg, webp or gif`,
+            );
           const bytes = await readFile(resolve(workspaceRoot, path));
           pendingImages.push({
             mediaType,
             dataURL: `data:${mediaType};base64,${bytes.toString("base64")}`,
-          });
-        }
-      : undefined;
-    const attachPdf = currentModelPdfInput(exec)
-      ? async (path: string) => {
-          const bytes = await readFile(resolve(workspaceRoot, path));
-          pendingPdfs.push({
-            mediaType: "application/pdf",
-            dataURL: `data:application/pdf;base64,${bytes.toString("base64")}`,
           });
         }
       : undefined;
@@ -314,15 +310,38 @@ export function createExecuteCalls(
     const assistantMessage: ProviderMessage = {
       role: "assistant",
       content: assistant,
+      ...(reasoning?.content !== undefined
+        ? { reasoningContent: reasoning.content }
+        : {}),
+      ...(reasoning?.field ? { reasoningField: reasoning.field } : {}),
+      ...(reasoning?.signature
+        ? { reasoningSignature: reasoning.signature }
+        : {}),
+      ...(reasoning?.redacted ? { reasoningRedacted: true } : {}),
       toolCalls: effectiveCalls,
     };
     const messages: ProviderMessage[] = [assistantMessage];
-    for (const call of effectiveCalls) {
+    for (const [index, call] of effectiveCalls.entries()) {
       execContext.add({
         id: `${turnID}:${call.id}:call`,
         role: "tool_call",
         content: `${call.name} ${call.arguments}`,
         pairID: call.id,
+        ...(call.thoughtSignature
+          ? { thoughtSignature: call.thoughtSignature }
+          : {}),
+        ...(index === 0 && reasoning?.content !== undefined
+          ? { reasoningContent: reasoning.content }
+          : {}),
+        ...(index === 0 && reasoning?.field
+          ? { reasoningField: reasoning.field }
+          : {}),
+        ...(index === 0 && reasoning?.signature
+          ? { reasoningSignature: reasoning.signature }
+          : {}),
+        ...(index === 0 && reasoning?.redacted
+          ? { reasoningRedacted: true }
+          : {}),
       });
     }
     for (const call of effectiveCalls) {
@@ -425,7 +444,6 @@ export function createExecuteCalls(
         call,
         resolved.tool,
         attachImage,
-        attachPdf,
       );
       messages.push({
         role: "tool",
@@ -440,14 +458,12 @@ export function createExecuteCalls(
         pairID: call.id,
       });
     }
-    if (pendingImages.length || pendingPdfs.length)
+    if (pendingImages.length)
       messages.push({
         role: "user",
-        content: pendingPdfs.length
-          ? "The original PDF is attached as the result of the preceding tool call. Read every selected page in order using native document understanding. Do not claim that local OCR or page-image rendering was used."
-          : "Rendered page images are attached as the result of the preceding tool call. Read every image in attachment order. A visual attachment means the PDF text extractor found little text or vision was explicitly requested; it does not by itself prove the page is scanned. Do not claim that local OCR was used.",
-        ...(pendingImages.length ? { images: pendingImages } : {}),
-        ...(pendingPdfs.length ? { pdfs: pendingPdfs } : {}),
+        content:
+          "Rendered page images are attached as the result of the preceding tool call. Read every image in attachment order. A visual attachment means vision was explicitly requested; it does not by itself prove the page is scanned. Do not claim that local OCR was used.",
+        images: pendingImages,
       });
     return messages;
   }

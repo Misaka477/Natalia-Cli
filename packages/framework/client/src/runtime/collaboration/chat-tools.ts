@@ -5,16 +5,12 @@
  * plus the collaboration/mailbox/plan drafting tools. Reads live state through
  * `RuntimeContext` at call time.
  */
-import {
-  globWorkspaceFiles,
-  readWorkspaceFile,
-  searchWorkspaceFiles,
-} from "@natalia/platform";
+import { globWorkspaceFiles, readWorkspaceFile } from "@natalia/platform";
 import {
   projectedMailboxMessages,
   type ProjectedMailboxMessage,
 } from "@natalia/session";
-import type { RuntimeTool } from "@natalia/tools";
+import { grepWorkspaceFilesBounded, type RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import {
   COLLABORATION_SERVICE,
@@ -33,6 +29,10 @@ const CHAT_READ_ONLY_TOOLS = new Set([
   "web_fetch",
   "web_search",
 ]);
+
+/** Nia may run shell commands for verification, but the prompt forbids mutating
+ * commands; the tool itself is the existing run_shell implementation. */
+const NIA_EXTRA_TOOLS = new Set(["run_shell"]);
 
 export const CHAT_SUGGESTION_PRIORITIES = ["normal", "high"] as const;
 export const MAILBOX_PRIORITIES = ["normal", "high", "urgent"] as const;
@@ -455,8 +455,9 @@ export function createChatTools(ctx: RuntimeContext) {
       visible.push({
         name: "grep",
         description:
-          "Search file contents in the workspace with a regular expression. Use it to search code, docs or configuration.",
+          "Search file contents in the workspace with a regular expression. Results are paginated; if the response contains nextCursor, call grep again with the same pattern/path/include and that cursor until no nextCursor is returned.",
         requiresApproval: false,
+        timeoutSec: 20,
         parameters: {
           type: "object",
           properties: {
@@ -464,29 +465,34 @@ export function createChatTools(ctx: RuntimeContext) {
             path: { type: "string" },
             include: { type: "string" },
             limit: { type: "number" },
+            cursor: { type: "string" },
           },
           required: ["pattern"],
           additionalProperties: false,
         },
-        async execute(parsed) {
+        async execute(parsed, context) {
           const args = parsed as {
             pattern?: string;
             path?: string;
             include?: string;
             limit?: number;
+            cursor?: string;
           };
           if (typeof args.pattern !== "string") return "grep requires pattern";
-          const scopedInclude = args.path
-            ? `${args.path.replace(/\/+$/u, "")}/**/*`
-            : args.include;
           try {
-            const result = await searchWorkspaceFiles({
-              workspaceRoot: ctx.ports.getWorkspaceRoot(),
-              query: args.pattern,
-              ...(scopedInclude ? { include: scopedInclude } : {}),
-              ...(args.limit ? { limit: args.limit } : {}),
-            });
-            return JSON.stringify(result);
+            return JSON.stringify(
+              await grepWorkspaceFilesBounded({
+                workspaceRoot: ctx.ports.getWorkspaceRoot(),
+                pattern: args.pattern,
+                ...(args.path ? { path: args.path } : {}),
+                ...(args.include ? { include: args.include } : {}),
+                ...(args.limit !== undefined ? { limit: args.limit } : {}),
+                ...(args.cursor ? { cursor: args.cursor } : {}),
+                signal: context.signal,
+                authorize: async (authorizeInput) =>
+                  await context.workspaceReadAuthorize?.(authorizeInput),
+              }),
+            );
           } catch (cause) {
             return cause instanceof Error ? cause.message : String(cause);
           }
@@ -617,8 +623,9 @@ export function createChatTools(ctx: RuntimeContext) {
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ): RuntimeTool[] {
     const { currentSessionSnapshot } = ctx.ports;
-    const visible = [...ctx.state.tools.values()].filter((tool) =>
-      CHAT_READ_ONLY_TOOLS.has(tool.name),
+    const visible = [...ctx.state.tools.values()].filter(
+      (tool) =>
+        CHAT_READ_ONLY_TOOLS.has(tool.name) || NIA_EXTRA_TOOLS.has(tool.name),
     );
     visible.push(
       {

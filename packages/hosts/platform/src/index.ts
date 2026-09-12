@@ -19,6 +19,7 @@ export {
   deleteWorkspaceFile,
   findWorkspaceFiles,
   globWorkspaceFiles,
+  grepWorkspaceFilesBounded,
   invalidateWorkspaceFiles,
   listWorkspaceFiles,
   readWorkspaceFile,
@@ -26,6 +27,9 @@ export {
   searchWorkspaceFiles,
   watchWorkspaceFiles,
   writeWorkspaceFile,
+  type WorkspaceGrepInput,
+  type WorkspaceGrepMatch,
+  type WorkspaceGrepResult,
 } from "./workspace-files";
 
 /**

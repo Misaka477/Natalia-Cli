@@ -9,7 +9,7 @@
  * `execute-one.ts` stays within the source line limit.
  */
 import type { ProviderToolCall } from "@natalia/runtime";
-import type { RuntimeTool } from "@natalia/tools";
+import { requiresForcedGitApproval, type RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
   TOOL_POLICY_SERVICE,
@@ -34,7 +34,6 @@ export type ExecuteStageInput = {
   call: ProviderToolCall;
   turnID: string;
   attachImage?: (path: string) => Promise<void>;
-  attachPdf?: (path: string) => Promise<void>;
   ctx: RuntimeContext;
   options: RealRuntimeClientOptions;
   sessionID: import("@natalia/contracts").SessionID;
@@ -52,7 +51,6 @@ export async function runExecuteStage(
     call,
     turnID,
     attachImage,
-    attachPdf,
     ctx,
     options,
     sessionID,
@@ -95,28 +93,43 @@ export async function runExecuteStage(
   const tryParseToolArguments = ctx.ports.tryParseToolArguments;
   const parseToolArguments = ctx.ports.parseToolArguments;
   const validateToolParameters = ctx.ports.validateToolParameters;
+  const parsedForApproval = tryParseToolArguments(call.arguments);
+  const commandTextForApproval = toolPolicy.commandTextForTool(
+    tool.name,
+    (typeof parsedForApproval === "object" && parsedForApproval !== null
+      ? parsedForApproval
+      : {}) as Record<string, unknown>,
+  );
+  const forcedApproval = requiresForcedGitApproval(commandTextForApproval);
+  const approvalRequired = tool.requiresApproval || Boolean(forcedApproval);
   publish({
     type: "tool.update",
     id: toolID,
     name: tool.name,
     callID: call.id,
-    status: tool.requiresApproval ? "awaiting_approval" : "queued",
-    summary: tool.requiresApproval ? "awaiting approval" : "queued",
+    status: approvalRequired ? "awaiting_approval" : "queued",
+    summary: approvalRequired ? "awaiting approval" : "queued",
     argumentsDelta: call.arguments,
+    ...(call.thoughtSignature
+      ? { thoughtSignature: call.thoughtSignature }
+      : {}),
   });
   publish({
     type: "policy.decision",
     turnID,
     toolName: tool.name,
     toolCallID: call.id,
-    decision: tool.requiresApproval ? "approval_required" : "allow",
+    decision: approvalRequired ? "approval_required" : "allow",
   });
-  if (tool.requiresApproval) {
+  if (approvalRequired) {
     const refusal = await interactive.requireApproval(
       toolID,
       tool,
       call,
       turnID,
+      forcedApproval
+        ? { force: true, reason: forcedApproval.reason }
+        : undefined,
     );
     if (refusal) {
       // Reported like a policy denial: the call did not run, the turn keeps
@@ -130,6 +143,9 @@ export async function runExecuteStage(
         summary: refusal.reason,
         result: refusal.reason,
         argumentsDelta: call.arguments,
+        ...(call.thoughtSignature
+          ? { thoughtSignature: call.thoughtSignature }
+          : {}),
         endedAt: Date.now(),
       });
       publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
@@ -278,7 +294,6 @@ export async function runExecuteStage(
           call,
           turnID,
           attachImage,
-          attachPdf,
           ctx,
           sessionID,
           workspaceRoot,
@@ -323,6 +338,9 @@ export async function runExecuteStage(
       summary: result.slice(0, 200),
       result,
       argumentsDelta: call.arguments,
+      ...(call.thoughtSignature
+        ? { thoughtSignature: call.thoughtSignature }
+        : {}),
       metadata: {
         ...(bounded.outputPath
           ? {
@@ -415,6 +433,9 @@ export async function runExecuteStage(
       summary: message,
       result: message,
       argumentsDelta: call.arguments,
+      ...(call.thoughtSignature
+        ? { thoughtSignature: call.thoughtSignature }
+        : {}),
       endedAt: Date.now(),
     });
     // A failed call is as much a fact as a successful one; the error text stays

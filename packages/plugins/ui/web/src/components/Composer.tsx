@@ -24,6 +24,8 @@ export interface ComposerProps {
 export function Composer(props: ComposerProps) {
   let textareaRef: HTMLTextAreaElement | undefined;
   const [isFocused, setIsFocused] = createSignal(false);
+  const canSubmit = () =>
+    Boolean(props.value.trim() || props.attachments?.length);
 
   onMount(() => adjustHeight());
 
@@ -44,7 +46,7 @@ export function Composer(props: ComposerProps) {
       event.preventDefault();
       // Enter submits even while busy: app-neu sends that as `next-step`, so
       // the running turn claims it. Stop is its own control, not this key.
-      if (props.value.trim() && !props.disabled) {
+      if (canSubmit() && !props.disabled) {
         props.onSubmit();
         setTimeout(() => adjustHeight(), 0);
       }
@@ -52,7 +54,7 @@ export function Composer(props: ComposerProps) {
   }
 
   function handleSubmit() {
-    if (props.value.trim() && !props.disabled) {
+    if (canSubmit() && !props.disabled) {
       props.onSubmit();
       setTimeout(() => adjustHeight(), 0);
     }
@@ -186,7 +188,7 @@ export function Composer(props: ComposerProps) {
               class="natalia-composer-submit"
               data-busy={props.busy}
               onClick={handleSubmit}
-              disabled={props.disabled || !props.value.trim()}
+              disabled={props.disabled || !canSubmit()}
               title={props.busy ? "发送并注入当前轮" : "发送"}
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">

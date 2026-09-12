@@ -1610,6 +1610,54 @@ test("chat tool calls render in event order with post-tool text below the card",
   expect(displayText(post!)).toBe(" the main agent is idle.");
 });
 
+test("chat attachments project into Navi and Nia rows and hydrate intact", () => {
+  const attachment = {
+    id: "att_image",
+    path: ".natalia/attachments/att_image.png",
+    filename: "image.png",
+    mediaType: "image/png" as const,
+    byteLength: 24,
+    sha256: "image-hash",
+    width: 1,
+    height: 1,
+  };
+  const state = projectEvents([
+    {
+      type: "navi.chat.message.new",
+      id: "chat:navi:user",
+      messageID: "chat:navi",
+      role: "user",
+      text: "see image",
+      at: "t1",
+      attachments: [attachment],
+    },
+    {
+      type: "nia.chat.message.new",
+      id: "chat:nia:user",
+      messageID: "chat:nia",
+      role: "user",
+      text: "see image too",
+      at: "t2",
+      attachments: [attachment],
+    },
+  ]);
+  expect(state.navi.messages[0]?.attachments).toEqual([attachment]);
+  expect(state.nia.messages[0]?.attachments).toEqual([attachment]);
+
+  const hydrated = initialState();
+  hydrateNaviMessages(hydrated, [
+    {
+      messageID: "chat:hydrated",
+      role: "user",
+      text: "hydrated image",
+      at: "t3",
+      channel: "navi",
+      attachments: [attachment],
+    },
+  ]);
+  expect(hydrated.navi.messages[0]?.attachments).toEqual([attachment]);
+});
+
 test("chat activity follows its own lifecycle without replacing main activity", () => {
   const state = projectEvents([
     submitted("t1", "main work"),

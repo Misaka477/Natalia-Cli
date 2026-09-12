@@ -32,7 +32,6 @@ export function wireExecution(
   ports.refreshExecutionContextConfig =
     providerSelection.refreshExecutionContextConfig;
   ports.currentModelImageInput = providerSelection.currentModelImageInput;
-  ports.currentModelPdfInput = providerSelection.currentModelPdfInput;
   ports.mediaTypeForImage = providerSelection.mediaTypeForImage;
   ports.redactToolOutputEnabled = providerSelection.redactToolOutputEnabled;
   ports.resolveContextStatusConfig =

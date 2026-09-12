@@ -413,6 +413,12 @@ export type ProviderRunnerInput = {
     calls: ProviderToolCall[],
     assistant: string,
     materialized: ToolMaterialization,
+    reasoning?: {
+      content?: string;
+      field?: string;
+      signature?: string;
+      redacted?: boolean;
+    },
   ): Promise<import("@natalia/runtime").ProviderMessage[]>;
   takeLiveUserMessages?(): Array<{ source: "user" | "navi"; text: string }>;
   /** Claims un-promoted `next-step` inputs for one provider step. */
@@ -766,6 +772,7 @@ export interface InteractiveWaiter {
     tool: RuntimeTool,
     call: ProviderToolCall,
     turnID: string,
+    options?: { force?: boolean; reason?: string },
   ): Promise<{ reason: string } | undefined>;
   requireQuestion(
     requestID: string,

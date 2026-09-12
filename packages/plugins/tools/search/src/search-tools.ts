@@ -6,6 +6,7 @@
  * capability kernel or the host that loads it.
  */
 import {
+  grepWorkspaceFilesBounded,
   numberOr,
   optionalString,
   requireObject,
@@ -15,8 +16,7 @@ import {
   type ToolFamily,
 } from "@natalia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import { readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, sep } from "node:path";
 
 export const SEARCH_PLUGIN_ID = "natalia-tool-search";
 
@@ -102,8 +102,9 @@ function grepTool(): RuntimeTool {
   return {
     name: "grep",
     description:
-      "Search UTF-8 workspace files with a regular expression. Optionally scope the search to a workspace-relative directory with path.",
+      "Search UTF-8 workspace files with a regular expression. Optionally scope the search to a workspace-relative directory with path. Results are paginated; if the response contains nextCursor, call grep again with the same pattern/path/include and that cursor until no nextCursor is returned.",
     requiresApproval: false,
+    timeoutSec: 20,
     parameters: {
       type: "object",
       properties: {
@@ -111,6 +112,7 @@ function grepTool(): RuntimeTool {
         path: { type: "string" },
         include: { type: "string" },
         limit: { type: "number" },
+        cursor: { type: "string" },
       },
       required: ["pattern"],
       additionalProperties: false,
@@ -144,64 +146,49 @@ function grepTool(): RuntimeTool {
         };
       },
       presentResult(args, value) {
+        let summary = "grep";
+        try {
+          const parsed = JSON.parse(value) as {
+            matches?: unknown[];
+            nextCursor?: string;
+          };
+          const count = parsed.matches?.length ?? 0;
+          summary = count === 0 ? "no matches" : `${count} matches`;
+          if (parsed.nextCursor) summary += " · more";
+        } catch {
+          summary = value === "no matches" ? "no matches" : "matches";
+        }
         return {
           kind: "search",
           title: requireObject(args).pattern as string,
-          summary:
-            value === "no matches"
-              ? "no matches"
-              : `${value.split("\n").length} matches`,
+          summary,
           body: value,
         };
       },
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const expression = new RegExp(
-        requireString(args.pattern, "pattern"),
-        "u",
-      );
-      const scope = optionalString(args.path);
-      const directory = scope
-        ? workspacePath(context.workspaceRoot, scope)
-        : context.workspaceRoot;
-      const base = relative(context.workspaceRoot, directory)
-        .split(sep)
-        .join("/");
-      const include = optionalString(args.include) ?? "**/*";
-      const limit = Math.min(1000, Math.max(1, numberOr(args.limit, 200)));
-      const paths: string[] = [];
-      for await (const relativePath of new Bun.Glob(include).scan({
-        cwd: directory,
-        onlyFiles: true,
-      }))
-        paths.push(base ? `${base}/${relativePath}` : relativePath);
-      paths.sort();
-      const lines: string[] = [];
-      for (const displayPath of paths) {
-        if (lines.length >= limit) break;
-        const localPath = base
-          ? displayPath.slice(base.length + 1)
-          : displayPath;
-        await context.workspaceReadAuthorize?.({
-          toolName: "grep",
-          paths: [displayPath],
-        });
-        let content: string;
-        try {
-          content = await readFile(resolve(directory, localPath), "utf8");
-        } catch {
-          continue;
-        }
-        if (content.includes("\0")) continue;
-        for (const [index, line] of content.split(/\r?\n/u).entries()) {
-          expression.lastIndex = 0;
-          if (!expression.test(line)) continue;
-          lines.push(`${displayPath}:${index + 1}:${line}`);
-          if (lines.length >= limit) break;
-        }
-      }
-      return lines.length ? lines.join("\n") : "no matches";
+      const pattern = requireString(args.pattern, "pattern");
+      const result = await grepWorkspaceFilesBounded({
+        workspaceRoot: context.workspaceRoot,
+        pattern,
+        ...(optionalString(args.path)
+          ? { path: optionalString(args.path) }
+          : {}),
+        ...(optionalString(args.include)
+          ? { include: optionalString(args.include) }
+          : {}),
+        ...(args.limit !== undefined
+          ? { limit: numberOr(args.limit, 200) }
+          : {}),
+        ...(typeof args.cursor === "string" && args.cursor
+          ? { cursor: args.cursor }
+          : {}),
+        signal: context.signal,
+        authorize: async (authorizeInput) =>
+          await context.workspaceReadAuthorize?.(authorizeInput),
+      });
+      return JSON.stringify(result);
     },
   };
 }

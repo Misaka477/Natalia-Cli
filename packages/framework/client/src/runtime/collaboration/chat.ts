@@ -115,6 +115,7 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
         at: message.at,
         ...(message.kind ? { kind: message.kind } : {}),
         ...(message.tool ? { tool: message.tool } : {}),
+        ...(message.attachments ? { attachments: message.attachments } : {}),
         channel: "navi" as const,
       }));
     },
@@ -188,6 +189,7 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
           role: "user",
           text: safeText,
           at: new Date().toISOString(),
+          ...(attachments ? { attachments } : {}),
         }),
       );
       const responseMessageID = `navi-chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
@@ -195,6 +197,7 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
         exec.naviPendingQueue.push({
           messageID: userMessageID,
           text: safeText,
+          attachments,
         });
         if (exec.naviAbortWakePending) {
           exec.naviAbortWakePending = false;
@@ -244,6 +247,7 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
         at: message.at,
         ...(message.kind ? { kind: message.kind } : {}),
         ...(message.tool ? { tool: message.tool } : {}),
+        ...(message.attachments ? { attachments: message.attachments } : {}),
         channel: "nia" as const,
       }));
     },
@@ -317,11 +321,16 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
           role: "user",
           text: safeText,
           at: new Date().toISOString(),
+          ...(attachments ? { attachments } : {}),
         }),
       );
       const responseMessageID = `nia-chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`;
       if (controller.niaBusy(exec.session.id as SessionID)) {
-        exec.niaPendingQueue.push({ messageID: userMessageID, text: safeText });
+        exec.niaPendingQueue.push({
+          messageID: userMessageID,
+          text: safeText,
+          attachments,
+        });
         if (exec.niaAbortWakePending) {
           exec.niaAbortWakePending = false;
           controller.requestNiaWake(exec.session.id as SessionID);

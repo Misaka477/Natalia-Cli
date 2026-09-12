@@ -1,9 +1,5 @@
 import { parseToolArguments, validateToolParameters } from "@natalia/tools";
 import {
-  ATTACHMENT_SERVICE,
-  type AttachmentService,
-} from "@natalia/runtime-services";
-import {
   MAX_STEPS_PROMPT,
   MISSING_FINAL_RESPONSE_FALLBACK,
   nativeToolCallCorrection,
@@ -24,7 +20,10 @@ import {
   type ConcreteRuntimeEvent,
   niaChatHistory,
   collabMessagesForExec,
+  chatModelCapabilities,
   compactChatBeforeProviderStep,
+  applyChatAttachments,
+  applyChatHistoryAttachments,
   promptData,
   streamEvent,
 } from "./chat-turn-common";
@@ -49,6 +48,23 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     await ensureSessionFullEvents(ctx, input.exec);
     const activeProvider = niaProvider(input);
     if (!activeProvider) throw new Error("provider unavailable for Nia chat");
+    const profileModel = input.exec.niaChatModelProfile?.normal;
+    const chatModel = input.model?.modelID
+      ? input.model
+      : profileModel?.modelID
+        ? profileModel
+        : undefined;
+    const activeModelCapabilities = chatModelCapabilities(
+      ctx,
+      activeProvider,
+      chatModel,
+    );
+    const reportAttachmentDiagnostic = (message: string) =>
+      ctx.ports.publishForSession(input.exec, {
+        type: "diagnostic",
+        level: "warning",
+        message,
+      });
     console.log("[nia-chat-turn] start", {
       sessionID: input.exec.session.id,
       responseMessageID: input.responseMessageID,
@@ -82,7 +98,29 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         content:
           "Your audit wake request has arrived. Read the active plan and shared context, perform the audit, then call audit_report with planID and verdict passed or gaps. Use collab_chat to send concrete findings to Natalia. If Natalia claims fixes after a re-audit, verify the actual workspace and plan before passing. Be concise and exact.",
       });
-    await attachNiaImages(messages, input.attachments);
+    await applyChatHistoryAttachments(ctx, {
+      messages: history.messages,
+      attachments: history.attachments,
+      modelCapabilities: activeModelCapabilities,
+      provider: activeProvider,
+      onDiagnostic: reportAttachmentDiagnostic,
+    });
+    if (
+      !history.attachments.some((attachments) => attachments?.length) &&
+      input.attachments?.length
+    ) {
+      const initialUserMessage = messages.findLast(
+        (message) => message.role === "user",
+      );
+      if (initialUserMessage)
+        await applyChatAttachments(ctx, {
+          message: initialUserMessage,
+          attachments: input.attachments,
+          modelCapabilities: activeModelCapabilities,
+          provider: activeProvider,
+          onDiagnostic: reportAttachmentDiagnostic,
+        });
+    }
     const visibleTools = niaChatTools(input.exec);
     const toolSchemas = visibleTools.map((tool) => ({
       name: tool.name,
@@ -170,8 +208,19 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         const pending = input.exec.niaPendingQueue.splice(0);
         for (const incoming of pending)
           if (!consumedMessageIDs.has(incoming.messageID)) {
-            messages.push({ role: "user", content: incoming.text });
+            const message: ProviderMessage = {
+              role: "user",
+              content: incoming.text,
+            };
+            messages.push(message);
             consumedMessageIDs.add(incoming.messageID);
+            await applyChatAttachments(ctx, {
+              message,
+              attachments: incoming.attachments,
+              modelCapabilities: activeModelCapabilities,
+              provider: activeProvider,
+              onDiagnostic: reportAttachmentDiagnostic,
+            });
           }
         if (pending.length) {
           const systemIndex = messages.findIndex(
@@ -192,6 +241,10 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         ranFinalOnlyStep ||= finalOnly;
         const calls: ProviderToolCall[] = [];
         let stepOutput = "";
+        let stepThinking = "";
+        let stepThinkingField: string | undefined;
+        let stepThinkingSignature: string | undefined;
+        let stepThinkingRedacted = false;
         let protocolViolation = "";
         const compactedMessages = await compactChatBeforeProviderStep(
           ctx,
@@ -260,13 +313,20 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
             );
           if (chunk.type === "thinking") {
             setPhase("thinking");
-            thinking += chunk.text;
-            publish({
-              type: "nia.chat.thinking.delta",
-              id: `${input.responseMessageID}:thinking:${nextChatSequence()}`,
-              messageID: input.responseMessageID,
-              text: chunk.text,
-            });
+            if (chunk.text) {
+              thinking += chunk.text;
+              stepThinking += chunk.text;
+            }
+            if (chunk.field) stepThinkingField = chunk.field;
+            if (chunk.signature) stepThinkingSignature = chunk.signature;
+            if (chunk.redacted) stepThinkingRedacted = true;
+            if (chunk.text)
+              publish({
+                type: "nia.chat.thinking.delta",
+                id: `${input.responseMessageID}:thinking:${nextChatSequence()}`,
+                messageID: input.responseMessageID,
+                text: chunk.text,
+              });
             continue;
           }
           if (chunk.type === "content") {
@@ -372,6 +432,12 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         messages.push({
           role: "assistant",
           content: stepOutput,
+          ...(stepThinking ? { reasoningContent: stepThinking } : {}),
+          ...(stepThinkingField ? { reasoningField: stepThinkingField } : {}),
+          ...(stepThinkingSignature
+            ? { reasoningSignature: stepThinkingSignature }
+            : {}),
+          ...(stepThinkingRedacted ? { reasoningRedacted: true } : {}),
           toolCalls: calls,
         });
         for (const call of calls) {
@@ -530,33 +596,5 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         : undefined) ??
       ctx.ports.providerFromEnvironment?.()
     );
-  }
-
-  async function attachNiaImages(
-    messages: ProviderMessage[],
-    attachments: import("@natalia/contracts").LocalAttachment[] | undefined,
-  ) {
-    if (!attachments?.length) return;
-    const attachmentService =
-      ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
-    if (!attachmentService) return;
-    const images = await Promise.all(
-      attachments
-        .filter((attachment) =>
-          ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
-            attachment.mediaType,
-          ),
-        )
-        .map(async (attachment) => ({
-          mediaType: attachment.mediaType as
-            | "image/png"
-            | "image/jpeg"
-            | "image/webp"
-            | "image/gif",
-          dataURL: await attachmentService.dataURL(attachment),
-        })),
-    );
-    const userMessage = messages.findLast((message) => message.role === "user");
-    if (userMessage && images.length) userMessage.images = images;
   }
 }

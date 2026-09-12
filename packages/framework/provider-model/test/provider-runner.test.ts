@@ -142,7 +142,6 @@ function makeHarness(
       reasoning: true,
       thinking: true,
       imageInput: false,
-      pdfInput: false,
       videoInput: false,
     }),
     setActiveModelCapabilities: () => undefined,
@@ -192,9 +191,28 @@ function makeHarness(
     },
     isToolAllowed: () => true,
     setInFlightOperation: async () => undefined,
-    executeToolCalls: async (turnID, calls) => {
+    executeToolCalls: async (
+      turnID,
+      calls,
+      assistant,
+      _materialized,
+      reasoning,
+    ) => {
       for (const call of calls) executedCalls.push({ call });
       return [
+        {
+          role: "assistant",
+          content: assistant,
+          ...(reasoning?.content !== undefined
+            ? { reasoningContent: reasoning.content }
+            : {}),
+          ...(reasoning?.field ? { reasoningField: reasoning.field } : {}),
+          ...(reasoning?.signature
+            ? { reasoningSignature: reasoning.signature }
+            : {}),
+          ...(reasoning?.redacted ? { reasoningRedacted: true } : {}),
+          toolCalls: calls,
+        },
         {
           role: "tool",
           toolCallID: calls[0]?.id ?? "call_1",
@@ -419,6 +437,75 @@ test("complete textual tool calls are normalized and executed once", async () =>
         event.message.includes("native tool calling required"),
     ),
   ).toHaveLength(0);
+});
+
+test("assistant reasoning_content is preserved for the tool-call follow-up", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  let streamCalls = 0;
+  const { runner } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream(request) {
+      streamCalls += 1;
+      requests.push(request);
+      if (streamCalls === 1) {
+        yield thinking("deepseek reasoning");
+        yield toolCall([
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: '{"path":"a.txt"}',
+          },
+        ]);
+        return;
+      }
+      yield content("done");
+    },
+  });
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(2);
+  const assistant = requests[1]?.messages.find(
+    (message) => message.role === "assistant" && message.toolCalls?.length,
+  );
+  expect(assistant?.reasoningContent).toBe("deepseek reasoning");
+});
+
+test("signed thinking and tool-call thought signatures survive the tool-call follow-up", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  let streamCalls = 0;
+  const { runner } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream(request) {
+      streamCalls += 1;
+      requests.push(request);
+      if (streamCalls === 1) {
+        yield { type: "thinking", text: "signed plan", signature: "sig-1" };
+        yield toolCall([
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: '{"path":"a.txt"}',
+            thoughtSignature: "tool-sig",
+          },
+        ]);
+        return;
+      }
+      yield content("done");
+    },
+  });
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(2);
+  const assistant = requests[1]?.messages.find(
+    (message) => message.role === "assistant" && message.toolCalls?.length,
+  );
+  expect(assistant?.reasoningContent).toBe("signed plan");
+  expect(assistant?.reasoningSignature).toBe("sig-1");
+  expect(assistant?.toolCalls?.[0]?.thoughtSignature).toBe("tool-sig");
 });
 
 test("the configured final step preserves XML-like text without another request", async () => {
@@ -853,21 +940,7 @@ test("provider message estimates exclude binary data URLs", () => {
       ],
     },
   ]);
-  const pdf = estimateProviderMessages([
-    {
-      role: "user",
-      content: "read it",
-      pdfs: [
-        {
-          mediaType: "application/pdf",
-          dataURL: `data:application/pdf;base64,${encoded}`,
-        },
-      ],
-    },
-  ]);
-
   expect(image).toBe(base + 256);
-  expect(pdf).toBe(base + 256);
 });
 
 test("provider estimates price durable attachment refs by metadata, not bytes", () => {

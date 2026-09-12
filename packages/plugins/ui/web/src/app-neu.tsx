@@ -1116,10 +1116,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       .map((item) => item.getAsFile())
       .filter((file): file is File => file !== null);
     if (!files.length) return;
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (!imageFiles.length) return;
     event.preventDefault();
-    for (const file of imageFiles) {
+    for (const file of files) {
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = String(reader.result ?? "");
@@ -1127,8 +1125,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         if (!base64) return;
         void props.ctx.runtime
           .uploadAttachment?.({
-            name: file.name || "clipboard.png",
-            mediaType: file.type || "image/png",
+            name: file.name || "attachment",
+            mediaType: file.type || "application/octet-stream",
             data: base64,
           })
           .then((attachment) => {
@@ -1136,8 +1134,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               ...current,
               {
                 path: attachment.path,
-                previewUrl: dataUrl,
                 name: attachment.filename,
+                ...(file.type.startsWith("image/")
+                  ? { previewUrl: dataUrl }
+                  : {}),
               },
             ]);
           });
@@ -2759,6 +2759,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           msg.role === "user" ? ("user" as const) : ("assistant" as const);
         const content = msg.text + (msg.pendingText || "");
         const streaming = Boolean(activity && isLast && msg.role !== "user");
+        const attachments =
+          msg.role === "user" && msg.attachments?.length
+            ? msg.attachments
+            : undefined;
         return {
           id: msg.id,
           signature: [
@@ -2768,6 +2772,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             msg.pendingText ?? "",
             msg.reasoningVisible,
             content,
+            attachments,
             streaming,
             isLast,
             Boolean(activity),
@@ -2776,6 +2781,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             id: msg.id,
             role,
             thinking: msg.role === "thinking" && msg.reasoningVisible !== false,
+            ...(attachments
+              ? {
+                  attachments: attachments.map((attachment) => ({
+                    id: attachment.id,
+                    path: attachment.path,
+                    name: attachment.filename,
+                    mediaType: attachment.mediaType,
+                    ...(attachment.width ? { width: attachment.width } : {}),
+                    ...(attachment.height ? { height: attachment.height } : {}),
+                  })),
+                }
+              : {}),
             content,
             streaming,
           }),
@@ -4049,6 +4066,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     runtime={props.ctx.runtime}
                     catalog={modelCatalog()}
                     sessionID={selectedSessionID() || state().sessionID}
+                    loadAttachmentUrl={loadAttachmentUrl}
                   />
                 </Show>
                 <Show when={rightTab() === "agent"}>

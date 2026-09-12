@@ -797,6 +797,9 @@ function applyAgentChatEvent(
           role: internal ? "system" : "user",
           text: event.text,
           pendingText: "",
+          ...(event.attachments?.length
+            ? { attachments: event.attachments }
+            : {}),
         });
         return true;
       }

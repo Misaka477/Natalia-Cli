@@ -18,6 +18,15 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
         addMs += performance.now() - addStart;
       };
       const assistantByID = new Map<string, string>();
+      const reasoningByTurnID = new Map<
+        string,
+        {
+          reasoningContent?: string;
+          reasoningField?: string;
+          reasoningSignature?: string;
+          reasoningRedacted?: boolean;
+        }
+      >();
       const recordedCalls = new Set<string>();
       const recordedResults = new Set<string>();
       for (const event of events) {
@@ -40,6 +49,23 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           });
           continue;
         }
+        if (event.type === "thinking.done") {
+          const reasoning = {
+            ...(event.text !== undefined
+              ? { reasoningContent: event.text }
+              : {}),
+            ...(event.reasoningField
+              ? { reasoningField: event.reasoningField }
+              : {}),
+            ...(event.reasoningSignature
+              ? { reasoningSignature: event.reasoningSignature }
+              : {}),
+            ...(event.reasoningRedacted ? { reasoningRedacted: true } : {}),
+          };
+          if (Object.keys(reasoning).length > 0)
+            reasoningByTurnID.set(event.id, reasoning);
+          continue;
+        }
         if (event.type === "content.delta") {
           assistantByID.set(
             event.id,
@@ -60,11 +86,18 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
             event.status === "awaiting_approval")
         ) {
           recordedCalls.add(event.callID);
+          const reasoning = reasoningByTurnID.get(
+            event.id.slice(0, event.id.lastIndexOf(":")),
+          );
           add({
             id: `restore:${event.id}:call`,
             role: "tool_call",
             content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
             pairID: event.callID,
+            ...(reasoning ?? {}),
+            ...(event.thoughtSignature
+              ? { thoughtSignature: event.thoughtSignature }
+              : {}),
           });
           continue;
         }
@@ -82,11 +115,18 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           // provider still sees the call/result pair.
           if (!recordedCalls.has(event.callID)) {
             recordedCalls.add(event.callID);
+            const reasoning = reasoningByTurnID.get(
+              event.id.slice(0, event.id.lastIndexOf(":")),
+            );
             add({
               id: `restore:${event.id}:call`,
               role: "tool_call",
               content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
               pairID: event.callID,
+              ...(reasoning ?? {}),
+              ...(event.thoughtSignature
+                ? { thoughtSignature: event.thoughtSignature }
+                : {}),
             });
           }
           recordedResults.add(event.callID);

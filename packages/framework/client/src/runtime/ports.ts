@@ -138,13 +138,12 @@ export type RuntimePorts = {
   getPauseWaiters: () => Array<() => void>;
   getRuntimeContext: () => RuntimeContextLedger;
   currentModelImageInput: (exec: SessionExecutionState | undefined) => boolean;
-  currentModelPdfInput: (exec: SessionExecutionState | undefined) => boolean;
   modelCapabilitiesForExecution: (
     exec: SessionExecutionState | undefined,
   ) => import("@natalia/contracts").ModelCapabilities;
   mediaTypeForImage: (
     path: string,
-  ) => "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  ) => "image/png" | "image/jpeg" | "image/webp" | "image/gif" | undefined;
   publishWorkGraphToolCall: (
     turnID: string,
     callID: string,
@@ -156,7 +155,6 @@ export type RuntimePorts = {
     call: import("@natalia/runtime").ProviderToolCall,
     tool: import("@natalia/tools").RuntimeTool,
     attachImage?: (path: string) => Promise<void>,
-    attachPdf?: (path: string) => Promise<void>,
   ) => Promise<string>;
   executeToolCalls: (
     turnID: string,

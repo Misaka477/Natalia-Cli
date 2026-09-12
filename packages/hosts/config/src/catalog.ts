@@ -16,7 +16,6 @@ const DEFAULT_CAPABILITIES: ModelCapabilities = {
   reasoning: true,
   thinking: true,
   imageInput: false,
-  pdfInput: false,
   videoInput: false,
 };
 

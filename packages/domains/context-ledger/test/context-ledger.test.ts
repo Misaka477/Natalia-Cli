@@ -91,6 +91,51 @@ test("context ledger restores completed turns and tool pairs once", () => {
   ]);
 });
 
+test("context ledger restores provider reasoning and tool thought signatures", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "turn.submitted",
+      id: "turn-reasoning",
+      text: "inspect",
+      byteLength: 7,
+      lineCount: 1,
+      sha256: "input",
+    },
+    {
+      type: "thinking.done",
+      id: "turn-reasoning",
+      text: "need to read the file",
+      reasoningField: "reasoning_content",
+      reasoningSignature: "signature-1",
+    },
+    {
+      type: "tool.update",
+      id: "turn-reasoning:call-1",
+      callID: "call-1",
+      name: "read_file",
+      status: "succeeded",
+      summary: "read",
+      argumentsDelta: '{"path":"a.txt"}',
+      result: "contents",
+      thoughtSignature: "tool-signature",
+    },
+    { type: "turn.finished", id: "turn-reasoning", stopReason: "done" },
+  ];
+  const factory = createContextLedgerFactory();
+  const context = factory.create();
+  factory.restore(context, events);
+  expect(context.snapshot().entries).toContainEqual(
+    expect.objectContaining({
+      role: "tool_call",
+      pairID: "call-1",
+      reasoningContent: "need to read the file",
+      reasoningField: "reasoning_content",
+      reasoningSignature: "signature-1",
+      thoughtSignature: "tool-signature",
+    }),
+  );
+});
+
 test("context ledger factory is provided under the shared service key", () => {
   const factory = createContextLedgerFactory();
   expect(CONTEXT_LEDGER_FACTORY_SERVICE).toBe("context-ledger.factory");

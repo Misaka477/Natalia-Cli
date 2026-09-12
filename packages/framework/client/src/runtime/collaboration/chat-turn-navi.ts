@@ -1,9 +1,5 @@
 import { parseToolArguments, validateToolParameters } from "@natalia/tools";
 import {
-  ATTACHMENT_SERVICE,
-  type AttachmentService,
-} from "@natalia/runtime-services";
-import {
   MAX_STEPS_PROMPT,
   MISSING_FINAL_RESPONSE_FALLBACK,
   nativeToolCallCorrection,
@@ -23,7 +19,10 @@ import {
   type ConcreteRuntimeEvent,
   naviChatHistory,
   collabMessagesForExec,
+  chatModelCapabilities,
   compactChatBeforeProviderStep,
+  applyChatAttachments,
+  applyChatHistoryAttachments,
   promptData,
   streamEvent,
 } from "./chat-turn-common";
@@ -48,6 +47,23 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
     await ensureSessionFullEvents(ctx, input.exec);
     const activeProvider = naviProvider(input);
     if (!activeProvider) throw new Error("provider unavailable for Navi chat");
+    const profileModel = input.exec.naviChatModelProfile?.normal;
+    const chatModel = input.model?.modelID
+      ? input.model
+      : profileModel?.modelID
+        ? profileModel
+        : undefined;
+    const activeModelCapabilities = chatModelCapabilities(
+      ctx,
+      activeProvider,
+      chatModel,
+    );
+    const reportAttachmentDiagnostic = (message: string) =>
+      ctx.ports.publishForSession(input.exec, {
+        type: "diagnostic",
+        level: "warning",
+        message,
+      });
     if (process.env.NATALIA_DEBUG_PROVIDER === "1")
       console.log("[navi-chat-turn] provider", {
         sessionID: input.exec.session.id,
@@ -80,7 +96,29 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         content:
           "Natalia (the main agent) sent you collaboration messages, or needs your expert guidance. Read <natalia_collaborations> and the Main context. If there is an internal advisor request, reply with concise technical advice as chat text. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Every reply continues the thread; the runtime caps automatic exchanges. Always produce a concrete reply; never leave the response empty.",
       });
-    await attachNaviImages(messages, input.attachments);
+    await applyChatHistoryAttachments(ctx, {
+      messages: history.messages,
+      attachments: history.attachments,
+      modelCapabilities: activeModelCapabilities,
+      provider: activeProvider,
+      onDiagnostic: reportAttachmentDiagnostic,
+    });
+    if (
+      !history.attachments.some((attachments) => attachments?.length) &&
+      input.attachments?.length
+    ) {
+      const initialUserMessage = messages.findLast(
+        (message) => message.role === "user",
+      );
+      if (initialUserMessage)
+        await applyChatAttachments(ctx, {
+          message: initialUserMessage,
+          attachments: input.attachments,
+          modelCapabilities: activeModelCapabilities,
+          provider: activeProvider,
+          onDiagnostic: reportAttachmentDiagnostic,
+        });
+    }
     const visibleTools = naviChatTools(input.exec);
     const toolSchemas = visibleTools.map((tool) => ({
       name: tool.name,
@@ -157,8 +195,19 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         const pending = input.exec.naviPendingQueue.splice(0);
         for (const incoming of pending)
           if (!consumedMessageIDs.has(incoming.messageID)) {
-            messages.push({ role: "user", content: incoming.text });
+            const message: ProviderMessage = {
+              role: "user",
+              content: incoming.text,
+            };
+            messages.push(message);
             consumedMessageIDs.add(incoming.messageID);
+            await applyChatAttachments(ctx, {
+              message,
+              attachments: incoming.attachments,
+              modelCapabilities: activeModelCapabilities,
+              provider: activeProvider,
+              onDiagnostic: reportAttachmentDiagnostic,
+            });
           }
         if (pending.length) {
           const systemIndex = messages.findIndex(
@@ -179,6 +228,10 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         ranFinalOnlyStep ||= finalOnly;
         const calls: ProviderToolCall[] = [];
         let stepOutput = "";
+        let stepThinking = "";
+        let stepThinkingField: string | undefined;
+        let stepThinkingSignature: string | undefined;
+        let stepThinkingRedacted = false;
         let protocolViolation = "";
         const compactedMessages = await compactChatBeforeProviderStep(
           ctx,
@@ -247,13 +300,20 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
             );
           if (chunk.type === "thinking") {
             setPhase("thinking");
-            thinking += chunk.text;
-            publish({
-              type: "navi.chat.thinking.delta",
-              id: `${input.responseMessageID}:thinking:${nextChatSequence()}`,
-              messageID: input.responseMessageID,
-              text: chunk.text,
-            });
+            if (chunk.text) {
+              thinking += chunk.text;
+              stepThinking += chunk.text;
+            }
+            if (chunk.field) stepThinkingField = chunk.field;
+            if (chunk.signature) stepThinkingSignature = chunk.signature;
+            if (chunk.redacted) stepThinkingRedacted = true;
+            if (chunk.text)
+              publish({
+                type: "navi.chat.thinking.delta",
+                id: `${input.responseMessageID}:thinking:${nextChatSequence()}`,
+                messageID: input.responseMessageID,
+                text: chunk.text,
+              });
             continue;
           }
           if (chunk.type === "content") {
@@ -342,6 +402,12 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         messages.push({
           role: "assistant",
           content: stepOutput,
+          ...(stepThinking ? { reasoningContent: stepThinking } : {}),
+          ...(stepThinkingField ? { reasoningField: stepThinkingField } : {}),
+          ...(stepThinkingSignature
+            ? { reasoningSignature: stepThinkingSignature }
+            : {}),
+          ...(stepThinkingRedacted ? { reasoningRedacted: true } : {}),
           toolCalls: calls,
         });
         for (const call of calls) {
@@ -478,33 +544,5 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         : undefined) ??
       ctx.ports.providerFromEnvironment?.()
     );
-  }
-
-  async function attachNaviImages(
-    messages: ProviderMessage[],
-    attachments: import("@natalia/contracts").LocalAttachment[] | undefined,
-  ) {
-    if (!attachments?.length) return;
-    const attachmentService =
-      ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
-    if (!attachmentService) return;
-    const images = await Promise.all(
-      attachments
-        .filter((attachment) =>
-          ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
-            attachment.mediaType,
-          ),
-        )
-        .map(async (attachment) => ({
-          mediaType: attachment.mediaType as
-            | "image/png"
-            | "image/jpeg"
-            | "image/webp"
-            | "image/gif",
-          dataURL: await attachmentService.dataURL(attachment),
-        })),
-    );
-    const userMessage = messages.findLast((message) => message.role === "user");
-    if (userMessage && images.length) userMessage.images = images;
   }
 }

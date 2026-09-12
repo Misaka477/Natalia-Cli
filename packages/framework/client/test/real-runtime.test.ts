@@ -3825,12 +3825,13 @@ test("self-protection patterns block terminal input, not only run_shell", async 
   await client.dispose?.();
 });
 
-test("deny journal rule without override blocks git commit", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-deny-"));
+test("C-REL-001 forces git approval even in auto mode without a session grant", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-approval-"));
   const events: RuntimeEvent[] = [];
+  let approval: Extract<RuntimeEvent, { type: "approval.request" }> | undefined;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
-    sessionID: "ses_cst3_deny",
+    sessionID: "ses_cst3_approval",
     permissionMode: "auto",
     provider: {
       provider: "test",
@@ -3852,119 +3853,26 @@ test("deny journal rule without override blocks git commit", async () => {
       },
     },
   });
-  client.start((event) => events.push(event));
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request" && event.id.includes("commit")) {
+      approval = event;
+      client.respondApproval({ requestID: event.id, decision: "reject" });
+    }
+  });
   await client.submitAndWait!("commit the work");
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "constitution.check",
-      ruleID: "C-REL-001",
-      conflict: true,
-    }),
-  );
+  expect(approval).toMatchObject({
+    title: "Approve git commit",
+    allowSession: false,
+  });
   expect(
     events.some(
       (event) =>
         event.type === "tool.update" &&
         event.callID === "commit" &&
-        event.status === "failed" &&
-        String(event.summary).includes("blocked by constitution"),
+        event.status === "rejected",
     ),
   ).toBe(true);
-  await client.dispose?.();
-});
-
-test("scoped path override allows only that path", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-override-"));
-  const events: RuntimeEvent[] = [];
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_cst3_override",
-    permissionMode: "auto",
-    provider: {
-      provider: "test",
-      model: "test",
-      async *stream(request) {
-        if (request.messages.at(-1)?.role === "user") {
-          yield {
-            type: "tool_call" as const,
-            calls: [
-              {
-                id: "commit",
-                name: "run_shell",
-                arguments: JSON.stringify({ command: "git commit -m x" }),
-              },
-            ],
-          };
-        }
-        yield { type: "done" as const };
-      },
-    },
-  });
-  client.start((event) => events.push(event));
-  await client.submitAndWait!("hello");
-  await pollHistoryForFinished(client);
-  const granted = await client.requestOverride?.({
-    ruleID: "C-REL-001",
-    reason: "release this commit",
-    paths: ["global"],
-  });
-  expect(granted).toMatchObject({ requested: true });
-  const before = events.length;
-  await client.submitAndWait!("commit now");
-  expect(events.slice(before)).toContainEqual(
-    expect.objectContaining({
-      type: "constitution.check",
-      ruleID: "C-REL-001",
-      conflict: false,
-    }),
-  );
-  await client.dispose?.();
-});
-
-test("expired override does not lift a deny rule", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-cst3-expired-"));
-  const events: RuntimeEvent[] = [];
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_cst3_expired",
-    permissionMode: "auto",
-    provider: {
-      provider: "test",
-      model: "test",
-      async *stream(request) {
-        if (request.messages.at(-1)?.role === "user") {
-          yield {
-            type: "tool_call" as const,
-            calls: [
-              {
-                id: "commit",
-                name: "run_shell",
-                arguments: JSON.stringify({ command: "git commit -m x" }),
-              },
-            ],
-          };
-        }
-        yield { type: "done" as const };
-      },
-    },
-  });
-  client.start((event) => events.push(event));
-  await client.submitAndWait!("hello");
-  await pollHistoryForFinished(client);
-  await client.requestOverride?.({
-    ruleID: "C-REL-001",
-    reason: "too late",
-    expiresAt: "2000-01-01T00:00:00.000Z",
-  });
-  const before = events.length;
-  await client.submitAndWait!("commit now");
-  expect(events.slice(before)).toContainEqual(
-    expect.objectContaining({
-      type: "constitution.check",
-      ruleID: "C-REL-001",
-      conflict: true,
-    }),
-  );
   await client.dispose?.();
 });
 
@@ -5251,59 +5159,23 @@ test("runtime injects a UTF-8 text attachment into the active provider turn", as
   }
 });
 
-test("runtime lowers a PDF attachment through the Anthropic adapter", async () => {
+test("runtime rejects a PDF attachment before provider dispatch", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pdf-attachment-"));
-  const requests: Array<Record<string, unknown>> = [];
-  const server = Bun.serve({
-    port: 0,
-    fetch: async (request) => {
-      requests.push((await request.json()) as Record<string, unknown>);
-      return new Response("data: [DONE]\n\n", {
-        headers: { "content-type": "text/event-stream" },
-      });
-    },
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(join(root, "report.pdf"), "%PDF-1.7\n");
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_pdf_attachment",
+    provider: scriptedProvider("ok"),
   });
-  try {
-    await mkdir(join(root, ".natalia"), { recursive: true });
-    await writeFile(join(root, "report.pdf"), "%PDF-1.7\n");
-    await writeFile(
-      join(root, ".natalia", "config.json"),
-      JSON.stringify({
-        version: 3,
-        providers: {
-          local: {
-            name: "Local",
-            driver: "anthropic",
-            connection: { apiKey: "key", baseURL: server.url.toString() },
-          },
-        },
-        catalog: {
-          providers: {
-            local: {
-              models: {
-                pdf: { name: "pdf", capabilities: { pdfInput: true } },
-              },
-            },
-          },
-        },
-        defaultModel: { provider: "local", model: "pdf" },
-      }),
-    );
-    const client = createRealRuntimeClient({
-      workspaceRoot: root,
-      sessionID: "ses_pdf_attachment",
-    });
-    client.start(() => undefined);
-    await client.submitAndWait!({ text: "read", attachments: ["report.pdf"] });
-    const messages = requests[0]?.messages as Array<{
-      content: Array<{ type?: string; source?: { media_type?: string } }>;
-    }>;
-    expect(
-      messages[0]?.content.find((part) => part.type === "document"),
-    ).toMatchObject({ source: { media_type: "application/pdf" } });
-  } finally {
-    server.stop(true);
-  }
+  client.start(() => undefined);
+  await expect(
+    client.submitAndWait!({
+      text: "read",
+      attachments: ["report.pdf"],
+    }),
+  ).rejects.toThrow(/unsupported/u);
+  await client.dispose?.();
 });
 
 test("agent MCP server scope limits provider-visible MCP tools", async () => {

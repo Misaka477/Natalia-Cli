@@ -43,7 +43,6 @@ export function createExecuteOne(
     call: ProviderToolCall,
     tool: RuntimeTool,
     attachImage?: (path: string) => Promise<void>,
-    attachPdf?: (path: string) => Promise<void>,
   ) {
     const {
       getExecutionBySession,
@@ -214,6 +213,9 @@ export function createExecuteOne(
           status: "failed",
           summary: blocked,
           argumentsDelta: call.arguments,
+          ...(call.thoughtSignature
+            ? { thoughtSignature: call.thoughtSignature }
+            : {}),
         });
         publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
         return { decision: "deny" as const, reason: blocked };
@@ -228,7 +230,6 @@ export function createExecuteOne(
             call,
             turnID,
             attachImage,
-            attachPdf,
             ctx,
             options,
             sessionID,

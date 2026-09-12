@@ -36,7 +36,6 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
             reasoning: true,
             thinking: true,
             imageInput: false,
-            pdfInput: false,
             videoInput: false,
           },
           limits: { contextWindow: 32768, maxOutputTokens: 16384 },

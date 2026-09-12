@@ -33,7 +33,6 @@ export type BuildContextInput = {
   call: ProviderToolCall;
   turnID: string;
   attachImage?: (path: string) => Promise<void>;
-  attachPdf?: (path: string) => Promise<void>;
   ctx: RuntimeContext;
   sessionID: import("@natalia/contracts").SessionID;
   workspaceRoot: string;
@@ -50,7 +49,6 @@ export function buildToolExecutionContext(input: BuildContextInput) {
     call,
     turnID,
     attachImage,
-    attachPdf,
     ctx,
     sessionID,
     workspaceRoot,
@@ -128,7 +126,6 @@ export function buildToolExecutionContext(input: BuildContextInput) {
     terminal,
     sandboxes,
     ...(attachImage ? { attachImage } : {}),
-    ...(attachPdf ? { attachPdf } : {}),
     workspaceReadAuthorize: (request: { toolName: string; paths: string[] }) =>
       authorizeWorkspaceRead(request, exec),
     sandboxMergeAuthorize: (request: { id: string; paths: string[] }) =>

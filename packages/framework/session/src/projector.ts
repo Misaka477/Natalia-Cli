@@ -412,6 +412,8 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
           ...existing,
           statement: event.statement ?? existing.statement,
           priority: event.priority ?? existing.priority,
+          enforcement: event.enforcement ?? existing.enforcement,
+          overridePolicy: event.overridePolicy ?? existing.overridePolicy,
         };
       }
     }
@@ -688,6 +690,7 @@ export type ProjectedChatMessage = {
   at: string;
   channel: ChatChannel;
   kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
+  attachments?: import("@natalia/contracts").LocalAttachment[];
   tool?: {
     name: string;
     status: string;
@@ -757,6 +760,7 @@ export function projectedChatMessages(
         at: event.at,
         channel,
         kind: "message",
+        ...(event.attachments ? { attachments: event.attachments } : {}),
       });
       continue;
     }
@@ -948,6 +952,7 @@ function projectChatStream(
         at: event.at,
         channel,
         kind: "message",
+        ...(event.attachments ? { attachments: event.attachments } : {}),
       });
       continue;
     }

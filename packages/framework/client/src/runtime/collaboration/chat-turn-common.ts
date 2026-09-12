@@ -10,13 +10,188 @@ import {
   type ProviderMessage,
   type StreamingProvider,
 } from "@natalia/runtime";
+import { resolveEffectiveModel } from "@natalia/config";
 import {
+  modelRefKey,
+  type LocalAttachment,
+  type ModelCapabilities,
+} from "@natalia/contracts";
+import {
+  ATTACHMENT_SERVICE,
   COMPACTION_SERVICE,
+  type AttachmentService,
   type CompactionService,
 } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 
 const ledgerHistories = new WeakMap<ContextLedger, ProviderMessage[]>();
+
+const DEFAULT_CHAT_MODEL_CAPABILITIES: ModelCapabilities = {
+  toolCall: true,
+  reasoning: true,
+  thinking: true,
+  imageInput: false,
+  videoInput: false,
+};
+
+/**
+ * Resolves the active chat model's configured capabilities. Chat model
+ * profiles may point at a model different from the main agent, so this must be
+ * derived from the chat selection (falling back to the runtime default model)
+ * rather than from the main execution state.
+ */
+export function chatModelCapabilities(
+  ctx: RuntimeContext,
+  provider: StreamingProvider,
+  model?: { modelID?: string; variant?: string },
+): ModelCapabilities {
+  const config = ctx.ports.getTsRuntimeConfig();
+  const candidate =
+    model?.modelID ??
+    (config?.defaultModel ? modelRefKey(config.defaultModel) : undefined);
+  if (config && candidate) {
+    try {
+      const effective = resolveEffectiveModel(config, candidate);
+      if (effective) return effective.capabilities;
+    } catch {
+      // Fall through to the adapter-level capability fallback below.
+    }
+  }
+  return {
+    ...DEFAULT_CHAT_MODEL_CAPABILITIES,
+    imageInput: provider.imageInput === true,
+    videoInput: provider.videoInput === true,
+  };
+}
+
+type ChatImageAttachment = {
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  dataURL: string;
+};
+
+type ChatVideoAttachment = {
+  mediaType: "video/mp4" | "video/webm";
+  dataURL: string;
+};
+
+function isChatImageAttachment(
+  mediaType: string,
+): mediaType is ChatImageAttachment["mediaType"] {
+  return (
+    mediaType === "image/png" ||
+    mediaType === "image/jpeg" ||
+    mediaType === "image/webp" ||
+    mediaType === "image/gif"
+  );
+}
+
+function isChatVideoAttachment(
+  mediaType: string,
+): mediaType is ChatVideoAttachment["mediaType"] {
+  return mediaType === "video/mp4" || mediaType === "video/webm";
+}
+
+/**
+ * Applies local attachments to one provider message using the same text,
+ * image and video lowering rules for Navi and Nia. Text is always folded into
+ * message content; image/video payloads are only attached when both the model
+ * capability and provider adapter support that input modality. Unsupported
+ * media is represented by a stable text marker (PDF is ignored with a
+ * diagnostic because document support was removed).
+ */
+export async function applyChatAttachments(
+  ctx: RuntimeContext,
+  input: {
+    message: ProviderMessage;
+    attachments?: LocalAttachment[];
+    modelCapabilities: ModelCapabilities;
+    provider: StreamingProvider;
+    onDiagnostic?: (message: string) => void;
+  },
+): Promise<void> {
+  if (!input.attachments?.length) return;
+  const attachmentService =
+    ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
+  if (!attachmentService) return;
+
+  const textBlocks: string[] = [];
+  const imageAttachments: ChatImageAttachment[] = [];
+  const videoAttachments: ChatVideoAttachment[] = [];
+  const markers: string[] = [];
+  for (const attachment of input.attachments) {
+    if (attachmentService.isText(attachment)) {
+      textBlocks.push(
+        `[Attachment: ${attachment.filename}]\n${await attachmentService.text(attachment)}`,
+      );
+      continue;
+    }
+    const mediaType = String(attachment.mediaType);
+    if (isChatImageAttachment(mediaType)) {
+      if (input.modelCapabilities.imageInput && input.provider.imageInput) {
+        imageAttachments.push({
+          mediaType,
+          dataURL: await attachmentService.dataURL(attachment),
+        });
+      } else {
+        markers.push(`[Attached ${mediaType}: ${attachment.filename}]`);
+      }
+      continue;
+    }
+    if (isChatVideoAttachment(mediaType)) {
+      if (input.modelCapabilities.videoInput && input.provider.videoInput) {
+        videoAttachments.push({
+          mediaType,
+          dataURL: await attachmentService.dataURL(attachment),
+        });
+      } else {
+        markers.push(`[Attached ${mediaType}: ${attachment.filename}]`);
+      }
+      continue;
+    }
+    input.onDiagnostic?.(
+      `Unsupported attachment ${attachment.filename} (${mediaType}) was ignored`,
+    );
+  }
+
+  if (textBlocks.length)
+    input.message.content = `${input.message.content}\n\n${textBlocks.join("\n\n")}`;
+  if (markers.length)
+    input.message.content = `${input.message.content}\n\n${markers.join("\n\n")}`;
+  if (imageAttachments.length)
+    input.message.images = [
+      ...(input.message.images ?? []),
+      ...imageAttachments,
+    ];
+  if (videoAttachments.length)
+    input.message.videos = [
+      ...(input.message.videos ?? []),
+      ...videoAttachments,
+    ];
+}
+
+export async function applyChatHistoryAttachments(
+  ctx: RuntimeContext,
+  input: {
+    messages: ProviderMessage[];
+    attachments: Array<LocalAttachment[] | undefined>;
+    modelCapabilities: ModelCapabilities;
+    provider: StreamingProvider;
+    onDiagnostic?: (message: string) => void;
+  },
+): Promise<void> {
+  for (let index = 0; index < input.messages.length; index += 1) {
+    const message = input.messages[index];
+    const attachments = input.attachments[index];
+    if (!message || message.role !== "user" || !attachments?.length) continue;
+    await applyChatAttachments(ctx, {
+      message,
+      attachments,
+      modelCapabilities: input.modelCapabilities,
+      provider: input.provider,
+      onDiagnostic: input.onDiagnostic,
+    });
+  }
+}
 
 export function promptData(value: string): string {
   return value
@@ -30,6 +205,7 @@ export function naviChatHistory(
   responseMessageID: string,
 ): {
   messages: ProviderMessage[];
+  attachments: Array<LocalAttachment[] | undefined>;
   messageIDs: Set<string>;
   durableMessages: Array<{
     messageID: string;
@@ -46,6 +222,7 @@ export function naviChatHistory(
       role: message.role === "user" ? "user" : "assistant",
       content: message.text,
     })),
+    attachments: history.map((message) => message.attachments),
     messageIDs: new Set(history.map((message) => message.messageID)),
     durableMessages: history,
   };
@@ -56,6 +233,7 @@ export function niaChatHistory(
   responseMessageID: string,
 ): {
   messages: ProviderMessage[];
+  attachments: Array<LocalAttachment[] | undefined>;
   messageIDs: Set<string>;
   durableMessages: Array<{
     messageID: string;
@@ -72,6 +250,7 @@ export function niaChatHistory(
       role: message.role === "user" ? "user" : "assistant",
       content: message.text,
     })),
+    attachments: history.map((message) => message.attachments),
     messageIDs: new Set(history.map((message) => message.messageID)),
     durableMessages: history,
   };
@@ -131,6 +310,7 @@ export async function compactChatBeforeProviderStep(
         id: `${stream.compactionID}:${index}:assistant`,
         role: "assistant",
         content: message.content,
+        ...reasoningLedgerFields(message),
       });
       for (const call of message.toolCalls)
         ledger.add({
@@ -138,6 +318,9 @@ export async function compactChatBeforeProviderStep(
           role: "tool_call",
           content: `${call.name} ${call.arguments}`,
           pairID: call.id,
+          ...(call.thoughtSignature
+            ? { thoughtSignature: call.thoughtSignature }
+            : {}),
         });
       continue;
     }
@@ -154,6 +337,7 @@ export async function compactChatBeforeProviderStep(
       id: `${stream.compactionID}:${index}:${message.role}`,
       role: message.role === "user" ? "user" : "assistant",
       content: message.content,
+      ...reasoningLedgerFields(message),
     });
   }
   const runtimeInstruction =
@@ -191,6 +375,22 @@ export async function compactChatBeforeProviderStep(
 
   const snapshot = ledger.snapshot().entries;
   const rebuilt = contextEntriesToProviderMessages(snapshot);
+  const originalByKey = new Map(
+    messages.map((message) => [providerMessageKey(message), message]),
+  );
+  for (const message of rebuilt) {
+    const original = originalByKey.get(providerMessageKey(message));
+    if (!original) continue;
+    if (original.images?.length) message.images = original.images;
+    if (original.videos?.length) message.videos = original.videos;
+    if (original.reasoningContent !== undefined)
+      message.reasoningContent = original.reasoningContent;
+    if (original.reasoningField)
+      message.reasoningField = original.reasoningField;
+    if (original.reasoningSignature)
+      message.reasoningSignature = original.reasoningSignature;
+    if (original.reasoningRedacted) message.reasoningRedacted = true;
+  }
   if (runtimeInstruction && rebuilt[0]?.content !== runtimeInstruction.content)
     rebuilt.unshift(runtimeInstruction);
 
@@ -220,6 +420,26 @@ export async function compactChatBeforeProviderStep(
     stream.publishCompacted(summary, compactedThroughMessageID);
   ledgerHistories.set(ledger, [...rebuilt]);
   return rebuilt;
+}
+
+function reasoningLedgerFields(message: ProviderMessage): {
+  reasoningContent?: string;
+  reasoningField?: string;
+  reasoningSignature?: string;
+  reasoningRedacted?: boolean;
+} {
+  return {
+    ...(message.reasoningContent !== undefined
+      ? { reasoningContent: message.reasoningContent }
+      : {}),
+    ...(message.reasoningField
+      ? { reasoningField: message.reasoningField }
+      : {}),
+    ...(message.reasoningSignature
+      ? { reasoningSignature: message.reasoningSignature }
+      : {}),
+    ...(message.reasoningRedacted ? { reasoningRedacted: true } : {}),
+  };
 }
 
 function providerMessageKey(message: ProviderMessage): string {

@@ -79,9 +79,11 @@ const INFRASTRUCTURE_ERROR_KINDS = new Set([
   "empty_response",
   "context_limit",
   "quota",
+  "unknown",
+  "cancel",
 ]);
 
-function mainTurnHasInfrastructureError(
+export function mainTurnHasInfrastructureError(
   exec: SessionExecutionState,
   turnID: string,
 ): boolean {
@@ -98,7 +100,7 @@ function mainTurnHasInfrastructureError(
     .some(
       (event) =>
         event.type === "step.retry.exhausted" &&
-        event.id.startsWith(`${turnID}:`) &&
+        (event.id === turnID || event.id.startsWith(`${turnID}:`)) &&
         INFRASTRUCTURE_ERROR_KINDS.has(event.reason),
     );
 }

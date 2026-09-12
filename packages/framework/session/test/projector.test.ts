@@ -1013,6 +1013,32 @@ test("the Navi conversation projects messages and honours rollback boundaries", 
   ]);
 });
 
+test("chat replay preserves user attachment metadata", () => {
+  const session = createSessionRecord("ses_chat_attachment", "Chat attachment");
+  const attachment = {
+    id: "att_image",
+    path: ".natalia/attachments/att_image.png",
+    filename: "image.png",
+    mediaType: "image/png" as const,
+    byteLength: 24,
+    sha256: "image-hash",
+    width: 1,
+    height: 1,
+  };
+  appendSessionEvent(session, {
+    type: "navi.chat.message.new",
+    id: "navi:attachment:user",
+    messageID: "attachment-user",
+    role: "user",
+    text: "see image",
+    at: "2026-08-14T00:00:00.000Z",
+    attachments: [attachment],
+  });
+  expect(projectedNaviChatMessages(session.events)[0]?.attachments).toEqual([
+    attachment,
+  ]);
+});
+
 test("chat replay keeps identical Navi and Nia message IDs and thinking isolated", () => {
   const session = createSessionRecord("ses_chat_namespaces", "Chat namespaces");
   appendSessionEvent(session, {

@@ -21,10 +21,13 @@ test("seeding a fresh journal publishes all three rules as durable facts", () =>
   expect(seeded).toHaveLength(5);
   for (const rule of seeded) {
     expect(rule.type).toBe("constitution.rule_added");
+    if (rule.type !== "constitution.rule_added") continue;
     expect(rule.scope).toBe("release");
     expect(rule.priority).toBe("critical");
     expect(rule.source).toBe("policy");
-    expect(rule.enforcement).toBe("deny");
+    expect(rule.enforcement).toBe(
+      rule.ruleID === "C-REL-001" ? "approval" : "deny",
+    );
   }
   expect(seeded.map((rule) => rule.ruleID)).toEqual([
     "C-TERM-001",
@@ -62,6 +65,32 @@ test("seeding is idempotent: a journal that already holds a rule is not reseeded
     "C-REL-001",
     "C-REL-002",
   ]);
+});
+
+test("seeding migrates the old C-REL-001 deny rule to forced approval", () => {
+  const existing: RuntimeEvent[] = [
+    {
+      type: "constitution.rule_added",
+      id: "constitution:c-rel-001",
+      ruleID: "C-REL-001",
+      statement: "默认不 commit/push",
+      scope: "release",
+      priority: "critical",
+      source: "policy",
+      enforcement: "deny",
+      overridePolicy: "user_scoped",
+    },
+  ];
+  const seeded = seedConstitutionRules(existing);
+  expect(seeded).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "constitution.rule_updated",
+        ruleID: "C-REL-001",
+        enforcement: "approval",
+      }),
+    ]),
+  );
 });
 
 test("recordDecision builds an accepted durable decision", () => {

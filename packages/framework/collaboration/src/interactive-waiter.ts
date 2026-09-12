@@ -89,17 +89,22 @@ export function createInteractiveWaiter(
     tool: RuntimeTool,
     call: ProviderToolCall,
     turnID: string,
+    options?: { force?: boolean; reason?: string },
   ): Promise<{ reason: string } | undefined> {
-    if (deps.permissionMode(turnID) === "auto") return undefined;
-    if (deps.permissionMode(turnID) === "read_only")
+    const permissionMode = deps.permissionMode(turnID);
+    if (permissionMode === "read_only")
       return { reason: readOnlyToolMessage(tool.name) };
+    if (permissionMode === "auto" && !options?.force) return undefined;
     const session = deps.sessionIDForTurn(turnID);
     const agentID = deps.agentIDForTurn?.(turnID);
     const permissionFamily = classifyPermissionFamily(
       tool.name,
       deps.capabilityOwnerForTool?.(tool.name),
     );
-    if (sessionApprovedFamilies.get(session)?.has(permissionFamily.id))
+    if (
+      !options?.force &&
+      sessionApprovedFamilies.get(session)?.has(permissionFamily.id)
+    )
       return undefined;
     const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
     const presentation = approvalPresentation(tool.name, call.arguments);
@@ -121,15 +126,20 @@ export function createInteractiveWaiter(
     deps.publishForSession(session, {
       type: "approval.request",
       id: approvalID,
-      title: `Approve ${tool.name}`,
+      title: options?.force
+        ? `Approve ${options.reason ?? tool.name}`
+        : `Approve ${tool.name}`,
       preview: presentation.preview,
-      detail: presentation.detail,
+      detail: options?.reason
+        ? `${options.reason}\n${presentation.detail ?? ""}`.trim()
+        : presentation.detail,
       keyArguments: presentation.keyArguments,
       sensitive: presentation.sensitive,
       risk: terminalApproval?.risk,
       scope: terminalApproval?.scope,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       revocable: terminalApproval ? true : undefined,
+      ...(options?.force ? { allowSession: false } : {}),
       permissionFamily,
       agentID,
     });

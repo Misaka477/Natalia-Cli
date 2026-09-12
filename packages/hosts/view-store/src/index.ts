@@ -354,6 +354,7 @@ function chatRowToBlock(row: ChatMessageRow): {
   pendingText: string;
   reasoningVisible?: boolean;
   status?: string;
+  attachments?: import("@natalia/contracts").LocalAttachment[];
   tool?: ToolBlock;
 } {
   if (row.kind === "thinking") {
@@ -409,6 +410,7 @@ function chatRowToBlock(row: ChatMessageRow): {
         : ("assistant" as const),
     text: row.text,
     pendingText: "",
+    ...(row.attachments ? { attachments: row.attachments } : {}),
   };
 }
 

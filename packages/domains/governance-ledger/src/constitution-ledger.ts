@@ -29,28 +29,34 @@ import type { RuntimeEvent } from "@natalia/contracts";
 export const SELF_PROTECTION_RULES: ReadonlyArray<{
   ruleID: string;
   statement: string;
+  enforcement: "deny" | "approval" | "warn";
   overridePolicy?: "forbidden" | "user_scoped" | "user_explicit";
 }> = [
   {
     ruleID: "C-TERM-001",
     statement: "禁止直接杀掉 wezterm-mux-server",
+    enforcement: "deny",
   },
   {
     ruleID: "C-TERM-002",
     statement: "禁止删除 Natalia 运行时目录",
+    enforcement: "deny",
   },
   {
     ruleID: "C-TERM-003",
     statement: "禁止删除 Natalia 临时目录",
+    enforcement: "deny",
   },
   {
     ruleID: "C-REL-001",
-    statement: "默认不 commit/push",
+    statement: "git 写操作强制审批",
+    enforcement: "approval",
     overridePolicy: "user_scoped",
   },
   {
     ruleID: "C-REL-002",
     statement: "未知副作用不自动 replay",
+    enforcement: "deny",
   },
 ];
 
@@ -62,34 +68,82 @@ export const SELF_PROTECTION_RULES: ReadonlyArray<{
  */
 export function seedConstitutionRules(
   events: RuntimeEvent[],
-): Array<Extract<RuntimeEvent, { type: "constitution.rule_added" }>> {
-  const present = new Set(
-    events
-      .filter(
-        (
-          event,
-        ): event is Extract<
-          RuntimeEvent,
-          { type: "constitution.rule_added" }
-        > => event.type === "constitution.rule_added",
-      )
-      .map((event) => event.ruleID),
-  );
+): Array<
+  Extract<
+    RuntimeEvent,
+    { type: "constitution.rule_added" | "constitution.rule_updated" }
+  >
+> {
+  type EffectiveRule = {
+    statement: string;
+    priority: "critical" | "high" | "medium" | "low";
+    enforcement: "deny" | "approval" | "warn";
+    overridePolicy: "forbidden" | "user_scoped" | "user_explicit";
+  };
+  const effective = new Map<string, EffectiveRule>();
+  for (const event of events) {
+    if (event.type === "constitution.rule_added") {
+      if (!effective.has(event.ruleID))
+        effective.set(event.ruleID, {
+          statement: event.statement,
+          priority: event.priority,
+          enforcement: event.enforcement,
+          overridePolicy: event.overridePolicy,
+        });
+      continue;
+    }
+    if (event.type === "constitution.rule_updated") {
+      const current = effective.get(event.ruleID);
+      if (!current) continue;
+      effective.set(event.ruleID, {
+        ...current,
+        ...(event.statement ? { statement: event.statement } : {}),
+        ...(event.priority ? { priority: event.priority } : {}),
+        ...(event.enforcement ? { enforcement: event.enforcement } : {}),
+        ...(event.overridePolicy
+          ? { overridePolicy: event.overridePolicy }
+          : {}),
+      });
+    }
+  }
+
   const seeded: Array<
-    Extract<RuntimeEvent, { type: "constitution.rule_added" }>
+    Extract<
+      RuntimeEvent,
+      { type: "constitution.rule_added" | "constitution.rule_updated" }
+    >
   > = [];
   for (const rule of SELF_PROTECTION_RULES) {
-    if (present.has(rule.ruleID)) continue;
+    const overridePolicy = rule.overridePolicy ?? "forbidden";
+    const current = effective.get(rule.ruleID);
+    if (!current) {
+      seeded.push({
+        type: "constitution.rule_added",
+        id: `constitution:${rule.ruleID.toLowerCase()}`,
+        ruleID: rule.ruleID,
+        statement: rule.statement,
+        scope: "release",
+        priority: "critical",
+        source: "policy",
+        enforcement: rule.enforcement,
+        overridePolicy,
+      });
+      continue;
+    }
+    if (
+      current.statement === rule.statement &&
+      current.enforcement === rule.enforcement &&
+      current.overridePolicy === overridePolicy
+    )
+      continue;
     seeded.push({
-      type: "constitution.rule_added",
-      id: `constitution:${rule.ruleID.toLowerCase()}`,
+      type: "constitution.rule_updated",
+      id: `constitution:update:${rule.ruleID.toLowerCase()}`,
       ruleID: rule.ruleID,
       statement: rule.statement,
-      scope: "release",
       priority: "critical",
-      source: "policy",
-      enforcement: "deny",
-      overridePolicy: rule.overridePolicy ?? "forbidden",
+      enforcement: rule.enforcement,
+      overridePolicy,
     });
   }
   return seeded;
