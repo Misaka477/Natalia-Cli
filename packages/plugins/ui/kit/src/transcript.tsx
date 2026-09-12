@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onMount } from "solid-js";
 import type { JSX } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { marked } from "marked";
@@ -6,6 +6,14 @@ import type { Attachment, Message } from "./message";
 
 const VIRTUALIZE_THRESHOLD = 80;
 const VIRTUAL_OVERSCAN = 8;
+
+function uiDebugEnabled() {
+  try {
+    return globalThis.localStorage?.getItem("natalia.debug.ui") === "1";
+  } catch {
+    return false;
+  }
+}
 
 declare global {
   interface Window {
@@ -45,12 +53,38 @@ export function Transcript(props: TranscriptProps) {
     props.scrollRef?.(el);
   };
 
+  const handleScroll = (event: Event) => {
+    const startedAt = performance.now();
+    props.onScroll?.(event);
+    if (!uiDebugEnabled()) return;
+    const el = scrollEl();
+    const mounted = virtualize() ? virtualizer.getVirtualItems() : [];
+    console.debug("[natalia-ui] transcript scroll", {
+      elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
+      scrollTop: el?.scrollTop,
+      clientHeight: el?.clientHeight,
+      scrollHeight: el?.scrollHeight,
+      mounted: mounted.length,
+      firstMounted: mounted[0]?.index,
+      lastMounted: mounted.at(-1)?.index,
+    });
+  };
+
+  createEffect(() => {
+    if (!uiDebugEnabled()) return;
+    const mounted = virtualize() ? virtualizer.getVirtualItems() : [];
+    console.debug("[natalia-ui] transcript window", {
+      messages: props.messages.length,
+      virtualized: virtualize(),
+      mounted: mounted.length,
+      firstMounted: mounted[0]?.index,
+      lastMounted: mounted.at(-1)?.index,
+      totalSize: virtualize() ? virtualizer.getTotalSize() : null,
+    });
+  });
+
   return (
-    <div
-      class="natalia-transcript"
-      ref={setScrollRef}
-      onScroll={props.onScroll}
-    >
+    <div class="natalia-transcript" ref={setScrollRef} onScroll={handleScroll}>
       <div
         class="natalia-transcript-content"
         style={

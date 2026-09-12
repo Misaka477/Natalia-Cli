@@ -771,6 +771,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let chatLastUserScrollAt = Number.NEGATIVE_INFINITY;
   const chatAtBottom = { current: true };
   const followBreakWaitMs = 200;
+  const debugUiEnabled = () => {
+    try {
+      return globalThis.localStorage?.getItem("natalia.debug.ui") === "1";
+    } catch {
+      return false;
+    }
+  };
   type ScrollAnchor = { id: string; top: number };
   let transcriptPagingAnchor: ScrollAnchor | undefined;
   let chatPagingAnchor: ScrollAnchor | undefined;
@@ -2279,11 +2286,26 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const row = [...el.querySelectorAll<HTMLElement>("[data-message-id]")].find(
       (candidate) => candidate.dataset.messageId === anchor.id,
     );
-    if (!row) return;
+    if (!row) {
+      if (debugUiEnabled())
+        console.debug("[natalia-ui] transcript anchor missing", {
+          ledger,
+          anchor: anchor.id,
+          mounted: el.querySelectorAll("[data-message-id]").length,
+        });
+      return;
+    }
     const containerRect = el.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
     el.scrollTop =
       el.scrollTop + (rowRect.top - containerRect.top) - anchor.top;
+    if (debugUiEnabled())
+      console.debug("[natalia-ui] transcript anchor restored", {
+        ledger,
+        anchor: anchor.id,
+        top: anchor.top,
+        scrollTop: el.scrollTop,
+      });
     if (ledger === "transcript") {
       transcriptObservedTop = el.scrollTop;
       transcriptObservedHeight = el.scrollHeight;
