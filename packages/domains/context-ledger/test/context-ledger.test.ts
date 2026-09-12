@@ -109,6 +109,12 @@ test("context ledger restores provider reasoning and tool thought signatures", (
       reasoningSignature: "signature-1",
     },
     {
+      type: "content.done",
+      id: "turn-reasoning",
+      text: "answer",
+      textSignature: "text-signature",
+    },
+    {
       type: "tool.update",
       id: "turn-reasoning:call-1",
       callID: "call-1",
@@ -131,6 +137,7 @@ test("context ledger restores provider reasoning and tool thought signatures", (
       reasoningContent: "need to read the file",
       reasoningField: "reasoning_content",
       reasoningSignature: "signature-1",
+      textSignature: "text-signature",
       thoughtSignature: "tool-signature",
     }),
   );

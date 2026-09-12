@@ -1496,6 +1496,69 @@ test("Gemini forwards thought signatures on assistant tool-call replay", async (
   ]);
 });
 
+test("Gemini preserves a text part thoughtSignature across replay", async () => {
+  let body: Record<string, unknown> | undefined;
+  let calls = 0;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1)
+        return new Response(
+          [
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [{ text: "visible", thoughtSignature: "text-sig" }],
+                  },
+                },
+              ],
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new GeminiProvider({
+    apiKey: "key",
+    model: "gemini-3-pro",
+    fetch: fetchImpl,
+  });
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toContainEqual({
+    type: "content",
+    text: "visible",
+    textSignature: "text-sig",
+  });
+  for await (const _chunk of provider.stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "visible",
+        textSignature: "text-sig",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  const contents = body?.contents as Array<{
+    parts: Array<Record<string, unknown>>;
+  }>;
+  expect(contents[0]?.parts).toEqual([
+    { text: "visible", thoughtSignature: "text-sig" },
+  ]);
+});
+
 test("Anthropic parser exposes signature deltas for replay", async () => {
   const sse = [
     {

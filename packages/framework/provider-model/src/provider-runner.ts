@@ -578,6 +578,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         });
         const result: {
           assistant: string;
+          contentSignature?: string;
           thinking: string;
           thinkingField?: string;
           thinkingSignature?: string;
@@ -642,13 +643,17 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               if (chunk.redacted) result.thinkingRedacted = true;
             }
             if (chunk.type === "content") {
-              result.assistant += chunk.text;
-              input.publish({
-                type: "content.delta",
-                id,
-                text: chunk.text,
-                attempt,
-              });
+              if (chunk.text) {
+                result.assistant += chunk.text;
+                input.publish({
+                  type: "content.delta",
+                  id,
+                  text: chunk.text,
+                  attempt,
+                });
+              }
+              if (chunk.textSignature)
+                result.contentSignature = chunk.textSignature;
             }
             if (chunk.type === "tool_call") result.calls.push(...chunk.calls);
             if (chunk.type === "tool_protocol_violation")
@@ -710,8 +715,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         hadToolCalls: false,
         protocolViolation: output.protocolViolation,
       };
-    if (output.assistant)
-      input.publish({ type: "content.done", id, text: output.assistant });
+    if (output.assistant || output.contentSignature)
+      input.publish({
+        type: "content.done",
+        id,
+        ...(output.assistant ? { text: output.assistant } : {}),
+        ...(output.contentSignature
+          ? { textSignature: output.contentSignature }
+          : {}),
+      });
     const reservedCallIDs = new Set<string>();
     for (const message of messages) {
       for (const call of message.toolCalls ?? []) reservedCallIDs.add(call.id);
@@ -748,13 +760,22 @@ export function createProviderRunner(input: ProviderRunnerInput) {
             ? { signature: output.thinkingSignature }
             : {}),
           ...(output.thinkingRedacted ? { redacted: true } : {}),
+          ...(output.contentSignature
+            ? { textSignature: output.contentSignature }
+            : {}),
         },
       );
       toolMessages.push(...produced);
       messages.push(...produced);
     }
     if (output.assistant && !toolMessages.length) {
-      messages.push({ role: "assistant", content: output.assistant });
+      messages.push({
+        role: "assistant",
+        content: output.assistant,
+        ...(output.contentSignature
+          ? { textSignature: output.contentSignature }
+          : {}),
+      });
     }
     return {
       assistant: output.assistant,

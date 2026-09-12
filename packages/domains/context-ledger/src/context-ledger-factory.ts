@@ -27,6 +27,7 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           reasoningRedacted?: boolean;
         }
       >();
+      const textSignatureByTurnID = new Map<string, string>();
       const recordedCalls = new Set<string>();
       const recordedResults = new Set<string>();
       for (const event of events) {
@@ -73,8 +74,10 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           );
           continue;
         }
-        if (event.type === "content.done" && event.text !== undefined) {
-          assistantByID.set(event.id, event.text);
+        if (event.type === "content.done") {
+          if (event.text !== undefined) assistantByID.set(event.id, event.text);
+          if (event.textSignature)
+            textSignatureByTurnID.set(event.id, event.textSignature);
           continue;
         }
         if (
@@ -86,15 +89,16 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
             event.status === "awaiting_approval")
         ) {
           recordedCalls.add(event.callID);
-          const reasoning = reasoningByTurnID.get(
-            event.id.slice(0, event.id.lastIndexOf(":")),
-          );
+          const turnID = event.id.slice(0, event.id.lastIndexOf(":"));
+          const reasoning = reasoningByTurnID.get(turnID);
+          const textSignature = textSignatureByTurnID.get(turnID);
           add({
             id: `restore:${event.id}:call`,
             role: "tool_call",
             content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
             pairID: event.callID,
             ...(reasoning ?? {}),
+            ...(textSignature ? { textSignature } : {}),
             ...(event.thoughtSignature
               ? { thoughtSignature: event.thoughtSignature }
               : {}),
@@ -115,15 +119,16 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           // provider still sees the call/result pair.
           if (!recordedCalls.has(event.callID)) {
             recordedCalls.add(event.callID);
-            const reasoning = reasoningByTurnID.get(
-              event.id.slice(0, event.id.lastIndexOf(":")),
-            );
+            const turnID = event.id.slice(0, event.id.lastIndexOf(":"));
+            const reasoning = reasoningByTurnID.get(turnID);
+            const textSignature = textSignatureByTurnID.get(turnID);
             add({
               id: `restore:${event.id}:call`,
               role: "tool_call",
               content: `${event.name} ${event.argumentsDelta ?? "{}"}`,
               pairID: event.callID,
               ...(reasoning ?? {}),
+              ...(textSignature ? { textSignature } : {}),
               ...(event.thoughtSignature
                 ? { thoughtSignature: event.thoughtSignature }
                 : {}),
@@ -144,13 +149,16 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
         }
         if (event.type === "turn.finished") {
           const content = assistantByID.get(event.id);
-          if (content?.trim()) {
+          const textSignature = textSignatureByTurnID.get(event.id);
+          if (content?.trim() || textSignature) {
             add({
               id: `${event.id}:assistant`,
               role: "assistant",
-              content,
+              content: content ?? "",
+              ...(textSignature ? { textSignature } : {}),
             });
             assistantByID.delete(event.id);
+            textSignatureByTurnID.delete(event.id);
           }
         }
       }

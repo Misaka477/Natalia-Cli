@@ -109,6 +109,8 @@ export type DurableContextCheckpointRecord = {
     reasoningField?: string;
     reasoningSignature?: string;
     reasoningRedacted?: boolean;
+    /** Gemini thought signature attached to a non-thought text part. */
+    textSignature?: string;
     thoughtSignature?: string;
   }>;
   checkpoint?: {
@@ -713,7 +715,14 @@ type RuntimeEventData =
       reasoningRedacted?: boolean;
     }
   | { type: "content.delta"; id: string; text: string; attempt?: number }
-  | { type: "content.done"; id: string; text?: string; attempt?: number }
+  | {
+      type: "content.done";
+      id: string;
+      text?: string;
+      /** Gemini thought signature attached to this text part. */
+      textSignature?: string;
+      attempt?: number;
+    }
   | {
       type: "turn.retry";
       id: string;

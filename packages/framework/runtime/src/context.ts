@@ -27,6 +27,8 @@ export type ContextEntry = {
   reasoningField?: string;
   reasoningSignature?: string;
   reasoningRedacted?: boolean;
+  /** Gemini thought signature attached to a non-thought text part. */
+  textSignature?: string;
   /** Gemini thought signature attached to a tool_call entry. */
   thoughtSignature?: string;
 };

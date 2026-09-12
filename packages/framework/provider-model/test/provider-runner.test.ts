@@ -211,6 +211,9 @@ function makeHarness(
             ? { reasoningSignature: reasoning.signature }
             : {}),
           ...(reasoning?.redacted ? { reasoningRedacted: true } : {}),
+          ...(reasoning?.textSignature
+            ? { textSignature: reasoning.textSignature }
+            : {}),
           toolCalls: calls,
         },
         {
@@ -506,6 +509,44 @@ test("signed thinking and tool-call thought signatures survive the tool-call fol
   expect(assistant?.reasoningContent).toBe("signed plan");
   expect(assistant?.reasoningSignature).toBe("sig-1");
   expect(assistant?.toolCalls?.[0]?.thoughtSignature).toBe("tool-sig");
+});
+
+test("Gemini text part signatures survive the tool-call follow-up", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  let streamCalls = 0;
+  const { runner } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream(request) {
+      streamCalls += 1;
+      requests.push(request);
+      if (streamCalls === 1) {
+        yield {
+          type: "content" as const,
+          text: "visible answer",
+          textSignature: "text-sig",
+        };
+        yield toolCall([
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: '{"path":"a.txt"}',
+          },
+        ]);
+        return;
+      }
+      yield content("done");
+    },
+  });
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(2);
+  const assistant = requests[1]?.messages.find(
+    (message) => message.role === "assistant" && message.toolCalls?.length,
+  );
+  expect(assistant?.content).toBe("visible answer");
+  expect(assistant?.textSignature).toBe("text-sig");
 });
 
 test("the configured final step preserves XML-like text without another request", async () => {

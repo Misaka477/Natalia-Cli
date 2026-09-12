@@ -49,6 +49,12 @@ export type ProviderMessage = {
   /** True when `reasoningSignature` is Anthropic redacted_thinking rather than
    * a normal thinking block. */
   reasoningRedacted?: boolean;
+  /**
+   * Gemini thought signature attached to a non-thought text part. The
+   * signature must be replayed on the same text part, not moved onto a
+   * reasoning or functionCall part.
+   */
+  textSignature?: string;
   images?: ProviderAttachment[];
   videos?: ProviderAttachment[];
   toolCallID?: string;
@@ -119,7 +125,7 @@ export type ProviderFinishReason =
   | "unknown";
 
 export type ProviderStreamChunk =
-  | { type: "content"; text: string }
+  | { type: "content"; text: string; textSignature?: string }
   | {
       type: "thinking";
       text: string;
@@ -144,6 +150,7 @@ export async function* requireNativeToolCallProtocol(
   source: AsyncIterable<ProviderStreamChunk>,
 ): AsyncIterable<ProviderStreamChunk> {
   let content = "";
+  let contentSignature: string | undefined;
   let violation = "";
   let structuredCalls = false;
   let done: Extract<ProviderStreamChunk, { type: "done" }> | undefined;
@@ -152,6 +159,9 @@ export async function* requireNativeToolCallProtocol(
     final: boolean,
   ): Iterable<ProviderStreamChunk> {
     while (content) {
+      const signature = contentSignature
+        ? { textSignature: contentSignature }
+        : {};
       const start = textualToolCallMarkerIndex(content);
       if (start < 0) {
         const retained = final
@@ -159,11 +169,11 @@ export async function* requireNativeToolCallProtocol(
           : textualToolCallMarkerPrefixSuffix(content);
         const text = content.slice(0, content.length - retained.length);
         content = retained;
-        if (text) yield { type: "content", text };
+        if (text) yield { type: "content", text, ...signature };
         return;
       }
       if (start > 0) {
-        yield { type: "content", text: content.slice(0, start) };
+        yield { type: "content", text: content.slice(0, start), ...signature };
         content = content.slice(start);
       }
       // Once model-authored tool syntax begins, retain the remainder as one
@@ -177,11 +187,13 @@ export async function* requireNativeToolCallProtocol(
   for await (const chunk of source) {
     if (chunk.type === "content") {
       content += chunk.text;
+      if (chunk.textSignature) contentSignature = chunk.textSignature;
       yield* flushContent(false);
       continue;
     }
     if (chunk.type === "tool_call") {
       yield* flushContent(true);
+      contentSignature = undefined;
       structuredCalls ||= chunk.calls.length > 0;
       yield chunk;
       continue;
@@ -218,6 +230,7 @@ export async function* normalizeRawToolCallProtocol(
   source: AsyncIterable<ProviderStreamChunk>,
 ): AsyncIterable<ProviderStreamChunk> {
   let content = "";
+  let contentSignature: string | undefined;
   let generatedCallCount = 0;
   const orderedCalls: ProviderToolCall[] = [];
   const rawCallIndices = new Map<string, number[]>();
@@ -228,16 +241,19 @@ export async function* normalizeRawToolCallProtocol(
     final: boolean,
   ): Iterable<ProviderStreamChunk> {
     while (content) {
+      const signature = contentSignature
+        ? { textSignature: contentSignature }
+        : {};
       const start = rawToolCallStart(content);
       if (start < 0) {
         const retained = final ? "" : rawToolCallPrefixSuffix(content);
         const text = content.slice(0, content.length - retained.length);
         content = retained;
-        if (text) yield { type: "content", text };
+        if (text) yield { type: "content", text, ...signature };
         return;
       }
       if (start > 0) {
-        yield { type: "content", text: content.slice(0, start) };
+        yield { type: "content", text: content.slice(0, start), ...signature };
         content = content.slice(start);
       }
       const simple = /^<([A-Za-z_][\w.-]*)>\s*<args>/u.exec(content);
@@ -245,7 +261,7 @@ export async function* normalizeRawToolCallProtocol(
       const end = content.indexOf(endMarker);
       if (end < 0) {
         if (final) {
-          yield { type: "content", text: content };
+          yield { type: "content", text: content, ...signature };
           content = "";
         }
         return;
@@ -266,18 +282,20 @@ export async function* normalizeRawToolCallProtocol(
           rawCallIndices.set(signature, indices);
           orderedCalls.push(call);
         }
-      } else yield { type: "content", text: block };
+      } else yield { type: "content", text: block, ...signature };
     }
   };
 
   for await (const chunk of source) {
     if (chunk.type === "content") {
       content += chunk.text;
+      if (chunk.textSignature) contentSignature = chunk.textSignature;
       yield* flushContent(false);
       continue;
     }
     if (chunk.type === "tool_call") {
       yield* flushContent(true);
+      contentSignature = undefined;
       for (const call of chunk.calls) {
         const signature = toolCallSignature(call);
         structuredSignatures.add(signature);
@@ -1142,13 +1160,15 @@ function reasoningFromContextEntries(
   | "reasoningField"
   | "reasoningSignature"
   | "reasoningRedacted"
+  | "textSignature"
 > {
   for (const entry of entries) {
     if (
       entry.reasoningContent === undefined &&
       !entry.reasoningField &&
       !entry.reasoningSignature &&
-      !entry.reasoningRedacted
+      !entry.reasoningRedacted &&
+      !entry.textSignature
     )
       continue;
     return {
@@ -1160,6 +1180,7 @@ function reasoningFromContextEntries(
         ? { reasoningSignature: entry.reasoningSignature }
         : {}),
       ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
+      ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
   }
   return {};
@@ -1259,6 +1280,7 @@ function contextEntryToProviderMessage(
         ? { reasoningSignature: entry.reasoningSignature }
         : {}),
       ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
+      ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
   if (entry.role === "summary")
     return { role: "system", content: entry.content };
@@ -1822,7 +1844,13 @@ async function* streamGeminiSSE(
               };
             continue;
           }
-          if (part.text) yield { type: "content", text: part.text };
+          const textSignature = part.thoughtSignature ?? part.thought_signature;
+          if (!part.functionCall?.name && (part.text || textSignature))
+            yield {
+              type: "content",
+              text: part.text ?? "",
+              ...(textSignature ? { textSignature } : {}),
+            };
           if (part.functionCall?.name) {
             const signature = part.thoughtSignature ?? part.thought_signature;
             calls.push({
@@ -1878,7 +1906,13 @@ function parseGeminiSSEPart(part: string): {
           });
         continue;
       }
-      if (part.text) chunks.push({ type: "content", text: part.text });
+      const textSignature = part.thoughtSignature ?? part.thought_signature;
+      if (!part.functionCall?.name && (part.text || textSignature))
+        chunks.push({
+          type: "content",
+          text: part.text ?? "",
+          ...(textSignature ? { textSignature } : {}),
+        });
       if (part.functionCall?.name) {
         const signature = part.thoughtSignature ?? part.thought_signature;
         calls.push({
@@ -2342,6 +2376,16 @@ function toGeminiContent(message: ProviderMessage) {
               },
             ]
           : []),
+        ...(message.content || message.textSignature
+          ? [
+              {
+                text: message.content,
+                ...(message.textSignature
+                  ? { thoughtSignature: message.textSignature }
+                  : {}),
+              },
+            ]
+          : []),
         ...message.toolCalls.map((call) => ({
           functionCall: { name: call.name, args: safeJSON(call.arguments) },
           ...(call.thoughtSignature
@@ -2365,7 +2409,16 @@ function toGeminiContent(message: ProviderMessage) {
   return {
     role,
     parts: [
-      ...(message.content ? [{ text: message.content }] : []),
+      ...(message.content || message.textSignature
+        ? [
+            {
+              text: message.content,
+              ...(message.textSignature
+                ? { thoughtSignature: message.textSignature }
+                : {}),
+            },
+          ]
+        : []),
       ...(message.images?.map((image) => ({
         inlineData: {
           mimeType: image.mediaType,

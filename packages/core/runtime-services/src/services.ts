@@ -418,6 +418,7 @@ export type ProviderRunnerInput = {
       field?: string;
       signature?: string;
       redacted?: boolean;
+      textSignature?: string;
     },
   ): Promise<import("@natalia/runtime").ProviderMessage[]>;
   takeLiveUserMessages?(): Array<{ source: "user" | "navi"; text: string }>;

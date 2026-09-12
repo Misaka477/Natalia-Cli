@@ -236,6 +236,7 @@ export function createExecuteCalls(
       field?: string;
       signature?: string;
       redacted?: boolean;
+      textSignature?: string;
     },
   ): Promise<ProviderMessage[]> {
     const {
@@ -318,6 +319,9 @@ export function createExecuteCalls(
         ? { reasoningSignature: reasoning.signature }
         : {}),
       ...(reasoning?.redacted ? { reasoningRedacted: true } : {}),
+      ...(reasoning?.textSignature
+        ? { textSignature: reasoning.textSignature }
+        : {}),
       toolCalls: effectiveCalls,
     };
     const messages: ProviderMessage[] = [assistantMessage];
@@ -341,6 +345,9 @@ export function createExecuteCalls(
           : {}),
         ...(index === 0 && reasoning?.redacted
           ? { reasoningRedacted: true }
+          : {}),
+        ...(index === 0 && reasoning?.textSignature
+          ? { textSignature: reasoning.textSignature }
           : {}),
       });
     }
