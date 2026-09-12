@@ -53,12 +53,35 @@ export function Transcript(props: TranscriptProps) {
     props.scrollRef?.(el);
   };
 
+  const virtualItems = () => virtualizer.getVirtualItems();
+  // TanStack needs one paint to observe the scroll element. Until it has
+  // produced a window, render the ordinary list so long histories are never
+  // blank and the first scroll cannot jump against a zero-height spacer.
+  const useVirtual = () => virtualize() && virtualItems().length > 0;
+
+  let lastVirtualScrollEl: HTMLDivElement | undefined;
+  let lastVirtualEnabled = false;
+  createEffect(() => {
+    const el = scrollEl();
+    const enabled = props.messages.length > VIRTUALIZE_THRESHOLD;
+    if (el === lastVirtualScrollEl && enabled === lastVirtualEnabled) return;
+    lastVirtualScrollEl = el;
+    lastVirtualEnabled = enabled;
+    if (!el || !enabled) return;
+    // Force the virtualizer to pick up the element even if the Solid option
+    // proxy did not observe the ref signal, then rebuild measurements once.
+    virtualizer._willUpdate();
+    requestAnimationFrame(() => {
+      if (enabled) virtualizer.measure();
+    });
+  });
+
   const handleScroll = (event: Event) => {
     const startedAt = performance.now();
     props.onScroll?.(event);
     if (!uiDebugEnabled()) return;
     const el = scrollEl();
-    const mounted = virtualize() ? virtualizer.getVirtualItems() : [];
+    const mounted = useVirtual() ? virtualItems() : [];
     console.debug("[natalia-ui] transcript scroll", {
       elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
       scrollTop: el?.scrollTop,
@@ -72,14 +95,15 @@ export function Transcript(props: TranscriptProps) {
 
   createEffect(() => {
     if (!uiDebugEnabled()) return;
-    const mounted = virtualize() ? virtualizer.getVirtualItems() : [];
+    const mounted = useVirtual() ? virtualItems() : [];
     console.debug("[natalia-ui] transcript window", {
       messages: props.messages.length,
       virtualized: virtualize(),
+      virtualReady: useVirtual(),
       mounted: mounted.length,
       firstMounted: mounted[0]?.index,
       lastMounted: mounted.at(-1)?.index,
-      totalSize: virtualize() ? virtualizer.getTotalSize() : null,
+      totalSize: useVirtual() ? virtualizer.getTotalSize() : null,
     });
   });
 
@@ -88,7 +112,7 @@ export function Transcript(props: TranscriptProps) {
       <div
         class="natalia-transcript-content"
         style={
-          virtualize()
+          useVirtual()
             ? {
                 position: "relative",
                 height: `${virtualizer.getTotalSize()}px`,
@@ -120,39 +144,39 @@ export function Transcript(props: TranscriptProps) {
           }
         >
           <Show
-            when={!virtualize()}
+            when={useVirtual()}
             fallback={
-              <For each={virtualizer.getVirtualItems()}>
-                {(item) => (
+              <For each={props.messages}>
+                {(message) => (
                   <MessageGroup
-                    message={props.messages[item.index]!}
+                    message={message}
                     assistantName={props.assistantName}
                     assistantInitial={props.assistantInitial}
                     loadAttachmentUrl={props.loadAttachmentUrl}
                     onFork={props.onFork}
                     onRollback={props.onRollback}
-                    rowRef={virtualizer.measureElement}
-                    style={{
-                      position: "absolute",
-                      top: "0",
-                      left: "0",
-                      width: "100%",
-                      transform: `translateY(${item.start}px)`,
-                    }}
                   />
                 )}
               </For>
             }
           >
-            <For each={props.messages}>
-              {(message) => (
+            <For each={virtualItems()}>
+              {(item) => (
                 <MessageGroup
-                  message={message}
+                  message={props.messages[item.index]!}
                   assistantName={props.assistantName}
                   assistantInitial={props.assistantInitial}
                   loadAttachmentUrl={props.loadAttachmentUrl}
                   onFork={props.onFork}
                   onRollback={props.onRollback}
+                  rowRef={virtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: "0",
+                    left: "0",
+                    width: "100%",
+                    transform: `translateY(${item.start}px)`,
+                  }}
                 />
               )}
             </For>
