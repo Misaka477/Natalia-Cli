@@ -1106,3 +1106,39 @@ test("an already-announced turn is not re-announced", async () => {
   await runner.runTurn(turn);
   expect(events.some((event) => event.type === "turn.submitted")).toBe(false);
 });
+
+test("duplicate provider tool_call_ids are remapped before execution", async () => {
+  let streamCalls = 0;
+  const provider: StreamingProvider = {
+    provider: "scripted",
+    model: "m1",
+    async *stream() {
+      streamCalls += 1;
+      if (streamCalls === 1) {
+        yield toolCall([
+          { id: "call_dup", name: "read_file", arguments: "{}" },
+          { id: "call_dup", name: "glob", arguments: "{}" },
+        ]);
+        return;
+      }
+      yield content("done");
+    },
+  };
+  const { runner, events, executedCalls } = makeHarness(provider, {
+    maxSteps: 4,
+  });
+
+  await runner.runTurn(turn);
+
+  expect(executedCalls.map(({ call }) => call.id)).toEqual([
+    "call_dup",
+    "call_dup#1",
+  ]);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("duplicate tool_call_id"),
+    ),
+  ).toBe(true);
+});

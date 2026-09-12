@@ -22,7 +22,11 @@ import {
   type ToolPolicyService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
-import type { ProviderToolCall, ProviderMessage } from "@natalia/runtime";
+import {
+  uniqueProviderToolCallIds,
+  type ProviderToolCall,
+  type ProviderMessage,
+} from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
@@ -291,13 +295,29 @@ export function createExecuteCalls(
     // context ledger touched is the turn's own.
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const execContext = exec?.context ?? runtimeContext;
+    // Defensive boundary for callers that bypass provider-runner: the provider
+    // protocol requires a unique tool_call_id per assistant tool call, and a
+    // duplicate would otherwise become two tool messages with the same id.
+    const reservedCallIDs = new Set(
+      execContext
+        .snapshot()
+        .entries.flatMap((entry) => (entry.pairID ? [entry.pairID] : [])),
+    );
+    const normalizedCalls = uniqueProviderToolCallIds(calls, reservedCallIDs);
+    if (normalizedCalls.duplicates.length)
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `tool batch contained duplicate tool_call_id(s); remapped before execution: ${normalizedCalls.duplicates.join(", ")}`,
+      });
+    const effectiveCalls = normalizedCalls.calls;
     const assistantMessage: ProviderMessage = {
       role: "assistant",
       content: assistant,
-      toolCalls: calls,
+      toolCalls: effectiveCalls,
     };
     const messages: ProviderMessage[] = [assistantMessage];
-    for (const call of calls) {
+    for (const call of effectiveCalls) {
       execContext.add({
         id: `${turnID}:${call.id}:call`,
         role: "tool_call",
@@ -305,7 +325,7 @@ export function createExecuteCalls(
         pairID: call.id,
       });
     }
-    for (const call of calls) {
+    for (const call of effectiveCalls) {
       if (!call.name.trim()) {
         const reason =
           "provider emitted a tool call without a name; check OpenAI-compatible streaming format";

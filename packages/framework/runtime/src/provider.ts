@@ -50,6 +50,42 @@ export type ProviderToolCall = {
   arguments: string;
 };
 
+/**
+ * Provider call ids are expected to be unique across the request, but an
+ * OpenAI-compatible gateway can emit the same id on two streamed tool calls.
+ * Rewrite only the duplicates to deterministic unique ids while reserving every
+ * original id so a generated id never steals another call's identity. The
+ * returned calls are safe to put in assistant `tool_calls` and to pair with
+ * their tool results.
+ */
+export function uniqueProviderToolCallIds(
+  calls: ProviderToolCall[],
+  reservedIDs: Iterable<string> = [],
+): {
+  calls: ProviderToolCall[];
+  duplicates: string[];
+} {
+  const reserved = new Set([...reservedIDs, ...calls.map((call) => call.id)]);
+  const seen = new Set<string>(reservedIDs);
+  const duplicates: string[] = [];
+  const unique = calls.map((call) => {
+    if (!seen.has(call.id)) {
+      seen.add(call.id);
+      return call;
+    }
+    duplicates.push(call.id);
+    let suffix = 1;
+    let id = `${call.id}#${suffix}`;
+    while (seen.has(id) || reserved.has(id)) {
+      suffix += 1;
+      id = `${call.id}#${suffix}`;
+    }
+    seen.add(id);
+    return { ...call, id };
+  });
+  return { calls: unique, duplicates };
+}
+
 export type ProviderFinishReason =
   | "stop"
   | "tool_calls"
@@ -1089,13 +1125,20 @@ export function contextEntriesToProviderMessages(
           )
           .map((item) => [item.pairID, item]),
       );
+      const seenCallIDs = new Set<string>();
       const calls = transaction
         .filter((item) => item.role === "tool_call")
         .map(parseDurableToolCall)
-        .filter(
-          (call): call is ProviderToolCall =>
-            call !== undefined && results.has(call.id),
-        );
+        .filter((call): call is ProviderToolCall => {
+          if (
+            call === undefined ||
+            !results.has(call.id) ||
+            seenCallIDs.has(call.id)
+          )
+            return false;
+          seenCallIDs.add(call.id);
+          return true;
+        });
       if (!calls.length) continue;
       const preceding = entries[index - transaction.length];
       const previousMessage = messages.at(-1);

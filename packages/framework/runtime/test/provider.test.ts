@@ -9,6 +9,7 @@ import {
   providerForModel,
   readWithIdleTimeout,
   requireNativeToolCallProtocol,
+  uniqueProviderToolCallIds,
 } from "../src/provider";
 import type {
   ProviderStreamChunk,
@@ -1563,5 +1564,68 @@ test("Gemini provider maps SSE content function calls and usage without placing 
       },
       { type: "usage", inputTokens: 2, outputTokens: 3 },
     ]),
+  );
+});
+
+test("uniqueProviderToolCallIds remaps duplicates without stealing reserved ids", () => {
+  const normalized = uniqueProviderToolCallIds([
+    { id: "call_1", name: "read_file", arguments: "{}" },
+    { id: "call_1", name: "glob", arguments: "{}" },
+    { id: "call_1#1", name: "grep", arguments: "{}" },
+  ]);
+  expect(normalized.duplicates).toEqual(["call_1"]);
+  expect(normalized.calls.map((call) => call.id)).toEqual([
+    "call_1",
+    "call_1#2",
+    "call_1#1",
+  ]);
+  expect(normalized.calls.map((call) => call.name)).toEqual([
+    "read_file",
+    "glob",
+    "grep",
+  ]);
+
+  const crossStep = uniqueProviderToolCallIds(
+    [{ id: "call_1", name: "read_file", arguments: "{}" }],
+    ["call_1"],
+  );
+  expect(crossStep.duplicates).toEqual(["call_1"]);
+  expect(crossStep.calls[0]?.id).toBe("call_1#1");
+});
+
+test("contextEntriesToProviderMessages collapses duplicate ledger call pairs", () => {
+  const messages = contextEntriesToProviderMessages([
+    {
+      id: "call_a",
+      role: "tool_call",
+      content: 'read_file {"path":"a"}',
+      pairID: "call_x",
+    },
+    {
+      id: "result_a",
+      role: "tool_result",
+      content: "a",
+      pairID: "call_x",
+    },
+    {
+      id: "call_b",
+      role: "tool_call",
+      content: 'read_file {"path":"a"}',
+      pairID: "call_x",
+    },
+    {
+      id: "result_b",
+      role: "tool_result",
+      content: "a again",
+      pairID: "call_x",
+    },
+  ]);
+
+  expect(messages.flatMap((message) => message.toolCalls ?? [])).toHaveLength(
+    1,
+  );
+  expect(messages.filter((message) => message.role === "tool")).toHaveLength(1);
+  expect(messages.flatMap((message) => message.toolCalls ?? [])[0]?.id).toBe(
+    "call_x",
   );
 });

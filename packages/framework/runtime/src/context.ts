@@ -379,12 +379,18 @@ function closeToolPairs(
   const pairIDs = new Set(
     preserved.map((entry) => entry.pairID).filter(Boolean) as string[],
   );
-  const missingPairs = entries.filter(
-    (entry) =>
-      entry.pairID &&
-      pairIDs.has(entry.pairID) &&
-      !preserved.some((item) => item.id === entry.id),
-  );
+  const seenPairRoles = new Set<string>();
+  const missingPairs = entries.filter((entry) => {
+    if (!entry.pairID || !pairIDs.has(entry.pairID)) return false;
+    if (preserved.some((item) => item.id === entry.id)) return false;
+    // A malformed ledger can contain two calls or two results for one pair.
+    // Close each side at most once so the rebuilt provider request never has a
+    // duplicate tool_call_id.
+    const key = `${entry.pairID}:${entry.role}`;
+    if (seenPairRoles.has(key)) return false;
+    seenPairRoles.add(key);
+    return true;
+  });
   return [...missingPairs, ...preserved];
 }
 

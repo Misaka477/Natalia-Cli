@@ -13,6 +13,7 @@ import {
   nativeToolCallCorrection,
   normalizeRawToolCallProtocol,
   requireNativeToolCallProtocol,
+  uniqueProviderToolCallIds,
   type ContextEntry,
   type ProviderMessage,
   type ProviderFinishReason,
@@ -665,17 +666,33 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       };
     if (output.assistant)
       input.publish({ type: "content.done", id, text: output.assistant });
-    if (!allowToolCalls && output.calls.length)
+    const reservedCallIDs = new Set<string>();
+    for (const message of messages) {
+      for (const call of message.toolCalls ?? []) reservedCallIDs.add(call.id);
+      if (message.toolCallID) reservedCallIDs.add(message.toolCallID);
+    }
+    const normalizedCalls = uniqueProviderToolCallIds(
+      output.calls,
+      reservedCallIDs,
+    );
+    if (normalizedCalls.duplicates.length)
+      input.publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `provider emitted duplicate tool_call_id(s); remapped for this turn: ${normalizedCalls.duplicates.join(", ")}`,
+      });
+    const calls = normalizedCalls.calls;
+    if (!allowToolCalls && calls.length)
       input.publish({
         type: "diagnostic",
         level: "warning",
         message:
           "Provider emitted a tool call after tools were disabled; ignored the call and finalized with text",
       });
-    if (allowToolCalls && output.calls.length) {
+    if (allowToolCalls && calls.length) {
       const produced = await input.executeToolCalls(
         id,
-        output.calls,
+        calls,
         output.assistant,
         materialized,
       );
@@ -688,7 +705,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     return {
       assistant: output.assistant,
       toolMessages,
-      hadToolCalls: output.calls.length > 0,
+      hadToolCalls: calls.length > 0,
     };
   }
 
