@@ -1858,7 +1858,9 @@ async function* streamGeminiSSE(
             parsed.candidates[0].finishReason,
           );
         const calls: ProviderToolCall[] = [];
-        for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
+        for (const [partIndex, part] of (
+          parsed.candidates?.[0]?.content?.parts ?? []
+        ).entries()) {
           if (part.thought) {
             const signature = part.thoughtSignature ?? part.thought_signature;
             if (part.text || signature)
@@ -1866,6 +1868,7 @@ async function* streamGeminiSSE(
                 type: "thinking",
                 text: part.text ?? "",
                 ...(signature ? { signature } : {}),
+                blockIndex: partIndex,
               };
             continue;
           }
@@ -1920,7 +1923,9 @@ function parseGeminiSSEPart(part: string): {
         parsed.candidates[0].finishReason,
       );
     const calls: ProviderToolCall[] = [];
-    for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
+    for (const [partIndex, part] of (
+      parsed.candidates?.[0]?.content?.parts ?? []
+    ).entries()) {
       if (part.thought) {
         const signature = part.thoughtSignature ?? part.thought_signature;
         if (part.text || signature)
@@ -1928,6 +1933,7 @@ function parseGeminiSSEPart(part: string): {
             type: "thinking",
             text: part.text ?? "",
             ...(signature ? { signature } : {}),
+            blockIndex: partIndex,
           });
         continue;
       }
@@ -2412,23 +2418,37 @@ function toAnthropicMessage(message: ProviderMessage) {
   };
 }
 
+function geminiReasoningParts(
+  message: ProviderMessage,
+): Array<Record<string, unknown>> {
+  if (message.reasoningBlocks?.length)
+    return message.reasoningBlocks
+      .filter((block) => block.text !== undefined || block.signature)
+      .map((block) => ({
+        thought: true,
+        text: block.text ?? "",
+        ...(block.signature ? { thoughtSignature: block.signature } : {}),
+      }));
+  if (message.reasoningContent || message.reasoningSignature)
+    return [
+      {
+        thought: true,
+        text: message.reasoningContent ?? "",
+        ...(message.reasoningSignature
+          ? { thoughtSignature: message.reasoningSignature }
+          : {}),
+      },
+    ];
+  return [];
+}
+
 function toGeminiContent(message: ProviderMessage) {
   const role = message.role === "assistant" ? "model" : "user";
   if (message.toolCalls?.length)
     return {
       role: "model",
       parts: [
-        ...(message.reasoningContent || message.reasoningSignature
-          ? [
-              {
-                thought: true,
-                text: message.reasoningContent ?? "",
-                ...(message.reasoningSignature
-                  ? { thoughtSignature: message.reasoningSignature }
-                  : {}),
-              },
-            ]
-          : []),
+        ...geminiReasoningParts(message),
         ...(message.content || message.textSignature
           ? [
               {
@@ -2462,6 +2482,7 @@ function toGeminiContent(message: ProviderMessage) {
   return {
     role,
     parts: [
+      ...geminiReasoningParts(message),
       ...(message.content || message.textSignature
         ? [
             {

@@ -1559,6 +1559,113 @@ test("Gemini preserves a text part thoughtSignature across replay", async () => 
   ]);
 });
 
+test("Gemini preserves multiple thought signatures in order", async () => {
+  let body: Record<string, unknown> | undefined;
+  let calls = 0;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1)
+        return new Response(
+          [
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        thought: true,
+                        text: "plan A",
+                        thoughtSignature: "sig-A",
+                      },
+                      {
+                        thought: true,
+                        text: "plan B",
+                        thoughtSignature: "sig-B",
+                      },
+                      {
+                        functionCall: { name: "read_file", args: {} },
+                        thoughtSignature: "call-sig",
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new GeminiProvider({
+    apiKey: "key",
+    model: "gemini-3-pro",
+    fetch: fetchImpl,
+  });
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toContainEqual({
+    type: "thinking",
+    text: "plan A",
+    signature: "sig-A",
+    blockIndex: 0,
+  });
+  expect(chunks).toContainEqual({
+    type: "thinking",
+    text: "plan B",
+    signature: "sig-B",
+    blockIndex: 1,
+  });
+  for await (const _chunk of provider.stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        reasoningBlocks: [
+          { text: "plan A", signature: "sig-A" },
+          { text: "plan B", signature: "sig-B" },
+        ],
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: "{}",
+            thoughtSignature: "call-sig",
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  const contents = body?.contents as Array<{
+    parts: Array<Record<string, unknown>>;
+  }>;
+  expect(contents[0]?.parts).toEqual([
+    { thought: true, text: "plan A", thoughtSignature: "sig-A" },
+    { thought: true, text: "plan B", thoughtSignature: "sig-B" },
+    {
+      functionCall: { name: "read_file", args: {} },
+      thoughtSignature: "call-sig",
+    },
+  ]);
+});
+
 test("Anthropic parser exposes signature deltas for replay", async () => {
   const sse = [
     {
@@ -1736,7 +1843,12 @@ test("Gemini parser exposes thought signatures on thinking and tool-call parts",
     chunks.push(chunk);
   }
   expect(chunks).toEqual([
-    { type: "thinking", text: "plan", signature: "thought-sig" },
+    {
+      type: "thinking",
+      text: "plan",
+      signature: "thought-sig",
+      blockIndex: 0,
+    },
     {
       type: "tool_call",
       calls: [
