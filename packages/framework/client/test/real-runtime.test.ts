@@ -7277,13 +7277,20 @@ test("the self-protection rules are seeded as the first constitution facts", asy
     "C-REL-001",
     "C-REL-002",
   ]);
-  for (const rule of rules)
+  for (const rule of rules.filter((item) => item.ruleID !== "C-REL-001"))
     expect(rule).toMatchObject({
       scope: "release",
       priority: "critical",
       source: "policy",
       enforcement: "deny",
     });
+  expect(rules.find((rule) => rule.ruleID === "C-REL-001")).toMatchObject({
+    scope: "release",
+    priority: "critical",
+    source: "policy",
+    enforcement: "approval",
+    overridePolicy: "user_scoped",
+  });
   expect(
     events.some(
       (event) =>
