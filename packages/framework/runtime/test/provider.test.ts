@@ -432,6 +432,159 @@ test("configured provider resolution preserves the adapter provider identity", (
   });
 });
 
+test("providerForModel applies the DeepSeek interleaved reasoning default", async () => {
+  const config = defaultConfigV3();
+  config.providers.deepseek_gateway = {
+    name: "DeepSeek Gateway",
+    driver: "openai-compatible",
+    enabled: true,
+    connection: { apiKey: "test-key" },
+    requestDefaults: { stream: true, headers: {}, options: {} },
+  };
+  config.catalog.providers.deepseek_gateway = {
+    models: {
+      "deepseek-chat": {
+        name: "deepseek-chat",
+        status: "stable",
+        source: "manual",
+        capabilities: {
+          toolCall: true,
+          reasoning: true,
+          thinking: true,
+          imageInput: false,
+          videoInput: false,
+        },
+        limits: { contextWindow: "auto", maxOutputTokens: null },
+      },
+    },
+  };
+  config.modelOverrides["deepseek_gateway/deepseek-chat"] = {
+    enabled: true,
+    name: "DeepSeek Chat",
+    requestDefaults: { temperature: null, topP: null },
+    requestOptions: {},
+    headers: {},
+  };
+  let body: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  try {
+    const provider = providerForModel(config, "deepseek_gateway/deepseek-chat");
+    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    for await (const _chunk of provider!.stream({
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_1", name: "read_file", arguments: "{}" }],
+        },
+        {
+          role: "tool",
+          content: "ok",
+          toolCallID: "call_1",
+          toolName: "read_file",
+        },
+      ],
+    })) {
+      // Drain.
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  expect((body?.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
+    role: "assistant",
+    reasoning_content: "",
+  });
+});
+
+test("providerForModel honors an explicit interleaved reasoning field", async () => {
+  const config = defaultConfigV3();
+  config.providers.interleaved_gateway = {
+    name: "Interleaved Gateway",
+    driver: "openai-compatible",
+    enabled: true,
+    connection: { apiKey: "test-key" },
+    requestDefaults: { stream: true, headers: {}, options: {} },
+  };
+  config.catalog.providers.interleaved_gateway = {
+    models: {
+      "gateway-thinker": {
+        name: "gateway-thinker",
+        status: "stable",
+        source: "manual",
+        capabilities: {
+          toolCall: true,
+          reasoning: true,
+          thinking: true,
+          imageInput: false,
+          videoInput: false,
+          interleaved: { field: "reasoning" },
+        },
+        limits: { contextWindow: "auto", maxOutputTokens: null },
+      },
+    },
+  };
+  config.modelOverrides["interleaved_gateway/gateway-thinker"] = {
+    enabled: true,
+    name: "Gateway Thinker",
+    requestDefaults: { temperature: null, topP: null },
+    requestOptions: {},
+    headers: {},
+  };
+  let body: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  try {
+    const provider = providerForModel(
+      config,
+      "interleaved_gateway/gateway-thinker",
+    );
+    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    for await (const _chunk of provider!.stream({
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_1", name: "read_file", arguments: "{}" }],
+        },
+        {
+          role: "tool",
+          content: "ok",
+          toolCallID: "call_1",
+          toolName: "read_file",
+        },
+      ],
+    })) {
+      // Drain.
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  expect((body?.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
+    role: "assistant",
+    reasoning: "",
+  });
+  expect(
+    (body?.messages as Array<Record<string, unknown>>)[0],
+  ).not.toHaveProperty("reasoning_content");
+});
+
 test("Anthropic-compatible provider names use the Messages API adapter", async () => {
   const requested: string[] = [];
   const bodies: Array<Record<string, unknown>> = [];
@@ -1005,6 +1158,236 @@ test("OpenAI-compatible keeps the provider reasoning field on assistant replay",
   expect(
     (body?.messages as Array<Record<string, unknown>>)[0],
   ).not.toHaveProperty("reasoning_content");
+});
+
+test("OpenAI-compatible interleaved replay sends an empty reasoning field", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "deepseek-chat",
+    interleavedReasoningField: "reasoning_content",
+    fetch: fetchImpl,
+  });
+  for await (const _chunk of provider.stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_1", name: "read_file", arguments: "{}" }],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
+    role: "assistant",
+    reasoning_content: "",
+    tool_calls: [
+      {
+        id: "call_1",
+        type: "function",
+        function: { name: "read_file", arguments: "{}" },
+      },
+    ],
+  });
+});
+
+test("OpenAI-compatible preserves encrypted reasoning_details across tool calls", async () => {
+  const reasoningDetail = {
+    type: "reasoning.encrypted",
+    id: "call_1",
+    data: "encrypted-signature",
+  };
+  let body: Record<string, unknown> | undefined;
+  let calls = 0;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1)
+        return new Response(
+          [
+            `data: ${JSON.stringify({ choices: [{ delta: { reasoning_details: [reasoningDetail] } }] })}`,
+            "",
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  finish_reason: "tool_calls",
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call_1",
+                        type: "function",
+                        function: {
+                          name: "read_file",
+                          arguments: "{}",
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "gemini-test",
+    fetch: fetchImpl,
+  });
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  const toolCall = chunks.find(
+    (chunk): chunk is Extract<ProviderStreamChunk, { type: "tool_call" }> =>
+      chunk.type === "tool_call",
+  )?.calls[0];
+  expect(toolCall?.thoughtSignature).toBe(JSON.stringify(reasoningDetail));
+  if (!toolCall) throw new Error("expected a streamed tool call");
+  for await (const _chunk of provider.stream({
+    messages: [
+      { role: "assistant", content: "", toolCalls: [toolCall] },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
+    role: "assistant",
+    reasoning_details: [reasoningDetail],
+  });
+});
+
+test("OpenAI-compatible preserves reasoning_opaque for replay", async () => {
+  let body: Record<string, unknown> | undefined;
+  let calls = 0;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1)
+        return new Response(
+          [
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    reasoning_text: "think",
+                    reasoning_opaque: "opaque-signature",
+                  },
+                },
+              ],
+            })}`,
+            "",
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  finish_reason: "tool_calls",
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call_1",
+                        type: "function",
+                        function: { name: "read_file", arguments: "{}" },
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "copilot-test",
+    fetch: fetchImpl,
+  });
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toContainEqual({
+    type: "thinking",
+    text: "think",
+    field: "reasoning_text",
+  });
+  expect(chunks).toContainEqual({
+    type: "thinking",
+    text: "",
+    field: "reasoning_text",
+    signature: "opaque-signature",
+  });
+  const toolCall = chunks.find(
+    (chunk): chunk is Extract<ProviderStreamChunk, { type: "tool_call" }> =>
+      chunk.type === "tool_call",
+  )?.calls[0];
+  if (!toolCall) throw new Error("expected a streamed tool call");
+  for await (const _chunk of provider.stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        reasoningContent: "think",
+        reasoningField: "reasoning_text",
+        reasoningSignature: "opaque-signature",
+        toolCalls: [toolCall],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "call_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
+    role: "assistant",
+    reasoning_text: "think",
+    reasoning_opaque: "opaque-signature",
+  });
 });
 
 test("Anthropic forwards signed thinking blocks on assistant tool-call replay", async () => {

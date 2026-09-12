@@ -4,6 +4,7 @@ import {
   parseModelRef,
   type ConfigV3,
   type LocalAttachment,
+  type ModelCapabilities,
   type ModelRef,
 } from "@natalia/contracts";
 import { providerError, providerErrorFromHttp } from "./errors";
@@ -65,7 +66,11 @@ export type ProviderToolCall = {
   id: string;
   name: string;
   arguments: string;
-  /** Gemini thought signature that must accompany this functionCall part. */
+  /**
+   * Provider-native opaque metadata that must accompany this function call.
+   * Gemini stores its thoughtSignature here; OpenAI-compatible OpenRouter
+   * `reasoning_details` stores the serialized encrypted reasoning entry.
+   */
   thoughtSignature?: string;
 };
 
@@ -580,6 +585,11 @@ export type StreamingProvider = {
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
 
+export type OpenAICompatibleReasoningField =
+  | "reasoning"
+  | "reasoning_content"
+  | "reasoning_details";
+
 export type OpenAICompatibleProviderOptions = {
   apiKey: string;
   model: string;
@@ -593,6 +603,8 @@ export type OpenAICompatibleProviderOptions = {
   topP?: number;
   reasoningEffort?: string;
   thinkingEnabled?: boolean;
+  /** Interleaved reasoning field forced onto every assistant replay. */
+  interleavedReasoningField?: OpenAICompatibleReasoningField;
   timeoutMs?: number;
   streamIdleTimeoutMs?: number;
 };
@@ -640,6 +652,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   private readonly topP?: number;
   private readonly reasoningEffort?: string;
   private readonly thinkingEnabled?: boolean;
+  private readonly interleavedReasoningField?: OpenAICompatibleReasoningField;
   private readonly timeoutMs?: number;
   private readonly streamIdleTimeoutMs?: number;
   private modelMetadata?: ReturnType<
@@ -662,6 +675,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
     this.topP = options.topP;
     this.reasoningEffort = options.reasoningEffort;
     this.thinkingEnabled = options.thinkingEnabled;
+    this.interleavedReasoningField = options.interleavedReasoningField;
     this.timeoutMs = options.timeoutMs;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
   }
@@ -688,7 +702,9 @@ export class OpenAICompatibleProvider implements StreamingProvider {
       },
       body: JSON.stringify({
         model: this.model,
-        messages: request.messages.map(toOpenAIMessage),
+        messages: request.messages.map((message) =>
+          toOpenAIMessage(message, this.interleavedReasoningField),
+        ),
         tools:
           request.toolChoice === "none"
             ? undefined
@@ -1329,6 +1345,34 @@ export function providerFromKind(
   });
 }
 
+function interleavedReasoningFieldForModel(
+  driver: string,
+  model: string,
+  capabilities: ModelCapabilities,
+): OpenAICompatibleReasoningField | undefined {
+  const interleaved = capabilities.interleaved;
+  if (
+    typeof interleaved === "object" &&
+    interleaved !== null &&
+    "field" in interleaved
+  )
+    return interleaved.field;
+  if (interleaved === false) return undefined;
+  // OpenCode's built-in fallback: @ai-sdk/openai-compatible DeepSeek models
+  // default to reasoning_content even when the catalog has no explicit
+  // interleaved capability.
+  const kind = driver.toLowerCase();
+  if (
+    !kind.includes("anthropic") &&
+    !kind.includes("claude") &&
+    !kind.includes("gemini") &&
+    !kind.includes("google") &&
+    model.toLowerCase().includes("deepseek")
+  )
+    return "reasoning_content";
+  return undefined;
+}
+
 /**
  * Resolves a configured model reference into the same provider adapter used by
  * the runtime. The reference may be a canonical `"provider/model"` string or a
@@ -1373,6 +1417,11 @@ export function providerForModel(
     thinkingEnabled: effective.capabilities.thinking
       ? effective.requestDefaults.thinkingEnabled
       : undefined,
+    interleavedReasoningField: interleavedReasoningFieldForModel(
+      providerConfig.driver,
+      effective.ref.model,
+      effective.capabilities,
+    ),
     thinkingBudgetTokens:
       typeof effective.requestDefaults.options.thinkingBudgetTokens === "number"
         ? effective.requestDefaults.options.thinkingBudgetTokens
@@ -1542,6 +1591,8 @@ type OpenAIStreamChunk = {
       reasoning_content?: string;
       reasoning?: string;
       reasoning_text?: string;
+      reasoning_details?: unknown;
+      reasoning_opaque?: string;
       // Some OpenAI-compatible gateways use the older single-function shape
       // or the ChatGPT recipient field instead of tool_calls[].function.
       recipient?: string;
@@ -1571,6 +1622,7 @@ async function* streamOpenAISSE(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const toolCalls = new Map<number, ProviderToolCall>();
+  const pendingReasoningDetails = new Map<string, string>();
   const completion: { finishReason?: ProviderFinishReason } = {};
   let buffer = "";
   while (true) {
@@ -1580,11 +1632,21 @@ async function* streamOpenAISSE(
     const parts = buffer.split("\n\n");
     buffer = parts.pop() ?? "";
     for (const part of parts) {
-      yield* parseSSEChunks(part, toolCalls, completion);
+      yield* parseSSEChunks(
+        part,
+        toolCalls,
+        completion,
+        pendingReasoningDetails,
+      );
     }
   }
   if (buffer) {
-    yield* parseSSEChunks(buffer, toolCalls, completion);
+    yield* parseSSEChunks(
+      buffer,
+      toolCalls,
+      completion,
+      pendingReasoningDetails,
+    );
   }
   if (toolCalls.size)
     yield { type: "tool_call", calls: [...toolCalls.values()] };
@@ -1838,10 +1900,65 @@ function parseGeminiSSEPart(part: string): {
   return { chunks, finishReason };
 }
 
+type OpenAIEncryptedReasoningDetail = {
+  type: "reasoning.encrypted";
+  id: string;
+  data: string;
+};
+
+function isOpenAIEncryptedReasoningDetail(
+  value: unknown,
+): value is OpenAIEncryptedReasoningDetail {
+  if (typeof value !== "object" || value === null) return false;
+  const detail = value as Record<string, unknown>;
+  return (
+    detail.type === "reasoning.encrypted" &&
+    typeof detail.id === "string" &&
+    detail.id.length > 0 &&
+    typeof detail.data === "string" &&
+    detail.data.length > 0
+  );
+}
+
+function encryptedReasoningDetails(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter(isOpenAIEncryptedReasoningDetail)
+    : [];
+}
+
+function applyEncryptedReasoningDetails(
+  details: OpenAIEncryptedReasoningDetail[],
+  toolCalls: Map<number, ProviderToolCall>,
+  pendingReasoningDetails: Map<string, string>,
+) {
+  for (const detail of details) {
+    const serialized = JSON.stringify(detail);
+    let matched = false;
+    for (const [index, call] of toolCalls) {
+      if (call.id !== detail.id) continue;
+      toolCalls.set(index, { ...call, thoughtSignature: serialized });
+      matched = true;
+      break;
+    }
+    if (!matched) pendingReasoningDetails.set(detail.id, serialized);
+  }
+}
+
+function attachPendingReasoningDetail(
+  call: ProviderToolCall,
+  pendingReasoningDetails: Map<string, string>,
+) {
+  const signature = pendingReasoningDetails.get(call.id);
+  if (!signature) return call;
+  pendingReasoningDetails.delete(call.id);
+  return { ...call, thoughtSignature: signature };
+}
+
 function parseSSEChunks(
   part: string,
   toolCalls: Map<number, ProviderToolCall>,
   completion: { finishReason?: ProviderFinishReason },
+  pendingReasoningDetails: Map<string, string>,
 ): ProviderStreamChunk[] {
   const chunks: ProviderStreamChunk[] = [];
   for (const line of part.split("\n")) {
@@ -1876,6 +1993,24 @@ function parseSSEChunks(
         text: reasoning[1]!,
         field: reasoning[0],
       });
+    if (delta?.reasoning_opaque)
+      chunks.push({
+        type: "thinking",
+        text: "",
+        // Copilot's reasoning_opaque is attached to the reasoning_text field
+        // and must be replayed together with that text on the next request.
+        field: "reasoning_text",
+        signature: delta.reasoning_opaque,
+      });
+    const encryptedDetails = encryptedReasoningDetails(
+      delta?.reasoning_details,
+    );
+    if (encryptedDetails.length)
+      applyEncryptedReasoningDetails(
+        encryptedDetails,
+        toolCalls,
+        pendingReasoningDetails,
+      );
     const legacyRecipient =
       delta?.recipient ?? choice?.recipient ?? choice?.message?.recipient;
     const legacyFunction =
@@ -1893,14 +2028,20 @@ function parseSSEChunks(
         arguments: "",
       };
       const recipient = normalizeToolRecipient(legacyRecipient);
-      toolCalls.set(0, {
-        id: current.id,
-        name:
-          normalizeToolRecipient(legacyFunction?.name) ??
-          recipient ??
-          current.name,
-        arguments: `${current.arguments}${legacyFunction?.arguments ?? delta?.content ?? ""}`,
-      });
+      toolCalls.set(
+        0,
+        attachPendingReasoningDetail(
+          {
+            id: current.id,
+            name:
+              normalizeToolRecipient(legacyFunction?.name) ??
+              recipient ??
+              current.name,
+            arguments: `${current.arguments}${legacyFunction?.arguments ?? delta?.content ?? ""}`,
+          },
+          pendingReasoningDetails,
+        ),
+      );
       if (
         (choice?.finish_reason === "tool_calls" ||
           choice?.finish_reason === "function_call") &&
@@ -1920,11 +2061,17 @@ function parseSSEChunks(
           arguments: "",
         };
         const name = toolNameFromGatewayCall(call);
-        toolCalls.set(call.index, {
-          id: call.id ?? current.id,
-          name: name ?? current.name,
-          arguments: `${current.arguments}${toolArgumentsFromGatewayCall(call)}`,
-        });
+        toolCalls.set(
+          call.index,
+          attachPendingReasoningDetail(
+            {
+              id: call.id ?? current.id,
+              name: name ?? current.name,
+              arguments: `${current.arguments}${toolArgumentsFromGatewayCall(call)}`,
+            },
+            pendingReasoningDetails,
+          ),
+        );
       }
       if (choice?.finish_reason === "tool_calls" && toolCalls.size) {
         const calls = [...toolCalls.values()];
@@ -2010,13 +2157,67 @@ function toolArgumentsFromGatewayCall(call: {
   return call.function_call?.arguments ?? call.arguments ?? call.input ?? "";
 }
 
-function openAIReasoningField(message: ProviderMessage) {
-  return message.reasoningField && message.reasoningField.length > 0
-    ? message.reasoningField
-    : "reasoning_content";
+function openAIReasoningField(
+  message: ProviderMessage,
+  interleavedReasoningField?: OpenAICompatibleReasoningField,
+) {
+  if (message.reasoningField && message.reasoningField.length > 0)
+    return message.reasoningField;
+  return interleavedReasoningField ?? "reasoning_content";
 }
 
-function toOpenAIMessage(message: ProviderMessage) {
+/**
+ * OpenAI-compatible interleaved providers (DeepSeek is the canonical example)
+ * require the reasoning field on every assistant message, even when it is
+ * empty. This is deliberately separate from `reasoningContent` because an
+ * absent value is not the same as an empty string to these APIs.
+ */
+function openAIReasoningEntry(
+  message: ProviderMessage,
+  interleavedReasoningField?: OpenAICompatibleReasoningField,
+) {
+  if (message.role !== "assistant") return {};
+  if (
+    message.reasoningContent === undefined &&
+    !interleavedReasoningField &&
+    !message.reasoningField
+  )
+    return {};
+  return {
+    [openAIReasoningField(message, interleavedReasoningField)]:
+      message.reasoningContent ?? "",
+  };
+}
+
+function openAIReasoningPayload(
+  message: ProviderMessage,
+  interleavedReasoningField?: OpenAICompatibleReasoningField,
+) {
+  const entry = openAIReasoningEntry(message, interleavedReasoningField);
+  if (message.reasoningField === "reasoning_text" && message.reasoningSignature)
+    return { ...entry, reasoning_opaque: message.reasoningSignature };
+  return entry;
+}
+
+function openAIReasoningDetails(calls: ProviderToolCall[]) {
+  const details: OpenAIEncryptedReasoningDetail[] = [];
+  for (const call of calls) {
+    if (!call.thoughtSignature) continue;
+    try {
+      const parsed = JSON.parse(call.thoughtSignature) as unknown;
+      if (isOpenAIEncryptedReasoningDetail(parsed)) details.push(parsed);
+    } catch {
+      // Other providers use thoughtSignature for non-JSON opaque values.
+    }
+  }
+  return details;
+}
+
+function toOpenAIMessage(
+  message: ProviderMessage,
+  interleavedReasoningField?: OpenAICompatibleReasoningField,
+) {
+  const reasoning = openAIReasoningPayload(message, interleavedReasoningField);
   if (message.role === "tool") {
     return {
       role: "tool",
@@ -2025,11 +2226,13 @@ function toOpenAIMessage(message: ProviderMessage) {
     };
   }
   if (message.toolCalls?.length) {
+    const reasoningDetails = openAIReasoningDetails(message.toolCalls);
     return {
       role: "assistant",
       content: message.content || null,
-      ...(message.reasoningContent !== undefined
-        ? { [openAIReasoningField(message)]: message.reasoningContent }
+      ...reasoning,
+      ...(reasoningDetails.length
+        ? { reasoning_details: reasoningDetails }
         : {}),
       tool_calls: message.toolCalls.map((call) => ({
         id: call.id,
@@ -2048,13 +2251,12 @@ function toOpenAIMessage(message: ProviderMessage) {
           image_url: { url: materializedDataURL(image) },
         })),
       ],
+      ...reasoning,
     };
   return {
     role: message.role,
     content: message.content,
-    ...(message.role === "assistant" && message.reasoningContent !== undefined
-      ? { [openAIReasoningField(message)]: message.reasoningContent }
-      : {}),
+    ...reasoning,
   };
 }
 

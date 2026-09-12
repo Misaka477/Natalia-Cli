@@ -115,12 +115,27 @@ export const checkpointConfigSchema = z
   })
   .default({});
 
+export const interleavedReasoningCapabilitySchema = z.union([
+  z.literal(true),
+  z.literal(false),
+  z.object({
+    field: z.enum(["reasoning", "reasoning_content", "reasoning_details"]),
+  }),
+]);
+
 export const modelCapabilitiesSchema = z.object({
   toolCall: z.boolean().default(true),
   reasoning: z.boolean().default(true),
   thinking: z.boolean().default(true),
   imageInput: z.boolean().default(false),
   videoInput: z.boolean().default(false),
+  /**
+   * OpenAI-compatible providers that expect reasoning to be carried in a
+   * dedicated message field across turns. `false` disables the behavior even
+   * for models whose id otherwise looks interleaved. An omitted value lets the
+   * adapter use its built-in DeepSeek default.
+   */
+  interleaved: interleavedReasoningCapabilitySchema.optional(),
 });
 
 export const modelLimitsSchema = z
