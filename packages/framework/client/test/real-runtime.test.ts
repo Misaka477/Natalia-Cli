@@ -5153,15 +5153,19 @@ test("unsupported video attachments degrade to text instead of failing the turn"
       sessionID: "ses_video_attachment",
     });
     client.start(() => undefined);
-    const userText = (requestIndex: number): string => {
-      const messages = requests[requestIndex]?.messages as Array<{
+    const userText = (request: Record<string, unknown> | undefined): string => {
+      const messages = request?.messages as Array<{
         role: string;
         content: unknown;
       }>;
-      const user = messages?.findLast((message) => message.role === "user");
-      return typeof user?.content === "string"
-        ? user.content
-        : JSON.stringify(user?.content ?? "");
+      return (messages ?? [])
+        .filter((message) => message.role === "user")
+        .map((message) =>
+          typeof message.content === "string"
+            ? message.content
+            : JSON.stringify(message.content ?? ""),
+        )
+        .join("\n");
     };
     const finished = async (stopReason: string) => {
       for (let elapsed = 0; elapsed < 3_000; elapsed += 10) {
@@ -5179,14 +5183,18 @@ test("unsupported video attachments degrade to text instead of failing the turn"
 
     await client.submitAndWait!({ text: "watch", attachments: ["clip.mp4"] });
     expect(await finished("done")).toMatchObject({ stopReason: "done" });
-    expect(userText(0)).toContain("[Attached video/mp4: clip.mp4]");
+    expect(userText(requests[0])).toContain("[Attached video/mp4: clip.mp4]");
 
     await client.updateConfig?.({
       patch: { defaultModel: { provider: "local", model: "vision" } },
     });
     await client.submitAndWait!({ text: "watch", attachments: ["clip.mp4"] });
     expect(await finished("done")).toMatchObject({ stopReason: "done" });
-    expect(userText(1)).toContain("[Attached video/mp4: clip.mp4]");
+    const visionRequest = requests.find(
+      (request) => request.model === "vision",
+    );
+    expect(visionRequest).toBeDefined();
+    expect(userText(visionRequest)).toContain("[Attached video/mp4: clip.mp4]");
     await client.dispose?.();
   } finally {
     server.stop(true);
