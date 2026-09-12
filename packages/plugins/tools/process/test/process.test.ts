@@ -291,12 +291,16 @@ test("reopened managed process registry restores a durable deadline", async () =
   );
   const reopened = processRegistryTools();
   await reopened.get("process_list")!.execute({}, { workspaceRoot: root });
-  await Bun.sleep(300);
-  const status = JSON.parse(
-    await reopened
-      .get("process_status")!
-      .execute({ id: "proc_reopen_deadline" }, { workspaceRoot: root }),
-  ) as { status: string };
+  let status = { status: "" };
+  for (let elapsed = 0; elapsed < 3_000; elapsed += 25) {
+    status = JSON.parse(
+      await reopened
+        .get("process_status")!
+        .execute({ id: "proc_reopen_deadline" }, { workspaceRoot: root }),
+    ) as { status: string };
+    if (status.status === "stopped" || status.status === "exited") break;
+    await Bun.sleep(25);
+  }
   expect(["stopped", "exited"]).toContain(status.status);
 });
 

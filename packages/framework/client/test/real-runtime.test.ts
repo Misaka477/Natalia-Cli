@@ -5158,7 +5158,7 @@ test("unsupported video attachments degrade to text instead of failing the turn"
         role: string;
         content: unknown;
       }>;
-      const user = messages?.find((message) => message.role === "user");
+      const user = messages?.findLast((message) => message.role === "user");
       return typeof user?.content === "string"
         ? user.content
         : JSON.stringify(user?.content ?? "");
