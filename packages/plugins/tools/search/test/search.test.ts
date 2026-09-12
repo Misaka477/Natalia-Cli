@@ -154,6 +154,41 @@ test("grep skips derived directories by default", async () => {
   ]);
 });
 
+test("grep enters a derived directory when include names it explicitly", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-grep-include-"));
+  await writeFile(join(root, "visible.txt"), "needle visible\n");
+  await Bun.write(join(root, "devref", "hidden.txt"), "needle hidden\n");
+  const tools = new Map(
+    searchToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const result = JSON.parse(
+    await tools
+      .get("grep")!
+      .execute(
+        { pattern: "needle", include: "devref/**/*" },
+        { workspaceRoot: root },
+      ),
+  );
+  expect(result.matches).toEqual([
+    { path: "devref/hidden.txt", line: 1, text: "needle hidden" },
+  ]);
+});
+
+test("glob enters a derived directory when its pattern names it explicitly", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-glob-include-"));
+  await writeFile(join(root, "visible.txt"), "visible\n");
+  await Bun.write(join(root, "devref", "hidden.txt"), "hidden\n");
+  const tools = new Map(
+    searchToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const result = JSON.parse(
+    await tools
+      .get("glob")!
+      .execute({ pattern: "devref/**/*" }, { workspaceRoot: root }),
+  ) as { paths: string[] };
+  expect(result.paths).toEqual(["devref/hidden.txt"]);
+});
+
 test("glob and grep preflight every exposed or read workspace path", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tool-search-policy-"));
   await writeFile(join(root, "allowed.ts"), "const value = 'needle';\n");

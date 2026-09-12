@@ -462,7 +462,8 @@ export async function globWorkspaceFilesBounded(
     if (child.isDirectory()) {
       if (
         DEFAULT_GREP_IGNORED_DIRECTORIES.has(child.name) &&
-        childRelative !== scope
+        childRelative !== scope &&
+        !includeMayEnterDirectory(childRelative, input.pattern)
       )
         continue;
       const real = await realpath(childAbsolute).catch(() => undefined);
@@ -839,7 +840,8 @@ export async function grepWorkspaceFilesBounded(
     if (child.isDirectory()) {
       if (
         DEFAULT_GREP_IGNORED_DIRECTORIES.has(child.name) &&
-        childRelative !== scope
+        childRelative !== scope &&
+        !includeMayEnterDirectory(childRelative, include)
       )
         continue;
       const real = await realpath(childAbsolute).catch(() => undefined);
@@ -1293,4 +1295,18 @@ function matchesInclude(path: string, include?: string) {
   if (!include) return true;
   const prefix = include.includes("/") ? "" : "(?:.*/)?";
   return new RegExp(`^${prefix}${globExpression(include)}$`, "u").test(path);
+}
+
+/**
+ * Returns true when a default-ignored directory is explicitly addressed by a
+ * glob include prefix such as `devref/...` or `**\/devref/...`.
+ * `**\/*` alone intentionally does not make every heavy directory walkable.
+ */
+function includeMayEnterDirectory(directory: string, include?: string) {
+  if (!include) return false;
+  const normalized = include.replace(/\\/gu, "/").replace(/^\.\//u, "");
+  const withoutLeadingGlob = normalized.startsWith("**/")
+    ? normalized.slice(3)
+    : normalized;
+  return withoutLeadingGlob.startsWith(`${directory}/`);
 }
