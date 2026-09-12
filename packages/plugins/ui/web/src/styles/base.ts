@@ -1669,7 +1669,10 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .ast-group-header { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 4px 8px; background: var(--neu-bg); border: none; border-radius: 8px; box-shadow: var(--neu-badge-inset); font-family: var(--neu-font-mono); font-size: 11px; color: var(--neu-text); font-weight: 600; cursor: pointer; }
 .ast-group-count { color: var(--neu-muted); }
 .ast-snippet { margin: 6px 12px; padding: 8px 10px; background: var(--neu-bg); border-radius: 8px; font-family: var(--neu-font-mono); font-size: 11px; color: var(--neu-text); white-space: pre-wrap; box-shadow: var(--neu-badge-inset); }
-.diff-split { display: flex; flex-direction: column; }
+/* Keep virtual rows in normal block flow. A flex column here makes every
+   row a shrinkable flex item, so large patches collapse their 22px rows and
+   the split renderer visibly overlaps line content. */
+.diff-split { display: block; }
 .review-diff-split-row {
   display: grid;
   grid-template-columns: 32px 1fr 32px 1fr;

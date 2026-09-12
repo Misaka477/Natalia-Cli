@@ -900,10 +900,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           } catch {
             projected = cloneState(props.ctx.projection.getState());
           }
+          const allowFollow = !resizing();
           const keepTranscriptBottom =
+            allowFollow &&
             transcriptAtBottom.current &&
             performance.now() - transcriptLastUserScrollAt >= followBreakWaitMs;
           const keepChatBottom =
+            allowFollow &&
             chatAtBottom.current &&
             performance.now() - chatLastUserScrollAt >= followBreakWaitMs;
           const setStart = performance.now();
@@ -914,7 +917,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           );
           if (projected.workspaces.length)
             mergeProjectedWorkspaces(projected.workspaces);
-          if (mainForceScroll || keepTranscriptBottom) {
+          if (allowFollow && (mainForceScroll || keepTranscriptBottom)) {
             mainForceScroll = false;
             requestAnimationFrame(() => {
               if (
@@ -934,7 +937,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               }
             });
           }
-          if (chatForceScroll || keepChatBottom) {
+          if (allowFollow && (chatForceScroll || keepChatBottom)) {
             chatForceScroll = false;
             requestAnimationFrame(() => {
               if (
@@ -969,6 +972,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     typeof ResizeObserver === "undefined"
       ? undefined
       : new ResizeObserver(() => {
+          if (resizing()) return;
           if (transcriptAtBottom.current && transcriptEl()) {
             scrollMainTranscriptToBottom();
           }
@@ -2385,6 +2389,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const scrollStart = performance.now();
     const el = transcriptEl();
     if (!el) return;
+    if (resizing()) {
+      transcriptObservedTop = el.scrollTop;
+      transcriptObservedHeight = el.scrollHeight;
+      return;
+    }
     const heightChanged =
       Math.abs(el.scrollHeight - transcriptObservedHeight) > 1;
     const userScrolled =
@@ -2445,6 +2454,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const scrollStart = performance.now();
     const el = chatTranscriptEl();
     if (!el) return;
+    if (resizing()) {
+      chatObservedTop = el.scrollTop;
+      chatObservedHeight = el.scrollHeight;
+      return;
+    }
     const heightChanged = Math.abs(el.scrollHeight - chatObservedHeight) > 1;
     const userScrolled =
       performance.now() - chatLastUserScrollAt < followBreakWaitMs;
@@ -2832,6 +2846,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       target.removeEventListener("pointerup", finish);
       target.removeEventListener("pointercancel", finish);
       setResizing(false);
+      // ResizeObserver-driven follow-bottom is intentionally suppressed while
+      // dragging. Re-apply the pin once the virtualizer has remeasured.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (transcriptAtBottom.current && transcriptEl())
+            scrollMainTranscriptToBottom();
+          if (chatAtBottom.current && chatTranscriptEl())
+            scrollChatTranscriptToBottom();
+        });
+      });
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", finish);
@@ -3542,7 +3566,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   <span class="neu-pane-title">Natalia</span>
                   <span
                     class="neu-pane-status"
-                    data-running={state().natalia.activeTurn}
+                    data-running={Boolean(state().natalia.activeTurn)}
                   >
                     {state().natalia.activeTurn ? "running" : "idle"}
                   </span>
@@ -3584,7 +3608,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   </Show>
                   <div
                     class="neu-activity-bar"
-                    data-running={state().natalia.activeTurn}
+                    data-running={Boolean(state().natalia.activeTurn)}
                   >
                     <span class="neu-activity-pulse" />
                     <span class="neu-activity-label">
@@ -3815,7 +3839,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   <span class="neu-pane-title">Navi</span>
                   <span
                     class="neu-pane-status"
-                    data-running={naviChatActivity()}
+                    data-running={Boolean(naviChatActivity())}
                   >
                     {naviChatActivity() ? "running" : "idle"}
                   </span>

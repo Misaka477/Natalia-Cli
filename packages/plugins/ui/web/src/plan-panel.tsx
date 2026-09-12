@@ -61,7 +61,7 @@ export function PlanPanel(props: {
 }) {
   const [selectedID, setSelectedID] = createSignal<string | undefined>();
   const [draft, setDraft] = createSignal("");
-  const [preview, setPreview] = createSignal(false);
+  const [preview, setPreview] = createSignal(true);
   const [notice, setNotice] = createSignal("");
   const [error, setError] = createSignal("");
   const [saving, setSaving] = createSignal(false);
@@ -276,7 +276,7 @@ export function PlanPanel(props: {
   function selectPlan(planID: string) {
     setSelectedID(planID);
     rememberSelected(planID);
-    setPreview(false);
+    setPreview(true);
     void readSelected(planID);
   }
 

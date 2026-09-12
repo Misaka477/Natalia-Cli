@@ -163,6 +163,10 @@ export function NiaPanel(props: {
   function handleNiaScroll() {
     const el = niaTranscriptEl();
     if (!el) return;
+    if (props.suspendVirtualization) {
+      niaObservedTop = el.scrollTop;
+      return;
+    }
     const floor = Math.max(0, el.scrollHeight - el.clientHeight);
     const ledger = Math.min(niaObservedTop, floor);
     const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
@@ -191,6 +195,7 @@ export function NiaPanel(props: {
     typeof ResizeObserver === "undefined"
       ? undefined
       : new ResizeObserver(() => {
+          if (props.suspendVirtualization) return;
           if (niaFollowBottom() && niaTranscriptEl()) {
             const el = niaTranscriptEl()!;
             el.scrollTop = el.scrollHeight;
@@ -209,6 +214,7 @@ export function NiaPanel(props: {
     if (el) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
+          if (props.suspendVirtualization) return;
           if (niaFollowBottom() && niaTranscriptEl()) {
             const target = niaTranscriptEl()!;
             target.scrollTop = target.scrollHeight;
@@ -217,6 +223,23 @@ export function NiaPanel(props: {
         });
       });
     }
+  });
+
+  let lastNiaSuspended = false;
+  createEffect(() => {
+    const suspended = props.suspendVirtualization === true;
+    if (lastNiaSuspended && !suspended) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (niaFollowBottom() && niaTranscriptEl()) {
+            const target = niaTranscriptEl()!;
+            target.scrollTop = target.scrollHeight;
+            niaObservedTop = target.scrollTop;
+          }
+        });
+      });
+    }
+    lastNiaSuspended = suspended;
   });
 
   async function saveProfile(patch: {

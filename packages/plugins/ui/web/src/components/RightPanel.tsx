@@ -268,6 +268,44 @@ export function ReviewPane(
   const [astApplyLoading, setAstApplyLoading] = createSignal(false);
   const [astApplyError, setAstApplyError] = createSignal<string | undefined>();
 
+  const gitPatchCache = new Map<
+    string,
+    { signature: string; item: DiffItem }
+  >();
+  let gitPatchCacheScope = "";
+
+  function gitDiffScopeKey() {
+    return [
+      props.workspaceID ?? "",
+      gitFrom(),
+      gitTo(),
+      diffIgnoreWhitespace() ? "1" : "0",
+    ].join("\u0000");
+  }
+
+  function ensureGitPatchCache() {
+    const scope = gitDiffScopeKey();
+    if (scope !== gitPatchCacheScope) {
+      gitPatchCacheScope = scope;
+      gitPatchCache.clear();
+    }
+  }
+
+  function diffItemSignature(item: DiffItem) {
+    return [
+      item.operation,
+      item.oldPath ?? "",
+      item.additions ?? "",
+      item.deletions ?? "",
+    ].join("|");
+  }
+
+  function pickGitSelection(mapped: DiffItem[]) {
+    const current = gitSelected();
+    if (current && mapped.some((item) => item.path === current)) return current;
+    return mapped[0]?.path ?? null;
+  }
+
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   const refreshCurrent = () => {
     if (tab() === "git") void loadGit();
@@ -285,8 +323,11 @@ export function ReviewPane(
     } else if (tab() === "rounds") void loadRounds();
   };
   const onRefreshEvent = (event: RuntimeEvent) => {
+    const finalToolUpdate =
+      event.type === "tool.update" &&
+      ["succeeded", "failed", "rejected", "cancelled"].includes(event.status);
     const relevant =
-      event.type === "tool.update" ||
+      finalToolUpdate ||
       event.type === "checkpoint.created" ||
       event.type === "rollback.previewed" ||
       event.type === "rollback.begin" ||
@@ -355,6 +396,7 @@ export function ReviewPane(
   }
 
   async function loadGit() {
+    ensureGitPatchCache();
     const start = performance.now();
     const sessionPaths = await currentSessionPaths();
     try {
@@ -370,7 +412,9 @@ export function ReviewPane(
           .map(toDiffItem)
           .filter((change) => !sessionPaths || sessionPaths.has(change.path));
         setGitChanges(mapped);
-        if (mapped.length) await selectGitFile(mapped[0]!.path);
+        const target = pickGitSelection(mapped);
+        if (target) await selectGitFile(target, { force: true });
+        else setGitSelected(null);
         perfLog(
           `[perf] diff git list ${mapped.length} files ${(performance.now() - start).toFixed(1)}ms`,
         );
@@ -387,14 +431,25 @@ export function ReviewPane(
       .map(toDiffItem)
       .filter((change) => !sessionPaths || sessionPaths.has(change.path));
     setGitChanges(mapped);
-    if (mapped.length) setGitSelected(mapped[0]!.path);
+    setGitSelected(pickGitSelection(mapped));
     perfLog(
       `[perf] diff workspace fallback ${mapped.length} files ${(performance.now() - start).toFixed(1)}ms`,
     );
   }
 
-  async function selectGitFile(path: string) {
+  async function selectGitFile(path: string, options?: { force?: boolean }) {
+    ensureGitPatchCache();
     const start = performance.now();
+    const current = gitChanges().find((change) => change.path === path);
+    const signature = current ? diffItemSignature(current) : "";
+    const cached = options?.force ? undefined : gitPatchCache.get(path);
+    if (cached && cached.signature === signature) {
+      setGitSelected(path);
+      setGitChanges((prev) =>
+        prev.map((change) => (change.path === path ? cached.item : change)),
+      );
+      return;
+    }
     setGitSelected(path);
     try {
       const detail = await props.runtime?.workspaceGitDiff?.({
@@ -409,6 +464,10 @@ export function ReviewPane(
       const file = detail?.[0];
       if (file) {
         const updated = toDiffItem(file);
+        gitPatchCache.set(path, {
+          signature: diffItemSignature(updated),
+          item: updated,
+        });
         setGitChanges((prev) =>
           prev.map((change) => (change.path === path ? updated : change)),
         );
@@ -1064,6 +1123,8 @@ export function ReviewPane(
     setLoaded(false);
     setSandboxLoaded(false);
     setCheckpointLoaded(false);
+    gitPatchCache.clear();
+    gitPatchCacheScope = "";
     setGitChanges([]);
     setGitSelected(null);
     setGitRefs([]);
