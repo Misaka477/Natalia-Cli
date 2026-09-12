@@ -39,3 +39,35 @@ test("Nia exposes run_shell for verification while Navi does not", () => {
     "run_shell",
   );
 });
+
+test("Nia run_shell wrapper enforces the read-only policy", async () => {
+  const runShell = tool("run_shell");
+  let executed = 0;
+  runShell.execute = async () => {
+    executed += 1;
+    return "ok";
+  };
+  const ctx = {
+    state: {
+      tools: new Map([[runShell.name, runShell]]),
+    },
+    ports: {
+      getActiveExec: () => undefined,
+      currentSessionSnapshot: () => undefined,
+      createCollabChatTool: () => tool("collab_chat"),
+    },
+  } as unknown as RuntimeContext;
+  const chatTools = createChatTools(ctx);
+  const niaShell = chatTools
+    .niaChatTools()
+    .find((item) => item.name === "run_shell")!;
+  const context = { workspaceRoot: process.cwd() };
+  await expect(
+    niaShell.execute({ command: "git commit -m test" }, context),
+  ).rejects.toThrow(/read-only/u);
+  expect(executed).toBe(0);
+  await expect(
+    niaShell.execute({ command: "git status" }, context),
+  ).resolves.toBe("ok");
+  expect(executed).toBe(1);
+});

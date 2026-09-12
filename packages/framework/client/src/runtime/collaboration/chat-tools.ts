@@ -13,8 +13,11 @@ import {
 import {
   globWorkspaceFilesBounded,
   grepWorkspaceFilesBounded,
+  requireObject,
+  requireString,
   type RuntimeTool,
 } from "@natalia/tools";
+import { niaShellPolicyDenial } from "./nia-shell-policy";
 import type { SessionID } from "@natalia/contracts";
 import {
   COLLABORATION_SERVICE,
@@ -627,14 +630,32 @@ export function createChatTools(ctx: RuntimeContext) {
     return visible;
   }
 
+  function withNiaShellPolicy(tool: RuntimeTool): RuntimeTool {
+    return {
+      ...tool,
+      description: `${tool.description} Nia may only run read-only inspection and verification commands.`,
+      async execute(input, context) {
+        const args = requireObject(input);
+        const command = requireString(args.command, "command");
+        const denial = await niaShellPolicyDenial(command);
+        if (denial) throw new Error(denial);
+        return tool.execute(input, context);
+      },
+    };
+  }
+
   function niaChatTools(
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ): RuntimeTool[] {
     const { currentSessionSnapshot } = ctx.ports;
-    const visible = [...ctx.state.tools.values()].filter(
-      (tool) =>
-        CHAT_READ_ONLY_TOOLS.has(tool.name) || NIA_EXTRA_TOOLS.has(tool.name),
-    );
+    const visible = [...ctx.state.tools.values()]
+      .filter(
+        (tool) =>
+          CHAT_READ_ONLY_TOOLS.has(tool.name) || NIA_EXTRA_TOOLS.has(tool.name),
+      )
+      .map((tool) =>
+        tool.name === "run_shell" ? withNiaShellPolicy(tool) : tool,
+      );
     visible.push(
       {
         name: "session_snapshot",
