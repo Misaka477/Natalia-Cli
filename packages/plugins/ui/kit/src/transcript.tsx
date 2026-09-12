@@ -1,4 +1,11 @@
-import { For, Show, createEffect, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type { JSX } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { marked } from "marked";
@@ -27,13 +34,27 @@ declare global {
   }
 }
 
+export interface TranscriptHandle {
+  /** Scroll to the last row when virtualized, or directly to the end otherwise. */
+  scrollToBottom(options?: { behavior?: ScrollBehavior }): void;
+  scrollToIndex(
+    index: number,
+    options?: {
+      align?: "start" | "center" | "end" | "auto";
+      behavior?: ScrollBehavior;
+    },
+  ): void;
+  /** Force TanStack Virtual to re-measure mounted rows. */
+  measure(): void;
+}
+
 export interface TranscriptProps {
   messages: Message[];
   emptyTitle?: string;
   emptyHint?: string;
   assistantName?: string;
   assistantInitial?: string;
-  scrollRef?: (el: HTMLDivElement) => void;
+  scrollRef?: (el: HTMLDivElement | undefined) => void;
   onScroll?: (event: Event) => void;
   loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
   onFork?: (turnID: string) => void;
@@ -41,6 +62,8 @@ export interface TranscriptProps {
   checkpointIDForMessage?: (message: Message) => string | undefined;
   /** Freeze row measurement while a host pane is being resized. */
   suspendVirtualization?: boolean;
+  /** Exposes scroll/measure methods so hosts do not write scrollTop directly. */
+  apiRef?: (handle: TranscriptHandle | undefined) => void;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -53,6 +76,8 @@ export function Transcript(props: TranscriptProps) {
     getScrollElement: () => scrollEl() ?? null,
     estimateSize: (index) => estimateMessageHeight(props.messages[index]!),
     getItemKey: (index) => props.messages[index]?.id ?? index,
+    anchorTo: "end",
+    scrollEndThreshold: 2,
     initialRect: {
       width: 0,
       height: VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX,
@@ -64,9 +89,33 @@ export function Transcript(props: TranscriptProps) {
     overscan: VIRTUAL_OVERSCAN,
   });
 
-  const setScrollRef = (el: HTMLDivElement) => {
-    setScrollEl(el);
-    props.scrollRef?.(el);
+  let pendingScrollEl: HTMLDivElement | undefined;
+  const setScrollRef = (el: HTMLDivElement | null) => {
+    if (!el) {
+      pendingScrollEl = undefined;
+      setScrollEl(undefined);
+      props.scrollRef?.(undefined);
+      return;
+    }
+    pendingScrollEl = el;
+    const commit = () => {
+      if (pendingScrollEl !== el || !el.isConnected) return;
+      pendingScrollEl = undefined;
+      setScrollEl(el);
+      props.scrollRef?.(el);
+    };
+    // Solid's compiled ref callback runs before the cloned node is inserted.
+    // At that point a template clone can still have an ownerDocument whose
+    // defaultView is null, so TanStack cannot attach its scroll observers.
+    // Commit after insertion (microtask when possible, rAF as fallback).
+    if (el.isConnected) {
+      commit();
+      return;
+    }
+    queueMicrotask(() => {
+      if (el.isConnected) commit();
+      else requestAnimationFrame(commit);
+    });
   };
 
   const liveVirtualItems = () => virtualizer.getVirtualItems();
@@ -103,13 +152,54 @@ export function Transcript(props: TranscriptProps) {
     return last ? Math.max(0, totalSize() - last.end) : 0;
   };
 
+  const scrollToBottom = (options?: { behavior?: ScrollBehavior }) => {
+    const el = scrollEl();
+    if (el && virtualize() && liveVirtualItems().length > 0) {
+      virtualizer.scrollToEnd({ behavior: options?.behavior ?? "auto" });
+      return;
+    }
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+  const scrollToIndex = (
+    index: number,
+    options?: {
+      align?: "start" | "center" | "end" | "auto";
+      behavior?: ScrollBehavior;
+    },
+  ) => {
+    if (props.messages.length === 0) return;
+    const target = Math.max(0, Math.min(index, props.messages.length - 1));
+    const el = scrollEl();
+    if (el && virtualize() && liveVirtualItems().length > 0) {
+      virtualizer.scrollToIndex(target, {
+        align: options?.align ?? "auto",
+        behavior: options?.behavior ?? "auto",
+      });
+      return;
+    }
+    const row = el?.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(props.messages[target]?.id ?? "")}"]`,
+    );
+    if (el && row) {
+      el.scrollTop +=
+        row.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    }
+  };
+  const api: TranscriptHandle = {
+    scrollToBottom,
+    scrollToIndex,
+    measure: () => virtualizer.measure(),
+  };
+
   onMount(() => {
+    props.apiRef?.(api);
     console.log("[natalia-ui] transcript mounted", {
       messages: props.messages.length,
       debug: uiDebugEnabled(),
       virtualizeThreshold: VIRTUALIZE_THRESHOLD,
     });
   });
+  onCleanup(() => props.apiRef?.(undefined));
 
   let lastVirtualScrollEl: HTMLDivElement | undefined;
   let lastVirtualEnabled = false;
@@ -280,6 +370,7 @@ export function Transcript(props: TranscriptProps) {
               {(item) => (
                 <MessageGroup
                   message={props.messages[item.index]!}
+                  virtualIndex={item.index}
                   assistantName={props.assistantName}
                   assistantInitial={props.assistantInitial}
                   loadAttachmentUrl={props.loadAttachmentUrl}
@@ -315,6 +406,7 @@ function estimateMessageHeight(message: Message): number {
 
 function MessageGroup(props: {
   message: Message;
+  virtualIndex?: number;
   assistantName?: string;
   assistantInitial?: string;
   loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
@@ -328,6 +420,7 @@ function MessageGroup(props: {
       class="natalia-message-group"
       data-role={props.message.role}
       data-message-id={props.message.id}
+      data-index={props.virtualIndex}
       ref={props.rowRef}
       style={props.style}
     >

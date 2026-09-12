@@ -22,7 +22,12 @@ import {
   For,
   Show,
 } from "solid-js";
-import { PendingBadge, Transcript, type Attachment } from "@natalia/ui-kit";
+import {
+  PendingBadge,
+  Transcript,
+  type Attachment,
+  type TranscriptHandle,
+} from "@natalia/ui-kit";
 import type { UiPanelDefinition } from "@natalia/ui-host";
 import { pendingToolLink } from "@natalia/ui-model";
 import { useConfirmDialog } from "./components/ConfirmDialog";
@@ -793,7 +798,35 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [chatTranscriptEl, setChatTranscriptEl] = chatTranscriptRef;
   const [chatFollowBottom, setChatFollowBottom] = createSignal(true);
   const [chatShowJumpToBottom, setChatShowJumpToBottom] = createSignal(false);
+  let transcriptApi: TranscriptHandle | undefined;
+  let chatTranscriptApi: TranscriptHandle | undefined;
   const [chatElapsedMs, setChatElapsedMs] = createSignal(0);
+
+  function scrollMainTranscriptToBottom() {
+    const el = transcriptEl();
+    if (transcriptApi) {
+      transcriptApi.scrollToBottom();
+    } else if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+    if (el) {
+      transcriptObservedTop = el.scrollTop;
+      transcriptObservedHeight = el.scrollHeight;
+    }
+  }
+
+  function scrollChatTranscriptToBottom() {
+    const el = chatTranscriptEl();
+    if (chatTranscriptApi) {
+      chatTranscriptApi.scrollToBottom();
+    } else if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+    if (el) {
+      chatObservedTop = el.scrollTop;
+      chatObservedHeight = el.scrollHeight;
+    }
+  }
   const activeTurnStartedAt = createSignal<number | undefined>(undefined);
   const [activeTurnStartedAtValue, setActiveTurnStartedAt] =
     activeTurnStartedAt;
@@ -892,10 +925,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               )
                 return;
               if (transcriptEl()) {
-                const el = transcriptEl()!;
-                el.scrollTop = el.scrollHeight;
-                transcriptObservedTop = el.scrollTop;
-                transcriptObservedHeight = el.scrollHeight;
+                scrollMainTranscriptToBottom();
                 if (keepTranscriptBottom) {
                   transcriptAtBottom.current = true;
                   setFollowBottom(true);
@@ -914,10 +944,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               )
                 return;
               if (chatTranscriptEl()) {
-                const el = chatTranscriptEl()!;
-                el.scrollTop = el.scrollHeight;
-                chatObservedTop = el.scrollTop;
-                chatObservedHeight = el.scrollHeight;
+                scrollChatTranscriptToBottom();
                 if (keepChatBottom) {
                   chatAtBottom.current = true;
                   setChatFollowBottom(true);
@@ -943,16 +970,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ? undefined
       : new ResizeObserver(() => {
           if (transcriptAtBottom.current && transcriptEl()) {
-            const el = transcriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            transcriptObservedTop = el.scrollTop;
-            transcriptObservedHeight = el.scrollHeight;
+            scrollMainTranscriptToBottom();
           }
           if (chatAtBottom.current && chatTranscriptEl()) {
-            const el = chatTranscriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            chatObservedTop = el.scrollTop;
-            chatObservedHeight = el.scrollHeight;
+            scrollChatTranscriptToBottom();
           }
         });
   onCleanup(() => followObserver?.disconnect());
@@ -986,10 +1007,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (transcriptAtBottom.current && transcriptEl()) {
-            const target = transcriptEl()!;
-            target.scrollTop = target.scrollHeight;
-            transcriptObservedTop = target.scrollTop;
-            transcriptObservedHeight = target.scrollHeight;
+            scrollMainTranscriptToBottom();
           }
         });
       });
@@ -1019,10 +1037,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (chatAtBottom.current && chatTranscriptEl()) {
-            const target = chatTranscriptEl()!;
-            target.scrollTop = target.scrollHeight;
-            chatObservedTop = target.scrollTop;
-            chatObservedHeight = target.scrollHeight;
+            scrollChatTranscriptToBottom();
           }
         });
       });
@@ -2009,18 +2024,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         logStartupSummary();
         void loadSecondaryStartupData();
         const scrollToBottom = () => {
-          if (transcriptEl()) {
-            const el = transcriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            transcriptObservedTop = el.scrollTop;
-            transcriptObservedHeight = el.scrollHeight;
-          }
-          if (chatTranscriptEl()) {
-            const el = chatTranscriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            chatObservedTop = el.scrollTop;
-            chatObservedHeight = el.scrollHeight;
-          }
+          scrollMainTranscriptToBottom();
+          scrollChatTranscriptToBottom();
         };
         // Initial layout settles over a few frames (fonts, images, tool cards
         // and chat/subagent hydration can change scrollHeight after paint).
@@ -2079,16 +2084,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (transcriptAtBottom.current && transcriptEl()) {
-            const el = transcriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            transcriptObservedTop = el.scrollTop;
-            transcriptObservedHeight = el.scrollHeight;
+            scrollMainTranscriptToBottom();
           }
           if (chatAtBottom.current && chatTranscriptEl()) {
-            const el = chatTranscriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            chatObservedTop = el.scrollTop;
-            chatObservedHeight = el.scrollHeight;
+            scrollChatTranscriptToBottom();
           }
         });
       });
@@ -2172,14 +2171,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       (session) => session.id === (selectedSessionID() || state().sessionID),
     )?.workspaceID ?? state().activeWorkspaceID;
 
+  const workspaceIDForRightPanels = () =>
+    state().activeWorkspaceID ?? workspaceIDForSelectedSession();
+
   // Remount every right-side panel when the workspace/session changes. The
   // panels hold their own async cursors and editors, so relying on prop
-  // updates left plan/review/files showing the previous workspace.
+  // updates left plan/review/files showing the previous workspace. Include
+  // both the immediately-selected session and the projection's active
+  // workspace/session because the runtime hydrates them in separate frames.
   const rightPanelScopeKey = createMemo(
     () =>
       `${workspaceIDForSelectedSession() ?? ""}:${
-        selectedSessionID() || state().sessionID || "none"
-      }`,
+        state().activeWorkspaceID ?? ""
+      }:${selectedSessionID() || "none"}:${state().sessionID || "none"}`,
   );
 
   const permissionOptions = () =>
@@ -2396,9 +2400,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       transcriptObservedTop = el.scrollTop;
       transcriptObservedHeight = el.scrollHeight;
       if (transcriptAtBottom.current) {
-        el.scrollTop = el.scrollHeight;
-        transcriptObservedTop = el.scrollTop;
-        transcriptObservedHeight = el.scrollHeight;
+        scrollMainTranscriptToBottom();
         setFollowBottom(true);
         setShowJumpToBottom(false);
       }
@@ -2408,7 +2410,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
     if (!movedByReader) {
       if (nearBottom) {
-        el.scrollTop = el.scrollHeight;
+        scrollMainTranscriptToBottom();
         transcriptAtBottom.current = true;
         setFollowBottom(true);
         setShowJumpToBottom(false);
@@ -2432,12 +2434,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function jumpToBottom() {
-    const el = transcriptEl();
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    if (!transcriptEl()) return;
+    scrollMainTranscriptToBottom();
     transcriptAtBottom.current = true;
-    transcriptObservedTop = el.scrollTop;
-    transcriptObservedHeight = el.scrollHeight;
     setFollowBottom(true);
     setShowJumpToBottom(false);
   }
@@ -2458,9 +2457,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       chatObservedTop = el.scrollTop;
       chatObservedHeight = el.scrollHeight;
       if (chatAtBottom.current) {
-        el.scrollTop = el.scrollHeight;
-        chatObservedTop = el.scrollTop;
-        chatObservedHeight = el.scrollHeight;
+        scrollChatTranscriptToBottom();
         setChatFollowBottom(true);
         setChatShowJumpToBottom(false);
       }
@@ -2469,7 +2466,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
     if (!movedByReader) {
       if (nearBottom) {
-        el.scrollTop = el.scrollHeight;
+        scrollChatTranscriptToBottom();
         chatAtBottom.current = true;
         setChatFollowBottom(true);
         setChatShowJumpToBottom(false);
@@ -2492,12 +2489,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function jumpChatToBottom() {
-    const el = chatTranscriptEl();
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    if (!chatTranscriptEl()) return;
+    scrollChatTranscriptToBottom();
     chatAtBottom.current = true;
-    chatObservedTop = el.scrollTop;
-    chatObservedHeight = el.scrollHeight;
     setChatFollowBottom(true);
     setChatShowJumpToBottom(false);
   }
@@ -3566,6 +3560,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         assistantName="Natalia"
                         assistantInitial="N"
                         scrollRef={setTranscriptEl}
+                        apiRef={(api) => {
+                          if (api) transcriptApi = api;
+                        }}
                         onScroll={handleTranscriptScroll}
                         loadAttachmentUrl={loadAttachmentUrl}
                         onFork={forkSessionAtTurn}
@@ -3836,6 +3833,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         assistantName="Navi"
                         assistantInitial="V"
                         scrollRef={setChatTranscriptEl}
+                        apiRef={(api) => {
+                          if (api) chatTranscriptApi = api;
+                        }}
                         onScroll={handleChatTranscriptScroll}
                         loadAttachmentUrl={loadAttachmentUrl}
                         suspendVirtualization={resizing()}
@@ -4053,7 +4053,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     requestedTab={reviewRequestedTab()}
                     requestedCheckpointID={reviewRequestedCheckpointID()}
                     sessionID={selectedSessionID() || state().sessionID}
-                    workspaceID={workspaceIDForSelectedSession()}
+                    workspaceID={workspaceIDForRightPanels()}
                   />
                 </Show>
                 <Show
@@ -4064,6 +4064,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 >
                   <PlanPanel
                     state={state()}
+                    sessionID={selectedSessionID() || state().sessionID}
                     runtime={props.ctx.runtime}
                     events={props.ctx.events}
                   />

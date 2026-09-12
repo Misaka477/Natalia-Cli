@@ -303,18 +303,6 @@ export function ReviewPane(
   };
 
   onMount(() => {
-    void (async () => {
-      const refs =
-        (await props.runtime?.gitRefs?.({ workspaceID: props.workspaceID })) ??
-        [];
-      setGitRefs(refs);
-      const currentBranch = refs.find(
-        (ref) => ref.kind === "branch" && ref.current,
-      )?.name;
-      if (currentBranch) setGitFrom(currentBranch);
-      await loadGit();
-      setLoaded(true);
-    })();
     const off = props.events?.subscribe(onRefreshEvent);
     onCleanup(() => {
       off?.();
@@ -371,6 +359,7 @@ export function ReviewPane(
     const sessionPaths = await currentSessionPaths();
     try {
       const git = await props.runtime?.workspaceGitDiff?.({
+        workspaceID: props.workspaceID,
         from: gitFrom(),
         to: gitTo(),
         includePatch: false,
@@ -409,6 +398,7 @@ export function ReviewPane(
     setGitSelected(path);
     try {
       const detail = await props.runtime?.workspaceGitDiff?.({
+        workspaceID: props.workspaceID,
         from: gitFrom(),
         to: gitTo(),
         path,
@@ -1060,6 +1050,55 @@ export function ReviewPane(
     if (next === "checkpoint") void loadCheckpointTab();
     if (next === "rounds") void loadRounds();
   }
+
+  let reviewScopeInitialized = false;
+  let reviewScope = "";
+  createEffect(() => {
+    const sessionID = props.sessionID ?? "";
+    const workspaceID = props.workspaceID ?? "";
+    const nextScope = `${workspaceID}:${sessionID}`;
+    if (reviewScopeInitialized && nextScope === reviewScope) return;
+    reviewScopeInitialized = true;
+    reviewScope = nextScope;
+
+    setLoaded(false);
+    setSandboxLoaded(false);
+    setCheckpointLoaded(false);
+    setGitChanges([]);
+    setGitSelected(null);
+    setGitRefs([]);
+    setSandboxes([]);
+    setTeamPRs([]);
+    setSelectedSandbox(null);
+    setSandboxChanges([]);
+    setSandboxSelected(null);
+    setCheckpoints([]);
+    setSelectedCheckpoint(null);
+    setCheckpointChanges([]);
+    setCheckpointSelected(null);
+    setAuditRounds([]);
+    setRoundChanges([]);
+    setRoundSelected(null);
+    setAstDiffResult(undefined);
+    setStructuredDiff(undefined);
+    setStructuredDiffError(undefined);
+    setAstDiffError(undefined);
+
+    void (async () => {
+      const refs =
+        (await props.runtime?.gitRefs?.({ workspaceID: props.workspaceID })) ??
+        [];
+      if (nextScope !== reviewScope) return;
+      setGitRefs(refs);
+      const currentBranch = refs.find(
+        (ref) => ref.kind === "branch" && ref.current,
+      )?.name;
+      setGitFrom(currentBranch ?? "HEAD");
+      await loadGit();
+      if (nextScope !== reviewScope) return;
+      setLoaded(true);
+    })();
+  });
 
   return (
     <div class="review-pane">

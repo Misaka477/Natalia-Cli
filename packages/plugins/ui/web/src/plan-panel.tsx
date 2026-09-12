@@ -52,6 +52,8 @@ function MarkdownPreview(props: { content: string }) {
 
 export function PlanPanel(props: {
   state: AppState;
+  /** Explicit selected session. Falls back to the projection session. */
+  sessionID?: string;
   runtime?: RuntimeClient;
   events?: {
     subscribe(listener: (event: RuntimeEvent) => void): () => void;
@@ -65,6 +67,7 @@ export function PlanPanel(props: {
   const [saving, setSaving] = createSignal(false);
   const [markPath, setMarkPath] = createSignal("");
   const [localPlans, setLocalPlans] = createSignal<PlanRow[]>([]);
+  const sessionID = () => props.sessionID ?? props.state.sessionID;
 
   const plans = createMemo(() =>
     localPlans().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -90,8 +93,7 @@ export function PlanPanel(props: {
 
   async function refreshPlans() {
     try {
-      const list =
-        (await props.runtime?.planDocList?.(props.state.sessionID)) ?? [];
+      const list = (await props.runtime?.planDocList?.(sessionID())) ?? [];
       setLocalPlans(
         list.map((plan) => ({
           ...plan,
@@ -152,7 +154,7 @@ export function PlanPanel(props: {
     try {
       const result = await props.runtime?.planDocRead?.({
         planID: plan.planID,
-        sessionID: props.state.sessionID,
+        sessionID: sessionID(),
       });
       setDraft(result?.content ?? "");
       setError("");
@@ -171,7 +173,7 @@ export function PlanPanel(props: {
         content: draft(),
         title: plan.title,
         planID: plan.planID,
-        sessionID: props.state.sessionID,
+        sessionID: sessionID(),
       });
       setNotice(result?.written ? `已保存 ${plan.documentPath}` : "保存未生效");
       setError("");
@@ -189,7 +191,7 @@ export function PlanPanel(props: {
       const result = await props.runtime?.planDocUpdateStatus?.({
         planID: plan.planID,
         status: "executing",
-        sessionID: props.state.sessionID,
+        sessionID: sessionID(),
       });
       setNotice(
         result?.updated
@@ -212,7 +214,7 @@ export function PlanPanel(props: {
     try {
       const result = await props.runtime?.planDocMark?.({
         path,
-        sessionID: props.state.sessionID,
+        sessionID: sessionID(),
       });
       setNotice(
         result?.marked && result.planID
@@ -235,7 +237,7 @@ export function PlanPanel(props: {
       await props.runtime?.planDocWrite?.({
         path,
         title,
-        sessionID: props.state.sessionID,
+        sessionID: sessionID(),
         content: `# ${title}
 
 ## 目标
@@ -254,7 +256,7 @@ export function PlanPanel(props: {
       const result = await props.runtime?.planDocMark?.({
         path,
         title,
-        sessionID: props.state.sessionID,
+        sessionID: sessionID(),
       });
       setNotice(
         result?.marked && result.planID
@@ -385,7 +387,7 @@ export function PlanPanel(props: {
                     void (async () => {
                       await props.runtime?.planDocDelete?.(
                         selected()!.planID,
-                        props.state.sessionID,
+                        sessionID(),
                       );
                       setSelectedID(undefined);
                       await refreshPlans();
