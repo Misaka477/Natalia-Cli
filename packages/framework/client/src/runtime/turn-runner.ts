@@ -120,6 +120,7 @@ export function createTurnRunner(
       },
       session: () => exec.session,
       context: () => exec.context,
+      tokenMeter: () => exec.tokenMeter,
       tools: () => tools,
       attachmentReferences: () => exec.attachmentReferences,
       attachments: attachmentService,

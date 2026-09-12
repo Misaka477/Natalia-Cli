@@ -1,7 +1,15 @@
 export { ContextMenu, contextMenuStyles } from "./context-menu";
 export type { ContextMenuItem, ContextMenuProps } from "./context-menu";
-export { Transcript, MessageRow } from "./transcript";
+export { Transcript, MessageRow, estimateMessageHeight } from "./transcript";
 export type { TranscriptHandle, TranscriptProps } from "./transcript";
+export { ContextMeter } from "./context-meter";
+export type { ContextUsageView } from "./context-meter";
+export { TailScrollController } from "./scroll-controller";
+export type {
+  OlderScrollAnchor,
+  TailScrollAlignment,
+  TailScrollControllerOptions,
+} from "./scroll-controller";
 export type { Attachment, Message, MessageAction, ToolCall } from "./message";
 
 export { applyUiSkin, defineUiLayoutProfile, defineUiSkin } from "./skin";

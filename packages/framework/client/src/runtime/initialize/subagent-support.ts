@@ -14,6 +14,7 @@ import type {
   SubagentSupport,
   SubagentsService,
 } from "../context";
+import { TokenMeter } from "@natalia/runtime";
 import { createInitializeRuntime } from "./runtime";
 
 export async function createSubagentSupport(
@@ -146,6 +147,65 @@ export async function createSubagentSupport(
     ledger.add({ id: "task", role: "user", content: task });
     return ledger;
   }
+  const tokenMeters = new WeakMap<RuntimeContextLedger, TokenMeter>();
+  function tokenMeterFor(ledger: RuntimeContextLedger): TokenMeter {
+    let meter = tokenMeters.get(ledger);
+    if (meter === undefined) {
+      meter = new TokenMeter();
+      tokenMeters.set(ledger, meter);
+    }
+    return meter;
+  }
+  function subagentProviderMessages(ledger: RuntimeContextLedger) {
+    return scope.contextEntriesToProviderMessages(ledger.snapshot().entries);
+  }
+  function subagentToolSchemas(tools: RuntimeTool[]) {
+    return tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+  }
+  function publishSubagentTokenSnapshot(
+    ledger: RuntimeContextLedger,
+    runner: SubagentRunnerContext,
+  ) {
+    const meter = tokenMeterFor(ledger);
+    const projection = meter.project(`subagent:${runner.agentId}`);
+    publishSubagentEvent(runner, {
+      type: "context.snapshot",
+      usedTokens:
+        projection.projectedTokens ??
+        projection.pressureTokens ??
+        ledger.effectiveTokens(),
+      ...(projection.pressureTokens === undefined
+        ? {}
+        : { pressureTokens: projection.pressureTokens }),
+      ...(projection.projectedTokens === undefined
+        ? {}
+        : { projectedTokens: projection.projectedTokens }),
+      ...(projection.contextWindow === undefined
+        ? {}
+        : { contextWindow: projection.contextWindow }),
+      source: projection.source,
+      at: new Date().toISOString(),
+    });
+  }
+  function measureSubagentRequest(
+    ledger: RuntimeContextLedger,
+    runner: SubagentRunnerContext,
+    tools: RuntimeTool[],
+    contextConfig: { max: number; thresholdPercent: number; reserved: number },
+  ): number {
+    const meter = tokenMeterFor(ledger);
+    const measured = meter.measureRequest(`subagent:${runner.agentId}`, {
+      tools: subagentToolSchemas(tools),
+      messages: subagentProviderMessages(ledger),
+      contextWindow: contextConfig.max,
+    });
+    publishSubagentTokenSnapshot(ledger, runner);
+    return Math.max(ledger.effectiveTokens(), measured.totalTokens);
+  }
   async function runSubagentProviderStep(
     ledger: RuntimeContextLedger,
     visibleTools: RuntimeTool[],
@@ -168,21 +228,18 @@ export async function createSubagentSupport(
           let thinking = "";
           const calls: ProviderToolCall[] = [];
           let protocolViolation = "";
+          let providerUsage:
+            | { inputTokens: number; outputTokens: number }
+            | undefined;
+          const providerMessages = subagentProviderMessages(ledger);
+          const toolSchemas = subagentToolSchemas(visibleTools);
           const stream = scope.withProviderConcurrency(
             scope.providerConcurrencyLimiter,
             activeProvider.provider,
             () =>
               activeProvider.stream({
-                messages: scope.contextEntriesToProviderMessages(
-                  ledger.snapshot().entries,
-                ),
-                tools: allowToolCalls
-                  ? visibleTools.map((tool) => ({
-                      name: tool.name,
-                      description: tool.description,
-                      parameters: tool.parameters,
-                    }))
-                  : undefined,
+                messages: providerMessages,
+                tools: allowToolCalls ? toolSchemas : undefined,
                 toolChoice: allowToolCalls ? undefined : "none",
                 signal: runner.signal,
               }),
@@ -215,6 +272,25 @@ export async function createSubagentSupport(
             if (chunk.type === "tool_call") calls.push(...chunk.calls);
             if (chunk.type === "tool_protocol_violation")
               protocolViolation = chunk.text;
+            if (chunk.type === "usage")
+              providerUsage = {
+                inputTokens: chunk.inputTokens,
+                outputTokens: chunk.outputTokens,
+              };
+          }
+          if (providerUsage) {
+            const meter = tokenMeterFor(ledger);
+            const scopeKey = `subagent:${runner.agentId}`;
+            const system =
+              providerMessages[0]?.role === "system"
+                ? providerMessages[0].content
+                : undefined;
+            meter.setContextWindow(scopeKey, activeContextConfig.max);
+            meter.recordUsage(scopeKey, providerUsage, {
+              headerKey: JSON.stringify({ system, tools: toolSchemas }),
+              surfaceTokens: meter.observeSurface(scopeKey, providerMessages),
+            });
+            publishSubagentTokenSnapshot(ledger, runner);
           }
           return { output, thinking, calls, protocolViolation };
         },
@@ -238,7 +314,12 @@ export async function createSubagentSupport(
         ledger,
         provider: activeProvider,
         budget: activeContextConfig,
-        usedTokens: ledger.effectiveTokens(),
+        usedTokens: measureSubagentRequest(
+          ledger,
+          runner,
+          visibleTools,
+          activeContextConfig,
+        ),
         enabled: scope.tsRuntimeConfig?.context.compactionEnabled ?? true,
         preservedRecentMessages:
           scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
@@ -249,6 +330,13 @@ export async function createSubagentSupport(
         signal: runner.signal,
         onEvent: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
       });
+      // Publish the compacted projection before the provider request starts.
+      measureSubagentRequest(
+        ledger,
+        runner,
+        visibleTools,
+        activeContextConfig,
+      );
       result = await resolvedCompactionService.runWithContextLimitRecovery({
         id,
         step,
@@ -265,7 +353,19 @@ export async function createSubagentSupport(
         instruction: "Recover this subagent from the provider context limit.",
         signal: runner.signal,
         runStep,
-        onEvent: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
+        onEvent: (event: RuntimeEvent) => {
+          publishSubagentEvent(runner, event);
+          if (event.type === "compaction.end" && event.success) {
+            // Context-limit recovery rewrites the ledger in place; publish the
+            // post-compaction meter before the retried provider request.
+            measureSubagentRequest(
+              ledger,
+              runner,
+              visibleTools,
+              activeContextConfig,
+            );
+          }
+        },
       });
       if (!result.protocolViolation) break;
       correction += 1;

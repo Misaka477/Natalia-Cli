@@ -721,6 +721,47 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
 .neu-pane-status[data-running="true"] {
   color: var(--neu-success);
 }
+.neu-pane-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.natalia-context-meter {
+  --context-meter-color: var(--neu-accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  color: var(--neu-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  user-select: none;
+  white-space: nowrap;
+}
+.natalia-context-meter[data-status="warning"] {
+  --context-meter-color: var(--neu-warning, #d97706);
+}
+.natalia-context-meter[data-status="critical"],
+.natalia-context-meter[data-status="compacting"] {
+  --context-meter-color: var(--neu-error);
+}
+.natalia-context-meter-ring {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      var(--context-meter-color) 0 var(--context-percent),
+      color-mix(in srgb, var(--neu-muted) 28%, transparent) var(--context-percent) 100%
+    );
+  box-shadow: inset 0 0 0 3px var(--neu-bg);
+}
+.natalia-context-meter[data-status="critical"] .natalia-context-meter-label,
+.natalia-context-meter[data-status="compacting"] .natalia-context-meter-label {
+  color: var(--neu-error);
+}
 .neu-pane-content {
   flex: 1;
   min-height: 0;
@@ -914,6 +955,18 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   max-width: 100%;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+}
+.neu-pane .natalia-tool-output-toggle {
+  display: block;
+  margin-top: 6px;
+  padding: 3px 0 0;
+  border: 0;
+  border-top: 1px solid var(--neu-divider);
+  color: var(--neu-accent);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 .neu-pane .natalia-streaming-indicator { display: flex; align-items: center; gap: 4px; color: var(--neu-muted); font-size: 12px; }
 .neu-pane .natalia-streaming-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--neu-accent); animation: neu-blink 1s infinite; }
@@ -4442,6 +4495,18 @@ button.neu-settings-item.neu-settings-item-button:active {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+.natalia-tool-output-toggle {
+  display: block;
+  margin-top: 6px;
+  padding: 3px 0 0;
+  border: 0;
+  border-top: 1px solid var(--neu-divider);
+  color: var(--neu-accent);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
 
 /* Markdown tables and blocks */
 .natalia-message-text table,
@@ -4466,8 +4531,9 @@ button.neu-settings-item.neu-settings-item-button:active {
   background: var(--neu-bg);
   border-radius: 8px;
   padding: 10px;
-  overflow-x: auto;
   max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
 }
 .natalia-message-text code,
 .natalia-thinking-text code {

@@ -475,9 +475,25 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           providerUsage.inputTokens,
           providerUsage.outputTokens,
         );
+        const meter = input.tokenMeter?.();
+        if (meter) {
+          const messagesAtSample = contextEntriesToProviderMessages(
+            ledger.snapshot().entries,
+          );
+          const systemAtSample =
+            messagesAtSample[0]?.role === "system"
+              ? messagesAtSample[0].content
+              : "";
+          meter.setContextWindow("main", input.runtimeContextConfig().max);
+          meter.recordUsage("main", providerUsage, {
+            headerKey: JSON.stringify({ system: systemAtSample, tools: null }),
+            surfaceTokens: meter.observeSurface("main", messagesAtSample),
+          });
+        }
         input.publish(
           contextStatusEvent(ledger.status(input.runtimeContextConfig())),
         );
+        if (meter) publishMainTokenSnapshot(meter, ledger.effectiveTokens());
       }
       input.publish({
         type: "context.checkpoint",
@@ -948,8 +964,42 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           id: `${id}:context-limit:${input.context().journalStatus().journalOffset}`,
           snapshot: input.context().durableCheckpoint(step),
         }),
-      beforeRetry: () =>
-        rebuildMessagesAfterCompaction(messages, input.context()),
+      beforeRetry: () => {
+        rebuildMessagesAfterCompaction(messages, input.context());
+        const meter = input.tokenMeter?.();
+        const system =
+          messages[0]?.role === "system" ? messages[0].content : "";
+        meter?.measureRequest("main", {
+          system,
+          messages,
+          contextWindow: contextConfig.max,
+        });
+        if (meter)
+          publishMainTokenSnapshot(meter, input.context().effectiveTokens());
+      },
+    });
+  }
+
+  function publishMainTokenSnapshot(
+    meter: ReturnType<NonNullable<ProviderRunnerInput["tokenMeter"]>>,
+    fallbackUsed: number,
+  ) {
+    const projection = meter.project("main");
+    input.publish({
+      type: "context.snapshot",
+      usedTokens:
+        projection.projectedTokens ?? projection.pressureTokens ?? fallbackUsed,
+      ...(projection.pressureTokens === undefined
+        ? {}
+        : { pressureTokens: projection.pressureTokens }),
+      ...(projection.projectedTokens === undefined
+        ? {}
+        : { projectedTokens: projection.projectedTokens }),
+      ...(projection.contextWindow === undefined
+        ? {}
+        : { contextWindow: projection.contextWindow }),
+      source: projection.source,
+      at: new Date().toISOString(),
     });
   }
 
@@ -968,10 +1018,19 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       });
       input.publish(contextStatusEvent(ledger.status(config)));
     }
+    const meter = input.tokenMeter?.();
+    const system = messages[0]?.role === "system" ? messages[0].content : "";
+    const measured = meter?.measureRequest("main", {
+      system,
+      messages,
+      contextWindow: config.max,
+    });
     const used = Math.max(
       ledger.effectiveTokens(),
       estimateProviderMessages(messages),
+      measured?.totalTokens ?? 0,
     );
+    if (meter) publishMainTokenSnapshot(meter, used);
     const compacted = await input.compaction.compactBeforeProviderStep({
       compactionID: `${id}:preflight:${step}`,
       ledger,
@@ -996,7 +1055,17 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       id: `${id}:preflight:${ledger.journalStatus().journalOffset}`,
       snapshot: ledger.durableCheckpoint(step),
     });
+    // Publish the compacted projection after the status event so the meter is
+    // the last context event the UI applies for this compaction boundary.
     input.publish(contextStatusEvent(ledger.status(config)));
+    const compactedSystem =
+      messages[0]?.role === "system" ? messages[0].content : "";
+    meter?.measureRequest("main", {
+      system: compactedSystem,
+      messages,
+      contextWindow: config.max,
+    });
+    if (meter) publishMainTokenSnapshot(meter, ledger.effectiveTokens());
   }
 
   function providerMessageStateKey(message: ProviderMessage): string {

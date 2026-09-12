@@ -23,6 +23,7 @@ import {
   Show,
 } from "solid-js";
 import {
+  ContextMeter,
   PendingBadge,
   Transcript,
   type Attachment,
@@ -763,70 +764,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let newerHistoryCursor: string | undefined;
   let loadingOlderHistory = false;
   let loadingNewerHistory = false;
-  let transcriptObservedTop = 0;
-  let transcriptObservedHeight = 0;
-  let transcriptLastUserScrollAt = Number.NEGATIVE_INFINITY;
-  const transcriptAtBottom = { current: true };
-  let chatObservedTop = 0;
-  let chatObservedHeight = 0;
-  let chatLastUserScrollAt = Number.NEGATIVE_INFINITY;
-  const chatAtBottom = { current: true };
-  const followBreakWaitMs = 200;
-  const debugUiEnabled = () => {
-    try {
-      if (globalThis.localStorage?.getItem("natalia.debug.ui") === "1")
-        return true;
-      const href = globalThis.location?.href;
-      if (!href) return false;
-      return new URL(href).searchParams.get("nataliaDebugUi") === "1";
-    } catch {
-      return false;
-    }
-  };
-  type ScrollAnchor = { id: string; top: number };
-  let transcriptPagingAnchor: ScrollAnchor | undefined;
-  let chatPagingAnchor: ScrollAnchor | undefined;
-  let mainForceScroll = false;
-  let chatForceScroll = false;
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
-  const transcriptRef = createSignal<HTMLDivElement | undefined>(undefined);
-  const [transcriptEl, setTranscriptEl] = transcriptRef;
-  const [followBottom, setFollowBottom] = createSignal(true);
   const [showJumpToBottom, setShowJumpToBottom] = createSignal(false);
-  const chatTranscriptRef = createSignal<HTMLDivElement | undefined>(undefined);
-  const [chatTranscriptEl, setChatTranscriptEl] = chatTranscriptRef;
-  const [chatFollowBottom, setChatFollowBottom] = createSignal(true);
   const [chatShowJumpToBottom, setChatShowJumpToBottom] = createSignal(false);
   let transcriptApi: TranscriptHandle | undefined;
   let chatTranscriptApi: TranscriptHandle | undefined;
   const [chatElapsedMs, setChatElapsedMs] = createSignal(0);
 
   function scrollMainTranscriptToBottom() {
-    const el = transcriptEl();
-    if (transcriptApi) {
-      transcriptApi.scrollToBottom();
-    } else if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-    if (el) {
-      transcriptObservedTop = el.scrollTop;
-      transcriptObservedHeight = el.scrollHeight;
-    }
+    transcriptApi?.scrollToBottom();
   }
 
   function scrollChatTranscriptToBottom() {
-    const el = chatTranscriptEl();
-    if (chatTranscriptApi) {
-      chatTranscriptApi.scrollToBottom();
-    } else if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-    if (el) {
-      chatObservedTop = el.scrollTop;
-      chatObservedHeight = el.scrollHeight;
-    }
+    chatTranscriptApi?.scrollToBottom();
   }
+
   const activeTurnStartedAt = createSignal<number | undefined>(undefined);
   const [activeTurnStartedAtValue, setActiveTurnStartedAt] =
     activeTurnStartedAt;
@@ -900,15 +853,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           } catch {
             projected = cloneState(props.ctx.projection.getState());
           }
-          const allowFollow = !resizing();
-          const keepTranscriptBottom =
-            allowFollow &&
-            transcriptAtBottom.current &&
-            performance.now() - transcriptLastUserScrollAt >= followBreakWaitMs;
-          const keepChatBottom =
-            allowFollow &&
-            chatAtBottom.current &&
-            performance.now() - chatLastUserScrollAt >= followBreakWaitMs;
           const setStart = performance.now();
           setState(projected);
           const setMs = performance.now() - setStart;
@@ -917,45 +861,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           );
           if (projected.workspaces.length)
             mergeProjectedWorkspaces(projected.workspaces);
-          if (allowFollow && (mainForceScroll || keepTranscriptBottom)) {
-            mainForceScroll = false;
-            requestAnimationFrame(() => {
-              if (
-                keepTranscriptBottom &&
-                !transcriptAtBottom.current &&
-                performance.now() - transcriptLastUserScrollAt <
-                  followBreakWaitMs
-              )
-                return;
-              if (transcriptEl()) {
-                scrollMainTranscriptToBottom();
-                if (keepTranscriptBottom) {
-                  transcriptAtBottom.current = true;
-                  setFollowBottom(true);
-                  setShowJumpToBottom(false);
-                }
-              }
-            });
-          }
-          if (allowFollow && (chatForceScroll || keepChatBottom)) {
-            chatForceScroll = false;
-            requestAnimationFrame(() => {
-              if (
-                keepChatBottom &&
-                !chatAtBottom.current &&
-                performance.now() - chatLastUserScrollAt < followBreakWaitMs
-              )
-                return;
-              if (chatTranscriptEl()) {
-                scrollChatTranscriptToBottom();
-                if (keepChatBottom) {
-                  chatAtBottom.current = true;
-                  setChatFollowBottom(true);
-                  setChatShowJumpToBottom(false);
-                }
-              }
-            });
-          }
           const currentTurn = projected.activeTurn;
           if (currentTurn && activeTurnStartedAtValue() === undefined) {
             setActiveTurnStartedAt(Date.now());
@@ -967,86 +872,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       });
     }),
   );
-
-  const followObserver =
-    typeof ResizeObserver === "undefined"
-      ? undefined
-      : new ResizeObserver(() => {
-          if (resizing()) return;
-          if (transcriptAtBottom.current && transcriptEl()) {
-            scrollMainTranscriptToBottom();
-          }
-          if (chatAtBottom.current && chatTranscriptEl()) {
-            scrollChatTranscriptToBottom();
-          }
-        });
-  onCleanup(() => followObserver?.disconnect());
-
-  // Transcripts mount after the session id resolves and again when layout
-  // mode hides/shows a pane. Observe and re-apply pinned-to-bottom whenever an
-  // element (re)appears.
-  createEffect(() => {
-    const el = transcriptEl();
-    const content = el?.querySelector<HTMLElement>(
-      ".natalia-transcript-content",
-    );
-    if (el) {
-      followObserver?.observe(el);
-      const markUserScroll = () => {
-        transcriptLastUserScrollAt = performance.now();
-      };
-      el.addEventListener("wheel", markUserScroll, { passive: true });
-      el.addEventListener("touchstart", markUserScroll, { passive: true });
-      el.addEventListener("touchmove", markUserScroll, { passive: true });
-      el.addEventListener("pointerdown", markUserScroll, { passive: true });
-      onCleanup(() => {
-        el.removeEventListener("wheel", markUserScroll);
-        el.removeEventListener("touchstart", markUserScroll);
-        el.removeEventListener("touchmove", markUserScroll);
-        el.removeEventListener("pointerdown", markUserScroll);
-      });
-    }
-    if (content) followObserver?.observe(content);
-    if (el) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (transcriptAtBottom.current && transcriptEl()) {
-            scrollMainTranscriptToBottom();
-          }
-        });
-      });
-    }
-    const chatEl = chatTranscriptEl();
-    const chatContent = chatEl?.querySelector<HTMLElement>(
-      ".natalia-transcript-content",
-    );
-    if (chatEl) {
-      followObserver?.observe(chatEl);
-      const markUserScroll = () => {
-        chatLastUserScrollAt = performance.now();
-      };
-      chatEl.addEventListener("wheel", markUserScroll, { passive: true });
-      chatEl.addEventListener("touchstart", markUserScroll, { passive: true });
-      chatEl.addEventListener("touchmove", markUserScroll, { passive: true });
-      chatEl.addEventListener("pointerdown", markUserScroll, { passive: true });
-      onCleanup(() => {
-        chatEl.removeEventListener("wheel", markUserScroll);
-        chatEl.removeEventListener("touchstart", markUserScroll);
-        chatEl.removeEventListener("touchmove", markUserScroll);
-        chatEl.removeEventListener("pointerdown", markUserScroll);
-      });
-    }
-    if (chatContent) followObserver?.observe(chatContent);
-    if (chatEl) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (chatAtBottom.current && chatTranscriptEl()) {
-            scrollChatTranscriptToBottom();
-          }
-        });
-      });
-    }
-  });
 
   async function refreshWorkspaces() {
     if (workspacesRefreshInFlight) return workspacesRefreshInFlight;
@@ -1289,12 +1114,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const created = await props.ctx.runtime.sessionNew?.();
     if (created?.sessionID) {
       userSelectedSession = true;
-      await props.ctx.runtime.sessionAttach?.(created.sessionID);
-      setSelectedSessionID(created.sessionID);
+      const nextSessionID = created.sessionID;
+      setSelectedSessionID(nextSessionID);
       setSelectedSession("新会话");
-      void loadPerSessionModelConfig(created.sessionID);
+      await props.ctx.runtime.sessionAttach?.(nextSessionID);
+      void loadPerSessionModelConfig(nextSessionID);
     }
     await refreshWorkspaces();
+    // A refresh requested before sessionNew may still be in flight. Drop it so
+    // the newly created session cannot be missed by a stale list response.
+    sessionsRefreshInFlight = undefined;
     await refreshSessions();
   }
 
@@ -1363,28 +1192,96 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
   }
 
+  function workspaceIDForSessionID(sessionID: string): string | undefined {
+    const fromList = sessionList().find(
+      (session) => session.id === sessionID,
+    )?.workspaceID;
+    if (fromList) return fromList;
+    const fromState = state().sessions.find(
+      (session) => session.id === sessionID,
+    )?.workspaceID;
+    if (fromState) return fromState;
+    if (sessionID === selectedSessionID() || sessionID === state().sessionID)
+      return state().activeWorkspaceID;
+    return undefined;
+  }
+
+  async function attachAndSelectSession(session: {
+    id: string;
+    title: string;
+  }): Promise<void> {
+    const attach = props.ctx.runtime.sessionAttach;
+    if (typeof attach !== "function")
+      throw new Error("当前 runtime 不支持会话切换。");
+    // Select locally before awaiting attach: the web runtime emits
+    // `natalia:session-attached` from inside the attach promise, and the
+    // hydration listener reads selectedSessionID() at that moment. Updating the
+    // signals afterwards makes hydration load the previous session even though
+    // the tree already shows the new one.
+    const previousID = selectedSessionID();
+    const previousTitle = selectedSession();
+    const previousUserSelected = userSelectedSession;
+    userSelectedSession = true;
+    setSelectedSessionID(session.id);
+    setSelectedSession(session.title);
+    try {
+      await attach(session.id);
+      void loadPerSessionModelConfig(session.id);
+    } catch (error) {
+      userSelectedSession = previousUserSelected;
+      setSelectedSessionID(previousID);
+      setSelectedSession(previousTitle);
+      throw error;
+    }
+  }
+
+  async function switchAwayFromSession(targetID: string): Promise<boolean> {
+    const findOther = (list: RuntimeSessionSummary[]) => {
+      const candidates = list.filter(
+        (session) => session.id !== targetID && !session.archived,
+      );
+      if (!candidates.length) return undefined;
+      const targetWorkspaceID = workspaceIDForSessionID(targetID);
+      if (targetWorkspaceID) {
+        const sameWorkspace = candidates.find(
+          (session) => session.workspaceID === targetWorkspaceID,
+        );
+        if (sameWorkspace) return sameWorkspace;
+      }
+      return candidates[0];
+    };
+    let other = findOther(sessionList());
+    if (!other) {
+      // A stale/short list must not force a brand-new session when older
+      // sessions already exist. Refresh once before falling back to creation.
+      sessionsRefreshInFlight = undefined;
+      await refreshSessions();
+      other = findOther(sessionList());
+    }
+    if (!other) other = findOther(state().sessions);
+    if (other) {
+      await attachAndSelectSession(other);
+      return true;
+    }
+    const created = await props.ctx.runtime.sessionNew?.();
+    if (!created?.sessionID) return false;
+    await attachAndSelectSession({
+      id: created.sessionID,
+      title: "新会话",
+    });
+    return true;
+  }
+
   async function archiveSession(targetID: string) {
     try {
-      if (targetID === selectedSessionID() && selectedSessionIsActive()) {
-        const other = sessionList().find(
-          (session) => session.id !== targetID && !session.archived,
-        );
-        if (other) {
-          await props.ctx.runtime.sessionAttach?.(other.id);
-          setSelectedSessionID(other.id);
-          setSelectedSession(other.title);
-        } else {
-          const created = await props.ctx.runtime.sessionNew?.();
-          if (!created?.sessionID) {
-            props.ctx.runtime.diagnostic?.(
-              "移除当前唯一会话前需要先创建并切换到新会话，但当前 runtime 不支持。",
-              "warning",
-            );
-            return;
-          }
-          await props.ctx.runtime.sessionAttach?.(created.sessionID);
-          setSelectedSessionID(created.sessionID);
-          setSelectedSession("新会话");
+      if (targetID === selectedSessionID()) {
+        const switched = await switchAwayFromSession(targetID);
+        if (!switched) {
+          props.ctx.runtime.diagnostic?.(
+            "归档当前会话前需要先创建或切换到其他会话，但当前 runtime 不支持。",
+            "warning",
+          );
+          return;
         }
       }
       await props.ctx.runtime.sessionArchive?.(targetID);
@@ -1449,13 +1346,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   async function switchAwayFromActiveIfNeeded(ids: string[]) {
     const active = state().sessionID;
     if (!active || !ids.includes(active)) return true;
-    const other = sessionList().find(
+    const activeWorkspaceID =
+      workspaceIDForSessionID(active) ?? state().activeWorkspaceID;
+    const candidates = sessionList().filter(
       (session) => !ids.includes(session.id) && !session.archived,
     );
+    const other =
+      (activeWorkspaceID
+        ? candidates.find(
+            (session) => session.workspaceID === activeWorkspaceID,
+          )
+        : undefined) ?? candidates[0];
     if (other) {
-      await props.ctx.runtime.sessionAttach?.(other.id);
-      setSelectedSessionID(other.id);
-      setSelectedSession(other.title);
+      await attachAndSelectSession(other);
       return true;
     }
     const created = await props.ctx.runtime.sessionNew?.();
@@ -1466,9 +1369,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       );
       return false;
     }
-    await props.ctx.runtime.sessionAttach?.(created.sessionID);
-    setSelectedSessionID(created.sessionID);
-    setSelectedSession("新会话");
+    await attachAndSelectSession({
+      id: created.sessionID,
+      title: "新会话",
+    });
     return true;
   }
 
@@ -1647,36 +1551,38 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     ) {
       return;
     }
+    const deleteSession = props.ctx.runtime.sessionDelete;
+    if (typeof deleteSession !== "function") {
+      await alert({
+        title: "删除失败",
+        message: "当前 runtime 不支持彻底删除会话。",
+      });
+      return;
+    }
     try {
-      if (selectedSessionIsActive()) {
-        const other = sessionList().find(
-          (session) => session.id !== targetID && !session.archived,
-        );
-        if (other) {
-          await props.ctx.runtime.sessionAttach?.(other.id);
-          setSelectedSessionID(other.id);
-          setSelectedSession(other.title);
-        } else {
-          const created = await props.ctx.runtime.sessionNew?.();
-          if (!created?.sessionID) {
-            props.ctx.runtime.diagnostic?.(
-              "彻底删除当前唯一会话前需要先创建并切换到新会话。",
-              "warning",
-            );
-            return;
-          }
-          await props.ctx.runtime.sessionAttach?.(created.sessionID);
-          setSelectedSessionID(created.sessionID);
-          setSelectedSession("新会话");
+      if (targetID === selectedSessionID()) {
+        const switched = await switchAwayFromSession(targetID);
+        if (!switched) {
+          await alert({
+            title: "删除失败",
+            message: "彻底删除当前会话前无法创建或切换到其他会话。",
+          });
+          return;
         }
       }
-      await props.ctx.runtime.sessionDelete?.(targetID);
+      await deleteSession(targetID);
+      setSessionMenuOpen(false);
       await refreshSessions();
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       props.ctx.runtime.diagnostic?.(
-        `彻底删除会话失败：${error instanceof Error ? error.message : String(error)}`,
+        `彻底删除会话失败：${message}`,
         "warning",
       );
+      await alert({
+        title: "删除失败",
+        message,
+      });
     }
   }
 
@@ -1758,21 +1664,18 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           }
         ).__nataliaReplayingHistory;
         if (replaying) return;
-        const currentSession = selectedSessionID() || state().sessionID;
         if (event.type === "turn.submitted" || event.type === "turn.input") {
           // A turn that starts (or an input injected into one) should be visible.
-          mainForceScroll = true;
-          transcriptAtBottom.current = true;
-          setFollowBottom(true);
+          scrollMainTranscriptToBottom();
+          setShowJumpToBottom(false);
         }
         if (
           (event.type === "navi.chat.message.new" ||
             event.type === "navi.chat.message.added") &&
           event.role === "user"
         ) {
-          chatForceScroll = true;
-          chatAtBottom.current = true;
-          setChatFollowBottom(true);
+          scrollChatTranscriptToBottom();
+          setChatShowJumpToBottom(false);
         }
         if (
           event.type.startsWith("workspace.") ||
@@ -1798,11 +1701,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       loadingOlderHistory = false;
       loadingNewerHistory = false;
       toolOutputCache.clear();
-      transcriptAtBottom.current = true;
-      setFollowBottom(true);
       setShowJumpToBottom(false);
-      chatAtBottom.current = true;
-      setChatFollowBottom(true);
       setChatShowJumpToBottom(false);
       setMainDraft("");
       setChatDraft("");
@@ -2027,20 +1926,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         }
         logStartupSummary();
         void loadSecondaryStartupData();
-        const scrollToBottom = () => {
-          scrollMainTranscriptToBottom();
-          scrollChatTranscriptToBottom();
-        };
-        // Initial layout settles over a few frames (fonts, images, tool cards
-        // and chat/subagent hydration can change scrollHeight after paint).
-        const settleToBottom = (remaining = 5) => {
-          scrollToBottom();
-          if (remaining > 0) {
-            requestAnimationFrame(() => settleToBottom(remaining - 1));
-          }
-        };
-        settleToBottom();
-        setTimeout(scrollToBottom, 250);
+        // One explicit initial tail alignment. Later measurement/data
+        // changes are owned by the shared Transcript controller.
+        scrollMainTranscriptToBottom();
+        scrollChatTranscriptToBottom();
         perfLog(
           `[perf] openUnresolvedInteractives done +${(performance.now() - openStart).toFixed(1)}ms`,
         );
@@ -2079,23 +1968,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     };
     applyTheme();
     createEffect(applyTheme);
-
-    // The keyed Transcript remounts when the resolved session id changes.
-    // Re-apply the pinned-to-bottom position after that remount commits.
-    createEffect(() => {
-      const sessionID = selectedSessionID() || state().sessionID;
-      if (!sessionID) return;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (transcriptAtBottom.current && transcriptEl()) {
-            scrollMainTranscriptToBottom();
-          }
-          if (chatAtBottom.current && chatTranscriptEl()) {
-            scrollChatTranscriptToBottom();
-          }
-        });
-      });
-    });
 
     // Non-critical startup queries are deferred until the primary transcript
     // has painted. Running them before session.messages competes for the
@@ -2280,64 +2152,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return output;
   }
 
-  function captureScrollAnchor(
-    el: HTMLDivElement | undefined,
-  ): ScrollAnchor | undefined {
-    if (!el) return undefined;
-    const containerRect = el.getBoundingClientRect();
-    for (const row of el.querySelectorAll<HTMLElement>("[data-message-id]")) {
-      const rect = row.getBoundingClientRect();
-      if (rect.bottom > containerRect.top && rect.top < containerRect.bottom) {
-        const id = row.dataset.messageId;
-        if (id) return { id, top: rect.top - containerRect.top };
-      }
-    }
-    return undefined;
-  }
-
-  function restoreScrollAnchor(
-    el: HTMLDivElement | undefined,
-    anchor: ScrollAnchor | undefined,
-    ledger: "transcript" | "chat",
-  ) {
-    if (!el || !anchor) return;
-    const row = [...el.querySelectorAll<HTMLElement>("[data-message-id]")].find(
-      (candidate) => candidate.dataset.messageId === anchor.id,
-    );
-    if (!row) {
-      if (debugUiEnabled())
-        console.log("[natalia-ui] transcript anchor missing", {
-          ledger,
-          anchor: anchor.id,
-          mounted: el.querySelectorAll("[data-message-id]").length,
-        });
-      return;
-    }
-    const containerRect = el.getBoundingClientRect();
-    const rowRect = row.getBoundingClientRect();
-    el.scrollTop =
-      el.scrollTop + (rowRect.top - containerRect.top) - anchor.top;
-    if (debugUiEnabled())
-      console.log("[natalia-ui] transcript anchor restored", {
-        ledger,
-        anchor: anchor.id,
-        top: anchor.top,
-        scrollTop: el.scrollTop,
-      });
-    if (ledger === "transcript") {
-      transcriptObservedTop = el.scrollTop;
-      transcriptObservedHeight = el.scrollHeight;
-    } else {
-      chatObservedTop = el.scrollTop;
-      chatObservedHeight = el.scrollHeight;
-    }
-  }
-
   async function loadOlderHistory() {
     if (!historyCursor || loadingOlderHistory || !historyReplayDone) return;
     loadingOlderHistory = true;
-    const anchor = captureScrollAnchor(transcriptEl());
-    transcriptPagingAnchor = anchor;
     try {
       const page = await props.ctx.runtime.messages?.({
         cursor: historyCursor,
@@ -2353,13 +2170,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       historyCursor = page.cursor.next;
     } finally {
       loadingOlderHistory = false;
-      const pendingAnchor = transcriptPagingAnchor;
-      transcriptPagingAnchor = undefined;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() =>
-          restoreScrollAnchor(transcriptEl(), pendingAnchor, "transcript"),
-        );
-      });
     }
   }
 
@@ -2385,128 +2195,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     }
   }
 
-  function handleTranscriptScroll() {
-    const scrollStart = performance.now();
-    const el = transcriptEl();
-    if (!el) return;
-    if (resizing()) {
-      transcriptObservedTop = el.scrollTop;
-      transcriptObservedHeight = el.scrollHeight;
-      return;
-    }
-    const heightChanged =
-      Math.abs(el.scrollHeight - transcriptObservedHeight) > 1;
-    const userScrolled =
-      performance.now() - transcriptLastUserScrollAt < followBreakWaitMs;
-    const floor = Math.max(0, el.scrollHeight - el.clientHeight);
-    const ledger = Math.min(transcriptObservedTop, floor);
-    const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
-
-    if (heightChanged && !userScrolled) {
-      // Content/layout growth can change scrollTop without the reader moving.
-      // Preserve the pin state and snap back when the reader was at the tip.
-      transcriptObservedTop = el.scrollTop;
-      transcriptObservedHeight = el.scrollHeight;
-      if (transcriptAtBottom.current) {
-        scrollMainTranscriptToBottom();
-        setFollowBottom(true);
-        setShowJumpToBottom(false);
-      }
-      if (el.scrollTop < 80) void loadOlderHistory();
-      return;
-    }
-
-    if (!movedByReader) {
-      if (nearBottom) {
-        scrollMainTranscriptToBottom();
-        transcriptAtBottom.current = true;
-        setFollowBottom(true);
-        setShowJumpToBottom(false);
-      }
-      transcriptObservedTop = el.scrollTop;
-      transcriptObservedHeight = el.scrollHeight;
-      return;
-    }
-
-    transcriptAtBottom.current = nearBottom;
-    setFollowBottom(nearBottom);
-    setShowJumpToBottom(!nearBottom);
-    transcriptObservedTop = el.scrollTop;
-    transcriptObservedHeight = el.scrollHeight;
-    if (el.scrollTop < 80) void loadOlderHistory();
-    const scrollMs = performance.now() - scrollStart;
-    if (scrollMs > 16)
-      perfLog(
-        `[perf] renderer scroll transcript ${scrollMs.toFixed(1)}ms scrollTop=${el.scrollTop} height=${el.scrollHeight}`,
-      );
-  }
-
   function jumpToBottom() {
-    if (!transcriptEl()) return;
     scrollMainTranscriptToBottom();
-    transcriptAtBottom.current = true;
-    setFollowBottom(true);
     setShowJumpToBottom(false);
   }
 
-  function handleChatTranscriptScroll() {
-    const scrollStart = performance.now();
-    const el = chatTranscriptEl();
-    if (!el) return;
-    if (resizing()) {
-      chatObservedTop = el.scrollTop;
-      chatObservedHeight = el.scrollHeight;
-      return;
-    }
-    const heightChanged = Math.abs(el.scrollHeight - chatObservedHeight) > 1;
-    const userScrolled =
-      performance.now() - chatLastUserScrollAt < followBreakWaitMs;
-    const floor = Math.max(0, el.scrollHeight - el.clientHeight);
-    const ledger = Math.min(chatObservedTop, floor);
-    const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
-
-    if (heightChanged && !userScrolled) {
-      chatObservedTop = el.scrollTop;
-      chatObservedHeight = el.scrollHeight;
-      if (chatAtBottom.current) {
-        scrollChatTranscriptToBottom();
-        setChatFollowBottom(true);
-        setChatShowJumpToBottom(false);
-      }
-      return;
-    }
-
-    if (!movedByReader) {
-      if (nearBottom) {
-        scrollChatTranscriptToBottom();
-        chatAtBottom.current = true;
-        setChatFollowBottom(true);
-        setChatShowJumpToBottom(false);
-      }
-      chatObservedTop = el.scrollTop;
-      chatObservedHeight = el.scrollHeight;
-      return;
-    }
-
-    chatAtBottom.current = nearBottom;
-    setChatFollowBottom(nearBottom);
-    setChatShowJumpToBottom(!nearBottom);
-    chatObservedTop = el.scrollTop;
-    chatObservedHeight = el.scrollHeight;
-    const scrollMs = performance.now() - scrollStart;
-    if (scrollMs > 16)
-      perfLog(
-        `[perf] renderer scroll chat ${scrollMs.toFixed(1)}ms scrollTop=${el.scrollTop} height=${el.scrollHeight}`,
-      );
-  }
-
   function jumpChatToBottom() {
-    if (!chatTranscriptEl()) return;
     scrollChatTranscriptToBottom();
-    chatAtBottom.current = true;
-    setChatFollowBottom(true);
     setChatShowJumpToBottom(false);
   }
 
@@ -2846,16 +2541,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       target.removeEventListener("pointerup", finish);
       target.removeEventListener("pointercancel", finish);
       setResizing(false);
-      // ResizeObserver-driven follow-bottom is intentionally suppressed while
-      // dragging. Re-apply the pin once the virtualizer has remeasured.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (transcriptAtBottom.current && transcriptEl())
-            scrollMainTranscriptToBottom();
-          if (chatAtBottom.current && chatTranscriptEl())
-            scrollChatTranscriptToBottom();
-        });
-      });
+      // The Transcript controller pauses follow while resizing and resumes
+      // it only if follow was still true when the drag ended.
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", finish);
@@ -3564,11 +3251,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <div class="neu-pane">
                 <div class="neu-pane-header">
                   <span class="neu-pane-title">Natalia</span>
-                  <span
-                    class="neu-pane-status"
-                    data-running={Boolean(state().natalia.activeTurn)}
-                  >
-                    {state().natalia.activeTurn ? "running" : "idle"}
+                  <span class="neu-pane-header-right">
+                    <ContextMeter
+                      usage={state().natalia.context ?? state().context}
+                      compact
+                    />
+                    <span
+                      class="neu-pane-status"
+                      data-running={Boolean(state().natalia.activeTurn)}
+                    >
+                      {state().natalia.activeTurn ? "running" : "idle"}
+                    </span>
                   </span>
                 </div>
                 <div class="neu-pane-content">
@@ -3583,11 +3276,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         emptyHint="Natalia 会直接处理工作区任务。"
                         assistantName="Natalia"
                         assistantInitial="N"
-                        scrollRef={setTranscriptEl}
                         apiRef={(api) => {
-                          if (api) transcriptApi = api;
+                          transcriptApi = api;
                         }}
-                        onScroll={handleTranscriptScroll}
+                        onFollowChange={(following) =>
+                          setShowJumpToBottom(!following)
+                        }
+                        onNearTop={() => void loadOlderHistory()}
                         loadAttachmentUrl={loadAttachmentUrl}
                         onFork={forkSessionAtTurn}
                         onRollback={rollbackDraftFromMessage}
@@ -3837,11 +3532,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               <div class="neu-pane">
                 <div class="neu-pane-header">
                   <span class="neu-pane-title">Navi</span>
-                  <span
-                    class="neu-pane-status"
-                    data-running={Boolean(naviChatActivity())}
-                  >
-                    {naviChatActivity() ? "running" : "idle"}
+                  <span class="neu-pane-header-right">
+                    <ContextMeter usage={state().navi.context} compact />
+                    <span
+                      class="neu-pane-status"
+                      data-running={Boolean(naviChatActivity())}
+                    >
+                      {naviChatActivity() ? "running" : "idle"}
+                    </span>
                   </span>
                 </div>
                 <div class="neu-pane-content">
@@ -3856,11 +3554,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         emptyHint="Navi 用于规划和审查，不直接操作工作区。"
                         assistantName="Navi"
                         assistantInitial="V"
-                        scrollRef={setChatTranscriptEl}
                         apiRef={(api) => {
-                          if (api) chatTranscriptApi = api;
+                          chatTranscriptApi = api;
                         }}
-                        onScroll={handleChatTranscriptScroll}
+                        onFollowChange={(following) =>
+                          setChatShowJumpToBottom(!following)
+                        }
                         loadAttachmentUrl={loadAttachmentUrl}
                         suspendVirtualization={resizing()}
                       />

@@ -9,12 +9,15 @@ import {
 import type { JSX } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { marked } from "marked";
-import type { Attachment, Message } from "./message";
+import type { Attachment, Message, ToolCall } from "./message";
+import { TailScrollController } from "./scroll-controller";
 
 const VIRTUALIZE_THRESHOLD = 80;
-const VIRTUAL_OVERSCAN = 8;
+const VIRTUAL_OVERSCAN = 24;
 const VIRTUAL_ROW_GAP = 6;
 const VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX = 600;
+const TOOL_OUTPUT_COLLAPSE_LINES = 14;
+const TOOL_OUTPUT_PREVIEW_LINES = 10;
 
 function uiDebugEnabled() {
   try {
@@ -46,6 +49,10 @@ export interface TranscriptHandle {
   ): void;
   /** Force TanStack Virtual to re-measure mounted rows. */
   measure(): void;
+  /** Whether new data currently follows the tail. */
+  isFollowing(): boolean;
+  /** Immediately leave tail-follow mode without changing the scroll offset. */
+  breakFollow(): void;
 }
 
 export interface TranscriptProps {
@@ -55,7 +62,12 @@ export interface TranscriptProps {
   assistantName?: string;
   assistantInitial?: string;
   scrollRef?: (el: HTMLDivElement | undefined) => void;
+  /** Observation-only native scroll callback. Follow decisions live in kit. */
   onScroll?: (event: Event) => void;
+  /** Notified when the shared tail-follow state changes. */
+  onFollowChange?: (following: boolean) => void;
+  /** Called when the reader is near the top so hosts can page older history. */
+  onNearTop?: (scrollTop: number) => void;
   loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
   onFork?: (turnID: string) => void;
   onRollback?: (message: Message) => void;
@@ -69,6 +81,7 @@ export interface TranscriptProps {
 export function Transcript(props: TranscriptProps) {
   const [scrollEl, setScrollEl] = createSignal<HTMLDivElement>();
   const virtualize = () => props.messages.length > VIRTUALIZE_THRESHOLD;
+  let controller: TailScrollController | undefined;
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return props.messages.length;
@@ -77,7 +90,10 @@ export function Transcript(props: TranscriptProps) {
     estimateSize: (index) => estimateMessageHeight(props.messages[index]!),
     getItemKey: (index) => props.messages[index]?.id ?? index,
     anchorTo: "end",
-    scrollEndThreshold: 2,
+    // Follow is owned exclusively by TailScrollController. Disable
+    // TanStack's hidden at-end correction and dynamic measurement
+    // compensation so a first measurement cannot push the reader down.
+    scrollEndThreshold: -1,
     initialRect: {
       width: 0,
       height: VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX,
@@ -87,7 +103,11 @@ export function Transcript(props: TranscriptProps) {
     },
     gap: VIRTUAL_ROW_GAP,
     overscan: VIRTUAL_OVERSCAN,
+    onChange: () => {
+      controller?.notifyDataChanged();
+    },
   });
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
 
   let pendingScrollEl: HTMLDivElement | undefined;
   const setScrollRef = (el: HTMLDivElement | null) => {
@@ -139,7 +159,10 @@ export function Transcript(props: TranscriptProps) {
     const items = virtualItems();
     return (
       items.length > 0 &&
-      items.every((item) => props.messages[item.index] !== undefined)
+      items.every(
+        (item) =>
+          item !== undefined && props.messages[item.index] !== undefined,
+      )
     );
   };
   const topSpacer = () => {
@@ -152,13 +175,48 @@ export function Transcript(props: TranscriptProps) {
     return last ? Math.max(0, totalSize() - last.end) : 0;
   };
 
+  controller = new TailScrollController({
+    getScrollElement: () => scrollEl(),
+    scrollToEnd: (options) => {
+      if (virtualize() && liveVirtualItems().length > 0) {
+        virtualizer.scrollToEnd({ behavior: options?.behavior ?? "auto" });
+      } else {
+        const el = scrollEl();
+        if (el) el.scrollTop = el.scrollHeight;
+      }
+    },
+    scrollToIndex: (index, options) => {
+      if (props.messages.length === 0) return;
+      const target = Math.max(0, Math.min(index, props.messages.length - 1));
+      const el = scrollEl();
+      if (el && virtualize() && liveVirtualItems().length > 0) {
+        virtualizer.scrollToIndex(target, {
+          align: options?.align ?? "auto",
+          behavior: options?.behavior ?? "auto",
+        });
+        return;
+      }
+      const row = el?.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(props.messages[target]?.id ?? "")}"]`,
+      );
+      if (el && row) {
+        el.scrollTop +=
+          row.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      }
+    },
+    distanceThreshold: 2,
+    nearTopThreshold: 80,
+    isPaused: () => props.suspendVirtualization === true,
+    onFollowChange: (following) => props.onFollowChange?.(following),
+    onNearTop: (scrollTop) => {
+      if (props.onNearTop === undefined) return;
+      controller?.captureOlderAnchor();
+      props.onNearTop(scrollTop);
+    },
+  });
+
   const scrollToBottom = (options?: { behavior?: ScrollBehavior }) => {
-    const el = scrollEl();
-    if (el && virtualize() && liveVirtualItems().length > 0) {
-      virtualizer.scrollToEnd({ behavior: options?.behavior ?? "auto" });
-      return;
-    }
-    if (el) el.scrollTop = el.scrollHeight;
+    controller?.scrollToBottom(options);
   };
   const scrollToIndex = (
     index: number,
@@ -167,29 +225,60 @@ export function Transcript(props: TranscriptProps) {
       behavior?: ScrollBehavior;
     },
   ) => {
-    if (props.messages.length === 0) return;
-    const target = Math.max(0, Math.min(index, props.messages.length - 1));
-    const el = scrollEl();
-    if (el && virtualize() && liveVirtualItems().length > 0) {
-      virtualizer.scrollToIndex(target, {
-        align: options?.align ?? "auto",
-        behavior: options?.behavior ?? "auto",
-      });
-      return;
-    }
-    const row = el?.querySelector<HTMLElement>(
-      `[data-message-id="${CSS.escape(props.messages[target]?.id ?? "")}"]`,
-    );
-    if (el && row) {
-      el.scrollTop +=
-        row.getBoundingClientRect().top - el.getBoundingClientRect().top;
-    }
+    controller?.scrollToIndex(index, options);
   };
   const api: TranscriptHandle = {
     scrollToBottom,
     scrollToIndex,
     measure: () => virtualizer.measure(),
+    isFollowing: () => controller?.isFollowing() ?? true,
+    breakFollow: () => controller?.breakFollow(),
   };
+
+  createEffect(() => {
+    const el = scrollEl();
+    if (!el || controller === undefined) return;
+    // The ref commit can land after the first data effect. Re-request a
+    // follow pass once the scroll element is actually observable.
+    controller.notifyDataChanged();
+  });
+
+  let lastMessageIds: string[] | undefined;
+  createEffect(() => {
+    const ids = props.messages.map((message) => message.id);
+    const previous = lastMessageIds;
+    lastMessageIds = ids;
+    if (controller === undefined) return;
+    if (previous === undefined) {
+      controller.scrollToBottom({ behavior: "auto" });
+      return;
+    }
+    if (ids.length === 0) {
+      // Empty transcripts cannot scroll, so there is no tail to leave.
+      // Breaking follow here made the jump-to-bottom control appear while
+      // a fresh Navi/Nia pane was still empty.
+      controller.scrollToBottom({ behavior: "auto" });
+      return;
+    }
+    if (previous.length === 0) {
+      controller.scrollToBottom({ behavior: "auto" });
+      return;
+    }
+
+    const previousFirst = previous[0]!;
+    const previousFirstIndex = ids.indexOf(previousFirst);
+    if (previousFirstIndex > 0) {
+      // Older history was prepended in front of the current viewport.
+      controller.restoreOlderAnchor();
+      return;
+    }
+    if (ids[0] !== previousFirst) {
+      // Whole transcript/session replacement.
+      controller.scrollToBottom({ behavior: "auto" });
+      return;
+    }
+    controller.notifyDataChanged();
+  });
 
   onMount(() => {
     props.apiRef?.(api);
@@ -199,7 +288,10 @@ export function Transcript(props: TranscriptProps) {
       virtualizeThreshold: VIRTUALIZE_THRESHOLD,
     });
   });
-  onCleanup(() => props.apiRef?.(undefined));
+  onCleanup(() => {
+    controller?.dispose();
+    props.apiRef?.(undefined);
+  });
 
   let lastVirtualScrollEl: HTMLDivElement | undefined;
   let lastVirtualEnabled = false;
@@ -220,6 +312,7 @@ export function Transcript(props: TranscriptProps) {
 
   const handleScroll = (event: Event) => {
     const startedAt = performance.now();
+    controller?.onScroll(event);
     props.onScroll?.(event);
     if (!uiDebugEnabled()) return;
     const el = scrollEl();
@@ -233,6 +326,31 @@ export function Transcript(props: TranscriptProps) {
       firstMounted: mounted[0]?.index,
       lastMounted: mounted.at(-1)?.index,
     });
+  };
+
+  const handleWheel = (event: WheelEvent) => {
+    if (Math.abs(event.deltaY) < 1) return;
+    const el = scrollEl();
+    if (el) {
+      const atBottom = el.scrollHeight - el.clientHeight - el.scrollTop <= 2;
+      // Scrolling further down at the physical bottom is not a reason to
+      // leave follow mode.
+      if (atBottom && event.deltaY > 0) return;
+    }
+    controller?.onUserIntent();
+  };
+
+  const handleUserIntentStart = () => {
+    controller?.onUserIntent();
+  };
+
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    controller?.onUserIntent();
+  };
+
+  const handleUserIntentEnd = () => {
+    controller?.reconcile();
   };
 
   createEffect(() => {
@@ -268,7 +386,9 @@ export function Transcript(props: TranscriptProps) {
     const suspended = props.suspendVirtualization === true;
     if (lastSuspended && !suspended) {
       requestAnimationFrame(() => {
-        if (!props.suspendVirtualization) virtualizer.measure();
+        if (props.suspendVirtualization) return;
+        virtualizer.measure();
+        controller?.notifyDataChanged();
       });
     }
     lastSuspended = suspended;
@@ -317,7 +437,18 @@ export function Transcript(props: TranscriptProps) {
   });
 
   return (
-    <div class="natalia-transcript" ref={setScrollRef} onScroll={handleScroll}>
+    <div
+      class="natalia-transcript"
+      ref={setScrollRef}
+      onScroll={handleScroll}
+      onWheel={handleWheel}
+      onTouchStart={handleUserIntentStart}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handleUserIntentEnd}
+      onPointerCancel={handleUserIntentEnd}
+      onTouchEnd={handleUserIntentEnd}
+      onTouchCancel={handleUserIntentEnd}
+    >
       <div class="natalia-transcript-content">
         <Show
           when={props.messages.length > 0}
@@ -367,18 +498,21 @@ export function Transcript(props: TranscriptProps) {
               />
             </Show>
             <For each={virtualItems()}>
-              {(item) => (
-                <MessageGroup
-                  message={props.messages[item.index]!}
-                  virtualIndex={item.index}
-                  assistantName={props.assistantName}
-                  assistantInitial={props.assistantInitial}
-                  loadAttachmentUrl={props.loadAttachmentUrl}
-                  onFork={props.onFork}
-                  onRollback={props.onRollback}
-                  rowRef={virtualizer.measureElement}
-                />
-              )}
+              {(item) =>
+                item === undefined ||
+                props.messages[item.index] === undefined ? null : (
+                  <MessageGroup
+                    message={props.messages[item.index]!}
+                    virtualIndex={item.index}
+                    assistantName={props.assistantName}
+                    assistantInitial={props.assistantInitial}
+                    loadAttachmentUrl={props.loadAttachmentUrl}
+                    onFork={props.onFork}
+                    onRollback={props.onRollback}
+                    rowRef={virtualizer.measureElement}
+                  />
+                )
+              }
             </For>
             <Show when={bottomSpacer() > 0}>
               <div
@@ -394,14 +528,92 @@ export function Transcript(props: TranscriptProps) {
   );
 }
 
-function estimateMessageHeight(message: Message): number {
-  const attachments = message.attachments?.length ?? 0;
-  const toolCalls = message.toolCalls?.length ?? 0;
-  const contentLines = Math.max(1, Math.ceil(message.content.length / 110));
-  if (attachments > 0) return 220 + Math.min(180, contentLines * 20);
-  if (toolCalls > 0) return 160 + Math.min(240, contentLines * 22);
-  if (message.thinking) return 100 + Math.min(160, contentLines * 20);
-  return 64 + Math.min(180, contentLines * 22);
+const MESSAGE_BASE_HEIGHT = 66;
+const MESSAGE_LINE_HEIGHT = 21.5;
+const THINKING_BLOCK_HEIGHT = 46;
+const TOOL_CARD_BASE_HEIGHT = 48;
+const TOOL_OUTPUT_LINE_HEIGHT = 19;
+const ATTACHMENT_GAP = 8;
+
+function wrappedLineCount(text: string, charsPerLine: number): number {
+  if (text === "") return 0;
+  let lines = 0;
+  for (const rawLine of text.split("\n")) {
+    lines += Math.max(1, Math.ceil(rawLine.length / charsPerLine));
+  }
+  return lines;
+}
+
+function estimatedTextHeight(
+  text: string,
+  charsPerLine: number,
+  lineHeight: number,
+): number {
+  if (text === "") return 0;
+  return wrappedLineCount(text, charsPerLine) * lineHeight;
+}
+
+function estimateMarkdownBodyHeight(text: string): number {
+  let height = 0;
+  let inFence = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*```/u.test(line)) {
+      height += 22;
+      inFence = !inFence;
+      continue;
+    }
+    // Fenced code has horizontal scrolling (`overflow-x: auto`) instead of
+    // wrapping long lines, so do not inflate an unbroken 2000-character line
+    // into dozens of estimated rows.
+    height += inFence
+      ? 19
+      : Math.max(1, Math.ceil(line.length / 96)) * MESSAGE_LINE_HEIGHT;
+  }
+  return height;
+}
+
+function estimateAttachmentHeight(attachment: Attachment): number {
+  const width = attachment.width ?? 160;
+  const height = attachment.height ?? 120;
+  const scale = Math.min(1, 240 / Math.max(width, height));
+  return Math.max(48, Math.round(height * scale));
+}
+
+/**
+ * Estimate a rich message group closely enough that the virtualizer does not
+ * first discover a 5000px tool output while the reader is scrolling upward.
+ * Measurements still refine the exact height, but the initial estimate must
+ * account for tool output, thinking, markdown/code lines, and attachments.
+ */
+export function estimateMessageHeight(message: Message): number {
+  let height = MESSAGE_BASE_HEIGHT;
+
+  // Thinking replaces the ordinary body in MessageRow, so use its own block
+  // metrics plus the thought text line count.
+  if (message.thinking) {
+    height +=
+      THINKING_BLOCK_HEIGHT + estimateMarkdownBodyHeight(message.content);
+  } else if (message.content !== "") {
+    height += estimateMarkdownBodyHeight(message.content);
+  }
+
+  for (const toolCall of message.toolCalls ?? []) {
+    const output = toolCall.output ?? toolCall.summary ?? "";
+    const outputLines = wrappedLineCount(output, 110);
+    const collapsible =
+      outputLines > TOOL_OUTPUT_COLLAPSE_LINES || output.length > 2_000;
+    height +=
+      TOOL_CARD_BASE_HEIGHT +
+      (collapsible
+        ? 16 + TOOL_OUTPUT_PREVIEW_LINES * TOOL_OUTPUT_LINE_HEIGHT + 28
+        : estimatedTextHeight(output, 110, TOOL_OUTPUT_LINE_HEIGHT));
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    height += estimateAttachmentHeight(attachment) + ATTACHMENT_GAP;
+  }
+
+  return Math.max(MESSAGE_BASE_HEIGHT, Math.ceil(height));
 }
 
 function MessageGroup(props: {
@@ -415,13 +627,21 @@ function MessageGroup(props: {
   rowRef?: (el: HTMLDivElement) => void;
   style?: JSX.CSSProperties;
 }) {
+  const setRowRef = (el: HTMLDivElement) => {
+    // Solid can call the ref before dynamic data-* attributes are patched.
+    // TanStack needs data-index synchronously when measureElement runs.
+    if (props.virtualIndex !== undefined) {
+      el.setAttribute("data-index", String(props.virtualIndex));
+    }
+    props.rowRef?.(el);
+  };
   return (
     <div
       class="natalia-message-group"
       data-role={props.message.role}
       data-message-id={props.message.id}
       data-index={props.virtualIndex}
-      ref={props.rowRef}
+      ref={setRowRef}
       style={props.style}
     >
       <MessageRow
@@ -669,6 +889,64 @@ function sessionTurnID(messageID: string) {
   return messageID.replace(/:(?:user|assistant|thinking|system)$/u, "");
 }
 
+function ToolCallCard(props: { toolCall: ToolCall }) {
+  const [expanded, setExpanded] = createSignal(false);
+  const output = () => props.toolCall.output ?? "";
+  const outputLines = () => output().split("\n");
+  const collapsible = () =>
+    outputLines().length > TOOL_OUTPUT_COLLAPSE_LINES ||
+    output().length > 2_000;
+  const shownOutput = () => {
+    if (!collapsible() || expanded()) return output();
+    return outputLines().slice(0, TOOL_OUTPUT_PREVIEW_LINES).join("\n");
+  };
+
+  return (
+    <div class="natalia-tool-card">
+      <div class="natalia-tool-header">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          style="color: var(--accent-primary); flex-shrink: 0;"
+        >
+          <path
+            d="M7 1L3 5L7 9L11 5L7 1Z"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span class="natalia-tool-name">{props.toolCall.name}</span>
+        <Show when={props.toolCall.summary}>
+          <span class="natalia-tool-summary">{props.toolCall.summary}</span>
+        </Show>
+        <span class="natalia-badge natalia-badge-default">
+          {props.toolCall.status ?? "tool"}
+        </span>
+      </div>
+      <Show when={output()}>
+        <div
+          class="natalia-tool-output"
+          data-collapsed={collapsible() && !expanded() ? "true" : undefined}
+        >
+          <pre>{shownOutput()}</pre>
+          <Show when={collapsible()}>
+            <button
+              type="button"
+              class="natalia-tool-output-toggle"
+              onClick={() => setExpanded(!expanded())}
+            >
+              {expanded() ? "收起" : `展开全部（${outputLines().length} 行）`}
+            </button>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
 export function MessageRow(props: MessageRowProps) {
   const isUser = () => props.message.role === "user";
   const isSystem = () => props.message.role === "system";
@@ -781,38 +1059,7 @@ export function MessageRow(props: MessageRowProps) {
       >
         <div class="natalia-tool-calls">
           <For each={props.message.toolCalls}>
-            {(toolCall) => (
-              <div class="natalia-tool-card">
-                <div class="natalia-tool-header">
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 14 14"
-                    fill="none"
-                    style="color: var(--accent-primary); flex-shrink: 0;"
-                  >
-                    <path
-                      d="M7 1L3 5L7 9L11 5L7 1Z"
-                      stroke="currentColor"
-                      stroke-width="1.3"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                  <span class="natalia-tool-name">{toolCall.name}</span>
-                  <Show when={toolCall.summary}>
-                    <span class="natalia-tool-summary">{toolCall.summary}</span>
-                  </Show>
-                  <span class="natalia-badge natalia-badge-default">
-                    {toolCall.status ?? "tool"}
-                  </span>
-                </div>
-                <Show when={toolCall.output}>
-                  <div class="natalia-tool-output">
-                    <pre>{toolCall.output}</pre>
-                  </div>
-                </Show>
-              </div>
-            )}
+            {(toolCall) => <ToolCallCard toolCall={toolCall} />}
           </For>
         </div>
       </Show>

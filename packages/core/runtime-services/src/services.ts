@@ -1,3 +1,4 @@
+import type { TokenMeter } from "@natalia/runtime";
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import type {
   ApprovalResponse,
@@ -319,6 +320,7 @@ export type ProviderRunnerInput = {
   provider(): StreamingProvider | undefined;
   session(): SessionRecord | undefined;
   context(): RuntimeContextLedgerInput;
+  tokenMeter?(): TokenMeter;
   tools(): ToolRegistry;
   attachmentReferences(): Map<string, LocalAttachment[]>;
   attachments: AttachmentService;

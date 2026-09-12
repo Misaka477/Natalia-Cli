@@ -1,5 +1,5 @@
 import type { RuntimeEvent } from "@natalia/contracts";
-import { ContextLedger } from "@natalia/runtime";
+import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { SessionProjection } from "@natalia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
 import type {
@@ -153,6 +153,7 @@ export class SessionRecoveryCoordinator {
       announcedTurnIDs: announcedTurnIDsFrom(session),
       naviChatLedger: new ContextLedger(),
       niaChatLedger: new ContextLedger(),
+      tokenMeter: new TokenMeter(),
       naviPendingQueue: [],
       niaPendingQueue: [],
       naviAbortWakePending: false,

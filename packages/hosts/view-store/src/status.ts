@@ -41,12 +41,39 @@ export function applyStatusEvent(
         `bg:${event.background}`,
       ];
       return true;
-    case "context.status":
-      state.context = event;
+    case "context.status": {
+      const usage: import("./state").ContextUsageView = {
+        used: event.used,
+        max: event.max,
+        source: event.source,
+        thresholdPercent: event.thresholdPercent,
+        reserved: event.reserved,
+        ...(event.trigger === undefined ? {} : { trigger: event.trigger }),
+      };
+      if (event.channel === "navi") state.navi.context = usage;
+      else if (event.channel === "nia") state.nia.context = usage;
+      else state.context = usage;
       state.footer = `context ${event.used}/${event.max} source=${event.source}${
         event.trigger ? ` trigger=${event.trigger}` : ""
       }`;
       return true;
+    }
+    case "context.snapshot": {
+      const usage: import("./state").ContextUsageView = {
+        used: event.projectedTokens ?? event.pressureTokens ?? event.usedTokens,
+        ...(event.contextWindow === undefined
+          ? {}
+          : { max: event.contextWindow }),
+        source: event.source,
+        contextWindow: event.contextWindow,
+        pressureTokens: event.pressureTokens,
+        projectedTokens: event.projectedTokens,
+      };
+      if (event.channel === "navi") state.navi.context = usage;
+      else if (event.channel === "nia") state.nia.context = usage;
+      else state.context = usage;
+      return true;
+    }
     case "context.checkpoint":
       return true;
     case "compaction.begin":

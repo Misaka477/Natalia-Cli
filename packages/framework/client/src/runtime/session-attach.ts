@@ -6,7 +6,7 @@
  * closures to that exec while a background turn of the previous session keeps
  * running. Reads and writes host state through `RuntimeContext` ports.
  */
-import { contextStatusEvent } from "@natalia/runtime";
+import { contextStatusEvent, type TokenMeterMessage } from "@natalia/runtime";
 import { projectSession } from "@natalia/session";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
@@ -19,12 +19,186 @@ import {
 } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
+import { chatProviderMessagesFromHistory } from "./collaboration/chat-turn-common";
+import { ensureSessionFullEvents } from "./session-full-events";
 import { perfLog } from "@natalia/runtime-services";
 
 export function createSessionAttach(ctx: RuntimeContext) {
   return {
     attachSession,
   };
+
+  async function seedStreamContextSnapshots(
+    exec: import("./context").SessionExecutionState,
+  ) {
+    await ensureSessionFullEvents(ctx, exec).catch(() => undefined);
+    const meter = exec.tokenMeter;
+    const latestSnapshot = (
+      channel: "navi" | "nia" | undefined,
+      agentID?: string,
+    ) => {
+      for (let index = exec.session.events.length - 1; index >= 0; index -= 1) {
+        const event = exec.session.events[index];
+        if (
+          event?.type === "context.snapshot" &&
+          event.channel === channel &&
+          event.agentID === agentID
+        )
+          return event;
+      }
+      return undefined;
+    };
+    const publishSnapshot = (data: {
+      channel?: "navi" | "nia";
+      agentID?: string;
+      usedTokens: number;
+      pressureTokens?: number;
+      projectedTokens?: number;
+      contextWindow?: number;
+      source: "estimate" | "provider_usage";
+    }) => {
+      ctx.ports.publishForSession(exec, {
+        type: "context.snapshot",
+        ...data,
+        at: new Date().toISOString(),
+      });
+    };
+    const publishExistingSnapshot = (snapshot: {
+      channel?: "navi" | "nia";
+      agentID?: string;
+      usedTokens: number;
+      pressureTokens?: number;
+      projectedTokens?: number;
+      contextWindow?: number;
+      source: "estimate" | "provider_usage";
+    }) =>
+      publishSnapshot({
+        ...(snapshot.channel ? { channel: snapshot.channel } : {}),
+        ...(snapshot.agentID ? { agentID: snapshot.agentID } : {}),
+        usedTokens: snapshot.usedTokens,
+        ...(snapshot.pressureTokens === undefined
+          ? {}
+          : { pressureTokens: snapshot.pressureTokens }),
+        ...(snapshot.projectedTokens === undefined
+          ? {}
+          : { projectedTokens: snapshot.projectedTokens }),
+        ...(snapshot.contextWindow === undefined
+          ? {}
+          : { contextWindow: snapshot.contextWindow }),
+        source: snapshot.source,
+      });
+    const chatContextWindow = async (channel: "navi" | "nia") => {
+      const config = ctx.ports.getTsRuntimeConfig();
+      const profile =
+        channel === "navi"
+          ? exec.naviChatModelProfile?.normal
+          : exec.niaChatModelProfile?.normal;
+      if (!config || !exec.provider) return exec.runtimeContextConfig.max;
+      try {
+        const budget = await ctx.ports.resolveContextStatusConfig(
+          config,
+          exec.provider,
+          ctx.ports.getContextWindowResolver(),
+          ctx.ports.modelRefKeyForSelection(undefined, profile),
+        );
+        return budget.max;
+      } catch {
+        return exec.runtimeContextConfig.max;
+      }
+    };
+    for (const channel of ["navi", "nia"] as const) {
+      const existing = latestSnapshot(channel);
+      // Attach no longer replays the full durable log, so an existing durable
+      // snapshot must be re-published to the live sink or the UI would never
+      // see it after a restart. Republish it verbatim instead of inventing a
+      // fresh estimate; if it lacks a context window the meter cannot render,
+      // so fall through and compute a usable one below.
+      if (existing && (existing.contextWindow ?? 0) > 0) {
+        publishExistingSnapshot(existing);
+        continue;
+      }
+      const messages = chatProviderMessagesFromHistory(exec, channel);
+      if (!messages.length) continue;
+      const scope = `chat:${channel}`;
+      const contextWindow = await chatContextWindow(channel);
+      meter.measureRequest(scope, {
+        tools: undefined,
+        messages,
+        contextWindow,
+      });
+      const projection = meter.project(scope);
+      publishSnapshot({
+        channel,
+        usedTokens:
+          projection.projectedTokens ??
+          projection.pressureTokens ??
+          meter.estimateMessages(messages),
+        ...(projection.pressureTokens === undefined
+          ? {}
+          : { pressureTokens: projection.pressureTokens }),
+        ...(projection.projectedTokens === undefined
+          ? {}
+          : { projectedTokens: projection.projectedTokens }),
+        contextWindow,
+        source: projection.source,
+      });
+    }
+
+    const byAgent = new Map<string, TokenMeterMessage[]>();
+    for (const event of exec.session.events) {
+      if (!event.agentID) continue;
+      const messages = byAgent.get(event.agentID) ?? [];
+      byAgent.set(event.agentID, messages);
+      if (
+        (event.type === "content.done" || event.type === "thinking.done") &&
+        event.text
+      ) {
+        messages.push({ role: "assistant", content: event.text });
+      } else if (event.type === "tool.update") {
+        messages.push({
+          role: "assistant",
+          content: [
+            event.name,
+            event.summary,
+            event.argumentsDelta ?? "",
+            event.result ?? "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+      }
+    }
+    for (const [agentID, messages] of byAgent) {
+      const existing = latestSnapshot(undefined, agentID);
+      if (existing && (existing.contextWindow ?? 0) > 0) {
+        publishExistingSnapshot(existing);
+        continue;
+      }
+      if (!messages.length) continue;
+      const scope = `subagent:${agentID}`;
+      meter.observeSurface(scope, messages);
+      meter.measureRequest(scope, {
+        messages,
+        contextWindow: exec.runtimeContextConfig.max,
+      });
+      const projection = meter.project(scope);
+      publishSnapshot({
+        agentID,
+        usedTokens:
+          projection.projectedTokens ??
+          projection.pressureTokens ??
+          meter.estimateMessages(messages),
+        ...(projection.pressureTokens === undefined
+          ? {}
+          : { pressureTokens: projection.pressureTokens }),
+        ...(projection.projectedTokens === undefined
+          ? {}
+          : { projectedTokens: projection.projectedTokens }),
+        contextWindow: exec.runtimeContextConfig.max,
+        source: projection.source,
+      });
+    }
+  }
 
   async function attachSession(id: string) {
     const start = performance.now();
@@ -85,6 +259,19 @@ export function createSessionAttach(ctx: RuntimeContext) {
     const sessionID = getSessionID();
     const nextID = id as SessionID;
     if (nextID === sessionID) {
+      // Startup restores the runtime's already-selected session by attaching to
+      // the same id. Do not skip context seeding just because the id is already
+      // active: legacy journals have no stream context snapshots yet, and the
+      // UI mounts after the runtime was initialized with this session.
+      const activeExec = ctx.ports.getActiveExec();
+      if (activeExec?.session.id === nextID) {
+        void seedStreamContextSnapshots(activeExec).catch(() => undefined);
+      } else {
+        const exec = await ensureExecution(nextID);
+        if (exec.session.metadata?.archived)
+          throw new RuntimeRefusal("cannot attach an archived session");
+        void seedStreamContextSnapshots(exec).catch(() => undefined);
+      }
       perfLog(
         `[perf] attachSession same target=${id} +${(performance.now() - start).toFixed(1)}ms`,
       );
@@ -171,6 +358,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
       exec,
       contextStatusEvent(exec.context.status(exec.runtimeContextConfig)),
     );
+    void seedStreamContextSnapshots(exec).catch(() => undefined);
     mark("context");
     publishForSession(
       exec,

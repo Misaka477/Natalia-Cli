@@ -5,7 +5,11 @@ import type {
   RuntimeReasoningEffort,
   SubmittedTurn,
 } from "@natalia/contracts";
-import { ContextLedger, type StreamingProvider } from "@natalia/runtime";
+import {
+  ContextLedger,
+  TokenMeter,
+  type StreamingProvider,
+} from "@natalia/runtime";
 import type { SessionRecord } from "@natalia/session";
 import type {
   RuntimeContextLedger,
@@ -47,6 +51,7 @@ export type SessionExecutionState = {
   pauseWaiters: Array<() => void>;
   naviChatLedger: ContextLedger;
   niaChatLedger: ContextLedger;
+  tokenMeter: TokenMeter;
   naviChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
   niaChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
   advisorPending?: boolean;

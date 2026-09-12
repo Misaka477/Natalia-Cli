@@ -586,6 +586,57 @@ test("sessions aggregate across workspaces and attach routes to the owner", asyn
   }
 });
 
+test("workspace delete replaces an inactive workspace's active session", async () => {
+  const firstRoot = await officialPluginWorkspace("workspace-delete-active-a");
+  const secondRoot = await officialPluginWorkspace("workspace-delete-active-b");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  const registryPath = join(firstRoot, "workspaces.json");
+  process.env.NATALIA_WORKSPACES_FILE = registryPath;
+  const firstStore = new JsonSessionStore(
+    join(firstRoot, ".natalia", "sessions"),
+  );
+  const secondStore = new JsonSessionStore(
+    join(secondRoot, ".natalia", "sessions"),
+  );
+  const firstSession = createSessionRecord("ses_delete_a", "First");
+  const secondSession = createSessionRecord("ses_delete_b", "Second");
+  await firstStore.save(firstSession);
+  await secondStore.save(secondSession);
+  const manager = createWorkspaceManager({
+    pluginStoreRoot: officialPluginStoreRoot(firstRoot),
+    globalConfigPath: join(firstRoot, "global-config.json"),
+  });
+  try {
+    const first = await manager.workspaceAdd({ path: firstRoot });
+    const second = await manager.workspaceAdd({ path: secondRoot });
+    const client = createWorkspaceRuntimeClient(manager);
+    client.start?.(() => undefined);
+    await client.sessionAttach?.(firstSession.id);
+    await client.sessionAttach?.(secondSession.id);
+    expect(manager.getActive()?.workspaceID).toBe(second.workspaceID);
+
+    // `firstSession` is no longer globally active, but its own workspace
+    // runtime still has it attached. The facade must replace that attachment
+    // before retrying the delete, otherwise the active-session guard wins.
+    await expect(
+      client.sessionDelete?.(firstSession.id),
+    ).resolves.toMatchObject({ id: firstSession.id });
+    expect(await firstStore.load(firstSession.id as never)).toBeUndefined();
+    const remaining = await firstStore.list();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.id).not.toBe(firstSession.id);
+    expect(await manager.workspaceSessionGet(first.workspaceID)).toBe(
+      remaining[0]?.id,
+    );
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
+
 test("load restores the persisted active workspace", async () => {
   const firstRoot = await officialPluginWorkspace("workspace-active-a");
   const secondRoot = await officialPluginWorkspace("workspace-active-b");

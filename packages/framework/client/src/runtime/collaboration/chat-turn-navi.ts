@@ -58,6 +58,19 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
       activeProvider,
       chatModel,
     );
+    const tsRuntimeConfig = ctx.ports.getTsRuntimeConfig();
+    const activeContextBudget = tsRuntimeConfig
+      ? await ctx.ports.resolveContextStatusConfig(
+          tsRuntimeConfig,
+          activeProvider,
+          ctx.ports.getContextWindowResolver(),
+          ctx.ports.modelRefKeyForSelection(undefined, chatModel),
+        )
+      : input.exec.runtimeContextConfig;
+    input.exec.tokenMeter.setContextWindow(
+      `chat:navi`,
+      activeContextBudget.max,
+    );
     const reportAttachmentDiagnostic = (message: string) =>
       ctx.ports.publishForSession(input.exec, {
         type: "diagnostic",
@@ -84,6 +97,28 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
     const publish = (
       event: Extract<ConcreteRuntimeEvent, { type: `navi.chat.${string}` }>,
     ) => publishForSession(input.exec, streamEvent(event));
+    const publishTokenSnapshot = () => {
+      const projection = input.exec.tokenMeter.project("chat:navi");
+      publishForSession(input.exec, {
+        type: "context.snapshot",
+        channel: "navi",
+        usedTokens:
+          projection.projectedTokens ??
+          projection.pressureTokens ??
+          input.exec.naviChatLedger.effectiveTokens(),
+        ...(projection.pressureTokens === undefined
+          ? {}
+          : { pressureTokens: projection.pressureTokens }),
+        ...(projection.projectedTokens === undefined
+          ? {}
+          : { projectedTokens: projection.projectedTokens }),
+        ...(projection.contextWindow === undefined
+          ? {}
+          : { contextWindow: projection.contextWindow }),
+        source: projection.source,
+        at: new Date().toISOString(),
+      });
+    };
     const history = naviChatHistory(input.exec, input.responseMessageID);
     const consumedMessageIDs = history.messageIDs;
     const messages: ProviderMessage[] = [
@@ -241,6 +276,9 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           messages,
           signal,
           {
+            channel: "navi",
+            tools: toolSchemas,
+            contextWindow: activeContextBudget.max,
             compactionID: `navi-chat:${input.exec.session.id}`,
             durableMessages: history.durableMessages,
             instruction:
@@ -281,6 +319,10 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         );
         if (compactedMessages !== messages)
           messages.splice(0, messages.length, ...compactedMessages);
+        publishTokenSnapshot();
+        let providerUsage:
+          | { inputTokens: number; outputTokens: number }
+          | undefined;
         const raw = activeProvider.stream({
           messages: finalOnly
             ? [...messages, { role: "assistant", content: MAX_STEPS_PROMPT }]
@@ -331,6 +373,28 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           if (chunk.type === "tool_protocol_violation")
             protocolViolation = chunk.text;
           if (chunk.type === "done") finishReason = chunk.finishReason;
+          if (chunk.type === "usage")
+            providerUsage = {
+              inputTokens: chunk.inputTokens,
+              outputTokens: chunk.outputTokens,
+            };
+        }
+        if (providerUsage) {
+          const scope = "chat:navi";
+          const system =
+            messages[0]?.role === "system" ? messages[0].content : undefined;
+          input.exec.tokenMeter.setContextWindow(
+            scope,
+            activeContextBudget.max,
+          );
+          input.exec.tokenMeter.recordUsage(scope, providerUsage, {
+            headerKey: JSON.stringify({ system, tools: toolSchemas }),
+            surfaceTokens: input.exec.tokenMeter.observeSurface(
+              scope,
+              messages,
+            ),
+          });
+          publishTokenSnapshot();
         }
         usedTools ||= calls.length > 0;
         if (

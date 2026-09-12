@@ -673,6 +673,55 @@ export function createWorkspaceRuntimeClient(
     if (active) startWorkspaceClient(active);
   }
 
+  function isActiveSessionDeleteRefusal(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      error.message.includes("cannot delete the active runtime session")
+    );
+  }
+
+  /**
+   * The runtime refuses to delete the session it is currently attached to.
+   * When a workspace-scoped call targets that active session, attach another
+   * session in the same workspace before retrying the delete. If the workspace
+   * has only the doomed session, create one replacement so the runtime still
+   * has a live attachment to serve when the workspace is opened again.
+   */
+  async function replaceActiveSessionForDelete(
+    owner: WorkspaceRuntime,
+    sessionID: string,
+  ): Promise<void> {
+    const client = owner.client as RuntimeServiceClient;
+    const sessions = (await client.sessionList?.()) ?? [];
+    const replacement = sessions.find(
+      (session) => session.id !== sessionID && !session.archived,
+    );
+    if (replacement) {
+      if (typeof client.sessionAttach !== "function")
+        throw new Error(
+          "cannot delete the active session: runtime does not support session attach",
+        );
+      await client.sessionAttach(replacement.id);
+      await manager.workspaceSessionSet(owner.workspaceID, replacement.id);
+      return;
+    }
+    if (typeof client.sessionNew !== "function")
+      throw new Error(
+        "cannot delete the active session: runtime does not support creating a replacement session",
+      );
+    const created = await client.sessionNew();
+    if (!created?.sessionID)
+      throw new Error(
+        "cannot delete the active session: runtime did not create a replacement session",
+      );
+    if (typeof client.sessionAttach !== "function")
+      throw new Error(
+        "cannot delete the active session: runtime does not support session attach",
+      );
+    await client.sessionAttach(created.sessionID);
+    await manager.workspaceSessionSet(owner.workspaceID, created.sessionID);
+  }
+
   function emitWorkspace(event: import("@natalia/contracts").RuntimeEvent) {
     emit(event);
   }
@@ -1001,9 +1050,22 @@ export function createWorkspaceRuntimeClient(
           } else {
             startWorkspaceClient(owner);
           }
-          const result = await (
-            fn as (...call: unknown[]) => Promise<unknown>
-          ).apply(owner.client, args);
+          let result: unknown;
+          try {
+            result = await (
+              fn as (...call: unknown[]) => Promise<unknown>
+            ).apply(owner.client, args);
+          } catch (error) {
+            if (
+              prop !== "sessionDelete" ||
+              !isActiveSessionDeleteRefusal(error)
+            )
+              throw error;
+            await replaceActiveSessionForDelete(owner, sessionID);
+            result = await (
+              fn as (...call: unknown[]) => Promise<unknown>
+            ).apply(owner.client, args);
+          }
           manager.invalidateSessionCache(owner.workspaceID);
           if (
             prop === "sessionAttach" &&

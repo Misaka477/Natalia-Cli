@@ -1190,12 +1190,24 @@ type RuntimeEventData =
     }
   | {
       type: "context.status";
+      channel?: ChatChannel;
       used: number;
       max: number;
       source: ContextStatusSource;
       thresholdPercent: number;
       reserved: number;
       trigger?: CompactionTrigger;
+    }
+  | {
+      /** Durable shared TokenMeter projection for one stream. */
+      type: "context.snapshot";
+      channel?: ChatChannel;
+      usedTokens: number;
+      pressureTokens?: number;
+      projectedTokens?: number;
+      contextWindow?: number;
+      source: "estimate" | "provider_usage";
+      at: string;
     }
   | {
       type: "compaction.begin";

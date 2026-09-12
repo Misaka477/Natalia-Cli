@@ -12,7 +12,11 @@ import type {
   RuntimeModelCatalogEntry,
 } from "@natalia/contracts";
 import { type AppState } from "@natalia/view-store";
-import { Transcript } from "@natalia/ui-kit";
+import {
+  ContextMeter,
+  Transcript,
+  type TranscriptHandle,
+} from "@natalia/ui-kit";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
 import type { Attachment, Message } from "./types";
@@ -32,10 +36,7 @@ export function NiaPanel(props: {
   const [reasoning, setReasoning] = createSignal("medium");
   const [busy, setBusy] = createSignal(false);
   const [elapsedMs, setElapsedMs] = createSignal(0);
-  let niaObservedTop = 0;
-  const niaTranscriptRef = createSignal<HTMLDivElement | undefined>(undefined);
-  const [niaTranscriptEl, setNiaTranscriptEl] = niaTranscriptRef;
-  const [niaFollowBottom, setNiaFollowBottom] = createSignal(true);
+  let niaApi: TranscriptHandle | undefined;
   const [niaShowJumpToBottom, setNiaShowJumpToBottom] = createSignal(false);
   let profileLoadToken = 0;
 
@@ -159,88 +160,6 @@ export function NiaPanel(props: {
       // Profile may be unavailable until the runtime is fully ready.
     }
   }
-
-  function handleNiaScroll() {
-    const el = niaTranscriptEl();
-    if (!el) return;
-    if (props.suspendVirtualization) {
-      niaObservedTop = el.scrollTop;
-      return;
-    }
-    const floor = Math.max(0, el.scrollHeight - el.clientHeight);
-    const ledger = Math.min(niaObservedTop, floor);
-    const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
-    if (!movedByReader) {
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
-      if (nearBottom) el.scrollTop = el.scrollHeight;
-      niaObservedTop = el.scrollTop;
-      return;
-    }
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
-    setNiaFollowBottom(nearBottom);
-    setNiaShowJumpToBottom(!nearBottom);
-    niaObservedTop = el.scrollTop;
-  }
-
-  function jumpNiaToBottom() {
-    const el = niaTranscriptEl();
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    niaObservedTop = el.scrollTop;
-    setNiaFollowBottom(true);
-    setNiaShowJumpToBottom(false);
-  }
-
-  const niaObserver =
-    typeof ResizeObserver === "undefined"
-      ? undefined
-      : new ResizeObserver(() => {
-          if (props.suspendVirtualization) return;
-          if (niaFollowBottom() && niaTranscriptEl()) {
-            const el = niaTranscriptEl()!;
-            el.scrollTop = el.scrollHeight;
-            niaObservedTop = el.scrollTop;
-          }
-        });
-  onCleanup(() => niaObserver?.disconnect());
-
-  createEffect(() => {
-    const el = niaTranscriptEl();
-    const content = el?.querySelector<HTMLElement>(
-      ".natalia-transcript-content",
-    );
-    if (el) niaObserver?.observe(el);
-    if (content) niaObserver?.observe(content);
-    if (el) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (props.suspendVirtualization) return;
-          if (niaFollowBottom() && niaTranscriptEl()) {
-            const target = niaTranscriptEl()!;
-            target.scrollTop = target.scrollHeight;
-            niaObservedTop = target.scrollTop;
-          }
-        });
-      });
-    }
-  });
-
-  let lastNiaSuspended = false;
-  createEffect(() => {
-    const suspended = props.suspendVirtualization === true;
-    if (lastNiaSuspended && !suspended) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (niaFollowBottom() && niaTranscriptEl()) {
-            const target = niaTranscriptEl()!;
-            target.scrollTop = target.scrollHeight;
-            niaObservedTop = target.scrollTop;
-          }
-        });
-      });
-    }
-    lastNiaSuspended = suspended;
-  });
 
   async function saveProfile(patch: {
     modelID?: string;
@@ -386,6 +305,7 @@ export function NiaPanel(props: {
       <div class="neu-pane-header">
         <span class="neu-pane-title">Nia</span>
         <span class="neu-pane-header-actions">
+          <ContextMeter usage={props.state.nia.context} compact />
           <span class="neu-pane-status" data-running={Boolean(active())}>
             {active() ? "running" : "idle"}
           </span>
@@ -399,8 +319,10 @@ export function NiaPanel(props: {
             emptyHint="Nia 用于审计，只读、不写代码、不写 Plan。"
             assistantName="Nia"
             assistantInitial="N"
-            scrollRef={setNiaTranscriptEl}
-            onScroll={handleNiaScroll}
+            apiRef={(api) => {
+              niaApi = api;
+            }}
+            onFollowChange={(following) => setNiaShowJumpToBottom(!following)}
             loadAttachmentUrl={props.loadAttachmentUrl}
             suspendVirtualization={props.suspendVirtualization}
           />
@@ -408,7 +330,7 @@ export function NiaPanel(props: {
             <button
               type="button"
               class="neu-jump-bottom"
-              onClick={jumpNiaToBottom}
+              onClick={() => niaApi?.scrollToBottom()}
               title="跳到底部"
             >
               ↓

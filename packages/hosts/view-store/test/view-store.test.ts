@@ -2102,3 +2102,55 @@ test("generic interactive requests project and clear on response", () => {
   });
   expect(state.pendingInteractives).toEqual([]);
 });
+
+test("context snapshots route to their owning stream", () => {
+  const state = initialState();
+  applyEvent(state, {
+    type: "context.snapshot",
+    usedTokens: 100,
+    pressureTokens: 80,
+    projectedTokens: 100,
+    contextWindow: 1_000,
+    source: "provider_usage",
+    at: "t",
+  });
+  expect(state.context?.used).toBe(100);
+  expect(state.context?.max).toBe(1_000);
+  expect(state.natalia.context?.used).toBe(100);
+
+  applyEvent(state, {
+    type: "context.snapshot",
+    channel: "navi",
+    usedTokens: 200,
+    contextWindow: 2_000,
+    source: "estimate",
+    at: "t",
+  });
+  applyEvent(state, {
+    type: "context.snapshot",
+    channel: "nia",
+    usedTokens: 300,
+    contextWindow: 3_000,
+    source: "estimate",
+    at: "t",
+  });
+  expect(state.navi.context?.used).toBe(200);
+  expect(state.navi.context?.max).toBe(2_000);
+  expect(state.nia.context?.used).toBe(300);
+  expect(state.nia.context?.max).toBe(3_000);
+});
+
+test("context snapshots with agentID route to the isolated subagent state", () => {
+  const state = initialState();
+  applyEvent(state, {
+    type: "context.snapshot",
+    agentID: "sub-1",
+    usedTokens: 400,
+    contextWindow: 4_000,
+    source: "provider_usage",
+    at: "t",
+  });
+  expect(state.context).toBeUndefined();
+  expect(state.subagentStates["sub-1"]?.context?.used).toBe(400);
+  expect(state.subagentStates["sub-1"]?.context?.max).toBe(4_000);
+});

@@ -128,7 +128,17 @@ export type CheckpointView = Extract<
   RuntimeEvent,
   { type: "checkpoint.created" }
 >;
-export type ContextView = Extract<RuntimeEvent, { type: "context.status" }>;
+export type ContextUsageView = {
+  used: number;
+  max?: number;
+  source?: string;
+  thresholdPercent?: number;
+  reserved?: number;
+  trigger?: string;
+  pressureTokens?: number;
+  projectedTokens?: number;
+  contextWindow?: number;
+};
 export type PolicyDecisionView = Extract<
   RuntimeEvent,
   { type: "policy.decision" }
@@ -200,6 +210,8 @@ export type AgentStreamState = {
   streams: Record<string, StreamState>;
   streamPhases: Record<string, "thinking" | "assistant">;
   activity?: StreamActivityView;
+  /** Latest shared context measurement for this independent stream. */
+  context?: ContextUsageView;
   /** Baseline captured immediately before an asynchronous durable snapshot. */
   hydrationBaseline?: MessageBlock[];
 };
@@ -289,7 +301,7 @@ export type AppState = {
   rollback?: RollbackView;
 
   // status and advisories
-  context?: ContextView;
+  context?: ContextUsageView;
   compactionBanner?: Banner;
   retryBanner?: Banner;
   agentSelection?: { name?: string; pending: boolean };
@@ -513,6 +525,7 @@ export function synchronizeStreamSlices(state: AppState): void {
     pendingApprovals: state.pendingApprovals,
     pendingQuestions: state.pendingQuestions,
     activities: state.activities,
+    context: state.context,
   });
   Object.assign(state.subagentStream, {
     active: state.subagents,

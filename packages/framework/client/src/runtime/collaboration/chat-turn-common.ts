@@ -201,6 +201,22 @@ export function promptData(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+export function chatProviderMessagesFromHistory(
+  exec: SessionExecutionState,
+  channel: "navi" | "nia",
+): ProviderMessage[] {
+  const history =
+    channel === "navi"
+      ? projectedNaviChatMessages(exec.session.events)
+      : projectedNiaChatMessages(exec.session.events);
+  return history
+    .filter((message) => message.kind !== "thinking")
+    .map((message) => ({
+      role: message.role === "user" ? "user" : "assistant",
+      content: message.text,
+    }));
+}
+
 export function naviChatHistory(
   exec: SessionExecutionState,
   responseMessageID: string,
@@ -272,6 +288,9 @@ export async function compactChatBeforeProviderStep(
   messages: ProviderMessage[],
   signal: AbortSignal,
   stream: {
+    channel: "navi" | "nia";
+    tools?: unknown;
+    contextWindow?: number;
     compactionID: string;
     instruction: string;
     durableMessages: Array<{
@@ -287,7 +306,10 @@ export async function compactChatBeforeProviderStep(
 ) {
   const compaction =
     ctx.ports.resolveService<CompactionService>(COMPACTION_SERVICE);
-  const budget = exec.runtimeContextConfig;
+  const budget =
+    stream.contextWindow === undefined
+      ? exec.runtimeContextConfig
+      : { ...exec.runtimeContextConfig, max: stream.contextWindow };
   if (!compaction || !budget) return messages;
 
   // This ledger is owned by the stream execution state. Incremental updates
@@ -354,11 +376,23 @@ export async function compactChatBeforeProviderStep(
       ) ?? 0),
     0,
   );
+  const system =
+    messages[0]?.role === "system" ? messages[0].content : undefined;
+  const measured = exec.tokenMeter?.measureRequest(`chat:${stream.channel}`, {
+    system,
+    tools: stream.tools,
+    messages,
+    contextWindow: budget.max,
+  });
+  const conservativeUsedTokens = Math.max(
+    usedTokens,
+    measured?.totalTokens ?? 0,
+  );
   const outcome = await compaction.compactBeforeProviderStep({
     compactionID: stream.compactionID,
     ledger,
     provider,
-    usedTokens,
+    usedTokens: conservativeUsedTokens,
     budget,
     enabled: ctx.ports.getTsRuntimeConfig()?.context.compactionEnabled ?? true,
     preservedRecentMessages:
@@ -426,6 +460,19 @@ export async function compactChatBeforeProviderStep(
   });
   if (compactedThroughMessageID)
     stream.publishCompacted(summary, compactedThroughMessageID);
+  // Re-measure after the ledger rewrite: callers publish their token snapshot
+  // immediately below, and the meter must reflect the compacted surface rather
+  // than the pre-compaction request.
+  try {
+    exec.tokenMeter?.measureRequest(`chat:${stream.channel}`, {
+      system: rebuilt[0]?.role === "system" ? rebuilt[0].content : undefined,
+      tools: stream.tools,
+      messages: rebuilt,
+      contextWindow: budget.max,
+    });
+  } catch {
+    // Token accounting must never fail the actual chat turn.
+  }
   ledgerHistories.set(ledger, [...rebuilt]);
   return rebuilt;
 }

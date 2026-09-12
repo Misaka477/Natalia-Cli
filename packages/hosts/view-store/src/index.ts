@@ -84,7 +84,7 @@ export {
   type AgentStreamState,
   type CapabilityView,
   type CheckpointView,
-  type ContextView,
+  type ContextUsageView,
   type McpView,
   type MessageBlock,
   type PendingApproval,
