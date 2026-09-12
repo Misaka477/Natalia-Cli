@@ -6,17 +6,16 @@
  * capability kernel or the host that loads it.
  */
 import {
+  globWorkspaceFilesBounded,
   grepWorkspaceFilesBounded,
   numberOr,
   optionalString,
   requireObject,
   requireString,
-  workspacePath,
   type RuntimeTool,
   type ToolFamily,
 } from "@natalia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import { isAbsolute, relative, sep } from "node:path";
 
 export const SEARCH_PLUGIN_ID = "natalia-tool-search";
 
@@ -24,15 +23,16 @@ function globTool(): RuntimeTool {
   return {
     name: "glob",
     description:
-      "List workspace files matching a Bun glob pattern. Optionally scope the search to a workspace-relative directory with path.",
+      "List workspace files matching a Bun glob pattern. Optionally scope the search to a workspace-relative directory with path. Results are paginated; if the response contains nextCursor, call glob again with the same pattern/path and that cursor until no nextCursor is returned.",
     requiresApproval: false,
+    timeoutSec: 20,
     parameters: {
       type: "object",
       properties: {
         pattern: { type: "string" },
         path: { type: "string" },
         limit: { type: "number" },
-        offset: { type: "number" },
+        cursor: { type: "string" },
       },
       required: ["pattern"],
       additionalProperties: false,
@@ -40,7 +40,11 @@ function globTool(): RuntimeTool {
     output: {
       schema: {
         type: "object",
-        properties: { paths: { type: "array", items: { type: "string" } } },
+        properties: {
+          paths: { type: "array", items: { type: "string" } },
+          truncated: { type: "boolean" },
+          nextCursor: { type: "string" },
+        },
         required: ["paths"],
         additionalProperties: false,
       },
@@ -52,13 +56,22 @@ function globTool(): RuntimeTool {
         };
       },
       presentResult(args, value) {
-        const paths = value
-          .split("\n")
-          .filter((line) => !line.startsWith("..."));
+        let summary = "glob";
+        try {
+          const parsed = JSON.parse(value) as {
+            paths?: unknown[];
+            nextCursor?: string;
+          };
+          const count = parsed.paths?.length ?? 0;
+          summary = count === 0 ? "no matches" : `${count} matches`;
+          if (parsed.nextCursor) summary += " · more";
+        } catch {
+          summary = "glob";
+        }
         return {
           kind: "search",
           title: requireObject(args).pattern as string,
-          summary: `${paths.length} matches`,
+          summary,
           body: value,
         };
       },
@@ -66,34 +79,24 @@ function globTool(): RuntimeTool {
     async execute(input, context) {
       const args = requireObject(input);
       const pattern = requireString(args.pattern, "pattern");
-      if (isAbsolute(pattern) || pattern.includes(".."))
-        throw new Error("glob pattern must remain inside workspace");
-      const scope = optionalString(args.path);
-      const directory = scope
-        ? workspacePath(context.workspaceRoot, scope)
-        : context.workspaceRoot;
-      const base = relative(context.workspaceRoot, directory)
-        .split(sep)
-        .join("/");
-      const paths: string[] = [];
-      for await (const relativePath of new Bun.Glob(pattern).scan({
-        cwd: directory,
-        onlyFiles: true,
-      }))
-        paths.push(base ? `${base}/${relativePath}` : relativePath);
-      paths.sort();
-      const offset = Math.max(0, numberOr(args.offset, 0));
-      const limit = Math.min(1000, Math.max(1, numberOr(args.limit, 200)));
-      const page = paths.slice(offset, offset + limit);
-      await context.workspaceReadAuthorize?.({ toolName: "glob", paths: page });
-      return [
-        ...page,
-        paths.length > offset + limit
-          ? `... ${paths.length - offset - limit} more; use offset=${offset + limit}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      const result = await globWorkspaceFilesBounded({
+        workspaceRoot: context.workspaceRoot,
+        pattern,
+        path: optionalString(args.path),
+        limit: numberOr(args.limit, 200),
+        cursor: optionalString(args.cursor),
+        authorize: context.workspaceReadAuthorize
+          ? (authorization) => context.workspaceReadAuthorize!(authorization)
+          : undefined,
+      });
+      return JSON.stringify({
+        paths: result.paths,
+        truncated: result.truncated,
+        ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+        scannedFiles: result.scannedFiles,
+        scannedBytes: result.scannedBytes,
+        ...(result.timedOut ? { timedOut: true } : {}),
+      });
     },
   };
 }

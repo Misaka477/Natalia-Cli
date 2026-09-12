@@ -38,14 +38,58 @@ test("glob finds the files it should and nothing outside the workspace", async (
   const tools = new Map(
     searchToolFamily().tools.map((tool) => [tool.name, tool]),
   );
-  const listed = await tools
-    .get("glob")!
-    .execute({ pattern: "**/*.ts" }, { workspaceRoot: root });
-  expect(listed).toContain("a.ts");
-  expect(listed).not.toContain("b.js");
+  const listed = JSON.parse(
+    await tools
+      .get("glob")!
+      .execute({ pattern: "**/*.ts" }, { workspaceRoot: root }),
+  ) as { paths: string[] };
+  expect(listed.paths).toContain("a.ts");
+  expect(listed.paths).not.toContain("b.js");
   await expect(
     tools.get("glob")!.execute({ pattern: "../**/*" }, { workspaceRoot: root }),
   ).rejects.toThrow(/must remain inside workspace/u);
+});
+
+test("glob returns a cursor and resumes the next page deterministically", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-glob-pages-"));
+  await writeFile(join(root, "b.txt"), "b\n");
+  await writeFile(join(root, "a.txt"), "a\n");
+  const tools = new Map(
+    searchToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const first = JSON.parse(
+    await tools
+      .get("glob")!
+      .execute({ pattern: "*.txt", limit: 1 }, { workspaceRoot: root }),
+  ) as { paths: string[]; nextCursor?: string };
+  expect(first.paths).toEqual(["a.txt"]);
+  expect(first.nextCursor).toBeString();
+  const second = JSON.parse(
+    await tools
+      .get("glob")!
+      .execute(
+        { pattern: "*.txt", limit: 1, cursor: first.nextCursor },
+        { workspaceRoot: root },
+      ),
+  ) as { paths: string[]; nextCursor?: string };
+  expect(second.paths).toEqual(["b.txt"]);
+  expect(second.nextCursor).toBeUndefined();
+});
+
+test("glob skips derived directories by default", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-glob-ignore-"));
+  await writeFile(join(root, "visible.txt"), "visible\n");
+  await Bun.write(join(root, "node_modules", "hidden.txt"), "hidden\n");
+  await Bun.write(join(root, "devref", "hidden.txt"), "hidden\n");
+  const tools = new Map(
+    searchToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const result = JSON.parse(
+    await tools
+      .get("glob")!
+      .execute({ pattern: "*.txt" }, { workspaceRoot: root }),
+  ) as { paths: string[] };
+  expect(result.paths).toEqual(["visible.txt"]);
 });
 
 test("grep matches a line with its path and number", async () => {

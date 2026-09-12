@@ -1,6 +1,9 @@
 export { validateToolParameters, assertValidToolParameters } from "./validate";
 export {
+  globWorkspaceFilesBounded,
   grepWorkspaceFilesBounded,
+  type WorkspaceGlobInput,
+  type WorkspaceGlobResult,
   type WorkspaceGrepInput,
   type WorkspaceGrepMatch,
   type WorkspaceGrepResult,

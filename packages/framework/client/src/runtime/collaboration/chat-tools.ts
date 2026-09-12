@@ -5,12 +5,16 @@
  * plus the collaboration/mailbox/plan drafting tools. Reads live state through
  * `RuntimeContext` at call time.
  */
-import { globWorkspaceFiles, readWorkspaceFile } from "@natalia/platform";
+import { readWorkspaceFile } from "@natalia/platform";
 import {
   projectedMailboxMessages,
   type ProjectedMailboxMessage,
 } from "@natalia/session";
-import { grepWorkspaceFilesBounded, type RuntimeTool } from "@natalia/tools";
+import {
+  globWorkspaceFilesBounded,
+  grepWorkspaceFilesBounded,
+  type RuntimeTool,
+} from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import {
   COLLABORATION_SERVICE,
@@ -414,37 +418,41 @@ export function createChatTools(ctx: RuntimeContext) {
       visible.push({
         name: "glob",
         description:
-          "List files under a workspace directory matching a glob pattern. Use it to find md, source, config or test files.",
+          "List files under a workspace directory matching a glob pattern. Use it to find md, source, config or test files. Results are paginated; if the response contains nextCursor, call glob again with the same pattern/path and that cursor until no nextCursor is returned.",
         requiresApproval: false,
+        timeoutSec: 20,
         parameters: {
           type: "object",
           properties: {
             pattern: { type: "string" },
             path: { type: "string" },
             limit: { type: "number" },
-            offset: { type: "number" },
+            cursor: { type: "string" },
           },
           required: ["pattern"],
           additionalProperties: false,
         },
-        async execute(parsed) {
+        async execute(parsed, context) {
           const args = parsed as {
             pattern?: string;
             path?: string;
             limit?: number;
-            offset?: number;
+            cursor?: string;
           };
           if (typeof args.pattern !== "string") return "glob requires pattern";
           try {
-            const offset = Math.max(0, args.offset ?? 0);
-            const limit = Math.max(1, args.limit ?? 200);
-            const result = await globWorkspaceFiles({
-              workspaceRoot: ctx.ports.getWorkspaceRoot(),
-              pattern: args.pattern,
-              ...(args.path ? { path: args.path } : {}),
-              limit: Math.min(200, offset + limit),
-            });
-            return JSON.stringify(offset ? result.slice(offset) : result);
+            return JSON.stringify(
+              await globWorkspaceFilesBounded({
+                workspaceRoot: ctx.ports.getWorkspaceRoot(),
+                pattern: args.pattern,
+                ...(args.path ? { path: args.path } : {}),
+                ...(args.limit !== undefined ? { limit: args.limit } : {}),
+                ...(args.cursor ? { cursor: args.cursor } : {}),
+                signal: context.signal,
+                authorize: async (authorizeInput) =>
+                  await context.workspaceReadAuthorize?.(authorizeInput),
+              }),
+            );
           } catch (cause) {
             return cause instanceof Error ? cause.message : String(cause);
           }

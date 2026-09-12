@@ -266,6 +266,225 @@ export async function globWorkspaceFiles(input: {
   return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 
+const maxGlobScannedFiles = 500;
+const maxGlobScannedBytes = 4 * 1024 * 1024;
+const maxGlobDeadlineMs = 8_000;
+
+export type WorkspaceGlobResult = {
+  paths: string[];
+  truncated: boolean;
+  nextCursor?: string;
+  scannedFiles: number;
+  scannedBytes: number;
+  timedOut?: boolean;
+};
+
+export type WorkspaceGlobInput = {
+  workspaceRoot: string;
+  pattern: string;
+  path?: string;
+  limit?: number;
+  cursor?: string;
+  maxScannedFiles?: number;
+  maxScannedBytes?: number;
+  deadlineMs?: number;
+  signal?: AbortSignal;
+  authorize?: (input: { toolName: "glob"; paths: string[] }) => Promise<void>;
+};
+
+type GlobFrame = { path: string; index: number };
+
+type GlobCursorState = {
+  v: 1;
+  root: string;
+  pattern: string;
+  scope: string;
+  stack: GlobFrame[];
+  scannedFiles: number;
+  scannedBytes: number;
+};
+
+function globCursorQueryMatches(
+  state: GlobCursorState,
+  input: { root: string; pattern: string; scope: string },
+) {
+  return (
+    state.v === 1 &&
+    state.root === input.root &&
+    state.pattern === input.pattern &&
+    state.scope === input.scope
+  );
+}
+
+function encodeGlobCursor(state: GlobCursorState): string {
+  return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
+}
+
+function decodeGlobCursor(cursor: string): GlobCursorState {
+  try {
+    return JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as GlobCursorState;
+  } catch {
+    throw new RuntimeInvalidParams("glob cursor is invalid");
+  }
+}
+
+function throwIfGlobAborted(signal?: AbortSignal) {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new Error("glob aborted");
+}
+
+/**
+ * Bounded, cursor-paginated glob.
+ *
+ * Uses the same deterministic DFS and default heavy-directory skips as grep.
+ * Unlike grep there is no file content to read, so the byte budget is based on
+ * stat sizes and only matching paths consume the result limit.
+ */
+export async function globWorkspaceFilesBounded(
+  input: WorkspaceGlobInput,
+): Promise<WorkspaceGlobResult> {
+  if (
+    !input.pattern ||
+    input.pattern.includes("..") ||
+    input.pattern.startsWith("/")
+  )
+    throw new RuntimeRefusal(
+      "workspace glob pattern must remain inside workspace",
+    );
+
+  const root = await realpath(input.workspaceRoot);
+  const scopeArg = input.path?.trim() || ".";
+  const scopeAbs = await realpath(resolve(root, scopeArg)).catch(() => {
+    throw new RuntimeInvalidParams(`glob path does not exist: ${scopeArg}`);
+  });
+  if (!contains(root, scopeAbs))
+    throw new RuntimeInvalidParams("glob path must remain inside workspace");
+  if (!(await stat(scopeAbs)).isDirectory())
+    throw new RuntimeInvalidParams(`glob path is not a directory: ${scopeArg}`);
+  const scope = relative(root, scopeAbs).split(sep).join("/");
+  const limit = Math.min(1_000, Math.max(1, input.limit ?? 200));
+  const matcher = new Bun.Glob(input.pattern);
+  const maxScannedFiles = Math.max(
+    1,
+    input.maxScannedFiles ?? maxGlobScannedFiles,
+  );
+  const maxScannedBytes = Math.max(
+    1,
+    input.maxScannedBytes ?? maxGlobScannedBytes,
+  );
+  const deadline =
+    Date.now() + Math.max(1, input.deadlineMs ?? maxGlobDeadlineMs);
+
+  let state: GlobCursorState;
+  if (input.cursor) {
+    state = decodeGlobCursor(input.cursor);
+    if (
+      !globCursorQueryMatches(state, {
+        root,
+        pattern: input.pattern,
+        scope,
+      })
+    )
+      throw new RuntimeInvalidParams("glob cursor does not match the query");
+  } else {
+    state = {
+      v: 1,
+      root,
+      pattern: input.pattern,
+      scope,
+      stack: [{ path: scope, index: 0 }],
+      scannedFiles: 0,
+      scannedBytes: 0,
+    };
+  }
+
+  const paths: string[] = [];
+  let timedOut = false;
+
+  const result = (truncated: boolean, nextState?: GlobCursorState) => ({
+    paths,
+    truncated,
+    ...(truncated && nextState
+      ? { nextCursor: encodeGlobCursor(nextState) }
+      : {}),
+    scannedFiles: state.scannedFiles,
+    scannedBytes: state.scannedBytes,
+    ...(timedOut ? { timedOut } : {}),
+  });
+
+  const budgetReached = () =>
+    paths.length >= limit ||
+    state.scannedFiles >= maxScannedFiles ||
+    state.scannedBytes >= maxScannedBytes;
+
+  const authorizeResults = () =>
+    input.authorize?.({ toolName: "glob", paths: [...paths] }) ??
+    Promise.resolve();
+
+  const stopWithCursor = async () => {
+    await authorizeResults();
+    return result(true, {
+      ...state,
+      stack: state.stack.map((frame) => ({ ...frame })),
+    });
+  };
+
+  while (state.stack.length > 0) {
+    throwIfGlobAborted(input.signal);
+    if (Date.now() >= deadline) {
+      timedOut = true;
+      return stopWithCursor();
+    }
+
+    const frame = state.stack[state.stack.length - 1]!;
+    const directory = resolve(root, frame.path || ".");
+    const children = await readdir(directory, { withFileTypes: true }).catch(
+      () => [],
+    );
+    children.sort((left, right) => left.name.localeCompare(right.name));
+    if (frame.index >= children.length) {
+      state.stack.pop();
+      continue;
+    }
+    if (budgetReached()) return stopWithCursor();
+
+    const child = children[frame.index]!;
+    frame.index += 1;
+    const childRelative = frame.path
+      ? `${frame.path}/${child.name}`
+      : child.name;
+    const childAbsolute = resolve(directory, child.name);
+
+    if (child.isDirectory()) {
+      if (
+        DEFAULT_GREP_IGNORED_DIRECTORIES.has(child.name) &&
+        childRelative !== scope
+      )
+        continue;
+      const real = await realpath(childAbsolute).catch(() => undefined);
+      if (!real || !contains(root, real)) continue;
+      state.stack.push({ path: childRelative, index: 0 });
+      continue;
+    }
+    if (!child.isFile()) continue;
+    if (!matcher.match(childRelative)) continue;
+
+    const info = await stat(childAbsolute).catch(() => undefined);
+    throwIfGlobAborted(input.signal);
+    if (!info?.isFile()) continue;
+    state.scannedFiles += 1;
+    state.scannedBytes += info.size;
+    paths.push(childRelative);
+  }
+
+  await authorizeResults();
+  return result(false);
+}
+
 export async function watchWorkspaceFiles(
   workspaceRoot: string,
   onChange: (change: {
