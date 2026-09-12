@@ -184,6 +184,48 @@ export function Transcript(props: TranscriptProps) {
     lastSuspended = suspended;
   });
 
+  let lastLayoutSignature = "";
+  createEffect(() => {
+    const items = useVirtual() ? virtualItems() : [];
+    if (!items.length) return;
+    const signature = `${props.messages.length}:${items[0]?.index}:${items.at(-1)?.index}`;
+    if (signature === lastLayoutSignature) return;
+    lastLayoutSignature = signature;
+    requestAnimationFrame(() => {
+      const el = scrollEl();
+      if (!el) return;
+      const rows = [...el.querySelectorAll<HTMLElement>("[data-message-id]")];
+      const container = el.getBoundingClientRect();
+      const first = rows[0];
+      const last = rows.at(-1);
+      const rectOf = (row: HTMLElement | undefined) => {
+        if (!row) return null;
+        const rect = row.getBoundingClientRect();
+        return {
+          id: row.dataset.messageId,
+          top: Math.round(rect.top - container.top),
+          height: Math.round(rect.height),
+        };
+      };
+      console.log("[natalia-ui] transcript layout", {
+        scrollTop: el.scrollTop,
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight,
+        mounted: rows.length,
+        topSpacer:
+          el
+            .querySelector<HTMLElement>('[data-virtual-spacer="top"]')
+            ?.getBoundingClientRect().height ?? 0,
+        bottomSpacer:
+          el
+            .querySelector<HTMLElement>('[data-virtual-spacer="bottom"]')
+            ?.getBoundingClientRect().height ?? 0,
+        first: rectOf(first),
+        last: rectOf(last),
+      });
+    });
+  });
+
   return (
     <div class="natalia-transcript" ref={setScrollRef} onScroll={handleScroll}>
       <div class="natalia-transcript-content">
