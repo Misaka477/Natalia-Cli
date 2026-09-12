@@ -5576,7 +5576,12 @@ test("real runtime reserves the configured final step for a text response", asyn
     provider: "scripted-tool-finalize",
     model: "scripted-tool-finalize-model",
     async *stream(request) {
-      requests.push(request);
+      const mainTurnRequest =
+        request.tools !== undefined ||
+        request.messages.some((message) =>
+          message.content.includes("MAXIMUM STEPS REACHED"),
+        );
+      if (mainTurnRequest) requests.push(request);
       if (request.tools === undefined) {
         yield { type: "content", text: "All tool checks completed." };
         yield { type: "done" };
