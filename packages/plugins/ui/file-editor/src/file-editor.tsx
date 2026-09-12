@@ -6,7 +6,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import type { UiTransport } from "@natalia/ui-host";
+import type { UiProjection, UiTransport } from "@natalia/ui-host";
 import type { RuntimeClient } from "@natalia/contracts";
 import {
   ContextMenu,
@@ -117,6 +117,13 @@ function getOrCreateNode(
   return node;
 }
 
+function workspaceKey(state?: {
+  activeWorkspaceID?: string;
+  sessionID?: string;
+}) {
+  return `${state?.activeWorkspaceID ?? ""}:${state?.sessionID ?? ""}`;
+}
+
 const neuLightTheme = EditorView.theme(
   {
     "&": {
@@ -205,6 +212,7 @@ function languageForPath(path: string): Extension {
 export function FileEditor(props: {
   transport?: UiTransport;
   runtime?: RuntimeClient;
+  projection?: UiProjection;
 }) {
   const [contents, setContents] = createSignal<Record<string, string>>({});
   const [selectedPath, setSelectedPath] = createSignal<string>("");
@@ -218,6 +226,7 @@ export function FileEditor(props: {
   >([]);
   const nodeMap = new Map<string, FileNode>();
   const rowCache = new Map<string, VisibleRow>();
+  let lastWorkspaceKey: string | undefined;
 
   const visibleRows = createMemo<VisibleRow[]>(() => {
     const rows: VisibleRow[] = [];
@@ -332,6 +341,29 @@ export function FileEditor(props: {
     }
   }
 
+  async function reloadWorkspace() {
+    const page = await props.runtime?.workspaceList?.();
+    if (!page) return;
+    nodeMap.clear();
+    rowCache.clear();
+    setEntries(page.entries);
+    setTree(buildTree(page.entries, nodeMap));
+    setExpanded(new Set(["."]));
+    setLoadedDirs(new Set());
+    setOpenTabs([]);
+    setSelectedPath("");
+    setContents({});
+    setPreview(false);
+    if (cmView)
+      cmView.dispatch({
+        changes: { from: 0, to: cmView.state.doc.length, insert: "" },
+      });
+    const firstFile = page.entries.find(
+      (entry) => entry.type === "file" && !entry.path.endsWith("/"),
+    );
+    if (firstFile) selectFile(firstFile.path);
+  }
+
   onMount(() => {
     const handleOpenFile = (event: Event) => {
       const detail = (event as CustomEvent<{ path?: string; line?: number }>)
@@ -343,18 +375,15 @@ export function FileEditor(props: {
     onCleanup(() =>
       window.removeEventListener("natalia:open-file", handleOpenFile),
     );
-    void props.runtime?.workspaceList?.().then((page) => {
-      if (page?.entries?.length) {
-        setEntries(page.entries);
-        setTree(buildTree(page.entries, nodeMap));
-        if (!selectedPath()) {
-          const firstFile = page.entries.find(
-            (entry) => entry.type === "file" && !entry.path.endsWith("/"),
-          );
-          if (firstFile) selectFile(firstFile.path);
-        }
-      }
+    lastWorkspaceKey = workspaceKey(props.projection?.getState());
+    void reloadWorkspace();
+    const unsubscribe = props.projection?.subscribe((state) => {
+      const key = workspaceKey(state);
+      if (key === lastWorkspaceKey) return;
+      lastWorkspaceKey = key;
+      void reloadWorkspace();
     });
+    onCleanup(() => unsubscribe?.());
   });
 
   async function toggle(path: string) {

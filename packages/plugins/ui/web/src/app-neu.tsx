@@ -3561,6 +3561,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         onFork={forkSessionAtTurn}
                         onRollback={rollbackDraftFromMessage}
                         checkpointIDForMessage={checkpointIDForMessage}
+                        suspendVirtualization={resizing()}
                       />
                       <Show when={showJumpToBottom()}>
                         <button
@@ -3827,6 +3828,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         scrollRef={setChatTranscriptEl}
                         onScroll={handleChatTranscriptScroll}
                         loadAttachmentUrl={loadAttachmentUrl}
+                        suspendVirtualization={resizing()}
                       />
                       <Show when={chatShowJumpToBottom()}>
                         <button
@@ -4060,6 +4062,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     catalog={modelCatalog()}
                     sessionID={selectedSessionID() || state().sessionID}
                     loadAttachmentUrl={loadAttachmentUrl}
+                    suspendVirtualization={resizing()}
                   />
                 </Show>
                 <Show when={rightTab() === "agent"}>

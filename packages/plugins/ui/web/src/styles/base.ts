@@ -617,6 +617,10 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   contain: layout;
   overflow-anchor: none;
 }
+.neu-shell[data-resizing="true"] .neu-main {
+  contain: layout paint;
+  overflow-anchor: none;
+}
 .neu-shell[data-resizing="true"] .neu-sidebar-content,
 .neu-shell[data-resizing="true"] .neu-secondary-content,
 .neu-shell[data-resizing="true"] .neu-main {

@@ -38,6 +38,8 @@ export interface TranscriptProps {
   onFork?: (turnID: string) => void;
   onRollback?: (message: Message) => void;
   checkpointIDForMessage?: (message: Message) => string | undefined;
+  /** Freeze row measurement while a host pane is being resized. */
+  suspendVirtualization?: boolean;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -50,6 +52,9 @@ export function Transcript(props: TranscriptProps) {
     getScrollElement: () => scrollEl() ?? null,
     estimateSize: (index) => estimateMessageHeight(props.messages[index]!),
     getItemKey: (index) => props.messages[index]?.id ?? index,
+    get useCachedMeasurements() {
+      return props.suspendVirtualization === true;
+    },
     gap: VIRTUAL_ROW_GAP,
     overscan: VIRTUAL_OVERSCAN,
   });
@@ -142,6 +147,17 @@ export function Transcript(props: TranscriptProps) {
       mounted: ready ? virtualItems().length : 0,
       totalSize: ready ? virtualizer.getTotalSize() : null,
     });
+  });
+
+  let lastSuspended = false;
+  createEffect(() => {
+    const suspended = props.suspendVirtualization === true;
+    if (lastSuspended && !suspended) {
+      requestAnimationFrame(() => {
+        if (!props.suspendVirtualization) virtualizer.measure();
+      });
+    }
+    lastSuspended = suspended;
   });
 
   return (

@@ -24,6 +24,7 @@ export function NiaPanel(props: {
   sessionID?: string;
   catalog: RuntimeModelCatalogEntry[];
   loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
+  suspendVirtualization?: boolean;
 }) {
   const [draft, setDraft] = createSignal("");
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([]);
@@ -378,6 +379,7 @@ export function NiaPanel(props: {
             scrollRef={setNiaTranscriptEl}
             onScroll={handleNiaScroll}
             loadAttachmentUrl={props.loadAttachmentUrl}
+            suspendVirtualization={props.suspendVirtualization}
           />
           <Show when={niaShowJumpToBottom()}>
             <button
