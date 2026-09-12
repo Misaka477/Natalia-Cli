@@ -64,7 +64,14 @@ export function Transcript(props: TranscriptProps) {
     props.scrollRef?.(el);
   };
 
-  const virtualItems = () => virtualizer.getVirtualItems();
+  const liveVirtualItems = () => virtualizer.getVirtualItems();
+  let frozenVirtualItems: ReturnType<typeof virtualizer.getVirtualItems> = [];
+  createEffect(() => {
+    if (props.suspendVirtualization) return;
+    frozenVirtualItems = liveVirtualItems();
+  });
+  const virtualItems = () =>
+    props.suspendVirtualization ? frozenVirtualItems : liveVirtualItems();
   // TanStack needs one paint to observe the scroll element. Until it has
   // produced a window, render the ordinary list so long histories are never
   // blank and the first scroll cannot jump against a zero-height spacer.
