@@ -1206,6 +1206,44 @@ test("hydrateProjectedMessages replace drops later transcript rows", () => {
   );
 });
 
+test("hydrateProjectedMessages keeps every row in an oversized turn page", () => {
+  const state = initialState();
+  const rows = Array.from(
+    { length: 400 },
+    (_, index) =>
+      ({
+        id: `t1:tool:${index}`,
+        turnID: "t1",
+        kind: "tool",
+        event: {
+          type: "tool.update",
+          id: `t1:tool:${index}`,
+          name: "read_file",
+          callID: `call_${index}`,
+          status: "succeeded",
+          summary: "ok",
+          result: "ok",
+        },
+      }) as const,
+  );
+  hydrateProjectedMessages(
+    state,
+    [
+      {
+        id: "t1",
+        turnID: "t1",
+        submitted: submitted("t1", "one big turn"),
+        rows: [...rows],
+      },
+    ],
+    "newer",
+  );
+
+  expect(state.messages).toHaveLength(rows.length);
+  expect(state.messages[0]?.id).toContain("t1:tool:0");
+  expect(state.messages.at(-1)?.id).toContain("t1:tool:399");
+});
+
 test("an unknown event is ignored rather than fatal", () => {
   const state = initialState();
   expect(() =>
@@ -1944,6 +1982,18 @@ test("boundTranscript newer keeps the newest end", () => {
   const fallback = boundTranscript(internalOnly, "newer");
   expect(fallback.evicted).toBe(true);
   expect(fallback.messages.at(-1)).toBe(internalOnly.at(-1));
+});
+
+test("boundTranscript newer never undershoots the watermark on sparse user boundaries", () => {
+  const messages = Array.from({ length: 1_140 }, (_, index) => ({
+    id: `row:${index}`,
+    role: index === 4 || index === 1_075 ? "user" : "tool",
+    text: "x",
+  }));
+  const bounded = boundTranscript(messages, "newer");
+  expect(bounded.evicted).toBe(true);
+  expect(bounded.messages).toHaveLength(240);
+  expect(bounded.messages.at(-1)).toBe(messages.at(-1));
 });
 
 test("empty explicit stream hydration clears durable rows without losing live output", () => {

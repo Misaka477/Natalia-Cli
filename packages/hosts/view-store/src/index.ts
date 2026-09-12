@@ -278,8 +278,11 @@ export function hydrateProjectedMessages(
           message.status === "running" ||
           message.id.endsWith(":collab")),
     );
-    const bounded = boundTranscript([...incoming, ...liveRows], direction);
-    state.messages = bounded.messages;
+    // Hydration owns a contiguous event window. Do not destructively trim it
+    // here: an earlier version capped `state.messages` with `boundTranscript`,
+    // which made rows dropped inside the already-loaded page unreachable
+    // because the server cursor only pages by turn.
+    state.messages = [...incoming, ...liveRows];
     const liveStreams = Object.fromEntries(
       Object.entries(state.streams).filter(
         ([id]) => !(id in projected.streams),
@@ -297,7 +300,7 @@ export function hydrateProjectedMessages(
     state.streamPhases = { ...projected.streamPhases, ...livePhases };
     state.tools = { ...projected.tools, ...liveTools };
     synchronizeStreamSlices(state);
-    return bounded.evicted;
+    return false;
   }
   const incoming = projected.messages.map((message) => ({ ...message }));
   if (!incoming.length) return false;
@@ -309,8 +312,7 @@ export function hydrateProjectedMessages(
     direction === "older"
       ? [...incoming, ...retained]
       : [...retained, ...incoming];
-  const bounded = boundTranscript(merged, direction);
-  state.messages = bounded.messages;
+  state.messages = merged;
   // Keep stream/tool state for hydrated turns when the live project has not
   // seen them yet.
   for (const id of Object.keys(projected.streams))
@@ -337,7 +339,7 @@ export function hydrateProjectedMessages(
     state.sessionID = projected.sessionID;
   if (!state.title && projected.title) state.title = projected.title;
   synchronizeStreamSlices(state);
-  return bounded.evicted;
+  return false;
 }
 
 /**

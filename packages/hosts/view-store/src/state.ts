@@ -629,17 +629,18 @@ export function boundTranscript<T extends { role: string }>(
       };
     return { messages: messages.slice(0, start), evicted: true };
   }
-  let end = 0;
-  let removed = 0;
-  while (end < messages.length) {
-    if (removed >= excess && end > 0 && messages[end]?.role === "user") break;
-    end++;
-    removed++;
-  }
-  if (end === messages.length && removed === messages.length)
+  // Keep the newest end while allowing the rendered window to breathe between
+  // `watermark` and `limit` rows. Search backwards from the target removal
+  // point for a user-turn boundary inside that range. Walking *forward* for
+  // the next user can overshoot badly (a tool-heavy turn can leave far fewer
+  // than `watermark` rendered rows), which made history appear missing.
+  const minCut = Math.max(0, messages.length - limit);
+  let cut = Math.min(Math.max(0, excess), messages.length);
+  while (cut > minCut && messages[cut]?.role !== "user") cut -= 1;
+  if (cut < minCut || messages[cut]?.role !== "user")
     return {
       messages: messages.slice(Math.max(0, messages.length - watermark)),
       evicted: true,
     };
-  return { messages: messages.slice(end), evicted: true };
+  return { messages: messages.slice(cut), evicted: true };
 }
