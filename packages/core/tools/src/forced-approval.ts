@@ -24,13 +24,11 @@ export type ForcedApproval = {
 };
 
 function stripShellQuotes(value: string): string {
-  if (
-    value.length >= 2 &&
-    ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'")))
-  )
-    return value.slice(1, -1);
-  return value;
+  // Wrapper commands often leave a quote attached to only one side of a word
+  // (`bash -lc 'git commit'` makes the subcommand token `commit'`). Trim any
+  // leading/trailing shell quote characters rather than requiring a balanced
+  // pair so conservative detection still sees the subcommand.
+  return value.replace(/^["'`]+|["'`]+$/gu, "");
 }
 
 function shellTokens(value: string): string[] {
