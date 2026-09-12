@@ -173,6 +173,16 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
             messages.push({ role: "user", content: incoming.text });
             consumedMessageIDs.add(incoming.messageID);
           }
+        if (pending.length) {
+          const systemIndex = messages.findIndex(
+            (message) => message.role === "system",
+          );
+          if (systemIndex >= 0)
+            messages[systemIndex] = {
+              role: "system",
+              content: niaChatSystemPrompt(input.exec),
+            };
+        }
         const requiredReply = requiredNataliaReply();
         const finalOnly =
           step >= effectiveMaxSteps(input.exec) &&

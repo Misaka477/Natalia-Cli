@@ -122,11 +122,26 @@ export function createCollaborationWake(ctx: RuntimeContext) {
 
   function requestNaviWake(exec: SessionExecutionState) {
     console.log("[navi-wake] requestNaviWake", { sessionID: exec.session.id });
-    ctx.ports
-      .resolveService<ProviderModelController>(
-        PROVIDER_MODEL_CONTROLLER_SERVICE,
+    const controller = ctx.ports.resolveService<ProviderModelController>(
+      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    );
+    const sessionID = exec.session.id as SessionID;
+    // Mirror the main-agent policy: while Navi is already in a chat turn,
+    // inject the wake at its next provider step instead of waiting for the
+    // whole current turn to finish.
+    if (
+      controller?.naviBusy(sessionID) &&
+      !exec.naviPendingQueue.some((item) =>
+        item.messageID.startsWith("navi-collab-wake:"),
       )
-      ?.requestNaviWake(exec.session.id as SessionID);
+    ) {
+      exec.naviPendingQueue.push({
+        messageID: `navi-collab-wake:${Date.now().toString(36)}`,
+        text: "(internal collaboration wake: read <natalia_collaborations> for the latest Natalia message and respond according to the collaboration rules. This is not a user message.)",
+      });
+      return;
+    }
+    controller?.requestNaviWake(sessionID);
   }
 
   async function wakeNavi(exec: SessionExecutionState) {
@@ -191,11 +206,25 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     console.log("[nia-wake] requestNiaWake", {
       sessionID: exec.session.id,
     });
-    ctx.ports
-      .resolveService<ProviderModelController>(
-        PROVIDER_MODEL_CONTROLLER_SERVICE,
+    const controller = ctx.ports.resolveService<ProviderModelController>(
+      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    );
+    const sessionID = exec.session.id as SessionID;
+    // Same busy-turn policy as Navi: an active Nia turn claims the wake on its
+    // next provider step; an idle Nia gets a fresh chat turn.
+    if (
+      controller?.niaBusy(sessionID) &&
+      !exec.niaPendingQueue.some((item) =>
+        item.messageID.startsWith("nia-collab-wake:"),
       )
-      ?.requestNiaWake(exec.session.id as SessionID);
+    ) {
+      exec.niaPendingQueue.push({
+        messageID: `nia-collab-wake:${Date.now().toString(36)}`,
+        text: "(internal collaboration wake: read the latest collaboration context and respond according to the Nia audit rules. This is not a user message.)",
+      });
+      return;
+    }
+    controller?.requestNiaWake(sessionID);
   }
 
   async function wakeNia(exec: SessionExecutionState) {

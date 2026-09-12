@@ -160,6 +160,16 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
             messages.push({ role: "user", content: incoming.text });
             consumedMessageIDs.add(incoming.messageID);
           }
+        if (pending.length) {
+          const systemIndex = messages.findIndex(
+            (message) => message.role === "system",
+          );
+          if (systemIndex >= 0)
+            messages[systemIndex] = {
+              role: "system",
+              content: naviChatSystemPrompt(input.exec),
+            };
+        }
         const requiredReply = requiredNataliaReply();
         const finalOnly =
           step >= effectiveMaxSteps(input.exec) &&
