@@ -11,7 +11,7 @@ import type {
   RuntimeClient,
   RuntimeModelCatalogEntry,
 } from "@natalia/contracts";
-import { boundTranscript, type AppState } from "@natalia/view-store";
+import { type AppState } from "@natalia/view-store";
 import { Transcript } from "@natalia/ui-kit";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { NeuSelect } from "./components/NeuSelect";
@@ -126,10 +126,7 @@ export function NiaPanel(props: {
     );
   });
 
-  const renderedMessages = createMemo<Message[]>(() => {
-    const rows = messages();
-    return niaFollowBottom() ? boundTranscript(rows, "newer").messages : rows;
-  });
+  const renderedMessages = createMemo<Message[]>(() => messages());
 
   const modelOptions = () =>
     props.catalog.map((entry) => ({

@@ -10,11 +10,7 @@ import type {
   RuntimeClient,
   WorkspaceSummary,
 } from "@natalia/contracts";
-import {
-  type AppState,
-  boundTranscript,
-  cloneState,
-} from "@natalia/view-store";
+import { type AppState, cloneState } from "@natalia/view-store";
 import { cloneStateInWorker } from "./clone-state-worker-client";
 import {
   createSignal,
@@ -2412,25 +2408,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       return;
     }
 
-    const wasFollowing = transcriptAtBottom.current;
-    const switchAnchor =
-      wasFollowing && !nearBottom ? captureScrollAnchor(el) : undefined;
     transcriptAtBottom.current = nearBottom;
     setFollowBottom(nearBottom);
     setShowJumpToBottom(!nearBottom);
     transcriptObservedTop = el.scrollTop;
     transcriptObservedHeight = el.scrollHeight;
-    if (switchAnchor) {
-      // The rendered list switches from the bounded tail to the full paged
-      // window here. Restore the reader's semantic anchor after that commit so
-      // already-visible rows do not jump down.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (!transcriptAtBottom.current)
-            restoreScrollAnchor(transcriptEl(), switchAnchor, "transcript");
-        });
-      });
-    }
     if (el.scrollTop < 80) void loadOlderHistory();
     const scrollMs = performance.now() - scrollStart;
     if (scrollMs > 16)
@@ -2487,22 +2469,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       return;
     }
 
-    const wasFollowing = chatAtBottom.current;
-    const switchAnchor =
-      wasFollowing && !nearBottom ? captureScrollAnchor(el) : undefined;
     chatAtBottom.current = nearBottom;
     setChatFollowBottom(nearBottom);
     setChatShowJumpToBottom(!nearBottom);
     chatObservedTop = el.scrollTop;
     chatObservedHeight = el.scrollHeight;
-    if (switchAnchor) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (!chatAtBottom.current)
-            restoreScrollAnchor(chatTranscriptEl(), switchAnchor, "chat");
-        });
-      });
-    }
     const scrollMs = performance.now() - scrollStart;
     if (scrollMs > 16)
       perfLog(
@@ -2737,13 +2708,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return messages.slice(0, hiddenAfter);
   });
 
-  // Keep the DOM bounded while streaming: render only the newest window when
-  // the user is following the bottom. Scrolled up, render the whole (already
-  // paged) window so loading older history keeps working.
-  const renderedMainMessages = createMemo<Message[]>(() => {
-    const rows = visibleMainMessages();
-    return followBottom() ? boundTranscript(rows, "newer").messages : rows;
-  });
+  // The shared Transcript virtualizes long histories, so do not switch
+  // between a synthetic tail window and the full paged window here. That
+  // data-window swap was racing the scroll anchor restore in CEF.
+  const renderedMainMessages = createMemo<Message[]>(() =>
+    visibleMainMessages(),
+  );
 
   const naviChatActivity = () => state().navi.activity;
 
@@ -2827,10 +2797,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
   });
 
-  const renderedChatMessages = createMemo<Message[]>(() => {
-    const rows = chatMessages();
-    return chatFollowBottom() ? boundTranscript(rows, "newer").messages : rows;
-  });
+  const renderedChatMessages = createMemo<Message[]>(() => chatMessages());
   function startResize(
     event: PointerEvent,
     computeWidth: (clientX: number) => number,
