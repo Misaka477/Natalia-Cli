@@ -773,7 +773,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const followBreakWaitMs = 200;
   const debugUiEnabled = () => {
     try {
-      return globalThis.localStorage?.getItem("natalia.debug.ui") === "1";
+      if (globalThis.localStorage?.getItem("natalia.debug.ui") === "1")
+        return true;
+      const href = globalThis.location?.href;
+      if (!href) return false;
+      return new URL(href).searchParams.get("nataliaDebugUi") === "1";
     } catch {
       return false;
     }
@@ -2288,7 +2292,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
     if (!row) {
       if (debugUiEnabled())
-        console.debug("[natalia-ui] transcript anchor missing", {
+        console.log("[natalia-ui] transcript anchor missing", {
           ledger,
           anchor: anchor.id,
           mounted: el.querySelectorAll("[data-message-id]").length,
@@ -2300,7 +2304,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     el.scrollTop =
       el.scrollTop + (rowRect.top - containerRect.top) - anchor.top;
     if (debugUiEnabled())
-      console.debug("[natalia-ui] transcript anchor restored", {
+      console.log("[natalia-ui] transcript anchor restored", {
         ledger,
         anchor: anchor.id,
         top: anchor.top,

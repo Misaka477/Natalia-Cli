@@ -9,7 +9,11 @@ const VIRTUAL_OVERSCAN = 8;
 
 function uiDebugEnabled() {
   try {
-    return globalThis.localStorage?.getItem("natalia.debug.ui") === "1";
+    if (globalThis.localStorage?.getItem("natalia.debug.ui") === "1")
+      return true;
+    const href = globalThis.location?.href;
+    if (!href) return false;
+    return new URL(href).searchParams.get("nataliaDebugUi") === "1";
   } catch {
     return false;
   }
@@ -82,7 +86,7 @@ export function Transcript(props: TranscriptProps) {
     if (!uiDebugEnabled()) return;
     const el = scrollEl();
     const mounted = useVirtual() ? virtualItems() : [];
-    console.debug("[natalia-ui] transcript scroll", {
+    console.log("[natalia-ui] transcript scroll", {
       elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
       scrollTop: el?.scrollTop,
       clientHeight: el?.clientHeight,
@@ -96,7 +100,7 @@ export function Transcript(props: TranscriptProps) {
   createEffect(() => {
     if (!uiDebugEnabled()) return;
     const mounted = useVirtual() ? virtualItems() : [];
-    console.debug("[natalia-ui] transcript window", {
+    console.log("[natalia-ui] transcript window", {
       messages: props.messages.length,
       virtualized: virtualize(),
       virtualReady: useVirtual(),
