@@ -9,7 +9,7 @@
  * `execute-one.ts` stays within the source line limit.
  */
 import type { ProviderToolCall } from "@natalia/runtime";
-import { requiresForcedGitApproval, type RuntimeTool } from "@natalia/tools";
+import { requiresForcedGitApprovalAst, type RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
   TOOL_POLICY_SERVICE,
@@ -100,7 +100,9 @@ export async function runExecuteStage(
       ? parsedForApproval
       : {}) as Record<string, unknown>,
   );
-  const forcedApproval = requiresForcedGitApproval(commandTextForApproval);
+  const forcedApproval = await requiresForcedGitApprovalAst(
+    commandTextForApproval,
+  );
   const approvalRequired = tool.requiresApproval || Boolean(forcedApproval);
   publish({
     type: "tool.update",

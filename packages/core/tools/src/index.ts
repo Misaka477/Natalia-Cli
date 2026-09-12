@@ -11,6 +11,7 @@ export {
 export { assertNetworkURL } from "./network";
 export {
   requiresForcedGitApproval,
+  requiresForcedGitApprovalAst,
   type ForcedApproval,
 } from "./forced-approval";
 export { runShell } from "./run-shell";

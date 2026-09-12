@@ -82,6 +82,35 @@ export async function parseBashCommandRule(
   return parseBashSimpleCommand(rule.command);
 }
 
+/**
+ * Visits every command / variable-assignment node in a Bash script, including
+ * nodes nested inside compound commands, functions, subshells, pipelines and
+ * command substitutions. The callback receives the raw node text; callers can
+ * tokenize it for policy checks without needing the tree to outlive the walk.
+ */
+export async function visitBashCommands(
+  source: string,
+  visit: (nodeText: string, nodeType: string) => void | Promise<void>,
+): Promise<{ ok: boolean; reason?: string }> {
+  const parser = await getParser();
+  const tree = parser.parse(source);
+  if (!tree) return { ok: false, reason: "Bash parser did not produce an AST" };
+  try {
+    const root = tree.rootNode;
+    const walk = async (node: Node): Promise<void> => {
+      if (node.type === "command" || node.type === "variable_assignment")
+        await visit(node.text, node.type);
+      for (const child of node.namedChildren.filter(isNode)) await walk(child);
+    };
+    await walk(root);
+    return root.hasError
+      ? { ok: false, reason: "Bash command contains invalid syntax" }
+      : { ok: true };
+  } finally {
+    tree.delete();
+  }
+}
+
 export function commandHasPrefix(
   command: ParsedBashCommand,
   prefix: ParsedBashCommand,
