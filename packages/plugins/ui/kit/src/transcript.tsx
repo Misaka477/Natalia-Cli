@@ -1,6 +1,11 @@
 import { For, Show, createSignal, onMount } from "solid-js";
+import type { JSX } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { marked } from "marked";
 import type { Attachment, Message } from "./message";
+
+const VIRTUALIZE_THRESHOLD = 80;
+const VIRTUAL_OVERSCAN = 8;
 
 declare global {
   interface Window {
@@ -23,13 +28,40 @@ export interface TranscriptProps {
 }
 
 export function Transcript(props: TranscriptProps) {
+  const [scrollEl, setScrollEl] = createSignal<HTMLDivElement>();
+  const virtualize = () => props.messages.length > VIRTUALIZE_THRESHOLD;
+  const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
+    get count() {
+      return props.messages.length;
+    },
+    getScrollElement: () => scrollEl() ?? null,
+    estimateSize: (index) => estimateMessageHeight(props.messages[index]!),
+    getItemKey: (index) => props.messages[index]?.id ?? index,
+    overscan: VIRTUAL_OVERSCAN,
+  });
+
+  const setScrollRef = (el: HTMLDivElement) => {
+    setScrollEl(el);
+    props.scrollRef?.(el);
+  };
+
   return (
     <div
       class="natalia-transcript"
-      ref={props.scrollRef}
+      ref={setScrollRef}
       onScroll={props.onScroll}
     >
-      <div class="natalia-transcript-content">
+      <div
+        class="natalia-transcript-content"
+        style={
+          virtualize()
+            ? {
+                position: "relative",
+                height: `${virtualizer.getTotalSize()}px`,
+              }
+            : undefined
+        }
+      >
         <Show
           when={props.messages.length > 0}
           fallback={
@@ -53,143 +85,189 @@ export function Transcript(props: TranscriptProps) {
             </div>
           }
         >
-          <For each={props.messages}>
-            {(message) => (
-              <div class="natalia-message-group" data-role={message.role}>
-                <MessageRow
+          <Show
+            when={!virtualize()}
+            fallback={
+              <For each={virtualizer.getVirtualItems()}>
+                {(item) => (
+                  <MessageGroup
+                    message={props.messages[item.index]!}
+                    assistantName={props.assistantName}
+                    assistantInitial={props.assistantInitial}
+                    loadAttachmentUrl={props.loadAttachmentUrl}
+                    onFork={props.onFork}
+                    onRollback={props.onRollback}
+                    rowRef={virtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: "0",
+                      left: "0",
+                      width: "100%",
+                      transform: `translateY(${item.start}px)`,
+                    }}
+                  />
+                )}
+              </For>
+            }
+          >
+            <For each={props.messages}>
+              {(message) => (
+                <MessageGroup
                   message={message}
                   assistantName={props.assistantName}
                   assistantInitial={props.assistantInitial}
                   loadAttachmentUrl={props.loadAttachmentUrl}
+                  onFork={props.onFork}
+                  onRollback={props.onRollback}
                 />
-                <Show when={message.role !== "system"}>
-                  <div class="natalia-message-group-actions">
-                    <button
-                      type="button"
-                      class="natalia-message-icon-btn"
-                      title="复制内容"
-                      onClick={() =>
-                        navigator.clipboard?.writeText(message.content)
-                      }
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                      >
-                        <rect
-                          x="5.5"
-                          y="5.5"
-                          width="7"
-                          height="7"
-                          rx="1.5"
-                          stroke="currentColor"
-                          stroke-width="1.3"
-                        />
-                        <path
-                          d="M10.5 4.5H11.5A1.5 1.5 0 0 1 13 6V11"
-                          stroke="currentColor"
-                          stroke-width="1.3"
-                          stroke-linecap="round"
-                        />
-                      </svg>
-                      <span>复制</span>
-                    </button>
-                    <Show when={props.onFork && sessionTurnID(message.id)}>
-                      <button
-                        type="button"
-                        class="natalia-message-icon-btn"
-                        title="从此消息 Fork 会话"
-                        onClick={() =>
-                          props.onFork?.(sessionTurnID(message.id)!)
-                        }
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                        >
-                          <circle
-                            cx="5"
-                            cy="4"
-                            r="1.6"
-                            stroke="currentColor"
-                            stroke-width="1.2"
-                          />
-                          <circle
-                            cx="5"
-                            cy="12"
-                            r="1.6"
-                            stroke="currentColor"
-                            stroke-width="1.2"
-                          />
-                          <circle
-                            cx="11"
-                            cy="12"
-                            r="1.6"
-                            stroke="currentColor"
-                            stroke-width="1.2"
-                          />
-                          <path
-                            d="M5 5.6V10.4M5 10.4H11"
-                            stroke="currentColor"
-                            stroke-width="1.2"
-                            stroke-linecap="round"
-                          />
-                        </svg>
-                        <span>Fork</span>
-                      </button>
-                    </Show>
-                    <Show when={props.onRollback}>
-                      <button
-                        type="button"
-                        class="natalia-message-icon-btn"
-                        title="回滚到此处"
-                        onClick={() => props.onRollback?.(message)}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                        >
-                          <path
-                            d="M6.5 3.5L3 7L6.5 10.5"
-                            stroke="currentColor"
-                            stroke-width="1.3"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                          <path
-                            d="M7 7H13"
-                            stroke="currentColor"
-                            stroke-width="1.3"
-                            stroke-linecap="round"
-                          />
-                          <path
-                            d="M11 4.5L13 7L11 9.5"
-                            stroke="currentColor"
-                            stroke-width="1.3"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                        </svg>
-                        <span>回滚</span>
-                      </button>
-                    </Show>
-                  </div>
-                </Show>
-              </div>
-            )}
-          </For>
+              )}
+            </For>
+          </Show>
         </Show>
       </div>
     </div>
   );
 }
 
+function estimateMessageHeight(message: Message): number {
+  const attachments = message.attachments?.length ?? 0;
+  const toolCalls = message.toolCalls?.length ?? 0;
+  const contentLines = Math.max(1, Math.ceil(message.content.length / 110));
+  if (attachments > 0) return 220 + Math.min(180, contentLines * 20);
+  if (toolCalls > 0) return 160 + Math.min(240, contentLines * 22);
+  if (message.thinking) return 100 + Math.min(160, contentLines * 20);
+  return 64 + Math.min(180, contentLines * 22);
+}
+
+function MessageGroup(props: {
+  message: Message;
+  assistantName?: string;
+  assistantInitial?: string;
+  loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
+  onFork?: (turnID: string) => void;
+  onRollback?: (message: Message) => void;
+  rowRef?: (el: HTMLDivElement) => void;
+  style?: JSX.CSSProperties;
+}) {
+  return (
+    <div
+      class="natalia-message-group"
+      data-role={props.message.role}
+      data-message-id={props.message.id}
+      ref={props.rowRef}
+      style={props.style}
+    >
+      <MessageRow
+        message={props.message}
+        assistantName={props.assistantName}
+        assistantInitial={props.assistantInitial}
+        loadAttachmentUrl={props.loadAttachmentUrl}
+      />
+      <Show when={props.message.role !== "system"}>
+        <div class="natalia-message-group-actions">
+          <button
+            type="button"
+            class="natalia-message-icon-btn"
+            title="复制内容"
+            onClick={() =>
+              navigator.clipboard?.writeText(props.message.content)
+            }
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect
+                x="5.5"
+                y="5.5"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="currentColor"
+                stroke-width="1.3"
+              />
+              <path
+                d="M10.5 4.5H11.5A1.5 1.5 0 0 1 13 6V11"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span>复制</span>
+          </button>
+          <Show when={props.onFork && sessionTurnID(props.message.id)}>
+            <button
+              type="button"
+              class="natalia-message-icon-btn"
+              title="从此消息 Fork 会话"
+              onClick={() => props.onFork?.(sessionTurnID(props.message.id)!)}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle
+                  cx="5"
+                  cy="4"
+                  r="1.6"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                />
+                <circle
+                  cx="5"
+                  cy="12"
+                  r="1.6"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                />
+                <circle
+                  cx="11"
+                  cy="12"
+                  r="1.6"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                />
+                <path
+                  d="M5 5.6V10.4M5 10.4H11"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span>Fork</span>
+            </button>
+          </Show>
+          <Show when={props.onRollback}>
+            <button
+              type="button"
+              class="natalia-message-icon-btn"
+              title="回滚到此处"
+              onClick={() => props.onRollback?.(props.message)}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M6.5 3.5L3 7L6.5 10.5"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M7 7H13"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M11 4.5L13 7L11 9.5"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>回滚</span>
+            </button>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  );
+}
 export interface MessageRowProps {
   message: Message;
   assistantName?: string;

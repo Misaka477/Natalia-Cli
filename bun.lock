@@ -15,6 +15,10 @@
         "typescript": "5.8.2",
       },
     },
+    "apps/cef-desktop": {
+      "name": "@natalia/cef-desktop",
+      "version": "0.1.0",
+    },
     "apps/cli": {
       "name": "@natalia/cli",
       "version": "0.0.0-m13",
@@ -391,6 +395,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/ui-model": "workspace:*",
         "@natalia/view-store": "workspace:*",
       },
     },
@@ -596,7 +601,22 @@
       "name": "@natalia/ui-kit",
       "version": "1.0.0",
       "dependencies": {
+        "@natalia/ui-model": "workspace:*",
+        "@tanstack/solid-virtual": "3.13.37",
         "marked": "17.0.1",
+        "solid-js": "1.9.12",
+      },
+    },
+    "packages/plugins/ui/pending": {
+      "name": "@natalia/plugin-pending-inbox",
+      "version": "1.0.0",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/ui-host": "workspace:*",
+        "@natalia/ui-kit": "workspace:*",
+        "@natalia/ui-model": "workspace:*",
+        "@natalia/view-store": "workspace:*",
         "solid-js": "1.9.12",
       },
     },
@@ -607,7 +627,10 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/diff-wasm": "workspace:*",
         "@natalia/framework-diff": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "@natalia/ui-host": "workspace:*",
+        "@natalia/ui-kit": "workspace:*",
+        "@natalia/ui-model": "workspace:*",
         "@natalia/view-store": "workspace:*",
         "@vscode/tree-sitter-wasm": "*",
         "@xterm/addon-canvas": "^0.7.0",
@@ -853,6 +876,8 @@
 
     "@natalia/capability": ["@natalia/capability@workspace:packages/core/capability"],
 
+    "@natalia/cef-desktop": ["@natalia/cef-desktop@workspace:apps/cef-desktop"],
+
     "@natalia/checkpoint": ["@natalia/checkpoint@workspace:packages/framework/checkpoint"],
 
     "@natalia/cli": ["@natalia/cli@workspace:apps/cli"],
@@ -896,6 +921,8 @@
     "@natalia/plugin-mcp": ["@natalia/plugin-mcp@workspace:packages/plugins/mcp"],
 
     "@natalia/plugin-native-terminal": ["@natalia/plugin-native-terminal@workspace:packages/plugins/native-terminal"],
+
+    "@natalia/plugin-pending-inbox": ["@natalia/plugin-pending-inbox@workspace:packages/plugins/ui/pending"],
 
     "@natalia/plugin-skills": ["@natalia/plugin-skills@workspace:packages/plugins/skills"],
 
@@ -1026,6 +1053,10 @@
     "@sindresorhus/is": ["@sindresorhus/is@4.6.0", "https://registry.npmmirror.com/@sindresorhus/is/-/is-4.6.0.tgz", {}, "sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw=="],
 
     "@szmarczak/http-timer": ["@szmarczak/http-timer@4.0.6", "https://registry.npmmirror.com/@szmarczak/http-timer/-/http-timer-4.0.6.tgz", { "dependencies": { "defer-to-connect": "^2.0.0" } }, "sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w=="],
+
+    "@tanstack/solid-virtual": ["@tanstack/solid-virtual@3.13.37", "https://registry.npmmirror.com/@tanstack/solid-virtual/-/solid-virtual-3.13.37.tgz", { "dependencies": { "@tanstack/virtual-core": "3.17.8" }, "peerDependencies": { "solid-js": "^1.3.0" } }, "sha512-RxJC8n/6nnFHcPvDGMg7ZkqSzCVUco4JNw3ctIChj1HjoKs5I9wt5nsU+DUVtMVEiMfizUxOAx4TPIN8SHjxUQ=="],
+
+    "@tanstack/virtual-core": ["@tanstack/virtual-core@3.17.8", "https://registry.npmmirror.com/@tanstack/virtual-core/-/virtual-core-3.17.8.tgz", {}, "sha512-BfEvehNpOT75r5Ksc5xW6NZuXujTfb7nlSEyVu4XHG3gdxNg1KqXruWbDewXOUaUYIo4oRbSfkjIajz4MAT8tA=="],
 
     "@tootallnate/once": ["@tootallnate/once@2.0.1", "https://registry.npmmirror.com/@tootallnate/once/-/once-2.0.1.tgz", {}, "sha512-HqmEUIGRJ5fSXchkVgR5F7qn48bDBzv0kWj/Kfu5e6uci4UlEeng4331LnBkWffb++Ei3FOVLxo8JJWMFBDMeQ=="],
 
