@@ -41,6 +41,7 @@ export {
   MAX_TOOL_OUTPUT_BYTES,
   MAX_TOOL_OUTPUT_LINES,
   TOOL_OUTPUT_RETENTION_MS,
+  type BoundedToolOutput,
 } from "./output";
 import { optionalString, requireObject, requireString } from "./arguments";
 

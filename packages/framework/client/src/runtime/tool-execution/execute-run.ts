@@ -324,7 +324,24 @@ export async function runExecuteStage(
       result,
       argumentsDelta: call.arguments,
       metadata: {
-        ...(bounded.outputPath ? { outputPath: bounded.outputPath } : {}),
+        ...(bounded.outputPath
+          ? {
+              outputPath: bounded.outputPath,
+              ...(bounded.truncated
+                ? {
+                    truncated: true,
+                    page: bounded.page,
+                    totalPages: bounded.totalPages,
+                    ...(bounded.nextPagePath
+                      ? { nextPagePath: bounded.nextPagePath }
+                      : {}),
+                    ...(bounded.totalBytes === undefined
+                      ? {}
+                      : { totalBytes: bounded.totalBytes }),
+                  }
+                : {}),
+            }
+          : {}),
         ...(projectedRender ? { render: projectedRender } : {}),
       },
       endedAt: Date.now(),

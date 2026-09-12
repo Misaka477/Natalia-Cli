@@ -167,7 +167,7 @@ export type RuntimePortsExtra = {
   boundToolOutput: (
     workspaceRoot: string,
     text: string,
-  ) => Promise<{ text: string; outputPath?: string }>;
+  ) => Promise<import("@natalia/tools").BoundedToolOutput>;
   isManagedResourceTool: (toolName: string) => boolean;
   tryParseToolArguments: (arguments_: string) => Record<string, unknown>;
   parseToolArguments: (arguments_: string) => unknown;
