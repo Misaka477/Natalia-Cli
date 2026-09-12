@@ -161,7 +161,7 @@ test("apply_edits applies sequential edits to the same file", async () => {
   const tools = new Map(
     fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
   );
-  await tools.get("apply_edits")!.execute(
+  const result = await tools.get("apply_edits")!.execute(
     {
       edits: [
         {
@@ -180,8 +180,75 @@ test("apply_edits applies sequential edits to the same file", async () => {
     },
     { workspaceRoot: root },
   );
+  expect(result).toContain("all 2 edits applied");
+  expect(result).toContain("1 file changed");
+  expect(result).toContain("- a.ts (2 edits)");
   const { readFile } = await import("node:fs/promises");
   expect(await readFile(join(root, "a.ts"), "utf8")).toBe("const x = 3;\n");
+});
+
+test("apply_edits distinguishes requested edits from changed files", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-tool-fs-write-edits-counts-"),
+  );
+  await writeFile(join(root, "a.ts"), "const a = 1;\n");
+  const tools = new Map(
+    fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const result = await tools.get("apply_edits")!.execute(
+    {
+      edits: [
+        {
+          path: "a.ts",
+          operation: "replace",
+          oldText: "const a = 1;",
+          newText: "const a = 2;",
+        },
+        {
+          path: "a.ts",
+          operation: "replace",
+          oldText: "const a = 2;",
+          newText: "const a = 3;",
+        },
+        {
+          path: "a.ts",
+          operation: "replace",
+          oldText: "const a = 3;",
+          newText: "const a = 4;",
+        },
+      ],
+    },
+    { workspaceRoot: root },
+  );
+  expect(result).toBe(
+    "apply_edits: all 3 edits applied; 1 file changed.\n- a.ts (3 edits)",
+  );
+});
+
+test("apply_edits reports a no-op batch without pretending it wrote files", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-tool-fs-write-edits-noop-"),
+  );
+  await writeFile(join(root, "a.ts"), "const a = 1;\n");
+  const tools = new Map(
+    fsWriteToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+  const result = await tools.get("apply_edits")!.execute(
+    {
+      edits: [
+        {
+          path: "a.ts",
+          operation: "replace",
+          oldText: "const a = 1;",
+          newText: "const a = 1;",
+        },
+      ],
+    },
+    { workspaceRoot: root },
+  );
+  expect(result).toBe(
+    "apply_edits: all 1 edit applied; no file content changed.",
+  );
 });
 
 test("apply_edits creates and deletes files atomically", async () => {

@@ -253,6 +253,7 @@ function applyEditsTool(): RuntimeTool {
       // content in memory. A mismatch anywhere aborts here, before any file is
       // written.
       const order: string[] = [];
+      const editCounts = new Map<string, number>();
       const states = new Map<
         string,
         {
@@ -263,6 +264,7 @@ function applyEditsTool(): RuntimeTool {
       >();
       for (const edit of edits) {
         const abs = workspacePath(context.workspaceRoot, edit.path);
+        editCounts.set(abs, (editCounts.get(abs) ?? 0) + 1);
         await context.workspaceWriteAuthorize?.({
           toolName: "apply_edits",
           path: abs,
@@ -342,17 +344,17 @@ function applyEditsTool(): RuntimeTool {
 
       // Phase 2: write/delete the changed paths. On a mid-write failure,
       // restore the files already changed so a batch is all-or-nothing on disk.
-      const written: string[] = [];
+      const written: PreparedEdit[] = [];
       try {
         for (const entry of prepared) {
           if (entry.kind === "write") {
             if (entry.original === entry.next) continue;
             await mkdir(dirname(entry.abs), { recursive: true });
             await writeFile(entry.abs, entry.next!);
-            written.push(entry.path);
+            written.push(entry);
           } else {
             await rm(entry.abs, { force: false });
-            written.push(entry.path);
+            written.push(entry);
           }
         }
       } catch (error) {
@@ -373,8 +375,18 @@ function applyEditsTool(): RuntimeTool {
         throw error;
       }
 
-      if (!written.length) return "apply_edits: no changes";
-      return `applied ${written.length} edit${written.length === 1 ? "" : "s"}: ${written.join(", ")}`;
+      const requested = edits.length;
+      const requestedLabel = requested === 1 ? "edit" : "edits";
+      if (!written.length)
+        return `apply_edits: all ${requested} ${requestedLabel} applied; no file content changed.`;
+      const changedLabel = written.length === 1 ? "file" : "files";
+      const details = written
+        .map((entry) => {
+          const count = editCounts.get(entry.abs) ?? 0;
+          return `- ${entry.path} (${count} ${count === 1 ? "edit" : "edits"})`;
+        })
+        .join("\n");
+      return `apply_edits: all ${requested} ${requestedLabel} applied; ${written.length} ${changedLabel} changed.\n${details}`;
     },
   };
 }
