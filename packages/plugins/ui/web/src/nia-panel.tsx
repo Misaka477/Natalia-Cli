@@ -169,12 +169,12 @@ export function NiaPanel(props: {
     const ledger = Math.min(niaObservedTop, floor);
     const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
     if (!movedByReader) {
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
       if (nearBottom) el.scrollTop = el.scrollHeight;
       niaObservedTop = el.scrollTop;
       return;
     }
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
     setNiaFollowBottom(nearBottom);
     setNiaShowJumpToBottom(!nearBottom);
     niaObservedTop = el.scrollTop;

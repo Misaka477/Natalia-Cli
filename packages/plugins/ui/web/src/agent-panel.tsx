@@ -304,7 +304,7 @@ export function AgentPanel(props: {
   function handleSubagentTranscriptScroll() {
     const el = subTranscriptEl();
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
     setSubFollowBottom(nearBottom);
     setSubShowJumpToBottom(!nearBottom);
     subObservedTop = el.scrollTop;

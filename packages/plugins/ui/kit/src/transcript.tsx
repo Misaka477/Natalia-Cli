@@ -130,6 +130,20 @@ export function Transcript(props: TranscriptProps) {
     });
   });
 
+  let lastVirtualReady: boolean | undefined;
+  createEffect(() => {
+    const ready = useVirtual();
+    const messages = props.messages.length;
+    if (ready === lastVirtualReady) return;
+    lastVirtualReady = ready;
+    console.log("[natalia-ui] transcript virtualization", {
+      messages,
+      virtualReady: ready,
+      mounted: ready ? virtualItems().length : 0,
+      totalSize: ready ? virtualizer.getTotalSize() : null,
+    });
+  });
+
   return (
     <div class="natalia-transcript" ref={setScrollRef} onScroll={handleScroll}>
       <div class="natalia-transcript-content">

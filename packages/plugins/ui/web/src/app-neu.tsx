@@ -2382,7 +2382,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const floor = Math.max(0, el.scrollHeight - el.clientHeight);
     const ledger = Math.min(transcriptObservedTop, floor);
     const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
 
     if (heightChanged && !userScrolled) {
       // Content/layout growth can change scrollTop without the reader moving.
@@ -2460,7 +2460,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const floor = Math.max(0, el.scrollHeight - el.clientHeight);
     const ledger = Math.min(chatObservedTop, floor);
     const movedByReader = Math.abs(el.scrollTop - ledger) > 1;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
 
     if (heightChanged && !userScrolled) {
       chatObservedTop = el.scrollTop;
