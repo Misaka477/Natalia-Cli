@@ -2172,6 +2172,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       (session) => session.id === (selectedSessionID() || state().sessionID),
     )?.workspaceID ?? state().activeWorkspaceID;
 
+  // Remount every right-side panel when the workspace/session changes. The
+  // panels hold their own async cursors and editors, so relying on prop
+  // updates left plan/review/files showing the previous workspace.
+  const rightPanelScopeKey = createMemo(
+    () =>
+      `${workspaceIDForSelectedSession() ?? ""}:${
+        selectedSessionID() || state().sessionID || "none"
+      }`,
+  );
+
   const permissionOptions = () =>
     Object.entries(config()?.agentModes ?? {}).map(([name, mode]) => ({
       value: name,
@@ -4031,7 +4041,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 </For>
               </div>
               <div class="neu-secondary-content">
-                <Show when={rightTab() === "diff"}>
+                <Show
+                  keyed
+                  when={
+                    rightTab() === "diff" ? rightPanelScopeKey() : undefined
+                  }
+                >
                   <ReviewPane
                     runtime={props.ctx.runtime}
                     events={props.ctx.events}
@@ -4041,7 +4056,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     workspaceID={workspaceIDForSelectedSession()}
                   />
                 </Show>
-                <Show when={rightTab() === "plan"}>
+                <Show
+                  keyed
+                  when={
+                    rightTab() === "plan" ? rightPanelScopeKey() : undefined
+                  }
+                >
                   <PlanPanel
                     state={state()}
                     runtime={props.ctx.runtime}
@@ -4049,11 +4069,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   />
                 </Show>
                 <Show
-                  when={
-                    rightTab() === "nia"
-                      ? selectedSessionID() || state().sessionID || "none"
-                      : false
-                  }
+                  when={rightTab() === "nia" ? rightPanelScopeKey() : undefined}
                   keyed
                 >
                   <NiaPanel
@@ -4065,7 +4081,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     suspendVirtualization={resizing()}
                   />
                 </Show>
-                <Show when={rightTab() === "agent"}>
+                <Show
+                  keyed
+                  when={
+                    rightTab() === "agent" ? rightPanelScopeKey() : undefined
+                  }
+                >
                   <AgentPanel
                     state={state()}
                     runtime={props.ctx.runtime}
@@ -4074,7 +4095,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 </Show>
                 <For each={sidePanels()}>
                   {(item) => (
-                    <Show when={rightTab() === item.panel.id}>
+                    <Show
+                      keyed
+                      when={
+                        rightTab() === item.panel.id
+                          ? rightPanelScopeKey()
+                          : undefined
+                      }
+                    >
                       <div
                         class="neu-side-panel-host"
                         style="height:100%;"
