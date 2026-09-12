@@ -7,6 +7,7 @@ import type { Attachment, Message } from "./message";
 const VIRTUALIZE_THRESHOLD = 80;
 const VIRTUAL_OVERSCAN = 8;
 const VIRTUAL_ROW_GAP = 6;
+const VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX = 600;
 
 function uiDebugEnabled() {
   try {
@@ -52,6 +53,10 @@ export function Transcript(props: TranscriptProps) {
     getScrollElement: () => scrollEl() ?? null,
     estimateSize: (index) => estimateMessageHeight(props.messages[index]!),
     getItemKey: (index) => props.messages[index]?.id ?? index,
+    initialRect: {
+      width: 0,
+      height: VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX,
+    },
     get useCachedMeasurements() {
       return props.suspendVirtualization === true;
     },
