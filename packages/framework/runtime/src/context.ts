@@ -2,6 +2,7 @@ import type {
   CompactionTrigger,
   LocalAttachment,
   ContextStatusSource,
+  ProviderReasoningBlock,
   RuntimeEvent,
 } from "@natalia/contracts";
 
@@ -27,6 +28,8 @@ export type ContextEntry = {
   reasoningField?: string;
   reasoningSignature?: string;
   reasoningRedacted?: boolean;
+  /** Ordered Anthropic thinking blocks, including per-block signatures. */
+  reasoningBlocks?: ProviderReasoningBlock[];
   /** Gemini thought signature attached to a non-thought text part. */
   textSignature?: string;
   /** Gemini thought signature attached to a tool_call entry. */

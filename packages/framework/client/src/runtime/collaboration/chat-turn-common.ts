@@ -390,6 +390,8 @@ export async function compactChatBeforeProviderStep(
     if (original.reasoningSignature)
       message.reasoningSignature = original.reasoningSignature;
     if (original.reasoningRedacted) message.reasoningRedacted = true;
+    if (original.reasoningBlocks?.length)
+      message.reasoningBlocks = original.reasoningBlocks;
     if (original.textSignature) message.textSignature = original.textSignature;
   }
   if (runtimeInstruction && rebuilt[0]?.content !== runtimeInstruction.content)
@@ -428,6 +430,7 @@ function reasoningLedgerFields(message: ProviderMessage): {
   reasoningField?: string;
   reasoningSignature?: string;
   reasoningRedacted?: boolean;
+  reasoningBlocks?: import("@natalia/contracts").ProviderReasoningBlock[];
   textSignature?: string;
 } {
   return {
@@ -441,6 +444,9 @@ function reasoningLedgerFields(message: ProviderMessage): {
       ? { reasoningSignature: message.reasoningSignature }
       : {}),
     ...(message.reasoningRedacted ? { reasoningRedacted: true } : {}),
+    ...(message.reasoningBlocks?.length
+      ? { reasoningBlocks: message.reasoningBlocks }
+      : {}),
     ...(message.textSignature ? { textSignature: message.textSignature } : {}),
   };
 }
@@ -452,6 +458,7 @@ function providerMessageKey(message: ProviderMessage): string {
     toolCallID: message.toolCallID,
     toolName: message.toolName,
     toolCalls: message.toolCalls,
+    reasoningBlocks: message.reasoningBlocks,
     textSignature: message.textSignature,
   });
 }

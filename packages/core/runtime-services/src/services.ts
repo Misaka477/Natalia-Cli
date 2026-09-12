@@ -418,6 +418,7 @@ export type ProviderRunnerInput = {
       field?: string;
       signature?: string;
       redacted?: boolean;
+      blocks?: import("@natalia/contracts").ProviderReasoningBlock[];
       textSignature?: string;
     },
   ): Promise<import("@natalia/runtime").ProviderMessage[]>;

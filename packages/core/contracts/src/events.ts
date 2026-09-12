@@ -88,6 +88,13 @@ export type SandboxDiffKind =
   | "mode"
   | "conflict";
 
+export type ProviderReasoningBlock = {
+  text?: string;
+  field?: string;
+  signature?: string;
+  redacted?: boolean;
+};
+
 export type DurableContextCheckpointRecord = {
   entries: Array<{
     id: string;
@@ -109,6 +116,8 @@ export type DurableContextCheckpointRecord = {
     reasoningField?: string;
     reasoningSignature?: string;
     reasoningRedacted?: boolean;
+    /** Ordered Anthropic thinking blocks, including per-block signatures. */
+    reasoningBlocks?: ProviderReasoningBlock[];
     /** Gemini thought signature attached to a non-thought text part. */
     textSignature?: string;
     thoughtSignature?: string;
@@ -713,6 +722,8 @@ type RuntimeEventData =
       reasoningSignature?: string;
       /** Anthropic redacted_thinking payload. */
       reasoningRedacted?: boolean;
+      /** Ordered Anthropic thinking blocks, including per-block signatures. */
+      reasoningBlocks?: ProviderReasoningBlock[];
     }
   | { type: "content.delta"; id: string; text: string; attempt?: number }
   | {

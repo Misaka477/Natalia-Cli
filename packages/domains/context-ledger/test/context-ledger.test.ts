@@ -107,6 +107,9 @@ test("context ledger restores provider reasoning and tool thought signatures", (
       text: "need to read the file",
       reasoningField: "reasoning_content",
       reasoningSignature: "signature-1",
+      reasoningBlocks: [
+        { text: "need to read the file", signature: "signature-1" },
+      ],
     },
     {
       type: "content.done",
@@ -137,6 +140,9 @@ test("context ledger restores provider reasoning and tool thought signatures", (
       reasoningContent: "need to read the file",
       reasoningField: "reasoning_content",
       reasoningSignature: "signature-1",
+      reasoningBlocks: [
+        { text: "need to read the file", signature: "signature-1" },
+      ],
       textSignature: "text-signature",
       thoughtSignature: "tool-signature",
     }),

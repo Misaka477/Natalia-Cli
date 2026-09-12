@@ -1595,9 +1595,108 @@ test("Anthropic parser exposes signature deltas for replay", async () => {
     chunks.push(chunk);
   }
   expect(chunks).toEqual([
-    { type: "thinking", text: "plan" },
-    { type: "thinking", text: "", signature: "sig" },
+    { type: "thinking", text: "plan", blockIndex: 0 },
+    { type: "thinking", text: "", signature: "sig", blockIndex: 0 },
     { type: "done", finishReason: "stop" },
+  ]);
+});
+
+test("Anthropic parser keeps multiple thinking blocks distinct", async () => {
+  const sse = [
+    {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "thinking", thinking: "plan A" },
+    },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "signature_delta", signature: "sig-A" },
+    },
+    {
+      type: "content_block_start",
+      index: 1,
+      content_block: { type: "thinking", thinking: "plan B" },
+    },
+    {
+      type: "content_block_delta",
+      index: 1,
+      delta: { type: "signature_delta", signature: "sig-B" },
+    },
+    { type: "message_delta", delta: { stop_reason: "end_turn" } },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "claude-thinking",
+    fetch: Object.assign(
+      async () =>
+        new Response(sse, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch,
+  }).stream({ messages: [{ role: "user", content: "go" }] })) {
+    chunks.push(chunk);
+  }
+  expect(chunks).toEqual([
+    { type: "thinking", text: "plan A", blockIndex: 0 },
+    { type: "thinking", text: "", signature: "sig-A", blockIndex: 0 },
+    { type: "thinking", text: "plan B", blockIndex: 1 },
+    { type: "thinking", text: "", signature: "sig-B", blockIndex: 1 },
+    { type: "done", finishReason: "stop" },
+  ]);
+});
+
+test("Anthropic replays multiple signed thinking blocks in order", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for await (const _chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "claude-thinking",
+    fetch: fetchImpl,
+  }).stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        reasoningBlocks: [
+          { text: "plan A", signature: "sig-A" },
+          { text: "plan B", signature: "sig-B" },
+          { signature: "redacted-data", redacted: true },
+        ],
+        toolCalls: [{ id: "toolu_1", name: "read_file", arguments: "{}" }],
+      },
+      {
+        role: "tool",
+        content: "ok",
+        toolCallID: "toolu_1",
+        toolName: "read_file",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  expect((body?.messages as Array<{ content: unknown }>)[0]?.content).toEqual([
+    { type: "thinking", thinking: "plan A", signature: "sig-A" },
+    { type: "thinking", thinking: "plan B", signature: "sig-B" },
+    { type: "redacted_thinking", data: "redacted-data" },
+    {
+      type: "tool_use",
+      id: "toolu_1",
+      name: "read_file",
+      input: {},
+    },
   ]);
 });
 
@@ -2047,10 +2146,10 @@ test("Anthropic provider streams thinking variants without polluting tool JSON a
   for await (const chunk of provider.stream({ messages: [] }))
     chunks.push(chunk);
   expect(chunks).toEqual([
-    { type: "thinking", text: "plan" },
-    { type: "thinking", text: " more" },
-    { type: "thinking", text: " compat" },
-    { type: "thinking", text: " gateway" },
+    { type: "thinking", text: "plan", blockIndex: 0 },
+    { type: "thinking", text: " more", blockIndex: 0 },
+    { type: "thinking", text: " compat", blockIndex: 0 },
+    { type: "thinking", text: " gateway", blockIndex: 0 },
     { type: "content", text: " choice text" },
     { type: "content", text: "hello" },
     { type: "usage", inputTokens: 5, outputTokens: 7 },

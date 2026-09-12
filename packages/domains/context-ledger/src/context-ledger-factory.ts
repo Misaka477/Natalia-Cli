@@ -25,6 +25,7 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           reasoningField?: string;
           reasoningSignature?: string;
           reasoningRedacted?: boolean;
+          reasoningBlocks?: import("@natalia/contracts").ProviderReasoningBlock[];
         }
       >();
       const textSignatureByTurnID = new Map<string, string>();
@@ -62,6 +63,9 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
               ? { reasoningSignature: event.reasoningSignature }
               : {}),
             ...(event.reasoningRedacted ? { reasoningRedacted: true } : {}),
+            ...(event.reasoningBlocks?.length
+              ? { reasoningBlocks: event.reasoningBlocks }
+              : {}),
           };
           if (Object.keys(reasoning).length > 0)
             reasoningByTurnID.set(event.id, reasoning);

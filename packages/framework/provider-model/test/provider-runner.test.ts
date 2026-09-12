@@ -211,6 +211,9 @@ function makeHarness(
             ? { reasoningSignature: reasoning.signature }
             : {}),
           ...(reasoning?.redacted ? { reasoningRedacted: true } : {}),
+          ...(reasoning?.blocks?.length
+            ? { reasoningBlocks: reasoning.blocks }
+            : {}),
           ...(reasoning?.textSignature
             ? { textSignature: reasoning.textSignature }
             : {}),
@@ -509,6 +512,55 @@ test("signed thinking and tool-call thought signatures survive the tool-call fol
   expect(assistant?.reasoningContent).toBe("signed plan");
   expect(assistant?.reasoningSignature).toBe("sig-1");
   expect(assistant?.toolCalls?.[0]?.thoughtSignature).toBe("tool-sig");
+});
+
+test("multiple signed thinking blocks survive the tool-call follow-up", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  let streamCalls = 0;
+  const { runner } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream(request) {
+      streamCalls += 1;
+      requests.push(request);
+      if (streamCalls === 1) {
+        yield { type: "thinking", text: "plan A", blockIndex: 0 };
+        yield {
+          type: "thinking",
+          text: "",
+          signature: "sig-A",
+          blockIndex: 0,
+        };
+        yield { type: "thinking", text: "plan B", blockIndex: 1 };
+        yield {
+          type: "thinking",
+          text: "",
+          signature: "sig-B",
+          blockIndex: 1,
+        };
+        yield toolCall([
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: '{"path":"a.txt"}',
+          },
+        ]);
+        return;
+      }
+      yield content("done");
+    },
+  });
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(2);
+  const assistant = requests[1]?.messages.find(
+    (message) => message.role === "assistant" && message.toolCalls?.length,
+  );
+  expect(assistant?.reasoningBlocks).toEqual([
+    { text: "plan A", signature: "sig-A" },
+    { text: "plan B", signature: "sig-B" },
+  ]);
 });
 
 test("Gemini text part signatures survive the tool-call follow-up", async () => {

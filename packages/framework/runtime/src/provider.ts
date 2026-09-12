@@ -6,6 +6,7 @@ import {
   type LocalAttachment,
   type ModelCapabilities,
   type ModelRef,
+  type ProviderReasoningBlock,
 } from "@natalia/contracts";
 import { providerError, providerErrorFromHttp } from "./errors";
 import {
@@ -49,6 +50,9 @@ export type ProviderMessage = {
   /** True when `reasoningSignature` is Anthropic redacted_thinking rather than
    * a normal thinking block. */
   reasoningRedacted?: boolean;
+  /** Ordered provider-native reasoning blocks for providers that emit more
+   * than one signed thinking block in a single assistant turn. */
+  reasoningBlocks?: ProviderReasoningBlock[];
   /**
    * Gemini thought signature attached to a non-thought text part. The
    * signature must be replayed on the same text part, not moved onto a
@@ -135,6 +139,8 @@ export type ProviderStreamChunk =
       signature?: string;
       /** Anthropic redacted_thinking payload rather than displayable text. */
       redacted?: boolean;
+      /** Anthropic content block index, used to keep multiple blocks distinct. */
+      blockIndex?: number;
     }
   | { type: "tool_call"; calls: ProviderToolCall[] }
   | { type: "tool_protocol_violation"; text: string }
@@ -1160,6 +1166,7 @@ function reasoningFromContextEntries(
   | "reasoningField"
   | "reasoningSignature"
   | "reasoningRedacted"
+  | "reasoningBlocks"
   | "textSignature"
 > {
   for (const entry of entries) {
@@ -1168,6 +1175,7 @@ function reasoningFromContextEntries(
       !entry.reasoningField &&
       !entry.reasoningSignature &&
       !entry.reasoningRedacted &&
+      !entry.reasoningBlocks?.length &&
       !entry.textSignature
     )
       continue;
@@ -1180,6 +1188,9 @@ function reasoningFromContextEntries(
         ? { reasoningSignature: entry.reasoningSignature }
         : {}),
       ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
+      ...(entry.reasoningBlocks?.length
+        ? { reasoningBlocks: entry.reasoningBlocks }
+        : {}),
       ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
   }
@@ -1280,6 +1291,9 @@ function contextEntryToProviderMessage(
         ? { reasoningSignature: entry.reasoningSignature }
         : {}),
       ...(entry.reasoningRedacted ? { reasoningRedacted: true } : {}),
+      ...(entry.reasoningBlocks?.length
+        ? { reasoningBlocks: entry.reasoningBlocks }
+        : {}),
       ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
   if (entry.role === "summary")
@@ -1743,13 +1757,18 @@ function parseAnthropicSSEPart(
         });
       const initialThinking = block?.thinking ?? block?.reasoning_content;
       if (initialThinking)
-        chunks.push({ type: "thinking", text: initialThinking });
+        chunks.push({
+          type: "thinking",
+          text: initialThinking,
+          blockIndex: index,
+        });
       if (block?.type === "redacted_thinking" && block.data)
         chunks.push({
           type: "thinking",
           text: "",
           signature: block.data,
           redacted: true,
+          blockIndex: index,
         });
     }
 
@@ -1758,12 +1777,18 @@ function parseAnthropicSSEPart(
       parsed.delta?.thinking ??
       parsed.delta?.reasoning_content ??
       parsed.choices?.[0]?.delta?.reasoning_content;
-    if (deltaThinking) chunks.push({ type: "thinking", text: deltaThinking });
+    if (deltaThinking)
+      chunks.push({
+        type: "thinking",
+        text: deltaThinking,
+        ...(index !== undefined ? { blockIndex: index } : {}),
+      });
     if (parsed.delta?.signature)
       chunks.push({
         type: "thinking",
         text: "",
         signature: parsed.delta.signature,
+        ...(index !== undefined ? { blockIndex: index } : {}),
       });
     if (parsed.delta?.text)
       chunks.push({ type: "content", text: parsed.delta.text });
@@ -2294,18 +2319,46 @@ function toOpenAIMessage(
   };
 }
 
-function anthropicReasoningBlock(message: ProviderMessage) {
-  if (!message.reasoningSignature) return undefined;
+function anthropicReasoningBlocks(
+  message: ProviderMessage,
+): Array<Record<string, unknown>> {
+  if (message.reasoningBlocks?.length) {
+    return message.reasoningBlocks.flatMap(
+      (block): Array<Record<string, unknown>> => {
+        if (block.redacted && block.signature)
+          return [
+            {
+              type: "redacted_thinking",
+              data: block.signature,
+            },
+          ];
+        if (block.signature)
+          return [
+            {
+              type: "thinking",
+              thinking: block.text ?? "",
+              signature: block.signature,
+            },
+          ];
+        return block.text ? [{ type: "text", text: block.text }] : [];
+      },
+    );
+  }
+  if (!message.reasoningSignature) return [];
   if (message.reasoningRedacted)
-    return {
-      type: "redacted_thinking" as const,
-      data: message.reasoningSignature,
-    };
-  return {
-    type: "thinking" as const,
-    thinking: message.reasoningContent ?? "",
-    signature: message.reasoningSignature,
-  };
+    return [
+      {
+        type: "redacted_thinking" as const,
+        data: message.reasoningSignature,
+      },
+    ];
+  return [
+    {
+      type: "thinking" as const,
+      thinking: message.reasoningContent ?? "",
+      signature: message.reasoningSignature,
+    },
+  ];
 }
 
 function toAnthropicMessage(message: ProviderMessage) {
@@ -2321,11 +2374,11 @@ function toAnthropicMessage(message: ProviderMessage) {
       ],
     };
   if (message.toolCalls?.length) {
-    const reasoning = anthropicReasoningBlock(message);
+    const reasoning = anthropicReasoningBlocks(message);
     return {
       role: "assistant",
       content: [
-        ...(reasoning ? [reasoning] : []),
+        ...reasoning,
         ...(message.content ? [{ type: "text", text: message.content }] : []),
         ...message.toolCalls.map((call) => ({
           type: "tool_use",
@@ -2336,13 +2389,13 @@ function toAnthropicMessage(message: ProviderMessage) {
       ],
     };
   }
-  const reasoning = anthropicReasoningBlock(message);
+  const reasoning = anthropicReasoningBlocks(message);
   return {
     role: message.role === "assistant" ? "assistant" : "user",
     content:
-      message.images?.length || reasoning
+      message.images?.length || reasoning.length
         ? [
-            ...(reasoning ? [reasoning] : []),
+            ...reasoning,
             ...(message.content
               ? [{ type: "text", text: message.content }]
               : []),
