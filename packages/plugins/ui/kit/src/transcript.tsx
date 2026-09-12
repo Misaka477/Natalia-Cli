@@ -65,13 +65,18 @@ export function Transcript(props: TranscriptProps) {
   };
 
   const liveVirtualItems = () => virtualizer.getVirtualItems();
+  const liveTotalSize = () => virtualizer.getTotalSize();
   let frozenVirtualItems: ReturnType<typeof virtualizer.getVirtualItems> = [];
+  let frozenTotalSize = 0;
   createEffect(() => {
     if (props.suspendVirtualization) return;
     frozenVirtualItems = liveVirtualItems();
+    frozenTotalSize = liveTotalSize();
   });
   const virtualItems = () =>
     props.suspendVirtualization ? frozenVirtualItems : liveVirtualItems();
+  const totalSize = () =>
+    props.suspendVirtualization ? frozenTotalSize : liveTotalSize();
   // TanStack needs one paint to observe the scroll element. Until it has
   // produced a window, render the ordinary list so long histories are never
   // blank and the first scroll cannot jump against a zero-height spacer.
@@ -83,7 +88,7 @@ export function Transcript(props: TranscriptProps) {
   const bottomSpacer = () => {
     const items = virtualItems();
     const last = items.at(-1);
-    return last ? Math.max(0, virtualizer.getTotalSize() - last.end) : 0;
+    return last ? Math.max(0, totalSize() - last.end) : 0;
   };
 
   onMount(() => {
@@ -138,7 +143,7 @@ export function Transcript(props: TranscriptProps) {
       mounted: mounted.length,
       firstMounted: mounted[0]?.index,
       lastMounted: mounted.at(-1)?.index,
-      totalSize: useVirtual() ? virtualizer.getTotalSize() : null,
+      totalSize: useVirtual() ? totalSize() : null,
     });
   });
 
@@ -152,7 +157,7 @@ export function Transcript(props: TranscriptProps) {
       messages,
       virtualReady: ready,
       mounted: ready ? virtualItems().length : 0,
-      totalSize: ready ? virtualizer.getTotalSize() : null,
+      totalSize: ready ? totalSize() : null,
     });
   });
 
