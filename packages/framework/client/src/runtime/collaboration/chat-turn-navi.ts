@@ -78,7 +78,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
       messages.push({
         role: "user",
         content:
-          "Natalia (the main agent) sent you collaboration messages, or needs your expert guidance. Read <natalia_collaborations> and the Main context. If there is an internal advisor request, reply with concise technical advice as chat text. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Set continueConversation=true if your reply asks a question, invites a follow-up, or says you will wait for more; false explicitly closes the conversation. Always produce a concrete reply; never leave the response empty.",
+          "Natalia (the main agent) sent you collaboration messages, or needs your expert guidance. Read <natalia_collaborations> and the Main context. If there is an internal advisor request, reply with concise technical advice as chat text. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Every reply continues the thread; the runtime caps automatic exchanges. Always produce a concrete reply; never leave the response empty.",
       });
     await attachNaviImages(messages, input.attachments);
     const visibleTools = naviChatTools(input.exec);

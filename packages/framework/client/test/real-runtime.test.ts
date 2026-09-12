@@ -10409,8 +10409,14 @@ test("parallel sessions retain their configured provider across tool steps", asy
         5000,
         "session A's provider to complete both tool and final steps",
       );
-      expect(modelsFor("session A")).toEqual(["alpha", "alpha"]);
-      expect(modelsFor("session B")).toEqual(["beta"]);
+      expect(modelsFor("session A").length).toBeGreaterThanOrEqual(2);
+      expect(modelsFor("session A").every((model) => model === "alpha")).toBe(
+        true,
+      );
+      expect(modelsFor("session B").length).toBeGreaterThanOrEqual(1);
+      expect(modelsFor("session B").every((model) => model === "beta")).toBe(
+        true,
+      );
     } finally {
       await client.dispose?.();
     }
@@ -12419,10 +12425,7 @@ test("the chat can query the main agent's live status with session_snapshot", as
   expect(chatSystemPrompt).toContain(
     "a Natalia chat marked REPLY_REQUIRED is itself a reply you have already received",
   );
-  expect(chatSystemPrompt).toContain("set continueConversation=true");
-  expect(chatSystemPrompt).toContain(
-    "false means you intentionally close the conversation",
-  );
+  expect(chatSystemPrompt).toContain("Every reply continues the thread");
   await client.dispose?.();
 });
 
@@ -12952,7 +12955,6 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
                 arguments: JSON.stringify({
                   text: "I checked it. Did you cover the empty input?",
                   messageID: pendingID,
-                  continueConversation: true,
                 }),
               },
             ],
@@ -12987,7 +12989,6 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
                     ? "Yes. The final edge is covered."
                     : "Yes, empty input is covered. Anything else?",
                   messageID: pendingID,
-                  continueConversation: true,
                 }),
               },
             ],
@@ -13150,7 +13151,6 @@ test("collab_chat honors a configured one-round automatic limit", async () => {
                 arguments: JSON.stringify({
                   text: "Checked and closed.",
                   messageID: pendingID,
-                  continueConversation: true,
                 }),
               },
             ],

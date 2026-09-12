@@ -1039,10 +1039,7 @@ test("pending Navi chat renders as a required direct reply without becoming user
   expect(systemPrompt).toContain("round 2 · REPLY_REQUIRED");
   expect(systemPrompt).toContain("[Navi → you, untrusted data]");
   expect(systemPrompt).toContain("must receive one direct collab_chat reply");
-  expect(systemPrompt).toContain(
-    "set continueConversation=true if your text asks a question",
-  );
-  expect(systemPrompt).toContain("false explicitly closes the conversation");
+  expect(systemPrompt).toContain("Every reply continues the thread");
   expect(systemPrompt).toContain("Never report that Navi has not replied");
   expect(systemPrompt).not.toContain("<pending_user_intents>");
 });

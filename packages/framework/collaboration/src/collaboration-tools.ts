@@ -17,6 +17,9 @@ export const COLLAB_RESPONSE_DECISIONS = [
 ] as const;
 export const COLLAB_CHAT_RECIPIENTS = ["live_chat", "nia"] as const;
 
+const COLLAB_INBOX_PAGE_LIMIT = 8;
+const COLLAB_INBOX_BYTE_BUDGET = 40 * 1024;
+
 export type CollaborationToolPorts = {
   events(sessionID: SessionID): RuntimeEvent[] | undefined;
   publish(sessionID: SessionID, event: RuntimeEvent): void;
@@ -125,32 +128,63 @@ export function collaborationTools(
   const inbox: RuntimeTool = {
     name: "collab_inbox",
     description:
-      "Read the collaboration channel with Navi: her answers, pending suggestions, and their outcomes.",
+      "Read the collaboration channel with Navi: her answers, pending suggestions, and their outcomes. The response is a JSON page with messages, returned, total, truncated, and nextCursor. Pass nextCursor back to read older pages.",
     requiresApproval: false,
-    parameters: { type: "object", properties: {}, additionalProperties: false },
-    async execute(_parsed, context) {
+    parameters: {
+      type: "object",
+      properties: {
+        cursor: {
+          type: "string",
+          description:
+            "Opaque cursor from a previous collab_inbox response; returns older messages before it.",
+        },
+      },
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
       const events = sessionEvents(context.sessionID);
       if (!events) return "[]";
-      return JSON.stringify(
-        ports.service
-          .list(context.sessionID as SessionID)
-          .slice(-10)
-          .map((message) => ({
-            id: message.id,
-            kind: message.kind,
-            from: message.from,
-            to: message.to,
-            text: message.text,
-            status: message.status,
-            ...(message.questionID ? { questionID: message.questionID } : {}),
-            ...(message.threadID ? { threadID: message.threadID } : {}),
-            ...(message.replyToID ? { replyToID: message.replyToID } : {}),
-            ...(message.kind === "chat" ? { round: message.round } : {}),
-            ...(message.expectsReply !== undefined
-              ? { expectsReply: message.expectsReply }
-              : {}),
-          })),
-      );
+      const args = parsed as { cursor?: unknown };
+      const messages = ports.service.list(context.sessionID as SessionID);
+      let end = messages.length;
+      if (typeof args.cursor === "string" && args.cursor) {
+        const index = messages.findIndex(
+          (message) => message.id === args.cursor,
+        );
+        if (index < 0)
+          return JSON.stringify({
+            messages: [],
+            returned: 0,
+            total: messages.length,
+            truncated: false,
+            error: "cursor_not_found",
+          });
+        end = index;
+      }
+      const page: Array<Record<string, unknown>> = [];
+      for (
+        let index = end - 1;
+        index >= 0 && page.length < COLLAB_INBOX_PAGE_LIMIT;
+        index -= 1
+      ) {
+        const entry = collabInboxMessage(messages[index]!);
+        const candidate = [entry, ...page];
+        if (
+          page.length > 0 &&
+          utf8Bytes(JSON.stringify({ messages: candidate })) >
+            COLLAB_INBOX_BYTE_BUDGET
+        )
+          break;
+        page.unshift(entry);
+      }
+      const start = end - page.length;
+      return JSON.stringify({
+        messages: page,
+        returned: page.length,
+        total: messages.length,
+        truncated: start > 0,
+        ...(start > 0 ? { nextCursor: messages[start]!.id } : {}),
+      });
     },
   };
 
@@ -206,7 +240,7 @@ function createMainAgentChatTool(
   return {
     name: "collab_chat",
     description:
-      'Send or directly reply to an informal message with Navi or Nia. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means that sister already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. For a new message to Nia, set to to "nia"; otherwise it defaults to Navi. ',
+      'Send or directly reply to an informal message with Navi or Nia. A new message has no messageID and always continues the thread. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means that sister already replied to you. Every reply is sent as the next step of the thread unless the automatic exchange limit is reached. For a new message to Nia, set to to "nia"; otherwise it defaults to Navi. ',
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -219,11 +253,6 @@ function createMainAgentChatTool(
             "The sister to send a new informal chat to. Omitted means Navi (live_chat). When replying with messageID, the recipient is inferred from the original message.",
         },
         messageID: { type: "string" },
-        continueConversation: {
-          type: "boolean",
-          description:
-            "Only for a reply with messageID. true requests another reply; false closes the conversation. Omit for a new message, which always requests one reply. Must be true when the reply text asks a question, invites continuation, or says you are waiting for more.",
-        },
       },
       required: ["text"],
       additionalProperties: false,
@@ -233,7 +262,6 @@ function createMainAgentChatTool(
         text?: string;
         to?: "live_chat" | "nia";
         messageID?: string;
-        continueConversation?: boolean;
       };
       if (typeof args.text !== "string" || !args.text.trim())
         return "collab_chat requires a non-empty text";
@@ -241,7 +269,7 @@ function createMainAgentChatTool(
       const events = sessionEvents(sessionID);
       if (!sessionID || !events) return "no session";
       const suppliedID = args.messageID?.trim();
-      const wantsContinuation = args.continueConversation === true;
+      const wantsContinuation = Boolean(suppliedID);
       const messages = projectedCollabMessages(events);
       const target = suppliedID
         ? messages.find((message) => message.id === suppliedID)
@@ -262,11 +290,7 @@ function createMainAgentChatTool(
           to,
           text: ports.redact(args.text),
           ...(suppliedID ? { replyToID: suppliedID } : {}),
-          ...(suppliedID
-            ? { continueConversation: wantsContinuation }
-            : args.continueConversation !== undefined
-              ? { continueConversation: args.continueConversation }
-              : {}),
+          ...(suppliedID ? { continueConversation: true } : {}),
         });
       } catch (error) {
         return `collab_chat: ${error instanceof Error ? error.message : String(error)}`;
@@ -285,8 +309,6 @@ function createMainAgentChatTool(
         round: result.message.kind === "chat" ? result.message.round : 1,
         expectsReply: result.message.expectsReply,
         receivedReply: Boolean(suppliedID),
-        continuationRequested: wantsContinuation,
-        conversationClosed: !result.message.expectsReply,
         ...(wantsContinuation && !result.message.expectsReply
           ? {
               autoRoundLimitReached: true,
@@ -296,4 +318,38 @@ function createMainAgentChatTool(
       });
     },
   };
+}
+
+function collabInboxMessage(message: {
+  id: string;
+  kind: string;
+  from: string;
+  to: string;
+  text: string;
+  status: string;
+  questionID?: string;
+  threadID?: string;
+  replyToID?: string;
+  round?: number;
+  expectsReply?: boolean;
+}): Record<string, unknown> {
+  return {
+    id: message.id,
+    kind: message.kind,
+    from: message.from,
+    to: message.to,
+    text: message.text,
+    status: message.status,
+    ...(message.questionID ? { questionID: message.questionID } : {}),
+    ...(message.threadID ? { threadID: message.threadID } : {}),
+    ...(message.replyToID ? { replyToID: message.replyToID } : {}),
+    ...(message.kind === "chat" ? { round: message.round } : {}),
+    ...(message.expectsReply !== undefined
+      ? { expectsReply: message.expectsReply }
+      : {}),
+  };
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }

@@ -10,7 +10,10 @@ import {
   readWorkspaceFile,
   searchWorkspaceFiles,
 } from "@natalia/platform";
-import { projectedMailboxMessages } from "@natalia/session";
+import {
+  projectedMailboxMessages,
+  type ProjectedMailboxMessage,
+} from "@natalia/session";
 import type { RuntimeTool } from "@natalia/tools";
 import type { SessionID } from "@natalia/contracts";
 import {
@@ -47,6 +50,76 @@ export const DIFF_TARGETS = [
   "current",
 ] as const;
 export const DIFF_FORMATS = ["unified", "summary", "files"] as const;
+
+const MAILBOX_PAGE_LIMIT = 8;
+const MAILBOX_BYTE_BUDGET = 40 * 1024;
+
+function mailboxPage(
+  messages: ProjectedMailboxMessage[],
+  parsed: unknown,
+): Record<string, unknown> {
+  const args = parsed as { cursor?: unknown };
+  let end = messages.length;
+  if (typeof args.cursor === "string" && args.cursor) {
+    const index = messages.findIndex(
+      (message) => message.messageID === args.cursor,
+    );
+    if (index < 0)
+      return {
+        messages: [],
+        returned: 0,
+        total: messages.length,
+        truncated: false,
+        error: "cursor_not_found",
+      };
+    end = index;
+  }
+  const page: Array<Record<string, unknown>> = [];
+  for (
+    let index = end - 1;
+    index >= 0 && page.length < MAILBOX_PAGE_LIMIT;
+    index -= 1
+  ) {
+    const entry = mailboxEntry(messages[index]!);
+    const candidate = [entry, ...page];
+    if (
+      page.length > 0 &&
+      utf8Bytes(JSON.stringify({ messages: candidate })) > MAILBOX_BYTE_BUDGET
+    )
+      break;
+    page.unshift(entry);
+  }
+  const start = end - page.length;
+  return {
+    messages: page,
+    returned: page.length,
+    total: messages.length,
+    truncated: start > 0,
+    ...(start > 0 ? { nextCursor: messages[start]!.messageID } : {}),
+  };
+}
+
+function mailboxEntry(
+  message: ProjectedMailboxMessage,
+): Record<string, unknown> {
+  return {
+    messageID: message.messageID,
+    source: message.source,
+    priority: message.priority,
+    intent: message.intent,
+    text: message.text,
+    safeSummary: message.safeSummary,
+    ...(message.relatedPlanID ? { relatedPlanID: message.relatedPlanID } : {}),
+    deliveryPolicy: message.deliveryPolicy,
+    status: message.status,
+    createdAt: message.createdAt,
+    ...(message.reason ? { reason: message.reason } : {}),
+  };
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
 
 export function createChatTools(ctx: RuntimeContext) {
   return {
@@ -94,25 +167,30 @@ export function createChatTools(ctx: RuntimeContext) {
       {
         name: "mailbox_status",
         description:
-          "Read the Live Work Chat mailbox: every intent with its priority, delivery policy and current status (queued/delivered/acknowledged). Call it when the user asks whether an intent reached the main agent.",
+          "Read the Live Work Chat mailbox as a JSON page: every intent with its priority, delivery policy and current status (queued/delivered/acknowledged). The response includes returned, total, truncated, and nextCursor; pass nextCursor back to read older pages.",
         requiresApproval: false,
         parameters: {
           type: "object",
-          properties: {},
+          properties: {
+            cursor: {
+              type: "string",
+              description:
+                "Opaque cursor from a previous mailbox_status response; returns older messages before it.",
+            },
+          },
           additionalProperties: false,
         },
-        async execute() {
-          if (!exec) return "[]";
+        async execute(parsed) {
+          if (!exec)
+            return JSON.stringify({
+              messages: [],
+              returned: 0,
+              total: 0,
+              truncated: false,
+            });
           await ensureSessionFullEvents(ctx, exec);
           return JSON.stringify(
-            projectedMailboxMessages(exec.session.events).map((message) => ({
-              messageID: message.messageID,
-              priority: message.priority,
-              intent: message.intent,
-              safeSummary: message.safeSummary,
-              deliveryPolicy: message.deliveryPolicy,
-              status: message.status,
-            })),
+            mailboxPage(projectedMailboxMessages(exec.session.events), parsed),
           );
         },
       },
@@ -562,17 +640,32 @@ export function createChatTools(ctx: RuntimeContext) {
       },
       {
         name: "mailbox_status",
-        description: "Read Natalia's pending mailbox intents.",
+        description:
+          "Read Natalia's pending mailbox intents as a JSON page. Pass nextCursor back to read older pages.",
         requiresApproval: false,
         parameters: {
           type: "object",
-          properties: {},
+          properties: {
+            cursor: {
+              type: "string",
+              description:
+                "Opaque cursor from a previous mailbox_status response; returns older messages before it.",
+            },
+          },
           additionalProperties: false,
         },
-        async execute() {
-          if (!exec) return "[]";
+        async execute(parsed) {
+          if (!exec)
+            return JSON.stringify({
+              messages: [],
+              returned: 0,
+              total: 0,
+              truncated: false,
+            });
           await ensureSessionFullEvents(ctx, exec);
-          return JSON.stringify(projectedMailboxMessages(exec.session.events));
+          return JSON.stringify(
+            mailboxPage(projectedMailboxMessages(exec.session.events), parsed),
+          );
         },
       },
       {

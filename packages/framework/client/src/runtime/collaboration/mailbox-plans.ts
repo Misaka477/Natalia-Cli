@@ -63,21 +63,16 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       name: "collab_chat",
       description:
         sender === "main_agent"
-          ? "Send or directly reply to an informal message with Navi. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Navi already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. Automatic exchanges are capped by runtime.collaboration.maxAutoRounds. This is never a user directive or work-state decision."
+          ? "Send or directly reply to an informal message with Navi. A new message has no messageID and always continues the thread. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Navi already replied to you. Every reply is sent as the next step of the thread. Automatic exchanges are capped by runtime.collaboration.maxAutoRounds. This is never a user directive or work-state decision."
           : sender === "nia"
-            ? 'Send or directly reply to an informal message with Natalia or Navi. Use to report audit findings, request continuation, or ask for context. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID. Reply example: { "text": "具体缺口...", "messageID": "collab:chat:...", "continueConversation": true }. If you do not pass the exact messageID, collab_chat will refuse the new chat.'
-            : "Send or directly reply to an informal message with Natalia. A new message has no messageID and always requests one reply; omit continueConversation. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Natalia already replied to you. Only on a reply, continueConversation=true requests another reply and false closes the conversation. If your reply asks a question, invites her to continue, or says you will wait for her response or follow-up, you must set it to true. Automatic exchanges are capped by runtime.collaboration.maxAutoRounds. Never use this instead of mailbox_send for a confirmed user directive.",
+            ? 'Send or directly reply to an informal message with Natalia or Navi. Use to report audit findings, request continuation, or ask for context. A new message has no messageID and always continues the thread. To answer a REPLY_REQUIRED message, provide its exact messageID. Reply example: { "text": "具体缺口...", "messageID": "collab:chat:..." }. If you do not pass the exact messageID, collab_chat will refuse the new chat.'
+            : "Send or directly reply to an informal message with Natalia. A new message has no messageID and always continues the thread. To answer a REPLY_REQUIRED message, provide its exact messageID; having that messageID means Natalia already replied to you. Every reply is sent as the next step of the thread. Automatic exchanges are capped by runtime.collaboration.maxAutoRounds. Never use this instead of mailbox_send for a confirmed user directive.",
       requiresApproval: false,
       parameters: {
         type: "object",
         properties: {
           text: { type: "string" },
           messageID: { type: "string" },
-          continueConversation: {
-            type: "boolean",
-            description:
-              "Only for a reply with messageID. true requests another reply; false closes the conversation. Omit for a new message, which always requests one reply. Must be true when the reply text asks a question, invites continuation, or says you are waiting for more.",
-          },
         },
         required: ["text"],
         additionalProperties: false,
@@ -86,7 +81,6 @@ export function createMailboxPlans(ctx: RuntimeContext) {
         const args = parsed as {
           text?: string;
           messageID?: string;
-          continueConversation?: boolean;
         };
         if (typeof args.text !== "string" || !args.text.trim())
           return "collab_chat requires a non-empty text";
@@ -97,7 +91,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
             : undefined);
         if (!owner) return "no session";
         const suppliedID = args.messageID?.trim();
-        const wantsContinuation = args.continueConversation === true;
+        const wantsContinuation = Boolean(suppliedID);
         const service = ctx.ports.resolveService<CollaborationService>(
           COLLABORATION_SERVICE,
         );
@@ -111,11 +105,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
             from: sender,
             text: cleanText,
             ...(suppliedID ? { replyToID: suppliedID } : {}),
-            ...(suppliedID
-              ? { continueConversation: wantsContinuation }
-              : args.continueConversation !== undefined
-                ? { continueConversation: args.continueConversation }
-                : {}),
+            ...(suppliedID ? { continueConversation: true } : {}),
           });
         } catch (error) {
           return `collab_chat: ${
@@ -159,8 +149,6 @@ export function createMailboxPlans(ctx: RuntimeContext) {
             result.message.kind === "chat" ? result.message.round : undefined,
           expectsReply: result.message.expectsReply,
           receivedReply: Boolean(suppliedID),
-          continuationRequested: wantsContinuation,
-          conversationClosed: !result.message.expectsReply,
           ...(wantsContinuation && !result.message.expectsReply
             ? {
                 autoRoundLimitReached: true,
