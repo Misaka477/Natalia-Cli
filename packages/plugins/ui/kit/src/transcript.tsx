@@ -83,9 +83,16 @@ export function Transcript(props: TranscriptProps) {
   const totalSize = () =>
     props.suspendVirtualization ? frozenTotalSize : liveTotalSize();
   // TanStack needs one paint to observe the scroll element. Until it has
-  // produced a window, render the ordinary list so long histories are never
-  // blank and the first scroll cannot jump against a zero-height spacer.
-  const useVirtual = () => virtualize() && virtualItems().length > 0;
+  // produced a valid window, render the ordinary list so long histories are
+  // never blank and switching sessions cannot leave stale indexes on screen.
+  const useVirtual = () => {
+    if (!virtualize()) return false;
+    const items = virtualItems();
+    return (
+      items.length > 0 &&
+      items.every((item) => props.messages[item.index] !== undefined)
+    );
+  };
   const topSpacer = () => {
     const first = virtualItems()[0];
     return first ? Math.max(0, first.start) : 0;
