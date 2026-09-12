@@ -420,6 +420,7 @@ export type ProviderRunnerInput = {
       redacted?: boolean;
       blocks?: import("@natalia/contracts").ProviderReasoningBlock[];
       parts?: import("@natalia/contracts").ProviderContentPart[];
+      providerMetadata?: Record<string, unknown>;
       textSignature?: string;
     },
   ): Promise<import("@natalia/runtime").ProviderMessage[]>;

@@ -242,6 +242,7 @@ export function createExecuteCalls(
       redacted?: boolean;
       blocks?: ProviderReasoningBlock[];
       parts?: ProviderContentPart[];
+      providerMetadata?: Record<string, unknown>;
       textSignature?: string;
     },
   ): Promise<ProviderMessage[]> {
@@ -329,6 +330,9 @@ export function createExecuteCalls(
         ? { reasoningBlocks: reasoning.blocks }
         : {}),
       ...(reasoning?.parts?.length ? { contentParts: reasoning.parts } : {}),
+      ...(reasoning?.providerMetadata
+        ? { providerMetadata: reasoning.providerMetadata }
+        : {}),
       ...(reasoning?.textSignature
         ? { textSignature: reasoning.textSignature }
         : {}),
@@ -361,6 +365,9 @@ export function createExecuteCalls(
           : {}),
         ...(index === 0 && reasoning?.parts?.length
           ? { contentParts: reasoning.parts }
+          : {}),
+        ...(index === 0 && reasoning?.providerMetadata
+          ? { providerMetadata: reasoning.providerMetadata }
           : {}),
         ...(index === 0 && reasoning?.textSignature
           ? { textSignature: reasoning.textSignature }

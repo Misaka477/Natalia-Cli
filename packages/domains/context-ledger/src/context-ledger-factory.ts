@@ -29,6 +29,14 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
         }
       >();
       const textSignatureByTurnID = new Map<string, string>();
+      const contentPartsByTurnID = new Map<
+        string,
+        import("@natalia/contracts").ProviderContentPart[]
+      >();
+      const providerMetadataByTurnID = new Map<
+        string,
+        Record<string, unknown>
+      >();
       const recordedCalls = new Set<string>();
       const recordedResults = new Set<string>();
       for (const event of events) {
@@ -82,6 +90,10 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           if (event.text !== undefined) assistantByID.set(event.id, event.text);
           if (event.textSignature)
             textSignatureByTurnID.set(event.id, event.textSignature);
+          if (event.contentParts?.length)
+            contentPartsByTurnID.set(event.id, event.contentParts);
+          if (event.providerMetadata)
+            providerMetadataByTurnID.set(event.id, event.providerMetadata);
           continue;
         }
         if (
@@ -96,6 +108,8 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           const turnID = event.id.slice(0, event.id.lastIndexOf(":"));
           const reasoning = reasoningByTurnID.get(turnID);
           const textSignature = textSignatureByTurnID.get(turnID);
+          const contentParts = contentPartsByTurnID.get(turnID);
+          const providerMetadata = providerMetadataByTurnID.get(turnID);
           add({
             id: `restore:${event.id}:call`,
             role: "tool_call",
@@ -103,6 +117,8 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
             pairID: event.callID,
             ...(reasoning ?? {}),
             ...(textSignature ? { textSignature } : {}),
+            ...(contentParts ? { contentParts } : {}),
+            ...(providerMetadata ? { providerMetadata } : {}),
             ...(event.thoughtSignature
               ? { thoughtSignature: event.thoughtSignature }
               : {}),
@@ -126,6 +142,8 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
             const turnID = event.id.slice(0, event.id.lastIndexOf(":"));
             const reasoning = reasoningByTurnID.get(turnID);
             const textSignature = textSignatureByTurnID.get(turnID);
+            const contentParts = contentPartsByTurnID.get(turnID);
+            const providerMetadata = providerMetadataByTurnID.get(turnID);
             add({
               id: `restore:${event.id}:call`,
               role: "tool_call",
@@ -133,6 +151,8 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
               pairID: event.callID,
               ...(reasoning ?? {}),
               ...(textSignature ? { textSignature } : {}),
+              ...(contentParts ? { contentParts } : {}),
+              ...(providerMetadata ? { providerMetadata } : {}),
               ...(event.thoughtSignature
                 ? { thoughtSignature: event.thoughtSignature }
                 : {}),
@@ -154,15 +174,26 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
         if (event.type === "turn.finished") {
           const content = assistantByID.get(event.id);
           const textSignature = textSignatureByTurnID.get(event.id);
-          if (content?.trim() || textSignature) {
+          const contentParts = contentPartsByTurnID.get(event.id);
+          const providerMetadata = providerMetadataByTurnID.get(event.id);
+          if (
+            content?.trim() ||
+            textSignature ||
+            contentParts?.length ||
+            providerMetadata
+          ) {
             add({
               id: `${event.id}:assistant`,
               role: "assistant",
               content: content ?? "",
               ...(textSignature ? { textSignature } : {}),
+              ...(contentParts?.length ? { contentParts } : {}),
+              ...(providerMetadata ? { providerMetadata } : {}),
             });
             assistantByID.delete(event.id);
             textSignatureByTurnID.delete(event.id);
+            contentPartsByTurnID.delete(event.id);
+            providerMetadataByTurnID.delete(event.id);
           }
         }
       }

@@ -57,6 +57,8 @@ export type ProviderMessage = {
   /** Ordered provider-native assistant content parts. When present, adapters
    * use this to preserve the provider's original part order on replay. */
   contentParts?: ProviderContentPart[];
+  /** Generic provider metadata carried across turns (OpenRouter details, etc.). */
+  providerMetadata?: Record<string, unknown>;
   /**
    * Gemini thought signature attached to a non-thought text part. The
    * signature must be replayed on the same text part, not moved onto a
@@ -86,6 +88,8 @@ export type ProviderToolCall = {
    * `reasoning_details` stores the serialized encrypted reasoning entry.
    */
   thoughtSignature?: string;
+  /** Generic provider metadata copied onto replay messages. */
+  providerMetadata?: Record<string, unknown>;
 };
 
 /**
@@ -149,7 +153,11 @@ export type ProviderStreamChunk =
   | { type: "tool_call"; calls: ProviderToolCall[] }
   | { type: "tool_protocol_violation"; text: string }
   | { type: "usage"; inputTokens: number; outputTokens: number }
-  | { type: "done"; finishReason?: ProviderFinishReason };
+  | {
+      type: "done";
+      finishReason?: ProviderFinishReason;
+      providerMetadata?: Record<string, unknown>;
+    };
 
 /**
  * Keeps textual tool-call markup out of the assistant transcript. Plain text is
@@ -1172,6 +1180,7 @@ function reasoningFromContextEntries(
   | "reasoningRedacted"
   | "reasoningBlocks"
   | "contentParts"
+  | "providerMetadata"
   | "textSignature"
 > {
   for (const entry of entries) {
@@ -1182,6 +1191,7 @@ function reasoningFromContextEntries(
       !entry.reasoningRedacted &&
       !entry.reasoningBlocks?.length &&
       !entry.contentParts?.length &&
+      !entry.providerMetadata &&
       !entry.textSignature
     )
       continue;
@@ -1199,6 +1209,9 @@ function reasoningFromContextEntries(
         : {}),
       ...(entry.contentParts?.length
         ? { contentParts: entry.contentParts }
+        : {}),
+      ...(entry.providerMetadata
+        ? { providerMetadata: entry.providerMetadata }
         : {}),
       ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
@@ -1305,6 +1318,9 @@ function contextEntryToProviderMessage(
         : {}),
       ...(entry.contentParts?.length
         ? { contentParts: entry.contentParts }
+        : {}),
+      ...(entry.providerMetadata
+        ? { providerMetadata: entry.providerMetadata }
         : {}),
       ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
@@ -1671,6 +1687,7 @@ async function* streamOpenAISSE(
   const decoder = new TextDecoder();
   const toolCalls = new Map<number, ProviderToolCall>();
   const pendingReasoningDetails = new Map<string, string>();
+  const reasoningDetails: OpenAIReasoningDetail[] = [];
   const completion: { finishReason?: ProviderFinishReason } = {};
   let buffer = "";
   while (true) {
@@ -1685,6 +1702,7 @@ async function* streamOpenAISSE(
         toolCalls,
         completion,
         pendingReasoningDetails,
+        reasoningDetails,
       );
     }
   }
@@ -1694,11 +1712,22 @@ async function* streamOpenAISSE(
       toolCalls,
       completion,
       pendingReasoningDetails,
+      reasoningDetails,
     );
   }
   if (toolCalls.size)
     yield { type: "tool_call", calls: [...toolCalls.values()] };
-  yield { type: "done", finishReason: completion.finishReason };
+  yield {
+    type: "done",
+    finishReason: completion.finishReason,
+    ...(reasoningDetails.length
+      ? {
+          providerMetadata: {
+            openrouter: { reasoning_details: reasoningDetails },
+          },
+        }
+      : {}),
+  };
 }
 
 async function* streamAnthropicSSE(
@@ -1977,30 +2006,57 @@ function parseGeminiSSEPart(part: string): {
   return { chunks, finishReason };
 }
 
-type OpenAIEncryptedReasoningDetail = {
+type OpenAIReasoningDetail = Record<string, unknown> & { type?: string };
+
+type OpenAIEncryptedReasoningDetail = OpenAIReasoningDetail & {
   type: "reasoning.encrypted";
   id: string;
   data: string;
 };
 
+function isOpenAIReasoningDetail(
+  value: unknown,
+): value is OpenAIReasoningDetail {
+  return typeof value === "object" && value !== null;
+}
+
+function collectOpenAIReasoningDetails(
+  value: unknown,
+): OpenAIReasoningDetail[] {
+  return Array.isArray(value) ? value.filter(isOpenAIReasoningDetail) : [];
+}
+
 function isOpenAIEncryptedReasoningDetail(
   value: unknown,
 ): value is OpenAIEncryptedReasoningDetail {
-  if (typeof value !== "object" || value === null) return false;
-  const detail = value as Record<string, unknown>;
+  if (!isOpenAIReasoningDetail(value)) return false;
   return (
-    detail.type === "reasoning.encrypted" &&
-    typeof detail.id === "string" &&
-    detail.id.length > 0 &&
-    typeof detail.data === "string" &&
-    detail.data.length > 0
+    value.type === "reasoning.encrypted" &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.data === "string" &&
+    value.data.length > 0
   );
 }
 
-function encryptedReasoningDetails(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter(isOpenAIEncryptedReasoningDetail)
-    : [];
+function accumulateOpenAIReasoningDetails(
+  existing: OpenAIReasoningDetail[],
+  incoming: OpenAIReasoningDetail[],
+) {
+  for (const detail of incoming) {
+    if (
+      detail.type === "reasoning.text" &&
+      existing.at(-1)?.type === "reasoning.text"
+    ) {
+      const previous = existing.at(-1)!;
+      previous.text = `${typeof previous.text === "string" ? previous.text : ""}${typeof detail.text === "string" ? detail.text : ""}`;
+      previous.signature ??= detail.signature;
+      previous.format ??= detail.format;
+      continue;
+    }
+    existing.push({ ...detail });
+  }
+  return existing;
 }
 
 function applyEncryptedReasoningDetails(
@@ -2036,6 +2092,7 @@ function parseSSEChunks(
   toolCalls: Map<number, ProviderToolCall>,
   completion: { finishReason?: ProviderFinishReason },
   pendingReasoningDetails: Map<string, string>,
+  reasoningDetails: OpenAIReasoningDetail[],
 ): ProviderStreamChunk[] {
   const chunks: ProviderStreamChunk[] = [];
   for (const line of part.split("\n")) {
@@ -2079,15 +2136,17 @@ function parseSSEChunks(
         field: "reasoning_text",
         signature: delta.reasoning_opaque,
       });
-    const encryptedDetails = encryptedReasoningDetails(
-      delta?.reasoning_details,
-    );
-    if (encryptedDetails.length)
-      applyEncryptedReasoningDetails(
-        encryptedDetails,
-        toolCalls,
-        pendingReasoningDetails,
-      );
+    const details = collectOpenAIReasoningDetails(delta?.reasoning_details);
+    if (details.length) {
+      accumulateOpenAIReasoningDetails(reasoningDetails, details);
+      const encryptedDetails = details.filter(isOpenAIEncryptedReasoningDetail);
+      if (encryptedDetails.length)
+        applyEncryptedReasoningDetails(
+          encryptedDetails,
+          toolCalls,
+          pendingReasoningDetails,
+        );
+    }
     const legacyRecipient =
       delta?.recipient ?? choice?.recipient ?? choice?.message?.recipient;
     const legacyFunction =
@@ -2290,11 +2349,22 @@ function openAIReasoningDetails(calls: ProviderToolCall[]) {
   return details;
 }
 
+function openAIProviderReasoningDetails(message: ProviderMessage) {
+  const metadata = message.providerMetadata as
+    | { openrouter?: { reasoning_details?: unknown } }
+    | undefined;
+  const details = metadata?.openrouter?.reasoning_details;
+  return Array.isArray(details) && details.length ? details : undefined;
+}
+
 function toOpenAIMessage(
   message: ProviderMessage,
   interleavedReasoningField?: OpenAICompatibleReasoningField,
 ) {
-  const reasoning = openAIReasoningPayload(message, interleavedReasoningField);
+  const providerReasoningDetails = openAIProviderReasoningDetails(message);
+  const reasoning = providerReasoningDetails
+    ? {}
+    : openAIReasoningPayload(message, interleavedReasoningField);
   if (message.role === "tool") {
     return {
       role: "tool",
@@ -2303,7 +2373,8 @@ function toOpenAIMessage(
     };
   }
   if (message.toolCalls?.length) {
-    const reasoningDetails = openAIReasoningDetails(message.toolCalls);
+    const reasoningDetails =
+      providerReasoningDetails ?? openAIReasoningDetails(message.toolCalls);
     return {
       role: "assistant",
       content: message.content || null,
@@ -2329,11 +2400,17 @@ function toOpenAIMessage(
         })),
       ],
       ...reasoning,
+      ...(providerReasoningDetails
+        ? { reasoning_details: providerReasoningDetails }
+        : {}),
     };
   return {
     role: message.role,
     content: message.content,
     ...reasoning,
+    ...(providerReasoningDetails
+      ? { reasoning_details: providerReasoningDetails }
+      : {}),
   };
 }
 

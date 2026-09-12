@@ -1289,6 +1289,108 @@ test("OpenAI-compatible preserves encrypted reasoning_details across tool calls"
   });
 });
 
+test("OpenAI-compatible accumulates OpenRouter reasoning_details for replay", async () => {
+  let body: Record<string, unknown> | undefined;
+  let calls = 0;
+  const firstDetail = {
+    type: "reasoning.text",
+    text: "think",
+    index: 0,
+  };
+  const secondDetail = {
+    type: "reasoning.text",
+    text: "ing",
+    signature: "sig",
+    format: "anthropic-claude-v1",
+    index: 0,
+  };
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1)
+        return new Response(
+          [
+            `data: ${JSON.stringify({
+              choices: [{ delta: { reasoning_details: [firstDetail] } }],
+            })}`,
+            "",
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    reasoning_details: [secondDetail],
+                    content: "answer",
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "openrouter-test",
+    interleavedReasoningField: "reasoning_content",
+    fetch: fetchImpl,
+  });
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  const done = chunks.find(
+    (chunk): chunk is Extract<ProviderStreamChunk, { type: "done" }> =>
+      chunk.type === "done",
+  );
+  expect(done?.providerMetadata).toEqual({
+    openrouter: {
+      reasoning_details: [
+        {
+          type: "reasoning.text",
+          text: "thinking",
+          signature: "sig",
+          format: "anthropic-claude-v1",
+          index: 0,
+        },
+      ],
+    },
+  });
+  for await (const _chunk of provider.stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "answer",
+        providerMetadata: done?.providerMetadata,
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  const assistant = (body?.messages as Array<Record<string, unknown>>)[0];
+  expect(assistant).toMatchObject({
+    role: "assistant",
+    reasoning_details: [
+      {
+        type: "reasoning.text",
+        text: "thinking",
+        signature: "sig",
+        format: "anthropic-claude-v1",
+        index: 0,
+      },
+    ],
+  });
+  expect(assistant).not.toHaveProperty("reasoning_content");
+});
+
 test("OpenAI-compatible preserves reasoning_opaque for replay", async () => {
   let body: Record<string, unknown> | undefined;
   let calls = 0;

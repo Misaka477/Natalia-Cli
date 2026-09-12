@@ -395,6 +395,8 @@ export async function compactChatBeforeProviderStep(
       message.reasoningBlocks = original.reasoningBlocks;
     if (original.contentParts?.length)
       message.contentParts = original.contentParts;
+    if (original.providerMetadata)
+      message.providerMetadata = original.providerMetadata;
     if (original.textSignature) message.textSignature = original.textSignature;
   }
   if (runtimeInstruction && rebuilt[0]?.content !== runtimeInstruction.content)
@@ -435,6 +437,7 @@ function reasoningLedgerFields(message: ProviderMessage): {
   reasoningRedacted?: boolean;
   reasoningBlocks?: import("@natalia/contracts").ProviderReasoningBlock[];
   contentParts?: ProviderContentPart[];
+  providerMetadata?: Record<string, unknown>;
   textSignature?: string;
 } {
   return {
@@ -454,6 +457,9 @@ function reasoningLedgerFields(message: ProviderMessage): {
     ...(message.contentParts?.length
       ? { contentParts: message.contentParts }
       : {}),
+    ...(message.providerMetadata
+      ? { providerMetadata: message.providerMetadata }
+      : {}),
     ...(message.textSignature ? { textSignature: message.textSignature } : {}),
   };
 }
@@ -467,6 +473,7 @@ function providerMessageKey(message: ProviderMessage): string {
     toolCalls: message.toolCalls,
     reasoningBlocks: message.reasoningBlocks,
     contentParts: message.contentParts,
+    providerMetadata: message.providerMetadata,
     textSignature: message.textSignature,
   });
 }

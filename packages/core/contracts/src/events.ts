@@ -93,6 +93,7 @@ export type ProviderReasoningBlock = {
   field?: string;
   signature?: string;
   redacted?: boolean;
+  providerMetadata?: Record<string, unknown>;
 };
 
 export type ProviderContentPart =
@@ -103,6 +104,7 @@ export type ProviderContentPart =
       field?: string;
       signature?: string;
       redacted?: boolean;
+      providerMetadata?: Record<string, unknown>;
     }
   | {
       type: "tool_call";
@@ -110,6 +112,7 @@ export type ProviderContentPart =
       name: string;
       arguments: string;
       thoughtSignature?: string;
+      providerMetadata?: Record<string, unknown>;
     };
 
 export type DurableContextCheckpointRecord = {
@@ -137,6 +140,8 @@ export type DurableContextCheckpointRecord = {
     reasoningBlocks?: ProviderReasoningBlock[];
     /** Ordered provider-native assistant content parts. */
     contentParts?: ProviderContentPart[];
+    /** Generic provider metadata carried across turns. */
+    providerMetadata?: Record<string, unknown>;
     /** Gemini thought signature attached to a non-thought text part. */
     textSignature?: string;
     thoughtSignature?: string;
@@ -751,6 +756,10 @@ type RuntimeEventData =
       text?: string;
       /** Gemini thought signature attached to this text part. */
       textSignature?: string;
+      /** Ordered provider-native assistant content parts. */
+      contentParts?: ProviderContentPart[];
+      /** Generic provider metadata carried across turns. */
+      providerMetadata?: Record<string, unknown>;
       attempt?: number;
     }
   | {

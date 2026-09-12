@@ -587,6 +587,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           thinkingRedacted?: boolean;
           thinkingBlocks?: ProviderReasoningBlock[];
           contentParts?: ProviderContentPart[];
+          providerMetadata?: Record<string, unknown>;
           calls: ProviderToolCall[];
           finishReason?: ProviderFinishReason;
           protocolViolation?: string;
@@ -715,7 +716,11 @@ export function createProviderRunner(input: ProviderRunnerInput) {
             }
             if (chunk.type === "tool_protocol_violation")
               result.protocolViolation = chunk.text;
-            if (chunk.type === "done") result.finishReason = chunk.finishReason;
+            if (chunk.type === "done") {
+              result.finishReason = chunk.finishReason;
+              if (chunk.providerMetadata)
+                result.providerMetadata = chunk.providerMetadata;
+            }
             if (chunk.type === "usage")
               result.usage = {
                 inputTokens: chunk.inputTokens,
@@ -784,13 +789,24 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         hadToolCalls: false,
         protocolViolation: output.protocolViolation,
       };
-    if (output.assistant || output.contentSignature)
+    if (
+      output.assistant ||
+      output.contentSignature ||
+      output.contentParts?.length ||
+      output.providerMetadata
+    )
       input.publish({
         type: "content.done",
         id,
         ...(output.assistant ? { text: output.assistant } : {}),
         ...(output.contentSignature
           ? { textSignature: output.contentSignature }
+          : {}),
+        ...(output.contentParts?.length
+          ? { contentParts: output.contentParts }
+          : {}),
+        ...(output.providerMetadata
+          ? { providerMetadata: output.providerMetadata }
           : {}),
       });
     const reservedCallIDs = new Set<string>();
@@ -835,6 +851,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           ...(output.contentParts?.length
             ? { parts: output.contentParts }
             : {}),
+          ...(output.providerMetadata
+            ? { providerMetadata: output.providerMetadata }
+            : {}),
           ...(output.contentSignature
             ? { textSignature: output.contentSignature }
             : {}),
@@ -849,6 +868,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         content: output.assistant,
         ...(output.contentParts?.length
           ? { contentParts: output.contentParts }
+          : {}),
+        ...(output.providerMetadata
+          ? { providerMetadata: output.providerMetadata }
           : {}),
         ...(output.contentSignature
           ? { textSignature: output.contentSignature }

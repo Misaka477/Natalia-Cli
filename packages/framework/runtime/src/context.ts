@@ -33,6 +33,8 @@ export type ContextEntry = {
   reasoningBlocks?: ProviderReasoningBlock[];
   /** Ordered provider-native assistant content parts. */
   contentParts?: ProviderContentPart[];
+  /** Generic provider metadata carried across turns. */
+  providerMetadata?: Record<string, unknown>;
   /** Gemini thought signature attached to a non-thought text part. */
   textSignature?: string;
   /** Gemini thought signature attached to a tool_call entry. */
