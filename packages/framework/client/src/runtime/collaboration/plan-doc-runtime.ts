@@ -19,6 +19,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { RuntimeInvalidParams } from "@natalia/contracts";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -114,8 +115,19 @@ async function writeIndex(
 
 function ensurePlanPath(ctx: RuntimeContext, inputPath: string) {
   if (!inputPath || typeof inputPath !== "string")
-    throw new Error("plan document path is required");
-  const root = planRoot(ctx) + "/";
+    throw new RuntimeInvalidParams("plan document path is required");
+  const rootPath = planRoot(ctx);
+  const root = rootPath + "/";
+
+  if (isAbsolute(inputPath)) {
+    const resolved = resolve(inputPath);
+    if (resolved !== rootPath && !resolved.startsWith(root))
+      throw new RuntimeInvalidParams(
+        `plan document path must be under ${PLAN_DIR}: ${inputPath}`,
+      );
+    return resolved;
+  }
+
   // Accept both plan-dir-relative names ("neon-plan.md") and workspace
   // paths (".natalia/plans/neon-plan.md", "natalia/plans/neon-plan.md").
   const normalizedInput = inputPath
@@ -123,14 +135,11 @@ function ensurePlanPath(ctx: RuntimeContext, inputPath: string) {
     .replace(/^[.\/]*natalia\/plans[\/]*/u, "")
     .replace(/^\.natalia[\/]plans[\/]*/u, "")
     .replace(/^[\/]+/u, "");
-  const resolved = resolve(root, normalizedInput);
-  if (!resolved.startsWith(root) && resolved !== root)
-    throw new Error(`plan document path is outside ${PLAN_DIR}: ${inputPath}`);
-  if (isAbsolute(inputPath)) {
-    const normalized = normalizeSlashes(relative(planRoot(ctx), resolved));
-    if (normalized.startsWith(".."))
-      throw new Error("plan path escapes .natalia/plans");
-  }
+  const resolved = resolve(rootPath, normalizedInput);
+  if (resolved !== rootPath && !resolved.startsWith(root))
+    throw new RuntimeInvalidParams(
+      `plan document path is outside ${PLAN_DIR}: ${inputPath}`,
+    );
   return resolved;
 }
 
@@ -196,7 +205,14 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       const targetPath = record
         ? ensurePlanPath(ctx, record.documentPath)
         : ensurePlanPath(ctx, input.path ?? "");
-      const content = await readFile(targetPath, "utf8");
+      let content: string;
+      try {
+        content = await readFile(targetPath, "utf8");
+      } catch {
+        throw new RuntimeInvalidParams(
+          `plan document not found: ${record?.documentPath ?? input.path ?? ""}`,
+        );
+      }
       return {
         ...(record ? { planID: record.planID } : {}),
         ...(record ? { title: record.title } : {}),
@@ -216,7 +232,18 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
 
     async planDocMark(input) {
       const targetPath = ensurePlanPath(ctx, input.path);
-      await stat(targetPath);
+      let target;
+      try {
+        target = await stat(targetPath);
+      } catch {
+        throw new RuntimeInvalidParams(
+          `plan document does not exist: ${input.path}`,
+        );
+      }
+      if (!target.isFile())
+        throw new RuntimeInvalidParams(
+          `plan document is not a file: ${input.path}`,
+        );
       const entries = await readIndex(ctx);
       const existing = Object.values(entries).find(
         (entry) => entry.documentPath === relativePlanPath(ctx, targetPath),

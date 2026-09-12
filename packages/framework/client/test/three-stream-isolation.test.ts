@@ -570,3 +570,34 @@ test("durable thinking rows replay independently and never enter later chat prom
     await reopened.dispose?.();
   }
 });
+
+test("plan document paths are validated without masking the reason as internal", async () => {
+  const root = await officialPluginWorkspace("three-stream-plan-path");
+  const provider: StreamingProvider = {
+    provider: "plan-path",
+    model: "plan-path",
+    async *stream() {},
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_path",
+    provider,
+  });
+  client.start(() => undefined);
+  try {
+    await expect(
+      client.planDocMark!({ path: "/tmp/outside-plan.md" }),
+    ).rejects.toMatchObject({
+      name: "RuntimeInvalidParams",
+      message: expect.stringContaining("must be under .natalia/plans"),
+    });
+    await expect(
+      client.planDocMark!({ path: ".natalia/plans/missing.md" }),
+    ).rejects.toMatchObject({
+      name: "RuntimeInvalidParams",
+      message: expect.stringContaining("does not exist"),
+    });
+  } finally {
+    await client.dispose?.();
+  }
+});

@@ -58,6 +58,9 @@ export function Composer(props: ComposerProps) {
     }
   }
 
+  const showStop = () =>
+    Boolean(props.busy && props.onStop && !props.value.trim());
+
   return (
     <div class="natalia-composer" data-focused={isFocused()}>
       <Show when={props.attachments && props.attachments.length > 0}>
@@ -157,7 +160,7 @@ export function Composer(props: ComposerProps) {
               </svg>
             </button>
           </Show>
-          <Show when={props.busy && props.onStop}>
+          <Show when={showStop()}>
             <button
               type="button"
               class="natalia-composer-stop"
@@ -177,24 +180,26 @@ export function Composer(props: ComposerProps) {
               </svg>
             </button>
           </Show>
-          <button
-            type="button"
-            class="natalia-composer-submit"
-            data-busy={props.busy}
-            onClick={handleSubmit}
-            disabled={props.disabled || !props.value.trim()}
-            title={props.busy ? "发送并注入当前轮" : "发送"}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M16.5 8.5L2.5 15V2L16.5 8.5Z"
-                fill="currentColor"
-                stroke="currentColor"
-                stroke-width="1.2"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </button>
+          <Show when={!showStop()}>
+            <button
+              type="button"
+              class="natalia-composer-submit"
+              data-busy={props.busy}
+              onClick={handleSubmit}
+              disabled={props.disabled || !props.value.trim()}
+              title={props.busy ? "发送并注入当前轮" : "发送"}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M16.5 8.5L2.5 15V2L16.5 8.5Z"
+                  fill="currentColor"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </Show>
         </div>
       </div>
     </div>
