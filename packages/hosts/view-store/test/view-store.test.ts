@@ -2263,3 +2263,81 @@ test("content.partial batches do not duplicate the final content.done", () => {
   );
   expect(text(state, streamID("t1", "assistant"))).toBe("hello world");
 });
+
+test("hydrateProjectedMessages restores a row missing from an existing turn", () => {
+  const state = initialState();
+  // A reconnect/replay left the user row, but the answer row is gone.
+  state.messages.push({
+    id: "t1:user",
+    role: "user",
+    text: "question",
+    pendingText: "",
+  });
+
+  hydrateProjectedMessages(
+    state,
+    [
+      {
+        id: "t1",
+        turnID: "t1",
+        submitted: submitted("t1", "question"),
+        rows: [
+          {
+            id: "t1:user",
+            turnID: "t1",
+            kind: "user",
+            event: submitted("t1", "question"),
+          },
+          {
+            id: "t1:assistant",
+            turnID: "t1",
+            kind: "assistant",
+            event: { type: "content.done", id: "t1", text: "answer" },
+          },
+        ],
+      },
+    ],
+    "newer",
+  );
+
+  expect(state.messages.map((message) => message.id)).toContain("t1:assistant");
+  expect(text(state, "t1:assistant")).toBe("answer");
+});
+
+test("hydrateProjectedMessages does not roll a longer live row back to a stale page", () => {
+  const state = initialState();
+  state.messages.push({
+    id: "t1:assistant",
+    role: "assistant",
+    text: "hello world",
+    pendingText: "",
+  });
+
+  hydrateProjectedMessages(
+    state,
+    [
+      {
+        id: "t1",
+        turnID: "t1",
+        submitted: submitted("t1", "question"),
+        rows: [
+          {
+            id: "t1:user",
+            turnID: "t1",
+            kind: "user",
+            event: submitted("t1", "question"),
+          },
+          {
+            id: "t1:assistant",
+            turnID: "t1",
+            kind: "assistant",
+            event: { type: "content.done", id: "t1", text: "hi" },
+          },
+        ],
+      },
+    ],
+    "newer",
+  );
+
+  expect(text(state, "t1:assistant")).toBe("hello world");
+});

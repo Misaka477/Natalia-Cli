@@ -238,6 +238,23 @@ export function projectEvents(
 }
 
 /**
+ * Rows that carry live/streaming state and must survive a durable hydration
+ * merge: an in-flight answer, a thinking block, a tool card, or a
+ * collaboration row. Completed rows can be replaced by the hydrated version.
+ */
+function isLiveHydrationRow(
+  message: AppState["messages"][number],
+): boolean {
+  return (
+    message.pendingText.length > 0 ||
+    message.role === "thinking" ||
+    message.tool !== undefined ||
+    message.status === "running" ||
+    message.id.endsWith(":collab")
+  );
+}
+
+/**
  * Hydrates UI transcript rows from server-projected messages. Used by UIs that
  * adopt message-page loading instead of replaying every raw session event.
  * Merges by message id so a live projection can keep its own streaming rows.
@@ -260,16 +277,12 @@ export function hydrateProjectedMessages(
   direction: "older" | "newer" = "older",
   options: { replace?: boolean } = {},
 ): boolean {
-  const existingTurnIDs = options.replace
-    ? new Set<string>()
-    : new Set(
-        state.messages
-          .filter((message) => message.role === "user")
-          .map((message) => message.id.replace(/:user$/u, "")),
-      );
+  // Project every row in the page. The merge below deduplicates by row id, so
+  // a turn that is already partly present still contributes its missing rows
+  // (for example an answer row lost to a reconnect) instead of being skipped
+  // wholesale because its user row survived.
   const projected = initialState();
   for (const message of messages) {
-    if (existingTurnIDs.has(message.turnID)) continue;
     for (const row of message.rows) applyEvent(projected, row.event);
   }
   if (options.replace) {
@@ -283,12 +296,7 @@ export function hydrateProjectedMessages(
     const incomingIDs = new Set(incoming.map((message) => message.id));
     const liveRows = state.messages.filter(
       (message) =>
-        !incomingIDs.has(message.id) &&
-        (message.pendingText.length > 0 ||
-          message.role === "thinking" ||
-          message.tool !== undefined ||
-          message.status === "running" ||
-          message.id.endsWith(":collab")),
+        !incomingIDs.has(message.id) && isLiveHydrationRow(message),
     );
     // Hydration owns a contiguous event window. Do not destructively trim it
     // here: an earlier version capped `state.messages` with `boundTranscript`,
@@ -314,7 +322,22 @@ export function hydrateProjectedMessages(
     synchronizeStreamSlices(state);
     return false;
   }
-  const incoming = projected.messages.map((message) => ({ ...message }));
+  // Merge by row id. A missing row (for example an answer row that a
+  // reconnect dropped) is contributed by the page, while an existing row is
+  // only replaced when the page carries strictly more text, so a stale page
+  // cannot roll a newer live row back.
+  const stateByID = new Map(
+    state.messages.map((message) => [message.id, message]),
+  );
+  const incoming = projected.messages.map((message) => {
+    const existing = stateByID.get(message.id);
+    if (!existing) return { ...message };
+    const existingText = existing.text + existing.pendingText;
+    const incomingText = message.text + message.pendingText;
+    return existingText.length >= incomingText.length
+      ? { ...existing }
+      : { ...message };
+  });
   if (!incoming.length) return false;
   const incomingIDs = new Set(incoming.map((message) => message.id));
   const retained = state.messages.filter(
