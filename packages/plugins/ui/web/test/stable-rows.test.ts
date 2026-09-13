@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { stableRows, type RowSignature } from "../src/stable-rows";
+import {
+  collapseDuplicateTranscriptRows,
+  stableRows,
+  type RowSignature,
+} from "../src/stable-rows";
 
 type Row = { id: string; text: string };
 type Cache = Map<string, { signature: RowSignature; value: Row }>;
@@ -37,4 +41,21 @@ test("prunes rows that are no longer visible", () => {
   expect(cache.has("gone")).toBe(true);
   stableRows(cache, []);
   expect(cache.has("gone")).toBe(false);
+});
+
+test("collapses duplicate assistant and thinking rows within one turn", () => {
+  const rows = [
+    { id: "turn_a:thinking", role: "thinking", content: "same thought" },
+    { id: "turn_a:thinking:segment:1", role: "thinking", content: "same thought" },
+    { id: "turn_a:assistant", role: "assistant", content: "same answer" },
+    { id: "turn_a:assistant:segment:1", role: "assistant", content: "same answer" },
+    { id: "turn_b:assistant", role: "assistant", content: "same answer" },
+  ];
+  expect(
+    collapseDuplicateTranscriptRows(rows).map((row) => row.id),
+  ).toEqual([
+    "turn_a:thinking",
+    "turn_a:assistant",
+    "turn_b:assistant",
+  ]);
 });

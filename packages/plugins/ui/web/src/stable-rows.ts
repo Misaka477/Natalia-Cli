@@ -47,3 +47,30 @@ function sameSignature(a: RowSignature, b: RowSignature): boolean {
   for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
   return true;
 }
+
+/**
+ * Collapse duplicate assistant / thinking rows that belong to the same turn
+ * and carry identical display text. Durable replay and message-page hydration
+ * can race into a projection and produce two segment ids for one logical
+ * response; the transcript must show one row, not two.
+ */
+export function collapseDuplicateTranscriptRows<
+  T extends { id: string; role: string; content: string },
+>(rows: readonly T[]): T[] {
+  const out: T[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (row.role !== "assistant" && row.role !== "thinking") {
+      out.push(row);
+      continue;
+    }
+    const turnID = row.id.startsWith("turn_")
+      ? (row.id.split(":")[0] ?? row.id)
+      : row.id;
+    const key = `${turnID}\u0000${row.role}\u0000${row.content}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
