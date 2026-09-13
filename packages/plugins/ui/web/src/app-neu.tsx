@@ -2009,6 +2009,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           suppressProjectionClones = false;
         }
         if (isStaleLoad()) return;
+        // Attach hydrates Navi/Nia in the background, but that request is
+        // dropped when the load token changes. Re-request after main history is
+        // settled so a slow old session cannot leave both chat streams empty.
+        const secondarySessionID =
+          detail?.sessionID || selectedSessionID() || state().sessionID;
+        if (secondarySessionID) {
+          const [naviChat, niaChat] = await Promise.all([
+            props.ctx.runtime.chatMessages?.("navi", secondarySessionID),
+            props.ctx.runtime.chatMessages?.("nia", secondarySessionID),
+          ]);
+          if (isStaleLoad()) return;
+          if (naviChat !== undefined)
+            props.ctx.projection.hydrateNaviMessages?.(naviChat);
+          if (niaChat !== undefined)
+            props.ctx.projection.hydrateNiaMessages?.(niaChat);
+        }
         // Session loading finished; take one projection snapshot instead of
         // cloning once per raw event.
         const projected = cloneState(props.ctx.projection.getState());
