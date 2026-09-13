@@ -3,6 +3,7 @@ import {
   terminalApprovalScope,
   terminalInputRisk,
 } from "@natalia/runtime-services";
+import { startMemoryTraceSampler } from "@natalia/runtime";
 import { createClientSurface } from "./client-surface";
 import { createCompositionContext } from "./composition/state";
 import { wireFoundation } from "./composition/foundation";
@@ -21,6 +22,8 @@ export function createRealRuntimeClient(
   options: RealRuntimeClientOptions = {},
 ): RuntimeServiceClient {
   const ctx = createCompositionContext(options);
+  // Periodic RSS/heap samples when NATALIA_MEMORY_TRACE=1 (no-op otherwise).
+  startMemoryTraceSampler();
   wireFoundation(ctx);
   const features = wireFeatures(ctx, options);
   const services = wireServices(ctx, options);

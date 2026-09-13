@@ -12,4 +12,8 @@ export * from "./request";
 export * from "./retry";
 export * from "./token-meter";
 
-export { memoryTrace } from "./memory-trace";
+export {
+  memoryTrace,
+  startMemoryTraceSampler,
+  stopMemoryTraceSampler,
+} from "./memory-trace";
