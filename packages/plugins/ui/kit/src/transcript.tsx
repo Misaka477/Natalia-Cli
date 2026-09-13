@@ -212,14 +212,39 @@ export function Transcript(props: TranscriptProps) {
   const useVirtual = () => {
     if (!virtualize()) return false;
     const items = virtualItems();
-    return (
-      items.length > 0 &&
-      items.every(
+    if (items.length === 0) return false;
+    if (
+      !items.every(
         (item) =>
           item !== undefined && props.messages[item.index] !== undefined,
       )
-    );
+    )
+      return false;
+    // A data change from a one-row live projection to a full hydrated history
+    // can leave the cached virtual window covering only that one row even
+    // though every index is technically valid. Treat an absurdly small window
+    // as not-ready so the fallback list renders the real history while the
+    // remeasure below rebuilds the virtualizer.
+    const first = items[0]!.index;
+    const last = items.at(-1)!.index;
+    if (last - first + 1 < Math.min(props.messages.length, 2)) return false;
+    return true;
   };
+  let lastMessageCount = -1;
+  createEffect(() => {
+    const count = props.messages.length;
+    if (count === lastMessageCount) return;
+    const previous = lastMessageCount;
+    lastMessageCount = count;
+    if (previous < 0) return;
+    // Count changes invalidate the cached window. Rebuild after the DOM has
+    // taken the new count; otherwise the transcript can stay pinned to the
+    // previous (possibly single-row) end window.
+    requestAnimationFrame(() => {
+      virtualizer.measure();
+      controller?.notifyDataChanged();
+    });
+  });
   const topSpacer = () => {
     const first = virtualItems()[0];
     return first ? Math.max(0, first.start) : 0;
@@ -385,11 +410,14 @@ export function Transcript(props: TranscriptProps) {
 
   onMount(() => {
     props.apiRef?.(api);
-    console.log("[natalia-ui] transcript mounted", {
-      messages: props.messages.length,
-      debug: uiDebugEnabled(),
-      virtualizeThreshold: VIRTUALIZE_THRESHOLD,
-    });
+    console.log(
+      "[natalia-ui] transcript mounted",
+      JSON.stringify({
+        messages: props.messages.length,
+        debug: uiDebugEnabled(),
+        virtualizeThreshold: VIRTUALIZE_THRESHOLD,
+      }),
+    );
   });
   onCleanup(() => {
     controller?.dispose();
@@ -463,29 +491,40 @@ export function Transcript(props: TranscriptProps) {
   createEffect(() => {
     if (!uiDebugEnabled()) return;
     const mounted = useVirtual() ? virtualItems() : [];
-    console.log("[natalia-ui] transcript window", {
-      messages: props.messages.length,
-      virtualized: virtualize(),
-      virtualReady: useVirtual(),
-      mounted: mounted.length,
-      firstMounted: mounted[0]?.index,
-      lastMounted: mounted.at(-1)?.index,
-      totalSize: useVirtual() ? totalSize() : null,
-    });
+    console.log(
+      "[natalia-ui] transcript window",
+      JSON.stringify({
+        messages: props.messages.length,
+        virtualized: virtualize(),
+        virtualReady: useVirtual(),
+        mounted: mounted.length,
+        firstMounted: mounted[0]?.index,
+        lastMounted: mounted.at(-1)?.index,
+        totalSize: useVirtual() ? totalSize() : null,
+      }),
+    );
   });
 
   let lastVirtualReady: boolean | undefined;
+  let lastVirtualMessages = -1;
   createEffect(() => {
     const ready = useVirtual();
     const messages = props.messages.length;
-    if (ready === lastVirtualReady) return;
+    if (ready === lastVirtualReady && messages === lastVirtualMessages) return;
     lastVirtualReady = ready;
-    console.log("[natalia-ui] transcript virtualization", {
-      messages,
-      virtualReady: ready,
-      mounted: ready ? virtualItems().length : 0,
-      totalSize: ready ? totalSize() : null,
-    });
+    lastVirtualMessages = messages;
+    const items = ready ? virtualItems() : [];
+    console.log(
+      "[natalia-ui] transcript virtualization",
+      JSON.stringify({
+        messages,
+        virtualReady: ready,
+        mounted: items.length,
+        firstMounted: items[0]?.index,
+        lastMounted: items.at(-1)?.index,
+        totalSize: ready ? totalSize() : null,
+      }),
+    );
   });
 
   let lastDuplicateSignature = "";

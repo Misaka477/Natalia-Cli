@@ -1584,6 +1584,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const page = sessionID
       ? await props.ctx.runtime.messages?.({ limit: 100, sessionID })
       : await props.ctx.runtime.messages?.({ limit: 100 });
+    console.log(
+      "[hydrate] page",
+      JSON.stringify({
+        sessionID,
+        current: isCurrent(),
+        turns: page?.data.length ?? -1,
+        rows: page?.data.reduce((count, turn) => count + turn.rows.length, 0) ?? -1,
+        ms: Math.round(performance.now() - hydrateStart),
+      }),
+    );
     // A superseded/expired load must still release the transcript's initial
     // loading gate, otherwise the tail state machine waits forever.
     setTranscriptHistoryLoading(false);
@@ -1593,6 +1603,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
     if (!page?.data.length) {
       props.ctx.projection.hydrateMessages?.([], "newer", options);
+      console.log(
+        "[hydrate] applied",
+        JSON.stringify({
+          sessionID,
+          emptyPage: true,
+          messages: props.ctx.projection.getState().natalia.messages.length,
+        }),
+      );
       historyCursor = undefined;
       newerHistoryCursor = undefined;
       setTranscriptHistoryLoading(false);
@@ -1605,6 +1623,23 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       [...page.data].reverse(),
       "newer",
       options,
+    );
+    // Do not rely on the projection notification: when the page returns while
+    // the replay guard is still set the notification is dropped, and by the
+    // time the guard clears the flag may already read false, so neither the
+    // subscription nor a replaying check re-syncs the UI. Compare the applied
+    // projection with the UI signal and copy it across directly.
+    const hydrated = props.ctx.projection.getState();
+    if (state().natalia.messages.length !== hydrated.natalia.messages.length) {
+      setState(cloneState(hydrated));
+    }
+    console.log(
+      "[hydrate] applied",
+      JSON.stringify({
+        sessionID,
+        projectedMessages: hydrated.natalia.messages.length,
+        uiMessages: state().natalia.messages.length,
+      }),
     );
     historyCursor = page.cursor.next;
     newerHistoryCursor = undefined;
@@ -1802,6 +1837,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       setTranscriptHistoryLoading(true);
       messagesHydrationStarted = false;
       lastHydratedSessionID = undefined;
+      // A stale in-flight load must not block the same session from being
+      // retried after the reset.
+      hydratingSessionID = undefined;
       historyCursor = undefined;
       newerHistoryCursor = undefined;
       loadingOlderHistory = false;
@@ -1866,6 +1904,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
     let messagesHydrationStarted = false;
     let lastHydratedSessionID: string | undefined;
+    let hydratingSessionID: string | undefined;
     const workspaceIDForSession = (sessionID: string) =>
       sessionList().find((session) => session.id === sessionID)?.workspaceID ??
       state().activeWorkspaceID;
@@ -1877,13 +1916,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setTimeout(() => void hydrateRecentMessagesOnLoad(), 100);
         return;
       }
-      if (sessionID === lastHydratedSessionID) return;
+      if (sessionID === lastHydratedSessionID || sessionID === hydratingSessionID)
+        return;
+      hydratingSessionID = sessionID;
       props.ctx.projection.activateSession?.(
         sessionID,
         workspaceIDForSession(sessionID),
       );
       messagesHydrationStarted = true;
-      lastHydratedSessionID = sessionID;
       const loadToken = (
         globalThis as unknown as { __nataliaSessionLoadToken?: number }
       ).__nataliaSessionLoadToken;
@@ -1898,9 +1938,65 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       );
       // Message-first startup: the latest projected page replaces the old
       // full-log replay. The page is newest-last on the wire; reverse it so the
-      // projection's older-merge keeps transcript order.
-      await hydrateRecentMessagesForSession(sessionID, isCurrentLoad);
-      if (!isCurrentLoad()) return;
+      // projection's older-merge keeps transcript order. This is a baseline
+      // replacement, not a paging merge: merging a whole baseline page with
+      // live rows via the paging path put new messages before history.
+      try {
+        await hydrateRecentMessagesForSession(sessionID, isCurrentLoad, {
+          replace: true,
+        });
+      } catch (error) {
+        // Release the in-flight guard so the history-replay-complete path can
+        // retry instead of leaving the transcript with only live rows.
+        console.log(
+          "[hydrate] failed",
+          JSON.stringify({
+            sessionID,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        if (hydratingSessionID === sessionID) hydratingSessionID = undefined;
+        throw error;
+      }
+      if (!isCurrentLoad()) {
+        // A reconnect/newer attach superseded this load. Do not mark the
+        // session hydrated; clearing the guard lets the next attach retry the
+        // page instead of leaving the transcript partial forever.
+        console.log(
+          "[hydrate] stale",
+          JSON.stringify({
+            sessionID,
+            loadToken,
+            currentToken: (globalThis as { __nataliaSessionLoadToken?: number })
+              .__nataliaSessionLoadToken,
+            selected: selectedSessionID() || state().sessionID,
+          }),
+        );
+        if (hydratingSessionID === sessionID) hydratingSessionID = undefined;
+        return;
+      }
+      lastHydratedSessionID = sessionID;
+      if (hydratingSessionID === sessionID) hydratingSessionID = undefined;
+      // The attach-triggered hydrate can finish while the runtime replay guard
+      // is still set; the projection subscription intentionally ignores those
+      // notifications, and finishSessionLoad only flushes live events rather
+      // than re-syncing an already-applied projection. Push the hydrated state
+      // into the UI signal explicitly so the transcript is not left at 0 rows.
+      if (
+        (globalThis as unknown as { __nataliaReplayingHistory?: boolean })
+          .__nataliaReplayingHistory
+      ) {
+        setState(cloneState(props.ctx.projection.getState()));
+      }
+      console.log(
+        "[hydrate] onLoad applied",
+        JSON.stringify({
+          sessionID,
+          projectedMessages:
+            props.ctx.projection.getState().natalia.messages.length,
+          uiMessages: state().natalia.messages.length,
+        }),
+      );
       markStartup("main.messages");
       // Chat and subagents are secondary surfaces. Hydrate them in the
       // background so the primary transcript paints first and does not wait
@@ -2035,6 +2131,14 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const projected = cloneState(props.ctx.projection.getState());
         const cloneStart = performance.now();
         setState(projected);
+        console.log(
+          "[hydrate] ui state",
+          JSON.stringify({
+            selected: selectedSessionID(),
+            projectedSession: projected.sessionID,
+            projectedMessages: projected.natalia.messages.length,
+          }),
+        );
         if (projected.workspaces.length)
           mergeProjectedWorkspaces(projected.workspaces);
         perfLog(
