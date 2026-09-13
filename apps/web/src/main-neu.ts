@@ -8,6 +8,9 @@ import {
 import { createWebRuntimeClient } from "./runtime-rpc";
 import { createLocalPreferenceStore } from "./local-preferences";
 import { loadPluginUiBundles, syncPluginUiBundles } from "./plugin-ui-loader";
+import { startRendererMemoryTrace } from "./memory-trace";
+
+startRendererMemoryTrace();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");

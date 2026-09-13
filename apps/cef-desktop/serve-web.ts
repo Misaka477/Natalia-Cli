@@ -28,10 +28,14 @@ serve({
       return new Response("forbidden", { status: 403 });
     }
 
-    const perfProbe =
+    const perfProbe = [
       process.env.NATALIA_PERF_VERBOSE === "1"
         ? "<script>window.__NATALIA_PERF_VERBOSE=1</script>"
-        : "";
+        : "",
+      process.env.NATALIA_MEMORY_TRACE === "1"
+        ? "<script>window.__NATALIA_MEMORY_TRACE=1</script>"
+        : "",
+    ].join("");
 
     const file = Bun.file(filePath);
     if (await file.exists()) {
