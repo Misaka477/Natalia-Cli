@@ -35,16 +35,6 @@ function planStatusLabel(status: string): string {
   return PLAN_STATUS_LABELS[status] ?? status;
 }
 
-function isActivePlanStatus(status: string): boolean {
-  return new Set([
-    "handed_off",
-    "executing",
-    "awaiting_audit",
-    "auditing",
-    "audit_gaps",
-  ]).has(status);
-}
-
 function MarkdownPreview(props: { content: string }) {
   const html = createMemo(() => marked.parse(props.content ?? "") as string);
   return <div class="plan-panel-preview markdown-body" innerHTML={html()} />;
@@ -60,6 +50,7 @@ export function PlanPanel(props: {
   };
 }) {
   const [selectedID, setSelectedID] = createSignal<string | undefined>();
+  const [activePlanID, setActivePlanID] = createSignal<string | undefined>();
   const [draft, setDraft] = createSignal("");
   const [preview, setPreview] = createSignal(true);
   const [notice, setNotice] = createSignal("");
@@ -73,7 +64,7 @@ export function PlanPanel(props: {
     localPlans().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   );
   const activePlan = createMemo(() =>
-    plans().find((plan) => isActivePlanStatus(plan.status)),
+    plans().find((plan) => plan.planID === activePlanID()),
   );
   const selected = createMemo(
     () =>
@@ -93,25 +84,31 @@ export function PlanPanel(props: {
 
   async function refreshPlans() {
     try {
-      const list = (await props.runtime?.planDocList?.(sessionID())) ?? [];
+      const [list, active] = await Promise.all([
+        Promise.resolve(props.runtime?.planDocList?.(sessionID()) ?? []),
+        Promise.resolve(props.runtime?.planDocActive?.(sessionID())),
+      ]);
       setLocalPlans(
         list.map((plan) => ({
           ...plan,
           createdBy: plan.createdBy,
         })),
       );
+      const nextActivePlanID = active?.planID;
+      setActivePlanID(nextActivePlanID);
       const next = (() => {
+        const currentActive = nextActivePlanID
+          ? list.find((plan) => plan.planID === nextActivePlanID)
+          : undefined;
         try {
           const stored = localStorage.getItem("natalia.selectedPlanID");
           return (
             list.find((plan) => plan.planID === stored) ??
-            list.find((plan) => isActivePlanStatus(plan.status)) ??
+            currentActive ??
             list[0]
           );
         } catch {
-          return (
-            list.find((plan) => isActivePlanStatus(plan.status)) ?? list[0]
-          );
+          return currentActive ?? list[0];
         }
       })();
       if (next) {
@@ -188,11 +185,10 @@ export function PlanPanel(props: {
     const plan = selected();
     if (!plan) return;
     try {
-      const result = await props.runtime?.planDocUpdateStatus?.({
-        planID: plan.planID,
-        status: "executing",
-        sessionID: sessionID(),
-      });
+      const result = await props.runtime?.planDocActivate?.(
+        plan.planID,
+        sessionID(),
+      );
       setNotice(
         result?.updated
           ? `已将「${plan.title}」设为当前活跃计划`
@@ -331,7 +327,7 @@ export function PlanPanel(props: {
                   <div class="agent-card-title">{plan.title}</div>
                   <div
                     class="agent-card-status"
-                    data-active={isActivePlanStatus(plan.status)}
+                    data-active={activePlanID() === plan.planID}
                   >
                     {planStatusLabel(plan.status)}
                   </div>

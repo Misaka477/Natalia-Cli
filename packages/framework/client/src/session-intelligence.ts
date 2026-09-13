@@ -102,9 +102,31 @@ export function buildSessionIntelligenceSnapshot(input: {
   events: RuntimeEvent[];
   live: SessionIntelligenceLive;
 }): Extract<RuntimeEvent, { type: "session.snapshot" }> {
-  const changedFiles = countChangedFiles(input.events);
-  const validated = countValidatedChanges(input.events);
-  const output = input.live.recentOutput ?? latestConfirmedOutput(input.events);
+  let changedFiles = 0;
+  let validated = 0;
+  let latestOutput: string | undefined;
+  const latestTerminalAction = new Map<string, string>();
+  const latestSandboxStatus = new Map<string, string>();
+  for (const event of input.events) {
+    switch (event.type) {
+      case "workgraph.node_added":
+        if (event.kind === "workspace_change") changedFiles += 1;
+        break;
+      case "evidence.recorded":
+        validated += event.changes?.length ?? 0;
+        break;
+      case "content.done":
+        if (event.text) latestOutput = event.text;
+        break;
+      case "terminal.timeline":
+        latestTerminalAction.set(event.id, event.action);
+        break;
+      case "sandbox.update":
+        latestSandboxStatus.set(event.id, event.status);
+        break;
+    }
+  }
+  const output = input.live.recentOutput ?? latestOutput;
   return {
     type: "session.snapshot",
     id: input.id,
@@ -114,7 +136,12 @@ export function buildSessionIntelligenceSnapshot(input: {
     changedFiles,
     unvalidatedChanges: Math.max(0, changedFiles - validated),
     ...(output ? { recentOutput: output.slice(0, 2000) } : {}),
-    hasPTY: hasLivePTY(input.events),
-    hasSandbox: hasLiveSandbox(input.events),
+    hasPTY: [...latestTerminalAction.values()].some(
+      (action) => action !== "exit",
+    ),
+    hasSandbox: [...latestSandboxStatus.values()].some(
+      (status) =>
+        status !== "deleted" && status !== "stopped" && status !== "failed",
+    ),
   };
 }

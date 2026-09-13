@@ -10,6 +10,7 @@
  * Read-only: this module only writes `.natalia/plans/` plan documents and the
  * index. It never touches project source, shell, sandbox or checkpoints.
  */
+import { readFileSync } from "node:fs";
 import {
   mkdir,
   readFile,
@@ -22,10 +23,12 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { RuntimeInvalidParams } from "@natalia/contracts";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
+  SESSION_STORE_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
+  type SessionStoreController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext, SessionExecutionState } from "../context";
 
 export type PlanDocRuntime = {
   planDocList(sessionID?: string): Promise<
@@ -75,11 +78,25 @@ export type PlanDocRuntime = {
     status: string;
     sessionID?: string;
   }): Promise<{ updated: boolean }>;
+  /** Workspace-level plan registry snapshot for synchronous prompt building. */
+  planDocSnapshot(): PlanDocRecord[];
+  /** Workspace-level lookup by planID. */
+  planDocByID(planID: string): PlanDocRecord | undefined;
+  /** Session-scoped active plan pointer. */
+  planDocActive(sessionID?: string): Promise<{ planID?: string }>;
+  planDocActivate(
+    planID: string,
+    sessionID?: string,
+  ): Promise<{ planID?: string; updated: boolean }>;
+  planDocDeactivate(
+    sessionID?: string,
+  ): Promise<{ planID?: string; updated: boolean }>;
 };
 
-type IndexEntry = Awaited<
+export type PlanDocRecord = Awaited<
   ReturnType<NonNullable<RuntimeServiceClient["planDocList"]>>
 >[number];
+type IndexEntry = PlanDocRecord;
 
 const PLAN_DIR = ".natalia/plans";
 const INDEX_FILE = join(PLAN_DIR, "index.json");
@@ -93,6 +110,16 @@ async function readIndex(
 ): Promise<Record<string, IndexEntry>> {
   try {
     const raw = await readFile(join(planRoot(ctx), "index.json"), "utf8");
+    const parsed = JSON.parse(raw) as Record<string, IndexEntry>;
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function readIndexSync(ctx: RuntimeContext): Record<string, IndexEntry> {
+  try {
+    const raw = readFileSync(join(planRoot(ctx), "index.json"), "utf8");
     const parsed = JSON.parse(raw) as Record<string, IndexEntry>;
     return parsed ?? {};
   } catch {
@@ -161,6 +188,19 @@ function planIDForPath(path: string) {
   return `plan_${slug || "doc"}`;
 }
 
+/**
+ * Resolve the plan activated in this session. Document existence/status stays
+ * workspace-level; only the pointer is session-scoped.
+ */
+export function activePlanForExec(
+  ctx: RuntimeContext,
+  exec?: SessionExecutionState,
+): PlanDocRecord | undefined {
+  const planID = exec?.session?.metadata?.activePlanID;
+  if (typeof planID !== "string" || planID.length === 0) return undefined;
+  return ctx.ports.planDocRuntime.planDocByID(planID);
+}
+
 export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
   function requireWorkLedger() {
     const ledger = ctx.ports.resolveService<WorkLedgerController>(
@@ -184,6 +224,28 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     sessionID?: string,
   ) {
     ctx.ports.publishForSession(sessionExec(sessionID), event);
+  }
+
+  async function updateActivePlanID(
+    planID: string | undefined,
+    sessionID?: string,
+  ): Promise<{ planID?: string; updated: boolean }> {
+    let exec = sessionExec(sessionID);
+    if (!exec && sessionID)
+      exec = await ctx.ports.ensureExecution(
+        sessionID as import("@natalia/contracts").SessionID,
+      );
+    if (!exec) return { updated: false };
+    const store = ctx.ports.resolveService<SessionStoreController>(
+      SESSION_STORE_CONTROLLER_SERVICE,
+    );
+    if (!store) throw new Error("session store unavailable (natalia-session-store)");
+    const metadata = { ...exec.session.metadata };
+    if (planID) metadata.activePlanID = planID;
+    else delete metadata.activePlanID;
+    exec.session.metadata = metadata;
+    await store.updateMetadata(exec.session, { activePlanID: planID });
+    return { ...(planID ? { planID } : {}), updated: true };
   }
 
   return {
@@ -315,6 +377,38 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       const entries = await readIndex(ctx);
       const record = entries[planID];
       return { status: record?.status ?? "unmarked" };
+    },
+
+    planDocSnapshot() {
+      return Object.values(readIndexSync(ctx));
+    },
+
+    planDocByID(planID) {
+      return readIndexSync(ctx)[planID];
+    },
+
+    async planDocActive(sessionID?) {
+      let exec = sessionExec(sessionID);
+      if (!exec && sessionID)
+        exec = await ctx.ports.ensureExecution(
+          sessionID as import("@natalia/contracts").SessionID,
+        );
+      const planID = exec?.session?.metadata?.activePlanID;
+      return {
+        ...(typeof planID === "string" && planID.length
+          ? { planID }
+          : {}),
+      };
+    },
+
+    async planDocActivate(planID, sessionID?) {
+      if (!planID || !readIndexSync(ctx)[planID])
+        return { updated: false };
+      return await updateActivePlanID(planID, sessionID);
+    },
+
+    async planDocDeactivate(sessionID?) {
+      return await updateActivePlanID(undefined, sessionID);
     },
 
     async planDocUpdateStatus(input) {

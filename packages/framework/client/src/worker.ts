@@ -115,6 +115,9 @@ export const WORKER_ROUTE_MEMBERS = {
   "planDoc.delete": "planDocDelete",
   "planDoc.status": "planDocStatus",
   "planDoc.updateStatus": "planDocUpdateStatus",
+  "planDoc.active": "planDocActive",
+  "planDoc.activate": "planDocActivate",
+  "planDoc.deactivate": "planDocDeactivate",
   "mailbox.list": "mailboxList",
   "mailbox.send": "mailboxSend",
   "mailbox.acknowledge": "mailboxAcknowledge",
@@ -241,6 +244,9 @@ type WorkerRequest = {
     | "planDoc.delete"
     | "planDoc.status"
     | "planDoc.updateStatus"
+    | "planDoc.active"
+    | "planDoc.activate"
+    | "planDoc.deactivate"
     | "mailbox.list"
     | "mailbox.send"
     | "mailbox.acknowledge"
@@ -840,6 +846,23 @@ export function createWorkerRuntimeClient(
       return (await request("planDoc.updateStatus", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>
       >;
+    },
+    async planDocActive(sessionID) {
+      return (await request(
+        "planDoc.active",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocActive"]>>>;
+    },
+    async planDocActivate(planID, sessionID) {
+      return (await request("planDoc.activate", { planID, sessionID })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocActivate"]>>
+      >;
+    },
+    async planDocDeactivate(sessionID) {
+      return (await request(
+        "planDoc.deactivate",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocDeactivate"]>>>;
     },
     async mailboxList(sessionID) {
       return (await request(
@@ -1478,6 +1501,18 @@ export async function handleWorkerRequest(
   }
   if (request.method === "planDoc.updateStatus")
     return await client.planDocUpdateStatus?.(request.value as never);
+  if (request.method === "planDoc.active")
+    return await client.planDocActive?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "planDoc.activate") {
+    const value = request.value as { planID: string; sessionID?: string };
+    return await client.planDocActivate?.(value.planID, value.sessionID);
+  }
+  if (request.method === "planDoc.deactivate")
+    return await client.planDocDeactivate?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
   if (request.method === "mailbox.list")
     return await client.mailboxList?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,

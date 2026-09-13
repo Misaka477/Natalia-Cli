@@ -8,7 +8,7 @@
  * edits and drift-check them against the active plan). Reads live state through
  * `RuntimeContext` at call time.
  */
-import { projectedMailboxMessages, projectedPlanDocs } from "@natalia/session";
+import { projectedMailboxMessages } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -18,19 +18,9 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
+import { activePlanForExec } from "./plan-doc-runtime";
 
 export function createCollaborationBoundary(ctx: RuntimeContext) {
-  function planDocsFor(exec?: SessionExecutionState) {
-    const snapshot = exec?.collabSnapshot;
-    if (
-      snapshot &&
-      snapshot.eventCount ===
-        (exec?.eventCount ?? exec?.session.events.length ?? -1)
-    )
-      return snapshot.planDocs;
-    return projectedPlanDocs(exec?.session.events ?? []);
-  }
-
   function mailboxMessagesFor(exec?: SessionExecutionState) {
     const snapshot = exec?.collabSnapshot;
     if (
@@ -206,13 +196,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         );
       }
       if (confirmed.length) {
-        const activePlan = planDocsFor(target).find(
-          (plan) =>
-            plan.status === "executing" ||
-            plan.status === "awaiting_audit" ||
-            plan.status === "auditing" ||
-            plan.status === "audit_gaps",
-        );
+        const activePlan = activePlanForExec(ctx, target);
         const objective = activePlan?.title ?? "";
         const applicableConstraints: string[] = [];
         if (objective || applicableConstraints.length) {

@@ -14,11 +14,11 @@ import {
   projectedDecisionRecords,
   projectedDriftFindings,
   projectedMailboxMessages,
-  projectedPlanDocs,
 } from "@natalia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
+import { activePlanForExec } from "./plan-doc-runtime";
 
 function promptData(value: string): string {
   return value
@@ -43,16 +43,6 @@ export function createChatPrompt(ctx: RuntimeContext) {
     if (snapshot && snapshot.eventCount === events.length)
       return snapshot.collabMessages;
     return projectedCollabMessages(events);
-  }
-
-  function planDocsFor(
-    exec: SessionExecutionState | undefined,
-    events: RuntimeEvent[],
-  ): ReturnType<typeof projectedPlanDocs> {
-    const snapshot = exec?.collabSnapshot;
-    if (snapshot && snapshot.eventCount === events.length)
-      return snapshot.planDocs;
-    return projectedPlanDocs(events);
   }
 
   function recentMainAgentActivity(
@@ -145,14 +135,10 @@ export function createChatPrompt(ctx: RuntimeContext) {
     const snapshot = exec
       ? currentSessionSnapshot(exec, `snapshot:nia:${chatSession.id}`)
       : undefined;
-    const plans = planDocsFor(exec, chatSession.events);
-    const activePlan = plans.find(
-      (plan) =>
-        plan.status === "executing" ||
-        plan.status === "awaiting_audit" ||
-        plan.status === "auditing" ||
-        plan.status === "audit_gaps",
+    const plans = [...ctx.ports.planDocRuntime.planDocSnapshot()].sort(
+      (left, right) => left.createdAt.localeCompare(right.createdAt),
     );
+    const activePlan = activePlanForExec(ctx, exec);
     const mailbox = projectedMailboxMessages(chatSession.events).filter(
       (message) =>
         message.status === "queued" || message.status === "delivered",
@@ -161,9 +147,9 @@ export function createChatPrompt(ctx: RuntimeContext) {
       "<nia_chat_persona>",
       "You are Nia, Natalia's independent read-only audit agent and younger sister.",
       "You inspect plans and workspace state, verify evidence, find gaps, and report findings in natural language.",
-      "You never write files, never modify plans, and never change runtime state. You may run shell commands only for verification/testing; never use the shell to create, edit, delete, move, install, commit, or otherwise modify workspace files or repository state. Prefer commands that read or test: test runners, typecheckers, linters, build checks, git status/diff/log, and read-only inspection commands.",
-      "You use read-only tools: read_file, glob, grep, web_fetch, web_search, run_shell (verification only), session_snapshot, plan_doc_read, plan_doc_list, mailbox_status, collab_chat, audit_report, workspace/diff reads.",
-      "When you finish auditing an active plan, call audit_report with planID and verdict passed or gaps. Use collab_chat to send the concrete gap list or summary to Natalia.",
+      "You never write project source, never modify runtime state, and never edit files outside .natalia/plans/. Your one write exception is plan_doc_write, which updates the Markdown content of a plan document under .natalia/plans/. You may run shell commands only for verification/testing; never use the shell to create, edit, delete, move, install, commit, or otherwise modify workspace files or repository state. Prefer commands that read or test: test runners, typecheckers, linters, build checks, git status/diff/log, and read-only inspection commands.",
+      "You use read_file, glob, grep, web_fetch, web_search, run_shell (verification only), session_snapshot, plan_doc_read, plan_doc_list, plan_doc_write (plan documents only), mailbox_status, collab_chat, audit_report, and workspace/diff reads.",
+      "When you finish auditing an active plan, update that plan document with plan_doc_write to record concrete gaps, completed items, fixes, or verification notes, then call audit_report with planID and verdict passed or gaps. Use collab_chat to send the concrete gap list or summary to Natalia.",
       "Only claim that you notified Natalia after collab_chat returns sent:true. If collab_chat returns an error, do not claim notification; read the pending REPLY_REQUIRED messageID from <natalia_collaborations> and retry with collab_chat using that exact messageID.",
       'When replying to a REPLY_REQUIRED Natalia message, call collab_chat with: { "text": "your concrete reply", "messageID": "<exact messageID from the REPLY_REQUIRED line>" }.',
       "When audit_report verdict is passed, do not call collab_chat to Natalia; the audit is complete. You may still use collab_chat in future turns.",
@@ -254,13 +240,10 @@ export function createChatPrompt(ctx: RuntimeContext) {
     const snapshot = exec
       ? currentSessionSnapshot(exec, `snapshot:live:${chatSession.id}`)
       : latestSessionSnapshot(chatSession.events);
-    const plans = planDocsFor(exec, chatSession.events);
-    const activePlan = plans.find(
-      (plan) =>
-        plan.status === "executing" ||
-        plan.status === "awaiting_audit" ||
-        plan.status === "auditing",
+    const plans = [...ctx.ports.planDocRuntime.planDocSnapshot()].sort(
+      (left, right) => left.createdAt.localeCompare(right.createdAt),
     );
+    const activePlan = activePlanForExec(ctx, exec);
     const mailbox = projectedMailboxMessages(chatSession.events).filter(
       (message) =>
         message.status === "queued" || message.status === "delivered",

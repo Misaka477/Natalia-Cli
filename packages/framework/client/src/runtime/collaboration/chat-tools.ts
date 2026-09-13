@@ -128,6 +128,48 @@ function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+
+function planDocWriteTool(
+  ctx: RuntimeContext,
+  description: string,
+): RuntimeTool {
+  return {
+    name: "plan_doc_write",
+    description,
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        content: { type: "string" },
+        title: { type: "string" },
+      },
+      required: ["path", "content"],
+      additionalProperties: false,
+    },
+    async execute(parsed) {
+      const args = parsed as {
+        path?: string;
+        content?: string;
+        title?: string;
+      };
+      if (typeof args.path !== "string" || typeof args.content !== "string")
+        return "plan_doc_write requires path and content";
+      try {
+        return JSON.stringify(
+          await ctx.ports.planDocRuntime.planDocWrite({
+            path: args.path,
+            content: args.content,
+            ...(args.title ? { title: args.title } : {}),
+          }),
+        );
+      } catch (cause) {
+        return cause instanceof Error ? cause.message : String(cause);
+      }
+    },
+  };
+}
+
 export function createChatTools(ctx: RuntimeContext) {
   return {
     naviChatTools,
@@ -514,7 +556,7 @@ export function createChatTools(ctx: RuntimeContext) {
       visible.push({
         name: "plan_doc_list",
         description:
-          "List the current session's plan documents. Marked plan documents carry a stable planID and documentPath.",
+          "List the workspace plan documents. Marked plan documents carry a stable planID and documentPath.",
         requiresApproval: false,
         parameters: {
           type: "object",
@@ -558,42 +600,12 @@ export function createChatTools(ctx: RuntimeContext) {
       });
     }
     if (!visible.some((tool) => tool.name === "plan_doc_write")) {
-      visible.push({
-        name: "plan_doc_write",
-        description:
+      visible.push(
+        planDocWriteTool(
+          ctx,
           "Write or update a Markdown plan document under .natalia/plans/. Use it when the user asks to draft or revise a plan document. Never write project source with this tool.",
-        requiresApproval: false,
-        parameters: {
-          type: "object",
-          properties: {
-            path: { type: "string" },
-            content: { type: "string" },
-            title: { type: "string" },
-          },
-          required: ["path", "content"],
-          additionalProperties: false,
-        },
-        async execute(parsed) {
-          const args = parsed as {
-            path?: string;
-            content?: string;
-            title?: string;
-          };
-          if (typeof args.path !== "string" || typeof args.content !== "string")
-            return "plan_doc_write requires path and content";
-          try {
-            return JSON.stringify(
-              await ctx.ports.planDocRuntime.planDocWrite({
-                path: args.path,
-                content: args.content,
-                ...(args.title ? { title: args.title } : {}),
-              }),
-            );
-          } catch (cause) {
-            return cause instanceof Error ? cause.message : String(cause);
-          }
-        },
-      });
+        ),
+      );
     }
     if (!visible.some((tool) => tool.name === "plan_doc_mark")) {
       visible.push({
@@ -706,7 +718,7 @@ export function createChatTools(ctx: RuntimeContext) {
       },
       {
         name: "plan_doc_list",
-        description: "List this session's plan documents.",
+        description: "List the workspace plan documents.",
         requiresApproval: false,
         parameters: {
           type: "object",
@@ -745,6 +757,10 @@ export function createChatTools(ctx: RuntimeContext) {
           }
         },
       },
+      planDocWriteTool(
+        ctx,
+        "Update the Markdown content of the plan document being audited. Use this after an audit to record concrete gaps, fixes, verification notes, or status updates in the document itself. Only .natalia/plans/ paths are accepted; never write project source.",
+      ),
     );
     visible.push(ctx.ports.createCollabChatTool("nia", exec));
     if (!visible.some((tool) => tool.name === "audit_report")) {

@@ -296,13 +296,11 @@ export function createIntelligenceSurface(
       const session = await intelligenceSession(sessionID);
       if (!session) return [];
       // P2 E3: the effective status of each evidence record is driven by the
-      // lifecycle of the plan whose task it belongs to (a projection policy —
-      // the journal keeps the recorded status; the query answers what it means
-      // now).
-      const plans = (await runSessionProjectionWithFallback(
-        "planDocs",
-        session.events,
-      )) as ReturnType<typeof projectedPlanDocs>;
+      // workspace-level lifecycle of the plan whose task it belongs to (a
+      // projection policy — the journal keeps the recorded status; the query
+      // answers what it means now). Plan documents are workspace-level, so
+      // evidence can resolve even when the plan was created in another session.
+      const plans = ctx.ports.planDocRuntime.planDocSnapshot();
       const planStateForTask = new Map<string, string>();
       for (const plan of plans) {
         planStateForTask.set(plan.planID, plan.status);

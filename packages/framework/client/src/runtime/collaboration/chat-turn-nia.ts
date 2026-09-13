@@ -13,9 +13,9 @@ import type {
   ProviderToolCall,
   StreamingProvider,
 } from "@natalia/runtime";
-import { projectedPlanDocs } from "@natalia/session";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
+import { activePlanForExec } from "./plan-doc-runtime";
 import {
   type ConcreteRuntimeEvent,
   niaChatHistory,
@@ -212,14 +212,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           }
         : undefined;
     };
-    const activePlan = projectedPlanDocs(input.exec.session.events).find(
-      (plan) =>
-        plan.status === "handed_off" ||
-        plan.status === "executing" ||
-        plan.status === "awaiting_audit" ||
-        plan.status === "auditing" ||
-        plan.status === "audit_gaps",
-    );
+    const activePlan = activePlanForExec(ctx, input.exec);
     const auditIntent =
       input.internal !== true && /审计|audit|审核/iu.test(input.text);
     const requiredAuditAction = () => {

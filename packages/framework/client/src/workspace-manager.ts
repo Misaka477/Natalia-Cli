@@ -740,6 +740,8 @@ export function createWorkspaceRuntimeClient(
     "decisionRecords",
     "mailboxList",
     "planDocList",
+    "planDocActive",
+    "planDocDeactivate",
     "evidenceRecords",
     "completions",
     "sessionSnapshot",
@@ -779,6 +781,7 @@ export function createWorkspaceRuntimeClient(
     "mailboxAcknowledge",
     "planDocDelete",
     "planDocStatus",
+    "planDocActivate",
     "chatAbort",
     "chatModelProfile",
     "chatMessages",
@@ -1129,10 +1132,15 @@ export function createWorkspaceRuntimeClient(
           ];
           if (typeof fn !== "function") return undefined;
           startWorkspaceClient(owner);
-          return await (fn as (...call: unknown[]) => Promise<unknown>).apply(
-            owner.client,
-            args,
-          );
+          const result = await (
+            fn as (...call: unknown[]) => Promise<unknown>
+          ).apply(owner.client, args);
+          if (
+            prop === "planDocActivate" ||
+            prop === "planDocDeactivate"
+          )
+            manager.invalidateSessionCache(owner.workspaceID);
+          return result;
         };
       }
       if (prop in manager) {

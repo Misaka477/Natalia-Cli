@@ -59,25 +59,29 @@ export function createCollabSnapshotScheduler(
     const exec = ctx.ports.getExecutionBySession().get(sessionID);
     if (!exec) return;
     const events = exec.session.events;
+    // These projections only consume collaboration/plan/mailbox events. Send
+    // that slice to the worker instead of structured-cloning the complete
+    // long-session event array.
+    const projectionEvents = events.filter(isCollabProjectionEvent);
     const start = performance.now();
     try {
-      const computed = await computeCollabSnapshotInWorker(events);
+      const computed = await computeCollabSnapshotInWorker(projectionEvents);
       commit(sessionID, revision, computed);
       perfLog(
-        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms worker`,
+        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${projectionEvents.length}/${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms worker`,
       );
     } catch {
       // Worker failure must never take the collaboration surfaces offline.
       const computed: CollabSnapshot = {
-        collabMessages: projectedCollabMessages(events),
-        planDocs: projectedPlanDocs(events),
-        mailboxMessages: projectedMailboxMessages(events),
+        collabMessages: projectedCollabMessages(projectionEvents),
+        planDocs: projectedPlanDocs(projectionEvents),
+        mailboxMessages: projectedMailboxMessages(projectionEvents),
         revision,
-        eventCount: events.length,
+        eventCount: projectionEvents.length,
       };
       commit(sessionID, revision, computed);
       perfLog(
-        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms fallback`,
+        `[perf] collabSnapshot.commit session=${sessionID} revision=${revision} events=${projectionEvents.length}/${events.length} collab=${computed.collabMessages.length} plans=${computed.planDocs.length} +${(performance.now() - start).toFixed(1)}ms fallback`,
       );
     }
   }
@@ -95,6 +99,10 @@ export function createCollabSnapshotScheduler(
     exec.collabSnapshot = {
       ...snapshot,
       revision,
+      // The projection only depends on collab/plan/mailbox events; unrelated
+      // events may land during the worker round-trip without invalidating it.
+      // Relevant events always schedule a newer revision, so a stale result is
+      // still discarded above.
       eventCount: exec.session.events.length,
     };
   }
@@ -109,9 +117,14 @@ export function createCollabSnapshotScheduler(
 }
 
 export function isCollabSnapshotRelevantEvent(event: RuntimeEvent): boolean {
+  return isCollabProjectionEvent(event);
+}
+
+function isCollabProjectionEvent(event: RuntimeEvent): boolean {
   return (
     event.type.startsWith("collab.") ||
     event.type.includes(".collab.") ||
-    event.type.startsWith("plan.doc.")
+    event.type.startsWith("plan.doc.") ||
+    event.type.startsWith("mailbox.")
   );
 }

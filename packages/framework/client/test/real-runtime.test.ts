@@ -7208,23 +7208,22 @@ test("session intelligence writer survives replay with the same facts", async ()
   await initial.submitAndWait!("create a workspace file");
   await pollHistoryForFinished(initial);
 
-  const replayed: RuntimeEvent[] = [];
   const reopened = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_ts7_intelligence_replay",
     provider: writeFileProvider(),
   });
-  reopened.start((event) => replayed.push(event));
-  await waitFor(() => replayed.some((event) => event.type === "session.ready"));
+  reopened.start(() => undefined);
+  await reopened.sessionAttach!("ses_ts7_intelligence_replay");
 
-  const snapshots = replayed.filter(
-    (event): event is Extract<RuntimeEvent, { type: "session.snapshot" }> =>
-      event.type === "session.snapshot",
-  );
-  expect(snapshots.length).toBeGreaterThan(0);
-  expect(snapshots.at(-1)?.changedFiles).toBeGreaterThan(0);
-  expect(snapshots.at(-1)?.agentStatus).toBe("idle");
-  expect(JSON.stringify(snapshots)).not.toContain("hello from TS7");
+  // `session.snapshot` is live/reconstructible now, so replay does not carry
+  // historical snapshot events. The read model must rebuild the same facts
+  // from the durable journal on demand.
+  const snapshot = await reopened.sessionSnapshot?.();
+  expect(snapshot).toBeDefined();
+  expect(snapshot?.changedFiles).toBeGreaterThan(0);
+  expect(snapshot?.agentStatus).toBe("idle");
+  expect(JSON.stringify(snapshot)).not.toContain("hello from TS7");
 });
 
 test("session intelligence read model answers the latest published snapshot", async () => {

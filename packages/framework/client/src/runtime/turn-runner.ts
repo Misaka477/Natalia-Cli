@@ -9,11 +9,7 @@
  * call time.
  */
 import { providerForModel } from "@natalia/runtime";
-import {
-  claimNextSteps,
-  projectedCollabMessages,
-  projectedPlanDocs,
-} from "@natalia/session";
+import { claimNextSteps, projectedCollabMessages } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import {
   ATTACHMENT_SERVICE,
@@ -28,6 +24,7 @@ import {
   type StatusSnapshotController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "./context";
+import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import type { RealRuntimeClientOptions } from "./options";
 
 function collabMessagesForExec(
@@ -37,15 +34,6 @@ function collabMessagesForExec(
   if (snapshot && snapshot.eventCount === exec.session.events.length)
     return snapshot.collabMessages;
   return projectedCollabMessages(exec.session.events);
-}
-
-function planDocsForExec(
-  exec: SessionExecutionState,
-): ReturnType<typeof projectedPlanDocs> {
-  const snapshot = exec.collabSnapshot;
-  if (snapshot && snapshot.eventCount === exec.session.events.length)
-    return snapshot.planDocs;
-  return projectedPlanDocs(exec.session.events);
 }
 
 export function createTurnRunner(
@@ -226,13 +214,7 @@ export function createTurnRunner(
           (message) => message.from === "nia" || message.to === "nia",
         ),
       activePlan: () => {
-        const plan = planDocsForExec(exec).find(
-          (candidate) =>
-            candidate.status === "executing" ||
-            candidate.status === "awaiting_audit" ||
-            candidate.status === "auditing" ||
-            candidate.status === "audit_gaps",
-        );
+        const plan = activePlanForExec(ctx, exec);
         if (!plan) return undefined;
         return {
           planID: plan.planID,

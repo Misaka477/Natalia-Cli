@@ -6,11 +6,7 @@
  * and the plan draft writer. Reads live state through `RuntimeContext` at call
  * time.
  */
-import {
-  projectedMailboxMessages,
-  projectedPlanDocs,
-  sessionRunCoordinator,
-} from "@natalia/session";
+import { projectedMailboxMessages, sessionRunCoordinator } from "@natalia/session";
 import {
   buildMailboxQueued,
   buildMailboxStatus,
@@ -26,12 +22,6 @@ import { ensureSessionFullEvents } from "../session-full-events";
 import type { SessionExecutionState } from "../context";
 
 export function createMailboxPlans(ctx: RuntimeContext) {
-  function planDocsFor(exec: SessionExecutionState | undefined) {
-    const snapshot = exec?.collabSnapshot;
-    if (snapshot && snapshot.eventCount === (exec?.session.events.length ?? -1))
-      return snapshot.planDocs;
-    return projectedPlanDocs(exec?.session.events ?? []);
-  }
 
   return {
     createCollabChatTool,
@@ -198,9 +188,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           queued: false as const,
           reason: "next_plan_handoff requires relatedPlanID",
         };
-      const plan = planDocsFor(owner).find(
-        (candidate) => candidate.planID === planID,
-      );
+      const plan = ctx.ports.planDocRuntime.planDocByID(planID);
       if (!plan)
         return {
           queued: false as const,
@@ -298,6 +286,13 @@ export function createMailboxPlans(ctx: RuntimeContext) {
         status: "handed_off",
         sessionID: owner.session.id,
       });
+      // Handoff is the explicit activation step: the plan becomes active for
+      // the session that accepted the handoff, while its lifecycle status stays
+      // workspace-level.
+      await ctx.ports.planDocRuntime.planDocActivate(
+        input.relatedPlanID,
+        owner.session.id,
+      );
     }
     // Wake the main agent when it is idle: a directive sent through the Live
     // Work Chat must reach it without waiting for the next manual turn, so it

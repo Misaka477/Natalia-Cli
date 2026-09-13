@@ -576,7 +576,7 @@ export type NataliaSDK = {
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSupersede"]>>>
   >;
-  /** Lists persisted plan documents for the active session (P8 C4 replacement). */
+  /** Lists persisted workspace plan documents (P8 C4 replacement). */
   planDocList(
     sessionID?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocList"]>>>>;
@@ -617,6 +617,25 @@ export type NataliaSDK = {
     sessionID?: string;
   }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["planDocUpdateStatus"]>>>
+  >;
+  /** Reads the session-scoped active plan pointer. */
+  planDocActive(
+    sessionID?: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["planDocActive"]>>>
+  >;
+  /** Sets the session-scoped active plan pointer. */
+  planDocActivate(
+    planID: string,
+    sessionID?: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["planDocActivate"]>>>
+  >;
+  /** Clears the session-scoped active plan pointer. */
+  planDocDeactivate(
+    sessionID?: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["planDocDeactivate"]>>>
   >;
   driftFindings(
     sessionID?: string,
@@ -1178,6 +1197,15 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         status: input.status,
         ...(input.sessionID ? { sessionID: input.sessionID } : {}),
       }),
+    planDocActive: async (sessionID) =>
+      await call("planDoc.active", sessionID ? { sessionID } : {}),
+    planDocActivate: async (planID, sessionID) =>
+      await call("planDoc.activate", {
+        planID,
+        ...(sessionID ? { sessionID } : {}),
+      }),
+    planDocDeactivate: async (sessionID) =>
+      await call("planDoc.deactivate", sessionID ? { sessionID } : {}),
     driftFindings: async (sessionID) =>
       await call("drift.findings", sessionID ? { sessionID } : {}),
     evaluateDrift: async (input, sessionID) =>
