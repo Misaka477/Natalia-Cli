@@ -198,7 +198,6 @@ export function createEventSink(
       maybeContinueAfterHumanInput,
       settleMailboxAtBoundary,
       reconcileWorkspaceObservation,
-      requestNaviWake,
       toolEventTurnID,
       isSessionSnapshotTrigger,
       publishSessionSnapshot,
@@ -384,22 +383,12 @@ export function createEventSink(
       exec?.session &&
       event.stopReason === "error"
     ) {
-      const infrastructureError =
-        event.reason === "missing_final_response" ||
-        mainTurnHasInfrastructureError(exec, event.id);
-      if (infrastructureError) {
-        console.log(
-          "[navi-wake-trigger] skipped provider/infrastructure error",
-          {
-            turnID: event.id,
-            reason: event.reason ?? "unknown",
-          },
-        );
-      } else {
-        exec.advisorPending = true;
-        console.log("[navi-wake-trigger] main turn error");
-        requestNaviWake(exec);
-      }
+      // Automatic Navi wake on main-turn errors is intentionally removed:
+      // only a model-issued collaboration tool call may wake Navi.
+      console.log("[navi-wake-trigger] automatic wake removed", {
+        turnID: event.id,
+        reason: event.reason ?? "unknown",
+      });
     }
     if (
       !event.agentID &&
