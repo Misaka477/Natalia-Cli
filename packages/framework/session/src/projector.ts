@@ -1008,6 +1008,7 @@ function projectChatStream(
         channel,
         kind: "tool",
         tool: {
+          eventID: event.id,
           name: event.toolName,
           status: event.status,
           summary: event.summary,

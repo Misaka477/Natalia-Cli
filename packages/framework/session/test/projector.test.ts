@@ -1050,6 +1050,33 @@ test("the Navi conversation projects messages and honours rollback boundaries", 
   ]);
 });
 
+test("namespaced chat tool projections keep durable event ids", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "navi.chat.tool.used",
+      id: "chat:tool:1",
+      messageID: "chat:m1",
+      toolName: "read_file",
+      status: "succeeded",
+      summary: "first",
+      at: "t1",
+    },
+    {
+      type: "navi.chat.tool.used",
+      id: "chat:tool:2",
+      messageID: "chat:m1",
+      toolName: "read_file",
+      status: "succeeded",
+      summary: "second",
+      at: "t2",
+    },
+  ];
+  expect(projectedNaviChatMessages(events).map((row) => row.tool?.eventID)).toEqual([
+    "chat:tool:1",
+    "chat:tool:2",
+  ]);
+});
+
 test("chat replay preserves user attachment metadata", () => {
   const session = createSessionRecord("ses_chat_attachment", "Chat attachment");
   const attachment = {
