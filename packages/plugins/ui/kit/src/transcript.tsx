@@ -18,6 +18,7 @@ import {
 } from "./tail-scroll-machine";
 
 const VIRTUALIZE_THRESHOLD = 80;
+const BOTTOM_FOLLOW_THRESHOLD_PX = 2;
 const VIRTUAL_OVERSCAN = 24;
 const VIRTUAL_ROW_GAP = 6;
 const VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX = 600;
@@ -131,10 +132,13 @@ export function Transcript(props: TranscriptProps) {
     estimateSize: (index) => estimateStable(index),
     getItemKey: (index) => props.messages[index]?.id ?? index,
     anchorTo: "end",
-    // Follow is owned exclusively by TailScrollController. Disable
-    // TanStack's hidden at-end correction and dynamic measurement
-    // compensation so a first measurement cannot push the reader down.
-    scrollEndThreshold: -1,
+    // Match deepseek-harness TrajectoryTable: anchorTo:"end" plus the same
+    // 2px follow threshold lets TanStack compensate dynamic estimate→measure
+    // deltas while the reader is pinned. Follow *ownership* still lives in
+    // TailScrollController; without this end compensation a late measurement
+    // of a large row above the fold silently leaves the scrollport above the
+    // true bottom with no scroll event to correct it.
+    scrollEndThreshold: BOTTOM_FOLLOW_THRESHOLD_PX,
     initialRect: {
       width: 0,
       height: VIRTUAL_INITIAL_VIEWPORT_HEIGHT_PX,
@@ -149,8 +153,6 @@ export function Transcript(props: TranscriptProps) {
       // measurement callback must not scroll on its own.
     },
   });
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
-
   let pendingScrollEl: HTMLDivElement | undefined;
   const setScrollRef = (el: HTMLDivElement | null) => {
     if (!el) {
