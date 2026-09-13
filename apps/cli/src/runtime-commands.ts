@@ -10,7 +10,12 @@ import { createRecordedFetch } from "@natalia/transport";
 import { createHttpTransportHost } from "./transport-host";
 import { createPluginUiResolver } from "./plugin-ui";
 import { promptArguments } from "./index";
-import { valueAfter, waitSignal, withoutOption } from "./command-helpers";
+import {
+  valueAfter,
+  waitSignal,
+  settleShutdown,
+  withoutOption,
+} from "./command-helpers";
 import { pluginStoreRoot } from "./official-plugins";
 import { perfLog } from "@natalia/runtime-services";
 
@@ -69,8 +74,8 @@ export async function handleRuntimeCommand(argv: string[]) {
       }),
     );
     await waitSignal();
-    await transport.close();
-    await manager.dispose();
+    await settleShutdown("runtime transport close", () => transport.close());
+    await settleShutdown("runtime manager dispose", () => manager.dispose());
     return true;
   }
   if (command === "run" || command === "--once") {
@@ -156,7 +161,7 @@ export async function handleRuntimeCommand(argv: string[]) {
       console.log(`natalia: ui adapter ${kind} mounted`);
       await waitSignal();
     } finally {
-      await host.close();
+      await settleShutdown("ui host close", () => host.close());
     }
     return true;
   }
@@ -179,8 +184,8 @@ export async function handleRuntimeCommand(argv: string[]) {
       JSON.stringify({ url: transport.server.url, cassette: cassettePath }),
     );
     await waitSignal();
-    await transport.close();
-    await client.dispose?.();
+    await settleShutdown("record transport close", () => transport.close());
+    await settleShutdown("record client dispose", () => client.dispose?.());
     return true;
   }
   return false;

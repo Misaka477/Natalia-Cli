@@ -12,25 +12,49 @@ RUNTIME_PID=""
 WEB_PID=""
 
 cleanup() {
-  if [[ -n "$WEB_PID" ]]; then kill "$WEB_PID" 2>/dev/null || true; fi
-  if [[ -n "$RUNTIME_PID" ]]; then kill "$RUNTIME_PID" 2>/dev/null || true; fi
+  local status=$?
+  # Drop every trap first so an INT followed by EXIT cannot run cleanup twice.
+  trap - EXIT INT TERM
+  if [[ -n "$WEB_PID" ]]; then
+    kill -TERM "$WEB_PID" 2>/dev/null || true
+    wait "$WEB_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$RUNTIME_PID" ]]; then
+    echo "[cef-desktop] stopping runtime (graceful shutdown)..."
+    kill -TERM "$RUNTIME_PID" 2>/dev/null || true
+    # Let the runtime flush durable state. The runtime has its own hard
+    # shutdown watchdog (default 20s), so wait past it before escalating.
+    local waited=0
+    while kill -0 "$RUNTIME_PID" 2>/dev/null && (( waited < 25000 )); do
+      sleep 0.2
+      waited=$((waited + 200))
+    done
+    if kill -0 "$RUNTIME_PID" 2>/dev/null; then
+      echo "[cef-desktop] runtime did not exit gracefully; killing"
+      kill -KILL "$RUNTIME_PID" 2>/dev/null || true
+    fi
+    wait "$RUNTIME_PID" 2>/dev/null || true
+  fi
+  exit "$status"
 }
 trap cleanup EXIT INT TERM
 
 echo "[cef-desktop] starting runtime on 127.0.0.1:$RUNTIME_PORT"
 (
   cd "$REPO_ROOT"
-  NATALIA_CONFIG="$REPO_ROOT/.natalia/global-config.json" \
-  NATALIA_WORKSPACES_FILE="$REPO_ROOT/.natalia/workspaces.json" \
-  bun apps/cli/src/main.ts serve "$RUNTIME_PORT"
+  # `exec` so $! is the bun process itself; a plain subshell would swallow the
+  # SIGTERM and let bun keep running after the script exits.
+  exec env \
+    NATALIA_CONFIG="$REPO_ROOT/.natalia/global-config.json" \
+    NATALIA_WORKSPACES_FILE="$REPO_ROOT/.natalia/workspaces.json" \
+    bun apps/cli/src/main.ts serve "$RUNTIME_PORT"
 ) &
 RUNTIME_PID=$!
 
 echo "[cef-desktop] starting web server on 127.0.0.1:$WEB_PORT"
 (
   cd "$REPO_ROOT"
-  NATALIA_WEB_PORT="$WEB_PORT" \
-  bun apps/cef-desktop/serve-web.ts
+  exec env NATALIA_WEB_PORT="$WEB_PORT" bun apps/cef-desktop/serve-web.ts
 ) &
 WEB_PID=$!
 

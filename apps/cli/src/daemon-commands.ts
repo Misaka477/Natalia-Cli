@@ -37,7 +37,12 @@ import {
   localWorkGraph,
   workGraphLines,
 } from "./index";
-import { valueAfter, daemonDir, waitSignal } from "./command-helpers";
+import {
+  valueAfter,
+  daemonDir,
+  waitSignal,
+  settleShutdown,
+} from "./command-helpers";
 
 export async function handleDaemonCommands(argv: string[]) {
   const subcommand = argv[0];
@@ -86,8 +91,10 @@ export async function handleDaemonCommands(argv: string[]) {
         console.log(JSON.stringify({ url: server.url }));
         await waitSignal();
       } finally {
-        await transport.close();
-        await client.dispose?.();
+        await settleShutdown("daemon transport close", () => transport.close());
+        await settleShutdown("daemon client dispose", () =>
+          client.dispose?.(),
+        );
       }
       break;
     }
