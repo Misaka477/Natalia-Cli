@@ -221,10 +221,16 @@ export function applyConversationEvent(
       state.pendingInputs = state.pendingInputs.filter(
         (item) => item.id !== event.id,
       );
+      const messageID = `${event.id}:${event.internal ? "system" : "user"}`;
+      // Durable replay and message-page hydration can deliver the same turn
+      // boundary into one projection. Re-applying it must be idempotent: a
+      // second user row with the same id corrupts virtualizer keys and makes
+      // the whole turn appear duplicated.
+      if (state.messages.some((block) => block.id === messageID)) return true;
       state.streams[streamID(event.id, "thinking")] = newStream();
       state.streams[streamID(event.id, "assistant")] = newStream();
       state.messages.push({
-        id: `${event.id}:${event.internal ? "system" : "user"}`,
+        id: messageID,
         role: event.internal ? "system" : "user",
         text: userText(event),
         pendingText: "",
@@ -240,15 +246,19 @@ export function applyConversationEvent(
       state.pendingInputs = state.pendingInputs.filter(
         (item) => item.id !== event.inputID,
       );
-      state.messages.push({
-        id: `${event.turnID}:user:${event.inputID}`,
-        role: event.internal ? "system" : "user",
-        text: event.text,
-        pendingText: "",
-        // Marks a mid-turn injected input so the transcript can label it
-        // without pretending it is a turn of its own.
-        status: "steering",
-      });
+      {
+        const messageID = `${event.turnID}:user:${event.inputID}`;
+        if (state.messages.some((block) => block.id === messageID)) return true;
+        state.messages.push({
+          id: messageID,
+          role: event.internal ? "system" : "user",
+          text: event.text,
+          pendingText: "",
+          // Marks a mid-turn injected input so the transcript can label it
+          // without pretending it is a turn of its own.
+          status: "steering",
+        });
+      }
       return true;
     case "turn.started":
       markTurnStarted(state, event.id);

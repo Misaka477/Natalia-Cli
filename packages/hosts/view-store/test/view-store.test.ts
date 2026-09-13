@@ -575,6 +575,33 @@ test("content.done does not duplicate a response that already streamed", () => {
   expect(text(unstreamed, streamID("t2", "assistant"))).toBe("hello");
 });
 
+test("durable replay after hydration is idempotent for turn rows", () => {
+  const events: RuntimeEvent[] = [
+    submitted("t1", "hi"),
+    { type: "thinking.done", id: "t1", text: "think" },
+    { type: "content.done", id: "t1", text: "answer" },
+    { type: "turn.finished", id: "t1", stopReason: "done" },
+  ];
+  const state = projectEvents(events);
+  // Message-page hydration and durable SSE replay can both reach one
+  // projection. Re-applying the same turn boundary must not append a second
+  // row with the same id, because duplicate virtualizer keys render the whole
+  // turn twice.
+  for (const event of events) applyEvent(state, event);
+
+  const ids = state.messages.map((block) => block.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(state.messages.filter((block) => block.role === "user")).toHaveLength(
+    1,
+  );
+  expect(
+    state.messages.filter((block) => block.role === "thinking"),
+  ).toHaveLength(1);
+  expect(
+    state.messages.filter((block) => block.role === "assistant"),
+  ).toHaveLength(1);
+});
+
 test("a retried attempt replaces the superseded text instead of appending", () => {
   const state = projectEvents([
     submitted("t1", "hi"),
