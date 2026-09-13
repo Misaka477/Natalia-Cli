@@ -1381,6 +1381,8 @@ test("projected messages include collaboration rows in event order", () => {
       from: "main_agent",
       to: "live_chat",
       text: "please review this",
+      expectsReply: false,
+      round: 1,
       at: "2026-01-01T00:00:00.000Z",
     },
   });
