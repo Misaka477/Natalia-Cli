@@ -761,6 +761,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [panelRevision, setPanelRevision] = createSignal(0);
   const [interactiveTerminalAvailable, setInteractiveTerminalAvailable] =
     createSignal(false);
+  const [transcriptHistoryLoading, setTranscriptHistoryLoading] =
+    createSignal(true);
+  const [transcriptOlderLoading, setTranscriptOlderLoading] =
+    createSignal(false);
   let historyReplayDone = false;
   let userSelectedSession = false;
   let sessionsRefreshToken = 0;
@@ -1575,6 +1579,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const page = sessionID
       ? await props.ctx.runtime.messages?.({ limit: 100, sessionID })
       : await props.ctx.runtime.messages?.({ limit: 100 });
+    // A superseded/expired load must still release the transcript's initial
+    // loading gate, otherwise the tail state machine waits forever.
+    setTranscriptHistoryLoading(false);
     if (!isCurrent()) return;
     perfLog(
       `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
@@ -1583,6 +1590,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       props.ctx.projection.hydrateMessages?.([], "newer", options);
       historyCursor = undefined;
       newerHistoryCursor = undefined;
+      setTranscriptHistoryLoading(false);
       return;
     }
     // The first page is the newest baseline. `"newer"` keeps the newest end
@@ -1595,6 +1603,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     );
     historyCursor = page.cursor.next;
     newerHistoryCursor = undefined;
+    setTranscriptHistoryLoading(false);
     perfLog(
       `[perf] messages hydrate total ${(performance.now() - hydrateStart).toFixed(1)}ms`,
     );
@@ -1785,6 +1794,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // from the view-store pending state during replay.
     const resetProjectionForSessionSwitch = () => {
       historyReplayDone = false;
+      setTranscriptHistoryLoading(true);
       messagesHydrationStarted = false;
       lastHydratedSessionID = undefined;
       historyCursor = undefined;
@@ -2243,24 +2253,29 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     return output;
   }
 
-  async function loadOlderHistory() {
-    if (!historyCursor || loadingOlderHistory || !historyReplayDone) return;
+  async function loadOlderHistory(): Promise<boolean> {
+    if (!historyCursor || loadingOlderHistory || !historyReplayDone)
+      return false;
     loadingOlderHistory = true;
+    setTranscriptOlderLoading(true);
+    const before = props.ctx.projection.getState().natalia.messages.length;
     try {
       const page = await props.ctx.runtime.messages?.({
         cursor: historyCursor,
         limit: 100,
         sessionID: selectedSessionID() || state().sessionID,
       });
-      if (!page) return;
+      if (!page) return false;
       const evicted = props.ctx.projection.hydrateMessages?.(
         [...page.data].reverse(),
         "older",
       );
       if (evicted) newerHistoryCursor = page.cursor.previous;
       historyCursor = page.cursor.next;
+      return props.ctx.projection.getState().natalia.messages.length > before;
     } finally {
       loadingOlderHistory = false;
+      setTranscriptOlderLoading(false);
     }
   }
 
@@ -3378,6 +3393,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                           setShowJumpToBottom(!following)
                         }
                         onNearTop={() => void loadOlderHistory()}
+                        historyLoading={transcriptHistoryLoading()}
+                        olderHistoryLoading={transcriptOlderLoading()}
                         loadAttachmentUrl={loadAttachmentUrl}
                         onFork={forkSessionAtTurn}
                         onRollback={rollbackDraftFromMessage}

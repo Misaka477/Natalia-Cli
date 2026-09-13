@@ -74,6 +74,10 @@ export interface TranscriptProps {
   checkpointIDForMessage?: (message: Message) => string | undefined;
   /** Freeze row measurement while a host pane is being resized. */
   suspendVirtualization?: boolean;
+  /** True while the initial history page is still loading. Tail init waits. */
+  historyLoading?: boolean;
+  /** True while an older-history page is in flight. */
+  olderHistoryLoading?: boolean;
   /** Exposes scroll/measure methods so hosts do not write scrollTop directly. */
   apiRef?: (handle: TranscriptHandle | undefined) => void;
 }
@@ -104,7 +108,8 @@ export function Transcript(props: TranscriptProps) {
     gap: VIRTUAL_ROW_GAP,
     overscan: VIRTUAL_OVERSCAN,
     onChange: () => {
-      controller?.notifyDataChanged();
+      // Tail-follow is owned by the transcript state machine below; a
+      // measurement callback must not scroll on its own.
     },
   });
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
@@ -140,6 +145,18 @@ export function Transcript(props: TranscriptProps) {
 
   const liveVirtualItems = () => virtualizer.getVirtualItems();
   const liveTotalSize = () => virtualizer.getTotalSize();
+
+  // deepseek-harness TrajectoryTable state machine:
+  //   tableScrollInitialized + followsTableTail + olderLoadAnchor.
+  let tableScrollInitialized = false;
+  let followsTableTail = true;
+  let lastMessageStartKey: string | null = null;
+  let olderAnchor: {
+    readonly startKey: string | null;
+    readonly scrollHeight: number;
+    readonly scrollTop: number;
+    readonly visibleKey: string | null;
+  } | null = null;
   let frozenVirtualItems: ReturnType<typeof virtualizer.getVirtualItems> = [];
   let frozenTotalSize = 0;
   createEffect(() => {
@@ -210,7 +227,19 @@ export function Transcript(props: TranscriptProps) {
     onFollowChange: (following) => props.onFollowChange?.(following),
     onNearTop: (scrollTop) => {
       if (props.onNearTop === undefined) return;
-      controller?.captureOlderAnchor();
+      if (props.olderHistoryLoading === true) return;
+      const el = scrollEl();
+      if (el !== undefined) {
+        const firstVirtual = liveVirtualItems()[0]?.index ?? 0;
+        const visibleIndex =
+          virtualize() && liveVirtualItems().length > 0 ? firstVirtual : 0;
+        olderAnchor = {
+          startKey: lastMessageStartKey,
+          scrollHeight: el.scrollHeight,
+          scrollTop: el.scrollTop,
+          visibleKey: props.messages[visibleIndex]?.id ?? null,
+        };
+      }
       props.onNearTop(scrollTop);
     },
   });
@@ -235,87 +264,70 @@ export function Transcript(props: TranscriptProps) {
     breakFollow: () => controller?.breakFollow(),
   };
 
-  createEffect(() => {
-    const el = scrollEl();
-    if (!el || controller === undefined) return;
-    // The ref commit can land after the first data effect. Re-request a
-    // follow pass once the scroll element is actually observable.
-    controller.notifyDataChanged();
-  });
-
-  let lastMessageIds: string[] | undefined;
-  createEffect(() => {
-    const ids = props.messages.map((message) => message.id);
-    const previous = lastMessageIds;
-    lastMessageIds = ids;
-    if (controller === undefined) return;
-    if (previous === undefined) {
-      controller.scrollToBottom({ behavior: "auto" });
-      return;
-    }
-    if (ids.length === 0) {
-      // Empty transcripts cannot scroll, so there is no tail to leave.
-      // Breaking follow here made the jump-to-bottom control appear while
-      // a fresh Navi/Nia pane was still empty.
-      controller.scrollToBottom({ behavior: "auto" });
-      return;
-    }
-    if (previous.length === 0) {
-      controller.scrollToBottom({ behavior: "auto" });
-      return;
-    }
-
-    const previousFirst = previous[0]!;
-    const previousFirstIndex = ids.indexOf(previousFirst);
-    if (previousFirstIndex > 0) {
-      // Older history was prepended in front of the current viewport.
-      controller.restoreOlderAnchor();
-      return;
-    }
-    if (ids[0] !== previousFirst) {
-      // Whole transcript/session replacement.
-      controller.scrollToBottom({ behavior: "auto" });
-      return;
-    }
-    controller.notifyDataChanged();
-  });
-
-  // Mirrors deepseek-harness `tableScrollInitialized` + `followsTableTail`:
-  // the first non-empty transcript must wait until the virtualizer has a real
-  // window, then force one scroll-to-end. A prior scrollToBottom call can be
-  // lost while the scroll ref/window is still initializing, which left the
-  // transcript anchored at the oldest rows until the user hit jump-to-bottom.
-  let tailScrollInitialized = false;
-  let lastTailCount = 0;
+  // Mirrors deepseek-harness TrajectoryTable's useLayoutEffect:
+  // - prepend: restore the older anchor and explicitly leave tail-follow
+  // - first non-empty, non-loading page: measure once, then scrollToEnd
+  // - later growth: only follow while the reader is still pinned
   createEffect(() => {
     const count = props.messages.length;
     const el = scrollEl();
+    const firstKey = props.messages[0]?.id ?? null;
+    const historyLoading = props.historyLoading === true;
     if (el === undefined) return;
-    if (count === 0) {
-      tailScrollInitialized = false;
-      lastTailCount = 0;
+
+    // Older-page prepend: historyStartKey changes while the request was in
+    // flight and the older anchor owns the reader position.
+    if (olderAnchor !== null && olderAnchor.startKey !== firstKey) {
+      const anchor = olderAnchor;
+      olderAnchor = null;
+      followsTableTail = false;
+      controller?.breakFollow();
+      const visibleIndex = anchor.visibleKey === null
+        ? -1
+        : props.messages.findIndex((message) => message.id === anchor.visibleKey);
+      if (
+        virtualize() &&
+        visibleIndex >= 0 &&
+        liveVirtualItems().length > 0
+      ) {
+        virtualizer.scrollToIndex(visibleIndex, { align: "start" });
+      } else {
+        el.scrollTop =
+          anchor.scrollTop + (el.scrollHeight - anchor.scrollHeight);
+      }
+      lastMessageStartKey = firstKey;
       return;
     }
-    const needsInitialScroll = !tailScrollInitialized;
-    const countChanged = count !== lastTailCount;
-    if (!needsInitialScroll && !countChanged) return;
-    // With virtualization enabled, wait until useVirtual() has a valid window.
-    if (virtualize() && !useVirtual()) return;
-    const shouldForce = needsInitialScroll;
-    const shouldFollow =
-      !needsInitialScroll && controller?.isFollowing() === true;
-    if (!shouldForce && !shouldFollow) {
-      lastTailCount = count;
+
+    // Whole transcript/session replacement: re-run first-load initialization.
+    if (
+      tableScrollInitialized &&
+      lastMessageStartKey !== null &&
+      lastMessageStartKey !== firstKey
+    ) {
+      tableScrollInitialized = false;
+      followsTableTail = true;
+    }
+    lastMessageStartKey = firstKey;
+
+    if (historyLoading || count === 0) return;
+
+    if (!tableScrollInitialized) {
+      // Dynamic message heights mean the first window must be measured before
+      // it can own the tail. Wait for a valid virtual window first.
+      if (virtualize() && !useVirtual()) return;
+      tableScrollInitialized = true;
+      followsTableTail = true;
+      virtualizer.measure();
+      requestAnimationFrame(() => {
+        controller?.scrollToBottom({ behavior: "auto" });
+      });
       return;
     }
-    lastTailCount = count;
-    if (shouldForce) tailScrollInitialized = true;
+
+    if (!followsTableTail) return;
     requestAnimationFrame(() => {
-      const currentEl = scrollEl();
-      if (currentEl === undefined) return;
-      if (virtualize()) virtualizer.scrollToEnd({ behavior: "auto" });
-      else currentEl.scrollTop = currentEl.scrollHeight;
-      controller?.notifyDataChanged();
+      controller?.scrollToBottom({ behavior: "auto" });
     });
   });
 
@@ -352,6 +364,7 @@ export function Transcript(props: TranscriptProps) {
   const handleScroll = (event: Event) => {
     const startedAt = performance.now();
     controller?.onScroll(event);
+    followsTableTail = controller?.isFollowing() ?? true;
     props.onScroll?.(event);
     if (!uiDebugEnabled()) return;
     const el = scrollEl();
