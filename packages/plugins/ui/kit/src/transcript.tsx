@@ -280,6 +280,45 @@ export function Transcript(props: TranscriptProps) {
     controller.notifyDataChanged();
   });
 
+  // Mirrors deepseek-harness `tableScrollInitialized` + `followsTableTail`:
+  // the first non-empty transcript must wait until the virtualizer has a real
+  // window, then force one scroll-to-end. A prior scrollToBottom call can be
+  // lost while the scroll ref/window is still initializing, which left the
+  // transcript anchored at the oldest rows until the user hit jump-to-bottom.
+  let tailScrollInitialized = false;
+  let lastTailCount = 0;
+  createEffect(() => {
+    const count = props.messages.length;
+    const el = scrollEl();
+    if (el === undefined) return;
+    if (count === 0) {
+      tailScrollInitialized = false;
+      lastTailCount = 0;
+      return;
+    }
+    const needsInitialScroll = !tailScrollInitialized;
+    const countChanged = count !== lastTailCount;
+    if (!needsInitialScroll && !countChanged) return;
+    // With virtualization enabled, wait until useVirtual() has a valid window.
+    if (virtualize() && !useVirtual()) return;
+    const shouldForce = needsInitialScroll;
+    const shouldFollow =
+      !needsInitialScroll && controller?.isFollowing() === true;
+    if (!shouldForce && !shouldFollow) {
+      lastTailCount = count;
+      return;
+    }
+    lastTailCount = count;
+    if (shouldForce) tailScrollInitialized = true;
+    requestAnimationFrame(() => {
+      const currentEl = scrollEl();
+      if (currentEl === undefined) return;
+      if (virtualize()) virtualizer.scrollToEnd({ behavior: "auto" });
+      else currentEl.scrollTop = currentEl.scrollHeight;
+      controller?.notifyDataChanged();
+    });
+  });
+
   onMount(() => {
     props.apiRef?.(api);
     console.log("[natalia-ui] transcript mounted", {
