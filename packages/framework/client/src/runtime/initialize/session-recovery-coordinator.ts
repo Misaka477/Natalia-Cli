@@ -2,6 +2,10 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
 import type { SessionProjection } from "@natalia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
+import {
+  maxLiveSessionEvents,
+  windowRuntimeEvents,
+} from "../session-event-retention";
 import type {
   AttachmentService,
   ContextLedgerFactory,
@@ -198,8 +202,12 @@ export class SessionRecoveryCoordinator {
             sessionID: scope.sessionID,
             events: full.events.length,
           });
-          this.session.events = full.events;
-          if (scope.activeExec) scope.activeExec.session.events = full.events;
+          const bounded = windowRuntimeEvents(
+            full.events,
+            maxLiveSessionEvents(),
+          );
+          this.session.events = bounded;
+          if (scope.activeExec) scope.activeExec.session.events = bounded;
         })
         .catch((error) => {
           console.warn(

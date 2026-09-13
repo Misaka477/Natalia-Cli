@@ -5,7 +5,11 @@ import {
 import { memoryTrace } from "@natalia/runtime";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
-import { filterRuntimeRetainedEvents } from "./session-event-retention";
+import {
+  filterRuntimeRetainedEvents,
+  maxLiveSessionEvents,
+  windowRuntimeEvents,
+} from "./session-event-retention";
 
 /**
  * Load the full durable event log into an execution state.
@@ -39,10 +43,9 @@ export function ensureSessionFullEvents(
     const full = await sessionStore.loadFullAsync(exec.session.id, {
       runtimeEvents: true,
     });
-    exec.session.events = filterRuntimeRetainedEvents(
-      full.events,
-      sessionStore.status().mode,
-      true,
+    exec.session.events = windowRuntimeEvents(
+      filterRuntimeRetainedEvents(full.events, sessionStore.status().mode, true),
+      maxLiveSessionEvents(),
     );
     exec.eventCount = exec.session.events.length;
     exec.fullEventsLoaded = true;
