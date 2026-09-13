@@ -476,7 +476,11 @@ function replaceAgentMessages(
         row.status === "running" ||
         row.id.endsWith(":collab")),
   );
-  target.messages.splice(0, target.messages.length, ...incoming, ...liveOnly);
+  target.messages.splice(
+    0,
+    target.messages.length,
+    ...dedupeMessagesByID([...incoming, ...liveOnly]),
+  );
   delete target.hydrationBaseline;
   return true;
 }
