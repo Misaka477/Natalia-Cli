@@ -30,6 +30,16 @@ export interface Message {
   steering?: boolean;
   thinking?: boolean;
   streaming?: boolean;
+  /**
+   * A goal round (`<goal_round>` internal turn). The transcript renders it as a
+   * compact `Round N/M` row with the full prompt behind a disclosure.
+   */
+  goalRound?: {
+    round: number;
+    maxGoalRounds: number;
+    objective: string;
+    detail: string;
+  };
   toolCalls?: ToolCall[];
   actions?: MessageAction[];
   attachments?: Attachment[];

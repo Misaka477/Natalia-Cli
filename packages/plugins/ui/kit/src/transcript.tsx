@@ -947,6 +947,46 @@ function ToolCallCard(props: { toolCall: ToolCall }) {
   );
 }
 
+/**
+ * Compact row for a `<goal_round>` internal turn: the round number and the
+ * objective at a glance, with the full injected prompt behind a disclosure.
+ */
+function GoalRoundBody(props: {
+  goalRound: NonNullable<Message["goalRound"]>;
+}) {
+  const [expanded, setExpanded] = createSignal(false);
+  const capLabel = () =>
+    props.goalRound.maxGoalRounds === 0
+      ? "∞"
+      : String(props.goalRound.maxGoalRounds);
+  return (
+    <div class="natalia-goal-round" data-expanded={expanded() || undefined}>
+      <button
+        type="button"
+        class="natalia-goal-round-header"
+        title={props.goalRound.objective}
+        onClick={() => setExpanded(!expanded())}
+      >
+        <span class="natalia-goal-round-badge">Goal</span>
+        <span class="natalia-goal-round-title">
+          Round {props.goalRound.round}/{capLabel()}
+        </span>
+        <Show when={props.goalRound.objective}>
+          <span class="natalia-goal-round-objective">
+            {props.goalRound.objective}
+          </span>
+        </Show>
+        <span class="natalia-goal-round-toggle">
+          {expanded() ? "收起" : "展开"}
+        </span>
+      </button>
+      <Show when={expanded()}>
+        <pre class="natalia-goal-round-detail">{props.goalRound.detail}</pre>
+      </Show>
+    </div>
+  );
+}
+
 export function MessageRow(props: MessageRowProps) {
   const isUser = () => props.message.role === "user";
   const isSystem = () => props.message.role === "system";
@@ -959,15 +999,23 @@ export function MessageRow(props: MessageRowProps) {
     >
       <div class="natalia-message-header">
         <div class="natalia-message-avatar" data-role={props.message.role}>
-          {isUser() ? "U" : isSystem() ? "S" : (props.assistantInitial ?? "N")}
+          {isUser()
+            ? "U"
+            : props.message.goalRound
+              ? "G"
+              : isSystem()
+                ? "S"
+                : (props.assistantInitial ?? "N")}
         </div>
         <div class="natalia-message-meta">
           <span class="natalia-message-author">
             {isUser()
               ? "You"
-              : isSystem()
-                ? "System"
-                : (props.assistantName ?? "Natalia")}
+              : props.message.goalRound
+                ? "Goal"
+                : isSystem()
+                  ? "System"
+                  : (props.assistantName ?? "Natalia")}
           </span>
           <span class="natalia-message-time">
             {props.message.timestamp ?? ""}
@@ -1001,41 +1049,50 @@ export function MessageRow(props: MessageRowProps) {
 
       <div class="natalia-message-body">
         <Show
-          when={props.message.thinking}
+          when={props.message.goalRound}
           fallback={
             <Show
-              when={props.message.content || !props.message.toolCalls?.length}
+              when={props.message.thinking}
+              fallback={
+                <Show
+                  when={
+                    props.message.content || !props.message.toolCalls?.length
+                  }
+                >
+                  <Show
+                    when={props.message.streaming}
+                    fallback={
+                      <div
+                        class="natalia-message-text"
+                        innerHTML={formatContent(props.message.content)}
+                      />
+                    }
+                  >
+                    <div
+                      class="natalia-message-text"
+                      innerHTML={formatContent(props.message.content)}
+                    />
+                    <div class="natalia-streaming-indicator">
+                      <div class="natalia-streaming-dot" />
+                      <div class="natalia-streaming-dot" />
+                      <div class="natalia-streaming-dot" />
+                      <span class="natalia-streaming-label">正在思考...</span>
+                    </div>
+                  </Show>
+                </Show>
+              }
             >
-              <Show
-                when={props.message.streaming}
-                fallback={
-                  <div
-                    class="natalia-message-text"
-                    innerHTML={formatContent(props.message.content)}
-                  />
-                }
-              >
+              <div class="natalia-thinking-block">
+                <span class="natalia-thinking-label">Thinking</span>
                 <div
-                  class="natalia-message-text"
+                  class="natalia-thinking-text"
                   innerHTML={formatContent(props.message.content)}
                 />
-                <div class="natalia-streaming-indicator">
-                  <div class="natalia-streaming-dot" />
-                  <div class="natalia-streaming-dot" />
-                  <div class="natalia-streaming-dot" />
-                  <span class="natalia-streaming-label">正在思考...</span>
-                </div>
-              </Show>
+              </div>
             </Show>
           }
         >
-          <div class="natalia-thinking-block">
-            <span class="natalia-thinking-label">Thinking</span>
-            <div
-              class="natalia-thinking-text"
-              innerHTML={formatContent(props.message.content)}
-            />
-          </div>
+          {(goalRound) => <GoalRoundBody goalRound={goalRound()} />}
         </Show>
       </div>
 

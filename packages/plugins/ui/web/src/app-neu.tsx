@@ -58,6 +58,7 @@ import { SandboxPanel } from "./sandbox-panel";
 import { GovernancePanel } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
+import { parseGoalRoundPrompt } from "./goal-round";
 import { stableRows, type RowSignature } from "./stable-rows";
 
 const perfLog = (...args: unknown[]) => {
@@ -2454,6 +2455,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             ? msg.attachments
             : undefined;
         const content = msg.text + (msg.pendingText || "");
+        const goalRound =
+          msg.role === "system" ? parseGoalRoundPrompt(msg.text) : undefined;
         const status = active && isLast ? "running" : undefined;
         const steering = msg.status === "steering";
         const streaming = Boolean(
@@ -2474,6 +2477,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
             status,
             steering,
             streaming,
+            goalRound?.round ?? 0,
             Boolean(active),
             isLast,
             attachments,
@@ -2494,6 +2498,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   })),
                 }
               : {}),
+            ...(goalRound ? { goalRound } : {}),
             content,
             status,
             steering,

@@ -924,6 +924,67 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   min-width: 0;
   max-width: 100%;
 }
+.neu-pane .natalia-goal-round {
+  margin: 6px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--neu-accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--neu-accent) 28%, transparent);
+}
+.neu-pane .natalia-goal-round-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+.neu-pane .natalia-goal-round-header:hover {
+  background: color-mix(in srgb, var(--neu-accent) 8%, transparent);
+}
+.neu-pane .natalia-goal-round-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--neu-accent) 26%, transparent);
+  color: var(--neu-accent);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.neu-pane .natalia-goal-round-title {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.neu-pane .natalia-goal-round-objective {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
+}
+.neu-pane .natalia-goal-round-toggle {
+  margin-left: auto;
+  opacity: 0.6;
+  font-size: 11px;
+}
+.neu-pane .natalia-goal-round-detail {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--neu-accent) 18%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.85;
+}
 .neu-pane .natalia-tool-header {
   display: flex;
   align-items: center;
