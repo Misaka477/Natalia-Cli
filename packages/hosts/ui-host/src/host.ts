@@ -89,6 +89,36 @@ export async function createUiPluginHost<TContext = unknown>(
   let started = false;
   let closed = false;
 
+  /**
+   * Session keys are `${workspaceID ?? "default"}:${sessionID}`. Before the
+   * workspace registry is known a session's hydrated history can land on the
+   * `default:` key. A later event carrying the concrete workspace id used to
+   * create a second, empty shell key that then won `activateSession` and wiped
+   * the visible transcript. Treat `default:` as the workspace-unknown home for
+   * that session.
+   */
+  function conversationContentScore(
+    candidate: viewStore.AppState | undefined,
+  ): number {
+    if (!candidate) return 0;
+    return (
+      candidate.messages.length +
+      Object.keys(candidate.streams).length +
+      Object.keys(candidate.tools).length
+    );
+  }
+
+  function hasConversationContent(
+    candidate: viewStore.AppState | undefined,
+  ): boolean {
+    return conversationContentScore(candidate) > 0;
+  }
+
+  function workspaceUnknownKey(sessionID: string): string | undefined {
+    const key = `default:${sessionID}`;
+    return hasConversationContent(sessionStates.get(key)) ? key : undefined;
+  }
+
   const projection: UiProjection = {
     getState: () => state,
     subscribe(listener) {
@@ -135,12 +165,36 @@ export async function createUiPluginHost<TContext = unknown>(
     },
     activateSession(sessionID, workspaceID) {
       const preferredKey = `${workspaceID ?? "default"}:${sessionID}`;
-      const existingKey = sessionStates.has(preferredKey)
+      const preferredState = sessionStates.get(preferredKey);
+      const defaultKey = `default:${sessionID}`;
+      const defaultState = sessionStates.get(defaultKey);
+      const siblingKeys = [...sessionStates.keys()].filter(
+        (key) => key !== preferredKey && key.endsWith(`:${sessionID}`),
+      );
+      let selectedKey = sessionStates.has(preferredKey)
         ? preferredKey
-        : [...sessionStates.keys()].find((key) =>
-            key.endsWith(`:${sessionID}`),
-          );
-      activeKey = existingKey ?? preferredKey;
+        : (siblingKeys[0] ?? preferredKey);
+      // A concrete-workspace key created by a late event is usually a shell.
+      // When the workspace-unknown `default:` key holds this session's history,
+      // prefer whichever side actually has more conversation content.
+      if (defaultKey !== preferredKey && hasConversationContent(defaultState)) {
+        if (
+          !hasConversationContent(preferredState) ||
+          conversationContentScore(defaultState) >=
+            conversationContentScore(preferredState)
+        ) {
+          selectedKey = defaultKey;
+        }
+      } else if (
+        selectedKey === preferredKey &&
+        !hasConversationContent(preferredState)
+      ) {
+        const hydrated = siblingKeys.find((key) =>
+          hasConversationContent(sessionStates.get(key)),
+        );
+        if (hydrated) selectedKey = hydrated;
+      }
+      activeKey = selectedKey;
       state = sessionStates.get(activeKey) ?? viewStore.initialState();
       state.sessionID ??= sessionID as never;
       sessionStates.set(activeKey, state);
@@ -152,14 +206,25 @@ export async function createUiPluginHost<TContext = unknown>(
     const sessionID = event.sessionID;
     const workspaceID = (event as { workspaceID?: string }).workspaceID;
     const activeSessionID = activeKey
-      ? activeKey.slice(activeKey.indexOf(":") + 1)
+      ? activeKey.slice(activeKey.lastIndexOf(":") + 1)
       : undefined;
-    const key =
+    let key: string | undefined =
       sessionID && activeSessionID && sessionID === activeSessionID
         ? activeKey
         : sessionID
           ? `${workspaceID ?? "default"}:${sessionID}`
           : activeKey;
+    // Do not fork a second state key for a session whose history already lives
+    // on the workspace-unknown `default:` key.
+    if (
+      key &&
+      sessionID &&
+      workspaceID &&
+      workspaceID !== "default" &&
+      !sessionStates.has(key)
+    ) {
+      key = workspaceUnknownKey(sessionID) ?? key;
+    }
     if (!key) {
       viewStore.applyEvent(state, event);
       for (const listener of projectionListeners) listener(state);
