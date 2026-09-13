@@ -1361,3 +1361,41 @@ test("session projection carries the current goal, folded and disarmed", () => {
   expect(goal?.activation).toBe("disarmed");
   expect(projectedGoal(session.events)?.objective).toBe("second");
 });
+
+test("projected messages include collaboration rows in event order", () => {
+  const session = createSessionRecord("ses_collab_projection", "Collab");
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_collab_1",
+    text: "ask navi",
+    byteLength: 8,
+    lineCount: 1,
+    sha256: "test",
+  });
+  appendSessionEvent(session, {
+    type: "natalia.collab.message",
+    message: {
+      id: "collab:chat:abc:1",
+      threadID: "collab:chat:abc:1",
+      kind: "chat",
+      from: "main_agent",
+      to: "live_chat",
+      text: "please review this",
+      at: "2026-01-01T00:00:00.000Z",
+    },
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_collab_1",
+    stopReason: "done",
+  });
+
+  const page = projectSessionMessages(session, { order: "asc" });
+  const rows = page.data.flatMap((message) => message.rows);
+  const collab = rows.find(
+    (row) => row.event.type === "natalia.collab.message",
+  );
+  expect(collab).toBeDefined();
+  expect(collab?.turnID).toBe("turn_collab_1");
+  expect(collab?.kind).toBe("system");
+});
