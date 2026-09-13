@@ -36,3 +36,12 @@ export {
   PendingPanel,
 } from "./pending";
 export { renderMarkdownHtml } from "./markdown";
+export {
+  evaluateTailScroll,
+  initialTailScrollState,
+} from "./tail-scroll-machine";
+export type {
+  TailScrollAnchor,
+  TailScrollEffect,
+  TailScrollState,
+} from "./tail-scroll-machine";

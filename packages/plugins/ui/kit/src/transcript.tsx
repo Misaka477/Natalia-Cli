@@ -11,6 +11,11 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import { marked } from "marked";
 import type { Attachment, Message, ToolCall } from "./message";
 import { TailScrollController } from "./scroll-controller";
+import {
+  evaluateTailScroll,
+  initialTailScrollState,
+  type TailScrollState,
+} from "./tail-scroll-machine";
 
 const VIRTUALIZE_THRESHOLD = 80;
 const VIRTUAL_OVERSCAN = 24;
@@ -146,17 +151,9 @@ export function Transcript(props: TranscriptProps) {
   const liveVirtualItems = () => virtualizer.getVirtualItems();
   const liveTotalSize = () => virtualizer.getTotalSize();
 
-  // deepseek-harness TrajectoryTable state machine:
-  //   tableScrollInitialized + followsTableTail + olderLoadAnchor.
-  let tableScrollInitialized = false;
-  let followsTableTail = true;
-  let lastMessageStartKey: string | null = null;
-  let olderAnchor: {
-    readonly startKey: string | null;
-    readonly scrollHeight: number;
-    readonly scrollTop: number;
-    readonly visibleKey: string | null;
-  } | null = null;
+  // deepseek-harness TrajectoryTable state machine (pure, tested in
+  // tail-scroll-machine.test.ts).
+  let tailState: TailScrollState = initialTailScrollState();
   let frozenVirtualItems: ReturnType<typeof virtualizer.getVirtualItems> = [];
   let frozenTotalSize = 0;
   createEffect(() => {
@@ -233,11 +230,14 @@ export function Transcript(props: TranscriptProps) {
         const firstVirtual = liveVirtualItems()[0]?.index ?? 0;
         const visibleIndex =
           virtualize() && liveVirtualItems().length > 0 ? firstVirtual : 0;
-        olderAnchor = {
-          startKey: lastMessageStartKey,
-          scrollHeight: el.scrollHeight,
-          scrollTop: el.scrollTop,
-          visibleKey: props.messages[visibleIndex]?.id ?? null,
+        tailState = {
+          ...tailState,
+          olderAnchor: {
+            startKey: tailState.lastStartKey,
+            scrollHeight: el.scrollHeight,
+            scrollTop: el.scrollTop,
+            visibleKey: props.messages[visibleIndex]?.id ?? null,
+          },
         };
       }
       props.onNearTop(scrollTop);
@@ -264,23 +264,27 @@ export function Transcript(props: TranscriptProps) {
     breakFollow: () => controller?.breakFollow(),
   };
 
-  // Mirrors deepseek-harness TrajectoryTable's useLayoutEffect:
-  // - prepend: restore the older anchor and explicitly leave tail-follow
-  // - first non-empty, non-loading page: measure once, then scrollToEnd
-  // - later growth: only follow while the reader is still pinned
+  // deepseek-harness TrajectoryTable layout contract:
+  // - historyLoading gates first initialization
+  // - the first measured window owns one scroll-to-end
+  // - later growth follows only while the reader is pinned
+  // - a pending older anchor owns prepend restoration
   createEffect(() => {
-    const count = props.messages.length;
     const el = scrollEl();
-    const firstKey = props.messages[0]?.id ?? null;
-    const historyLoading = props.historyLoading === true;
     if (el === undefined) return;
+    const result = evaluateTailScroll(tailState, {
+      count: props.messages.length,
+      firstKey: props.messages[0]?.id ?? null,
+      historyLoading: props.historyLoading === true,
+      virtualize: virtualize(),
+      virtualReady: useVirtual(),
+    });
+    tailState = result.state;
+    const effect = result.effect;
+    if (effect.type === "none") return;
 
-    // Older-page prepend: historyStartKey changes while the request was in
-    // flight and the older anchor owns the reader position.
-    if (olderAnchor !== null && olderAnchor.startKey !== firstKey) {
-      const anchor = olderAnchor;
-      olderAnchor = null;
-      followsTableTail = false;
+    if (effect.type === "restore-anchor") {
+      const anchor = effect.anchor;
       controller?.breakFollow();
       const visibleIndex = anchor.visibleKey === null
         ? -1
@@ -295,29 +299,10 @@ export function Transcript(props: TranscriptProps) {
         el.scrollTop =
           anchor.scrollTop + (el.scrollHeight - anchor.scrollHeight);
       }
-      lastMessageStartKey = firstKey;
       return;
     }
 
-    // Whole transcript/session replacement: re-run first-load initialization.
-    if (
-      tableScrollInitialized &&
-      lastMessageStartKey !== null &&
-      lastMessageStartKey !== firstKey
-    ) {
-      tableScrollInitialized = false;
-      followsTableTail = true;
-    }
-    lastMessageStartKey = firstKey;
-
-    if (historyLoading || count === 0) return;
-
-    if (!tableScrollInitialized) {
-      // Dynamic message heights mean the first window must be measured before
-      // it can own the tail. Wait for a valid virtual window first.
-      if (virtualize() && !useVirtual()) return;
-      tableScrollInitialized = true;
-      followsTableTail = true;
+    if (effect.type === "measure-and-scroll-end") {
       virtualizer.measure();
       requestAnimationFrame(() => {
         controller?.scrollToBottom({ behavior: "auto" });
@@ -325,7 +310,6 @@ export function Transcript(props: TranscriptProps) {
       return;
     }
 
-    if (!followsTableTail) return;
     requestAnimationFrame(() => {
       controller?.scrollToBottom({ behavior: "auto" });
     });
@@ -364,7 +348,10 @@ export function Transcript(props: TranscriptProps) {
   const handleScroll = (event: Event) => {
     const startedAt = performance.now();
     controller?.onScroll(event);
-    followsTableTail = controller?.isFollowing() ?? true;
+    tailState = {
+      ...tailState,
+      following: controller?.isFollowing() ?? true,
+    };
     props.onScroll?.(event);
     if (!uiDebugEnabled()) return;
     const el = scrollEl();
