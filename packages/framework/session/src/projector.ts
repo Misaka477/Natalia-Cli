@@ -347,7 +347,11 @@ function projectedRowKind(
     return undefined;
   if (event.type === "thinking.delta" || event.type === "thinking.done")
     return "thinking";
-  if (event.type === "content.delta" || event.type === "content.done")
+  if (
+    event.type === "content.delta" ||
+    event.type === "content.done" ||
+    event.type === "content.partial"
+  )
     return "assistant";
   if (event.type === "tool.update") return "tool";
   if (event.type === "approval.request" || event.type === "approval.response")

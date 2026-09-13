@@ -2218,3 +2218,48 @@ test("context snapshots with agentID route to the isolated subagent state", () =
   expect(state.subagentStates["sub-1"]?.context?.used).toBe(400);
   expect(state.subagentStates["sub-1"]?.context?.max).toBe(4_000);
 });
+
+test("durable content.partial batches reconstruct a stream killed mid-flight", () => {
+  const state = projectEvents([
+    submitted("t1", "hi"),
+    {
+      type: "content.partial",
+      id: "t1",
+      text: "partial one ",
+      at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      type: "content.partial",
+      id: "t1",
+      text: "partial two",
+      at: "2026-01-01T00:00:01.000Z",
+    },
+    // The process died here: no content.done was ever written.
+  ]);
+  expect(text(state, streamID("t1", "assistant"))).toBe(
+    "partial one partial two",
+  );
+});
+
+test("content.partial batches do not duplicate the final content.done", () => {
+  const state = projectEvents([
+    submitted("t1", "hi"),
+    {
+      type: "content.partial",
+      id: "t1",
+      text: "hello ",
+      at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      type: "content.partial",
+      id: "t1",
+      text: "world",
+      at: "2026-01-01T00:00:01.000Z",
+    },
+    { type: "content.done", id: "t1", text: "hello world" },
+  ]);
+  expect(state.messages.filter((block) => block.role === "assistant")).toHaveLength(
+    1,
+  );
+  expect(text(state, streamID("t1", "assistant"))).toBe("hello world");
+});

@@ -9,6 +9,7 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import { createSessionStoreController } from "@natalia/session-store";
+import { projectSessionMessages } from "@natalia/session";
 import { createRealRuntimeClient } from "../src/runtime/main";
 
 const provider: StreamingProvider = {
@@ -316,4 +317,77 @@ test("pause hard-stops the running goal round and edit steers it", async () => {
     for (const release of releases.values()) release();
     await client.dispose?.();
   }
+});
+
+/**
+ * A stream killed mid-flight must keep the text it already generated. The
+ * event sink coalesces `content.delta` into durable `content.partial` batches,
+ * and dispose flushes the last buffer before the store closes.
+ */
+test("a killed stream keeps its generated text as durable partial batches", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-partial-kill-"));
+  const sessionID = "ses_partial_kill" as SessionID;
+  let yielded: (() => void) | undefined;
+  const bothChunksYielded = new Promise<void>((resolve) => {
+    yielded = resolve;
+  });
+  const provider: StreamingProvider = {
+    provider: "partial-kill-test",
+    model: "partial-kill-test-model",
+    async *stream(request: ProviderStreamRequest) {
+      yield { type: "content", text: "Recovered " };
+      yield { type: "content", text: "partial text" };
+      yielded?.();
+      // Simulate a provider request that never completes on its own; the abort
+      // is what lets dispose finish.
+      await new Promise<void>((resolve) => {
+        if (request.signal?.aborted) return resolve();
+        request.signal?.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
+      });
+      yield { type: "done" as const };
+    },
+  };
+
+  const live: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    useSqliteStore: true,
+    provider,
+  });
+  client.start((event) => live.push(event));
+  await client.sessionAttach?.(sessionID);
+  void client.submit?.("go");
+  await bothChunksYielded;
+  await client.dispose?.();
+
+  // Partials are the durable copy; they must never be re-broadcast live (the
+  // live transcript already has the raw deltas).
+  expect(live.some((event) => event.type === "content.delta")).toBe(true);
+  expect(live.some((event) => event.type === "content.partial")).toBe(false);
+
+  const reader = createSessionStoreController({
+    workspaceRoot: root,
+    sessionID: () => sessionID,
+    useSqliteStore: true,
+    attachments: createAttachmentService(root),
+  });
+  await reader.init();
+  const session = (await reader.load(sessionID)).session;
+  await reader.close();
+
+  const projected = projectSessionMessages(session, { order: "asc" });
+  const assistantRows = projected.data.flatMap((message) =>
+    message.rows.filter((row) => row.kind === "assistant"),
+  );
+  // The partial batches alone reconstruct the full generated text, so a real
+  // SIGKILL (which never publishes `content.done`) still recovers it.
+  const partialText = assistantRows
+    .flatMap((row) =>
+      row.event.type === "content.partial" ? [row.event.text] : [],
+    )
+    .join("");
+  expect(partialText).toBe("Recovered partial text");
 });

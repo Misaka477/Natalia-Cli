@@ -315,13 +315,14 @@ export function applyConversationEvent(
       return true;
     }
     case "content.delta":
+    case "content.partial":
       markTurnStarted(state, event.id);
       prepareStreamPhase(state, event.id, "assistant");
       appendStream(state, {
         id: streamID(event.id, "assistant"),
         role: "assistant",
         text: event.text,
-        attempt: event.attempt,
+        attempt: "attempt" in event ? event.attempt : undefined,
       });
       return true;
     case "content.done": {

@@ -810,6 +810,19 @@ type RuntimeEventData =
     }
   | { type: "content.delta"; id: string; text: string; attempt?: number }
   | {
+      /**
+       * A throttled, durable batch of streamed assistant text. `content.delta`
+       * stays live-only (one event per provider chunk would bloat the journal);
+       * this is the durable copy, so an abrupt process death does not lose the
+       * text already generated. Batches are incremental and concatenate in
+       * order to the same text as the step's final `content.done`.
+       */
+      type: "content.partial";
+      id: string;
+      text: string;
+      at: string;
+    }
+  | {
       type: "content.done";
       id: string;
       text?: string;

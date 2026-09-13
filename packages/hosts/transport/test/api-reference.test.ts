@@ -411,6 +411,8 @@ const EVENT_TRIGGERS: Record<string, string> = {
   "constitution.rule_added": "a constitution rule was added",
   "constitution.rule_updated": "a constitution rule was updated",
   "content.delta": "streaming answer text; live only, never journaled",
+  "content.partial":
+    "throttled durable batch of streamed answer text (crash-recovery copy)",
   "content.done": "one completed answer chunk per provider step; journaled",
   "context.checkpoint":
     "the context journal reached a durable checkpoint (projection point)",

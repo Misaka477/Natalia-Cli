@@ -96,6 +96,81 @@ export function createEventSink(
   };
   ctx.ports.syncGoalStatus = (sessionID) => goalRuntime.refresh(sessionID);
 
+  // `content.delta` is live-only: one durable event per provider chunk would
+  // bloat the journal. Coalesce the deltas into throttled durable
+  // `content.partial` batches instead, so an abrupt death keeps the text that
+  // was already generated. The batches concatenate to the step's final text.
+  const PARTIAL_FLUSH_MS = Math.max(
+    100,
+    Number(process.env.NATALIA_PARTIAL_FLUSH_MS ?? 1_000),
+  );
+  const PARTIAL_FLUSH_CHARS = Math.max(
+    256,
+    Number(process.env.NATALIA_PARTIAL_FLUSH_CHARS ?? 4_000),
+  );
+  const pendingPartialByTurn = new Map<
+    string,
+    {
+      exec: SessionExecutionState;
+      text: string;
+      timer?: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  function flushPartial(turnID: string): void {
+    const pending = pendingPartialByTurn.get(turnID);
+    if (!pending) return;
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+      pending.timer = undefined;
+    }
+    const text = pending.text;
+    pending.text = "";
+    const { exec } = pending;
+    if (!text || !exec.session) return;
+    const partial: RuntimeEvent = {
+      type: "content.partial",
+      id: turnID,
+      text,
+      at: new Date().toISOString(),
+    };
+    appendSessionEvent(exec.session, partial);
+    const sessionStoreController =
+      ctx.ports.resolveService<SessionStoreController>(
+        SESSION_STORE_CONTROLLER_SERVICE,
+      );
+    if (sessionStoreController?.status().initialized) {
+      void sessionStoreController
+        .appendEvent(exec.session, partial)
+        .catch(() => undefined);
+    }
+  }
+
+  function schedulePartialFlush(exec: SessionExecutionState, turnID: string) {
+    const pending = pendingPartialByTurn.get(turnID) ?? {
+      exec,
+      text: "",
+    };
+    pending.exec = exec;
+    pendingPartialByTurn.set(turnID, pending);
+    if (pending.text.length >= PARTIAL_FLUSH_CHARS) {
+      flushPartial(turnID);
+      return;
+    }
+    pending.timer ??= setTimeout(() => {
+      const current = pendingPartialByTurn.get(turnID);
+      if (current) current.timer = undefined;
+      flushPartial(turnID);
+    }, PARTIAL_FLUSH_MS);
+    pending.timer.unref?.();
+  }
+
+  // Release any in-flight stream buffer before the store closes, so a graceful
+  // shutdown keeps the last <1s of generated text too.
+  ctx.ports.flushPendingPartialOutput = () => {
+    for (const turnID of [...pendingPartialByTurn.keys()]) flushPartial(turnID);
+  };
+
   const CONTEXT_EPOCH_WRITE_EVERY = 100;
   const CONTEXT_EPOCH_WRITE_INTERVAL_MS = 5_000;
   const contextEpochDirty = new Map<
@@ -246,7 +321,20 @@ export function createEventSink(
         event.id,
         `${current}${event.text}`.slice(-8000),
       );
+      if (exec?.session && event.text) {
+        const pending = pendingPartialByTurn.get(event.id) ?? {
+          exec,
+          text: "",
+        };
+        pending.text += event.text;
+        pendingPartialByTurn.set(event.id, pending);
+        schedulePartialFlush(exec, event.id);
+      }
     }
+    // The durable partial batches must cover the step's full text before the
+    // final `content.done` lands, or replay would render a truncated answer.
+    if (!event.agentID && event.type === "content.done")
+      flushPartial(event.id);
     // TERM-M.3 (c): a turn that ended as waiting_human persists the typed
     // pending-human state and clears the turn-level marker.
     if (
@@ -369,8 +457,11 @@ export function createEventSink(
     if (
       !event.agentID &&
       (event.type === "turn.finished" || event.type === "turn.cancelled")
-    )
+    ) {
+      flushPartial(event.id);
+      pendingPartialByTurn.delete(event.id);
       liveMainOutputByTurn.delete(event.id);
+    }
     // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
     // "step complete"). Deliver every queued mailbox message so the main agent
     // sees user intents at the boundary, never mid-token. `mailbox.delivered`

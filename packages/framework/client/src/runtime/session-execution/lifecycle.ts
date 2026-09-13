@@ -47,6 +47,8 @@ export function createLifecycleSurface(
         for (const resolveWaiter of exec.pauseWaiters) resolveWaiter();
         exec.pauseWaiters = [];
       }
+      // Persist the last <1s of streamed text before the store flushes/closes.
+      ctx.ports.flushPendingPartialOutput?.();
       await Promise.all(
         [...ctx.ports.getExecutionBySession().keys()].map((id) =>
           sessionRunCoordinator(id).interrupt(),

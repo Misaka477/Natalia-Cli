@@ -1464,3 +1464,37 @@ test("projected messages include collaboration rows in event order", () => {
   expect(collab?.turnID).toBe("turn_collab_1");
   expect(collab?.kind).toBe("system");
 });
+
+test("message projection keeps durable content.partial rows for a killed stream", () => {
+  const session = createSessionRecord("ses_partial_rows", "Partial rows");
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_partial",
+    text: "start",
+    byteLength: 5,
+    lineCount: 1,
+    sha256: "test",
+  });
+  appendSessionEvent(session, {
+    type: "content.partial",
+    id: "turn_partial",
+    text: "par",
+    at: "2026-01-01T00:00:00.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "content.partial",
+    id: "turn_partial",
+    text: "tial",
+    at: "2026-01-01T00:00:01.000Z",
+  });
+  // Killed mid-stream: there is no content.done.
+  const projected = projectSessionMessages(session, { order: "asc" });
+  expect(projected.data.map((message) => message.id)).toEqual(["turn_partial"]);
+  const rows = projected.data[0]!.rows;
+  expect(rows.filter((row) => row.kind === "assistant")).toHaveLength(2);
+  expect(rows.map((row) => row.event.type)).toEqual([
+    "turn.submitted",
+    "content.partial",
+    "content.partial",
+  ]);
+});

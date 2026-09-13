@@ -225,6 +225,8 @@ export type RuntimePorts = {
   cancelTurn?: (reason: string, sessionID?: SessionID) => void | Promise<unknown>;
   /** Re-seed and re-publish the live goal status on attach / reconnect. */
   syncGoalStatus?: (sessionID: SessionID) => Promise<void>;
+  /** Flush in-flight streaming text into its durable partial batch. */
+  flushPendingPartialOutput?: () => void;
   applyAgentPolicy: () => void;
   applyAgentProvider: (exec?: SessionExecutionState) => void;
   refreshExecutionContextConfig: (exec: SessionExecutionState) => Promise<void>;
