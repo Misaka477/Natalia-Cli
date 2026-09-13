@@ -48,6 +48,20 @@ function sameSignature(a: RowSignature, b: RowSignature): boolean {
   return true;
 }
 
+/** Preserve first occurrence for each transcript row id. */
+export function dedupeTranscriptRowsById<
+  T extends { id: string },
+>(rows: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+  }
+  return out;
+}
+
 /**
  * Collapse duplicate assistant / thinking rows that belong to the same turn
  * and carry identical display text. Durable replay and message-page hydration

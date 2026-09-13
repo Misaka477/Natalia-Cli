@@ -242,6 +242,18 @@ export function projectEvents(
  * adopt message-page loading instead of replaying every raw session event.
  * Merges by message id so a live projection can keep its own streaming rows.
  */
+/** The transcript row id is the render key; duplicates are never valid. */
+function dedupeMessagesByID<T extends { id: string }>(messages: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const message of messages) {
+    if (seen.has(message.id)) continue;
+    seen.add(message.id);
+    out.push(message);
+  }
+  return out;
+}
+
 export function hydrateProjectedMessages(
   state: AppState,
   messages: RuntimeProjectedMessage[],
@@ -282,7 +294,7 @@ export function hydrateProjectedMessages(
     // here: an earlier version capped `state.messages` with `boundTranscript`,
     // which made rows dropped inside the already-loaded page unreachable
     // because the server cursor only pages by turn.
-    state.messages = [...incoming, ...liveRows];
+    state.messages = dedupeMessagesByID([...incoming, ...liveRows]);
     const liveStreams = Object.fromEntries(
       Object.entries(state.streams).filter(
         ([id]) => !(id in projected.streams),
@@ -312,7 +324,7 @@ export function hydrateProjectedMessages(
     direction === "older"
       ? [...incoming, ...retained]
       : [...retained, ...incoming];
-  state.messages = merged;
+  state.messages = dedupeMessagesByID(merged);
   // Keep stream/tool state for hydrated turns when the live project has not
   // seen them yet.
   for (const id of Object.keys(projected.streams))

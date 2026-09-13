@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   collapseDuplicateTranscriptRows,
+  dedupeTranscriptRowsById,
   stableRows,
   type RowSignature,
 } from "../src/stable-rows";
@@ -61,5 +62,17 @@ test("collapses duplicate assistant and thinking rows within one turn", () => {
     "turn_a:tool:1",
     "turn_a:tool:2",
     "turn_b:assistant",
+  ]);
+});
+
+test("dedupes transcript rows by id before rendering", () => {
+  const rows = [
+    { id: "a", role: "user", content: "one" },
+    { id: "a", role: "user", content: "one" },
+    { id: "b", role: "assistant", content: "two" },
+  ];
+  expect(dedupeTranscriptRowsById(rows).map((row) => row.id)).toEqual([
+    "a",
+    "b",
   ]);
 });

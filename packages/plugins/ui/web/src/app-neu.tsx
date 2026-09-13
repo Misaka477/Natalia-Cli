@@ -61,6 +61,7 @@ import type { Message } from "./types";
 import { parseGoalRoundPrompt } from "./goal-round";
 import {
   collapseDuplicateTranscriptRows,
+  dedupeTranscriptRowsById,
   stableRows,
   type RowSignature,
 } from "./stable-rows";
@@ -2555,7 +2556,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   // between a synthetic tail window and the full paged window here. That
   // data-window swap was racing the scroll anchor restore in CEF.
   const renderedMainMessages = createMemo<Message[]>(() =>
-    collapseDuplicateTranscriptRows(visibleMainMessages()),
+    collapseDuplicateTranscriptRows(
+      dedupeTranscriptRowsById(visibleMainMessages()),
+    ),
   );
 
   const naviChatActivity = () => state().navi.activity;
@@ -2641,7 +2644,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   });
 
   const renderedChatMessages = createMemo<Message[]>(() =>
-    collapseDuplicateTranscriptRows(chatMessages()),
+    collapseDuplicateTranscriptRows(dedupeTranscriptRowsById(chatMessages())),
   );
   function startResize(
     event: PointerEvent,
