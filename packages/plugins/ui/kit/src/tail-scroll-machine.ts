@@ -16,6 +16,8 @@ export interface TailScrollAnchor {
   readonly scrollTop: number;
   /** First visible semantic row id, used to restore a virtualized window. */
   readonly visibleKey: string | null;
+  /** Offset of that row from the scrollport top, in pixels. */
+  readonly visibleTop: number;
 }
 
 export interface TailScrollState {

@@ -89,14 +89,46 @@ export interface TranscriptProps {
 
 export function Transcript(props: TranscriptProps) {
   const [scrollEl, setScrollEl] = createSignal<HTMLDivElement>();
+  const [scrollReady, setScrollReady] = createSignal(false);
   const virtualize = () => props.messages.length > VIRTUALIZE_THRESHOLD;
   let controller: TailScrollController | undefined;
+  // dsh's useStableVirtualRowStructure keeps row identity/height stable across
+  // renders. Message heights are dynamic, so cache by a content signature: a
+  // measurement callback must not see a different estimate for the same row.
+  const estimateCache = new Map<string, { signature: string; height: number }>();
+  const messageSignature = (message: Message): string =>
+    [
+      message.id,
+      message.role,
+      message.content.length,
+      message.thinking === true,
+      message.attachments?.length ?? 0,
+      (message.toolCalls ?? [])
+        .map((call) => `${call.name}:${call.output?.length ?? 0}`)
+        .join(","),
+    ].join("|");
+  const estimateStable = (index: number): number => {
+    const message = props.messages[index];
+    if (message === undefined) return 40;
+    const signature = messageSignature(message);
+    const cached = estimateCache.get(message.id);
+    if (cached !== undefined && cached.signature === signature)
+      return cached.height;
+    const height = estimateMessageHeight(message);
+    estimateCache.set(message.id, { signature, height });
+    if (estimateCache.size > 4096) {
+      const oldest = estimateCache.keys().next().value;
+      if (oldest !== undefined) estimateCache.delete(oldest);
+    }
+    return height;
+  };
+
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return props.messages.length;
     },
     getScrollElement: () => scrollEl() ?? null,
-    estimateSize: (index) => estimateMessageHeight(props.messages[index]!),
+    estimateSize: (index) => estimateStable(index),
     getItemKey: (index) => props.messages[index]?.id ?? index,
     anchorTo: "end",
     // Follow is owned exclusively by TailScrollController. Disable
@@ -230,13 +262,25 @@ export function Transcript(props: TranscriptProps) {
         const firstVirtual = liveVirtualItems()[0]?.index ?? 0;
         const visibleIndex =
           virtualize() && liveVirtualItems().length > 0 ? firstVirtual : 0;
+        const visibleKey = props.messages[visibleIndex]?.id ?? null;
+        const visibleRow =
+          visibleKey === null
+            ? null
+            : el.querySelector<HTMLElement>(
+                `[data-message-id="${CSS.escape(visibleKey)}"]`,
+              );
+        const containerRect = el.getBoundingClientRect();
         tailState = {
           ...tailState,
           olderAnchor: {
             startKey: tailState.lastStartKey,
             scrollHeight: el.scrollHeight,
             scrollTop: el.scrollTop,
-            visibleKey: props.messages[visibleIndex]?.id ?? null,
+            visibleKey,
+            visibleTop:
+              visibleRow === null
+                ? 0
+                : visibleRow.getBoundingClientRect().top - containerRect.top,
           },
         };
       }
@@ -280,6 +324,7 @@ export function Transcript(props: TranscriptProps) {
       virtualReady: useVirtual(),
     });
     tailState = result.state;
+    if (!result.state.initialized) setScrollReady(false);
     const effect = result.effect;
     if (effect.type === "none") return;
 
@@ -295,6 +340,19 @@ export function Transcript(props: TranscriptProps) {
         liveVirtualItems().length > 0
       ) {
         virtualizer.scrollToIndex(visibleIndex, { align: "start" });
+        if (anchor.visibleKey !== null) {
+          requestAnimationFrame(() => {
+            const row = el.querySelector<HTMLElement>(
+              `[data-message-id="${CSS.escape(anchor.visibleKey!)}"]`,
+            );
+            if (row !== null) {
+              el.scrollTop +=
+                row.getBoundingClientRect().top -
+                el.getBoundingClientRect().top -
+                anchor.visibleTop;
+            }
+          });
+        }
       } else {
         el.scrollTop =
           anchor.scrollTop + (el.scrollHeight - anchor.scrollHeight);
@@ -306,6 +364,7 @@ export function Transcript(props: TranscriptProps) {
       virtualizer.measure();
       requestAnimationFrame(() => {
         controller?.scrollToBottom({ behavior: "auto" });
+        setScrollReady(true);
       });
       return;
     }
@@ -478,6 +537,7 @@ export function Transcript(props: TranscriptProps) {
   return (
     <div
       class="natalia-transcript"
+      data-scroll-ready={scrollReady() ? "true" : "false"}
       ref={setScrollRef}
       onScroll={handleScroll}
       onWheel={handleWheel}

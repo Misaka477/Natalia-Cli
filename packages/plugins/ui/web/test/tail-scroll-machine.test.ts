@@ -57,6 +57,7 @@ test("prepend restores the older anchor and leaves follow", () => {
       scrollHeight: 1000,
       scrollTop: 100,
       visibleKey: "t3",
+      visibleTop: 24,
     },
   };
   const result = evaluateTailScroll(state, input({ firstKey: "t0", count: 20 }));
