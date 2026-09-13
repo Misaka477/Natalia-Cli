@@ -55,12 +55,24 @@ function sameSignature(a: RowSignature, b: RowSignature): boolean {
  * response; the transcript must show one row, not two.
  */
 export function collapseDuplicateTranscriptRows<
-  T extends { id: string; role: string; content: string },
+  T extends {
+    id: string;
+    role: string;
+    content: string;
+    toolCalls?: readonly unknown[];
+  },
 >(rows: readonly T[]): T[] {
   const out: T[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
-    if (row.role !== "assistant" && row.role !== "thinking") {
+    // Tool cards also carry role "assistant" with an empty `content`; they are
+    // distinct records and must never be collapsed together just because that
+    // display text is empty.
+    if (
+      (row.role !== "assistant" && row.role !== "thinking") ||
+      row.content.length === 0 ||
+      (row.toolCalls?.length ?? 0) > 0
+    ) {
       out.push(row);
       continue;
     }

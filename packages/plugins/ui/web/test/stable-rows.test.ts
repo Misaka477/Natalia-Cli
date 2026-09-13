@@ -49,6 +49,8 @@ test("collapses duplicate assistant and thinking rows within one turn", () => {
     { id: "turn_a:thinking:segment:1", role: "thinking", content: "same thought" },
     { id: "turn_a:assistant", role: "assistant", content: "same answer" },
     { id: "turn_a:assistant:segment:1", role: "assistant", content: "same answer" },
+    { id: "turn_a:tool:1", role: "assistant", content: "", toolCalls: [{}] },
+    { id: "turn_a:tool:2", role: "assistant", content: "", toolCalls: [{}] },
     { id: "turn_b:assistant", role: "assistant", content: "same answer" },
   ];
   expect(
@@ -56,6 +58,8 @@ test("collapses duplicate assistant and thinking rows within one turn", () => {
   ).toEqual([
     "turn_a:thinking",
     "turn_a:assistant",
+    "turn_a:tool:1",
+    "turn_a:tool:2",
     "turn_b:assistant",
   ]);
 });
