@@ -14,6 +14,7 @@ import {
   valueAfter,
   waitSignal,
   settleShutdown,
+  logActiveHandles,
   withoutOption,
 } from "./command-helpers";
 import { pluginStoreRoot } from "./official-plugins";
@@ -76,6 +77,7 @@ export async function handleRuntimeCommand(argv: string[]) {
     await waitSignal();
     await settleShutdown("runtime transport close", () => transport.close());
     await settleShutdown("runtime manager dispose", () => manager.dispose());
+    logActiveHandles();
     return true;
   }
   if (command === "run" || command === "--once") {

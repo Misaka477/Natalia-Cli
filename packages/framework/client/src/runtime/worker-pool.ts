@@ -19,7 +19,16 @@ export function createRuntimeWorkerPool<TWorker extends Worker = Worker>(
   let next = 0;
 
   function ensureWorkers(): void {
-    while (workers.length < size) workers.push(factory());
+    while (workers.length < size) {
+      const worker = factory();
+      // An idle worker must not keep the runtime process alive: the server/
+      // host handle owns liveness, and graceful shutdown closes those. Without
+      // this the process hangs after dispose until the shutdown watchdog.
+      (
+        worker as Worker & { unref?: () => void }
+      ).unref?.();
+      workers.push(worker);
+    }
   }
 
   return {

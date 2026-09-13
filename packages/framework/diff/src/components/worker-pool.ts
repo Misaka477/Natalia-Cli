@@ -20,7 +20,13 @@ export function createWebWorkerPool<TWorker extends Worker = Worker>(
   let next = 0;
 
   function ensureWorkers(): void {
-    while (workers.length < size) workers.push(factory());
+    while (workers.length < size) {
+      const worker = factory();
+      // In the browser `unref` is absent; in the Bun runtime an idle worker
+      // must not keep the process alive past a graceful shutdown.
+      (worker as Worker & { unref?: () => void }).unref?.();
+      workers.push(worker);
+    }
   }
 
   return {

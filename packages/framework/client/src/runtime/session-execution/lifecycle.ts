@@ -18,6 +18,46 @@ type Surface = Pick<
   RuntimeServiceClient,
   "dispose" | "canReloadConfig" | "reloadConfig" | "updateConfig" | "configGet"
 >;
+/** How long one dispose sub-step may take before the next one runs. */
+const DISPOSE_STEP_TIMEOUT_MS = Math.max(
+  500,
+  Number(process.env.NATALIA_DISPOSE_STEP_TIMEOUT_MS ?? 2_000),
+);
+
+/**
+ * Runs one dispose sub-step under a timeout and logs its duration. A hung
+ * sub-step must not stop the ones that follow it — the durable session flush in
+ * particular has to run even if an earlier worker/wake never settles.
+ */
+async function shutdownStep(
+  label: string,
+  work: () => Promise<unknown> | unknown,
+): Promise<void> {
+  const started = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.resolve().then(work),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          console.error(
+            `[shutdown] dispose.${label} stuck >${DISPOSE_STEP_TIMEOUT_MS}ms; continuing`,
+          );
+          resolve();
+        }, DISPOSE_STEP_TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]);
+  } catch (error) {
+    console.error(
+      `[shutdown] dispose.${label} failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    if (timer) clearTimeout(timer);
+    console.warn(`[shutdown] dispose.${label} +${Date.now() - started}ms`);
+  }
+}
+
 export function createLifecycleSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
@@ -34,10 +74,13 @@ export function createLifecycleSurface(
       }
     },
     async dispose() {
+      const flushStart = Date.now();
       ctx.ports.setDisposed(true);
-      await Promise.all(
-        [...ctx.state.titleGenerationTasks.keys()].map(
-          ctx.ports.cancelTitleGeneration,
+      await shutdownStep("titleGeneration", () =>
+        Promise.all(
+          [...ctx.state.titleGenerationTasks.keys()].map(
+            ctx.ports.cancelTitleGeneration,
+          ),
         ),
       );
       ctx.ports.getTerminalCommandBuffer().clearAll();
@@ -49,36 +92,55 @@ export function createLifecycleSurface(
       }
       // Persist the last <1s of streamed text before the store flushes/closes.
       ctx.ports.flushPendingPartialOutput?.();
-      await Promise.all(
-        [...ctx.ports.getExecutionBySession().keys()].map((id) =>
-          sessionRunCoordinator(id).interrupt(),
+      await shutdownStep("runCoordinator", () =>
+        Promise.all(
+          [...ctx.ports.getExecutionBySession().keys()].map((id) =>
+            sessionRunCoordinator(id).interrupt(),
+          ),
         ),
       );
-      await Promise.allSettled([...ctx.ports.getInternalWakeTasks()]);
+      await shutdownStep("internalWakeTasks", () =>
+        Promise.allSettled([...ctx.ports.getInternalWakeTasks()]),
+      );
       // A committed selection and other durable controls must reach disk before
-      // a caller opens the same session in a replacement runtime.
-      await ctx.ports.getSessionPersistence();
+      // a caller opens the same session in a replacement runtime. These three
+      // run even if an earlier step timed out, so durable state is not lost.
+      await shutdownStep("sessionPersistence", () =>
+        ctx.ports.getSessionPersistence(),
+      );
       const sessionStore = ctx.ports.resolveService<SessionStoreController>(
         SESSION_STORE_CONTROLLER_SERVICE,
       );
-      if (sessionStore)
-        await Promise.all(
-          [...ctx.ports.getExecutionBySession().keys()].map((id) =>
-            sessionStore.flush(id),
-          ),
-        );
-      await ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE)?.close();
-      await ctx.ports
-        .resolveService<TerminalController>(TERMINAL_CONTROLLER_SERVICE)
-        ?.close();
+      await shutdownStep("sessionStoreFlush", () =>
+        sessionStore
+          ? Promise.all(
+              [...ctx.ports.getExecutionBySession().keys()].map((id) =>
+                sessionStore.flush(id),
+              ),
+            )
+          : undefined,
+      );
+      await shutdownStep("sandboxClose", () =>
+        ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE)?.close(),
+      );
+      await shutdownStep("terminalClose", () =>
+        ctx.ports
+          .resolveService<TerminalController>(TERMINAL_CONTROLLER_SERVICE)
+          ?.close(),
+      );
       ctx.ports
         .resolveService<
           CheckpointFactory & { close?(): void }
         >(CHECKPOINT_FACTORY_SERVICE)
         ?.close?.();
-      await ctx.ports.getPluginsController().close();
+      await shutdownStep("pluginsClose", () =>
+        ctx.ports.getPluginsController().close(),
+      );
       ctx.state.frameworkServices?.close();
-      await ctx.ports.getPerformanceTrace().stop();
+      await shutdownStep("performanceTrace", () =>
+        ctx.ports.getPerformanceTrace().stop(),
+      );
+      console.warn(`[shutdown] dispose total +${Date.now() - flushStart}ms`);
     },
     async canReloadConfig() {
       await ctx.ports.getReady();

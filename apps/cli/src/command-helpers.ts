@@ -75,7 +75,9 @@ export async function settleShutdown(
   work: () => Promise<unknown> | unknown,
 ): Promise<void> {
   const timeoutMs = shutdownStepTimeoutMs();
+  const started = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  console.warn(`[shutdown] ${label} start`);
   try {
     await Promise.race([
       Promise.resolve().then(work),
@@ -95,5 +97,35 @@ export async function settleShutdown(
     );
   } finally {
     if (timer) clearTimeout(timer);
+    console.warn(`[shutdown] ${label} done +${Date.now() - started}ms`);
+  }
+}
+
+/**
+ * Diagnostic: names what still keeps the event loop alive after the graceful
+ * sequence. A completed dispose that never lets the process exit is invisible
+ * otherwise, and the hard watchdog then looks like a hang.
+ */
+export function logActiveHandles(label = "post-shutdown"): void {
+  try {
+    const resources =
+      (
+        process as { getActiveResourcesInfo?: () => string[] }
+      ).getActiveResourcesInfo?.() ?? [];
+    const handles =
+      (process as { _getActiveHandles?: () => unknown[] })._getActiveHandles?.() ??
+      [];
+    const names = handles.map(
+      (handle) =>
+        (handle as { constructor?: { name?: string } })?.constructor?.name ??
+        typeof handle,
+    );
+    console.warn(
+      `[shutdown] ${label} resources=${JSON.stringify(resources)} handles=${JSON.stringify(names)}`,
+    );
+  } catch (error) {
+    console.warn(
+      `[shutdown] ${label} handle probe failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }

@@ -54,6 +54,8 @@ function poolWorker(): Worker {
         reject(new Error("session-load worker failed"));
       pending.clear();
     });
+    // Idle workers must not pin the process; the host owns liveness.
+    (instance as Worker & { unref?: () => void }).unref?.();
     workers.push(instance);
   }
   return workers[nextWorker++ % workers.length]!;
