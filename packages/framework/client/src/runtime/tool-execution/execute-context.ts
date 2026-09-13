@@ -37,6 +37,7 @@ export type BuildContextInput = {
   sessionID: import("@natalia/contracts").SessionID;
   workspaceRoot: string;
   signal: AbortSignal;
+  timeoutSec?: number;
   parsed: unknown;
 };
 
@@ -53,6 +54,7 @@ export function buildToolExecutionContext(input: BuildContextInput) {
     sessionID,
     workspaceRoot,
     signal,
+    timeoutSec,
     parsed,
   } = input;
   const {
@@ -74,6 +76,7 @@ export function buildToolExecutionContext(input: BuildContextInput) {
   return {
     workspaceRoot,
     signal,
+    ...(timeoutSec === undefined ? {} : { timeoutSec }),
     sessionID: exec?.session.id ?? sessionID,
     askQuestion: async (input: {
       title: string;

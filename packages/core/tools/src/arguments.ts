@@ -47,6 +47,24 @@ export function numberOr(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+/**
+ * Reads an optional per-call timeout in seconds. Invalid values fall back to
+ * the tool default; values above the tool maximum are clamped so a model can
+ * extend a command but cannot hold the runtime open indefinitely.
+ */
+export function timeoutSecOr(
+  value: unknown,
+  fallback: number,
+  max: number,
+): number {
+  const candidate =
+    typeof value === "number" && Number.isFinite(value) && value > 0
+      ? value
+      : fallback;
+  const upperBound = max > 0 ? max : fallback;
+  return Math.min(candidate, upperBound);
+}
+
 export function positiveNumberOrUndefined(value: unknown) {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)

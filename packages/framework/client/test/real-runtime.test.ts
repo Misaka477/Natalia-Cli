@@ -5677,6 +5677,72 @@ test("ordinary tools settle as failed when their execution timeout expires", asy
   );
 });
 
+test("a tool can extend its timeout through a bounded per-call argument", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-tool-timeout-override-"));
+  const tools = createToolRegistry([]);
+  tools.set("wait_briefly", {
+    name: "wait_briefly",
+    description: "Wait briefly before returning.",
+    requiresApproval: false,
+    timeoutSec: 0.1,
+    maxTimeoutSec: 5,
+    parameters: {
+      type: "object",
+      properties: { timeoutSec: { type: "number" } },
+    },
+    async execute() {
+      await Bun.sleep(250);
+      return "finished";
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_tool_timeout_override",
+    tools,
+    provider: {
+      provider: "scripted-tool-timeout-override",
+      model: "scripted-tool-timeout-override-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_wait_briefly",
+                name: "wait_briefly",
+                arguments: JSON.stringify({ timeoutSec: 1 }),
+              },
+            ],
+          };
+        } else {
+          yield { type: "content", text: "The bounded wait finished." };
+        }
+        yield { type: "done" };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("wait briefly");
+
+  expect(
+    events.find(
+      (event) =>
+        event.type === "tool.update" &&
+        event.callID === "call_wait_briefly" &&
+        event.status === "succeeded",
+    ),
+  ).toBeDefined();
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn.finished",
+      id: expect.any(String),
+      stopReason: "done",
+      sessionID: "ses_ts7_tool_timeout_override",
+    }),
+  );
+});
+
 test("runtime status counts managed background processes", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-background-"));
   const handled = new Set<string>();

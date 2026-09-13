@@ -8,29 +8,36 @@
  */
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import {
-  numberOr,
   requireObject,
   requireString,
   runShell,
+  timeoutSecOr,
 } from "@natalia/tools";
 import type { RuntimeTool, ToolFamily } from "@natalia/tools";
 
 export { runShell };
 
 export const SHELL_PLUGIN_ID = "natalia-tool-shell";
+export const RUN_SHELL_DEFAULT_TIMEOUT_SEC = 120;
+export const RUN_SHELL_MAX_TIMEOUT_SEC = 1800;
 
 function runShellTool(): RuntimeTool {
   return {
     name: "run_shell",
     description:
-      "Run a shell command inside the workspace with output capture. The shell is always bash-compatible (Git Bash on Windows, native bash on Linux/Mac) — use POSIX syntax, not cmd.exe.",
+      "Run a shell command inside the workspace with output capture. The shell is always bash-compatible (Git Bash on Windows, native bash on Linux/Mac) — use POSIX syntax, not cmd.exe. For long-running commands, set timeoutSec; the default is 120 seconds and the maximum is 1800 seconds.",
     requiresApproval: true,
-    timeoutSec: 120,
+    timeoutSec: RUN_SHELL_DEFAULT_TIMEOUT_SEC,
+    maxTimeoutSec: RUN_SHELL_MAX_TIMEOUT_SEC,
     parameters: {
       type: "object",
       properties: {
         command: { type: "string" },
-        timeoutSec: { type: "number" },
+        timeoutSec: {
+          type: "number",
+          description:
+            "Optional timeout in seconds for this command. Defaults to 120; values above 1800 are clamped to 1800.",
+        },
       },
       required: ["command"],
       additionalProperties: false,
@@ -75,10 +82,17 @@ function runShellTool(): RuntimeTool {
     },
     async execute(input, context) {
       const args = requireObject(input);
+      const timeoutSec =
+        context.timeoutSec ??
+        timeoutSecOr(
+          args.timeoutSec,
+          RUN_SHELL_DEFAULT_TIMEOUT_SEC,
+          RUN_SHELL_MAX_TIMEOUT_SEC,
+        );
       return await runShell(
         requireString(args.command, "command"),
         context,
-        numberOr(args.timeoutSec, 120),
+        timeoutSec,
       );
     },
   };

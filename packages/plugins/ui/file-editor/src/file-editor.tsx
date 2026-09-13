@@ -349,7 +349,7 @@ export function FileEditor(props: {
     setEntries(page.entries);
     setTree(buildTree(page.entries, nodeMap));
     setExpanded(new Set(["."]));
-    setLoadedDirs(new Set());
+    setLoadedDirs(new Set<string>());
     setOpenTabs([]);
     setSelectedPath("");
     setContents({});

@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry, timeoutSecOr } from "@natalia/tools";
 import {
   createShellPlugin,
   SHELL_PLUGIN_ID,
@@ -30,6 +30,20 @@ test("the shell plugin owns run_shell and unloads cleanly", async () => {
   expect(tools.has("run_shell")).toBe(true);
   await registry.unload(SHELL_PLUGIN_ID);
   expect(tools.has("run_shell")).toBe(false);
+});
+
+test("run_shell exposes a bounded per-call timeout", () => {
+  const tool = shellToolFamily().tools.find(
+    (candidate) => candidate.name === "run_shell",
+  )!;
+  expect(tool.timeoutSec).toBe(120);
+  expect(tool.maxTimeoutSec).toBe(1800);
+  expect(tool.parameters.properties.timeoutSec).toMatchObject({
+    type: "number",
+  });
+  expect(timeoutSecOr(300, 120, 1800)).toBe(300);
+  expect(timeoutSecOr(9999, 120, 1800)).toBe(1800);
+  expect(timeoutSecOr(-1, 120, 1800)).toBe(120);
 });
 
 test("run_shell runs a command inside the workspace and reports exit", async () => {

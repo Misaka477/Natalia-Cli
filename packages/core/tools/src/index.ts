@@ -76,6 +76,7 @@ export {
   positiveNumberOrUndefined,
   requireObject,
   requireString,
+  timeoutSecOr,
   workspacePath,
 } from "./arguments";
 import type { RuntimeTool, ToolExecutionContext } from "./types";

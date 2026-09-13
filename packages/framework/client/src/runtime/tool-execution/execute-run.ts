@@ -9,7 +9,11 @@
  * `execute-one.ts` stays within the source line limit.
  */
 import type { ProviderToolCall } from "@natalia/runtime";
-import { requiresForcedGitApprovalAst, type RuntimeTool } from "@natalia/tools";
+import {
+  requiresForcedGitApprovalAst,
+  timeoutSecOr,
+  type RuntimeTool,
+} from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
   TOOL_POLICY_SERVICE,
@@ -192,6 +196,15 @@ export async function runExecuteStage(
         `tool "${tool.name}" parameter validation failed: ${detail}`,
       );
     }
+    const parsedRecord =
+      parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>)
+        : {};
+    const requestedTimeoutSec = parsedRecord.timeoutSec;
+    const effectiveTimeoutSec =
+      tool.timeoutSec !== undefined && tool.maxTimeoutSec !== undefined
+        ? timeoutSecOr(requestedTimeoutSec, tool.timeoutSec, tool.maxTimeoutSec)
+        : tool.timeoutSec;
     if (!exec) throw new Error("session execution state unavailable");
     await setInFlightOperationFor(exec, {
       kind: "tool_execution",
@@ -212,15 +225,15 @@ export async function runExecuteStage(
     const execSignal = exec?.activeAbort?.signal;
     if (execSignal?.aborted) cancelExecution();
     else execSignal?.addEventListener("abort", cancelExecution, { once: true });
-    const timeoutTimer = tool.timeoutSec
+    const timeoutTimer = effectiveTimeoutSec
       ? setTimeout(
           () =>
             executionController.abort(
               new Error(
-                `tool ${tool.name} timed out after ${tool.timeoutSec}s`,
+                `tool ${tool.name} timed out after ${effectiveTimeoutSec}s`,
               ),
             ),
-          tool.timeoutSec * 1000,
+          effectiveTimeoutSec * 1000,
         )
       : undefined;
     const signal = executionController.signal;
@@ -300,6 +313,7 @@ export async function runExecuteStage(
           sessionID,
           workspaceRoot,
           signal,
+          timeoutSec: effectiveTimeoutSec,
           parsed,
         }),
       ),

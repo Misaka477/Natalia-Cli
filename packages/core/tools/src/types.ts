@@ -335,7 +335,14 @@ export type SandboxToolService = {
 export type ToolExecutionBoundary = {
   name: string;
   requiresApproval: boolean;
+  /** Default timeout for one tool call. */
   timeoutSec?: number;
+  /**
+   * Optional upper bound for a per-call `timeoutSec` argument. When present,
+   * the runtime lets the model extend the call up to this many seconds; when
+   * absent, the static `timeoutSec` remains the exact boundary.
+   */
+  maxTimeoutSec?: number;
 };
 
 export type ToolSchema = {
@@ -400,6 +407,11 @@ export type ToolExecutionContext = {
   workspaceRoot: string;
   /** Session that owns the turn invoking this tool. */
   sessionID?: string;
+  /**
+   * Effective timeout the runtime is enforcing for this call. Tools that also
+   * run their own child-process timer use this so the two layers cannot drift.
+   */
+  timeoutSec?: number;
   signal?: AbortSignal;
   askQuestion?: (input: {
     title: string;
