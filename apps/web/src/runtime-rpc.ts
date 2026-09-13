@@ -613,6 +613,11 @@ export function createWebRuntimeClient(
                 }
               }
             }
+          } catch (error) {
+            // A dropped SSE socket surfaces here (the browser reports it as a
+            // `network error` rejection). Keep it from becoming an unhandled
+            // rejection; the outer loop reconnects below.
+            console.log("[web-runtime] sse reader error", error);
           } finally {
             resolveStreamEnd();
           }
@@ -637,6 +642,11 @@ export function createWebRuntimeClient(
             ?.signal.aborted
         )
           return;
+        // A failed connect must not leave the replay guard latched: the host
+        // projection would stop receiving live events until the next successful
+        // attach, which looks like a frozen or emptied transcript.
+        sessionLoadGlobal().__nataliaReplayingHistory = false;
+        liveBuffer.length = 0;
         console.log("[web-runtime] sse error", error);
       }
       await sleep(1000);
