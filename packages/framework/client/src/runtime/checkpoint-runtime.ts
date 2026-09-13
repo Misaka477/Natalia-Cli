@@ -305,7 +305,19 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
   async function initializeCheckpointController(exec: SessionExecutionState) {
     const controller = checkpointControllerFor(exec);
     if (!controller) return undefined;
-    await controller.init();
+    try {
+      await controller.init();
+    } catch (error) {
+      // A missing or corrupt checkpoint chunk must not take the whole runtime
+      // ready path down: transcript, model selection, session attach and the
+      // UI do not depend on checkpointing. Keep the session usable and surface
+      // the checkpoint failure instead of failing every RPC.
+      console.warn(
+        "[checkpoint] controller init failed; continuing without checkpoints",
+        error instanceof Error ? error.message : String(error),
+      );
+      return undefined;
+    }
     return controller;
   }
 }
