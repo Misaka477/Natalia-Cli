@@ -1,5 +1,13 @@
 import { DiffCache, ObjectStore } from "@natalia/object-store";
 import { createHash, randomUUID } from "node:crypto";
+import { ChunkStore } from "./chunk-store";
+import {
+  CheckpointJournal,
+  contextMetaOf,
+  manifestMetaOf,
+  type CheckpointContextMeta,
+  type StoredCheckpoint,
+} from "./checkpoint-journal";
 import { constants } from "node:fs";
 import {
   appendFile,
@@ -103,6 +111,20 @@ export type WorkspaceManifest = {
   totalBytes: number;
 };
 
+/**
+ * Scalar manifest header. Always present on a record; the (potentially huge)
+ * `manifest` itself is omitted from `list()` summaries and rebuilt on demand
+ * via `CheckpointStore.loadManifest`.
+ */
+export type CheckpointManifestMeta = {
+  root: string;
+  complete: boolean;
+  errors: string[];
+  ignoredFiles: number;
+  totalBytes: number;
+  entryCount: number;
+};
+
 export type CheckpointChange = {
   kind: CheckpointChangeKind;
   path: string;
@@ -111,7 +133,7 @@ export type CheckpointChange = {
 };
 
 export type CheckpointRecord = {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   id: string;
   sequence: number;
   sessionID: SessionID;
@@ -124,8 +146,24 @@ export type CheckpointRecord = {
   cwd: string;
   complete: boolean;
   errors: string[];
-  manifest: WorkspaceManifest;
-  context: DurableContextCheckpoint;
+  /**
+   * Full workspace manifest. `list()` deliberately omits it so a long session
+   * does not materialize every manifest just to render a list; the scalar
+   * `manifestMeta` is always present, and `CheckpointStore.loadManifest` (or
+   * `get`) rebuilds the entries on demand by replaying the stored deltas.
+   */
+  manifest?: WorkspaceManifest;
+  /** Scalar manifest header; always present, even when `manifest` is omitted. */
+  manifestMeta: CheckpointManifestMeta;
+  /**
+   * Full ledger snapshot. `list()` deliberately omits it so a long session does
+   * not materialize ~1 GB of history just to render a list; the scalar
+   * `contextMeta` is always present, and `CheckpointStore.loadContext` (or
+   * `get`) rebuilds the entries on demand by replaying the stored deltas.
+   */
+  context?: DurableContextCheckpoint;
+  /** Scalar facts about the ledger state, without the entries. */
+  contextMeta: CheckpointContextMeta;
   changes: CheckpointChange[];
   runtime: {
     status: string;
@@ -203,6 +241,10 @@ export class CheckpointStore {
   private readonly onEvent?: (event: RuntimeEvent) => void;
   private unavailableReason: string | undefined;
   private checkpointQueue = Promise.resolve();
+  /** Per-session content-defined chunk library for v3 payloads. */
+  private readonly chunks: ChunkStore;
+  private readonly chunkRoot: string;
+  private journal: CheckpointJournal | undefined;
 
   constructor(options: CheckpointStoreOptions) {
     this.sessionID = options.sessionID;
@@ -222,6 +264,38 @@ export class CheckpointStore {
     this.additionalDirs = options.additionalDirs ?? [];
     this.now = options.now ?? (() => new Date());
     this.onEvent = options.onEvent;
+    // Kept out of `storeDir`: the chunk library is not part of one checkpoint's
+    // disk footprint, and `storeDir` is what `diskUsageBytes` reports.
+    this.chunkRoot = resolve(
+      this.workspaceRoot,
+      ".natalia",
+      "chunks",
+      options.sessionID,
+    );
+    this.chunks = new ChunkStore(this.chunkRoot);
+  }
+
+  private async loadJournal(): Promise<CheckpointJournal> {
+    if (!this.journal) {
+      if (process.env.NATALIA_CHECKPOINT_NO_MIGRATE !== "1") {
+        // One-time forward migration of a v2 journal to the delta + CDC format.
+        // The original is copied to `<journal>.v2-backup` first, and every
+        // checkpoint is preserved.
+        const migration = await CheckpointJournal.migrate(
+          this.journalPath(),
+          this.chunks,
+        );
+        if (migration)
+          console.warn(
+            `[checkpoint] migrated ${migration.migrated} records to v3; backup at ${migration.backup}`,
+          );
+      }
+      this.journal = await CheckpointJournal.load(
+        this.journalPath(),
+        this.chunks,
+      );
+    }
+    return this.journal;
   }
 
   static async open(options: CheckpointStoreOptions) {
@@ -269,7 +343,13 @@ export class CheckpointStore {
     // the runtime. Checkpoint creation stays available for writable workspaces;
     // if the store is unavailable, skip the baseline and continue degraded.
     if (this.unavailableReason) return undefined;
-    if ((await this.list()).length > 0) return undefined;
+    // Existence only. Reading the whole journal here made every turn pay for
+    // the entire checkpoint history: `createTurnCheckpoint` calls `init()`,
+    // which calls this before creating the turn's own checkpoint. On a long
+    // session the journal grows to hundreds of MB, so an O(journal) check
+    // stalled the turn before the provider ever ran (the UI sat on
+    // "Planning" and a kill lost the in-flight reply). The tail read is O(1).
+    if ((await this.readLastRecord()) !== undefined) return undefined;
     return this.createCheckpoint({
       reason: "baseline",
       context,
@@ -294,19 +374,18 @@ export class CheckpointStore {
     input: CreateCheckpointInput,
   ): Promise<CheckpointRecord> {
     this.assertAvailable();
-    const existing = await this.list();
-    const sequence =
-      existing.length === 0
-        ? 0
-        : Math.max(...existing.map((record) => record.sequence)) + 1;
-    const previous = existing.at(-1);
+    // Append-only in the journal, and O(1) in journal size: the durable line is
+    // a small header plus chunk refs, and the payloads are semantic deltas
+    // (context/manifest) stored through the content-defined chunk library.
+    const previous = await this.readLastRecord();
+    const sequence = previous ? previous.sequence + 1 : 0;
     const id = sequence === 0 ? "checkpoint_0" : `checkpoint_${sequence}`;
     try {
       const manifest = await this.captureManifest();
       const context = input.context.durableCheckpoint(input.step);
       const diskUsageBytes = await this.diskUsageBytes();
       const record: CheckpointRecord = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         id,
         sequence,
         sessionID: this.sessionID,
@@ -320,7 +399,9 @@ export class CheckpointStore {
         complete: manifest.complete,
         errors: manifest.errors,
         manifest,
+        manifestMeta: manifestMetaOf(manifest),
         context,
+        contextMeta: contextMetaOf(context),
         changes: diffManifests(previous?.manifest, manifest),
         runtime: {
           status: input.status ?? "ready",
@@ -331,7 +412,7 @@ export class CheckpointStore {
         diskUsageBytes,
         ...(input.metadata ? { metadata: input.metadata } : {}),
       };
-      await this.writeJournal([...existing, record]);
+      await (await this.loadJournal()).append(record);
       if (!record.complete)
         this.emit({
           type: "checkpoint.failed",
@@ -349,11 +430,11 @@ export class CheckpointStore {
           stepID: record.stepID,
           sequence: record.sequence,
           complete: record.complete,
-          files: Object.keys(record.manifest.entries).length,
+          files: record.manifestMeta.entryCount,
           changes: record.changes.length,
-          contextJournalOffset: record.context.journalOffset,
-          step: record.context.step,
-          tokenEstimate: record.context.tokenEstimate,
+          contextJournalOffset: context.journalOffset,
+          step: context.step,
+          tokenEstimate: context.tokenEstimate,
           diskUsageBytes: record.diskUsageBytes,
         });
       return record;
@@ -364,27 +445,44 @@ export class CheckpointStore {
     }
   }
 
+  /**
+   * Records for listings. Ledger entries are intentionally NOT materialized:
+   * the scalar `contextMeta` carries what list consumers need, and `get` (or
+   * `loadContext`) reconstructs the entries for the single record that needs
+   * them. Materializing every context here would rebuild ~1 GB of history just
+   * to show a list.
+   */
   async list(): Promise<CheckpointRecord[]> {
     if (this.unavailableReason) return [];
-    try {
-      const text = await readFile(this.journalPath(), "utf8");
-      return text
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as CheckpointRecord)
-        .map(normalizeLegacyCheckpointRecord);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
-    }
+    return await (await this.loadJournal()).summaries();
   }
 
+  /** One record with its full ledger context materialized. */
   async get(id: string) {
-    const records = await this.list();
-    if (id === "last") return records.at(-1);
-    return records.find(
-      (record) => record.id === id || String(record.sequence) === id,
-    );
+    if (this.unavailableReason) return undefined;
+    return await (await this.loadJournal()).get(id);
+  }
+
+  /** Materializes the ledger context of an already-listed record. */
+  async loadContext(
+    record: CheckpointRecord,
+  ): Promise<DurableContextCheckpoint> {
+    if (record.context) return record.context;
+    const journal = await this.loadJournal();
+    for (let index = journal.length - 1; index >= 0; index--)
+      if (journal.sequenceAt(index) === record.sequence)
+        return await journal.contextAt(index);
+    throw new Error(`checkpoint context not found: ${record.id}`);
+  }
+
+  /** Materializes the workspace manifest of an already-listed record. */
+  async loadManifest(record: CheckpointRecord): Promise<WorkspaceManifest> {
+    if (record.manifest) return record.manifest;
+    const journal = await this.loadJournal();
+    for (let index = journal.length - 1; index >= 0; index--)
+      if (journal.sequenceAt(index) === record.sequence)
+        return await journal.manifestAt(index);
+    throw new Error(`checkpoint manifest not found: ${record.id}`);
   }
 
   async listCheckpointsByKind(
@@ -500,7 +598,7 @@ export class CheckpointStore {
     if (!record) throw new Error("checkpoint record not found");
     if (!record.complete)
       throw new Error(`checkpoint is incomplete: ${record.id}`);
-    return record.manifest;
+    return await this.loadManifest(record);
   }
 
   private async renderDiffChanges(
@@ -589,15 +687,8 @@ export class CheckpointStore {
     this.assertAvailable();
     const trimmed = name.trim();
     if (!trimmed) throw new Error("checkpoint name must not be empty");
-    const records = await this.list();
-    const index = records.findIndex(
-      (record) => record.id === id || String(record.sequence) === id,
-    );
-    if (index < 0) throw new Error(`checkpoint not found: ${id}`);
-    const current = records[index]!;
-    const updated: CheckpointRecord = { ...current, name: trimmed };
-    records[index] = updated;
-    await this.writeJournal(records);
+    const updated = await (await this.loadJournal()).rename(id, trimmed);
+    if (!updated) throw new Error(`checkpoint not found: ${id}`);
     this.emit({
       type: "checkpoint.created",
       id: updated.id,
@@ -606,11 +697,11 @@ export class CheckpointStore {
       stepID: updated.stepID,
       sequence: updated.sequence,
       complete: updated.complete,
-      files: Object.keys(updated.manifest.entries).length,
+      files: updated.manifestMeta.entryCount,
       changes: updated.changes.length,
-      contextJournalOffset: updated.context.journalOffset,
-      step: updated.context.step,
-      tokenEstimate: updated.context.tokenEstimate,
+      contextJournalOffset: updated.contextMeta.journalOffset,
+      step: updated.contextMeta.step,
+      tokenEstimate: updated.contextMeta.tokenEstimate,
       diskUsageBytes: updated.diskUsageBytes,
     });
     return updated;
@@ -625,6 +716,7 @@ export class CheckpointStore {
     this.assertAvailable();
     const target = await this.get(id);
     if (!target) throw new Error(`checkpoint not found: ${id}`);
+    const targetManifest = await this.loadManifest(target);
     const current = await this.captureManifest();
     const contextStatus = context.journalStatus();
     const preview: CheckpointPreview = {
@@ -632,18 +724,19 @@ export class CheckpointStore {
       dryRun,
       changes: await this.previewChangesWithDiff(
         current,
-        target.manifest,
-        diffManifests(current, target.manifest),
+        targetManifest,
+        diffManifests(current, targetManifest),
       ),
       context: {
+        // Scalar header only: preview must not materialize the ledger.
         truncateMessages: Math.max(
           0,
-          contextStatus.messageCount - target.context.entries.length,
+          contextStatus.messageCount - target.contextMeta.entryCount,
         ),
-        targetJournalOffset: target.context.journalOffset,
-        targetStep: target.context.step,
-        targetTokens: target.context.tokenEstimate,
-        compactionGeneration: target.context.compactionGeneration,
+        targetJournalOffset: target.contextMeta.journalOffset,
+        targetStep: target.contextMeta.step,
+        targetTokens: target.contextMeta.tokenEstimate,
+        compactionGeneration: target.contextMeta.compactionGeneration,
       },
       resources: resourcePolicies(resources),
       ignoredFiles: current.ignoredFiles,
@@ -757,6 +850,10 @@ export class CheckpointStore {
     if (!target) throw new Error(`checkpoint not found: ${id}`);
     if (!target.complete)
       throw new Error(`checkpoint is incomplete: ${target.id}`);
+    // Rolling back the ledger is the one place that needs the full entries, so
+    // materialize exactly this record's context (replaying its deltas).
+    const targetContext = await this.loadContext(target);
+    const targetManifest = await this.loadManifest(target);
     const preview = await this.previewRollback(
       target.id,
       options.context,
@@ -775,6 +872,8 @@ export class CheckpointStore {
       throw new Error(
         "rollback safety checkpoint is incomplete; refusing workspace mutation",
       );
+    const safetyContext = await this.loadContext(safety);
+    const safetyManifest = await this.loadManifest(safety);
     preview.safetyCheckpointID = safety.id;
     this.emit({
       type: "rollback.begin",
@@ -785,13 +884,13 @@ export class CheckpointStore {
       for (const policy of preview.resources)
         if (policy.action !== "none" && policy.action !== "preserve_dirty")
           await options.onResourcePolicy?.(policy);
-      const applied = await this.applyManifest(target.manifest);
+      const applied = await this.applyManifest(targetManifest);
       if (options.failAfterWorkspaceApply)
         throw new Error("injected workspace rollback failure");
       if (options.failContextRestore)
         throw new Error("injected context rollback failure");
-      options.context.restoreDurableCheckpoint(target.context);
-      await options.onContextRestored?.(target.context);
+      options.context.restoreDurableCheckpoint(targetContext);
+      await options.onContextRestored?.(targetContext);
       await this.truncateFutureCheckpoints(target, safety);
       this.emit({
         type: "rollback.end",
@@ -799,16 +898,16 @@ export class CheckpointStore {
         safetyCheckpointID: safety.id,
         restoredFiles: applied.restoredFiles,
         deletedFiles: applied.deletedFiles,
-        contextJournalOffset: target.context.journalOffset,
-        step: target.context.step,
+        contextJournalOffset: target.contextMeta.journalOffset,
+        step: target.contextMeta.step,
       });
       return preview;
     } catch (error) {
       let recovered = false;
       try {
-        await this.applyManifest(safety.manifest);
-        options.context.restoreDurableCheckpoint(safety.context);
-        await options.onContextRestored?.(safety.context);
+        await this.applyManifest(safetyManifest);
+        options.context.restoreDurableCheckpoint(safetyContext);
+        await options.onContextRestored?.(safetyContext);
         recovered = true;
       } finally {
         this.emit({
@@ -824,24 +923,65 @@ export class CheckpointStore {
   }
 
   async gcObjects(dryRun = true, extraReachable?: Iterable<string>) {
+    // Serialized with checkpoint creation: a checkpoint writes its chunks and
+    // only then appends the journal line that references them, so running GC
+    // through the same queue removes the "chunk written but not yet referenced"
+    // window entirely. The age window below is the second line of defence for
+    // a chunk written by another process.
+    const run = () => this.gcObjectsLocked(dryRun, extraReachable);
+    const queued = this.checkpointQueue.then(run, run);
+    this.checkpointQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return await queued;
+  }
+
+  private async gcObjectsLocked(
+    dryRun: boolean,
+    extraReachable?: Iterable<string>,
+  ) {
     // Reachable = this journal's object references, unioned with every other
     // owner's references (the sandbox's snapshot indices), so GC can never
     // prune another owner's live objects.
+    const journal = await this.loadJournal();
     const referenced = new Set<string>();
-    for (const record of await this.list()) {
-      for (const entry of Object.values(record.manifest.entries))
+    // GC is the one listing path that genuinely needs every manifest entry, so
+    // materialize each manifest here (on demand) rather than in `list()`.
+    for (let index = 0; index < journal.length; index++) {
+      const manifest = await journal.manifestAt(index);
+      for (const entry of Object.values(manifest.entries))
         if (entry.objectHash) referenced.add(entry.objectHash);
     }
     for (const id of extraReachable ?? []) referenced.add(id);
+    // The chunk library is per-session, so the journal's own refs are its
+    // complete GC root set. `minAgeMs` keeps a chunk that another process just
+    // wrote but has not committed a reference to yet.
+    const chunks = await this.chunks.collectGarbage(
+      journal.referencedChunks(),
+      dryRun,
+      { minAgeMs: 60_000 },
+    );
     if (dryRun) {
       const existing = new Set(await this.objects.list());
       const unreachable = [...existing].filter((hash) => !referenced.has(hash));
       let bytes = 0;
       for (const hash of unreachable)
         bytes += (await stat(this.objectPath(hash))).size;
-      return { dryRun, unreachableObjects: unreachable.length, bytes };
+      return {
+        dryRun,
+        unreachableObjects: unreachable.length,
+        bytes,
+        unreachableChunks: chunks.removed,
+        chunkBytes: chunks.bytes,
+      };
     }
-    return { dryRun, ...(await this.objects.collectGarbage(referenced)) };
+    return {
+      dryRun,
+      ...(await this.objects.collectGarbage(referenced)),
+      unreachableChunks: chunks.removed,
+      chunkBytes: chunks.bytes,
+    };
   }
 
   async diskUsageBytes() {
@@ -1029,32 +1169,20 @@ export class CheckpointStore {
     target: CheckpointRecord,
     safety: CheckpointRecord,
   ) {
-    const records = await this.list();
-    const retained = records.filter(
-      (record) => record.sequence <= target.sequence || record.id === safety.id,
-    );
-    await this.writeJournal(retained);
+    await (
+      await this.loadJournal()
+    ).truncateAfter(target.sequence, safety.sequence);
   }
 
-  private async writeJournal(records: CheckpointRecord[]) {
-    const journal = this.journalPath();
-    const temporary = `${journal}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(
-        temporary,
-        records.map((record) => JSON.stringify(record)).join("\n") + "\n",
-        { mode: 0o600 },
-      );
-      const handle = await open(temporary, "r+");
-      try {
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await replaceJournalFile(temporary, journal);
-    } finally {
-      await rm(temporary, { force: true }).catch(() => undefined);
-    }
+  /** Newest record summary, for sequence numbering and baseline checks. */
+  private async readLastRecord(): Promise<CheckpointRecord | undefined> {
+    const journal = await this.loadJournal();
+    if (journal.isEmpty) return undefined;
+    const index = journal.length - 1;
+    // The previous record is used to diff manifests, so materialize exactly its
+    // manifest (never the ledger).
+    const record = await journal.summaryAt(index);
+    return { ...record, manifest: await journal.manifestAt(index) };
   }
 
   private shouldIgnore(
@@ -1063,14 +1191,16 @@ export class CheckpointStore {
     directory: boolean,
     ignoreRules: readonly SnapshotIgnoreRule[],
   ): boolean {
-    // Structural self-exclusion: a snapshot must never include its own store
-    // or the shared object library, even if the user removes .natalia/ from
-    // .nataliaignore.
+    // Structural self-exclusion: a snapshot must never include its own store,
+    // the shared object library, or the chunk library, even if the user removes
+    // .natalia/ from .nataliaignore.
     if (
       full === this.storeDir ||
       isContained(this.storeDir, full) ||
       full === this.objectRoot() ||
-      isContained(this.objectRoot(), full)
+      isContained(this.objectRoot(), full) ||
+      full === this.chunkRoot ||
+      isContained(this.chunkRoot, full)
     )
       return true;
     if (full === resolve(this.workspaceRoot, NATALIA_IGNORE_FILE)) return true;
@@ -1408,29 +1538,6 @@ function diffManifests(
   return changes;
 }
 
-function normalizeLegacyCheckpointRecord(
-  record: CheckpointRecord,
-): CheckpointRecord {
-  if (
-    record.context?.resources?.some(
-      (resource) => (resource.kind as string) === "pty",
-    )
-  ) {
-    return {
-      ...record,
-      context: {
-        ...record.context,
-        resources: record.context.resources.map((resource) =>
-          (resource.kind as string) === "pty"
-            ? { ...resource, kind: "terminal" }
-            : resource,
-        ),
-      },
-    };
-  }
-  return record;
-}
-
 function resourcePolicies(
   resources: CheckpointRuntimeResource[],
 ): CheckpointResourcePolicy[] {
@@ -1478,7 +1585,7 @@ function resourcePolicies(
 
 function formatCheckpoint(record: CheckpointRecord) {
   const name = record.name ? ` name=${JSON.stringify(record.name)}` : "";
-  return `${record.id} step=${record.step} reason=${record.reason}${name} files=${Object.keys(record.manifest.entries).length} changes=${record.changes.length} tokens=${record.context.tokenEstimate} ${record.complete ? "complete" : "incomplete"}`;
+  return `${record.id} step=${record.step} reason=${record.reason}${name} files=${record.manifestMeta.entryCount} changes=${record.changes.length} tokens=${record.contextMeta.tokenEstimate} ${record.complete ? "complete" : "incomplete"}`;
 }
 
 function formatRollbackPreview(preview: CheckpointPreview) {

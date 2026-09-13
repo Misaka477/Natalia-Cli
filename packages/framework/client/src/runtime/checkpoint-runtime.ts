@@ -257,9 +257,11 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
       createdAt: record.createdAt,
       complete: record.complete,
       errors: record.errors,
-      files: Object.keys(record.manifest.entries).length,
+      files: record.manifestMeta.entryCount,
       changes: record.changes.length,
-      tokenEstimate: record.context.tokenEstimate,
+      // `list()` omits the ledger entries; the scalar header carries the token
+      // estimate so the list surface stays cheap.
+      tokenEstimate: record.contextMeta.tokenEstimate,
       diskUsageBytes: record.diskUsageBytes,
     };
   }

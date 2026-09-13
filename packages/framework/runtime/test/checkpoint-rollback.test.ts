@@ -159,8 +159,9 @@ symlinkTest(
       workspaceRoot: root,
       context: ledger,
     });
-    const baseline = (await store.list())[0];
-    expect(baseline?.manifest.entries["link.txt"]?.kind).toBe("symlink");
+    const baseline = (await store.list())[0]!;
+    const baselineManifest = await store.loadManifest(baseline);
+    expect(baselineManifest.entries["link.txt"]?.kind).toBe("symlink");
 
     await writeFile(join(root, "a.txt"), "changed\n");
     await rm(join(root, "delete.txt"));
@@ -175,7 +176,8 @@ symlinkTest(
     expect(changed.changes.map((change) => change.kind)).toEqual(
       expect.arrayContaining(["modify", "delete", "rename", "mode"]),
     );
-    expect(changed.manifest.entries["link.txt"]?.kind).toBe("symlink");
+    const changedManifest = await store.loadManifest(changed);
+    expect(changedManifest.entries["link.txt"]?.kind).toBe("symlink");
     await store.rollbackTo("checkpoint_0", { context: ledger });
     expect(await readFile(join(root, "a.txt"), "utf8")).toBe("same\n");
     expect((await lstat(join(root, "a.txt"))).mode & 0o777).toBe(0o644);
@@ -264,7 +266,8 @@ symlinkTest(
     expect(record.errors.join("\n")).toContain(
       "additional directory is outside the managed workspace",
     );
-    expect(record.manifest.entries["ignored.log"]).toBeUndefined();
+    const recordManifest = await store.loadManifest(record);
+    expect(recordManifest.entries["ignored.log"]).toBeUndefined();
     expect(events.map((event) => event.type)).toContain("checkpoint.failed");
     expect(events.map((event) => event.type)).not.toContain(
       "checkpoint.created",
@@ -298,7 +301,8 @@ test("checkpoint structurally excludes its own stores even without .natalia/ ign
     context: ledger,
   });
   const [baseline] = await store.list();
-  const paths = Object.keys(baseline!.manifest.entries);
+  const baselineManifest = await store.loadManifest(baseline!);
+  const paths = Object.keys(baselineManifest.entries);
   expect(paths).toContain("src/main.ts");
   expect(paths.some((path) => path.startsWith(".natalia/objects/"))).toBe(
     false,
@@ -347,8 +351,9 @@ symlinkTest(
 
     const [baseline] = await store.list();
     expect(baseline).toMatchObject({ complete: true });
-    expect(Object.keys(baseline!.manifest.entries)).toHaveLength(751);
-    expect(baseline!.manifest.entries["fixture-output/broken"]).toBeUndefined();
+    const baselineManifest = await store.loadManifest(baseline!);
+    expect(Object.keys(baselineManifest.entries)).toHaveLength(751);
+    expect(baselineManifest.entries["fixture-output/broken"]).toBeUndefined();
     expect(events).toEqual([
       expect.objectContaining({ type: "checkpoint.created", complete: true }),
     ]);
@@ -557,6 +562,269 @@ test("checkpoint rename persists a user label in the journal", async () => {
     workspaceRoot: root,
   });
   expect((await reopened.list())[0]?.name).toBe("before tools");
+});
+
+/**
+ * The A + CDC contract in one test: an append-only session must store only the
+ * new entries per checkpoint (so the journal stays tiny and does not grow
+ * quadratically), yet every materialized context must be byte-identical to the
+ * full snapshot it replaced, and a rollback must restore one exactly.
+ */
+test("append-only checkpoints stay small and replay their contexts exactly", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_delta_replay",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  const expected: string[][] = [[]];
+  const N = 60;
+  for (let index = 1; index <= N; index++) {
+    ledger.add({
+      id: `m${index}`,
+      role: "user",
+      content: `message ${index} `.repeat(40),
+    });
+    await store.createCheckpoint({
+      reason: "manual",
+      context: ledger,
+      step: index,
+      status: "manual",
+    });
+    expected.push(ledger.snapshot().entries.map((entry) => entry.id));
+  }
+
+  const records = await store.list();
+  expect(records.length).toBe(N + 1);
+  // Listings carry only the scalar header — no ledger entries materialized.
+  expect(records.every((record) => record.context === undefined)).toBe(true);
+
+  let naiveBytes = 0;
+  for (let index = 0; index <= N; index++) {
+    const record = records[index]!;
+    expect(record.contextMeta.entryCount).toBe(expected[index]!.length);
+    const full = await store.get(record.id);
+    expect(full?.context?.entries.map((entry) => entry.id)).toEqual(
+      expected[index],
+    );
+    naiveBytes += Buffer.byteLength(JSON.stringify(full!.context!));
+  }
+
+  const journalBytes = (
+    await readFile(
+      join(
+        root,
+        ".natalia",
+        "checkpoints",
+        "ses_delta_replay",
+        "journal.jsonl",
+      ),
+    )
+  ).byteLength;
+  // Full snapshots would be ~sum(index * entrySize); deltas should be a small
+  // fraction of that, not merely "smaller".
+  expect(journalBytes * 5).toBeLessThan(naiveBytes);
+
+  // Rolling back the ledger must restore the exact entries of a middle
+  // checkpoint, reconstructed from its delta chain.
+  const middle = records[Math.floor(N / 2)]!;
+  const live = new ContextLedger();
+  for (let index = 0; index < N * 2; index++)
+    live.add({ id: `live${index}`, role: "user", content: "live state" });
+  await store.rollbackTo(middle.id, { context: live });
+  expect(live.snapshot().entries.map((entry) => entry.id)).toEqual(
+    expected[middle.sequence]!,
+  );
+});
+
+/**
+ * A legacy v2 journal (inline manifest + context) must be migrated in place to
+ * v3 on first open, keep its `.v2-backup`, preserve every record and replay
+ * each context exactly.
+ */
+test("a v2 journal migrates to v3 and keeps every checkpoint", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_migrate_v2",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  const expected: string[][] = [[]];
+  for (let index = 1; index <= 5; index++) {
+    ledger.add({ id: `m${index}`, role: "user", content: `turn ${index}` });
+    await store.createCheckpoint({
+      reason: "manual",
+      context: ledger,
+      step: index,
+      status: "manual",
+    });
+    expected.push(ledger.snapshot().entries.map((entry) => entry.id));
+  }
+  const journalPath = join(
+    root,
+    ".natalia",
+    "checkpoints",
+    "ses_migrate_v2",
+    "journal.jsonl",
+  );
+  // Rewrite the file in the legacy inline shape.
+  const full = await store
+    .list()
+    .then(async (records) =>
+      Promise.all(records.map((record) => store.get(record.id))),
+    );
+  await writeFile(
+    journalPath,
+    `${full
+      .map((record) =>
+        JSON.stringify({
+          ...record,
+          schemaVersion: 2,
+          context: record!.context,
+        }),
+      )
+      .join("\n")}\n`,
+  );
+
+  // Re-open: the migration runs before the journal is read.
+  const reopened = await CheckpointStore.open({
+    sessionID: "ses_migrate_v2",
+    workspaceRoot: root,
+  });
+  const migrated = await reopened.list();
+  expect(migrated.length).toBe(6);
+  for (let index = 0; index < migrated.length; index++) {
+    const record = await reopened.get(migrated[index]!.id);
+    expect(record?.context?.entries.map((entry) => entry.id)).toEqual(
+      expected[index],
+    );
+  }
+  const rewritten = await readFile(journalPath, "utf8");
+  expect(rewritten).toContain('"schemaVersion":3');
+  expect(rewritten).not.toContain('"schemaVersion":2');
+  await lstat(`${journalPath}.v2-backup`);
+});
+
+/**
+ * Sub-4KB payloads (the common case: a tool call adds one or two entries) are
+ * inlined in the journal line instead of becoming one-block chunk files, which
+ * is where most of the small-file overhead came from.
+ */
+test("small checkpoint payloads are inlined instead of chunked", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_inline",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  ledger.add({ id: "m1", role: "user", content: "small turn" });
+  await store.createCheckpoint({
+    reason: "manual",
+    context: ledger,
+    step: 1,
+    status: "manual",
+  });
+  const journal = await readFile(
+    join(root, ".natalia", "checkpoints", "ses_inline", "journal.jsonl"),
+    "utf8",
+  );
+  expect(journal).toContain('"inline"');
+  expect(journal).not.toContain('"ref"');
+  // No chunk files were needed at all for these small payloads.
+  const chunkFiles = await countFiles(
+    join(root, ".natalia", "chunks", "ses_inline"),
+  );
+  expect(chunkFiles).toBe(0);
+});
+
+async function countFiles(root: string): Promise<number> {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw error;
+  }
+  let count = 0;
+  for (const entry of entries)
+    count += entry.isDirectory()
+      ? await countFiles(join(root, entry.name))
+      : entry.isFile()
+        ? 1
+        : 0;
+  return count;
+}
+
+/**
+ * Regression: appending one checkpoint must not read (or rewrite) the whole
+ * journal. The old path called `list()` in `ensureBaseline` and again in
+ * `createCheckpointLocked`, then serialized every record back out. On a long
+ * session the journal reaches hundreds of MB, so each turn's
+ * `createTurnCheckpoint` stalled before the provider ran — the fix reads only
+ * the journal tail and appends one line. `list()` is spied on because a full
+ * read is exactly what regressed; asserting on wall-clock time would be flaky.
+ */
+test("a checkpoint appends without reading the whole journal", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  ledger.add({ id: "user-1", role: "user", content: "checkpoint" });
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_append_only",
+    workspaceRoot: root,
+    context: ledger,
+  });
+
+  const realList = store.list.bind(store);
+  let listCalls = 0;
+  store.list = async () => {
+    listCalls += 1;
+    return await realList();
+  };
+
+  // Both entry points on the turn path: the baseline existence check and the
+  // turn's own checkpoint creation.
+  await store.ensureBaseline(ledger, 0);
+  const created = await store.createCheckpoint({
+    reason: "turn_begin",
+    context: ledger,
+    step: 1,
+    status: "turn_begin",
+  });
+  expect(listCalls).toBe(0);
+
+  // Correctness is unchanged: the record is appended with the next sequence
+  // and stays visible to a full read.
+  expect(created.sequence).toBe(1);
+  expect((await realList()).map((record) => record.id)).toEqual([
+    "checkpoint_0",
+    "checkpoint_1",
+  ]);
+});
+
+test("list() omits the manifest and loadManifest rebuilds it on demand", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  await writeFile(join(root, "a.txt"), "one\n");
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_manifest_lazy",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  const [summary] = await store.list();
+  // Scalars stay available without materializing the (potentially huge) entries.
+  expect(summary!.manifest).toBeUndefined();
+  expect(summary!.manifestMeta.complete).toBe(true);
+  expect(summary!.manifestMeta.entryCount).toBeGreaterThan(0);
+  // The full manifest is rebuilt on demand from the stored delta chain.
+  const manifest = await store.loadManifest(summary!);
+  expect(Object.keys(manifest.entries)).toContain("a.txt");
+  // A full get() carries both context and manifest.
+  const full = await store.get(summary!.id);
+  expect(full?.manifest).toBeDefined();
+  expect(Object.keys(full!.manifest!.entries)).toContain("a.txt");
 });
 
 async function tempWorkspace() {

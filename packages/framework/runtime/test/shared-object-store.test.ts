@@ -40,8 +40,8 @@ test("checkpoint and the sandbox share one content-addressed object library", as
     1,
   );
   const records = await store.list();
-  const checkpointHash = Object.values(records.at(-1)!.manifest.entries)[0]!
-    .objectHash!;
+  const lastManifest = await store.loadManifest(records.at(-1)!);
+  const checkpointHash = Object.values(lastManifest.entries)[0]!.objectHash!;
   expect(checkpointHash).toBe(objectID);
 });
 
