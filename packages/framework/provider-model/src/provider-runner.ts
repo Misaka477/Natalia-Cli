@@ -764,10 +764,14 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       },
     );
     if (output.usage) {
-      const previous = input.lastProviderUsage();
+      // This is the provider sample for *this* request, not a turn total.
+      // Summing it across the steps of a multi-step turn used to make the
+      // ledger checkpoint (and the context meter) grow with step count, so a
+      // long but small-context turn eventually looked like a 1M+ prompt and
+      // forced a bogus compaction.
       input.setLastProviderUsage({
-        inputTokens: (previous?.inputTokens ?? 0) + output.usage.inputTokens,
-        outputTokens: (previous?.outputTokens ?? 0) + output.usage.outputTokens,
+        inputTokens: output.usage.inputTokens,
+        outputTokens: output.usage.outputTokens,
       });
     }
     if (

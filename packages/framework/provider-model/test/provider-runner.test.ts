@@ -1462,3 +1462,37 @@ test("duplicate provider tool_call_ids are remapped before execution", async () 
     ),
   ).toBe(true);
 });
+
+test("provider usage commits the last step instead of summing every step", async () => {
+  let streamCalls = 0;
+  const { runner, ledger } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream() {
+      streamCalls += 1;
+      if (streamCalls === 1) {
+        yield toolCall([
+          {
+            id: "call_1",
+            name: "read_file",
+            arguments: '{"path":"a.txt"}',
+          },
+        ]);
+        yield usage(100, 5);
+        return;
+      }
+      yield content("done");
+      yield usage(120, 7);
+    },
+  });
+
+  await runner.runTurn(turn);
+  expect(streamCalls).toBe(2);
+  // The prompt size of the second request describes the live context. Summing
+  // both requests' prompt tokens (220) makes the ledger believe the window is
+  // far larger than it is and forces a bogus compaction.
+  expect(ledger.snapshot().checkpoint).toMatchObject({
+    inputTokens: 120,
+    outputTokens: 7,
+  });
+});
