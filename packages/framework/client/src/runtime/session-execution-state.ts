@@ -58,6 +58,8 @@ export type SessionExecutionState = {
   collabSnapshot?: CollabSnapshot;
   /** Total durable event count; may be larger than session.events.length when full events are still loading in background. */
   eventCount?: number;
+  /** True once session.events holds the complete durable log (not the fast-path tail). */
+  fullEventsLoaded?: boolean;
   /** Memoized session projection for snapshot/intelligence reads at one event revision. */
   snapshotProjection?: {
     eventCount: number;

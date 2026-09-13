@@ -372,6 +372,7 @@ export function createSessionExecution(
       naviAbortWakePending: false,
       niaAbortWakePending: false,
       eventCount: fastPath ? runtimeRestoreEvents.length : loaded.events.length,
+      fullEventsLoaded: !fastPath,
     };
     executionBySession.set(sessionID, exec);
     pruneIdleSessionExecutions(ctx);
@@ -399,6 +400,7 @@ export function createSessionExecution(
             true,
           );
           exec.eventCount = exec.session.events.length;
+          exec.fullEventsLoaded = true;
           try {
             sessionStore.ensureMessageIndex(sessionID);
           } catch {

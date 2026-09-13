@@ -1,0 +1,69 @@
+import { expect, test } from "bun:test";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { SessionExecutionState } from "../src/runtime/context";
+import { ensureSessionFullEvents } from "../src/runtime/session-full-events";
+
+test("ensureSessionFullEvents loads the full log when the fast path seeded only a tail", async () => {
+  const partial: RuntimeEvent[] = [
+    {
+      type: "navi.chat.message.new",
+      id: "navi:partial",
+      messageID: "partial",
+      role: "chat",
+      text: "tail only",
+      at: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+  const full: RuntimeEvent[] = [
+    {
+      type: "navi.chat.message.new",
+      id: "navi:old",
+      messageID: "old",
+      role: "chat",
+      text: "old durable row",
+      at: "2025-01-01T00:00:00.000Z",
+    },
+    ...partial,
+  ];
+  let loadFullCalls = 0;
+  const store = {
+    status: () => ({ initialized: true, mode: "sqlite" as const }),
+    loadFullAsync: async () => {
+      loadFullCalls += 1;
+      return {
+        id: "ses_full_events" as SessionID,
+        title: "",
+        createdAt: "",
+        events: full,
+        cancelled: false,
+        resumable: true,
+      };
+    },
+  };
+  const ctx = {
+    ports: {
+      resolveService: () => store,
+    },
+  } as unknown as import("../src/runtime/context").RuntimeContext;
+  const exec = {
+    session: {
+      id: "ses_full_events" as SessionID,
+      title: "",
+      createdAt: "",
+      events: partial,
+      cancelled: false,
+      resumable: true,
+    },
+    eventCount: partial.length,
+    fullEventsLoaded: false,
+  } as unknown as SessionExecutionState;
+
+  await ensureSessionFullEvents(ctx, exec);
+
+  expect(loadFullCalls).toBe(1);
+  expect(exec.fullEventsLoaded).toBe(true);
+  expect(exec.session.events).toEqual(full);
+
+  await ensureSessionFullEvents(ctx, exec);
+  expect(loadFullCalls).toBe(1);
+});

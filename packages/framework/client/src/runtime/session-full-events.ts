@@ -20,9 +20,13 @@ export function ensureSessionFullEvents(
   exec: SessionExecutionState,
 ): Promise<void> {
   if (exec.fullEventsPromise) return exec.fullEventsPromise;
+  // The fast attach path seeds `session.events` with only the post-epoch tail
+  // and sets `eventCount` to that tail length. Comparing `events.length` to
+  // `eventCount` therefore cannot tell whether the complete durable log is
+  // loaded. Consumers such as the Navi/Nia chat surfaces read this log directly
+  // and saw an empty stream until the background full-load happened to finish.
+  if (exec.fullEventsLoaded === true) return Promise.resolve();
   const promise = (async () => {
-    if (exec.eventCount === undefined) return;
-    if (exec.session.events.length >= exec.eventCount) return;
     const sessionStore = ctx.ports.resolveService<SessionStoreController>(
       SESSION_STORE_CONTROLLER_SERVICE,
     );
@@ -41,6 +45,7 @@ export function ensureSessionFullEvents(
       true,
     );
     exec.eventCount = exec.session.events.length;
+    exec.fullEventsLoaded = true;
     memoryTrace("execution.fullEvents.done", {
       sessionID: exec.session.id,
       events: exec.session.events.length,
