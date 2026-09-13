@@ -1,5 +1,5 @@
 import type { RuntimeEvent } from "@natalia/contracts";
-import { ContextLedger, TokenMeter } from "@natalia/runtime";
+import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
 import type { SessionProjection } from "@natalia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
 import type {
@@ -107,6 +107,7 @@ export class SessionRecoveryCoordinator {
    */
   private async phase0Load() {
     const scope = this.scope;
+    memoryTrace("recovery.phase0.start", { sessionID: scope.sessionID });
     if (scope.tsRuntimeConfig && scope.extensionEnabled("mcp")) {
       scope.resolveService<McpService>(scope.MCP_SERVICE)?.reload();
     }
@@ -119,12 +120,18 @@ export class SessionRecoveryCoordinator {
     await scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE)?.init();
 
     const fastPathEnabled = process.env.NATALIA_FAST_EXECUTION_LOAD === "1";
+    memoryTrace("recovery.load.start", { sessionID: scope.sessionID });
     const storedSession = await this.sessionStore.load(scope.sessionID, {
       title: this.options.title,
       create: true,
       indexedRecovery: fastPathEnabled || scope.replayMode === "none",
+      runtimeEvents: true,
     });
     scope.session = storedSession?.session;
+    memoryTrace("recovery.load.done", {
+      sessionID: scope.sessionID,
+      events: scope.session?.events.length,
+    });
     const session = scope.session;
     if (!session) throw new Error("session initialization did not complete");
     this.session = session;
@@ -183,9 +190,14 @@ export class SessionRecoveryCoordinator {
     if (restoreEvents && storedSession.contextEpoch) {
       session.events = restoreEvents;
       if (scope.activeExec) scope.activeExec.session.events = restoreEvents;
+      memoryTrace("recovery.fullLoad.start", { sessionID: scope.sessionID });
       void this.sessionStore
-        .loadFullAsync(scope.sessionID)
+        .loadFullAsync(scope.sessionID, { runtimeEvents: true })
         .then((full) => {
+          memoryTrace("recovery.fullLoad.done", {
+            sessionID: scope.sessionID,
+            events: full.events.length,
+          });
           this.session.events = full.events;
           if (scope.activeExec) scope.activeExec.session.events = full.events;
         })

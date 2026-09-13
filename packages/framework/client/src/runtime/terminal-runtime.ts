@@ -55,13 +55,12 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
       reason: input.reason,
       since: new Date().toISOString(),
     };
-    const sessionSnapshot = structuredClone(targetSession);
     const pendingSnapshot = targetSession.metadata.pendingHumanTerminal;
     const sessionPersistence =
       ctx.ports.getSessionPersistenceForSession(forSessionID);
     const next = sessionPersistence
       .then(() =>
-        sessionStoreController.updateMetadata(sessionSnapshot, {
+        sessionStoreController.updateMetadata(forSessionID, {
           pendingHumanTerminal: pendingSnapshot,
         }),
       )
@@ -97,12 +96,11 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
       throw new Error("session store unavailable (natalia-session-store)");
     targetSession.metadata = { ...targetSession.metadata };
     delete targetSession.metadata.pendingHumanTerminal;
-    const sessionSnapshot = structuredClone(targetSession);
     const sessionPersistence =
       ctx.ports.getSessionPersistenceForSession(forSessionID);
     const next = sessionPersistence
       .then(() =>
-        sessionStoreController.updateMetadata(sessionSnapshot, {
+        sessionStoreController.updateMetadata(forSessionID, {
           pendingHumanTerminal: undefined,
         }),
       )

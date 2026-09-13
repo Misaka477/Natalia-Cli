@@ -330,6 +330,8 @@ export async function createSubagentSupport(
         signal: runner.signal,
         onEvent: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
       });
+      // Drop the pre-compaction provider anchor before re-measuring.
+      tokenMeterFor(ledger).clear(`subagent:${runner.agentId}`);
       // Publish the compacted projection before the provider request starts.
       measureSubagentRequest(
         ledger,
@@ -356,8 +358,10 @@ export async function createSubagentSupport(
         onEvent: (event: RuntimeEvent) => {
           publishSubagentEvent(runner, event);
           if (event.type === "compaction.end" && event.success) {
-            // Context-limit recovery rewrites the ledger in place; publish the
-            // post-compaction meter before the retried provider request.
+            // Context-limit recovery rewrites the ledger in place; drop the
+            // pre-compaction anchor and publish the post-compaction meter before
+            // the retried provider request.
+            tokenMeterFor(ledger).clear(`subagent:${runner.agentId}`);
             measureSubagentRequest(
               ledger,
               runner,

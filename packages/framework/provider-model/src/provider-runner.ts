@@ -11,6 +11,7 @@ import {
   contextStatusEvent,
   estimateTokens,
   MAX_STEPS_PROMPT,
+  memoryTrace,
   MISSING_FINAL_RESPONSE_FALLBACK,
   nativeToolCallCorrection,
   normalizeRawToolCallProtocol,
@@ -168,6 +169,10 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     internal = false,
   ) {
     const startedAt = Date.now();
+    memoryTrace("main.runTurn.start", {
+      id,
+      textLength: text.length,
+    });
     if (!input.provider()) {
       const reloaded = await input.reloadConfig();
       if (!reloaded.providerReconfigured) {
@@ -969,6 +974,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         const meter = input.tokenMeter?.();
         const system =
           messages[0]?.role === "system" ? messages[0].content : "";
+        meter?.clear("main");
         meter?.measureRequest("main", {
           system,
           messages,
@@ -1031,6 +1037,17 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       measured?.totalTokens ?? 0,
     );
     if (meter) publishMainTokenSnapshot(meter, used);
+    // Log after measuring so the trace carries the numbers that actually decide
+    // whether compaction triggers (the old form only had message counts).
+    memoryTrace("main.compact.before", {
+      step,
+      messages: messages.length,
+      ledgerMessages: ledger.journalStatus().messageCount,
+      usedTokens: used,
+      maxTokens: config.max,
+      thresholdPercent: config.thresholdPercent,
+      reservedTokens: config.reserved,
+    });
     const compacted = await input.compaction.compactBeforeProviderStep({
       compactionID: `${id}:preflight:${step}`,
       ledger,
@@ -1050,6 +1067,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     });
     if (!compacted.compacted) return;
     rebuildMessagesAfterCompaction(messages, ledger);
+    meter?.clear("main");
+    memoryTrace("main.compact.after", {
+      step,
+      messages: messages.length,
+      ledgerMessages: ledger.journalStatus().messageCount,
+    });
     input.publish({
       type: "context.checkpoint",
       id: `${id}:preflight:${ledger.journalStatus().journalOffset}`,

@@ -8,6 +8,8 @@ export type SessionLoadWorkerRequest =
       op: "events";
       dbPath: string;
       sessionID: string;
+      afterSeq?: number;
+      limit?: number;
     }
   | {
       id: number;
@@ -28,6 +30,8 @@ export type SessionLoadWorkerResponse =
       id: number;
       ok: true;
       events: import("@natalia/contracts").RuntimeEvent[];
+      lastSeq: number;
+      hasMore: boolean;
     }
   | {
       id: number;
@@ -82,9 +86,19 @@ port.on("message", async (request: SessionLoadWorkerRequest) => {
     try {
       db = new Database(request.dbPath);
       db.exec("PRAGMA query_only=ON");
+      const afterSeq = Math.max(0, request.afterSeq ?? 0);
+      const limit = Math.max(1, Math.min(2_000, request.limit ?? 500));
       const rows = db
-        .query(`SELECT event FROM events WHERE session_id = ? ORDER BY seq`)
-        .all(request.sessionID) as { event: string }[];
+        .query(
+          `SELECT seq, event FROM events
+           WHERE session_id = ? AND seq > ?
+           ORDER BY seq
+           LIMIT ?`,
+        )
+        .all(request.sessionID, afterSeq, limit) as Array<{
+        seq: number;
+        event: string;
+      }>;
       const events = rows.map(
         (row) =>
           JSON.parse(row.event) as import("@natalia/contracts").RuntimeEvent,
@@ -93,6 +107,8 @@ port.on("message", async (request: SessionLoadWorkerRequest) => {
         id: request.id,
         ok: true,
         events,
+        lastSeq: rows.at(-1)?.seq ?? afterSeq,
+        hasMore: rows.length >= limit,
       };
       port.postMessage(response);
     } finally {

@@ -11,3 +11,5 @@ export * from "./provider-concurrency";
 export * from "./request";
 export * from "./retry";
 export * from "./token-meter";
+
+export { memoryTrace } from "./memory-trace";

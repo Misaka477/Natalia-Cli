@@ -38,7 +38,12 @@ function poolWorker(): Worker {
         if (!entry) return;
         pending.delete(response.id);
         if (response.ok) {
-          if ("events" in response) entry.resolve(response.events);
+          if ("events" in response)
+            entry.resolve({
+              events: response.events,
+              lastSeq: response.lastSeq,
+              hasMore: response.hasMore,
+            });
           else if ("page" in response) entry.resolve(response.page);
           else entry.resolve(undefined);
         } else entry.reject(new Error(response.error));
@@ -55,7 +60,13 @@ function poolWorker(): Worker {
 }
 
 type SessionLoadWorkerTask =
-  | { op: "events"; dbPath: string; sessionID: string }
+  | {
+      op: "events";
+      dbPath: string;
+      sessionID: string;
+      afterSeq?: number;
+      limit?: number;
+    }
   | {
       op: "messagePage";
       dbPath: string;
@@ -76,11 +87,44 @@ async function run<T>(request: SessionLoadWorkerTask): Promise<T> {
   });
 }
 
-export function loadSessionEventsInWorker(
+export async function loadSessionEventsInWorker(
   dbPath: string,
   sessionID: string,
 ): Promise<RuntimeEvent[]> {
-  return run<RuntimeEvent[]>({ op: "events", dbPath, sessionID });
+  const events: RuntimeEvent[] = [];
+  let afterSeq = 0;
+  while (true) {
+    const page = await loadSessionEventPageInWorker(
+      dbPath,
+      sessionID,
+      afterSeq,
+      500,
+    );
+    events.push(...page.events);
+    if (!page.hasMore) return events;
+    afterSeq = page.lastSeq;
+  }
+}
+
+export type SessionEventPage = {
+  events: RuntimeEvent[];
+  lastSeq: number;
+  hasMore: boolean;
+};
+
+export function loadSessionEventPageInWorker(
+  dbPath: string,
+  sessionID: string,
+  afterSeq: number,
+  limit: number,
+): Promise<SessionEventPage> {
+  return run<SessionEventPage>({
+    op: "events",
+    dbPath,
+    sessionID,
+    afterSeq,
+    limit,
+  });
 }
 
 export function loadMessagePageInWorker(

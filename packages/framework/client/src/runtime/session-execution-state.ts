@@ -58,6 +58,11 @@ export type SessionExecutionState = {
   collabSnapshot?: CollabSnapshot;
   /** Total durable event count; may be larger than session.events.length when full events are still loading in background. */
   eventCount?: number;
+  /** Memoized session projection for snapshot/intelligence reads at one event revision. */
+  snapshotProjection?: {
+    eventCount: number;
+    value: import("@natalia/session").SessionProjection;
+  };
   /** Memoized promise that loads the complete durable event log into session.events. */
   fullEventsPromise?: Promise<void>;
   injectedMailboxIDs: Set<string>;

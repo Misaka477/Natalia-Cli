@@ -460,6 +460,10 @@ export async function compactChatBeforeProviderStep(
   });
   if (compactedThroughMessageID)
     stream.publishCompacted(summary, compactedThroughMessageID);
+  // Drop the pre-compaction provider anchor before re-measuring. The anchor
+  // described a surface that no longer exists; keeping it can make the UI show
+  // the old pressure even though the ledger was compacted.
+  exec.tokenMeter?.clear(`chat:${stream.channel}`);
   // Re-measure after the ledger rewrite: callers publish their token snapshot
   // immediately below, and the meter must reflect the compacted surface rather
   // than the pre-compaction request.

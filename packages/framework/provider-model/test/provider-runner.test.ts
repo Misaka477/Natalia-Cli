@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   AnthropicProvider,
   ContextLedger,
+  TokenMeter,
   estimateTokens,
   providerError,
 } from "@natalia/runtime";
@@ -95,6 +96,7 @@ function makeHarness(
       reserved: number;
     };
     preservedRecentMessages?: number;
+    tokenMeter?: TokenMeter;
   },
 ) {
   const events: RuntimeEvent[] = [];
@@ -177,6 +179,9 @@ function makeHarness(
     naviAnswers: () => options?.naviAnswers ?? [],
     naviChats: () => options?.naviChats ?? [],
     activePlan: () => options?.activePlan,
+    ...(options?.tokenMeter
+      ? { tokenMeter: () => options.tokenMeter! }
+      : {}),
     retry,
     lastProviderUsage: () => lastUsage,
     setLastProviderUsage: (usage) => {
@@ -998,6 +1003,58 @@ test("context-limit recovery keeps compacted context and recovered tool results 
   await runner.runTurn(turn);
   expect(calls).toBe(4);
   expect(requests).toHaveLength(4);
+});
+
+test("context-limit recovery clears the stale token anchor before publishing the compacted snapshot", async () => {
+  let calls = 0;
+  const meter = new TokenMeter();
+  meter.setContextWindow("main", 1_000_000);
+  const staleSurface = meter.observeSurface("main", [
+    { role: "user", content: "x".repeat(4000) },
+  ]);
+  meter.recordUsage(
+    "main",
+    { inputTokens: 900_000, outputTokens: 0 },
+    { headerKey: "stale", surfaceTokens: staleSurface },
+  );
+  const { runner, ledger, events } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        calls++;
+        if (calls === 1)
+          throw providerError({ kind: "context_limit", message: "too long" });
+        yield content("compacted final");
+      },
+    },
+    { preservedRecentMessages: 0, tokenMeter: meter },
+  );
+  for (let index = 0; index < 3; index++)
+    ledger.add({
+      id: `old-${index}`,
+      role: index % 2 ? "assistant" : "user",
+      content: `old context ${index}`,
+    });
+
+  await runner.runTurn(turn);
+
+  const compactionEndIndex = events.findIndex(
+    (event) => event.type === "compaction.end" && event.success,
+  );
+  expect(compactionEndIndex).toBeGreaterThanOrEqual(0);
+  const snapshots = events
+    .slice(compactionEndIndex + 1)
+    .filter(
+      (
+        event,
+      ): event is Extract<RuntimeEvent, { type: "context.snapshot" }> =>
+        event.type === "context.snapshot",
+    );
+  expect(snapshots.length).toBeGreaterThan(0);
+  const compacted = snapshots.at(-1)!;
+  expect(compacted.usedTokens).toBeLessThan(10_000);
+  expect(compacted.projectedTokens ?? 0).toBeLessThan(10_000);
 });
 
 test("provider steps compact proactively before dispatching an oversized request", async () => {

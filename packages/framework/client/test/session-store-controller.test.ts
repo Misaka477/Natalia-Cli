@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSessionStoreController } from "@natalia/session-store";
 import { createAttachmentService } from "@natalia/attachments";
+import type { SessionID } from "@natalia/contracts";
 
 test("session store: create is idempotent, archive marks, export dumps", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-store-"));
@@ -18,6 +19,13 @@ test("session store: create is idempotent, archive marks, export dumps", async (
   expect(created).toEqual({ sessionID: "ses_a", created: true });
   const replay = await controller.create({ id: "ses_a" });
   expect(replay.created).toBe(false);
+
+  // Metadata updates only need the session id; callers must not have to clone
+  // (or otherwise construct) the full event-bearing record.
+  await controller.updateMetadata("ses_a" as SessionID, { pinned: true });
+  const loaded = await controller.load("ses_a" as SessionID);
+  expect(loaded).toBeDefined();
+  expect(loaded?.session?.metadata?.pinned).toBe(true);
 
   const archived = await controller.archive("ses_a");
   expect(archived.archived).toBe(true);

@@ -84,7 +84,13 @@ export function createSnapshot(ctx: RuntimeContext) {
     const { redactToolOutput } = ctx.ports;
     const { activeToolByTurn, liveMainOutputByTurn } = ctx.state;
     const events = exec.session.events;
-    const projection = projectSession(exec.session);
+    const cachedProjection = exec.snapshotProjection;
+    const projection =
+      cachedProjection && cachedProjection.eventCount === events.length
+        ? cachedProjection.value
+        : projectSession(exec.session);
+    if (!cachedProjection || cachedProjection.eventCount !== events.length)
+      exec.snapshotProjection = { eventCount: events.length, value: projection };
     const active = projection.activeTurnIDs.length > 0;
     let agentStatus = "idle";
     if (exec.paused) agentStatus = "paused";
@@ -159,13 +165,12 @@ export function createSnapshot(ctx: RuntimeContext) {
     targetSession.metadata = { ...targetSession.metadata };
     if (operation) targetSession.metadata.inFlightOperation = operation;
     else delete targetSession.metadata.inFlightOperation;
-    const sessionSnapshot = structuredClone(targetSession);
     const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
       exec.session.id,
     );
     const next = sessionPersistence
       .then(() =>
-        sessionStoreController.updateMetadata(sessionSnapshot, {
+        sessionStoreController.updateMetadata(exec.session.id, {
           inFlightOperation: operation,
         }),
       )

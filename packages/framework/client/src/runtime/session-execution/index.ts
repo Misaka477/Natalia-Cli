@@ -6,7 +6,12 @@
  * helpers that drive the turn controller for a session. Reads host state
  * through `RuntimeContext` at call time.
  */
-import { ContextLedger, TokenMeter, providerForModel } from "@natalia/runtime";
+import {
+  ContextLedger,
+  TokenMeter,
+  memoryTrace,
+  providerForModel,
+} from "@natalia/runtime";
 import { projectSession } from "@natalia/session";
 import {
   CONTEXT_LEDGER_FACTORY_SERVICE,
@@ -21,6 +26,7 @@ import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
+import { filterRuntimeRetainedEvents } from "../session-event-retention";
 import { perfLog } from "@natalia/runtime-services";
 
 const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
@@ -28,22 +34,80 @@ const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
   Number(process.env.NATALIA_MAX_IDLE_SESSIONS ?? 512),
 );
 
+/**
+ * Per-session event-count guard. An idle execution that accumulated a very
+ * large journal is the main long-session memory holder; it can be re-created
+ * lazily on the next attach/read. Busy sessions are never evicted.
+ */
+const MAX_IDLE_SESSION_EVENTS = Math.max(
+  5_000,
+  Number(process.env.NATALIA_MAX_IDLE_SESSION_EVENTS ?? 20_000),
+);
+
+/**
+ * Total event-count budget across idle executions. The count is an upper
+ * bound on object count; it intentionally avoids walking every event just to
+ * estimate bytes during a hot prune check.
+ */
+const MAX_TOTAL_IDLE_EVENT_COUNT = Math.max(
+  MAX_IDLE_SESSION_EVENTS,
+  Number(process.env.NATALIA_MAX_TOTAL_IDLE_EVENTS ?? 60_000),
+);
+
+function isIdleExecution(
+  active: SessionExecutionState | undefined,
+  exec: SessionExecutionState,
+) {
+  return (
+    exec !== active &&
+    !exec.activeAbort &&
+    !exec.activeTurnID &&
+    !exec.paused &&
+    !exec.endTurnWaitingHuman
+  );
+}
+
 function pruneIdleSessionExecutions(ctx: RuntimeContext) {
   const { executionBySession } = ctx.state;
-  if (executionBySession.size <= MAX_IDLE_SESSION_EXECUTIONS) return;
   const active = ctx.ports.getActiveExec();
-  for (const [sessionID, exec] of executionBySession) {
-    if (exec === active) continue;
-    if (
-      exec.activeAbort ||
-      exec.activeTurnID ||
-      exec.paused ||
-      exec.endTurnWaitingHuman
-    )
-      continue;
+  const idle = [...executionBySession.entries()].filter(([, exec]) =>
+    isIdleExecution(active, exec),
+  );
+
+  // First drop any single idle execution that is already over the per-session
+  // event guard. This is the common case after attaching to a very old session.
+  for (const [sessionID, exec] of idle) {
+    if (exec.session.events.length <= MAX_IDLE_SESSION_EVENTS) continue;
     executionBySession.delete(sessionID);
     ctx.state.sessionPersistenceBySession.delete(sessionID);
-    if (executionBySession.size <= MAX_IDLE_SESSION_EXECUTIONS) return;
+  }
+
+  const remainingIdleEventCount = [...executionBySession.values()]
+    .filter((exec) => isIdleExecution(active, exec))
+    .reduce((sum, exec) => sum + exec.session.events.length, 0);
+  if (
+    executionBySession.size <= MAX_IDLE_SESSION_EXECUTIONS &&
+    remainingIdleEventCount <= MAX_TOTAL_IDLE_EVENT_COUNT
+  )
+    return;
+
+  // Then evict the largest idle executions until both budgets are satisfied.
+  const evictionOrder = [...executionBySession.entries()]
+    .filter(([, exec]) => isIdleExecution(active, exec))
+    .sort(
+      (left, right) =>
+        right[1].session.events.length - left[1].session.events.length,
+    );
+  let eventCount = remainingIdleEventCount;
+  for (const [sessionID, exec] of evictionOrder) {
+    if (
+      executionBySession.size <= MAX_IDLE_SESSION_EXECUTIONS &&
+      eventCount <= MAX_TOTAL_IDLE_EVENT_COUNT
+    )
+      break;
+    executionBySession.delete(sessionID);
+    ctx.state.sessionPersistenceBySession.delete(sessionID);
+    eventCount -= exec.session.events.length;
   }
 }
 
@@ -159,11 +223,15 @@ export function createSessionExecution(
     const { executionBySession } = ctx.state;
     const existing = executionBySession.get(sessionID);
     if (existing) {
+      // Log cache hits distinctly: logging `ensure.start` before this check made
+      // every hit look like a fresh (expensive) execution rebuild in the trace.
+      memoryTrace("execution.ensure.hit", { sessionID });
       perfLog(
         `[perf] ensureExecution hit session=${sessionID} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return existing;
     }
+    memoryTrace("execution.ensure.start", { sessionID });
     const sessionStore = ctx.ports.resolveService<SessionStoreController>(
       SESSION_STORE_CONTROLLER_SERVICE,
     );
@@ -177,16 +245,24 @@ export function createSessionExecution(
     const fastPathEnabled = process.env.NATALIA_FAST_EXECUTION_LOAD === "1";
     const stored = await sessionStore.load(
       sessionID,
-      fastPathEnabled ? { indexedRecovery: true } : undefined,
+      fastPathEnabled
+        ? { indexedRecovery: true, runtimeEvents: true }
+        : { runtimeEvents: true },
     );
     mark("load");
     const loaded = stored.session;
     const recovery = stored.recovery;
+    const epoch = stored.contextEpoch;
+    const storeMode = sessionStore.status().mode;
+    loaded.events = filterRuntimeRetainedEvents(
+      loaded.events,
+      storeMode,
+      Boolean(epoch),
+    );
     const execContext = contextLedgerFactory.create();
     mark("createLedger");
     const projection = projectSession(loaded);
     mark("project");
-    const epoch = stored.contextEpoch;
     const latestContextCheckpoint = [...projection.replayableEvents]
       .reverse()
       .find((event) => event.type === "context.checkpoint");
@@ -207,11 +283,16 @@ export function createSessionExecution(
       : checkpointHasSummary && latestContextCheckpoint
         ? projection.replayableEvents.slice(checkpointIndex + 1)
         : projection.replayableEvents;
-    contextLedgerFactory.restore(execContext, restoreEvents);
+    const runtimeRestoreEvents = filterRuntimeRetainedEvents(
+      restoreEvents,
+      storeMode,
+      Boolean(epoch),
+    );
+    contextLedgerFactory.restore(execContext, runtimeRestoreEvents);
     mark("restore");
     const fastPath = fastPathEnabled && Boolean(epoch);
     if (fastPath) {
-      projection.replayableEvents = restoreEvents;
+      projection.replayableEvents = runtimeRestoreEvents;
       if (recovery) {
         projection.selectedAgent =
           recovery.selectedAgent ?? projection.selectedAgent;
@@ -226,12 +307,12 @@ export function createSessionExecution(
         projection.permissionProfile =
           recovery.permissionProfile ?? projection.permissionProfile;
       }
-      loaded.events = restoreEvents;
+      loaded.events = runtimeRestoreEvents;
     }
     console.warn("[context-restore] ensureExecution", {
       sessionID,
       replayableEvents: projection.replayableEvents.length,
-      restoreEvents: restoreEvents.length,
+      restoreEvents: runtimeRestoreEvents.length,
       contextEntries: execContext.snapshot().entries.length,
       hasEpoch: epoch !== undefined,
       checkpointHasSummary,
@@ -290,9 +371,7 @@ export function createSessionExecution(
       niaPendingQueue: [],
       naviAbortWakePending: false,
       niaAbortWakePending: false,
-      eventCount: fastPath
-        ? epoch!.baselineSeq + restoreEvents.length
-        : loaded.events.length,
+      eventCount: fastPath ? runtimeRestoreEvents.length : loaded.events.length,
     };
     executionBySession.set(sessionID, exec);
     pruneIdleSessionExecutions(ctx);
@@ -314,8 +393,12 @@ export function createSessionExecution(
         .then((full) => {
           const current = ctx.ports.getExecutionBySession().get(sessionID);
           if (current !== exec) return;
-          exec.session.events = full.events;
-          exec.eventCount = full.events.length;
+          exec.session.events = filterRuntimeRetainedEvents(
+            full.events,
+            storeMode,
+            true,
+          );
+          exec.eventCount = exec.session.events.length;
           try {
             sessionStore.ensureMessageIndex(sessionID);
           } catch {
@@ -338,6 +421,12 @@ export function createSessionExecution(
     perfLog(
       `[perf] ensureExecution done session=${sessionID} events=${exec.session.events.length} fast=${fastPath} +${(performance.now() - start).toFixed(1)}ms`,
     );
+    memoryTrace("execution.ensure.done", {
+      sessionID,
+      events: exec.session.events.length,
+      eventCount: exec.eventCount,
+      fastPath,
+    });
     return exec;
   }
 }
