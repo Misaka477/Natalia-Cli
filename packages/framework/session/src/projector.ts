@@ -213,18 +213,25 @@ export function projectTurnMessage(
   submitted: Extract<RuntimeEvent, { type: "turn.submitted" }>,
   events: RuntimeEvent[],
 ): RuntimeProjectedMessage {
+  const rowIDCounts = new Map<string, number>();
   const rows = events.flatMap((candidate) => {
     const kind = projectedRowKind(candidate, submitted.id);
-    return kind
-      ? [
-          {
-            id: projectedRowID(candidate, submitted.id),
-            turnID: submitted.id,
-            kind,
-            event: candidate,
-          },
-        ]
-      : [];
+    if (!kind) return [];
+    const baseID = projectedRowID(candidate, submitted.id);
+    const occurrence = rowIDCounts.get(baseID) ?? 0;
+    rowIDCounts.set(baseID, occurrence + 1);
+    return [
+      {
+        // Durable rows can repeat the same event type/id within one turn
+        // (multiple provider steps, partial/done pairs). The row id is a
+        // consumer-facing key, so keep the first id stable and disambiguate
+        // later occurrences instead of returning duplicates.
+        id: occurrence === 0 ? baseID : `${baseID}:${occurrence}`,
+        turnID: submitted.id,
+        kind,
+        event: candidate,
+      },
+    ];
   });
   const terminal = rows.findLast((row) => row.event.type === "turn.finished");
   return {
@@ -259,6 +266,7 @@ export function projectTurnMessages(events: RuntimeEvent[]) {
       ordered.push(event.id);
     }
   let currentTurnID: string | undefined;
+  const rowIDCounts = new Map<string, Map<string, number>>();
   for (const event of events) {
     if (event.type === "turn.submitted" && byID.has(event.id))
       currentTurnID = event.id;
@@ -267,8 +275,13 @@ export function projectTurnMessages(events: RuntimeEvent[]) {
     const message = byID.get(turnID)!;
     const kind = projectedRowKind(event, turnID);
     if (!kind) continue;
+    const baseID = projectedRowID(event, turnID);
+    const counts = rowIDCounts.get(turnID) ?? new Map<string, number>();
+    rowIDCounts.set(turnID, counts);
+    const occurrence = counts.get(baseID) ?? 0;
+    counts.set(baseID, occurrence + 1);
     message.rows.push({
-      id: projectedRowID(event, turnID),
+      id: occurrence === 0 ? baseID : `${baseID}:${occurrence}`,
       turnID,
       kind,
       event,

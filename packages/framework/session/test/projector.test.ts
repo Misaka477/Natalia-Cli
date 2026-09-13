@@ -339,6 +339,42 @@ test("projected turn inputs attach to the running turn as user rows", () => {
   ]);
 });
 
+test("projected row ids stay unique across repeated events in one turn", () => {
+  const session = createSessionRecord("ses_message_row_ids", "Row ids");
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_rows",
+    text: "hello",
+    byteLength: 5,
+    lineCount: 1,
+    sha256: "test",
+  });
+  appendSessionEvent(session, {
+    type: "thinking.done",
+    id: "turn_rows",
+    text: "first thought",
+  });
+  appendSessionEvent(session, {
+    type: "content.done",
+    id: "turn_rows",
+    text: "first answer",
+  });
+  appendSessionEvent(session, {
+    type: "content.done",
+    id: "turn_rows",
+    text: "",
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_rows",
+    stopReason: "done",
+  });
+
+  const rows = projectSessionMessages(session, { order: "asc" }).data[0]!.rows;
+  const ids = rows.map((row) => row.id);
+  expect(new Set(ids).size).toBe(ids.length);
+});
+
 test("message projection rejects malformed or stale opaque cursors", () => {
   const session = createSessionRecord("ses_message_cursor", "Messages");
   appendSessionEvent(session, {
