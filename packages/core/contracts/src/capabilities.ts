@@ -281,7 +281,12 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "planDocDelete",
     "planDocStatus",
     "planDocUpdateStatus",
+    "planDocActive",
+    "planDocActivate",
+    "planDocDeactivate",
   ],
+  /** Same-session goal control (pause/resume/clear/edit bypassing the model). */
+  goals: ["goalControl", "goalEdit"],
   /** Durable attachment upload/storage for pasted or dropped files. */
   attachments: ["uploadAttachment", "attachmentDataUrl"],
   /** The always-available Live Work Chat conversation (P8 Phase C2). */

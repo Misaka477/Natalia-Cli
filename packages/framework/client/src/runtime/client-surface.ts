@@ -1,4 +1,5 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { SessionID } from "@natalia/contracts";
 import { createChatSurface } from "./collaboration/chat";
 import { createMailboxSurface } from "./collaboration/mailbox";
 import { createPlanDocRuntime } from "./collaboration/plan-doc-runtime";
@@ -30,7 +31,7 @@ export function createClientSurface(
   options: RealRuntimeClientOptions,
 ): RuntimeServiceClient {
   const checkpoint = ctx.ports.getCheckpointRuntime();
-  return {
+  const surface: RuntimeServiceClient = {
     ...createCoreSurface(ctx, options),
     ...createTranscriptSurface(ctx, options),
     ...createTurnControlSurface(ctx, options),
@@ -62,5 +63,25 @@ export function createClientSurface(
     ...createMailboxSurface(ctx),
     ...createPlanDocRuntime(ctx),
     ...createChatSurface(ctx),
+    // Direct status-bar goal controls (pause/resume/clear/edit); bypass the
+    // model. Read the ports at call time — they are installed by the event sink
+    // during composition, and the workspace proxy forwards these per workspace.
+    goalControl: async (action, sessionID) =>
+      (await ctx.ports.goalControl?.(action, sessionID as SessionID | undefined)) ?? {
+        ok: false,
+        action,
+        message: "goal control unavailable",
+      },
+    goalEdit: async (input, sessionID) =>
+      (await ctx.ports.goalEdit?.(input, sessionID as SessionID | undefined)) ?? {
+        ok: false,
+        action: "edit",
+        message: "goal edit unavailable",
+      },
   };
+  // Goal `pause` hard-stops the in-flight goal round through the standard cancel
+  // path, so it must be reachable from the goal runtime (event sink).
+  ctx.ports.cancelTurn = (reason, sessionID) =>
+    surface.cancel(reason, sessionID as SessionID | undefined);
+  return surface;
 }

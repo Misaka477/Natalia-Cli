@@ -6,6 +6,7 @@ import type {
   CheckpointResourcePolicy,
   ConfigV3,
   ConfirmedWorkspaceChange,
+  GoalSnapshot,
   InteractiveResponseOutcome,
   LocalAttachment,
   MCPCatalogSnapshot,
@@ -107,6 +108,12 @@ export type AttachmentService = {
 
 export type SessionStoreRecoveryView = {
   activeTurnIDs: string[];
+  goal?: GoalSnapshot & {
+    roundsStarted: number;
+    activation: "armed" | "disarmed";
+    createdAt?: string;
+    updatedAt?: string;
+  };
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
   interactives: Array<Extract<RuntimeEvent, { type: "interactive.request" }>>;
@@ -125,17 +132,28 @@ export interface SessionStoreController {
   status(): { initialized: boolean; mode: "sqlite" | "json" };
   load(
     id: SessionID,
-    options?: { title?: string; create?: boolean; indexedRecovery?: boolean },
+    options?: {
+      title?: string;
+      create?: boolean;
+      indexedRecovery?: boolean;
+      /** Load only events the live execution projection needs. */
+      runtimeEvents?: boolean;
+    },
   ): Promise<{
     session: SessionRecord;
     contextEpoch?: StoredContextEpoch;
     recovery?: SessionStoreRecoveryView;
   }>;
   saveInbox(session: SessionRecord): Promise<void>;
+  /**
+   * Cheap read of the fast-restore recovery projection (no full event load).
+   * Used to re-seed live projections — e.g. the goal status bar — on attach.
+   */
+  loadRecoveryProjection(id: SessionID): SessionStoreRecoveryView | undefined;
   appendEvent(session: SessionRecord, event: RuntimeEvent): Promise<void>;
   appendEvents(session: SessionRecord, events: RuntimeEvent[]): Promise<void>;
   updateMetadata(
-    session: SessionRecord,
+    session: SessionRecord | SessionID,
     partial: Partial<SessionMetadata>,
   ): Promise<void>;
   contextEventsAfter(
@@ -149,7 +167,10 @@ export interface SessionStoreController {
   ensureMessageIndex(id: SessionID): void;
   ensureMessageIndexAsync(id: SessionID): Promise<void>;
   prewarmMessagePage(id: SessionID): Promise<void>;
-  loadFullAsync(id: SessionID): Promise<SessionRecord>;
+  loadFullAsync(
+    id: SessionID,
+    options?: { runtimeEvents?: boolean },
+  ): Promise<SessionRecord>;
   referencedAttachments(): Promise<LocalAttachment[]>;
   history(
     id: SessionID,

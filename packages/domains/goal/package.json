@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/session",
+  "name": "@natalia/goal",
   "version": "0.0.0-m13",
   "private": true,
   "type": "module",
@@ -9,7 +9,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
-    "@natalia/goal": "workspace:*"
+    "@natalia/contracts": "workspace:*"
   }
 }

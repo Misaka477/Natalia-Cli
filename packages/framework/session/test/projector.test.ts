@@ -18,6 +18,7 @@ import {
   projectedMailboxMessages,
   projectedCollabMessages,
   projectedPlanDocs,
+  projectedGoal,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectSessionMessages,
@@ -1327,4 +1328,36 @@ test("legacy persisted chat records retain isolated channel histories", () => {
       kind: "message",
     },
   ]);
+});
+
+test("session projection carries the current goal, folded and disarmed", () => {
+  const session = createSessionRecord("ses_goal_projection", "Goal");
+  const at = "2026-01-01T00:00:00.000Z";
+  const goalEvent = (
+    operation: "create" | "edit",
+    revision: number,
+    objective: string,
+  ) =>
+    ({
+      type: "goal.changed",
+      id: `goal:${operation}:${revision}`,
+      operation,
+      snapshot: {
+        goalID: "goal_1",
+        revision,
+        objective,
+        phase: "active",
+        maxGoalRounds: 256,
+      },
+      roundsStarted: 0,
+      at,
+    }) as RuntimeEvent;
+  appendSessionEvent(session, goalEvent("create", 1, "first"));
+  appendSessionEvent(session, goalEvent("edit", 2, "second"));
+  const goal = projectSession(session).goal;
+  expect(goal?.objective).toBe("second");
+  expect(goal?.revision).toBe(2);
+  expect(goal?.phase).toBe("active");
+  expect(goal?.activation).toBe("disarmed");
+  expect(projectedGoal(session.events)?.objective).toBe("second");
 });

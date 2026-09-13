@@ -246,6 +246,54 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
       delete state.plans[event.planID];
       delete state.activities[planActivityID(event.planID)];
       return;
+    case "goal.changed":
+      if (event.operation === "clear" || !event.snapshot) {
+        delete state.goal;
+        return;
+      }
+      state.goal = {
+        goalID: event.snapshot.goalID,
+        revision: event.snapshot.revision,
+        objective: event.snapshot.objective,
+        phase: event.snapshot.phase,
+        roundsStarted: event.roundsStarted,
+        maxGoalRounds: event.snapshot.maxGoalRounds,
+        ...(event.snapshot.planID ? { planID: event.snapshot.planID } : {}),
+        ...(event.snapshot.blockedReason
+          ? { blockedReason: event.snapshot.blockedReason }
+          : {}),
+        ...(event.snapshot.lastStop
+          ? { lastStop: event.snapshot.lastStop }
+          : {}),
+      };
+      return;
+    case "goal.status":
+      if (!event.goal) {
+        delete state.goal;
+        return;
+      }
+      state.goal = {
+        goalID: event.goal.goalID,
+        revision: event.goal.revision,
+        objective: event.goal.objective,
+        phase: event.goal.phase,
+        roundsStarted: event.goal.roundsStarted,
+        maxGoalRounds: event.goal.maxGoalRounds,
+        ...(event.goal.planID ? { planID: event.goal.planID } : {}),
+        ...(event.goal.blockedReason
+          ? { blockedReason: event.goal.blockedReason }
+          : {}),
+        ...(event.goal.lastStop ? { lastStop: event.goal.lastStop } : {}),
+      };
+      return;
+    case "goal.round":
+      if (state.goal && state.goal.goalID === event.goalID)
+        state.goal = {
+          ...state.goal,
+          revision: event.revision,
+          roundsStarted: event.round,
+        };
+      return;
     case "mailbox.queued":
       state.mailbox = {
         ...state.mailbox,

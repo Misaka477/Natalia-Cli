@@ -150,6 +150,12 @@ export function createSessionStoreController(input: {
         sqliteStore.updateMetadata(input.sessionID(), {
           titleSource: "manual",
         });
+      if (process.env.NATALIA_DISABLE_EVENT_COMPACTION !== "1") {
+        for (const sessionID of sqliteStore.compactHistoricalEvents()) {
+          invalidateMessagePage(sessionID);
+        }
+        sqliteStore.checkpoint();
+      }
     }
     initialized = true;
   }
@@ -174,6 +180,9 @@ export function createSessionStoreController(input: {
         record.inbox?.filter((input) => !input.promotedAt).length ?? 0,
       cancelled: record.cancelled,
       resumable: record.resumable,
+      ...(typeof record.metadata?.activePlanID === "string"
+        ? { activePlanID: record.metadata.activePlanID }
+        : {}),
       ...(pendingHumanTerminalOf(record.metadata ?? {})
         ? {
             pendingHumanTerminal: pendingHumanTerminalOf(
@@ -199,6 +208,9 @@ export function createSessionStoreController(input: {
       pendingInputs: 0,
       cancelled: record.cancelled,
       resumable: record.resumable,
+      ...(typeof record.metadata.activePlanID === "string"
+        ? { activePlanID: record.metadata.activePlanID }
+        : {}),
       ...(pendingHumanTerminalOf(record.metadata)
         ? { pendingHumanTerminal: pendingHumanTerminalOf(record.metadata)! }
         : {}),
@@ -221,6 +233,8 @@ export function createSessionStoreController(input: {
       title?: string;
       create?: boolean;
       indexedRecovery?: boolean;
+      /** Load only the events the live execution projection needs. */
+      runtimeEvents?: boolean;
     } = {},
   ): Promise<{
     session: SessionRecord;
@@ -254,9 +268,20 @@ export function createSessionStoreController(input: {
     const contextEpoch = store.loadContextEpoch(id);
     mark("contextEpoch");
     const indexedRecovery = options.indexedRecovery && Boolean(contextEpoch);
-    let events = indexedRecovery ? [] : store.loadEvents(id);
+    let events = indexedRecovery
+      ? []
+      : options.runtimeEvents
+        ? store.loadRuntimeEvents(id, {
+            excludeContextCheckpoint: Boolean(contextEpoch),
+          })
+        : store.loadEvents(id);
     mark("events");
-    if (!events.length && !indexedRecovery && legacy?.events.length) {
+    if (
+      !events.length &&
+      !indexedRecovery &&
+      !options.runtimeEvents &&
+      legacy?.events.length
+    ) {
       store.replace(legacy);
       durable = store.get(id)!;
       events = store.loadEvents(id);
@@ -289,6 +314,10 @@ export function createSessionStoreController(input: {
     else await sessionStore.save(session);
   }
 
+  function loadRecoveryProjection(id: SessionID) {
+    return sqliteStore?.loadRecoveryProjection(id);
+  }
+
   async function appendEvent(session: SessionRecord, event: RuntimeEvent) {
     invalidateMessagePage(session.id);
     if (sqliteStore) {
@@ -308,11 +337,12 @@ export function createSessionStoreController(input: {
   }
 
   async function updateMetadata(
-    session: SessionRecord,
+    session: SessionRecord | SessionID,
     partial: Partial<SessionMetadata>,
   ) {
-    if (sqliteStore) sqliteStore.updateMetadata(session.id, partial);
-    else await sessionStore.save(session);
+    const id = typeof session === "string" ? session : session.id;
+    if (sqliteStore) sqliteStore.updateMetadata(id, partial);
+    else await sessionStore.updateMetadata(id, partial);
   }
 
   function contextEventsAfter(id: SessionID, epoch?: StoredContextEpoch) {
@@ -375,7 +405,10 @@ export function createSessionStoreController(input: {
     return promise;
   }
 
-  async function loadFullAsync(id: SessionID): Promise<SessionRecord> {
+  async function loadFullAsync(
+    id: SessionID,
+    loadOptions: { runtimeEvents?: boolean } = {},
+  ): Promise<SessionRecord> {
     if (!sqliteStore) {
       const record = await sessionStore.load(id);
       if (!record) throw new Error(`session not found: ${id}`);
@@ -384,7 +417,11 @@ export function createSessionStoreController(input: {
     const durable = sqliteStore.get(id);
     if (!durable) throw new Error(`session not found: ${id}`);
     let events: RuntimeEvent[];
-    if (sqliteStorePath) {
+    if (loadOptions.runtimeEvents) {
+      events = await sqliteStore.loadRuntimeEventsAsync(id, {
+        excludeContextCheckpoint: Boolean(sqliteStore.loadContextEpoch(id)),
+      });
+    } else if (sqliteStorePath) {
       try {
         events = await loadSessionEventsInWorker(sqliteStorePath, id);
       } catch {
@@ -488,6 +525,9 @@ export function createSessionStoreController(input: {
         cancelled: record.cancelled,
         resumable: record.resumable,
         archived: Boolean(record.metadata.archived),
+        ...(typeof record.metadata.activePlanID === "string"
+          ? { activePlanID: record.metadata.activePlanID }
+          : {}),
         ...(pendingHumanTerminalOf(record.metadata)
           ? { pendingHumanTerminal: pendingHumanTerminalOf(record.metadata)! }
           : {}),
@@ -682,6 +722,7 @@ export function createSessionStoreController(input: {
     status,
     load,
     saveInbox,
+    loadRecoveryProjection,
     appendEvent,
     appendEvents,
     updateMetadata,

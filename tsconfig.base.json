@@ -27,6 +27,7 @@
       "@natalia/context-ledger": [
         "packages/domains/context-ledger/src/index.ts"
       ],
+      "@natalia/goal": ["packages/domains/goal/src/index.ts"],
       "@natalia/governance-ledger": [
         "packages/domains/governance-ledger/src/index.ts"
       ],

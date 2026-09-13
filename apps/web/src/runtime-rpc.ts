@@ -179,6 +179,11 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   planDocDelete: "planDoc.delete",
   planDocStatus: "planDoc.status",
   planDocUpdateStatus: "planDoc.updateStatus",
+  planDocActive: "planDoc.active",
+  planDocActivate: "planDoc.activate",
+  planDocDeactivate: "planDoc.deactivate",
+  goalControl: "goal.control",
+  goalEdit: "goal.edit",
   capabilities: "capabilities",
   sessionSnapshot: "session.snapshot",
   submitInput: "submit.input",
@@ -276,6 +281,11 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   mailboxSupersede: ["messageID"],
   planDocDelete: ["planID"],
   planDocStatus: ["planID"],
+  planDocActive: ["sessionID"],
+  planDocActivate: ["planID", "sessionID"],
+  planDocDeactivate: ["sessionID"],
+  goalControl: ["action", "sessionID"],
+  goalEdit: ["input", "sessionID"],
 };
 
 function buildParams(member: string, args: unknown[]) {

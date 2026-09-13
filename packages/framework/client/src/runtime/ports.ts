@@ -208,6 +208,23 @@ export type RuntimePorts = {
     input: import("@natalia/contracts").SubmitInput & { internal?: boolean },
     forSessionID?: SessionID,
   ) => Promise<import("@natalia/contracts").SubmittedTurn>;
+  /** Direct human goal control (status bar / RPC); bypasses the model. */
+  goalControl?: (
+    action: "pause" | "resume" | "clear",
+    sessionID?: SessionID,
+  ) => Promise<{ ok: boolean; action: string; message?: string }>;
+  /** Direct human goal edit (status bar inline editor); bypasses the model. */
+  goalEdit?: (
+    input: import("@natalia/contracts").GoalEditInput,
+    sessionID?: SessionID,
+  ) => Promise<{ ok: boolean; action: string; message?: string }>;
+  /**
+   * Cancels the session's active/pending turn through the standard cancel path.
+   * Used by the goal pause control so "pause" actually stops the running round.
+   */
+  cancelTurn?: (reason: string, sessionID?: SessionID) => void | Promise<unknown>;
+  /** Re-seed and re-publish the live goal status on attach / reconnect. */
+  syncGoalStatus?: (sessionID: SessionID) => Promise<void>;
   applyAgentPolicy: () => void;
   applyAgentProvider: (exec?: SessionExecutionState) => void;
   refreshExecutionContextConfig: (exec: SessionExecutionState) => Promise<void>;

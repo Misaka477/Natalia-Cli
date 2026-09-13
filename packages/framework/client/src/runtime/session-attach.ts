@@ -238,6 +238,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
       applyAgentProvider,
       initializeCheckpointController,
       publishForSession,
+      syncGoalStatus,
     } = ctx.ports;
     await getReady();
     mark("ready");
@@ -272,6 +273,10 @@ export function createSessionAttach(ctx: RuntimeContext) {
           throw new RuntimeRefusal("cannot attach an archived session");
         void seedStreamContextSnapshots(exec).catch(() => undefined);
       }
+      // A same-session startup attach skips `ensureExecution`, so the durable
+      // goal is never replayed here; re-seed the live projection explicitly or
+      // the status bar stays empty until the next goal mutation.
+      await syncGoalStatus?.(nextID).catch(() => undefined);
       perfLog(
         `[perf] attachSession same target=${id} +${(performance.now() - start).toFixed(1)}ms`,
       );
@@ -338,6 +343,10 @@ export function createSessionAttach(ctx: RuntimeContext) {
       applyAgentProvider(exec);
     }
     mark("apply");
+    // Re-seed the goal status for the session we just switched to; its exec may
+    // already have existed (ensureExecution returns the cache) or its journal
+    // tail may not carry the durable goal.
+    await syncGoalStatus?.(nextID).catch(() => undefined);
     // Checkpoint store initialization scans the workspace and may write a
     // baseline; it must not block the first visible attach. Let it run in the
     // background; checkpoint operations lazy-init again when actually needed.

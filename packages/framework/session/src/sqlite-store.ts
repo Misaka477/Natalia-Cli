@@ -3,10 +3,12 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import type {
   DurableContextCheckpointRecord,
+  GoalSnapshot,
   RuntimeEvent,
   RuntimeMessagePage,
   SessionID,
 } from "@natalia/contracts";
+import type { GoalView } from "@natalia/goal";
 import type { SessionRecord } from "./index";
 import { normalizeDelivery, type AdmittedSessionInput } from "./inbox";
 import {
@@ -119,6 +121,14 @@ CREATE TABLE IF NOT EXISTS recovery_state (
   indexed_events INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS recovery_goal (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+  snapshot TEXT NOT NULL,
+  rounds_started INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS context_epochs (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id),
   baseline_seq INTEGER NOT NULL,
@@ -163,6 +173,8 @@ export type StoredRecoveryProjection = {
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
   interactives: Array<Extract<RuntimeEvent, { type: "interactive.request" }>>;
+  /** Current goal, materialized for fast restore (always disarmed). */
+  goal?: GoalView;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
@@ -540,6 +552,83 @@ export class SqliteSessionStore {
     txn();
   }
 
+  /**
+   * Removes historical event payloads that are live-only or already covered by
+   * the context epoch table. This is an idempotent storage-size migration:
+   * every removed event is either reconstructible (`session.snapshot`,
+   * `rollback.previewed`) or superseded by `context_epochs`
+   * (`context.checkpoint`). It does not touch task/control events used by
+   * recovery, transcript paging, or work-graph projections.
+   */
+  compactHistoricalEvents(): SessionID[] {
+    const affected = new Set<SessionID>();
+    const live = this.db
+      .query(
+        `SELECT DISTINCT session_id FROM events
+         WHERE json_extract(event, '$.type') IN ('session.snapshot','rollback.previewed')`,
+      )
+      .all() as Array<{ session_id: SessionID }>;
+    for (const row of live) affected.add(row.session_id);
+
+    const checkpoints = this.db
+      .query(
+        `SELECT session_id, MAX(seq) AS max_seq
+         FROM events
+         WHERE json_extract(event, '$.type') = 'context.checkpoint'
+         GROUP BY session_id`,
+      )
+      .all() as Array<{ session_id: SessionID; max_seq: number }>;
+    const epochs = new Map<SessionID, number>();
+    for (const row of this.db
+      .query(`SELECT session_id, baseline_seq FROM context_epochs`)
+      .all() as Array<{ session_id: SessionID; baseline_seq: number }>)
+      epochs.set(row.session_id, row.baseline_seq);
+    for (const row of checkpoints)
+      if (epochs.has(row.session_id)) affected.add(row.session_id);
+
+    if (affected.size === 0) return [];
+    console.warn("[session-store] compacting live-only historical events", {
+      sessions: affected.size,
+    });
+
+    this.db.transaction(() => {
+      this.run(
+        `DELETE FROM events
+         WHERE json_extract(event, '$.type') IN ('session.snapshot','rollback.previewed')`,
+      );
+      for (const row of checkpoints) {
+        const baseline = epochs.get(row.session_id);
+        if (baseline !== undefined) {
+          this.run(
+            `DELETE FROM events
+             WHERE session_id = ?
+               AND json_extract(event, '$.type') = 'context.checkpoint'
+               AND seq <= ?`,
+            [row.session_id, baseline],
+          );
+        } else {
+          this.run(
+            `DELETE FROM events
+             WHERE session_id = ?
+               AND json_extract(event, '$.type') = 'context.checkpoint'
+               AND seq <> ?`,
+            [row.session_id, row.max_seq],
+          );
+        }
+      }
+      for (const sessionID of affected) {
+        this.run(`DELETE FROM recovery_state WHERE session_id = ?`, [
+          sessionID,
+        ]);
+        this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [
+          sessionID,
+        ]);
+      }
+    })();
+
+    return [...affected];
+  }
+
   loadEvents(sessionID: SessionID): RuntimeEvent[] {
     const rows = this.db
       .query(`SELECT event FROM events WHERE session_id = ? ORDER BY seq`)
@@ -547,15 +636,95 @@ export class SqliteSessionStore {
     return rows.map((r) => JSON.parse(r.event) as RuntimeEvent);
   }
 
-  async loadEventsAsync(sessionID: SessionID): Promise<RuntimeEvent[]> {
+  /**
+   * Loads only events that the live execution projection still needs. The
+   * heavy live-only payloads (`session.snapshot`, `rollback.previewed`) and,
+   * when a SQLite context epoch exists, `context.checkpoint` are filtered in
+   * SQLite before JSON parsing, so a 60MB historical journal does not become a
+   * 250MB JS object graph merely to attach the session.
+   */
+  private runtimeEventExclusion(options: {
+    excludeContextCheckpoint?: boolean;
+  }) {
+    return [
+      "session.snapshot",
+      "rollback.previewed",
+      ...(options.excludeContextCheckpoint ? ["context.checkpoint"] : []),
+    ];
+  }
+
+  loadRuntimeEvents(
+    sessionID: SessionID,
+    options: { excludeContextCheckpoint?: boolean } = {},
+  ): RuntimeEvent[] {
+    const excluded = this.runtimeEventExclusion(options);
+    const placeholders = excluded.map(() => "?").join(", ");
     const rows = this.db
-      .query(`SELECT event FROM events WHERE session_id = ? ORDER BY seq`)
-      .all(sessionID) as { event: string }[];
+      .query(
+        `SELECT event FROM events
+         WHERE session_id = ?
+           AND json_extract(event, '$.type') NOT IN (${placeholders})
+         ORDER BY seq`,
+      )
+      .all(sessionID, ...excluded) as { event: string }[];
+    return rows.map((row) => JSON.parse(row.event) as RuntimeEvent);
+  }
+
+  async loadRuntimeEventsAsync(
+    sessionID: SessionID,
+    options: { excludeContextCheckpoint?: boolean } = {},
+  ): Promise<RuntimeEvent[]> {
+    const excluded = this.runtimeEventExclusion(options);
+    const placeholders = excluded.map(() => "?").join(", ");
     const events: RuntimeEvent[] = [];
-    for (let index = 0; index < rows.length; index++) {
-      events.push(JSON.parse(rows[index]!.event) as RuntimeEvent);
-      if (index % 100 === 99)
-        await new Promise<void>((resolve) => setImmediate(resolve));
+    let afterSeq = 0;
+    const batchSize = 500;
+    while (true) {
+      const rows = this.db
+        .query(
+          `SELECT seq, event FROM events
+           WHERE session_id = ?
+             AND seq > ?
+             AND json_extract(event, '$.type') NOT IN (${placeholders})
+           ORDER BY seq
+           LIMIT ?`,
+        )
+        .all(sessionID, afterSeq, ...excluded, batchSize) as Array<{
+        seq: number;
+        event: string;
+      }>;
+      if (rows.length === 0) break;
+      for (const row of rows)
+        events.push(JSON.parse(row.event) as RuntimeEvent);
+      afterSeq = rows[rows.length - 1]!.seq;
+      if (rows.length < batchSize) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return events;
+  }
+
+  async loadEventsAsync(sessionID: SessionID): Promise<RuntimeEvent[]> {
+    const events: RuntimeEvent[] = [];
+    let afterSeq = 0;
+    const batchSize = 500;
+    while (true) {
+      const rows = this.db
+        .query(
+          `SELECT seq, event FROM events
+           WHERE session_id = ? AND seq > ?
+           ORDER BY seq
+           LIMIT ?`,
+        )
+        .all(sessionID, afterSeq, batchSize) as Array<{
+        seq: number;
+        event: string;
+      }>;
+      if (rows.length === 0) break;
+      for (const row of rows)
+        events.push(JSON.parse(row.event) as RuntimeEvent);
+      afterSeq = rows[rows.length - 1]!.seq;
+      if (rows.length < batchSize) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
     return events;
   }
@@ -605,6 +774,18 @@ export class SqliteSessionStore {
           permission_profile?: string;
         }
       | undefined;
+    const goalRow = this.db
+      .query(
+        `SELECT snapshot, rounds_started, created_at, updated_at FROM recovery_goal WHERE session_id = ?`,
+      )
+      .get(sessionID) as
+      | {
+          snapshot: string;
+          rounds_started: number;
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
     const attachments = new Map<
       string,
       import("@natalia/contracts").LocalAttachment[]
@@ -628,6 +809,15 @@ export class SqliteSessionStore {
       .all(sessionID) as Array<{ event: string }>;
     return {
       activeTurnIDs: active.map((row) => row.turn_id),
+      goal: goalRow
+        ? {
+            ...(JSON.parse(goalRow.snapshot) as GoalSnapshot),
+            roundsStarted: goalRow.rounds_started,
+            createdAt: goalRow.created_at,
+            updatedAt: goalRow.updated_at,
+            activation: "disarmed",
+          }
+        : undefined,
       approvals: interactive
         .filter((row) => row.kind === "approval")
         .map(
@@ -1093,6 +1283,57 @@ export class SqliteSessionStore {
   }
 
   private applyRecoveryEvent(sessionID: SessionID, event: RuntimeEvent) {
+    if (event.type === "goal.changed") {
+      // Recovery keeps only the current goal as a fast-restore cache; the
+      // journal remains the source of truth (see the goal subsystem plan).
+      if (event.operation === "clear") {
+        this.run(`DELETE FROM recovery_goal WHERE session_id = ?`, [sessionID]);
+        return;
+      }
+      const snapshot = event.snapshot;
+      if (snapshot === undefined) return;
+      const existing = this.db
+        .query(`SELECT created_at FROM recovery_goal WHERE session_id = ?`)
+        .get(sessionID) as { created_at: string } | undefined;
+      this.run(
+        `INSERT INTO recovery_goal(session_id, snapshot, rounds_started, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           snapshot = excluded.snapshot,
+           rounds_started = excluded.rounds_started,
+           updated_at = excluded.updated_at`,
+        [
+          sessionID,
+          JSON.stringify(snapshot),
+          event.roundsStarted,
+          existing?.created_at ?? event.at,
+          event.at,
+        ],
+      );
+      return;
+    }
+    if (event.type === "goal.round") {
+      const row = this.db
+        .query(
+          `SELECT snapshot, rounds_started FROM recovery_goal WHERE session_id = ?`,
+        )
+        .get(sessionID) as
+        | { snapshot: string; rounds_started: number }
+        | undefined;
+      if (row !== undefined) {
+        const snapshot = JSON.parse(row.snapshot) as GoalSnapshot;
+        if (
+          snapshot.goalID === event.goalID &&
+          snapshot.revision === event.revision &&
+          event.round > row.rounds_started
+        )
+          this.run(
+            `UPDATE recovery_goal SET rounds_started = ? WHERE session_id = ?`,
+            [event.round, sessionID],
+          );
+      }
+      return;
+    }
     if (event.type === "turn.submitted") {
       this.run(
         `INSERT INTO recovery_turns(session_id, turn_id, active) VALUES (?, ?, 1)
@@ -1237,6 +1478,7 @@ export class SqliteSessionStore {
       sessionID,
     ]);
     this.run(`DELETE FROM recovery_state WHERE session_id = ?`, [sessionID]);
+    this.run(`DELETE FROM recovery_goal WHERE session_id = ?`, [sessionID]);
   }
 
   ensureMessageIndex(sessionID: SessionID) {

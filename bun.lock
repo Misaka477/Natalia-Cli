@@ -119,6 +119,13 @@
         "@natalia/runtime-services": "workspace:*",
       },
     },
+    "packages/domains/goal": {
+      "name": "@natalia/goal",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
+    },
     "packages/domains/governance-ledger": {
       "name": "@natalia/governance-ledger",
       "version": "0.0.0-m13",
@@ -177,6 +184,7 @@
         "@natalia/config": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/goal": "workspace:*",
         "@natalia/governance-ledger": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
@@ -309,6 +317,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/goal": "workspace:*",
       },
     },
     "packages/framework/session-store": {
@@ -904,6 +913,8 @@
     "@natalia/example-ui-plugin": ["@natalia/example-ui-plugin@workspace:packages/examples/ui-plugin"],
 
     "@natalia/framework-diff": ["@natalia/framework-diff@workspace:packages/framework/diff"],
+
+    "@natalia/goal": ["@natalia/goal@workspace:packages/domains/goal"],
 
     "@natalia/governance-ledger": ["@natalia/governance-ledger@workspace:packages/domains/governance-ledger"],
 

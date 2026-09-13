@@ -654,6 +654,65 @@ export type NamespacedCollabMessageEventData =
       message: CollaborationMessage;
     };
 
+/** Durable lifecycle phase of a same-session goal. */
+export type GoalPhase = "active" | "paused" | "blocked" | "complete";
+
+/** Stable machine code plus human text explaining a blocked goal. */
+export type GoalBlockReason = { code: string; message: string };
+
+/**
+ * Why automatic continuation last stopped. Explanatory only: `phase` stays the
+ * authority, and a durable `lastStop` is what lets the UI explain a stop after
+ * the process-local activation has been lost to a restart.
+ */
+export type GoalLastStop = { code: string; at: number; message?: string };
+
+/** Operations a durable `goal.changed` mutation can carry. */
+export type GoalOperation =
+  | "create"
+  | "edit"
+  | "pause"
+  | "resume"
+  | "complete"
+  | "blocked"
+  | "clear";
+
+/**
+ * Human-initiated edit of the current goal (status-bar inline editor). The
+ * `goalID`/`revision` pair is a compare-and-set guard so an edit cannot clobber
+ * a concurrent round or mutation. At least one field must be present.
+ */
+export type GoalEditInput = {
+  goalID: string;
+  revision: number;
+  objective?: string;
+  maxGoalRounds?: number;
+  planID?: string;
+};
+
+/** Full durable goal state after one accepted mutation. */
+export type GoalSnapshot = {
+  goalID: string;
+  /** Compare-and-set revision; every durable mutation increments it. */
+  revision: number;
+  objective: string;
+  phase: GoalPhase;
+  /** Present exactly while `phase` is `blocked`. */
+  blockedReason?: GoalBlockReason;
+  lastStop?: GoalLastStop;
+  /** Admitted goal-round cap; 0 means unlimited. */
+  maxGoalRounds: number;
+  /** Optional plan this goal works toward (goal → plan, one-way reference). */
+  planID?: string;
+};
+
+/** Round attribution stamped on a goal-sourced turn. */
+export type GoalMessageSource = {
+  goalID: string;
+  revision: number;
+  round: number;
+};
+
 type RuntimeEventData =
   | {
       type: "session.created";
@@ -1176,6 +1235,44 @@ type RuntimeEventData =
       status: string;
       at: string;
       reason?: string;
+    }
+  | {
+      type: "goal.changed";
+      id: string;
+      operation: GoalOperation;
+      /** Full post-mutation snapshot; absent for a `clear` tombstone. */
+      snapshot?: GoalSnapshot;
+      /** Cleared identity, present for `clear`. */
+      cleared?: { goalID: string; revision: number };
+      /** Admitted goal-round count at the mutation. */
+      roundsStarted: number;
+      at: string;
+    }
+  | {
+      /**
+       * Live projection of the current goal, published when a session attaches.
+       * Not durable: it only re-seeds the client projection from the recovery
+       * row so the status bar shows an existing goal on startup.
+       */
+      type: "goal.status";
+      goal?: GoalSnapshot & {
+        roundsStarted: number;
+        activation: "armed" | "disarmed";
+      };
+      at: string;
+    }
+  | {
+      /**
+       * One admitted goal round. Written by the round driver when it admits the
+       * `<goal_round>` turn, so replay advances the counter only for rounds the
+       * driver actually started (never for a rejected reservation).
+       */
+      type: "goal.round";
+      id: string;
+      goalID: string;
+      revision: number;
+      round: number;
+      at: string;
     }
   | { type: "status.update"; status: string; detail?: string }
   | {
@@ -2066,6 +2163,12 @@ export type RuntimeSessionSummary = {
   resumable: boolean;
   status?: "idle" | "running" | "error" | "stopped";
   /**
+   * Session-scoped active plan pointer. Plan documents and their lifecycle
+   * status are workspace-level, but activation is per session so different
+   * sessions can work on different plans.
+   */
+  activePlanID?: string;
+  /**
    * TERM-M.3 (c): a terminal the model asked a human to take over, with the
    * turn ended. Present while the runtime is waiting for the human to finish
    * input before it resumes the task, so any consumer (session list, remote
@@ -2100,6 +2203,17 @@ export function runtimeEventDurability(
     case "nia.chat.turn.started":
     case "nia.chat.turn.phase":
     case "nia.chat.turn.finished":
+    // Session intelligence snapshots are reconstructible from the journal and
+    // are published on every work-state boundary. Persisting each one bloats
+    // long sessions and makes every full-session clone larger; keep them live
+    // and derive the latest snapshot on demand.
+    // A live re-seed of the current goal; the durable record is `goal.changed`.
+    case "goal.status":
+    case "session.snapshot":
+    // Rollback previews are a transient dry-run response. The Markdown/change
+    // data can be large, and the UI can re-request a preview instead of loading
+    // every historical preview back from the journal.
+    case "rollback.previewed":
     case "navi.chat.message.delta":
     case "navi.chat.thinking.delta":
     case "nia.chat.message.delta":
@@ -3212,8 +3326,8 @@ export type RuntimeClient = {
     sessionID?: string,
   ): Promise<{ superseded: boolean }>;
   /**
-   * Lists persisted plan documents for the active session. Plan content lives
-   * in Markdown under `.natalia/plans/`; this is only the lightweight registry
+   * Lists persisted plan documents for the workspace. Plan content lives in
+   * Markdown under `.natalia/plans/`; this is only the lightweight registry
    * (planID, documentPath, title, status).
    */
   planDocList?(sessionID?: string): Promise<
@@ -3272,6 +3386,39 @@ export type RuntimeClient = {
     status: string;
     sessionID?: string;
   }): Promise<{ updated: boolean }>;
+  /**
+   * Reads the session-scoped active plan pointer. Plan documents themselves are
+   * workspace-level; activation is independent per session.
+   */
+  planDocActive?(sessionID?: string): Promise<{ planID?: string }>;
+  /** Sets the session's active plan pointer without changing lifecycle status. */
+  planDocActivate?(
+    planID: string,
+    sessionID?: string,
+  ): Promise<{ planID?: string; updated: boolean }>;
+  /** Clears the session's active plan pointer. */
+  planDocDeactivate?(
+    sessionID?: string,
+  ): Promise<{ planID?: string; updated: boolean }>;
+
+  /**
+   * Directly pause/resume/clear the session's current goal, bypassing the
+   * model. used by the status-bar controls so a stuck turn can still be stopped.
+   */
+  goalControl?(
+    action: "pause" | "resume" | "clear",
+    sessionID?: string,
+  ): Promise<{ ok: boolean; action: string; message?: string }>;
+
+  /**
+   * Edit the current goal's objective / round cap / plan from the status bar,
+   * bypassing the model. Compare-and-set on `goalID`/`revision`; a running goal
+   * round gets a `next-step` steering note so it can adapt without a restart.
+   */
+  goalEdit?(
+    input: GoalEditInput,
+    sessionID?: string,
+  ): Promise<{ ok: boolean; action: string; message?: string }>;
 
   evidenceRecords?(sessionID?: string): Promise<
     Array<{

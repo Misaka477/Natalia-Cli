@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
-import type { SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { SqliteSessionStore } from "../src";
 import { createSessionRecord } from "../src";
 
@@ -166,6 +166,82 @@ test("SQLite context epoch tracks checkpoint baseline sequence", async () => {
     },
   });
   store.close();
+});
+
+test("SQLite compaction removes live-only and epoch-superseded events", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-compact-"));
+  const store = new SqliteSessionStore(join(root, "sessions.db"));
+  const sessionID = "ses_compact" as SessionID;
+  try {
+    store.create(sessionID, "Compact");
+    store.appendEvents(sessionID, [
+      {
+        type: "session.snapshot",
+        id: "snap_one",
+        agentStatus: "idle",
+        changedFiles: 0,
+        unvalidatedChanges: 0,
+        hasPTY: false,
+        hasSandbox: false,
+      },
+      {
+        type: "rollback.previewed",
+        preview: {
+          checkpointID: "checkpoint_one",
+          dryRun: true,
+          changes: [],
+          context: {
+            truncateMessages: 0,
+            targetJournalOffset: 0,
+            targetStep: 0,
+            targetTokens: 0,
+            compactionGeneration: 0,
+          },
+          resources: [],
+          ignoredFiles: 0,
+          diskUsageBytes: 0,
+          complete: true,
+          warnings: [],
+        },
+      },
+      {
+        type: "context.checkpoint",
+        id: "epoch_one",
+        snapshot: {
+          entries: [{ id: "user", role: "user", content: "hello" }],
+          resources: [],
+          journalOffset: 1,
+          step: 1,
+          tokenEstimate: 2,
+          compactionGeneration: 0,
+        },
+      },
+      { type: "turn.finished", id: "turn_one", stopReason: "done" },
+    ]);
+    store.writeContextEpoch(sessionID, {
+      entries: [{ id: "user", role: "user", content: "hello" }],
+      resources: [],
+      journalOffset: 1,
+      step: 1,
+      tokenEstimate: 2,
+      compactionGeneration: 0,
+    });
+
+    expect(store.compactHistoricalEvents()).toContain(sessionID);
+    const events = store.loadEvents(sessionID);
+    expect(events.some((event) => event.type === "session.snapshot")).toBe(
+      false,
+    );
+    expect(events.some((event) => event.type === "rollback.previewed")).toBe(
+      false,
+    );
+    expect(events.some((event) => event.type === "context.checkpoint")).toBe(
+      false,
+    );
+    expect(events.some((event) => event.type === "turn.finished")).toBe(true);
+  } finally {
+    store.close();
+  }
 });
 
 test("SQLite recovery projection tracks durable control state and backfills history", () => {
@@ -617,5 +693,65 @@ test("SQLite passive checkpoint preserves event reads", async () => {
   } finally {
     store.close();
     rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test("recovery projects the current goal and its admitted rounds", () => {
+  const path = join(
+    tmpdir(),
+    `natalia-goal-recovery-${crypto.randomUUID()}.db`,
+  );
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_goal_recovery" as SessionID;
+  try {
+    store.create(sessionID, "Goal");
+    store.appendEvents(sessionID, [
+      {
+        type: "goal.changed",
+        id: "goal:create",
+        operation: "create",
+        snapshot: {
+          goalID: "goal_1",
+          revision: 1,
+          objective: "ship it",
+          phase: "active",
+          maxGoalRounds: 256,
+        },
+        roundsStarted: 0,
+        at: "2026-01-01T00:00:00.000Z",
+      } as RuntimeEvent,
+    ]);
+    let recovery = store.loadRecoveryProjection(sessionID);
+    expect(recovery.goal?.goalID).toBe("goal_1");
+    expect(recovery.goal?.roundsStarted).toBe(0);
+    expect(recovery.goal?.activation).toBe("disarmed");
+
+    store.appendEvents(sessionID, [
+      {
+        type: "goal.round",
+        id: "goal:round:1",
+        goalID: "goal_1",
+        revision: 1,
+        round: 1,
+        at: "2026-01-01T00:00:30.000Z",
+      } as RuntimeEvent,
+    ]);
+    recovery = store.loadRecoveryProjection(sessionID);
+    expect(recovery.goal?.roundsStarted).toBe(1);
+
+    store.appendEvents(sessionID, [
+      {
+        type: "goal.changed",
+        id: "goal:clear",
+        operation: "clear",
+        cleared: { goalID: "goal_1", revision: 2 },
+        roundsStarted: 1,
+        at: "2026-01-01T00:01:00.000Z",
+      } as RuntimeEvent,
+    ]);
+    expect(store.loadRecoveryProjection(sessionID).goal).toBeUndefined();
+  } finally {
+    store.close();
+    rmSync(path, { force: true });
   }
 });

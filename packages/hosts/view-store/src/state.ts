@@ -329,6 +329,22 @@ export type AppState = {
   completions: Array<Extract<RuntimeEvent, { type: "completion.recorded" }>>;
   mailbox: Record<string, MailboxMessageView>;
   plans: Record<string, PlanDocView>;
+  /** Current same-session goal, folded from the journal for the status bar. */
+  goal?: GoalStatusView;
+};
+
+/** Durable goal facts the status bar renders (activation is process-local). */
+export type GoalStatusView = {
+  goalID: string;
+  revision: number;
+  objective: string;
+  phase: "active" | "paused" | "blocked" | "complete";
+  roundsStarted: number;
+  /** 0 means unlimited. */
+  maxGoalRounds: number;
+  planID?: string;
+  blockedReason?: { code: string; message: string };
+  lastStop?: { code: string; at: number; message?: string };
 };
 
 export type MailboxMessageView = {
@@ -498,6 +514,19 @@ export function cloneState(state: AppState): AppState {
     completions: [...state.completions],
     mailbox: mapRecord(state.mailbox, (value) => ({ ...value })),
     plans: mapRecord(state.plans, (value) => ({ ...value })),
+    ...(state.goal
+      ? {
+          goal: {
+            ...state.goal,
+            ...(state.goal.blockedReason
+              ? { blockedReason: { ...state.goal.blockedReason } }
+              : {}),
+            ...(state.goal.lastStop
+              ? { lastStop: { ...state.goal.lastStop } }
+              : {}),
+          },
+        }
+      : {}),
     ...(state.rollback ? { rollback: { ...state.rollback } } : {}),
   };
 }

@@ -264,6 +264,11 @@ export const RPC_ROUTE_MEMBERS = {
   "planDoc.delete": "planDocDelete",
   "planDoc.status": "planDocStatus",
   "planDoc.updateStatus": "planDocUpdateStatus",
+  "planDoc.active": "planDocActive",
+  "planDoc.activate": "planDocActivate",
+  "planDoc.deactivate": "planDocDeactivate",
+  "goal.control": "goalControl",
+  "goal.edit": "goalEdit",
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
@@ -386,6 +391,10 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "task.unschedule",
   "flow.install-examples",
   "ast.refactor.apply",
+  "planDoc.activate",
+  "planDoc.deactivate",
+  "goal.control",
+  "goal.edit",
 ]);
 
 /**
@@ -2864,6 +2873,115 @@ export async function handleRPCMessage(
             ? { sessionID: params.sessionID }
             : {}),
         }),
+      };
+    }
+    if (body.method === "planDoc.active") {
+      optionsGuard(client, "planDocActive");
+      const params = body.params as Record<string, unknown> | undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planDocActive?.(
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
+      };
+    }
+    if (body.method === "planDoc.activate") {
+      optionsGuard(client, "planDocActivate");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("planDoc.activate requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planDocActivate?.(
+          planID,
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
+      };
+    }
+    if (body.method === "planDoc.deactivate") {
+      optionsGuard(client, "planDocDeactivate");
+      const params = body.params as Record<string, unknown> | undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planDocDeactivate?.(
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
+      };
+    }
+    if (body.method === "goal.control") {
+      optionsGuard(client, "goalControl");
+      const params = body.params as Record<string, unknown> | undefined;
+      const action = params?.action;
+      if (action !== "pause" && action !== "resume" && action !== "clear")
+        throw invalidParams(
+          "goal.control requires action: pause | resume | clear",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.goalControl?.(
+          action,
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
+      };
+    }
+    if (body.method === "goal.edit") {
+      optionsGuard(client, "goalEdit");
+      const params = body.params as Record<string, unknown> | undefined;
+      const input = params?.input;
+      if (typeof input !== "object" || input === null)
+        throw invalidParams("goal.edit requires an input object");
+      const goalID = (input as { goalID?: unknown }).goalID;
+      const revision = (input as { revision?: unknown }).revision;
+      if (typeof goalID !== "string" || !goalID.trim())
+        throw invalidParams("goal.edit requires input.goalID");
+      if (typeof revision !== "number" || !Number.isInteger(revision))
+        throw invalidParams("goal.edit requires an integer input.revision");
+      const objective = (input as { objective?: unknown }).objective;
+      const maxGoalRounds = (input as { maxGoalRounds?: unknown })
+        .maxGoalRounds;
+      const planID = (input as { planID?: unknown }).planID;
+      if (
+        objective !== undefined &&
+        (typeof objective !== "string" || !objective.trim())
+      )
+        throw invalidParams("goal.edit input.objective must be a non-empty string");
+      if (
+        maxGoalRounds !== undefined &&
+        (typeof maxGoalRounds !== "number" ||
+          !Number.isInteger(maxGoalRounds) ||
+          maxGoalRounds < 0)
+      )
+        throw invalidParams(
+          "goal.edit input.maxGoalRounds must be a non-negative integer",
+        );
+      if (planID !== undefined && typeof planID !== "string")
+        throw invalidParams("goal.edit input.planID must be a string");
+      if (
+        objective === undefined &&
+        maxGoalRounds === undefined &&
+        planID === undefined
+      )
+        throw invalidParams(
+          "goal.edit requires at least one of objective, maxGoalRounds, planID",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.goalEdit?.(
+          {
+            goalID,
+            revision,
+            ...(objective !== undefined ? { objective } : {}),
+            ...(maxGoalRounds !== undefined ? { maxGoalRounds } : {}),
+            ...(planID !== undefined ? { planID } : {}),
+          },
+          typeof params?.sessionID === "string" ? params.sessionID : undefined,
+        ),
       };
     }
     if (body.method === "capabilities") {

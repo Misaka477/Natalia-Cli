@@ -685,6 +685,30 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "updated",
     note: "updates a plan document lifecycle status",
   },
+  planDocActive: {
+    refusal: "none",
+    note: "pure read of a session's active plan pointer",
+  },
+  planDocActivate: {
+    refusal: "value",
+    expressedBy: "updated",
+    note: "sets a session-scoped active plan pointer without changing lifecycle status",
+  },
+  planDocDeactivate: {
+    refusal: "value",
+    expressedBy: "updated",
+    note: "clears a session-scoped active plan pointer",
+  },
+  goalControl: {
+    refusal: "value",
+    expressedBy: "ok",
+    note: "pause/resume/clear the current goal; refusal is expressed by ok:false plus a message",
+  },
+  goalEdit: {
+    refusal: "value",
+    expressedBy: "ok",
+    note: "edit the current goal (objective/round cap/plan) from the status bar; refusal is expressed by ok:false plus a message",
+  },
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 
 type AssertNever<T extends never> = T;

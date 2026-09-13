@@ -21,6 +21,9 @@
       "path": "packages/domains/context-ledger"
     },
     {
+      "path": "packages/domains/goal"
+    },
+    {
       "path": "packages/domains/governance-ledger"
     },
     {

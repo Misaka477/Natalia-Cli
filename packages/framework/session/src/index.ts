@@ -337,6 +337,7 @@ export {
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectedMailboxMessages,
+  projectedGoal,
   projectedPlanDocs,
   projectedChatMessages,
   projectedNaviChatMessages,

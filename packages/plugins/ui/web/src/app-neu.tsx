@@ -653,6 +653,13 @@ function SessionTree(props: {
   );
 }
 
+type GoalEditorTarget = {
+  goalID: string;
+  revision: number;
+  objective: string;
+  maxGoalRounds: number;
+};
+
 export function AppNeu(props: { ctx: UiPluginContext }) {
   const appNeuStart = performance.now();
   perfLog(
@@ -778,6 +785,92 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
 
   function scrollChatTranscriptToBottom() {
     chatTranscriptApi?.scrollToBottom();
+  }
+
+  // --- Goal status-bar controls: one pause/resume toggle + inline editor ---
+  const [goalEditOpen, setGoalEditOpen] = createSignal(false);
+  const [goalEditObjective, setGoalEditObjective] = createSignal("");
+  const [goalEditCap, setGoalEditCap] = createSignal("");
+  const [goalNotice, setGoalNotice] = createSignal("");
+  const [goalBusy, setGoalBusy] = createSignal(false);
+  let goalNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function goalTargetSessionID(): string | undefined {
+    return selectedSessionID() || state().sessionID;
+  }
+
+  function flashGoalNotice(message: string) {
+    setGoalNotice(message);
+    if (goalNoticeTimer) clearTimeout(goalNoticeTimer);
+    goalNoticeTimer = setTimeout(() => setGoalNotice(""), 4000);
+  }
+
+  async function runGoalControl(
+    action: "pause" | "resume" | "clear",
+  ): Promise<void> {
+    const sessionID = goalTargetSessionID();
+    if (!sessionID) return;
+    setGoalBusy(true);
+    try {
+      const result = await props.ctx.runtime.goalControl?.(action, sessionID);
+      if (result && !result.ok)
+        flashGoalNotice(result.message ?? `goal ${action} refused`);
+      else if (action === "clear") setGoalEditOpen(false);
+    } catch (error) {
+      flashGoalNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setGoalBusy(false);
+    }
+  }
+
+  function openGoalEditor(goal: GoalEditorTarget) {
+    setGoalEditObjective(goal.objective);
+    setGoalEditCap(goal.maxGoalRounds === 0 ? "" : String(goal.maxGoalRounds));
+    setGoalEditOpen(true);
+  }
+
+  async function saveGoalEditor(goal: GoalEditorTarget): Promise<void> {
+    const sessionID = goalTargetSessionID();
+    if (!sessionID) return;
+    const objective = goalEditObjective().trim();
+    if (!objective) {
+      flashGoalNotice("goal objective must not be empty");
+      return;
+    }
+    const capRaw = goalEditCap().trim();
+    const maxGoalRounds = capRaw === "" ? undefined : Number(capRaw);
+    if (
+      maxGoalRounds !== undefined &&
+      (!Number.isInteger(maxGoalRounds) || maxGoalRounds < 0)
+    ) {
+      flashGoalNotice("round cap must be a non-negative integer");
+      return;
+    }
+    if (objective === goal.objective && maxGoalRounds === undefined) {
+      setGoalEditOpen(false);
+      return;
+    }
+    setGoalBusy(true);
+    try {
+      const result = await props.ctx.runtime.goalEdit?.(
+        {
+          goalID: goal.goalID,
+          revision: goal.revision,
+          ...(objective !== goal.objective ? { objective } : {}),
+          ...(maxGoalRounds !== undefined ? { maxGoalRounds } : {}),
+        },
+        sessionID,
+      );
+      if (result && !result.ok) {
+        flashGoalNotice(result.message ?? "goal edit refused");
+        return;
+      }
+      setGoalEditOpen(false);
+    } catch (error) {
+      flashGoalNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setGoalBusy(false);
+    }
   }
 
   const activeTurnStartedAt = createSignal<number | undefined>(undefined);
@@ -1575,10 +1668,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       await refreshSessions();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      props.ctx.runtime.diagnostic?.(
-        `彻底删除会话失败：${message}`,
-        "warning",
-      );
+      props.ctx.runtime.diagnostic?.(`彻底删除会话失败：${message}`, "warning");
       await alert({
         title: "删除失败",
         message,
@@ -3306,6 +3396,138 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     data-running={Boolean(state().natalia.activeTurn)}
                   >
                     <span class="neu-activity-pulse" />
+                    <Show when={state().goal}>
+                      {(goal) => (
+                        <span class="neu-goal-slot">
+                          <span
+                            class="neu-goal-control"
+                            data-phase={goal()!.phase}
+                          >
+                            <span
+                              class="neu-goal-chip"
+                              title={`${goal()!.objective}${
+                                goal()!.blockedReason
+                                  ? ` — ${goal()!.blockedReason!.code}: ${goal()!.blockedReason!.message}`
+                                  : ""
+                              }`}
+                            >
+                              <span class="neu-goal-chip-label">Goal</span>
+                              <span class="neu-goal-chip-text">
+                                {goal()!.objective.length > 40
+                                  ? `${goal()!.objective.slice(0, 40)}…`
+                                  : goal()!.objective}
+                              </span>
+                              <span class="neu-goal-chip-round">
+                                {`Round ${goal()!.roundsStarted}${
+                                  goal()!.maxGoalRounds === 0
+                                    ? ""
+                                    : `/${goal()!.maxGoalRounds}`
+                                }`}
+                              </span>
+                            </span>
+                            <Show when={goal()!.phase !== "complete"}>
+                              <button
+                                class="neu-goal-action neu-goal-toggle"
+                                data-phase={goal()!.phase}
+                                disabled={goalBusy()}
+                                title={
+                                  goal()!.phase === "active"
+                                    ? "暂停（停止当前轮，稍后可继续）"
+                                    : "继续（开启新一轮）"
+                                }
+                                onClick={() =>
+                                  void runGoalControl(
+                                    goal()!.phase === "active"
+                                      ? "pause"
+                                      : "resume",
+                                  )
+                                }
+                              >
+                                {goal()!.phase === "active" ? "❚❚" : "▶"}
+                              </button>
+                            </Show>
+                            <button
+                              class="neu-goal-action"
+                              disabled={goalBusy()}
+                              title="编辑 goal 目标 / 轮次上限"
+                              onClick={() => openGoalEditor(goal()!)}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              class="neu-goal-action neu-goal-clear"
+                              disabled={goalBusy()}
+                              title="清除 goal"
+                              onClick={() => void runGoalControl("clear")}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                          <Show when={goalEditOpen()}>
+                            <div class="neu-goal-editor">
+                              <label class="neu-goal-editor-field">
+                                <span>目标</span>
+                                <textarea
+                                  rows={2}
+                                  value={goalEditObjective()}
+                                  onInput={(event) =>
+                                    setGoalEditObjective(
+                                      event.currentTarget.value,
+                                    )
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (
+                                      event.key === "Enter" &&
+                                      !event.shiftKey
+                                    ) {
+                                      event.preventDefault();
+                                      void saveGoalEditor(goal()!);
+                                    } else if (event.key === "Escape")
+                                      setGoalEditOpen(false);
+                                  }}
+                                />
+                              </label>
+                              <label class="neu-goal-editor-field neu-goal-editor-cap">
+                                <span>轮次上限</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="留空=不改，0=无限"
+                                  value={goalEditCap()}
+                                  onInput={(event) =>
+                                    setGoalEditCap(event.currentTarget.value)
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter")
+                                      void saveGoalEditor(goal()!);
+                                    else if (event.key === "Escape")
+                                      setGoalEditOpen(false);
+                                  }}
+                                />
+                              </label>
+                              <div class="neu-goal-editor-actions">
+                                <button
+                                  class="neu-goal-editor-save"
+                                  disabled={goalBusy()}
+                                  onClick={() => void saveGoalEditor(goal()!)}
+                                >
+                                  保存
+                                </button>
+                                <button
+                                  class="neu-goal-editor-cancel"
+                                  onClick={() => setGoalEditOpen(false)}
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </div>
+                          </Show>
+                        </span>
+                      )}
+                    </Show>
+                    <Show when={goalNotice()}>
+                      <span class="neu-goal-notice">{goalNotice()}</span>
+                    </Show>
                     <span class="neu-activity-label">
                       {state().natalia.activeTurn
                         ? `${activityLabel()} · ${formatDuration(turnElapsedMs())}`
@@ -3499,9 +3721,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                               >("busySendDelivery") ?? "next-step";
                             const sessionID =
                               selectedSessionID() || state().sessionID;
+                            const outgoing =
+                              goalCommandInstruction(text) ?? text;
                             if (props.ctx.runtime.submitInput) {
                               props.ctx.runtime.submitInput({
-                                text,
+                                text: outgoing,
                                 ...(paths.length ? { attachments: paths } : {}),
                                 ...(busy ? { delivery: busySendDelivery } : {}),
                                 sessionID,
@@ -4022,4 +4246,28 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       {dialog}
     </div>
   );
+}
+
+/**
+ * Turns the `/goal` composer shortcut into an explicit instruction for the
+ * agent, which then uses the model-facing goal tools. This is the human
+ * "manual" path: `/goal <objective>` creates, `/goal` reads, and
+ * `/goal pause|resume|clear` control the current goal.
+ */
+export function goalCommandInstruction(text: string): string | undefined {
+  const match = /^\/goal(?:\s+([\s\S]*))?$/iu.exec(text.trim());
+  if (!match) return undefined;
+  const arg = (match[1] ?? "").trim();
+  if (!arg)
+    return "The user issued the direct command /goal. Call get_goal and report the current goal (objective, phase, rounds started/max, blockedReason, activation) to the user.";
+  const control = arg.toLowerCase();
+  if (control === "status")
+    return "The user issued the direct command /goal status. Call get_goal and report the current goal to the user.";
+  if (control === "pause")
+    return "The user issued the direct command /goal pause. Call get_goal, then call update_goal with action pause.";
+  if (control === "resume")
+    return "The user issued the direct command /goal resume. Call get_goal, then call update_goal with action resume.";
+  if (control === "clear")
+    return "The user issued the direct command /goal clear. Call get_goal, then call update_goal with action clear.";
+  return `The user issued the direct command /goal. This is an explicit human request, so do not ask for confirmation: call create_goal with objective ${JSON.stringify(arg)}, then continue working toward it.`;
 }

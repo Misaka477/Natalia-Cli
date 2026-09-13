@@ -127,3 +127,119 @@ test("input mutations reject malformed params before touching the runtime", asyn
   );
   expect(badSession.error?.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
 });
+
+test("goal.control validates the action and delegates to the runtime", async () => {
+  const calls: Array<[string, string | undefined]> = [];
+  const client = stubClient({
+    async goalControl(action, sessionID) {
+      calls.push([action, sessionID]);
+      return { ok: true, action };
+    },
+  });
+
+  const paused = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "goal.control",
+      params: { action: "pause", sessionID: "ses_1" },
+    },
+    client,
+  );
+  expect(paused.result).toEqual({ ok: true, action: "pause" });
+  expect(calls).toEqual([["pause", "ses_1"]]);
+
+  // A member this runtime lacks is "not supported", not a silent no-op.
+  const unsupported = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "goal.control",
+      params: { action: "resume" },
+    },
+    stubClient(),
+  );
+  expect(unsupported.error?.code).toBe(
+    RUNTIME_RPC_ERROR_CODES.notSupported,
+  );
+
+  const badAction = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "goal.control",
+      params: { action: "explode" },
+    },
+    client,
+  );
+  expect(badAction.error?.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
+  expect(calls).toHaveLength(1);
+});
+
+test("goal.edit validates the input and delegates to the runtime", async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const client = stubClient({
+    async goalEdit(input, sessionID) {
+      calls.push({ ...input, sessionID });
+      return { ok: true, action: "edit" };
+    },
+  });
+
+  const edited = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "goal.edit",
+      params: {
+        input: { goalID: "goal_1", revision: 2, objective: "new objective" },
+        sessionID: "ses_1",
+      },
+    },
+    client,
+  );
+  expect(edited.result).toEqual({ ok: true, action: "edit" });
+  expect(calls).toEqual([
+    {
+      goalID: "goal_1",
+      revision: 2,
+      objective: "new objective",
+      sessionID: "ses_1",
+    },
+  ]);
+
+  const missingRevision = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "goal.edit",
+      params: { input: { goalID: "goal_1" } },
+    },
+    client,
+  );
+  expect(missingRevision.error?.code).toBe(
+    RUNTIME_RPC_ERROR_CODES.invalidParams,
+  );
+
+  const emptyEdit = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "goal.edit",
+      params: { input: { goalID: "goal_1", revision: 2 } },
+    },
+    client,
+  );
+  expect(emptyEdit.error?.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
+
+  const badCap = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "goal.edit",
+      params: { input: { goalID: "goal_1", revision: 2, maxGoalRounds: -1 } },
+    },
+    client,
+  );
+  expect(badCap.error?.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
+  expect(calls).toHaveLength(1);
+});

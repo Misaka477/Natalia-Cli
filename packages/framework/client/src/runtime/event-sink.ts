@@ -7,17 +7,14 @@
  * events, and trigger session snapshots and safe-boundary settlement. Reads
  * everything it needs from `RuntimeContext` at call time.
  */
-import {
-  appendSessionEvent,
-  projectedChatMessages,
-  projectedCollabMessages,
-  projectedPlanDocs,
-} from "@natalia/session";
+import { appendSessionEvent, projectedChatMessages } from "@natalia/session";
 import { runtimeEventDurability } from "@natalia/contracts";
 import {
   createCollabSnapshotScheduler,
   isCollabSnapshotRelevantEvent,
 } from "./collaboration/collab-snapshot";
+import { activePlanForExec } from "./collaboration/plan-doc-runtime";
+import { createGoalRuntime } from "./goal/goal-runtime";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
   type SessionStoreController,
@@ -31,43 +28,6 @@ import { perfLog } from "@natalia/runtime-services";
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;
 };
-
-function mainTurnHasPendingCollabReply(
-  exec: SessionExecutionState,
-  turnID: string,
-): boolean {
-  const events = exec.session.events;
-  const start = events.findIndex(
-    (event) => event.type === "turn.submitted" && event.id === turnID,
-  );
-  const end = events.findIndex(
-    (event) => event.type === "turn.finished" && event.id === turnID,
-  );
-  if (start < 0 || end < 0 || end <= start) return false;
-  const sentIDs = new Set<string>();
-  for (const event of events.slice(start, end)) {
-    const isCollabMessage =
-      event.type === "collab.message" || event.type.endsWith(".collab.message");
-    if (!isCollabMessage || !("message" in event)) continue;
-    const message = event.message;
-    if (
-      typeof message === "object" &&
-      message !== null &&
-      "from" in message &&
-      "expectsReply" in message &&
-      message.from === "main_agent" &&
-      message.expectsReply === true &&
-      "id" in message &&
-      typeof message.id === "string"
-    )
-      sentIDs.add(message.id);
-  }
-  if (!sentIDs.size) return false;
-  const projected = projectedCollabMessages(events);
-  return projected.some(
-    (message) => sentIDs.has(message.id) && message.status === "pending",
-  );
-}
 
 const INFRASTRUCTURE_ERROR_KINDS = new Set([
   "timeout",
@@ -111,6 +71,30 @@ export function createEventSink(
 ) {
   const collabSnapshotScheduler = createCollabSnapshotScheduler(ctx);
   ctx.ports.scheduleCollabSnapshot = collabSnapshotScheduler.schedule;
+  const goalRuntime = createGoalRuntime(ctx);
+  // The goal tools ride in the main tool registry alongside the other framework
+  // tools (sandbox, subagents, collaboration).
+  for (const tool of goalRuntime.tools) {
+    if (ctx.state.tools.get(tool.name))
+      throw new Error(`framework tool already registered: ${tool.name}`);
+    ctx.state.tools.set(tool.name, tool);
+  }
+  ctx.ports.goalControl = (action, sessionID) => {
+    const id = sessionID ?? ctx.ports.getSessionID();
+    if (!id) return Promise.resolve({ ok: false, action, message: "no active session" });
+    return goalRuntime.control(action, id);
+  };
+  ctx.ports.goalEdit = (input, sessionID) => {
+    const id = sessionID ?? ctx.ports.getSessionID();
+    if (!id)
+      return Promise.resolve({
+        ok: false,
+        action: "edit",
+        message: "no active session",
+      });
+    return goalRuntime.edit(input, id);
+  };
+  ctx.ports.syncGoalStatus = (sessionID) => goalRuntime.refresh(sessionID);
 
   const CONTEXT_EPOCH_WRITE_EVERY = 100;
   const CONTEXT_EPOCH_WRITE_INTERVAL_MS = 5_000;
@@ -119,7 +103,7 @@ export function createEventSink(
     { pending: number; timer?: ReturnType<typeof setTimeout> }
   >();
 
-  function writeContextEpoch(
+  async function writeContextEpoch(
     exec: SessionExecutionState,
     trigger: "boundary" | "count" | "interval",
   ) {
@@ -128,6 +112,10 @@ export function createEventSink(
     );
     if (!sessionStore || !exec.context) return;
     try {
+      // Flush queued appends before taking the checkpoint. The epoch baseline
+      // is the current max journal seq, so snapshot and baseline must observe
+      // the same persisted prefix.
+      await sessionStore.flush(exec.session.id).catch(() => undefined);
       const step = exec.context.journalStatus().messageCount;
       const snapshot = exec.context.durableCheckpoint(step);
       sessionStore.writeContextEpoch(exec.session.id, snapshot);
@@ -165,7 +153,7 @@ export function createEventSink(
         clearTimeout(dirty.timer);
         dirty.timer = undefined;
       }
-      writeContextEpoch(exec, "boundary");
+      void writeContextEpoch(exec, "boundary");
       return;
     }
     dirty.pending += 1;
@@ -175,7 +163,7 @@ export function createEventSink(
         clearTimeout(dirty.timer);
         dirty.timer = undefined;
       }
-      writeContextEpoch(exec, "count");
+      void writeContextEpoch(exec, "count");
       return;
     }
     dirty.timer ??= setTimeout(() => {
@@ -184,16 +172,9 @@ export function createEventSink(
       if (!current) return;
       if (dirty.pending > 0) {
         dirty.pending = 0;
-        writeContextEpoch(current, "interval");
+        void writeContextEpoch(current, "interval");
       }
     }, CONTEXT_EPOCH_WRITE_INTERVAL_MS);
-  }
-
-  function planDocsFor(exec: SessionExecutionState | undefined) {
-    const snapshot = exec?.collabSnapshot;
-    if (snapshot && snapshot.eventCount === (exec?.session.events.length ?? -1))
-      return snapshot.planDocs;
-    return projectedPlanDocs(exec?.session.events ?? []);
   }
 
   return {
@@ -285,6 +266,10 @@ export function createEventSink(
       if (exec) exec.endTurnWaitingHuman = undefined;
       turnSession.delete(event.id);
     }
+    // Goal round driver: classify a finished goal round, then continue an
+    // active, armed goal on the next idle edge (human work always outranks it).
+    if (!event.agentID && event.type === "turn.finished" && exec?.session)
+      goalRuntime.onTurnFinished(exec, event);
     // TERM-M.3 (c): when the human releases the requested pane, the runtime
     // starts the continuation turn automatically. Replay never passes through
     // publish, so a replayed detach cannot double-resume.
@@ -302,45 +287,61 @@ export function createEventSink(
       exec?.session &&
       !event.agentID &&
       event.type !== "session.created" &&
-      event.type !== "session.ready" &&
-      runtimeEventDurability(event) === "durable"
+      event.type !== "session.ready"
     ) {
-      appendSessionEvent(exec.session, event);
-      scheduleContextEpochWrite(exec, event);
-      if (isCollabSnapshotRelevantEvent(event)) {
-        collabSnapshotScheduler.schedule(exec);
-      }
       const sessionStoreController =
         ctx.ports.resolveService<SessionStoreController>(
           SESSION_STORE_CONTROLLER_SERVICE,
         );
       if (!sessionStoreController)
         throw new Error("session store unavailable (natalia-session-store)");
-      if (!sessionStoreController.status().initialized) {
-        return;
+      // SQLite already persists the latest context checkpoint in
+      // `context_epochs`. Persisting the full checkpoint again in the event
+      // journal duplicates multi-MB snapshots and forces every full-session
+      // clone to carry them. Keep the event live for the UI and rely on the
+      // epoch row for recovery. JSON stores keep the durable event because
+      // they have no epoch table.
+      const sqliteContextCheckpoint =
+        event.type === "context.checkpoint" &&
+        sessionStoreController.status().mode === "sqlite";
+      if (sqliteContextCheckpoint) {
+        void writeContextEpoch(exec, "boundary");
       }
-      const sessionSnapshot = { ...exec.session };
-      const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
-        exec.session.id,
-      );
-      const next = sessionPersistence
-        .then(() => {
-          if (sessionStoreController.status().initialized)
-            return sessionStoreController.appendEvent(sessionSnapshot, event);
-        })
-        .catch((error) => {
-          sink?.({
-            type: "diagnostic",
-            level: "warning",
-            message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
+      if (
+        !sqliteContextCheckpoint &&
+        runtimeEventDurability(event) === "durable"
+      ) {
+        appendSessionEvent(exec.session, event);
+        scheduleContextEpochWrite(exec, event);
+        if (isCollabSnapshotRelevantEvent(event)) {
+          collabSnapshotScheduler.schedule(exec);
+        }
+        if (!sessionStoreController.status().initialized) {
+          return;
+        }
+        const sessionSnapshot = { ...exec.session };
+        const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
+          exec.session.id,
+        );
+        const next = sessionPersistence
+          .then(() => {
+            if (sessionStoreController.status().initialized)
+              return sessionStoreController.appendEvent(sessionSnapshot, event);
+          })
+          .catch((error) => {
+            sink?.({
+              type: "diagnostic",
+              level: "warning",
+              message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
+            });
           });
-        });
-      ctx.ports.setSessionPersistenceForSession(exec.session.id, next);
-      setSessionPersistence(
-        Promise.allSettled([getSessionPersistence(), next]).then(
-          () => undefined,
-        ),
-      );
+        ctx.ports.setSessionPersistenceForSession(exec.session.id, next);
+        setSessionPersistence(
+          Promise.allSettled([getSessionPersistence(), next]).then(
+            () => undefined,
+          ),
+        );
+      }
     }
     const pluginStartedAt = performance.now();
     if (!event.agentID) getPluginsController().dispatch(event);
@@ -498,17 +499,10 @@ export function createEventSink(
           /全部完成|全部通过|没有缺口|已完成|audit_passed|no gaps|all done/iu.test(
             last.text,
           );
-        const active = planDocsFor(exec).filter(
-          (plan) =>
-            plan.status === "handed_off" ||
-            plan.status === "executing" ||
-            plan.status === "awaiting_audit" ||
-            plan.status === "auditing" ||
-            plan.status === "audit_gaps",
-        );
-        for (const plan of active) {
+        const active = activePlanForExec(ctx, exec);
+        if (active && active.status !== "completed") {
           void ctx.ports.planDocRuntime.planDocUpdateStatus({
-            planID: plan.planID,
+            planID: active.planID,
             status: auditDone ? "completed" : "audit_gaps",
             sessionID: exec.session.id,
           });
@@ -528,36 +522,13 @@ export function createEventSink(
       // turn. The order matters — acknowledge the already-delivered batch before
       // delivering the queued batch, so a fresh delivery is not mis-acked.
       settleMailboxAtBoundary(exec);
-      // If Natalia just sent a collaboration question/chat and is now waiting
-      // for Navi or Nia to reply, do not promote plans to awaiting_audit yet.
-      // The audit should wait until the collaboration exchange completes.
-      const waitingForSisterReply =
-        exec?.session !== undefined &&
-        mainTurnHasPendingCollabReply(exec, event.id);
-      // Runtime-owned plan lifecycle: after Natalia finishes, promote any
-      // executed plan to awaiting_audit. planDocUpdateStatus itself wakes Nia,
-      // so this never depends on the model remembering to call a status tool.
-      if (exec?.session && !waitingForSisterReply) {
-        const activePlans = planDocsFor(exec).filter(
-          (plan) =>
-            plan.status === "handed_off" ||
-            plan.status === "executing" ||
-            plan.status === "audit_gaps",
-        );
-        console.log("[natalia-finish] promoting plans to awaiting_audit", {
-          sessionID: exec.session.id,
-          activePlans: activePlans.map((plan) => ({
-            planID: plan.planID,
-            status: plan.status,
-          })),
-        });
-        for (const plan of activePlans)
-          void ctx.ports.planDocRuntime.planDocUpdateStatus({
-            planID: plan.planID,
-            status: "awaiting_audit",
-            sessionID: exec.session.id,
-          });
-      }
+      // Nia is no longer woken automatically on every finished turn. The old
+      // runtime-owned promotion to `awaiting_audit` started an audit round after
+      // each Natalia turn even when the model had not asked for one, which made
+      // the audit agent double as a "keep going" mechanism. The model now asks
+      // for an audit explicitly (collab_chat to Nia) and continuation is owned
+      // by the goal loop. The `awaiting_audit` wake itself stays in
+      // planDocUpdateStatus for callers that still set that status.
       // WG4: a finished turn is a natural reconcile point — discover external
       // edits the watcher saw, graph them as isolated nodes, and drift-check
       // them against the active plan. No explicit call needed.

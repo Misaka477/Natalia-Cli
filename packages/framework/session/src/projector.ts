@@ -6,6 +6,7 @@ import type {
   RuntimeProjectedMessage,
   RuntimeProjectedMessageRowKind,
 } from "@natalia/contracts";
+import { foldGoal, type GoalView } from "@natalia/goal";
 import { admittedInputs, type AdmittedSessionInput } from "./inbox";
 import type { SessionRecord } from "./index";
 
@@ -14,6 +15,8 @@ export type SessionProjection = {
   completedTurnIDs: string[];
   pendingInputs: AdmittedSessionInput[];
   replayableEvents: RuntimeEvent[];
+  /** Current same-session goal, folded from the log (always disarmed). */
+  goal?: GoalView;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
@@ -63,6 +66,7 @@ export function projectSession(session: SessionRecord): SessionProjection {
     completedTurnIDs: [...completed],
     pendingInputs: admittedInputs(session).filter((input) => !input.promotedAt),
     replayableEvents: replayable,
+    goal: projectedGoal(session.events),
     selectedAgent: selectedAgentFromEvents(replayable),
     selectedModel: selectedModelFromEvents(replayable),
     reasoningEffort: reasoningEffortFromEvents(replayable),
@@ -385,6 +389,15 @@ export function settleInterruptedTurns(session: SessionRecord) {
   );
   session.events.push(...settled);
   return settled;
+}
+
+/**
+ * Projects the current same-session goal from the journal. The result is always
+ * `disarmed`: continuation authority is process-local and never reconstructed
+ * by replay (see the goal subsystem plan).
+ */
+export function projectedGoal(events: RuntimeEvent[]): GoalView | undefined {
+  return foldGoal(events);
 }
 
 export function projectedConstitutionRules(events: RuntimeEvent[]) {
