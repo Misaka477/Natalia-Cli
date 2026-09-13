@@ -367,8 +367,9 @@ function chatRowToBlock(row: ChatMessageRow): {
     };
   }
   if (row.kind === "tool" && row.tool) {
+    const toolID = row.tool.eventID ?? `${row.tool.name}:${row.tool.status}:${row.messageID}`;
     return {
-      id: `chat:${row.tool.name}:${row.tool.status}:${row.messageID}:tool`,
+      id: `chat:${toolID}:tool`,
       role: "tool",
       text: row.tool.summary,
       pendingText: "",

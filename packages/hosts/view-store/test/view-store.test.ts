@@ -2071,6 +2071,43 @@ test("boundTranscript newer never undershoots the watermark on sparse user bound
   expect(bounded.messages.at(-1)).toBe(messages.at(-1));
 });
 
+test("hydrating chat tool rows keeps distinct ids for repeated tool names", () => {
+  const state = initialState();
+  hydrateNaviMessages(state, [
+    {
+      messageID: "chat:tools",
+      role: "chat",
+      text: "",
+      at: "t1",
+      kind: "tool",
+      tool: {
+        eventID: "event:tool:1",
+        name: "read_file",
+        status: "succeeded",
+        summary: "first",
+        result: "first",
+      },
+    },
+    {
+      messageID: "chat:tools",
+      role: "chat",
+      text: "",
+      at: "t2",
+      kind: "tool",
+      tool: {
+        eventID: "event:tool:2",
+        name: "read_file",
+        status: "succeeded",
+        summary: "second",
+        result: "second",
+      },
+    },
+  ]);
+  const ids = state.navi.messages.map((block) => block.id);
+  expect(ids).toEqual(["chat:event:tool:1:tool", "chat:event:tool:2:tool"]);
+  expect(new Set(ids).size).toBe(ids.length);
+});
+
 test("empty explicit stream hydration clears durable rows without losing live output", () => {
   const state = initialState();
   hydrateNaviMessages(state, [

@@ -3681,6 +3681,8 @@ export type ChatMessageRow = {
   channel?: ChatChannel;
   kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
   tool?: {
+    /** Durable event id, stable across replay and live hydration. */
+    eventID?: string;
     name: string;
     status: string;
     summary: string;

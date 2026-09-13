@@ -719,6 +719,8 @@ export type ProjectedChatMessage = {
   kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
   attachments?: import("@natalia/contracts").LocalAttachment[];
   tool?: {
+    /** Durable event id, stable across replay and live hydration. */
+    eventID?: string;
     name: string;
     status: string;
     summary: string;
@@ -800,6 +802,7 @@ export function projectedChatMessages(
         channel,
         kind: "tool",
         tool: {
+          eventID: event.id,
           name: event.toolName,
           status: event.status,
           summary: event.summary,
