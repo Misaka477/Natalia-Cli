@@ -15,7 +15,7 @@ import {
   decodeMessageCursor,
   encodeMessageCursor,
   projectSessionMessages,
-  projectTurnMessage,
+  projectTurnMessages,
 } from "./projector";
 
 const SCHEMA = `
@@ -1588,25 +1588,22 @@ export class SqliteSessionStore {
       seq: row.seq,
       event: JSON.parse(row.event) as RuntimeEvent,
     }));
-    return turns.map((turn) => {
-      const submitted = JSON.parse(turn.event) as Extract<
-        RuntimeEvent,
-        { type: "turn.submitted" }
-      >;
-      const nextTurn = turns.find(
-        (candidate) => candidate.start_seq > turn.start_seq,
-      );
-      const end =
-        nextTurn?.start_seq ?? next?.start_seq ?? Number.POSITIVE_INFINITY;
-      return projectTurnMessage(
-        submitted,
-        parsed
-          .filter(
-            (candidate) =>
-              candidate.seq >= turn.start_seq && candidate.seq < end,
-          )
-          .map((candidate) => candidate.event),
-      );
+    // Reuse the event-stream projector instead of rebuilding each turn from its
+    // seq slice with `projectTurnMessage`. The slice form attaches
+    // `turn.input` to the wrong enclosing turn and lets a collaboration row
+    // belong to the previous turn even when the stream opened a newer turn,
+    // which surfaced as duplicate / out-of-order rows in the SQLite-backed
+    // message page. `projectTurnMessages` is the same algorithm the non-SQLite
+    // path already uses, so both stores now return identical turn semantics.
+    const projected = new Map(
+      projectTurnMessages(parsed.map((row) => row.event)).map((message) => [
+        message.turnID,
+        message,
+      ]),
+    );
+    return turns.flatMap((turn) => {
+      const message = projected.get(turn.turn_id);
+      return message === undefined ? [] : [message];
     });
   }
 }

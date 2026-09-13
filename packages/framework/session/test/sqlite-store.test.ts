@@ -133,6 +133,72 @@ test("SQLite message pages use turn cursors without loading unrelated history", 
   }
 });
 
+test("SQLite descending message pages keep turn.input with its owning turn", () => {
+  const path = join(tmpdir(), `natalia-message-input-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_message_input" as const;
+  try {
+    store.create(sessionID, "Message input page");
+    for (const id of ["turn_one", "turn_two", "turn_three"]) {
+      store.appendEvents(sessionID, [
+        {
+          type: "turn.submitted",
+          id,
+          text: id,
+          byteLength: id.length,
+          lineCount: 1,
+          sha256: "fixture",
+        },
+        // A mid-turn injected input belongs to the turn it names. Descending
+        // pages ask for newest turns first, and the old seq-slice projection
+        // let this row leak into the previous turn, where view-store applied it
+        // a second time as a duplicate.
+        ...(id === "turn_two"
+          ? [
+              {
+                type: "turn.input" as const,
+                turnID: id,
+                inputID: "input_two",
+                text: "steer turn two",
+                delivery: "next-step" as const,
+              },
+            ]
+          : []),
+        { type: "content.done", id, text: `${id} response` },
+        { type: "turn.finished", id, stopReason: "done" },
+      ]);
+    }
+
+    const page = store.loadMessagePage(sessionID, { limit: 3 });
+    expect(page.data.map((message) => message.id)).toEqual([
+      "turn_three",
+      "turn_two",
+      "turn_one",
+    ]);
+    const rowsFor = (turnID: string) =>
+      page.data
+        .find((message) => message.id === turnID)
+        ?.rows.map((row) => row.event)
+        .filter((event) => event.type === "turn.input") ?? [];
+    expect(rowsFor("turn_one")).toEqual([]);
+    expect(rowsFor("turn_two")).toEqual([
+      {
+        type: "turn.input",
+        turnID: "turn_two",
+        inputID: "input_two",
+        text: "steer turn two",
+        delivery: "next-step",
+      },
+    ]);
+    expect(rowsFor("turn_three")).toEqual([]);
+  } finally {
+    store.close();
+    rmSync(path, { force: true });
+    rmSync(`${path}-wal`, { force: true });
+    rmSync(`${path}-shm`, { force: true });
+  }
+});
+
 test("SQLite context epoch tracks checkpoint baseline sequence", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-context-epoch-"));
   const store = new SqliteSessionStore(join(root, "sessions.db"));
