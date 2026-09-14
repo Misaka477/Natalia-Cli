@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import { SqliteSessionStore } from "../src";
+import { projectSessionMessages, SqliteSessionStore } from "../src";
 import { createSessionRecord } from "../src";
 
 test("SQLite auto titles preserve manual titles and unrelated metadata", () => {
@@ -191,6 +191,61 @@ test("SQLite descending message pages keep turn.input with its owning turn", () 
       },
     ]);
     expect(rowsFor("turn_three")).toEqual([]);
+  } finally {
+    store.close();
+    rmSync(path, { force: true });
+    rmSync(`${path}-wal`, { force: true });
+    rmSync(`${path}-shm`, { force: true });
+  }
+});
+
+test("SQLite message pages match the event-stream projector", () => {
+  const path = join(tmpdir(), `natalia-message-parity-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_message_parity" as const;
+  try {
+    store.create(sessionID, "Message parity");
+    for (const id of ["turn_one", "turn_two", "turn_three"]) {
+      store.appendEvents(sessionID, [
+        {
+          type: "turn.submitted",
+          id,
+          text: id,
+          byteLength: id.length,
+          lineCount: 1,
+          sha256: "fixture",
+        },
+        ...(id === "turn_two"
+          ? [
+              {
+                type: "turn.input" as const,
+                turnID: id,
+                inputID: "input_two",
+                text: "steer two",
+                delivery: "next-step" as const,
+              },
+            ]
+          : []),
+        { type: "content.done" as const, id, text: `${id} answer` },
+        { type: "turn.finished" as const, id, stopReason: "done" as const },
+      ]);
+    }
+    const events = store.loadEvents(sessionID);
+    for (const order of ["asc", "desc"] as const) {
+      const sqlite = store.loadMessagePage(sessionID, { order, limit: 3 });
+      const projected = projectSessionMessages(
+        {
+          id: sessionID,
+          title: "",
+          createdAt: "",
+          events,
+          cancelled: false,
+          resumable: true,
+        },
+        { order, limit: 3 },
+      );
+      expect(sqlite).toEqual(projected);
+    }
   } finally {
     store.close();
     rmSync(path, { force: true });

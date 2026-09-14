@@ -16,6 +16,11 @@ import {
   initialTailScrollState,
   type TailScrollState,
 } from "./tail-scroll-machine";
+import {
+  dedupeVirtualItems,
+  duplicateValues,
+  duplicateVirtualIndexes,
+} from "./virtual-items";
 
 const VIRTUALIZE_THRESHOLD = 80;
 const BOTTOM_FOLLOW_THRESHOLD_PX = 2;
@@ -195,22 +200,10 @@ export function Transcript(props: TranscriptProps) {
     frozenVirtualItems = liveVirtualItems();
     frozenTotalSize = liveTotalSize();
   });
-  const virtualItems = () => {
-    const items = props.suspendVirtualization
-      ? frozenVirtualItems
-      : liveVirtualItems();
-    // TanStack normally returns a unique range, but a stale measurement/key
-    // transition can leave the same logical index in the window twice. The
-    // render key is the row id, so rendering it twice duplicates the whole
-    // message group; collapse by index at the boundary.
-    if (items.length < 2) return items;
-    const seen = new Set<number>();
-    return items.filter((item) => {
-      if (item === undefined || seen.has(item.index)) return false;
-      seen.add(item.index);
-      return true;
-    });
-  };
+  const virtualItems = () =>
+    dedupeVirtualItems(
+      props.suspendVirtualization ? frozenVirtualItems : liveVirtualItems(),
+    );
   const totalSize = () =>
     props.suspendVirtualization ? frozenTotalSize : liveTotalSize();
   // TanStack needs one paint to observe the scroll element. Until it has
@@ -493,6 +486,26 @@ export function Transcript(props: TranscriptProps) {
       mounted: ready ? virtualItems().length : 0,
       totalSize: ready ? totalSize() : null,
     });
+  });
+
+  let lastDuplicateSignature = "";
+  createEffect(() => {
+    if (!uiDebugEnabled()) return;
+    const duplicateMessageIDs = duplicateValues(
+      props.messages.map((message) => message.id),
+    );
+    const duplicateIndexes = duplicateVirtualIndexes(virtualItems());
+    if (duplicateMessageIDs.length === 0 && duplicateIndexes.length === 0) {
+      lastDuplicateSignature = "";
+      return;
+    }
+    const signature = JSON.stringify({
+      duplicateMessageIDs,
+      duplicateIndexes,
+    });
+    if (signature === lastDuplicateSignature) return;
+    lastDuplicateSignature = signature;
+    console.warn("[natalia-ui] duplicate transcript rows", signature);
   });
 
   let lastSuspended = false;

@@ -4,6 +4,11 @@ export { Transcript, MessageRow, estimateMessageHeight } from "./transcript";
 export type { TranscriptHandle, TranscriptProps } from "./transcript";
 export { ContextMeter } from "./context-meter";
 export type { ContextUsageView } from "./context-meter";
+export {
+  dedupeVirtualItems,
+  duplicateValues,
+  duplicateVirtualIndexes,
+} from "./virtual-items";
 export { TailScrollController } from "./scroll-controller";
 export type {
   OlderScrollAnchor,
