@@ -1498,3 +1498,51 @@ test("message projection keeps durable content.partial rows for a killed stream"
     "content.partial",
   ]);
 });
+
+test("static history restores thinking before its answer partials", () => {
+  const session = createSessionRecord("ses_partial_order", "Partial order");
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_partial_order",
+    text: "go",
+    byteLength: 2,
+    lineCount: 1,
+    sha256: "test",
+  });
+  appendSessionEvent(session, {
+    type: "content.partial",
+    id: "turn_partial_order",
+    text: "hello ",
+    at: "2026-01-01T00:00:00.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "content.partial",
+    id: "turn_partial_order",
+    text: "world",
+    at: "2026-01-01T00:00:01.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "thinking.done",
+    id: "turn_partial_order",
+    text: "thought",
+  });
+  appendSessionEvent(session, {
+    type: "content.done",
+    id: "turn_partial_order",
+    text: "hello world",
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_partial_order",
+    stopReason: "done",
+  });
+  const rows = projectSessionMessages(session, { order: "asc" }).data[0]!.rows;
+  expect(rows.map((row) => row.event.type)).toEqual([
+    "turn.submitted",
+    "thinking.done",
+    "content.partial",
+    "content.partial",
+    "content.done",
+    "turn.finished",
+  ]);
+});

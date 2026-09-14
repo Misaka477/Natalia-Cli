@@ -209,12 +209,80 @@ function messagePageStart(
   return Math.max(0, index - limit);
 }
 
+/**
+ * Static history can contain a late durable `thinking.done` after a
+ * `content.partial` batch that belongs to the following answer. The partials
+ * are an early durable copy of the same content step, so restore the logical
+ * order `thinking.done -> content.partial -> content.done` when the partial
+ * text reconstructs that answer. Do not cross tool/other barriers.
+ */
+function normalizeTurnEventOrder(events: RuntimeEvent[]): RuntimeEvent[] {
+  const out: RuntimeEvent[] = [];
+  let pendingPartials: RuntimeEvent[] = [];
+  const partialText = () =>
+    pendingPartials
+      .map((event) => ("text" in event ? event.text ?? "" : ""))
+      .join("");
+  const matchesDone = (event: RuntimeEvent) => {
+    if (!("text" in event) || typeof event.text !== "string") return false;
+    const partial = partialText();
+    if (!partial) return false;
+    return (
+      event.text === partial ||
+      event.text.startsWith(partial) ||
+      partial.startsWith(event.text)
+    );
+  };
+  const flushPartials = () => {
+    if (pendingPartials.length === 0) return;
+    out.push(...pendingPartials);
+    pendingPartials = [];
+  };
+  for (let index = 0; index < events.length; index++) {
+    const event = events[index]!;
+    if (event.type === "content.partial") {
+      pendingPartials.push(event);
+      continue;
+    }
+    if (pendingPartials.length > 0 && event.type === "thinking.done") {
+      const barrier = events
+        .slice(index + 1)
+        .find(
+          (candidate) =>
+            candidate.type === "content.done" ||
+            candidate.type === "tool.update" ||
+            candidate.type === "turn.finished",
+        );
+      if (barrier?.type === "content.done" && matchesDone(barrier)) {
+        // Keep the partials pending; emit them before their content.done.
+        out.push(event);
+        continue;
+      }
+      flushPartials();
+      out.push(event);
+      continue;
+    }
+    if (event.type === "content.done" && pendingPartials.length > 0) {
+      if (matchesDone(event)) {
+        flushPartials();
+        out.push(event);
+        continue;
+      }
+      flushPartials();
+    }
+    flushPartials();
+    out.push(event);
+  }
+  flushPartials();
+  return out;
+}
+
 export function projectTurnMessage(
   submitted: Extract<RuntimeEvent, { type: "turn.submitted" }>,
   events: RuntimeEvent[],
 ): RuntimeProjectedMessage {
   const rowIDCounts = new Map<string, number>();
-  const rows = events.flatMap((candidate) => {
+  const rows = normalizeTurnEventOrder(events).flatMap((candidate) => {
     const kind = projectedRowKind(candidate, submitted.id);
     if (!kind) return [];
     const baseID = projectedRowID(candidate, submitted.id);
@@ -267,7 +335,7 @@ export function projectTurnMessages(events: RuntimeEvent[]) {
     }
   let currentTurnID: string | undefined;
   const rowIDCounts = new Map<string, Map<string, number>>();
-  for (const event of events) {
+  for (const event of normalizeTurnEventOrder(events)) {
     if (event.type === "turn.submitted" && byID.has(event.id))
       currentTurnID = event.id;
     const turnID = projectedTurnID(event, byID, currentTurnID);
