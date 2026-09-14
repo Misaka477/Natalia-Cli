@@ -139,11 +139,37 @@ export function createEventSink(
       ctx.ports.resolveService<SessionStoreController>(
         SESSION_STORE_CONTROLLER_SERVICE,
       );
-    if (sessionStoreController?.status().initialized) {
-      void sessionStoreController
-        .appendEvent(exec.session, partial)
-        .catch(() => undefined);
-    }
+    if (!sessionStoreController) return;
+    // Partials are durable events like any other and must go through the same
+    // per-session persistence chain. Writing them directly let a timer-flushed
+    // partial jump ahead of a previously published `thinking.done`, so replay
+    // rendered the answer before its reasoning.
+    const sessionPersistence = ctx.ports.getSessionPersistenceForSession(
+      exec.session.id,
+    );
+    const next = sessionPersistence
+      .then(() => {
+        if (sessionStoreController.status().initialized)
+          return sessionStoreController.appendEvent(
+            { ...exec.session },
+            partial,
+          );
+      })
+      .catch((error) => {
+        ctx.ports.getSink()?.({
+          type: "diagnostic",
+          level: "warning",
+          message: `partial persistence deferred/failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+      });
+    ctx.ports.setSessionPersistenceForSession(exec.session.id, next);
+    ctx.ports.setSessionPersistence(
+      Promise.allSettled([ctx.ports.getSessionPersistence(), next]).then(
+        () => undefined,
+      ),
+    );
   }
 
   function schedulePartialFlush(exec: SessionExecutionState, turnID: string) {
