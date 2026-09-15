@@ -13,6 +13,14 @@ export {
   type UiAdapterHostOptions,
 } from "./ui-host";
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./runtime/main";
+export {
+  SessionWindow,
+  type SessionWindowLoader,
+  type SessionWindowOpenState,
+  type SessionWindowOptions,
+  type SessionWindowPage,
+  type SessionWindowSnapshot,
+} from "./runtime/session-window";
 export type { RuntimeServiceClient } from "@natalia/runtime-services";
 export {
   classifyPermissionFamily,
