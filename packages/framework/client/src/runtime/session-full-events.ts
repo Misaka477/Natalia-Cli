@@ -30,6 +30,16 @@ export function ensureSessionFullEvents(
   // loaded. Consumers such as the Navi/Nia chat surfaces read this log directly
   // and saw an empty stream until the background full-load happened to finish.
   if (exec.fullEventsLoaded === true) return Promise.resolve();
+  if (
+    process.env.NATALIA_MEMORY_TRACE === "1" ||
+    process.env.NATALIA_TRACE_FULL_EVENTS === "1"
+  ) {
+    const stack = new Error("full-events caller").stack
+      ?.split("\n")
+      .slice(1, 8)
+      .join("\n");
+    console.warn(`[full-events] caller session=${exec.session.id}\n${stack}`);
+  }
   const promise = (async () => {
     const sessionStore = ctx.ports.resolveService<SessionStoreController>(
       SESSION_STORE_CONTROLLER_SERVICE,
@@ -44,7 +54,11 @@ export function ensureSessionFullEvents(
       runtimeEvents: true,
     });
     exec.session.events = windowRuntimeEvents(
-      filterRuntimeRetainedEvents(full.events, sessionStore.status().mode, true),
+      filterRuntimeRetainedEvents(
+        full.events,
+        sessionStore.status().mode,
+        true,
+      ),
       maxLiveSessionEvents(),
     );
     exec.eventCount = exec.session.events.length;
