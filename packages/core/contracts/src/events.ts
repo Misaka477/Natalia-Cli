@@ -1728,6 +1728,39 @@ export type RuntimeEvent = RuntimeEventData & {
   agentID?: string;
 };
 
+/**
+ * Hidden per-session durable order carried alongside a runtime event.
+ *
+ * This is deliberately non-enumerable: it must survive the process boundary
+ * for windowed delivery, but it is transport metadata rather than a business
+ * event field. Exact event comparisons and persisted JSON stay unchanged.
+ */
+const RUNTIME_EVENT_SESSION_SEQ = "__nataliaSessionSeq";
+
+/** Attach the per-session durable order without changing the event's shape. */
+export function markRuntimeEventSessionSeq(
+  event: RuntimeEvent,
+  sessionSeq: number,
+): RuntimeEvent {
+  Object.defineProperty(event, RUNTIME_EVENT_SESSION_SEQ, {
+    value: sessionSeq,
+    enumerable: false,
+    configurable: true,
+    writable: false,
+  });
+  return event;
+}
+
+/** Read the per-session durable order when one was attached. */
+export function runtimeEventSessionSeq(
+  event: RuntimeEvent,
+): number | undefined {
+  const value = (
+    event as RuntimeEvent & { [RUNTIME_EVENT_SESSION_SEQ]?: unknown }
+  )[RUNTIME_EVENT_SESSION_SEQ];
+  return typeof value === "number" ? value : undefined;
+}
+
 export type SubmittedTurn = Extract<RuntimeEvent, { type: "turn.submitted" }>;
 export type LocalAttachment = {
   id: string;

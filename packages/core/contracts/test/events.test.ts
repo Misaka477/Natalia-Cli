@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
+  markRuntimeEventSessionSeq,
   runtimeEventDurability,
+  runtimeEventSessionSeq,
   type CollaborationMessage,
   type RuntimeEvent,
 } from "../src";
@@ -136,4 +138,20 @@ test("collab.message carries the strict collaboration union", () => {
   expect(events.map((event) => event.type)).toEqual(
     Array.from({ length: 6 }, () => "collab.message"),
   );
+});
+
+test("runtime event session sequence stays hidden transport metadata", () => {
+  const event: RuntimeEvent = {
+    type: "content.done",
+    id: "turn",
+    text: "answer",
+  };
+  markRuntimeEventSessionSeq(event, 42);
+  expect(runtimeEventSessionSeq(event)).toBe(42);
+  expect(Object.keys(event)).not.toContain("__nataliaSessionSeq");
+  expect(JSON.parse(JSON.stringify(event))).toEqual({
+    type: "content.done",
+    id: "turn",
+    text: "answer",
+  });
 });
