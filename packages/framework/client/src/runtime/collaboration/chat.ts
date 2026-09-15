@@ -107,7 +107,8 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
     async messages(sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return [];
-      await ensureSessionFullEvents(ctx, exec);
+      // Keep the secondary chat surfaces on the current window. Full history
+      // is an explicit escape hatch (rollback/search), not a startup cost.
       return projectedNaviChatMessages(exec.session.events).map((message) => ({
         messageID: message.messageID,
         role: message.role,
@@ -239,7 +240,8 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
     async messages(sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return [];
-      await ensureSessionFullEvents(ctx, exec);
+      // Keep the secondary chat surfaces on the current window. Full history
+      // is an explicit escape hatch (rollback/search), not a startup cost.
       return projectedNiaChatMessages(exec.session.events).map((message) => ({
         messageID: message.messageID,
         role: message.role,
