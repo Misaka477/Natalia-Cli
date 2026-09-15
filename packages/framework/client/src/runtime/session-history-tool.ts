@@ -22,7 +22,7 @@ export function createSessionHistoryTool(ctx: RuntimeContext): RuntimeTool {
   return {
     name: "session_history",
     description:
-      "Read the session transcript as a JSON page of projected turn/message rows. The response carries cursor.previous (older rows) and cursor.next (newer rows); pass a cursor back to page through history. Use it to retrieve concrete details from earlier in the session that are not in the current context.",
+      "Read the session transcript as a JSON page of projected turn/message rows. Your own context is a recent window, not the whole session, so use this to retrieve concrete earlier details. The response carries cursor.previous (the page of older rows) and cursor.next (the page of newer rows); pass one of those opaque strings back as `cursor` to turn the page. Keep paging until you find what you need or cursor.previous is absent (you reached the start).",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -30,7 +30,7 @@ export function createSessionHistoryTool(ctx: RuntimeContext): RuntimeTool {
         cursor: {
           type: "string",
           description:
-            "Opaque cursor from a previous session_history response.",
+            "Opaque cursor string from a previous session_history response: use cursor.previous for older rows, cursor.next for newer.",
         },
         limit: {
           type: "number",
