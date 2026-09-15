@@ -157,6 +157,17 @@ export function createIntelligenceSurface(
   async function intelligenceSession(sessionID?: string) {
     return (await intelligenceExec(sessionID))?.session;
   }
+  async function intelligenceExecWindow(sessionID?: string) {
+    const exec = sessionID
+      ? (ctx.ports
+          .getExecutionBySession()
+          .get(sessionID as import("@natalia/contracts").SessionID) ??
+        (await ctx.ports.ensureExecution(
+          sessionID as import("@natalia/contracts").SessionID,
+        )))
+      : ctx.ports.getActiveExec();
+    return exec;
+  }
   return {
     async confirmedWorkspaceChanges(sessionID?: string) {
       await ctx.ports.getReady();
@@ -629,7 +640,9 @@ export function createIntelligenceSurface(
       return { approved: outcome.accepted && input.decision === "once" };
     },
     async registeredTools(sessionID?: string) {
-      const session = await intelligenceSession(sessionID);
+      await ctx.ports.getReady();
+      const exec = await intelligenceExecWindow(sessionID);
+      const session = exec?.session;
       const projected = session
         ? (await projectedCanonicalToolsWithFallback(session.events)).map(
             (t) => ({

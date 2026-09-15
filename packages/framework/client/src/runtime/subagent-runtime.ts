@@ -18,7 +18,6 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { ensureSessionFullEvents } from "./session-full-events";
 import { subagentHistoryInWorker } from "./session-project-client";
 import { projectSubagentsInWorker } from "./secondary-worker-client";
 import { perfLog } from "@natalia/runtime-services";
@@ -67,7 +66,8 @@ export function createSubagentRuntime(
         ? ctx.ports.getExecutionBySession().get(sessionID)
         : ctx.ports.getActiveExec();
       if (!exec) return [];
-      await ensureSessionFullEvents(ctx, exec);
+      // Sub-agent history reads the current window. Full history is a
+      // deliberate escape hatch for inspector/search paths, not startup.
       const events = exec.session.events;
       let result: RuntimeSubagentView[];
       try {
