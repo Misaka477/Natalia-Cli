@@ -17,6 +17,8 @@ import {
   projectedDriftFindings,
   projectedEvidenceRecords,
   projectedPlanDocs,
+  sessionFactConstitutionRules,
+  sessionFactDriftFindings,
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
 import type { EpisodeID } from "@natalia/contracts";
@@ -146,18 +148,6 @@ export function createIntelligenceSurface(
     if (!ledger)
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     return ledger;
-  }
-  async function intelligenceExec(sessionID?: string) {
-    const exec = sessionID
-      ? (ctx.ports
-          .getExecutionBySession()
-          .get(sessionID as import("@natalia/contracts").SessionID) ??
-        (await ctx.ports.ensureExecution(
-          sessionID as import("@natalia/contracts").SessionID,
-        )))
-      : ctx.ports.getActiveExec();
-    if (exec) await ensureSessionFullEvents(ctx, exec);
-    return exec;
   }
   async function intelligenceSession(sessionID?: string) {
     const exec = await intelligenceExecWindow(sessionID);
@@ -566,10 +556,19 @@ export function createIntelligenceSurface(
       },
       sessionID?: string,
     ) {
-      const exec = await intelligenceExec(sessionID);
+      const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session) return { acknowledged: false as const };
       if (!input.findingID.trim()) return { acknowledged: false as const };
-      const finding = projectedDriftFindings(exec.session.events).find(
+      // A finding may have been opened long before the current window, so use
+      // the hot state when it is complete and only force the journal otherwise.
+      let findings: ReturnType<typeof projectedDriftFindings>;
+      if (exec.factStateComplete === true && exec.factState) {
+        findings = sessionFactDriftFindings(exec.factState);
+      } else {
+        await ensureSessionFullEvents(ctx, exec);
+        findings = projectedDriftFindings(exec.session.events);
+      }
+      const finding = findings.find(
         (candidate) =>
           candidate.findingID === input.findingID &&
           candidate.status === "open",
@@ -597,16 +596,23 @@ export function createIntelligenceSurface(
       sessionID?: string,
     ) {
       await ctx.ports.getReady();
-      const exec = await intelligenceExec(sessionID);
+      const exec = await intelligenceExecWindow(sessionID);
       const session = exec?.session;
       if (!session || !input.ruleID.trim() || !input.reason.trim())
         return {
           requested: false as const,
           reason: "invalid override request",
         };
-      const rule = projectedConstitutionRules(session.events).find(
-        (candidate) => candidate.ruleID === input.ruleID,
-      );
+      // A rule may predate the current window, so use the hot state when it is
+      // complete and only force the journal otherwise.
+      let rules: ReturnType<typeof projectedConstitutionRules>;
+      if (exec.factStateComplete === true && exec.factState) {
+        rules = sessionFactConstitutionRules(exec.factState);
+      } else {
+        await ensureSessionFullEvents(ctx, exec);
+        rules = projectedConstitutionRules(session.events);
+      }
+      const rule = rules.find((candidate) => candidate.ruleID === input.ruleID);
       if (!rule) return { requested: false as const, reason: "unknown rule" };
       if (rule.overridePolicy === "forbidden")
         return { requested: false as const, reason: "override forbidden" };

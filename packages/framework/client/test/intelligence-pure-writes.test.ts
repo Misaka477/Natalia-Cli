@@ -3,6 +3,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { createIntelligenceSurface } from "../src/runtime/engineering-intelligence/intelligence";
 import type { RuntimeContext } from "../src/runtime/context";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";
+import { sessionFactStateFromEvents } from "@natalia/session";
 
 /**
  * Pure intelligence writes must not pull the full journal: they only need the
@@ -115,5 +116,59 @@ test("recordCompletion records without loading full history", async () => {
   expect(result.recorded).toBe(true);
   expect(
     published.filter((e) => e.type === "completion.recorded"),
+  ).toHaveLength(1);
+});
+
+test("acknowledgeDriftFinding reads a complete hot state without a full load", async () => {
+  const published: RuntimeEvent[] = [];
+  const earlier: RuntimeEvent = {
+    type: "drift.finding_opened",
+    id: "drift:1",
+    findingID: "DF-1",
+    severity: "warning",
+    confidence: 0.5,
+    originalObjective: "objective",
+    currentActivity: "activity",
+    evidence: [],
+    applicableConstraints: [],
+  };
+  const exec = {
+    // A tail-only base: folding the journal here would miss the finding.
+    session: { id: "ses_hot_state", events: [] },
+    factState: sessionFactStateFromEvents([earlier]),
+    factStateComplete: true,
+  } as unknown as SessionExecutionState;
+  const ctx = {
+    state: { pluginStoreRoot: "/tmp/natalia-hot-state" },
+    ports: {
+      getExecutionBySession: () => new Map([["ses_hot_state", exec]]),
+      getActiveExec: () => exec,
+      resolveService: () => ({
+        buildDriftFindingUpdate: (input: {
+          id: string;
+          findingID: string;
+          status: string;
+          rationale?: string;
+        }) => ({
+          type: "drift.finding_updated",
+          id: input.id,
+          findingID: input.findingID,
+          status: input.status,
+          ...(input.rationale ? { rationale: input.rationale } : {}),
+        }),
+      }),
+      publishForSession: (_exec: unknown, event: RuntimeEvent) => {
+        published.push(event);
+      },
+    },
+  } as unknown as RuntimeContext;
+  const surface = createIntelligenceSurface(ctx, {});
+  const result = await surface.acknowledgeDriftFinding!(
+    { findingID: "DF-1", status: "explained" },
+    "ses_hot_state",
+  );
+  expect(result).toEqual({ acknowledged: true });
+  expect(
+    published.filter((e) => e.type === "drift.finding_updated"),
   ).toHaveLength(1);
 });
