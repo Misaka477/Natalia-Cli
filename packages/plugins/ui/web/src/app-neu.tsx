@@ -1590,14 +1590,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         sessionID,
         current: isCurrent(),
         turns: page?.data.length ?? -1,
-        rows: page?.data.reduce((count, turn) => count + turn.rows.length, 0) ?? -1,
+        rows:
+          page?.data.reduce((count, turn) => count + turn.rows.length, 0) ?? -1,
         ms: Math.round(performance.now() - hydrateStart),
       }),
     );
     // A superseded/expired load must still release the transcript's initial
-    // loading gate, otherwise the tail state machine waits forever.
-    setTranscriptHistoryLoading(false);
-    if (!isCurrent()) return;
+    // loading gate, otherwise the tail state machine waits forever. The
+    // current load keeps the gate closed until the page is installed so the
+    // transcript cannot flash its oldest row before the first tail scroll.
+    if (!isCurrent()) {
+      setTranscriptHistoryLoading(false);
+      return;
+    }
     perfLog(
       `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
     );
@@ -1630,7 +1635,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     // subscription nor a replaying check re-syncs the UI. Compare the applied
     // projection with the UI signal and copy it across directly.
     const hydrated = props.ctx.projection.getState();
-    if (state().natalia.messages.length !== hydrated.natalia.messages.length) {
+    if (
+      options?.replace ||
+      state().natalia.messages.length !== hydrated.natalia.messages.length
+    ) {
       setState(cloneState(hydrated));
     }
     console.log(
@@ -1916,7 +1924,10 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         setTimeout(() => void hydrateRecentMessagesOnLoad(), 100);
         return;
       }
-      if (sessionID === lastHydratedSessionID || sessionID === hydratingSessionID)
+      if (
+        sessionID === lastHydratedSessionID ||
+        sessionID === hydratingSessionID
+      )
         return;
       hydratingSessionID = sessionID;
       props.ctx.projection.activateSession?.(

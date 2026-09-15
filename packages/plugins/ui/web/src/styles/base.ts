@@ -794,6 +794,11 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   gap: 6px;
   min-height: 100%;
 }
+/* The first scroll-to-end owns the initial frame; showing flow before it
+   makes a tail-loading page look like it starts at the oldest row. */
+.neu-pane .natalia-transcript[data-scroll-ready="false"] .natalia-transcript-content {
+  visibility: hidden;
+}
 .neu-pane .natalia-transcript-empty {
   margin: auto;
   display: flex;
