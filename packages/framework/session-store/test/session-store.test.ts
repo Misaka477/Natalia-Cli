@@ -181,11 +181,11 @@ test("session store eventWindow pages contiguous per-session order", async () =>
     },
   );
   expect(tail.events.map((entry) => entry.sessionSeq)).toEqual([3, 4, 5]);
-  expect(tail.events.map((entry) => entry.event.text)).toEqual([
-    "answer 2",
-    "answer 3",
-    "answer 4",
-  ]);
+  expect(
+    tail.events.map((entry) =>
+      entry.event.type === "content.done" ? entry.event.text : undefined,
+    ),
+  ).toEqual(["answer 2", "answer 3", "answer 4"]);
   expect(tail.hasMore).toBe(true);
 
   const older = await controller.eventWindow(
