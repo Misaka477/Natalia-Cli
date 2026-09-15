@@ -478,6 +478,28 @@ export function createSessionStoreController(input: {
     };
   }
 
+  async function eventWindow(
+    id: SessionID,
+    fallback: RuntimeEvent[],
+    options: { beforeSeq?: number; limit?: number } = {},
+  ) {
+    if (sqliteStore) return sqliteStore.loadEventWindow(id, options);
+    const record = await sessionStore.load(id);
+    const source = record?.events ?? fallback;
+    const limit = Math.min(2000, Math.max(1, options.limit ?? 100));
+    const end =
+      options.beforeSeq === undefined
+        ? source.length
+        : Math.min(source.length, Math.max(0, options.beforeSeq - 1));
+    const start = Math.max(0, end - limit);
+    const events = source.slice(start, end).map((event, index) => ({
+      seq: start + index + 1,
+      sessionSeq: start + index + 1,
+      event,
+    }));
+    return { events, hasMore: start > 0 };
+  }
+
   async function messages(
     id: SessionID,
     fallback: SessionRecord,
@@ -743,6 +765,7 @@ export function createSessionStoreController(input: {
     referencedAttachments,
     eventCount,
     history,
+    eventWindow,
     messages,
     flush,
     list,

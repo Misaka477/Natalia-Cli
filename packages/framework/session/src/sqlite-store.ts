@@ -1036,6 +1036,42 @@ export class SqliteSessionStore {
     };
   }
 
+  loadEventWindow(
+    sessionID: SessionID,
+    options: { beforeSeq?: number; limit?: number } = {},
+  ) {
+    const limit = Math.min(2000, Math.max(1, options.limit ?? 100));
+    const before =
+      options.beforeSeq === undefined
+        ? Number.MAX_SAFE_INTEGER
+        : Math.max(1, options.beforeSeq);
+    const rows = this.db
+      .query(
+        `SELECT seq, event, session_seq FROM (
+           SELECT seq, event,
+             ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY seq) AS session_seq
+           FROM events WHERE session_id = ?
+         ) WHERE session_seq < ? ORDER BY session_seq DESC LIMIT ?`,
+      )
+      .all(sessionID, before, limit + 1) as Array<{
+      seq: number;
+      event: string;
+      session_seq: number;
+    }>;
+    const hasMore = rows.length > limit;
+    return {
+      events: rows
+        .slice(0, limit)
+        .reverse()
+        .map((row) => ({
+          seq: row.seq,
+          sessionSeq: row.session_seq,
+          event: JSON.parse(row.event) as RuntimeEvent,
+        })),
+      hasMore,
+    };
+  }
+
   loadMessagePage(
     sessionID: SessionID,
     options: { limit?: number; order?: "asc" | "desc"; cursor?: string } = {},

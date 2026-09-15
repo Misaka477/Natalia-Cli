@@ -87,6 +87,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** Reading and replaying a session's own history. */
   transcript: [
     "history",
+    "eventWindow",
     "messages",
     "pendingInteractive",
     "respondInteractive",

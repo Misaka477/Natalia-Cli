@@ -186,6 +186,18 @@ export interface SessionStoreController {
     }>;
     hasMore: boolean;
   }>;
+  eventWindow(
+    id: SessionID,
+    fallback: RuntimeEvent[],
+    options?: { beforeSeq?: number; limit?: number },
+  ): Promise<{
+    events: Array<{
+      seq: number;
+      sessionSeq?: number;
+      event: RuntimeEvent;
+    }>;
+    hasMore: boolean;
+  }>;
   messages(
     id: SessionID,
     fallback: SessionRecord,

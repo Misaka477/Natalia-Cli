@@ -86,6 +86,7 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
 
   // --- transcript ---
   history: { refusal: "none", note: "pure read" },
+  eventWindow: { refusal: "none", note: "pure read" },
   messages: { refusal: "none", note: "pure read" },
   pendingInteractive: { refusal: "none", note: "pure read" },
   submitInput: { refusal: "error", note: "as submit" },

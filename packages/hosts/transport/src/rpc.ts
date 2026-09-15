@@ -118,6 +118,7 @@ export const RPC_ROUTE_MEMBERS = {
   "interactive.pending": "pendingInteractive",
   "interactive.respond": "respondInteractive",
   "session.history": "history",
+  "session.eventWindow": "eventWindow",
   "session.messages": "messages",
   pause: "pause",
   resume: "resume",
@@ -1529,6 +1530,40 @@ export async function handleRPCMessage(
           sessionID,
           after: typeof after === "number" ? after : undefined,
           offset: typeof offset === "number" ? offset : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
+        }),
+      };
+    }
+    if (body.method === "session.eventWindow") {
+      optionsGuard(client, "eventWindow");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      const beforeSeq = body.params?.beforeSeq;
+      const limit = body.params?.limit;
+      if (
+        beforeSeq !== undefined &&
+        (typeof beforeSeq !== "number" ||
+          !Number.isInteger(beforeSeq) ||
+          beforeSeq < 1)
+      )
+        throw invalidParams(
+          "session.eventWindow.params.beforeSeq must be a positive integer",
+        );
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 2000)
+      )
+        throw invalidParams(
+          "session.eventWindow.params.limit must be an integer between 1 and 2000",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.eventWindow({
+          sessionID,
+          beforeSeq: typeof beforeSeq === "number" ? beforeSeq : undefined,
           limit: typeof limit === "number" ? limit : undefined,
         }),
       };
@@ -2949,7 +2984,9 @@ export async function handleRPCMessage(
         objective !== undefined &&
         (typeof objective !== "string" || !objective.trim())
       )
-        throw invalidParams("goal.edit input.objective must be a non-empty string");
+        throw invalidParams(
+          "goal.edit input.objective must be a non-empty string",
+        );
       if (
         maxGoalRounds !== undefined &&
         (typeof maxGoalRounds !== "number" ||

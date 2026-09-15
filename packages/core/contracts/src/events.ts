@@ -1833,6 +1833,12 @@ export type RuntimeHistory = {
   events: RuntimeHistoryEvent[];
   hasMore: boolean;
 };
+
+/** One contiguous page of the shared per-session event window. */
+export type RuntimeEventWindow = {
+  events: RuntimeHistoryEvent[];
+  hasMore: boolean;
+};
 export type RuntimeProjectedMessageRowKind =
   | "user"
   | "thinking"
@@ -2398,6 +2404,18 @@ export type RuntimeClient = {
     offset?: number;
     limit?: number;
   }): Promise<RuntimeHistory>;
+  /**
+   * One contiguous window page ordered by per-session durable sequence.
+   *
+   * Omitting `beforeSeq` returns the newest page; passing it returns the page
+   * immediately before that cursor. This is the single paging contract shared
+   * by every transcript and window consumer.
+   */
+  eventWindow?(options?: {
+    sessionID?: string;
+    beforeSeq?: number;
+    limit?: number;
+  }): Promise<RuntimeEventWindow>;
   messages?(options?: {
     sessionID?: string;
     limit?: number;

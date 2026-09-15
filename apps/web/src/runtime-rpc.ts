@@ -39,6 +39,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   pendingInteractive: "interactive.pending",
   respondInteractive: "interactive.respond",
   history: "session.history",
+  eventWindow: "session.eventWindow",
   messages: "session.messages",
   pause: "pause",
   resume: "resume",
@@ -666,6 +667,11 @@ export function createWebRuntimeClient(
 
   const impl: RuntimeClient = {
     start,
+    async eventWindow(options) {
+      return (await call("session.eventWindow", {
+        ...options,
+      })) as never;
+    },
     async submit(text, sessionID) {
       console.log("[web-runtime] submit", { text, sessionID });
       return (await call("prompt", {

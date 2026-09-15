@@ -149,6 +149,55 @@ test("sqlite init does not resurrect JSON sessions after they were deleted", asy
   await second.close();
 });
 
+test("session store eventWindow pages contiguous per-session order", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-session-window-"));
+  const controller = createSessionStoreController({
+    workspaceRoot: root,
+    sessionID: () => "ses_host" as SessionID,
+    useSqliteStore: true,
+    attachments: createAttachmentService(root),
+  });
+  await controller.init();
+  const created = await controller.create({
+    id: "ses_window",
+    title: "Window",
+  });
+  const loaded = await controller.load(created.sessionID as SessionID);
+  await controller.appendEvents(
+    loaded.session,
+    Array.from({ length: 5 }, (_, index) => ({
+      type: "content.done" as const,
+      id: `turn_${index}`,
+      text: `answer ${index}`,
+    })),
+  );
+  await controller.flush(created.sessionID as SessionID);
+
+  const tail = await controller.eventWindow(
+    created.sessionID as SessionID,
+    [],
+    {
+      limit: 3,
+    },
+  );
+  expect(tail.events.map((entry) => entry.sessionSeq)).toEqual([3, 4, 5]);
+  expect(tail.events.map((entry) => entry.event.text)).toEqual([
+    "answer 2",
+    "answer 3",
+    "answer 4",
+  ]);
+  expect(tail.hasMore).toBe(true);
+
+  const older = await controller.eventWindow(
+    created.sessionID as SessionID,
+    [],
+    { beforeSeq: 3, limit: 3 },
+  );
+  expect(older.events.map((entry) => entry.sessionSeq)).toEqual([1, 2]);
+  expect(older.hasMore).toBe(false);
+  await controller.close();
+});
+
 test("session store controller archives and restores a session without deleting it", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-archive-"));
   const controller = createSessionStoreController({
