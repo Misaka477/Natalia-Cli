@@ -289,7 +289,7 @@ export function createIntelligenceSurface(
       },
       sessionID?: string,
     ) {
-      const exec = await intelligenceExec(sessionID);
+      const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session) return { recorded: false as const };
       const event = requireGovernanceLedger().recordDecision({
         id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
@@ -382,7 +382,7 @@ export function createIntelligenceSurface(
       },
       sessionID?: string,
     ) {
-      const owner = await intelligenceExec(sessionID);
+      const owner = await intelligenceExecWindow(sessionID);
       if (!owner) return { recorded: false as const };
       if (
         typeof input.taskID !== "string" ||
@@ -454,7 +454,7 @@ export function createIntelligenceSurface(
       },
       sessionID?: string,
     ) {
-      const exec = await intelligenceExec(sessionID);
+      const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session) return { recorded: false as const };
       if (
         !input.taskID.trim() ||
@@ -537,7 +537,7 @@ export function createIntelligenceSurface(
       },
       sessionID?: string,
     ) {
-      const exec = await intelligenceExec(sessionID);
+      const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session) return { opened: 0 as const };
       if (!input.objective.trim() || !input.currentActivity.trim())
         return { opened: 0 as const };
