@@ -388,41 +388,16 @@ export function createSessionExecution(
         `[perf] ensureExecution message-page prewarm failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
       );
     });
-    if (fastPath) {
-      // Fast path: defer full transcript to background; async consumers call
-      // ensureSessionFullEvents before reading, so attach can return sooner.
-      void sessionStore
-        .loadFullAsync(sessionID)
-        .then((full) => {
-          const current = ctx.ports.getExecutionBySession().get(sessionID);
-          if (current !== exec) return;
-          exec.session.events = filterRuntimeRetainedEvents(
-            full.events,
-            storeMode,
-            true,
-          );
-          exec.eventCount = Math.max(
-            exec.eventCount ?? 0,
-            exec.session.events.length,
-          );
-          exec.fullEventsLoaded = true;
-          try {
-            sessionStore.ensureMessageIndex(sessionID);
-          } catch {
-            // Index rebuild is best-effort; the first messages RPC can retry.
-          }
-          ctx.ports.scheduleCollabSnapshot?.(exec);
-        })
-        .catch((error) => {
-          console.warn(
-            `[perf] ensureExecution background full-load failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        });
-    } else {
-      // Warm the collaboration snapshot cache for attached/background sessions
-      // without making the user wait for the worker.
-      ctx.ports.scheduleCollabSnapshot?.(exec);
+    // Never eagerly replace the window with the full durable log. A consumer
+    // that genuinely needs the whole journal calls ensureSessionFullEvents(),
+    // which remains the one explicit escape hatch. Keeping the fast path
+    // windowed is what bounds long-session memory.
+    try {
+      sessionStore.ensureMessageIndex(sessionID);
+    } catch {
+      // Index rebuild is best-effort; the first messages RPC can retry.
     }
+    ctx.ports.scheduleCollabSnapshot?.(exec);
     await refreshExecutionContextConfig(exec);
     mark("refresh");
     perfLog(
