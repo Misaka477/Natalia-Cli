@@ -156,7 +156,10 @@ export class TailScrollController {
 
     this.setFollowing(this.isAtBottom(element));
 
-    if (element.scrollTop <= this.nearTopThreshold) {
+    // Older-history paging is a reader action, not an initial-layout side
+    // effect. A pinned transcript at scrollTop 0 (short content) must not pull
+    // the oldest page before the first tail initialization.
+    if (!this.followTail && element.scrollTop <= this.nearTopThreshold) {
       this.options.onNearTop?.(element.scrollTop);
     }
   }

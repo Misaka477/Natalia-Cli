@@ -101,7 +101,10 @@ export function Transcript(props: TranscriptProps) {
   // dsh's useStableVirtualRowStructure keeps row identity/height stable across
   // renders. Message heights are dynamic, so cache by a content signature: a
   // measurement callback must not see a different estimate for the same row.
-  const estimateCache = new Map<string, { signature: string; height: number }>();
+  const estimateCache = new Map<
+    string,
+    { signature: string; height: number }
+  >();
   const messageSignature = (message: Message): string =>
     [
       message.id,
@@ -290,6 +293,7 @@ export function Transcript(props: TranscriptProps) {
     onFollowChange: (following) => props.onFollowChange?.(following),
     onNearTop: (scrollTop) => {
       if (props.onNearTop === undefined) return;
+      if (!tailState.initialized) return;
       if (props.olderHistoryLoading === true) return;
       const el = scrollEl();
       if (el !== undefined) {
@@ -365,14 +369,13 @@ export function Transcript(props: TranscriptProps) {
     if (effect.type === "restore-anchor") {
       const anchor = effect.anchor;
       controller?.breakFollow();
-      const visibleIndex = anchor.visibleKey === null
-        ? -1
-        : props.messages.findIndex((message) => message.id === anchor.visibleKey);
-      if (
-        virtualize() &&
-        visibleIndex >= 0 &&
-        liveVirtualItems().length > 0
-      ) {
+      const visibleIndex =
+        anchor.visibleKey === null
+          ? -1
+          : props.messages.findIndex(
+              (message) => message.id === anchor.visibleKey,
+            );
+      if (virtualize() && visibleIndex >= 0 && liveVirtualItems().length > 0) {
         virtualizer.scrollToIndex(visibleIndex, { align: "start" });
         if (anchor.visibleKey !== null) {
           requestAnimationFrame(() => {
