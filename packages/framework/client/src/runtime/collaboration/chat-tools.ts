@@ -8,6 +8,7 @@
 import { readWorkspaceFile } from "@natalia/platform";
 import {
   projectedMailboxMessages,
+  sessionFactMailboxMessages,
   type ProjectedMailboxMessage,
 } from "@natalia/session";
 import {
@@ -131,6 +132,22 @@ function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+/**
+ * The mailbox projection used by `mailbox_status`. When the execution's
+ * incremental hot state is complete it already holds the whole mailbox
+ * lifecycle, so a status page never forces the full journal; only a fast-attach
+ * tail falls back to the explicit full load (which also completes the state).
+ */
+export async function mailboxMessagesForStatus(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+): Promise<ProjectedMailboxMessage[]> {
+  if (exec.factStateComplete === true && exec.factState)
+    return sessionFactMailboxMessages(exec.factState);
+  await ensureSessionFullEvents(ctx, exec);
+  return projectedMailboxMessages(exec.session.events);
+}
+
 function planDocWriteTool(
   ctx: RuntimeContext,
   description: string,
@@ -240,9 +257,8 @@ export function createChatTools(ctx: RuntimeContext) {
               total: 0,
               truncated: false,
             });
-          await ensureSessionFullEvents(ctx, exec);
           return JSON.stringify(
-            mailboxPage(projectedMailboxMessages(exec.session.events), parsed),
+            mailboxPage(await mailboxMessagesForStatus(ctx, exec), parsed),
           );
         },
       },
@@ -714,9 +730,8 @@ export function createChatTools(ctx: RuntimeContext) {
               total: 0,
               truncated: false,
             });
-          await ensureSessionFullEvents(ctx, exec);
           return JSON.stringify(
-            mailboxPage(projectedMailboxMessages(exec.session.events), parsed),
+            mailboxPage(await mailboxMessagesForStatus(ctx, exec), parsed),
           );
         },
       },
