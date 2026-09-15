@@ -360,6 +360,33 @@ test("a turn streams content and usage, finishes done, and clears turn state", a
   expect(activeTurnID()).toBeUndefined();
 });
 
+test("thinking.done is published before the first content delta", async () => {
+  const { runner, events } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream() {
+      yield thinking("reasoning only");
+      yield content("answer");
+    },
+  });
+  await runner.runTurn(turn);
+  const types = events.map((event) => event.type);
+  const thinkingDoneIndex = types.indexOf("thinking.done");
+  const contentDeltaIndex = types.indexOf("content.delta");
+  expect(thinkingDoneIndex).toBeGreaterThanOrEqual(0);
+  expect(contentDeltaIndex).toBeGreaterThanOrEqual(0);
+  expect(thinkingDoneIndex).toBeLessThan(contentDeltaIndex);
+  const thinkingDone = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "thinking.done" }> =>
+      event.type === "thinking.done",
+  );
+  expect(thinkingDone?.text).toBe("reasoning only");
+  expect(thinkingDone?.attempt).toBe(1);
+  expect(events.filter((event) => event.type === "thinking.done")).toHaveLength(
+    1,
+  );
+});
+
 test("no provider and no reconfigured reload finishes with an error diagnostic", async () => {
   const { runner, events, checkpoints } = makeHarness(undefined);
   await runner.runTurn(turn);

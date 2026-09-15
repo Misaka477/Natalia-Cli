@@ -601,6 +601,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         });
         const result: {
           assistant: string;
+          attempt: number;
           contentSignature?: string;
           thinking: string;
           thinkingField?: string;
@@ -610,17 +611,46 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           contentParts?: ProviderContentPart[];
           providerMetadata?: Record<string, unknown>;
           calls: ProviderToolCall[];
+          thinkingDonePublished?: boolean;
           finishReason?: ProviderFinishReason;
           protocolViolation?: string;
           usage?: ProviderUsage;
         } = {
           assistant: "",
+          attempt,
           thinking: "",
           calls: [],
         };
         const thinkingBlocks = new Map<number, ProviderReasoningBlock>();
         const contentParts: ProviderContentPart[] = [];
         const thinkingPartIndex = new Map<number, number>();
+        const publishThinkingDone = () => {
+          if (result.thinkingDonePublished) return;
+          const reasoningBlocks = [...thinkingBlocks.entries()]
+            .sort(([left], [right]) => left - right)
+            .map(([, block]) => block);
+          if (
+            !result.thinking &&
+            !result.thinkingSignature &&
+            reasoningBlocks.length === 0
+          )
+            return;
+          input.publish({
+            type: "thinking.done",
+            id,
+            attempt: result.attempt,
+            ...(result.thinking ? { text: result.thinking } : {}),
+            ...(result.thinkingField
+              ? { reasoningField: result.thinkingField }
+              : {}),
+            ...(result.thinkingSignature
+              ? { reasoningSignature: result.thinkingSignature }
+              : {}),
+            ...(result.thinkingRedacted ? { reasoningRedacted: true } : {}),
+            ...(reasoningBlocks.length ? { reasoningBlocks } : {}),
+          });
+          result.thinkingDonePublished = true;
+        };
         try {
           if (process.env.NATALIA_DEBUG_PROVIDER === "1") {
             console.log("[provider-runner] stream", {
@@ -694,6 +724,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               if (chunk.redacted) result.thinkingRedacted = true;
             }
             if (chunk.type === "content") {
+              // Reasoning must be durably settled before the answer starts so a
+              // timer-flushed `content.partial` cannot precede `thinking.done`.
+              publishThinkingDone();
               if (chunk.text) {
                 result.assistant += chunk.text;
                 input.publish({
@@ -723,6 +756,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
                 result.contentSignature = chunk.textSignature;
             }
             if (chunk.type === "tool_call") {
+              publishThinkingDone();
               result.calls.push(...chunk.calls);
               for (const call of chunk.calls)
                 contentParts.push({
@@ -775,13 +809,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       });
     }
     if (
-      output.thinking ||
-      output.thinkingSignature ||
-      output.thinkingBlocks?.length
+      !output.thinkingDonePublished &&
+      (output.thinking ||
+        output.thinkingSignature ||
+        output.thinkingBlocks?.length)
     ) {
       input.publish({
         type: "thinking.done",
         id,
+        attempt: output.attempt,
         ...(output.thinking ? { text: output.thinking } : {}),
         ...(output.thinkingField
           ? { reasoningField: output.thinkingField }

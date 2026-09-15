@@ -391,3 +391,78 @@ test("a killed stream keeps its generated text as durable partial batches", asyn
     .join("");
   expect(partialText).toBe("Recovered partial text");
 });
+
+/**
+ * Regression for the original ordering bug: when an answer partial flushes on
+ * its timer before the provider stream ends, the durable journal must still
+ * settle reasoning before that partial.
+ */
+test("durable thinking.done precedes a timer-flushed answer partial", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-partial-order-"));
+  const sessionID = "ses_partial_order" as SessionID;
+  const previousFlushMs = process.env.NATALIA_PARTIAL_FLUSH_MS;
+  process.env.NATALIA_PARTIAL_FLUSH_MS = "100";
+  try {
+    const provider: StreamingProvider = {
+      provider: "partial-order-test",
+      model: "partial-order-test-model",
+      async *stream() {
+        yield { type: "thinking", text: "reasoning" };
+        yield { type: "content", text: "answer" };
+        await Bun.sleep(150);
+        yield { type: "done" as const };
+      },
+    };
+
+    const live: RuntimeEvent[] = [];
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID,
+      useSqliteStore: true,
+      provider,
+    });
+    try {
+      client.start((event) => live.push(event));
+      await client.sessionAttach?.(sessionID);
+      void client.submit?.("go");
+      const deadline = Date.now() + 5000;
+      while (
+        Date.now() < deadline &&
+        !live.some((event) => event.type === "turn.finished")
+      )
+        await Bun.sleep(20);
+      expect(live.some((event) => event.type === "turn.finished")).toBe(true);
+    } finally {
+      await client.dispose?.();
+    }
+
+    const reader = createSessionStoreController({
+      workspaceRoot: root,
+      sessionID: () => sessionID,
+      useSqliteStore: true,
+      attachments: createAttachmentService(root),
+    });
+    await reader.init();
+    const session = (await reader.load(sessionID)).session;
+    await reader.close();
+
+    const turnID = live.find((event) => event.type === "turn.finished")?.id;
+    expect(turnID).toBeDefined();
+    const turnEvents = session.events.filter(
+      (event) => "id" in event && event.id === turnID,
+    );
+    const thinkingIndex = turnEvents.findIndex(
+      (event) => event.type === "thinking.done",
+    );
+    const partialIndex = turnEvents.findIndex(
+      (event) => event.type === "content.partial",
+    );
+    expect(thinkingIndex).toBeGreaterThanOrEqual(0);
+    expect(partialIndex).toBeGreaterThanOrEqual(0);
+    expect(thinkingIndex).toBeLessThan(partialIndex);
+  } finally {
+    if (previousFlushMs === undefined)
+      delete process.env.NATALIA_PARTIAL_FLUSH_MS;
+    else process.env.NATALIA_PARTIAL_FLUSH_MS = previousFlushMs;
+  }
+});

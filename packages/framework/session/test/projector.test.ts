@@ -1546,3 +1546,111 @@ test("static history restores thinking before its answer partials", () => {
     "turn.finished",
   ]);
 });
+
+test("alternating reasoning and answering keeps the order the model produced", () => {
+  const session = createSessionRecord(
+    "ses_partial_alternating",
+    "Partial alternating",
+  );
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_partial_alternating",
+    text: "go",
+    byteLength: 2,
+    lineCount: 1,
+    sha256: "test",
+  });
+  appendSessionEvent(session, {
+    type: "thinking.done",
+    id: "turn_partial_alternating",
+    text: "first thought",
+  });
+  appendSessionEvent(session, {
+    type: "content.partial",
+    id: "turn_partial_alternating",
+    text: "first answer",
+    at: "2026-01-01T00:00:00.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "content.done",
+    id: "turn_partial_alternating",
+    text: "first answer",
+  });
+  appendSessionEvent(session, {
+    type: "thinking.done",
+    id: "turn_partial_alternating",
+    text: "second thought",
+  });
+  appendSessionEvent(session, {
+    type: "content.partial",
+    id: "turn_partial_alternating",
+    text: "second answer",
+    at: "2026-01-01T00:00:01.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "content.done",
+    id: "turn_partial_alternating",
+    text: "second answer",
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_partial_alternating",
+    stopReason: "done",
+  });
+  const rows = projectSessionMessages(session, { order: "asc" }).data[0]!.rows;
+  expect(rows.map((row) => row.event.type)).toEqual([
+    "turn.submitted",
+    "thinking.done",
+    "content.partial",
+    "content.done",
+    "thinking.done",
+    "content.partial",
+    "content.done",
+    "turn.finished",
+  ]);
+});
+
+test("attempt-stamped thinking.done is not treated as historical late settlement", () => {
+  const session = createSessionRecord(
+    "ses_partial_attempt_order",
+    "Partial attempt order",
+  );
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_partial_attempt_order",
+    text: "go",
+    byteLength: 2,
+    lineCount: 1,
+    sha256: "test",
+  });
+  appendSessionEvent(session, {
+    type: "content.partial",
+    id: "turn_partial_attempt_order",
+    text: "answer",
+    at: "2026-01-01T00:00:00.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "thinking.done",
+    id: "turn_partial_attempt_order",
+    text: "answer came first",
+    attempt: 1,
+  });
+  appendSessionEvent(session, {
+    type: "content.done",
+    id: "turn_partial_attempt_order",
+    text: "answer",
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_partial_attempt_order",
+    stopReason: "done",
+  });
+  const rows = projectSessionMessages(session, { order: "asc" }).data[0]!.rows;
+  expect(rows.map((row) => row.event.type)).toEqual([
+    "turn.submitted",
+    "content.partial",
+    "thinking.done",
+    "content.done",
+    "turn.finished",
+  ]);
+});

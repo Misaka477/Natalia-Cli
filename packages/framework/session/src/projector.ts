@@ -210,11 +210,16 @@ function messagePageStart(
 }
 
 /**
- * Static history can contain a late durable `thinking.done` after a
- * `content.partial` batch that belongs to the following answer. The partials
+ * Historical static history can contain a late durable `thinking.done` after
+ * a `content.partial` batch that belongs to the following answer. The partials
  * are an early durable copy of the same content step, so restore the logical
  * order `thinking.done -> content.partial -> content.done` when the partial
  * text reconstructs that answer. Do not cross tool/other barriers.
+ *
+ * New provider-runner writes stamp `thinking.done` with the provider attempt
+ * and publish it before the first content chunk, so only un-stamped historical
+ * records are normalized here. This keeps a real answer-then-reasoning stream
+ * in the order the model produced it.
  */
 function normalizeTurnEventOrder(events: RuntimeEvent[]): RuntimeEvent[] {
   const out: RuntimeEvent[] = [];
@@ -244,7 +249,11 @@ function normalizeTurnEventOrder(events: RuntimeEvent[]): RuntimeEvent[] {
       pendingPartials.push(event);
       continue;
     }
-    if (pendingPartials.length > 0 && event.type === "thinking.done") {
+    if (
+      pendingPartials.length > 0 &&
+      event.type === "thinking.done" &&
+      event.attempt === undefined
+    ) {
       const barrier = events
         .slice(index + 1)
         .find(
