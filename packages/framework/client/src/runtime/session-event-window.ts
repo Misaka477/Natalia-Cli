@@ -86,8 +86,11 @@ export async function ensureSessionEventWindow(
   const existing = exec.eventWindow;
   if (!existing) {
     // A just-finished startup turn may still be queued in the persistence
-    // chain. Flush it before opening, otherwise the DB tail can lag the live
-    // cursor and look like a real gap.
+    // chain. Drain the per-session chain before the store flush, otherwise the
+    // DB tail can lag the live cursor and look like a real gap.
+    await ctx.ports
+      .getSessionPersistenceForSession(exec.session.id)
+      .catch(() => undefined);
     await store.flush(exec.session.id).catch(() => undefined);
   }
   if (existing && existing.openState === "open") {
