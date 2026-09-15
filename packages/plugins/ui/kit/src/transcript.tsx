@@ -608,7 +608,9 @@ export function Transcript(props: TranscriptProps) {
   return (
     <div
       class="natalia-transcript"
-      data-scroll-ready={scrollReady() ? "true" : "false"}
+      data-scroll-ready={
+        scrollReady() ? "true" : props.messages.length === 0 ? "empty" : "false"
+      }
       ref={setScrollRef}
       onScroll={handleScroll}
       onWheel={handleWheel}
