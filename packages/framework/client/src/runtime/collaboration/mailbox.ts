@@ -1,6 +1,7 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
   projectedMailboxMessages,
+  sessionFactMailboxMessages,
   type ProjectedMailboxMessage,
 } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
@@ -55,6 +56,22 @@ async function mailboxesWithWorkerFallback(
 }
 
 /**
+ * The full mailbox projection for a read surface. When the execution's
+ * incremental hot state was seeded from the full log it already holds the whole
+ * mailbox lifecycle, so the read never forces the journal; only a fast-attach
+ * tail falls back to the explicit full load (which also completes the state).
+ */
+async function mailboxMessagesForRead(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+): Promise<ProjectedMailboxMessage[]> {
+  if (exec.factStateComplete === true && exec.factState)
+    return sessionFactMailboxMessages(exec.factState);
+  await ensureSessionFullEvents(ctx, exec);
+  return await mailboxesWithWorkerFallback(exec.session.events);
+}
+
+/**
  * Whether a mailbox message matching `match` exists. Mailbox status is derived
  * from the whole lifecycle, so a still-open message is normally near the tail;
  * we only fall back to the full journal when an older window page cannot be
@@ -83,8 +100,7 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
     async mailboxList(sessionID?: string) {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec) return [];
-      await ensureSessionFullEvents(ctx, exec);
-      const messages = await mailboxesWithWorkerFallback(exec.session.events);
+      const messages = await mailboxMessagesForRead(ctx, exec);
       return messages.map((m) => ({
         messageID: m.messageID,
         source: m.source,
