@@ -10,6 +10,7 @@ import {
   maxLiveSessionEvents,
   windowRuntimeEvents,
 } from "./session-event-retention";
+import { reseedSessionFactState } from "./session-facts";
 
 /**
  * Load the full durable event log into an execution state.
@@ -63,6 +64,8 @@ export function ensureSessionFullEvents(
     );
     exec.eventCount = exec.session.events.length;
     exec.fullEventsLoaded = true;
+    // The base log changed, so the incremental fact state must be re-seeded.
+    reseedSessionFactState(exec, true);
     memoryTrace("execution.fullEvents.done", {
       sessionID: exec.session.id,
       events: exec.session.events.length,

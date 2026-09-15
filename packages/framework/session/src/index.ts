@@ -349,6 +349,17 @@ export {
   settleInterruptedTurnIDs,
   selectedAgentFromEvents,
   selectedModelFromEvents,
+  emptySessionFactState,
+  applySessionFactEvent,
+  sessionFactStateFromEvents,
+  sessionFactActiveTurnIDs,
+  sessionFactConstitutionRules,
+  sessionFactConstitutionOverrides,
+  sessionFactDriftFindings,
+  sessionFactMailboxMessages,
+  sessionFactDecisionRecords,
+  sessionFactLatestSnapshot,
+  sessionFactCollabMessages,
 } from "./projector";
 export type {
   ProjectedCapability,
@@ -357,6 +368,7 @@ export type {
   ProjectedMailboxMessage,
   ProjectedPlanDoc,
   SessionProjection,
+  SessionFactState,
 } from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";
 export type {

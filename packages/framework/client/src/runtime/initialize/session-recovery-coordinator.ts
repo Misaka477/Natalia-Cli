@@ -2,6 +2,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
 import type { SessionProjection } from "@natalia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
+import { reseedSessionFactState } from "../session-facts";
 import type {
   AttachmentService,
   ContextLedgerFactory,
@@ -195,7 +196,12 @@ export class SessionRecoveryCoordinator {
       : undefined;
     if (restoreEvents && storedSession.contextEpoch) {
       session.events = restoreEvents;
-      if (scope.activeExec) scope.activeExec.session.events = restoreEvents;
+      if (scope.activeExec) {
+        scope.activeExec.session.events = restoreEvents;
+        // The base log is now the post-epoch tail, so a fact state seeded from
+        // the earlier record is stale; re-seed and mark it incomplete.
+        reseedSessionFactState(scope.activeExec, false);
+      }
     }
     if (fastPathEnabled) {
       // Prewarm the message index in a worker thread so the first

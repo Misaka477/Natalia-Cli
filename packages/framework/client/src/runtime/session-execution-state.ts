@@ -10,7 +10,7 @@ import {
   TokenMeter,
   type StreamingProvider,
 } from "@natalia/runtime";
-import type { SessionRecord } from "@natalia/session";
+import type { SessionFactState, SessionRecord } from "@natalia/session";
 import type {
   RuntimeContextLedger,
   SkillMetadata,
@@ -62,6 +62,18 @@ export type SessionExecutionState = {
   nextSessionSeq: number;
   /** True once session.events holds the complete durable log (not the fast-path tail). */
   fullEventsLoaded?: boolean;
+  /**
+   * Incremental hot memory for this session, maintained at the event sink
+   * (see session-facts.ts). Created lazily by `ensureSessionFactState`, so it
+   * is absent until a surface first asks for it.
+   */
+  factState?: SessionFactState;
+  /**
+   * False while `factState` was seeded from a fast-attach tail instead of the
+   * complete durable log. A consumer that needs cross-history facts (open drift,
+   * active rules, pending mailbox) must not trust an incomplete state.
+   */
+  factStateComplete?: boolean;
   /** Memoized session projection for snapshot/intelligence reads at one event revision. */
   snapshotProjection?: {
     eventCount: number;

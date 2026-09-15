@@ -24,6 +24,7 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { feedSessionEventWindow } from "./session-event-window";
+import { feedSessionFactState } from "./session-facts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -147,6 +148,7 @@ export function createEventSink(
     markRuntimeEventSessionSeq(partial, partialSeq);
     feedSessionEventWindow(exec, partialSeq, partial);
     appendSessionEvent(exec.session, partial);
+    feedSessionFactState(exec, partial);
     const sessionStoreController =
       ctx.ports.resolveService<SessionStoreController>(
         SESSION_STORE_CONTROLLER_SERVICE,
@@ -439,6 +441,7 @@ export function createEventSink(
         markRuntimeEventSessionSeq(event, sessionSeq);
         feedSessionEventWindow(exec, sessionSeq, event);
         appendSessionEvent(exec.session, event);
+        feedSessionFactState(exec, event);
         scheduleContextEpochWrite(exec, event);
         if (isCollabSnapshotRelevantEvent(event)) {
           collabSnapshotScheduler.schedule(exec);

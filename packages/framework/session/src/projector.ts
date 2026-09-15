@@ -226,7 +226,7 @@ function normalizeTurnEventOrder(events: RuntimeEvent[]): RuntimeEvent[] {
   let pendingPartials: RuntimeEvent[] = [];
   const partialText = () =>
     pendingPartials
-      .map((event) => ("text" in event ? event.text ?? "" : ""))
+      .map((event) => ("text" in event ? (event.text ?? "") : ""))
       .join("");
   const matchesDone = (event: RuntimeEvent) => {
     if (!("text" in event) || typeof event.text !== "string") return false;
@@ -509,56 +509,18 @@ export function projectedGoal(events: RuntimeEvent[]): GoalView | undefined {
 }
 
 export function projectedConstitutionRules(events: RuntimeEvent[]) {
-  const rules: RuntimeEvent[] = [];
-  for (const event of events) {
-    if (event.type === "constitution.rule_added") {
-      if (
-        rules.some(
-          (existing) =>
-            existing.type === "constitution.rule_added" &&
-            existing.ruleID === event.ruleID,
-        )
-      )
-        continue;
-      rules.push(event);
-    }
-    if (event.type === "constitution.rule_updated") {
-      const existing = rules.findLast(
-        (r) =>
-          r.type === "constitution.rule_added" && r.ruleID === event.ruleID,
-      );
-      if (existing && existing.type === "constitution.rule_added") {
-        const idx = rules.indexOf(existing);
-        rules[idx] = {
-          ...existing,
-          statement: event.statement ?? existing.statement,
-          priority: event.priority ?? existing.priority,
-          enforcement: event.enforcement ?? existing.enforcement,
-          overridePolicy: event.overridePolicy ?? existing.overridePolicy,
-        };
-      }
-    }
-  }
-  return rules.filter(
-    (r): r is Extract<RuntimeEvent, { type: "constitution.rule_added" }> =>
-      r.type === "constitution.rule_added",
-  );
+  const state = emptySessionConstitutionFactState();
+  for (const event of events) applySessionConstitutionFact(state, event);
+  return sessionConstitutionRulesFrom(state);
 }
 
-export function projectedConstitutionOverrides(events: RuntimeEvent[]) {
-  const now = Date.now();
-  const overrides: Array<
-    Extract<RuntimeEvent, { type: "constitution.override_granted" }>
-  > = [];
-  for (const event of events) {
-    if (event.type !== "constitution.override_granted") continue;
-    if (event.expiresAt) {
-      const expires = Date.parse(event.expiresAt);
-      if (Number.isFinite(expires) && expires <= now) continue;
-    }
-    overrides.push(event);
-  }
-  return overrides;
+export function projectedConstitutionOverrides(
+  events: RuntimeEvent[],
+  now = Date.now(),
+) {
+  const state = emptySessionConstitutionFactState();
+  for (const event of events) applySessionConstitutionFact(state, event);
+  return sessionConstitutionOverridesFrom(state, now);
 }
 
 export function latestSessionSnapshot(events: RuntimeEvent[]) {
@@ -590,34 +552,9 @@ export type ProjectedDriftFinding = {
 export function projectedDriftFindings(
   events: RuntimeEvent[],
 ): ProjectedDriftFinding[] {
-  const findings = new Map<string, ProjectedDriftFinding>();
-  for (const event of events) {
-    if (event.type === "drift.finding_opened")
-      findings.set(event.findingID, {
-        findingID: event.findingID,
-        severity: event.severity,
-        confidence: event.confidence,
-        originalObjective: event.originalObjective,
-        currentActivity: event.currentActivity,
-        evidence: event.evidence,
-        applicableConstraints: event.applicableConstraints,
-        status: "open",
-      });
-    if (event.type === "drift.finding_updated") {
-      const existing = findings.get(event.findingID);
-      // An update carries no objective or evidence, so a finding that was never
-      // opened cannot be reconstructed from it alone.
-      if (existing)
-        findings.set(event.findingID, {
-          ...existing,
-          status: event.status,
-          ...(event.rationale === undefined
-            ? {}
-            : { rationale: event.rationale }),
-        });
-    }
-  }
-  return [...findings.values()];
+  const state = emptySessionDriftFactState();
+  for (const event of events) applySessionDriftFact(state, event);
+  return sessionDriftFindingsFrom(state);
 }
 
 export function projectedCanonicalTools(events: RuntimeEvent[]) {
@@ -704,16 +641,9 @@ export function projectedCompletions(events: RuntimeEvent[]) {
 }
 
 export function projectedDecisionRecords(events: RuntimeEvent[]) {
-  const records: Array<Extract<RuntimeEvent, { type: "decision.recorded" }>> =
-    [];
-  const seen = new Set<string>();
-  for (const event of events) {
-    if (event.type !== "decision.recorded") continue;
-    if (seen.has(event.id)) continue;
-    seen.add(event.id);
-    records.push(event);
-  }
-  return records;
+  const state = emptySessionDecisionFactState();
+  for (const event of events) applySessionDecisionFact(state, event);
+  return sessionDecisionRecordsFrom(state);
 }
 
 /**
@@ -752,50 +682,9 @@ export type ProjectedMailboxMessage = {
 export function projectedMailboxMessages(
   events: RuntimeEvent[],
 ): ProjectedMailboxMessage[] {
-  const messages = new Map<string, ProjectedMailboxMessage>();
-  for (const event of events) {
-    if (event.type === "mailbox.queued") {
-      messages.set(event.messageID, {
-        messageID: event.messageID,
-        source: event.source,
-        priority: event.priority,
-        intent: event.intent,
-        text: event.text,
-        safeSummary: event.safeSummary,
-        ...(event.relatedPlanID ? { relatedPlanID: event.relatedPlanID } : {}),
-        deliveryPolicy: event.deliveryPolicy,
-        createdAt: event.createdAt,
-        status: "queued",
-      });
-      continue;
-    }
-    if (event.type === "mailbox.delivered") {
-      const message = messages.get(event.messageID);
-      if (message) message.status = "delivered";
-      continue;
-    }
-    if (event.type === "mailbox.acknowledged") {
-      const message = messages.get(event.messageID);
-      if (message) message.status = "acknowledged";
-      continue;
-    }
-    if (event.type === "mailbox.deferred") {
-      const message = messages.get(event.messageID);
-      if (message) {
-        message.status = "deferred";
-        message.reason = event.reason;
-      }
-      continue;
-    }
-    if (event.type === "mailbox.superseded") {
-      const message = messages.get(event.messageID);
-      if (message) {
-        message.status = "superseded";
-        message.reason = event.reason;
-      }
-    }
-  }
-  return [...messages.values()];
+  const state = emptySessionMailboxFactState();
+  for (const event of events) applySessionMailboxFact(state, event);
+  return sessionMailboxMessagesFrom(state);
 }
 
 /**
@@ -1476,4 +1365,334 @@ function requestBelongsToInterruptedTurn(requestID: string, turnIDs: string[]) {
       requestID.startsWith(`${turnID}:`) ||
       requestID.includes(`:${turnID}:`),
   );
+}
+
+/* ---------------------------------------------------------------------------
+ * Incremental session fact state.
+ *
+ * The projections in this file are pure folds over the durable event log. The
+ * runtime keeps the same folds materialised incrementally at the event-sink
+ * choke point (`applySessionFactEvent`), so a surface can read a fact set in
+ * O(active set) instead of re-scanning every event. Equivalence is enforced by
+ * construction: `projectedX(events)` folds through the same reducer the fact
+ * state uses.
+ *
+ * `collabEvents` is the one deliberate exception: `projectedCollabMessages`
+ * resolves out-of-order replies with a second pass, so we collect the relevant
+ * events verbatim and re-fold that (small) subset on read rather than trying to
+ * make the two-pass fold streaming-safe.
+ * ------------------------------------------------------------------------- */
+
+type ConstitutionRuleAdded = Extract<
+  RuntimeEvent,
+  { type: "constitution.rule_added" }
+>;
+type ConstitutionOverrideGranted = Extract<
+  RuntimeEvent,
+  { type: "constitution.override_granted" }
+>;
+type DecisionRecorded = Extract<RuntimeEvent, { type: "decision.recorded" }>;
+type SessionSnapshotEvent = Extract<RuntimeEvent, { type: "session.snapshot" }>;
+
+/** Turn ids still open, plus completed ids. */
+export type SessionTurnFactState = {
+  activeTurnIDs: Set<string>;
+  completedTurnIDs: Set<string>;
+};
+
+export function emptySessionTurnFactState(): SessionTurnFactState {
+  return { activeTurnIDs: new Set(), completedTurnIDs: new Set() };
+}
+
+export function applySessionTurnFact(
+  state: SessionTurnFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type === "turn.submitted") {
+    state.activeTurnIDs.add(event.id);
+    return;
+  }
+  if (event.type === "turn.finished") {
+    state.activeTurnIDs.delete(event.id);
+    state.completedTurnIDs.add(event.id);
+  }
+}
+
+/** Effective constitution rules keyed by ruleID, plus raw override grants. */
+export type SessionConstitutionFactState = {
+  rules: Map<string, ConstitutionRuleAdded>;
+  overrides: ConstitutionOverrideGranted[];
+};
+
+export function emptySessionConstitutionFactState(): SessionConstitutionFactState {
+  return { rules: new Map(), overrides: [] };
+}
+
+export function applySessionConstitutionFact(
+  state: SessionConstitutionFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type === "constitution.rule_added") {
+    if (!state.rules.has(event.ruleID)) state.rules.set(event.ruleID, event);
+    return;
+  }
+  if (event.type === "constitution.rule_updated") {
+    const existing = state.rules.get(event.ruleID);
+    if (!existing) return;
+    state.rules.set(event.ruleID, {
+      ...existing,
+      statement: event.statement ?? existing.statement,
+      priority: event.priority ?? existing.priority,
+      enforcement: event.enforcement ?? existing.enforcement,
+      overridePolicy: event.overridePolicy ?? existing.overridePolicy,
+    });
+    return;
+  }
+  if (event.type === "constitution.override_granted")
+    state.overrides.push(event);
+}
+
+export function sessionConstitutionRulesFrom(
+  state: SessionConstitutionFactState,
+): ConstitutionRuleAdded[] {
+  return [...state.rules.values()];
+}
+
+/** Overrides are time-filtered at read time, so the fold stays deterministic. */
+export function sessionConstitutionOverridesFrom(
+  state: SessionConstitutionFactState,
+  now = Date.now(),
+): ConstitutionOverrideGranted[] {
+  return state.overrides.filter((event) => {
+    if (!event.expiresAt) return true;
+    const expires = Date.parse(event.expiresAt);
+    return !Number.isFinite(expires) || expires > now;
+  });
+}
+
+/** Drift findings keyed by findingID. */
+export type SessionDriftFactState = {
+  findings: Map<string, ProjectedDriftFinding>;
+};
+
+export function emptySessionDriftFactState(): SessionDriftFactState {
+  return { findings: new Map() };
+}
+
+export function applySessionDriftFact(
+  state: SessionDriftFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type === "drift.finding_opened") {
+    state.findings.set(event.findingID, {
+      findingID: event.findingID,
+      severity: event.severity,
+      confidence: event.confidence,
+      originalObjective: event.originalObjective,
+      currentActivity: event.currentActivity,
+      evidence: event.evidence,
+      applicableConstraints: event.applicableConstraints,
+      status: "open",
+    });
+    return;
+  }
+  if (event.type === "drift.finding_updated") {
+    const existing = state.findings.get(event.findingID);
+    // An update carries no objective or evidence, so a finding that was never
+    // opened cannot be reconstructed from it alone.
+    if (!existing) return;
+    state.findings.set(event.findingID, {
+      ...existing,
+      status: event.status,
+      ...(event.rationale === undefined ? {} : { rationale: event.rationale }),
+    });
+  }
+}
+
+export function sessionDriftFindingsFrom(
+  state: SessionDriftFactState,
+): ProjectedDriftFinding[] {
+  return [...state.findings.values()];
+}
+
+/** Mailbox messages keyed by messageID. */
+export type SessionMailboxFactState = {
+  messages: Map<string, ProjectedMailboxMessage>;
+};
+
+export function emptySessionMailboxFactState(): SessionMailboxFactState {
+  return { messages: new Map() };
+}
+
+export function applySessionMailboxFact(
+  state: SessionMailboxFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type === "mailbox.queued") {
+    state.messages.set(event.messageID, {
+      messageID: event.messageID,
+      source: event.source,
+      priority: event.priority,
+      intent: event.intent,
+      text: event.text,
+      safeSummary: event.safeSummary,
+      ...(event.relatedPlanID ? { relatedPlanID: event.relatedPlanID } : {}),
+      deliveryPolicy: event.deliveryPolicy,
+      createdAt: event.createdAt,
+      status: "queued",
+    });
+    return;
+  }
+  if (event.type === "mailbox.delivered") {
+    const message = state.messages.get(event.messageID);
+    if (message) message.status = "delivered";
+    return;
+  }
+  if (event.type === "mailbox.acknowledged") {
+    const message = state.messages.get(event.messageID);
+    if (message) message.status = "acknowledged";
+    return;
+  }
+  if (event.type === "mailbox.deferred") {
+    const message = state.messages.get(event.messageID);
+    if (message) {
+      message.status = "deferred";
+      message.reason = event.reason;
+    }
+    return;
+  }
+  if (event.type === "mailbox.superseded") {
+    const message = state.messages.get(event.messageID);
+    if (message) {
+      message.status = "superseded";
+      message.reason = event.reason;
+    }
+  }
+}
+
+export function sessionMailboxMessagesFrom(
+  state: SessionMailboxFactState,
+): ProjectedMailboxMessage[] {
+  return [...state.messages.values()];
+}
+
+/** Decision records in journal order, deduped by event id. */
+export type SessionDecisionFactState = {
+  records: DecisionRecorded[];
+  seen: Set<string>;
+};
+
+export function emptySessionDecisionFactState(): SessionDecisionFactState {
+  return { records: [], seen: new Set() };
+}
+
+export function applySessionDecisionFact(
+  state: SessionDecisionFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type !== "decision.recorded") return;
+  if (state.seen.has(event.id)) return;
+  state.seen.add(event.id);
+  state.records.push(event);
+}
+
+export function sessionDecisionRecordsFrom(
+  state: SessionDecisionFactState,
+): DecisionRecorded[] {
+  return state.records;
+}
+
+/**
+ * The incremental hot memory for one session: active-set facts a surface can
+ * read without re-scanning the journal. This is deliberately the *memory* hot
+ * tier (see the RINA plan); the model-visible working set stays in
+ * `ContextLedger`.
+ */
+export type SessionFactState = {
+  turns: SessionTurnFactState;
+  constitution: SessionConstitutionFactState;
+  drift: SessionDriftFactState;
+  mailbox: SessionMailboxFactState;
+  decisions: SessionDecisionFactState;
+  latestSnapshot?: SessionSnapshotEvent;
+  collabEvents: RuntimeEvent[];
+};
+
+export function emptySessionFactState(): SessionFactState {
+  return {
+    turns: emptySessionTurnFactState(),
+    constitution: emptySessionConstitutionFactState(),
+    drift: emptySessionDriftFactState(),
+    mailbox: emptySessionMailboxFactState(),
+    decisions: emptySessionDecisionFactState(),
+    collabEvents: [],
+  };
+}
+
+export function applySessionFactEvent(
+  state: SessionFactState,
+  event: RuntimeEvent,
+): void {
+  applySessionTurnFact(state.turns, event);
+  applySessionConstitutionFact(state.constitution, event);
+  applySessionDriftFact(state.drift, event);
+  applySessionMailboxFact(state.mailbox, event);
+  applySessionDecisionFact(state.decisions, event);
+  if (event.type === "session.snapshot") state.latestSnapshot = event;
+  if (normalizeCollaborationEvent(event)) state.collabEvents.push(event);
+}
+
+export function sessionFactStateFromEvents(
+  events: RuntimeEvent[],
+): SessionFactState {
+  const state = emptySessionFactState();
+  for (const event of events) applySessionFactEvent(state, event);
+  return state;
+}
+
+export function sessionFactActiveTurnIDs(state: SessionFactState): string[] {
+  return [...state.turns.activeTurnIDs];
+}
+
+export function sessionFactConstitutionRules(
+  state: SessionFactState,
+): ConstitutionRuleAdded[] {
+  return sessionConstitutionRulesFrom(state.constitution);
+}
+
+export function sessionFactConstitutionOverrides(
+  state: SessionFactState,
+  now = Date.now(),
+): ConstitutionOverrideGranted[] {
+  return sessionConstitutionOverridesFrom(state.constitution, now);
+}
+
+export function sessionFactDriftFindings(
+  state: SessionFactState,
+): ProjectedDriftFinding[] {
+  return sessionDriftFindingsFrom(state.drift);
+}
+
+export function sessionFactMailboxMessages(
+  state: SessionFactState,
+): ProjectedMailboxMessage[] {
+  return sessionMailboxMessagesFrom(state.mailbox);
+}
+
+export function sessionFactDecisionRecords(
+  state: SessionFactState,
+): DecisionRecorded[] {
+  return sessionDecisionRecordsFrom(state.decisions);
+}
+
+export function sessionFactLatestSnapshot(
+  state: SessionFactState,
+): SessionSnapshotEvent | undefined {
+  return state.latestSnapshot;
+}
+
+export function sessionFactCollabMessages(
+  state: SessionFactState,
+): ProjectedCollabMessage[] {
+  return projectedCollabMessages(state.collabEvents);
 }
