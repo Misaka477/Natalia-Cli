@@ -14,6 +14,8 @@ import { resolve } from "node:path";
 import {
   projectedConstitutionOverrides,
   projectedConstitutionRules,
+  sessionFactConstitutionOverrides,
+  sessionFactConstitutionRules,
 } from "@natalia/session";
 import { readOnlyToolMessage } from "@natalia/runtime-services";
 import {
@@ -36,6 +38,7 @@ import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
+import { ensureSessionFactState } from "../session-facts";
 import type { RealRuntimeClientOptions } from "../options";
 
 /**
@@ -101,10 +104,22 @@ export function createExecuteCalls(
       executionForTurn(turnID) ??
       ctx.ports.getExecutionBySession().get(sessionID as never);
     if (!exec) return undefined;
-    await ensureSessionFullEvents(ctx, exec);
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
-    const rules = projectedConstitutionRules(exec.session.events);
-    const overrides = projectedConstitutionOverrides(exec.session.events);
+    // Constitution is a security boundary: only evaluate it against the complete
+    // fact state. When the execution is a fast-attach tail we force the explicit
+    // full load first (which also completes the state); a failure to load is
+    // fail-closed because the tool call aborts here.
+    ensureSessionFactState(exec);
+    if (exec.factStateComplete !== true)
+      await ensureSessionFullEvents(ctx, exec);
+    const rules =
+      exec.factStateComplete === true && exec.factState
+        ? sessionFactConstitutionRules(exec.factState)
+        : projectedConstitutionRules(exec.session.events);
+    const overrides =
+      exec.factStateComplete === true && exec.factState
+        ? sessionFactConstitutionOverrides(exec.factState)
+        : projectedConstitutionOverrides(exec.session.events);
     let blocked: string | undefined;
 
     if (commandText) {
