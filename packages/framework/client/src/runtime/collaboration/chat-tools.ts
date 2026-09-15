@@ -35,6 +35,9 @@ const CHAT_READ_ONLY_TOOLS = new Set([
   "grep",
   "web_fetch",
   "web_search",
+  // Model-facing transcript paging: the cursor lets Navi/Nia read older
+  // history on demand instead of the runtime pre-loading the journal.
+  "session_history",
 ]);
 
 /** Nia may run shell commands for verification, but the prompt forbids mutating

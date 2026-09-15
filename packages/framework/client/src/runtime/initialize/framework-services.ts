@@ -28,6 +28,7 @@ import {
   createInteractiveWaiter,
 } from "@natalia/collaboration";
 import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
+import { createSessionHistoryTool } from "../session-history-tool";
 import {
   createMutationRegistry,
   createWorkspaceFilesController,
@@ -186,6 +187,15 @@ export async function wireFrameworkServices(
       throw new Error(`framework tool already registered: ${tool.name}`);
     ctx.state.tools.set(tool.name, tool);
   }
+
+  // Model-facing transcript paging: the model can turn through older history
+  // with the returned cursor instead of the runtime pre-loading the journal.
+  const sessionHistoryTool = createSessionHistoryTool(ctx);
+  if (ctx.state.tools.get(sessionHistoryTool.name))
+    throw new Error(
+      `framework tool already registered: ${sessionHistoryTool.name}`,
+    );
+  ctx.state.tools.set(sessionHistoryTool.name, sessionHistoryTool);
 
   const checkpointOwner = registry.registerOwner({
     id: "natalia-checkpoint",
