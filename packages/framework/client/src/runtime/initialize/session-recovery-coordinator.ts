@@ -145,6 +145,9 @@ export class SessionRecoveryCoordinator {
       });
     }
 
+    const durableEventCount = await this.sessionStore
+      .eventCount(scope.sessionID)
+      .catch(() => session.events.length);
     const initialExec: SessionExecutionState = {
       session,
       context: scope.runtimeContext,
@@ -164,7 +167,8 @@ export class SessionRecoveryCoordinator {
       naviPendingQueue: [],
       niaPendingQueue: [],
       naviAbortWakePending: false,
-      nextSessionSeq: session.events.length + 1,
+      eventCount: durableEventCount,
+      nextSessionSeq: durableEventCount + 1,
       niaAbortWakePending: false,
     };
     scope.activeExec = initialExec;
