@@ -265,19 +265,26 @@ export class CheckpointStore {
     this.now = options.now ?? (() => new Date());
     this.onEvent = options.onEvent;
     // Kept out of `storeDir`: the chunk library is not part of one checkpoint's
-    // disk footprint, and `storeDir` is what `diskUsageBytes` reports.
-    this.chunkRoot = resolve(
-      this.workspaceRoot,
-      ".natalia",
-      "chunks",
-      options.sessionID,
-    );
+    // disk footprint, and `storeDir` is what `diskUsageBytes` reports. One
+    // shared root lets identical payloads dedupe across sessions; GC unions
+    // every session's references so that sharing stays safe.
+    this.chunkRoot = resolve(this.workspaceRoot, ".natalia", "chunks");
     this.chunks = new ChunkStore(this.chunkRoot);
   }
 
   private async loadJournal(): Promise<CheckpointJournal> {
     if (!this.journal) {
       if (process.env.NATALIA_CHECKPOINT_NO_MIGRATE !== "1") {
+        // Upgrade the pre-shared per-session chunk roots in place before any
+        // read resolves a chunk through the shared root.
+        const chunkMigration = await this.chunks.migrateLegacyRoots();
+        if (chunkMigration.roots > 0)
+          console.warn(
+            `[checkpoint] merged ${chunkMigration.moved} chunks from ${chunkMigration.roots} legacy session root(s)`,
+          );
+        // Fold any loose one-file-per-chunk leftovers into packs (covers the
+        // shared-root layout written before packing existed).
+        await this.chunks.packLooseChunks();
         // One-time forward migration of a v2 journal to the delta + CDC format.
         // The original is copied to `<journal>.v2-backup` first, and every
         // checkpoint is preserved.
@@ -937,28 +944,73 @@ export class CheckpointStore {
     return await queued;
   }
 
+  /**
+   * Every sibling session journal under the same checkpoint parent, plus the
+   * caller's own journal. The workspace object store and the chunk root are
+   * shared, so a GC that only saw this session would delete another session's
+   * live payloads.
+   */
+  private async journalsForGc(
+    ownJournal: CheckpointJournal,
+  ): Promise<CheckpointJournal[]> {
+    const journals = [ownJournal];
+    const parent = dirname(this.storeDir);
+    const ownDir = resolve(this.storeDir);
+    let entries;
+    try {
+      entries = await readdir(parent, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return journals;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const sessionDir = resolve(parent, entry.name);
+      if (sessionDir === ownDir) continue;
+      const journalPath = join(sessionDir, "journal.jsonl");
+      try {
+        journals.push(await CheckpointJournal.load(journalPath, this.chunks));
+      } catch (error) {
+        // A foreign/corrupt directory must never make GC unsafe: skipping it
+        // can only keep payloads that might already be dead, never delete a
+        // live one.
+        console.warn(
+          `[checkpoint] GC skipped unreadable journal ${journalPath}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return journals;
+  }
+
   private async gcObjectsLocked(
     dryRun: boolean,
     extraReachable?: Iterable<string>,
   ) {
-    // Reachable = this journal's object references, unioned with every other
-    // owner's references (the sandbox's snapshot indices), so GC can never
-    // prune another owner's live objects.
-    const journal = await this.loadJournal();
+    // The object store and the chunk root are both shared across sessions, so
+    // reachability must union *every* session's refs (plus the sandbox's
+    // snapshot indices passed in `extraReachable`). A GC that only saw this
+    // journal would delete another session's live payloads.
+    const ownJournal = await this.loadJournal();
+    const journals = await this.journalsForGc(ownJournal);
     const referenced = new Set<string>();
+    const referencedChunks = new Set<string>();
     // GC is the one listing path that genuinely needs every manifest entry, so
     // materialize each manifest here (on demand) rather than in `list()`.
-    for (let index = 0; index < journal.length; index++) {
-      const manifest = await journal.manifestAt(index);
-      for (const entry of Object.values(manifest.entries))
-        if (entry.objectHash) referenced.add(entry.objectHash);
+    for (const journal of journals) {
+      for (let index = 0; index < journal.length; index++) {
+        const manifest = await journal.manifestAt(index);
+        for (const entry of Object.values(manifest.entries))
+          if (entry.objectHash) referenced.add(entry.objectHash);
+      }
+      for (const hash of journal.referencedChunks())
+        referencedChunks.add(hash);
     }
-    for (const id of extraReachable ?? []) referenced.add(id);
-    // The chunk library is per-session, so the journal's own refs are its
-    // complete GC root set. `minAgeMs` keeps a chunk that another process just
-    // wrote but has not committed a reference to yet.
+    for (const id of extraReachable ?? []) {
+      referenced.add(id);
+      referencedChunks.add(id);
+    }
     const chunks = await this.chunks.collectGarbage(
-      journal.referencedChunks(),
+      referencedChunks,
       dryRun,
       { minAgeMs: 60_000 },
     );

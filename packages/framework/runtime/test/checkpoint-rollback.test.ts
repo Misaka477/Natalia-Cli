@@ -10,15 +10,20 @@ import {
   writeFile,
   rm,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { appendSessionEvent, createSessionRecord } from "@natalia/session";
 import {
   CheckpointStore,
+  ChunkStore,
   ContextLedger,
+  contentDefinedChunks,
   initializeDefaultCheckpointStore,
+  pruneV2Backups,
   runCheckpointCommand,
   type CheckpointRuntimeResource,
 } from "../src";
@@ -832,3 +837,140 @@ async function tempWorkspace() {
   await writeFile(join(root, ".gitignore"), "ignored.log\n");
   return root;
 }
+
+test("chunk/object GC unions every session sharing the workspace stores", async () => {
+  const root = await tempWorkspace();
+  const ledgerA = new ContextLedger();
+  const ledgerB = new ContextLedger();
+  await writeFile(join(root, "a-only.txt"), "a-only-content\n");
+  const storeA = await initializeDefaultCheckpointStore({
+    sessionID: "ses_gc_shared_a",
+    workspaceRoot: root,
+    context: ledgerA,
+  });
+  // A checkpoints before b-only exists, so A's manifest does not reference it.
+  const recordA = await storeA.createCheckpoint({
+    reason: "manual",
+    context: ledgerA,
+    step: 1,
+  });
+
+  await writeFile(join(root, "b-only.txt"), "b-only-content\n");
+  const storeB = await initializeDefaultCheckpointStore({
+    sessionID: "ses_gc_shared_b",
+    workspaceRoot: root,
+    context: ledgerB,
+  });
+  const recordB = await storeB.createCheckpoint({
+    reason: "manual",
+    context: ledgerB,
+    step: 1,
+  });
+
+  // A dry-run from A must see B's objects and chunks as reachable.
+  const dryRun = await storeA.gcObjects(true);
+  expect(dryRun.unreachableObjects).toBe(0);
+  expect(dryRun.unreachableChunks).toBe(0);
+
+  // A real GC from A must not prune B's shared payloads.
+  await storeA.gcObjects(false);
+  const manifestB = await storeB.loadManifest(recordB);
+  expect(Object.keys(manifestB.entries)).toContain("b-only.txt");
+  // And A's own payload still resolves.
+  const manifestA = await storeA.loadManifest(recordA);
+  expect(Object.keys(manifestA.entries)).toContain("a-only.txt");
+});
+
+test("checkpoint store migrates a legacy per-session chunk root on load", async () => {
+  const root = await tempWorkspace();
+  const sessionID = "ses_legacy_chunk_migrate";
+  const ledger = new ContextLedger();
+  const payload = Buffer.from("legacy chunk payload ".repeat(200));
+  const legacyRoot = join(root, ".natalia", "chunks", sessionID);
+  // Build the pre-A3 loose layout by hand: `<legacyRoot>/<xx>/<hash>`.
+  const chunks: string[] = [];
+  for (const chunk of contentDefinedChunks(payload)) {
+    const hash = createHash("sha256").update(chunk).digest("hex");
+    const path = join(legacyRoot, hash.slice(0, 2), hash);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, chunk);
+    chunks.push(hash);
+  }
+  const ref = { chunks, size: payload.length };
+
+  const store = await initializeDefaultCheckpointStore({
+    sessionID,
+    workspaceRoot: root,
+    context: ledger,
+  });
+  await store.list(); // triggers loadJournal → migrateLegacyRoots
+
+  const shared = new ChunkStore(join(root, ".natalia", "chunks"));
+  expect(await shared.get(ref)).toEqual(payload);
+  let legacyStillThere = true;
+  try {
+    await readdir(legacyRoot);
+  } catch {
+    legacyStillThere = false;
+  }
+  expect(legacyStillThere).toBe(false);
+});
+
+test("pruneV2Backups removes the backup once the v3 journal reconstructs", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  await writeFile(join(root, "keep.txt"), "keep\n");
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_prune_ok",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  await store.createCheckpoint({ reason: "manual", context: ledger, step: 1 });
+  const journalPath = join(
+    root,
+    ".natalia",
+    "checkpoints",
+    "ses_prune_ok",
+    "journal.jsonl",
+  );
+  const backupPath = `${journalPath}.v2-backup`;
+  await writeFile(backupPath, "{}\n");
+
+  const pruned = await pruneV2Backups(root);
+  expect(pruned.pruned).toBe(1);
+  expect(pruned.bytes).toBeGreaterThan(0);
+  expect(existsSync(backupPath)).toBe(false);
+});
+
+test("pruneV2Backups keeps the backup when v3 cannot reconstruct", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  await writeFile(join(root, "keep.txt"), "keep\n");
+  // Force the ledger payload past the inline threshold so it is chunked.
+  for (let index = 0; index < 200; index++)
+    ledger.add({
+      id: `msg_${index}`,
+      role: "user",
+      content: "x".repeat(200),
+    });
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_prune_keep",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  await store.createCheckpoint({ reason: "manual", context: ledger, step: 1 });
+  const journalPath = join(
+    root,
+    ".natalia",
+    "checkpoints",
+    "ses_prune_keep",
+    "journal.jsonl",
+  );
+  const backupPath = `${journalPath}.v2-backup`;
+  await writeFile(backupPath, "{}\n");
+  // Break the shared chunk store: the newest record can no longer reconstruct.
+  await rm(join(root, ".natalia", "chunks"), { recursive: true, force: true });
+
+  await expect(pruneV2Backups(root)).rejects.toThrow();
+  expect(existsSync(backupPath)).toBe(true);
+});

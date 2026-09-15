@@ -2,7 +2,10 @@ export * from "./chunk-store";
 export * from "./compaction";
 export * from "./context";
 export * from "./checkpoint";
-export { migrateAllCheckpointJournals } from "./checkpoint-journal";
+export {
+  migrateAllCheckpointJournals,
+  pruneV2Backups,
+} from "./checkpoint-journal";
 export * from "./errors";
 export * from "./loop";
 export * from "./modelmeta";

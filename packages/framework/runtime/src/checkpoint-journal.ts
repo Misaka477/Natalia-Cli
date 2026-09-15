@@ -21,7 +21,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { copyFile, open, readdir, readFile, rename } from "node:fs/promises";
+import { copyFile, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
 import { join } from "node:path";
@@ -813,16 +813,63 @@ export async function migrateAllCheckpointJournals(
     migrated: number;
     backup: string;
   }> = [];
+  // The chunk store is shared across sessions; fold any pre-shared per-session
+  // roots in first so migrated refs and existing chunks live in one place.
+  const chunks = new ChunkStore(join(workspaceRoot, ".natalia", "chunks"));
+  await chunks.migrateLegacyRoots();
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const journal = join(sessionsDir, entry.name, "journal.jsonl");
-    const chunks = new ChunkStore(
-      join(workspaceRoot, ".natalia", "chunks", entry.name),
-    );
     const migrated = await CheckpointJournal.migrate(journal, chunks);
     if (migrated) results.push({ sessionID: entry.name, ...migrated });
   }
   return results;
+}
+
+/**
+ * Deletes `<journal>.v2-backup` files once the v3 journal next to them loads
+ * and its newest record fully reconstructs from the shared chunk store.
+ *
+ * Deliberately opt-in and offline-only: the runtime never prunes a backup, and
+ * the newest record is reconstructed first so the only remaining copy is proven
+ * self-sufficient before it is deleted.
+ */
+export async function pruneV2Backups(
+  workspaceRoot: string,
+): Promise<{ pruned: number; bytes: number }> {
+  const sessionsDir = join(workspaceRoot, ".natalia", "checkpoints");
+  let entries;
+  try {
+    entries = await readdir(sessionsDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return { pruned: 0, bytes: 0 };
+    throw error;
+  }
+  const chunks = new ChunkStore(join(workspaceRoot, ".natalia", "chunks"));
+  let pruned = 0;
+  let bytes = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const journalPath = join(sessionsDir, entry.name, "journal.jsonl");
+    const backupPath = `${journalPath}.v2-backup`;
+    let backupInfo;
+    try {
+      backupInfo = await stat(backupPath);
+    } catch {
+      continue;
+    }
+    const journal = await CheckpointJournal.load(journalPath, chunks);
+    if (journal.length > 0) {
+      const last = journal.length - 1;
+      await journal.manifestAt(last);
+      await journal.contextAt(last);
+    }
+    await rm(backupPath, { force: true });
+    bytes += backupInfo.size;
+    pruned += 1;
+  }
+  return { pruned, bytes };
 }
 
 function emptyContext(): DurableContextCheckpoint {
