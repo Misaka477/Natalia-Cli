@@ -22,6 +22,17 @@ function storeLoader(
   const mapPage = (
     page: Awaited<ReturnType<SessionStoreController["eventWindow"]>>,
   ) => {
+    if (
+      process.env.NATALIA_MEMORY_TRACE === "1" ||
+      process.env.NATALIA_TRACE_FULL_EVENTS === "1"
+    )
+      console.warn("[event-window] page", {
+        sessionID: exec.session.id,
+        count: page.events.length,
+        first: page.events[0]?.sessionSeq,
+        last: page.events.at(-1)?.sessionSeq,
+        hasMore: page.hasMore,
+      });
     let next = 1;
     return {
       events: page.events.map((entry) => {
@@ -114,6 +125,26 @@ export async function ensureSessionEventWindow(
     if (seq !== undefined) window.acceptLive({ seq, event });
   }
   if (hasSequenceGap(exec, window)) {
+    if (
+      process.env.NATALIA_MEMORY_TRACE === "1" ||
+      process.env.NATALIA_TRACE_FULL_EVENTS === "1"
+    ) {
+      const windowSeqs = window.eventsView.map((entry) => entry.seq);
+      const liveSeqs = exec.session.events
+        .map((event) => runtimeEventSessionSeq(event))
+        .filter((seq): seq is number => seq !== undefined);
+      console.warn("[event-window] gap", {
+        sessionID: exec.session.id,
+        windowCount: windowSeqs.length,
+        windowFirst: windowSeqs[0],
+        windowLast: windowSeqs.at(-1),
+        windowHead: windowSeqs.slice(0, 3),
+        windowTail: windowSeqs.slice(-3),
+        liveCount: liveSeqs.length,
+        liveFirst: liveSeqs[0],
+        liveLast: liveSeqs.at(-1),
+      });
+    }
     exec.eventWindow = undefined;
     await ensureSessionFullEvents(ctx, exec);
     return undefined;
