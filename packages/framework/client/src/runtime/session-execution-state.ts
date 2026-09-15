@@ -70,6 +70,12 @@ export type SessionExecutionState = {
   /** Memoized promise that loads the complete durable event log into session.events. */
   fullEventsPromise?: Promise<void>;
   injectedMailboxIDs: Set<string>;
+  /** Lazily opened shared event window for secondary projections. */
+  eventWindow?: import("./session-window").SessionWindow<
+    import("./session-window").SessionWindowEntry<
+      import("@natalia/contracts").RuntimeEvent
+    >
+  >;
   /**
    * Turn ids whose `turn.submitted` was already published, so the runtime can
    * avoid an O(events) journal scan before every turn. Seeded once from the

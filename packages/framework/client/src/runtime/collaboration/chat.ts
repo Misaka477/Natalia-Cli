@@ -19,6 +19,10 @@ import {
 } from "@natalia/session";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
+import {
+  ensureSessionEventWindow,
+  sessionWindowEvents,
+} from "../session-event-window";
 import { streamEvent } from "./chat-turn-common";
 
 type Surface = Pick<
@@ -107,9 +111,13 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
     async messages(sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return [];
-      // Keep the secondary chat surfaces on the current window. Full history
-      // is an explicit escape hatch (rollback/search), not a startup cost.
-      return projectedNaviChatMessages(exec.session.events).map((message) => ({
+      // Keep the secondary chat surfaces on the shared event window. Full
+      // history is an explicit escape hatch (rollback/search), not startup.
+      const window = await ensureSessionEventWindow(ctx, exec);
+      const events = window
+        ? sessionWindowEvents(exec, window)
+        : exec.session.events;
+      return projectedNaviChatMessages(events).map((message) => ({
         messageID: message.messageID,
         role: message.role,
         text: message.text,
@@ -240,9 +248,13 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
     async messages(sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return [];
-      // Keep the secondary chat surfaces on the current window. Full history
-      // is an explicit escape hatch (rollback/search), not a startup cost.
-      return projectedNiaChatMessages(exec.session.events).map((message) => ({
+      // Keep the secondary chat surfaces on the shared event window. Full
+      // history is an explicit escape hatch (rollback/search), not startup.
+      const window = await ensureSessionEventWindow(ctx, exec);
+      const events = window
+        ? sessionWindowEvents(exec, window)
+        : exec.session.events;
+      return projectedNiaChatMessages(events).map((message) => ({
         messageID: message.messageID,
         role: message.role,
         text: message.text,

@@ -29,6 +29,10 @@ import {
 } from "@natalia/governance-ledger";
 import type { RuntimeContext } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
+import {
+  ensureSessionEventWindow,
+  sessionWindowEvents,
+} from "../session-event-window";
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
 
@@ -642,18 +646,21 @@ export function createIntelligenceSurface(
     async registeredTools(sessionID?: string) {
       await ctx.ports.getReady();
       const exec = await intelligenceExecWindow(sessionID);
-      const session = exec?.session;
-      const projected = session
-        ? (await projectedCanonicalToolsWithFallback(session.events)).map(
-            (t) => ({
-              name: t.name,
-              owner: t.owner,
-              scope: t.scope,
-              recovery: t.recovery,
-              precedence: t.precedence,
-              requiresApproval: t.requiresApproval,
-            }),
-          )
+      const window = exec
+        ? await ensureSessionEventWindow(ctx, exec)
+        : undefined;
+      const events = window
+        ? sessionWindowEvents(exec!, window)
+        : (exec?.session.events ?? []);
+      const projected = events.length
+        ? (await projectedCanonicalToolsWithFallback(events)).map((t) => ({
+            name: t.name,
+            owner: t.owner,
+            scope: t.scope,
+            recovery: t.recovery,
+            precedence: t.precedence,
+            requiresApproval: t.requiresApproval,
+          }))
         : [];
       // The live tool registry is the authoritative list of currently loaded
       // tools. Some plugin tools are registered before their projection events
