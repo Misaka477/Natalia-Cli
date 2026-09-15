@@ -10,6 +10,7 @@ import type {
 import type {
   ChatChannel,
   ChatModelProfile,
+  RuntimeEvent,
   RuntimeReasoningEffort,
   SessionID,
 } from "@natalia/contracts";
@@ -21,8 +22,37 @@ import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
 import {
   ensureSessionEventWindow,
+  scanSessionWindowNewestFirst,
   sessionWindowEvents,
 } from "../session-event-window";
+
+/**
+ * Find `toMessageID` from the newest event backwards across the shared window
+ * and return the number of projected rows after it. `undefined` means the
+ * message does not exist. A page that cannot be stitched falls back to the
+ * explicit full-history escape hatch.
+ */
+async function removedAfterMessage(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+  project: (events: RuntimeEvent[]) => Array<{ messageID: string }>,
+  toMessageID: string,
+): Promise<number | undefined> {
+  const scan = await scanSessionWindowNewestFirst(
+    ctx,
+    exec,
+    project,
+    (message) => message.messageID === toMessageID,
+  );
+  if (scan.kind === "found") return scan.newerCount;
+  if (scan.kind === "exhausted") return undefined;
+  await ensureSessionFullEvents(ctx, exec);
+  const history = project(exec.session.events);
+  const index = history.findIndex(
+    (message) => message.messageID === toMessageID,
+  );
+  return index === -1 ? undefined : history.length - index - 1;
+}
 import { streamEvent } from "./chat-turn-common";
 
 type Surface = Pick<
@@ -131,13 +161,14 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
     async rollback(input, sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return { rolledBackTo: input.toMessageID, removed: 0 };
-      await ensureSessionFullEvents(ctx, exec);
-      const history = projectedNaviChatMessages(exec.session.events);
-      const index = history.findIndex(
-        (message) => message.messageID === input.toMessageID,
+      const removed = await removedAfterMessage(
+        ctx,
+        exec,
+        projectedNaviChatMessages,
+        input.toMessageID,
       );
-      if (index === -1) return { rolledBackTo: input.toMessageID, removed: 0 };
-      const removed = history.length - index - 1;
+      if (removed === undefined)
+        return { rolledBackTo: input.toMessageID, removed: 0 };
       ctx.ports.publishForSession(
         exec,
         streamEvent({
@@ -268,13 +299,14 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
     async rollback(input, sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return { rolledBackTo: input.toMessageID, removed: 0 };
-      await ensureSessionFullEvents(ctx, exec);
-      const history = projectedNiaChatMessages(exec.session.events);
-      const index = history.findIndex(
-        (message) => message.messageID === input.toMessageID,
+      const removed = await removedAfterMessage(
+        ctx,
+        exec,
+        projectedNiaChatMessages,
+        input.toMessageID,
       );
-      if (index === -1) return { rolledBackTo: input.toMessageID, removed: 0 };
-      const removed = history.length - index - 1;
+      if (removed === undefined)
+        return { rolledBackTo: input.toMessageID, removed: 0 };
       ctx.ports.publishForSession(
         exec,
         streamEvent({

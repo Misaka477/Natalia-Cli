@@ -6,7 +6,7 @@
  * and the plan draft writer. Reads live state through `RuntimeContext` at call
  * time.
  */
-import { projectedMailboxMessages, sessionRunCoordinator } from "@natalia/session";
+import { sessionRunCoordinator } from "@natalia/session";
 import {
   buildMailboxQueued,
   buildMailboxStatus,
@@ -18,11 +18,11 @@ import {
   type CollaborationService,
 } from "@natalia/collaboration";
 import type { RuntimeContext } from "../context";
-import { ensureSessionFullEvents } from "../session-full-events";
 import type { SessionExecutionState } from "../context";
+import { ensureSessionFullEvents } from "../session-full-events";
+import { findMailboxMessage } from "./mailbox";
 
 export function createMailboxPlans(ctx: RuntimeContext) {
-
   return {
     createCollabChatTool,
     enqueueMailboxMessage,
@@ -173,6 +173,8 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     await getReady();
     const owner = targetExec ?? getActiveExec();
     if (!owner) return { queued: false as const };
+    // Keep enqueue anchored on the full log: the wake-turn injection and the
+    // mailbox lifecycle expect the whole mailbox to be present.
     await ensureSessionFullEvents(ctx, owner);
     if (
       typeof input.intent !== "string" ||
@@ -205,7 +207,9 @@ export function createMailboxPlans(ctx: RuntimeContext) {
       input.text,
       input.relatedPlanID,
     );
-    const duplicate = projectedMailboxMessages(owner.session.events).find(
+    const duplicate = await findMailboxMessage(
+      ctx,
+      owner,
       (message) =>
         (message.status === "queued" || message.status === "delivered") &&
         mailboxFingerprint(
@@ -316,15 +320,14 @@ export function createMailboxPlans(ctx: RuntimeContext) {
   ) {
     const owner = targetExec ?? ctx.ports.getActiveExec();
     if (!owner || !messageID.trim()) return { cancelled: false as const };
-    await ensureSessionFullEvents(ctx, owner);
-    const message = projectedMailboxMessages(owner.session.events).find(
-      (candidate) => candidate.messageID === messageID,
+    const message = await findMailboxMessage(
+      ctx,
+      owner,
+      (candidate) =>
+        candidate.messageID === messageID &&
+        (candidate.status === "queued" || candidate.status === "delivered"),
     );
-    if (
-      !message ||
-      (message.status !== "queued" && message.status !== "delivered")
-    )
-      return { cancelled: false as const };
+    if (!message) return { cancelled: false as const };
     ctx.ports.publishForSession(
       owner,
       buildMailboxStatus({

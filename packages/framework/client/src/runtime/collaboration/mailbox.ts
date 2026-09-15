@@ -1,8 +1,12 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { projectedMailboxMessages } from "@natalia/session";
+import {
+  projectedMailboxMessages,
+  type ProjectedMailboxMessage,
+} from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
+import { scanSessionWindowNewestFirst } from "../session-event-window";
 type Surface = Pick<
   RuntimeServiceClient,
   | "mailboxList"
@@ -50,6 +54,30 @@ async function mailboxesWithWorkerFallback(
   }
 }
 
+/**
+ * Whether a mailbox message matching `match` exists. Mailbox status is derived
+ * from the whole lifecycle, so a still-open message is normally near the tail;
+ * we only fall back to the full journal when an older window page cannot be
+ * stitched.
+ */
+export async function findMailboxMessage(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+  match: (message: ProjectedMailboxMessage) => boolean,
+): Promise<ProjectedMailboxMessage | undefined> {
+  const scan = await scanSessionWindowNewestFirst(
+    ctx,
+    exec,
+    projectedMailboxMessages,
+    match,
+  );
+  if (scan.kind === "found") return scan.item;
+  if (scan.kind === "exhausted") return undefined;
+  await ensureSessionFullEvents(ctx, exec);
+  const messages = await mailboxesWithWorkerFallback(exec.session.events);
+  return messages.find(match);
+}
+
 export function createMailboxSurface(ctx: RuntimeContext): Surface {
   return {
     async mailboxList(sessionID?: string) {
@@ -87,9 +115,9 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { delivered: false as const };
-      await ensureSessionFullEvents(ctx, exec);
-      const messages = await mailboxesWithWorkerFallback(exec.session.events);
-      const message = messages.find(
+      const message = await findMailboxMessage(
+        ctx,
+        exec,
         (m) => m.messageID === messageID && m.status === "queued",
       );
       if (!message) return { delivered: false as const };
@@ -108,9 +136,9 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { acknowledged: false as const };
-      await ensureSessionFullEvents(ctx, exec);
-      const messages = await mailboxesWithWorkerFallback(exec.session.events);
-      const message = messages.find(
+      const message = await findMailboxMessage(
+        ctx,
+        exec,
         (m) => m.messageID === messageID && m.status === "delivered",
       );
       if (!message) return { acknowledged: false as const };
@@ -129,9 +157,9 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { deferred: false as const };
-      await ensureSessionFullEvents(ctx, exec);
-      const messages = await mailboxesWithWorkerFallback(exec.session.events);
-      const message = messages.find(
+      const message = await findMailboxMessage(
+        ctx,
+        exec,
         (m) => m.messageID === messageID && m.status === "queued",
       );
       if (!message) return { deferred: false as const };
@@ -156,9 +184,9 @@ export function createMailboxSurface(ctx: RuntimeContext): Surface {
       const exec = await mailboxExec(ctx, sessionID);
       if (!exec || typeof messageID !== "string" || !messageID)
         return { superseded: false as const };
-      await ensureSessionFullEvents(ctx, exec);
-      const messages = await mailboxesWithWorkerFallback(exec.session.events);
-      const message = messages.find(
+      const message = await findMailboxMessage(
+        ctx,
+        exec,
         (m) => m.messageID === messageID && m.status === "queued",
       );
       if (!message) return { superseded: false as const };

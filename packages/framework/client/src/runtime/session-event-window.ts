@@ -178,3 +178,55 @@ export function sessionWindowEvents(
     .map(([, event]) => event);
   return result;
 }
+
+export type SessionWindowScanResult<T> =
+  | { kind: "found"; item: T; newerCount: number }
+  /** The whole durable log was searched (via window pages or full events). */
+  | { kind: "exhausted" }
+  /** An older page could not be stitched; the caller must use the full escape hatch. */
+  | { kind: "gap" };
+
+/**
+ * Walk the shared window from the newest event backwards until `match` finds an
+ * item in the projected view, or the window reaches the start of the durable
+ * log.
+ *
+ * `newerCount` is the number of projected items after the match in the current
+ * (physically newest-anchored) view, so a caller can compute "removed N" without
+ * materialising the whole history. The window is always contiguous and anchored
+ * at the newest event, so once the match is inside it every newer item is too.
+ *
+ * Returns `gap` when an older page failed to stitch, and `exhausted` when the
+ * whole log was searched without a match.
+ */
+export async function scanSessionWindowNewestFirst<T>(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+  project: (events: RuntimeEvent[]) => T[],
+  match: (item: T) => boolean,
+): Promise<SessionWindowScanResult<T>> {
+  const settled = (items: T[]): SessionWindowScanResult<T> => {
+    const index = items.findIndex(match);
+    return index >= 0
+      ? {
+          kind: "found",
+          item: items[index]!,
+          newerCount: items.length - index - 1,
+        }
+      : { kind: "exhausted" };
+  };
+
+  const window = await ensureSessionEventWindow(ctx, exec);
+  if (!window) {
+    // Full events are already resident, or a gap forced the explicit full load.
+    return settled(project(exec.session.events));
+  }
+  for (;;) {
+    const result = settled(project(sessionWindowEvents(exec, window)));
+    if (result.kind === "found") return result;
+    // The first durable event carries sessionSeq 1, so this is the real base.
+    if (window.baseSeq === 1) return result;
+    const advanced = await window.loadOlder();
+    if (!advanced && window.baseSeq !== 1) return { kind: "gap" };
+  }
+}

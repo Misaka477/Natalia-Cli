@@ -47,6 +47,14 @@ export function ensureSessionFullEvents(
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");
+    // A live event can be queued in the per-session persistence chain but not
+    // yet in the store. Drain that chain and the store flush before reading the
+    // full log, otherwise the load replaces `session.events` and drops the live
+    // tail (the window opener does the same before its gap check).
+    await ctx.ports
+      .getSessionPersistenceForSession(exec.session.id)
+      .catch(() => undefined);
+    await sessionStore.flush(exec.session.id).catch(() => undefined);
     memoryTrace("execution.fullEvents.start", {
       sessionID: exec.session.id,
       currentEvents: exec.session.events.length,
