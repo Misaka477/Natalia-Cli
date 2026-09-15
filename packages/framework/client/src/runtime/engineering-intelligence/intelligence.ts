@@ -30,7 +30,7 @@ import {
   resolveGovernanceRoot,
 } from "@natalia/governance-ledger";
 import type { RuntimeContext } from "../context";
-import { ensureSessionFullEvents } from "../session-full-events";
+import { ensureCompleteSessionFactState } from "../session-full-events";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
@@ -560,14 +560,13 @@ export function createIntelligenceSurface(
       if (!exec?.session) return { acknowledged: false as const };
       if (!input.findingID.trim()) return { acknowledged: false as const };
       // A finding may have been opened long before the current window, so use
-      // the hot state when it is complete and only force the journal otherwise.
-      let findings: ReturnType<typeof projectedDriftFindings>;
-      if (exec.factStateComplete === true && exec.factState) {
-        findings = sessionFactDriftFindings(exec.factState);
-      } else {
-        await ensureSessionFullEvents(ctx, exec);
-        findings = projectedDriftFindings(exec.session.events);
-      }
+      // the hot state when it is complete; a fast-attach tail completes it from
+      // paged history before we look.
+      await ensureCompleteSessionFactState(ctx, exec);
+      const findings =
+        exec.factStateComplete === true && exec.factState
+          ? sessionFactDriftFindings(exec.factState)
+          : projectedDriftFindings(exec.session.events);
       const finding = findings.find(
         (candidate) =>
           candidate.findingID === input.findingID &&
@@ -604,14 +603,12 @@ export function createIntelligenceSurface(
           reason: "invalid override request",
         };
       // A rule may predate the current window, so use the hot state when it is
-      // complete and only force the journal otherwise.
-      let rules: ReturnType<typeof projectedConstitutionRules>;
-      if (exec.factStateComplete === true && exec.factState) {
-        rules = sessionFactConstitutionRules(exec.factState);
-      } else {
-        await ensureSessionFullEvents(ctx, exec);
-        rules = projectedConstitutionRules(session.events);
-      }
+      // complete; a fast-attach tail completes it from paged history first.
+      await ensureCompleteSessionFactState(ctx, exec);
+      const rules =
+        exec.factStateComplete === true && exec.factState
+          ? sessionFactConstitutionRules(exec.factState)
+          : projectedConstitutionRules(session.events);
       const rule = rules.find((candidate) => candidate.ruleID === input.ruleID);
       if (!rule) return { requested: false as const, reason: "unknown rule" };
       if (rule.overridePolicy === "forbidden")

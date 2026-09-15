@@ -6,7 +6,7 @@ import {
 } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "../context";
-import { ensureSessionFullEvents } from "../session-full-events";
+import { ensureCompleteSessionFactState } from "../session-full-events";
 import { scanSessionWindowNewestFirst } from "../session-event-window";
 type Surface = Pick<
   RuntimeServiceClient,
@@ -67,8 +67,10 @@ async function mailboxMessagesForRead(
 ): Promise<ProjectedMailboxMessage[]> {
   if (exec.factStateComplete === true && exec.factState)
     return sessionFactMailboxMessages(exec.factState);
-  await ensureSessionFullEvents(ctx, exec);
-  return await mailboxesWithWorkerFallback(exec.session.events);
+  await ensureCompleteSessionFactState(ctx, exec);
+  return exec.factStateComplete === true && exec.factState
+    ? sessionFactMailboxMessages(exec.factState)
+    : await mailboxesWithWorkerFallback(exec.session.events);
 }
 
 /**
@@ -90,8 +92,7 @@ export async function findMailboxMessage(
   );
   if (scan.kind === "found") return scan.item;
   if (scan.kind === "exhausted") return undefined;
-  await ensureSessionFullEvents(ctx, exec);
-  const messages = await mailboxesWithWorkerFallback(exec.session.events);
+  const messages = await mailboxMessagesForRead(ctx, exec);
   return messages.find(match);
 }
 

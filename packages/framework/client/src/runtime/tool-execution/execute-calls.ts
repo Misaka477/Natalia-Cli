@@ -37,8 +37,7 @@ import type {
 import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
-import { ensureSessionFullEvents } from "../session-full-events";
-import { ensureSessionFactState } from "../session-facts";
+import { ensureCompleteSessionFactState } from "../session-full-events";
 import type { RealRuntimeClientOptions } from "../options";
 
 /**
@@ -106,12 +105,10 @@ export function createExecuteCalls(
     if (!exec) return undefined;
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     // Constitution is a security boundary: only evaluate it against the complete
-    // fact state. When the execution is a fast-attach tail we force the explicit
-    // full load first (which also completes the state); a failure to load is
-    // fail-closed because the tool call aborts here.
-    ensureSessionFactState(exec);
-    if (exec.factStateComplete !== true)
-      await ensureSessionFullEvents(ctx, exec);
+    // fact state. A fast-attach tail is completed from paged history; if no store
+    // can serve the pages this falls back to the explicit full load, and a load
+    // failure aborts the call (fail-closed).
+    await ensureCompleteSessionFactState(ctx, exec);
     const rules =
       exec.factStateComplete === true && exec.factState
         ? sessionFactConstitutionRules(exec.factState)

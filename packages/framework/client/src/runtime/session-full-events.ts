@@ -10,7 +10,25 @@ import {
   maxLiveSessionEvents,
   windowRuntimeEvents,
 } from "./session-event-retention";
-import { reseedSessionFactState } from "./session-facts";
+import {
+  completeSessionFactState,
+  reseedSessionFactState,
+} from "./session-facts";
+
+/**
+ * Complete the incremental fact state for an execution that needs cross-history
+ * facts. It streams the durable log into the state when a store can be paged, so
+ * `exec.session.events` does not have to hold the whole journal; only when no
+ * store is available does it fall back to the explicit full load.
+ */
+export async function ensureCompleteSessionFactState(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+): Promise<void> {
+  if (exec.factStateComplete === true) return;
+  if (await completeSessionFactState(ctx, exec)) return;
+  await ensureSessionFullEvents(ctx, exec);
+}
 
 /**
  * Load the full durable event log into an execution state.

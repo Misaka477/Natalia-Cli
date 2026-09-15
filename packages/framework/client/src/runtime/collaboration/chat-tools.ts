@@ -28,7 +28,7 @@ import { chatToolSummary } from "./chat-summary";
 import { createWorkspaceRuntime } from "../workspace-runtime";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
-import { ensureSessionFullEvents } from "../session-full-events";
+import { ensureCompleteSessionFactState } from "../session-full-events";
 
 const CHAT_READ_ONLY_TOOLS = new Set([
   "read_file",
@@ -144,8 +144,10 @@ export async function mailboxMessagesForStatus(
 ): Promise<ProjectedMailboxMessage[]> {
   if (exec.factStateComplete === true && exec.factState)
     return sessionFactMailboxMessages(exec.factState);
-  await ensureSessionFullEvents(ctx, exec);
-  return projectedMailboxMessages(exec.session.events);
+  await ensureCompleteSessionFactState(ctx, exec);
+  return exec.factStateComplete === true && exec.factState
+    ? sessionFactMailboxMessages(exec.factState)
+    : projectedMailboxMessages(exec.session.events);
 }
 
 function planDocWriteTool(
@@ -226,8 +228,7 @@ export function createChatTools(ctx: RuntimeContext) {
         },
         async execute() {
           if (!exec) return JSON.stringify({ agentStatus: "unknown" });
-          if (exec.factStateComplete !== true)
-            await ensureSessionFullEvents(ctx, exec);
+          await ensureCompleteSessionFactState(ctx, exec);
           return JSON.stringify(
             currentSessionSnapshot(exec, `snapshot:live:${exec.session.id}`),
           );
@@ -699,8 +700,7 @@ export function createChatTools(ctx: RuntimeContext) {
         },
         async execute() {
           if (!exec) return JSON.stringify({ agentStatus: "unknown" });
-          if (exec.factStateComplete !== true)
-            await ensureSessionFullEvents(ctx, exec);
+          await ensureCompleteSessionFactState(ctx, exec);
           return JSON.stringify(
             currentSessionSnapshot(exec, `snapshot:nia:${exec.session.id}`),
           );

@@ -14,8 +14,7 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import type { RuntimeContext, SessionExecutionState } from "../context";
-import { ensureSessionFullEvents } from "../session-full-events";
-import { ensureSessionFactState } from "../session-facts";
+import { ensureCompleteSessionFactState } from "../session-full-events";
 import { activePlanForExec } from "./plan-doc-runtime";
 import {
   type ConcreteRuntimeEvent,
@@ -46,11 +45,11 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     },
     signal: AbortSignal,
   ) {
-    // The system prompt and transcript read the incremental hot state when it
-    // is complete; only a fast-attach tail still needs the explicit full load.
-    ensureSessionFactState(input.exec);
-    if (input.exec.factStateComplete !== true)
-      await ensureSessionFullEvents(ctx, input.exec);
+    // The system prompt and transcript read the incremental hot state. On a
+    // fast-attach tail, complete it by streaming the log into the state rather
+    // than materialising the whole journal; only fall back to the full load when
+    // no store can serve the pages.
+    await ensureCompleteSessionFactState(ctx, input.exec);
     const activeProvider = niaProvider(input);
     if (!activeProvider) throw new Error("provider unavailable for Nia chat");
     const profileModel = input.exec.niaChatModelProfile?.normal;
