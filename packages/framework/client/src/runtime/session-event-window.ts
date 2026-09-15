@@ -22,17 +22,6 @@ function storeLoader(
   const mapPage = (
     page: Awaited<ReturnType<SessionStoreController["eventWindow"]>>,
   ) => {
-    if (
-      process.env.NATALIA_MEMORY_TRACE === "1" ||
-      process.env.NATALIA_TRACE_FULL_EVENTS === "1"
-    )
-      console.warn("[event-window] page", {
-        sessionID: exec.session.id,
-        count: page.events.length,
-        first: page.events[0]?.sessionSeq,
-        last: page.events.at(-1)?.sessionSeq,
-        hasMore: page.hasMore,
-      });
     let next = 1;
     return {
       events: page.events.map((entry) => {
