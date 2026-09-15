@@ -1,3 +1,4 @@
+import { markRuntimeEventSessionSeq } from "@natalia/contracts";
 import { perfLog } from "./perf-log";
 import type {
   ApprovalResponse,
@@ -587,6 +588,7 @@ export function createWebRuntimeClient(
         const decoder = new TextDecoder();
         let buffer = "";
         let current: RuntimeEvent | null = null;
+        let currentSessionSeq: number | undefined;
         const reader = response.body.getReader();
         let resolveStreamEnd!: () => void;
         const streamEnd = new Promise<void>((resolve) => {
@@ -606,10 +608,19 @@ export function createWebRuntimeClient(
                     current = JSON.parse(line.slice(6)) as RuntimeEvent;
                   } catch {
                     current = null;
+                    currentSessionSeq = undefined;
                   }
+                } else if (line.startsWith("seq: ")) {
+                  const parsed = Number(line.slice(5));
+                  currentSessionSeq = Number.isFinite(parsed)
+                    ? parsed
+                    : undefined;
                 } else if (line === "" && current) {
+                  if (currentSessionSeq !== undefined)
+                    markRuntimeEventSessionSeq(current, currentSessionSeq);
                   emitLive(current);
                   current = null;
+                  currentSessionSeq = undefined;
                 }
               }
             }

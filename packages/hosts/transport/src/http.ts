@@ -1,5 +1,5 @@
 import { gzipSync } from "node:zlib";
-import { API_VERSION } from "@natalia/contracts";
+import { API_VERSION, runtimeEventSessionSeq } from "@natalia/contracts";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { credentialSessions, handleRPCMessage, RPC_WRITE_METHODS } from "./rpc";
 import type { RuntimeAuthorizationContext } from "./rpc";
@@ -170,9 +170,15 @@ const TASK_EXECUTION_RECORD_LIMIT = 100;
 const TASK_EXECUTION_EVENT_LIMIT = 500;
 const TASK_EXECUTION_OUTPUT_LIMIT = 500;
 
-function encodeSSE(encoder: TextEncoder, id: number, event: RuntimeEvent) {
+function encodeSSE(
+  encoder: TextEncoder,
+  id: number,
+  event: RuntimeEvent,
+  sessionSeq?: number,
+) {
+  const cursor = sessionSeq === undefined ? "" : `seq: ${sessionSeq}\n`;
   return encoder.encode(
-    `id: ${id}\nevent: runtime\ndata: ${JSON.stringify(event)}\n\n`,
+    `id: ${id}\n${cursor}event: runtime\ndata: ${JSON.stringify(event)}\n\n`,
   );
 }
 
@@ -225,7 +231,9 @@ export function createRuntimeHttpServer(
         // for session A never sees an event carrying session B, not even its
         // count or type (the acceptance criterion for P0-D).
         if (!eventInSession(event, subscriber)) continue;
-        subscriber.controller.enqueue(encodeSSE(encoder, id, event));
+        subscriber.controller.enqueue(
+          encodeSSE(encoder, id, event, runtimeEventSessionSeq(event)),
+        );
       }
     });
   const handleRequest = async (
