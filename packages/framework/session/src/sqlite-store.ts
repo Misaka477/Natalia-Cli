@@ -1004,22 +1004,32 @@ export class SqliteSessionStore {
       options.offset === undefined
         ? this.db
             .query(
-              `SELECT seq, event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
+              `SELECT seq, event, session_seq FROM (
+                 SELECT seq, event,
+                   ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY seq) AS session_seq
+                 FROM events WHERE session_id = ?
+               ) WHERE seq > ? ORDER BY seq LIMIT ?`,
             )
             .all(sessionID, after, limit + 1)
         : this.db
             .query(
-              `SELECT seq, event FROM events WHERE session_id = ? ORDER BY seq LIMIT ? OFFSET ?`,
+              `SELECT seq, event, session_seq FROM (
+                 SELECT seq, event,
+                   ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY seq) AS session_seq
+                 FROM events WHERE session_id = ?
+               ) ORDER BY seq LIMIT ? OFFSET ?`,
             )
             .all(sessionID, limit + 1, offset)
     ) as Array<{
       seq: number;
       event: string;
+      session_seq: number;
     }>;
     const hasMore = rows.length > limit;
     return {
       events: rows.slice(0, limit).map((row) => ({
         seq: row.seq,
+        sessionSeq: row.session_seq,
         event: JSON.parse(row.event) as RuntimeEvent,
       })),
       hasMore,

@@ -243,6 +243,7 @@ export function createSessionExecution(
     if (!contextLedgerFactory)
       throw new Error("context ledger unavailable (natalia-context-ledger)");
     const fastPathEnabled = process.env.NATALIA_FAST_EXECUTION_LOAD === "1";
+    const durableEventCount = await sessionStore.eventCount(sessionID);
     const stored = await sessionStore.load(
       sessionID,
       fastPathEnabled
@@ -371,7 +372,8 @@ export function createSessionExecution(
       niaPendingQueue: [],
       naviAbortWakePending: false,
       niaAbortWakePending: false,
-      eventCount: fastPath ? runtimeRestoreEvents.length : loaded.events.length,
+      eventCount: durableEventCount,
+      nextSessionSeq: durableEventCount + 1,
       fullEventsLoaded: !fastPath,
     };
     executionBySession.set(sessionID, exec);
@@ -399,7 +401,10 @@ export function createSessionExecution(
             storeMode,
             true,
           );
-          exec.eventCount = exec.session.events.length;
+          exec.eventCount = Math.max(
+            exec.eventCount ?? 0,
+            exec.session.events.length,
+          );
           exec.fullEventsLoaded = true;
           try {
             sessionStore.ensureMessageIndex(sessionID);

@@ -172,12 +172,18 @@ export interface SessionStoreController {
     options?: { runtimeEvents?: boolean },
   ): Promise<SessionRecord>;
   referencedAttachments(): Promise<LocalAttachment[]>;
+  /** Durable event count for one session, independent of the live window. */
+  eventCount(id: SessionID): Promise<number>;
   history(
     id: SessionID,
     fallback: RuntimeEvent[],
     options?: { after?: number; offset?: number; limit?: number },
   ): Promise<{
-    events: Array<{ seq: number; event: RuntimeEvent }>;
+    events: Array<{
+      seq: number;
+      sessionSeq?: number;
+      event: RuntimeEvent;
+    }>;
     hasMore: boolean;
   }>;
   messages(

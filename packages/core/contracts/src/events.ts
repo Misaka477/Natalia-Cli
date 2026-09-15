@@ -1823,7 +1823,12 @@ export type InputMutationResult = {
     promotedAt?: string;
   };
 };
-export type RuntimeHistoryEvent = { seq: number; event: RuntimeEvent };
+export type RuntimeHistoryEvent = {
+  seq: number;
+  /** Per-session durable order for windowed consumers. */
+  sessionSeq?: number;
+  event: RuntimeEvent;
+};
 export type RuntimeHistory = {
   events: RuntimeHistoryEvent[];
   hasMore: boolean;

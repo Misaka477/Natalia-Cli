@@ -449,6 +449,12 @@ export function createSessionStoreController(input: {
       : input.attachments.referencedForSessions(await sessionStore.list());
   }
 
+  async function eventCount(id: SessionID): Promise<number> {
+    if (sqliteStore) return sqliteStore.eventCount(id);
+    const record = await sessionStore.load(id);
+    return record?.events.length ?? 0;
+  }
+
   async function history(
     id: SessionID,
     fallback: RuntimeEvent[],
@@ -463,9 +469,11 @@ export function createSessionStoreController(input: {
     const limit = Math.min(2000, Math.max(1, options.limit ?? 100));
     const page = source.slice(start, start + limit + 1);
     return {
-      events: page
-        .slice(0, limit)
-        .map((event, index) => ({ seq: start + index + 1, event })),
+      events: page.slice(0, limit).map((event, index) => ({
+        seq: start + index + 1,
+        sessionSeq: start + index + 1,
+        event,
+      })),
       hasMore: page.length > limit,
     };
   }
@@ -733,6 +741,7 @@ export function createSessionStoreController(input: {
     prewarmMessagePage,
     loadFullAsync,
     referencedAttachments,
+    eventCount,
     history,
     messages,
     flush,

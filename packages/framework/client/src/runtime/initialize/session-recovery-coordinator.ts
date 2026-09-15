@@ -168,6 +168,7 @@ export class SessionRecoveryCoordinator {
       naviPendingQueue: [],
       niaPendingQueue: [],
       naviAbortWakePending: false,
+      nextSessionSeq: session.events.length + 1,
       niaAbortWakePending: false,
     };
     scope.activeExec = initialExec;

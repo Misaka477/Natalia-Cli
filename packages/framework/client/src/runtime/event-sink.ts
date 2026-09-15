@@ -8,7 +8,10 @@
  * everything it needs from `RuntimeContext` at call time.
  */
 import { appendSessionEvent, projectedChatMessages } from "@natalia/session";
-import { runtimeEventDurability } from "@natalia/contracts";
+import {
+  markRuntimeEventSessionSeq,
+  runtimeEventDurability,
+} from "@natalia/contracts";
 import {
   createCollabSnapshotScheduler,
   isCollabSnapshotRelevantEvent,
@@ -81,7 +84,12 @@ export function createEventSink(
   }
   ctx.ports.goalControl = (action, sessionID) => {
     const id = sessionID ?? ctx.ports.getSessionID();
-    if (!id) return Promise.resolve({ ok: false, action, message: "no active session" });
+    if (!id)
+      return Promise.resolve({
+        ok: false,
+        action,
+        message: "no active session",
+      });
     return goalRuntime.control(action, id);
   };
   ctx.ports.goalEdit = (input, sessionID) => {
@@ -134,6 +142,7 @@ export function createEventSink(
       text,
       at: new Date().toISOString(),
     };
+    markRuntimeEventSessionSeq(partial, exec.nextSessionSeq++);
     appendSessionEvent(exec.session, partial);
     const sessionStoreController =
       ctx.ports.resolveService<SessionStoreController>(
@@ -359,8 +368,7 @@ export function createEventSink(
     }
     // The durable partial batches must cover the step's full text before the
     // final `content.done` lands, or replay would render a truncated answer.
-    if (!event.agentID && event.type === "content.done")
-      flushPartial(event.id);
+    if (!event.agentID && event.type === "content.done") flushPartial(event.id);
     // TERM-M.3 (c): a turn that ended as waiting_human persists the typed
     // pending-human state and clears the turn-level marker.
     if (
@@ -424,6 +432,7 @@ export function createEventSink(
         !sqliteContextCheckpoint &&
         runtimeEventDurability(event) === "durable"
       ) {
+        markRuntimeEventSessionSeq(event, exec.nextSessionSeq++);
         appendSessionEvent(exec.session, event);
         scheduleContextEpochWrite(exec, event);
         if (isCollabSnapshotRelevantEvent(event)) {
