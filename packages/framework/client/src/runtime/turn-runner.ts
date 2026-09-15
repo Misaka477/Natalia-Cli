@@ -9,7 +9,11 @@
  * call time.
  */
 import { providerForModel } from "@natalia/runtime";
-import { claimNextSteps, projectedCollabMessages } from "@natalia/session";
+import {
+  claimNextSteps,
+  projectedCollabMessages,
+  sessionFactCollabMessages,
+} from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import {
   ATTACHMENT_SERVICE,
@@ -30,6 +34,10 @@ import type { RealRuntimeClientOptions } from "./options";
 function collabMessagesForExec(
   exec: SessionExecutionState,
 ): ReturnType<typeof projectedCollabMessages> {
+  // The hot state holds the complete collab slice even when session.events is a
+  // fast-attach tail; prefer it over the (possibly tail-based) snapshot.
+  if (exec.factStateComplete === true && exec.factState)
+    return sessionFactCollabMessages(exec.factState);
   const snapshot = exec.collabSnapshot;
   if (snapshot && snapshot.eventCount === exec.session.events.length)
     return snapshot.collabMessages;

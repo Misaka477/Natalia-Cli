@@ -11,6 +11,7 @@ import {
   projectedMailboxMessages,
   projectedNaviChatMessages,
   projectedNiaChatMessages,
+  projectedPlanDocs,
   sessionFactActiveTurnIDs,
   sessionFactCollabMessages,
   sessionFactConstitutionOverrides,
@@ -22,6 +23,7 @@ import {
   sessionFactMailboxMessages,
   sessionFactNaviChatMessages,
   sessionFactNiaChatMessages,
+  sessionFactCollaborationEvents,
   sessionFactStateFromEvents,
   sessionIntelligenceFactsFromEvents,
 } from "../src";
@@ -589,4 +591,69 @@ test("navi/nia chat streams fold identically in the state and from events", () =
     "chat:m1",
     "collab:navi",
   ]);
+});
+
+test("the collaboration slice feeds collab, plan and mailbox projections", () => {
+  const noise: RuntimeEvent = {
+    type: "tool.update",
+    id: "turn_1:call_1",
+    name: "read_file",
+    callID: "call_1",
+    status: "succeeded",
+    summary: "read",
+  };
+  const events: RuntimeEvent[] = [
+    {
+      type: "plan.doc.created",
+      id: "plan:1:created",
+      planID: "plan:1",
+      title: "Plan 1",
+      documentPath: ".natalia/plans/plan_1.md",
+      createdBy: "live_chat",
+      status: "marked",
+      createdAt: "t0",
+    },
+    {
+      type: "collab.chat",
+      id: "collab:1",
+      threadID: "collab:1",
+      from: "live_chat",
+      to: "main_agent",
+      text: "hi",
+      round: 1,
+      expectsReply: true,
+      at: "t1",
+    },
+    {
+      type: "mailbox.queued",
+      id: "mailbox:1:queued",
+      messageID: "mailbox:1",
+      source: "system",
+      priority: "normal",
+      intent: "constraint",
+      text: "never commit",
+      safeSummary: "a constraint",
+      deliveryPolicy: "before_next_tool",
+      createdAt: "t2",
+    },
+    noise,
+  ];
+
+  const state = sessionFactStateFromEvents(events);
+  const slice = sessionFactCollaborationEvents(state);
+  // The noisy event is excluded from the slice.
+  expect(slice).toHaveLength(3);
+  expect(slice.map((event) => event.type)).toEqual([
+    "plan.doc.created",
+    "collab.chat",
+    "mailbox.queued",
+  ]);
+  // Every collaboration projection over the slice matches the full journal.
+  expect(projectedPlanDocs(slice)).toEqual(projectedPlanDocs(events));
+  expect(projectedCollabMessages(slice)).toEqual(
+    projectedCollabMessages(events),
+  );
+  expect(projectedMailboxMessages(slice)).toEqual(
+    projectedMailboxMessages(events),
+  );
 });

@@ -35,7 +35,7 @@ import {
   createWorkspaceWriteLock,
   type WorkspaceMutationIdentity,
 } from "@natalia/workspace";
-import type { SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import {
   ATTACHMENT_SERVICE,
@@ -136,9 +136,20 @@ export async function wireFrameworkServices(
     COLLABORATION_WAITER_SERVICE,
     createInteractiveWaiter(ctx.state.waiterDeps),
   );
+  // Collaboration tools/services must see the whole collab+mailbox slice even
+  // when the execution keeps only its fast-attach tail; the hot state carries
+  // that slice once completed (tool pre-stage + the snapshot scheduler do so).
+  const collaborationEventsFor = (
+    sessionID: SessionID,
+  ): RuntimeEvent[] | undefined => {
+    const exec = ctx.ports.getExecutionBySession().get(sessionID);
+    if (!exec) return undefined;
+    return exec.factStateComplete === true && exec.factState
+      ? exec.factState.collaborationEvents
+      : exec.session.events;
+  };
   const collaborationService = createCollaborationService({
-    events: (sessionID) =>
-      ctx.ports.getExecutionBySession().get(sessionID)?.session.events,
+    events: collaborationEventsFor,
     publish: (sessionID, event) => {
       const exec = ctx.ports.getExecutionBySession().get(sessionID);
       if (exec) ctx.ports.publishForSession(exec, event);
@@ -153,8 +164,7 @@ export async function wireFrameworkServices(
     collaborationService,
   );
   for (const tool of collaborationTools({
-    events: (sessionID) =>
-      ctx.ports.getExecutionBySession().get(sessionID)?.session.events,
+    events: collaborationEventsFor,
     publish: (sessionID, event) => {
       const exec = ctx.ports.getExecutionBySession().get(sessionID);
       if (exec) ctx.ports.publishForSession(exec, event);

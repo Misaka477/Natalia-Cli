@@ -1701,9 +1701,15 @@ export type SessionFactState = {
   decisions: SessionDecisionFactState;
   intelligence: SessionIntelligenceFactState;
   latestSnapshot?: SessionSnapshotEvent;
-  collabEvents: RuntimeEvent[];
   /**
-   * Channel-scoped chat events, collected verbatim like `collabEvents`. The
+   * Every event the collaboration projections consume: `collab.*`,
+   * `*.collab.*`, `plan.doc.*` and `mailbox.*`. Collected verbatim so the collab
+   * snapshot, mailbox page and collaboration tools can fold the complete slice
+   * without the raw journal.
+   */
+  collaborationEvents: RuntimeEvent[];
+  /**
+   * Channel-scoped chat events, collected verbatim like `collaborationEvents`. The
    * chat projector resolves thinking accumulations, rollback boundaries and
    * compaction in one pass, and only ever looks at events where a collab row or
    * the channel predicate matches — so folding just those events is equivalent
@@ -1713,6 +1719,16 @@ export type SessionFactState = {
   naviChatEvents: RuntimeEvent[];
   niaChatEvents: RuntimeEvent[];
 };
+
+/** Events the collaboration / collab-snapshot projections consume. */
+export function isCollaborationStreamEvent(event: RuntimeEvent): boolean {
+  return (
+    event.type.startsWith("collab.") ||
+    event.type.includes(".collab.") ||
+    event.type.startsWith("plan.doc.") ||
+    event.type.startsWith("mailbox.")
+  );
+}
 
 /** Would `projectChatStream` render this event on the `navi` channel? */
 function naviChatStreamEvent(event: RuntimeEvent): boolean {
@@ -1736,7 +1752,7 @@ export function emptySessionFactState(): SessionFactState {
     mailbox: emptySessionMailboxFactState(),
     decisions: emptySessionDecisionFactState(),
     intelligence: emptySessionIntelligenceFactState(),
-    collabEvents: [],
+    collaborationEvents: [],
     naviChatEvents: [],
     niaChatEvents: [],
   };
@@ -1753,7 +1769,7 @@ export function applySessionFactEvent(
   applySessionDecisionFact(state.decisions, event);
   applySessionIntelligenceFact(state.intelligence, event);
   if (event.type === "session.snapshot") state.latestSnapshot = event;
-  if (normalizeCollaborationEvent(event)) state.collabEvents.push(event);
+  if (isCollaborationStreamEvent(event)) state.collaborationEvents.push(event);
   if (naviChatStreamEvent(event)) state.naviChatEvents.push(event);
   if (niaChatStreamEvent(event)) state.niaChatEvents.push(event);
 }
@@ -1810,7 +1826,14 @@ export function sessionFactLatestSnapshot(
 export function sessionFactCollabMessages(
   state: SessionFactState,
 ): ProjectedCollabMessage[] {
-  return projectedCollabMessages(state.collabEvents);
+  return projectedCollabMessages(state.collaborationEvents);
+}
+
+/** The complete collaboration slice (collab + plan.doc + mailbox events). */
+export function sessionFactCollaborationEvents(
+  state: SessionFactState,
+): RuntimeEvent[] {
+  return state.collaborationEvents;
 }
 
 export function sessionFactIntelligenceFacts(

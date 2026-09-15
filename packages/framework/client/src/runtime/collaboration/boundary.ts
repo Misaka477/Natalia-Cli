@@ -8,7 +8,10 @@
  * edits and drift-check them against the active plan). Reads live state through
  * `RuntimeContext` at call time.
  */
-import { projectedMailboxMessages } from "@natalia/session";
+import {
+  projectedMailboxMessages,
+  sessionFactMailboxMessages,
+} from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -22,6 +25,9 @@ import { activePlanForExec } from "./plan-doc-runtime";
 
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   function mailboxMessagesFor(exec?: SessionExecutionState) {
+    // The hot state is complete even when session.events is a fast-attach tail.
+    if (exec?.factStateComplete === true && exec.factState)
+      return sessionFactMailboxMessages(exec.factState);
     const snapshot = exec?.collabSnapshot;
     if (
       snapshot &&

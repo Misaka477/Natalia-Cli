@@ -4,6 +4,7 @@ import {
   projectedNiaChatMessages,
   sessionFactNaviChatMessages,
   sessionFactNiaChatMessages,
+  sessionFactCollabMessages,
 } from "@natalia/session";
 import {
   ContextLedger,
@@ -293,6 +294,10 @@ export function niaChatHistory(
 }
 
 export function collabMessagesForExec(exec: SessionExecutionState) {
+  // The hot state holds the complete collab slice even when session.events is a
+  // fast-attach tail; prefer it over the (possibly tail-based) snapshot.
+  if (exec.factStateComplete === true && exec.factState)
+    return sessionFactCollabMessages(exec.factState);
   const snapshot = exec.collabSnapshot;
   return snapshot && snapshot.eventCount === exec.session.events.length
     ? snapshot.collabMessages

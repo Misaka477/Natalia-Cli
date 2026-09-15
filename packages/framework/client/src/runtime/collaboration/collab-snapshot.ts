@@ -11,6 +11,7 @@
  */
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
+  isCollaborationStreamEvent,
   projectedCollabMessages,
   projectedMailboxMessages,
   projectedPlanDocs,
@@ -20,6 +21,7 @@ import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import type { CollabSnapshot } from "../session-execution-state";
 import { perfLog } from "@natalia/runtime-services";
+import { completeSessionFactState } from "../session-facts";
 
 const SNAPSHOT_DEBOUNCE_MS = 80;
 
@@ -58,11 +60,17 @@ export function createCollabSnapshotScheduler(
     if (ctx.ports.isDisposed()) return;
     const exec = ctx.ports.getExecutionBySession().get(sessionID);
     if (!exec) return;
+    // Complete the hot state first so the snapshot sees the whole collaboration
+    // slice even when the execution is a fast-attach tail. Without this the
+    // snapshot would silently drop older collab threads and pending questions.
+    await completeSessionFactState(ctx, exec);
     const events = exec.session.events;
-    // These projections only consume collaboration/plan/mailbox events. Send
-    // that slice to the worker instead of structured-cloning the complete
-    // long-session event array.
-    const projectionEvents = events.filter(isCollabProjectionEvent);
+    // These projections only consume collaboration/plan/mailbox events. Use the
+    // collected slice instead of structured-cloning the whole event array.
+    const projectionEvents =
+      exec.factStateComplete === true && exec.factState
+        ? exec.factState.collaborationEvents
+        : events.filter(isCollabProjectionEvent);
     const start = performance.now();
     try {
       const computed = await computeCollabSnapshotInWorker(projectionEvents);
@@ -121,10 +129,5 @@ export function isCollabSnapshotRelevantEvent(event: RuntimeEvent): boolean {
 }
 
 function isCollabProjectionEvent(event: RuntimeEvent): boolean {
-  return (
-    event.type.startsWith("collab.") ||
-    event.type.includes(".collab.") ||
-    event.type.startsWith("plan.doc.") ||
-    event.type.startsWith("mailbox.")
-  );
+  return isCollaborationStreamEvent(event);
 }

@@ -365,6 +365,8 @@ export {
   sessionIntelligenceFactsFromEvents,
   sessionFactNaviChatMessages,
   sessionFactNiaChatMessages,
+  sessionFactCollaborationEvents,
+  isCollaborationStreamEvent,
 } from "./projector";
 export type {
   ProjectedCapability,
