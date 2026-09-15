@@ -20,7 +20,6 @@ import {
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import { chatProviderMessagesFromHistory } from "./collaboration/chat-turn-common";
-import { ensureSessionFullEvents } from "./session-full-events";
 import { perfLog } from "@natalia/runtime-services";
 
 export function createSessionAttach(ctx: RuntimeContext) {
@@ -31,7 +30,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
   async function seedStreamContextSnapshots(
     exec: import("./context").SessionExecutionState,
   ) {
-    await ensureSessionFullEvents(ctx, exec).catch(() => undefined);
+    // Seed stream meters from the current session window. A consumer that
+    // truly needs older snapshots must call the shared full-event escape hatch
+    // explicitly; attach must not force a full journal load on every switch.
     const meter = exec.tokenMeter;
     const latestSnapshot = (
       channel: "navi" | "nia" | undefined,

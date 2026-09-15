@@ -2,10 +2,6 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
 import type { SessionProjection } from "@natalia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
-import {
-  maxLiveSessionEvents,
-  windowRuntimeEvents,
-} from "../session-event-retention";
 import type {
   AttachmentService,
   ContextLedgerFactory,
@@ -184,8 +180,9 @@ export class SessionRecoveryCoordinator {
 
     // Fast recovery: when NATALIA_FAST_EXECUTION_LOAD is enabled and a context
     // epoch exists, the store already returned a recovery projection without
-    // loading the full event log. Use the post-epoch events for the in-memory
-    // session and load the full log in the background.
+    // loading the full event log. Keep the post-epoch tail as the normal
+    // window; a consumer that genuinely needs the full journal calls
+    // ensureSessionFullEvents(), the single explicit escape hatch.
     const restoreEvents = fastPathEnabled
       ? this.sessionStore.contextEventsAfter(
           scope.sessionID,
@@ -195,26 +192,6 @@ export class SessionRecoveryCoordinator {
     if (restoreEvents && storedSession.contextEpoch) {
       session.events = restoreEvents;
       if (scope.activeExec) scope.activeExec.session.events = restoreEvents;
-      memoryTrace("recovery.fullLoad.start", { sessionID: scope.sessionID });
-      void this.sessionStore
-        .loadFullAsync(scope.sessionID, { runtimeEvents: true })
-        .then((full) => {
-          memoryTrace("recovery.fullLoad.done", {
-            sessionID: scope.sessionID,
-            events: full.events.length,
-          });
-          const bounded = windowRuntimeEvents(
-            full.events,
-            maxLiveSessionEvents(),
-          );
-          this.session.events = bounded;
-          if (scope.activeExec) scope.activeExec.session.events = bounded;
-        })
-        .catch((error) => {
-          console.warn(
-            `[perf] recovery background full-load failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        });
     }
     if (fastPathEnabled) {
       // Prewarm the message index in a worker thread so the first
