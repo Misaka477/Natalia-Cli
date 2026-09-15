@@ -15,9 +15,11 @@ import {
   sessionFactConstitutionRules,
   sessionFactDecisionRecords,
   sessionFactDriftFindings,
+  sessionFactIntelligenceFacts,
   sessionFactLatestSnapshot,
   sessionFactMailboxMessages,
   sessionFactStateFromEvents,
+  sessionIntelligenceFactsFromEvents,
 } from "../src";
 
 const NOW = Date.parse("2026-01-01T00:00:00.000Z");
@@ -393,4 +395,107 @@ test("an old open fact survives unrelated later events", () => {
   expect(drift[0]?.findingID).toBe("DF-001");
   const mailbox = sessionFactMailboxMessages(state);
   expect(mailbox).toHaveLength(2);
+});
+
+test("intelligence facts fold identically in the state and from events", () => {
+  const baseTerminal = { target: { kind: "host", cwd: "/w" } } as const;
+  const events: RuntimeEvent[] = [
+    {
+      type: "workgraph.node_added",
+      id: "wg:change:1",
+      nodeID: "wg:change:1",
+      kind: "workspace_change",
+      summary: "write_file changed",
+      target: "src/a.ts",
+      actor: "write_file",
+      sessionID: "ses_1",
+    },
+    {
+      type: "workgraph.node_added",
+      id: "wg:action:1",
+      nodeID: "wg:action:1",
+      kind: "agent_action",
+      summary: "turn",
+      sessionID: "ses_1",
+    },
+    {
+      type: "evidence.recorded",
+      id: "evidence:1",
+      taskID: "task_1",
+      objective: "objective",
+      status: "validated",
+      changes: [
+        { path: "src/a.ts", changeType: "modified", summary: "fixed" },
+        { path: "src/b.ts", changeType: "modified", summary: "fixed" },
+      ],
+    },
+    { type: "content.done", id: "turn_1", text: "first" },
+    { type: "content.delta", id: "turn_2", text: "unconfirmed" },
+    { type: "content.done", id: "turn_2", text: "final" },
+    {
+      type: "terminal.timeline",
+      id: "term_live",
+      actor: "model",
+      action: "started",
+      status: "executed",
+      summary: "started",
+      at: "now",
+      ...baseTerminal,
+    },
+    {
+      type: "terminal.timeline",
+      id: "term_dead",
+      actor: "model",
+      action: "exit",
+      status: "executed",
+      summary: "exit",
+      at: "now",
+      ...baseTerminal,
+    },
+    {
+      type: "sandbox.update",
+      id: "sb_1",
+      status: "created",
+      root: "/w/.natalia/sandboxes/sb_1",
+      isolationLevel: "workspace",
+      changedFiles: 0,
+      runningResources: 0,
+      target: {
+        kind: "sandbox",
+        sandboxID: "sb_1",
+        root: "/r",
+        isolationLevel: "workspace",
+      },
+      resourcePolicy: "policy",
+    },
+    {
+      type: "sandbox.update",
+      id: "sb_1",
+      status: "deleted",
+      root: "/w/.natalia/sandboxes/sb_1",
+      isolationLevel: "workspace",
+      changedFiles: 0,
+      runningResources: 0,
+      target: {
+        kind: "sandbox",
+        sandboxID: "sb_1",
+        root: "/r",
+        isolationLevel: "workspace",
+      },
+      resourcePolicy: "policy",
+    },
+  ];
+
+  const state = sessionFactStateFromEvents(events);
+  expect(sessionFactIntelligenceFacts(state)).toEqual(
+    sessionIntelligenceFactsFromEvents(events),
+  );
+  expect(sessionFactIntelligenceFacts(state)).toEqual({
+    changedFiles: 1,
+    validatedChanges: 2,
+    unvalidatedChanges: 0,
+    latestOutput: "final",
+    hasPTY: true,
+    hasSandbox: false,
+  });
 });

@@ -360,6 +360,9 @@ export {
   sessionFactDecisionRecords,
   sessionFactLatestSnapshot,
   sessionFactCollabMessages,
+  sessionFactIntelligenceFacts,
+  sessionIntelligenceFactsFrom,
+  sessionIntelligenceFactsFromEvents,
 } from "./projector";
 export type {
   ProjectedCapability,
@@ -369,6 +372,8 @@ export type {
   ProjectedPlanDoc,
   SessionProjection,
   SessionFactState,
+  SessionIntelligenceFactState,
+  SessionIntelligenceFacts,
 } from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";
 export type {

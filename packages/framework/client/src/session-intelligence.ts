@@ -25,6 +25,10 @@
  *    redacted in-memory stream; replay falls back to the last `content.done`.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
+import {
+  sessionIntelligenceFactsFromEvents,
+  type SessionIntelligenceFacts,
+} from "@natalia/session";
 
 export type SessionIntelligenceLive = {
   agentStatus: string;
@@ -35,32 +39,19 @@ export type SessionIntelligenceLive = {
 
 /** The changed workspace files, as recorded by the Work Graph writer. */
 export function countChangedFiles(events: RuntimeEvent[]): number {
-  return events.filter(
-    (event): event is Extract<RuntimeEvent, { type: "workgraph.node_added" }> =>
-      event.type === "workgraph.node_added" &&
-      event.kind === "workspace_change",
-  ).length;
+  return sessionIntelligenceFactsFromEvents(events).changedFiles;
 }
 
 /** Changes backed by `evidence.recorded` events. Zero today: no evidence writer. */
 export function countValidatedChanges(events: RuntimeEvent[]): number {
-  return events
-    .filter(
-      (event): event is Extract<RuntimeEvent, { type: "evidence.recorded" }> =>
-        event.type === "evidence.recorded",
-    )
-    .reduce((sum, event) => sum + (event.changes?.length ?? 0), 0);
+  return sessionIntelligenceFactsFromEvents(events).validatedChanges;
 }
 
 /** The last confirmed assistant output, if any, before the snapshot moment. */
 export function latestConfirmedOutput(
   events: RuntimeEvent[],
 ): string | undefined {
-  for (let index = events.length - 1; index >= 0; index--) {
-    const event = events[index];
-    if (event && event.type === "content.done" && event.text) return event.text;
-  }
-  return undefined;
+  return sessionIntelligenceFactsFromEvents(events).latestOutput;
 }
 
 /**
@@ -71,12 +62,7 @@ export function latestConfirmedOutput(
  * exists. Journal-derived so replay answers the same way the live moment did.
  */
 export function hasLivePTY(events: RuntimeEvent[]): boolean {
-  const latestAction = new Map<string, string>();
-  for (const event of events) {
-    if (event.type === "terminal.timeline")
-      latestAction.set(event.id, event.action);
-  }
-  return [...latestAction.values()].some((action) => action !== "exit");
+  return sessionIntelligenceFactsFromEvents(events).hasPTY;
 }
 
 /**
@@ -86,15 +72,7 @@ export function hasLivePTY(events: RuntimeEvent[]): boolean {
  * publishes `deleted`. Journal-derived so replay answers the same way.
  */
 export function hasLiveSandbox(events: RuntimeEvent[]): boolean {
-  const latestStatus = new Map<string, string>();
-  for (const event of events) {
-    if (event.type === "sandbox.update")
-      latestStatus.set(event.id, event.status);
-  }
-  return [...latestStatus.values()].some(
-    (status) =>
-      status !== "deleted" && status !== "stopped" && status !== "failed",
-  );
+  return sessionIntelligenceFactsFromEvents(events).hasSandbox;
 }
 
 export function buildSessionIntelligenceSnapshot(input: {
@@ -102,46 +80,34 @@ export function buildSessionIntelligenceSnapshot(input: {
   events: RuntimeEvent[];
   live: SessionIntelligenceLive;
 }): Extract<RuntimeEvent, { type: "session.snapshot" }> {
-  let changedFiles = 0;
-  let validated = 0;
-  let latestOutput: string | undefined;
-  const latestTerminalAction = new Map<string, string>();
-  const latestSandboxStatus = new Map<string, string>();
-  for (const event of input.events) {
-    switch (event.type) {
-      case "workgraph.node_added":
-        if (event.kind === "workspace_change") changedFiles += 1;
-        break;
-      case "evidence.recorded":
-        validated += event.changes?.length ?? 0;
-        break;
-      case "content.done":
-        if (event.text) latestOutput = event.text;
-        break;
-      case "terminal.timeline":
-        latestTerminalAction.set(event.id, event.action);
-        break;
-      case "sandbox.update":
-        latestSandboxStatus.set(event.id, event.status);
-        break;
-    }
-  }
-  const output = input.live.recentOutput ?? latestOutput;
+  return buildSessionIntelligenceSnapshotFromFacts({
+    id: input.id,
+    facts: sessionIntelligenceFactsFromEvents(input.events),
+    live: input.live,
+  });
+}
+
+/**
+ * Assemble the snapshot from already-folded intelligence facts. The runtime's
+ * incremental hot state uses this variant so an immediate-status read does not
+ * re-scan the journal when the fact state is complete.
+ */
+export function buildSessionIntelligenceSnapshotFromFacts(input: {
+  id: string;
+  facts: SessionIntelligenceFacts;
+  live: SessionIntelligenceLive;
+}): Extract<RuntimeEvent, { type: "session.snapshot" }> {
+  const output = input.live.recentOutput ?? input.facts.latestOutput;
   return {
     type: "session.snapshot",
     id: input.id,
     agentStatus: input.live.agentStatus,
     ...(input.live.currentStep ? { currentStep: input.live.currentStep } : {}),
     ...(input.live.activeTool ? { activeTool: input.live.activeTool } : {}),
-    changedFiles,
-    unvalidatedChanges: Math.max(0, changedFiles - validated),
+    changedFiles: input.facts.changedFiles,
+    unvalidatedChanges: input.facts.unvalidatedChanges,
     ...(output ? { recentOutput: output.slice(0, 2000) } : {}),
-    hasPTY: [...latestTerminalAction.values()].some(
-      (action) => action !== "exit",
-    ),
-    hasSandbox: [...latestSandboxStatus.values()].some(
-      (status) =>
-        status !== "deleted" && status !== "stopped" && status !== "failed",
-    ),
+    hasPTY: input.facts.hasPTY,
+    hasSandbox: input.facts.hasSandbox,
   };
 }

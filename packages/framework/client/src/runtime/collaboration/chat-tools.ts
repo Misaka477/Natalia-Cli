@@ -128,7 +128,6 @@ function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
-
 function planDocWriteTool(
   ctx: RuntimeContext,
   description: string,
@@ -207,7 +206,8 @@ export function createChatTools(ctx: RuntimeContext) {
         },
         async execute() {
           if (!exec) return JSON.stringify({ agentStatus: "unknown" });
-          await ensureSessionFullEvents(ctx, exec);
+          if (exec.factStateComplete !== true)
+            await ensureSessionFullEvents(ctx, exec);
           return JSON.stringify(
             currentSessionSnapshot(exec, `snapshot:live:${exec.session.id}`),
           );
@@ -680,7 +680,8 @@ export function createChatTools(ctx: RuntimeContext) {
         },
         async execute() {
           if (!exec) return JSON.stringify({ agentStatus: "unknown" });
-          await ensureSessionFullEvents(ctx, exec);
+          if (exec.factStateComplete !== true)
+            await ensureSessionFullEvents(ctx, exec);
           return JSON.stringify(
             currentSessionSnapshot(exec, `snapshot:nia:${exec.session.id}`),
           );

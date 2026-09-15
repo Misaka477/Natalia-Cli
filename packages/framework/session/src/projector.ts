@@ -1603,6 +1603,91 @@ export function sessionDecisionRecordsFrom(
 }
 
 /**
+ * Intelligence snapshot facts, folded so `buildSessionIntelligenceSnapshot`
+ * and the incremental hot state share one reducer. Counts are cumulative
+ * workspace facts; latest output / terminal / sandbox are last-write-wins.
+ */
+export type SessionIntelligenceFactState = {
+  changedFiles: number;
+  validatedChanges: number;
+  latestOutput?: string;
+  terminalActions: Map<string, string>;
+  sandboxStatuses: Map<string, string>;
+};
+
+export type SessionIntelligenceFacts = {
+  changedFiles: number;
+  validatedChanges: number;
+  unvalidatedChanges: number;
+  latestOutput?: string;
+  hasPTY: boolean;
+  hasSandbox: boolean;
+};
+
+export function emptySessionIntelligenceFactState(): SessionIntelligenceFactState {
+  return {
+    changedFiles: 0,
+    validatedChanges: 0,
+    terminalActions: new Map(),
+    sandboxStatuses: new Map(),
+  };
+}
+
+export function applySessionIntelligenceFact(
+  state: SessionIntelligenceFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type === "workgraph.node_added") {
+    if (event.kind === "workspace_change") state.changedFiles += 1;
+    return;
+  }
+  if (event.type === "evidence.recorded") {
+    state.validatedChanges += event.changes?.length ?? 0;
+    return;
+  }
+  if (event.type === "content.done") {
+    if (event.text) state.latestOutput = event.text;
+    return;
+  }
+  if (event.type === "terminal.timeline") {
+    state.terminalActions.set(event.id, event.action);
+    return;
+  }
+  if (event.type === "sandbox.update") {
+    state.sandboxStatuses.set(event.id, event.status);
+  }
+}
+
+export function sessionIntelligenceFactsFrom(
+  state: SessionIntelligenceFactState,
+): SessionIntelligenceFacts {
+  return {
+    changedFiles: state.changedFiles,
+    validatedChanges: state.validatedChanges,
+    unvalidatedChanges: Math.max(
+      0,
+      state.changedFiles - state.validatedChanges,
+    ),
+    ...(state.latestOutput ? { latestOutput: state.latestOutput } : {}),
+    hasPTY: [...state.terminalActions.values()].some(
+      (action) => action !== "exit",
+    ),
+    hasSandbox: [...state.sandboxStatuses.values()].some(
+      (status) =>
+        status !== "deleted" && status !== "stopped" && status !== "failed",
+    ),
+  };
+}
+
+export function sessionIntelligenceFactsFromEvents(
+  events: RuntimeEvent[],
+): SessionIntelligenceFacts {
+  const state = emptySessionIntelligenceFactState();
+  for (const event of events) applySessionIntelligenceFact(state, event);
+  return sessionIntelligenceFactsFrom(state);
+}
+
+/**
  * The incremental hot memory for one session: active-set facts a surface can
  * read without re-scanning the journal. This is deliberately the *memory* hot
  * tier (see the RINA plan); the model-visible working set stays in
@@ -1614,6 +1699,7 @@ export type SessionFactState = {
   drift: SessionDriftFactState;
   mailbox: SessionMailboxFactState;
   decisions: SessionDecisionFactState;
+  intelligence: SessionIntelligenceFactState;
   latestSnapshot?: SessionSnapshotEvent;
   collabEvents: RuntimeEvent[];
 };
@@ -1625,6 +1711,7 @@ export function emptySessionFactState(): SessionFactState {
     drift: emptySessionDriftFactState(),
     mailbox: emptySessionMailboxFactState(),
     decisions: emptySessionDecisionFactState(),
+    intelligence: emptySessionIntelligenceFactState(),
     collabEvents: [],
   };
 }
@@ -1638,6 +1725,7 @@ export function applySessionFactEvent(
   applySessionDriftFact(state.drift, event);
   applySessionMailboxFact(state.mailbox, event);
   applySessionDecisionFact(state.decisions, event);
+  applySessionIntelligenceFact(state.intelligence, event);
   if (event.type === "session.snapshot") state.latestSnapshot = event;
   if (normalizeCollaborationEvent(event)) state.collabEvents.push(event);
 }
@@ -1695,4 +1783,10 @@ export function sessionFactCollabMessages(
   state: SessionFactState,
 ): ProjectedCollabMessage[] {
   return projectedCollabMessages(state.collabEvents);
+}
+
+export function sessionFactIntelligenceFacts(
+  state: SessionFactState,
+): SessionIntelligenceFacts {
+  return sessionIntelligenceFactsFrom(state.intelligence);
 }

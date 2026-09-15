@@ -5,8 +5,15 @@
  * turn/tool id helpers, the event flush barrier, and the durable in-flight
  * operation writer. Reads live state through `RuntimeContext` at call time.
  */
-import { projectSession } from "@natalia/session";
-import { buildSessionIntelligenceSnapshot } from "../session-intelligence";
+import {
+  projectSession,
+  sessionFactActiveTurnIDs,
+  sessionFactIntelligenceFacts,
+} from "@natalia/session";
+import {
+  buildSessionIntelligenceSnapshot,
+  buildSessionIntelligenceSnapshotFromFacts,
+} from "../session-intelligence";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
   type SessionStoreController,
@@ -83,20 +90,37 @@ export function createSnapshot(ctx: RuntimeContext) {
   ): Extract<RuntimeEvent, { type: "session.snapshot" }> {
     const { redactToolOutput } = ctx.ports;
     const { activeToolByTurn, liveMainOutputByTurn } = ctx.state;
-    const events = exec.session.events;
-    const cachedProjection = exec.snapshotProjection;
-    const projection =
-      cachedProjection && cachedProjection.eventCount === events.length
-        ? cachedProjection.value
-        : projectSession(exec.session);
-    if (!cachedProjection || cachedProjection.eventCount !== events.length)
-      exec.snapshotProjection = { eventCount: events.length, value: projection };
-    const active = projection.activeTurnIDs.length > 0;
+    // Prefer the incremental hot state when it was seeded from the full log;
+    // otherwise fall back to the full journal fold. This keeps the snapshot
+    // correct on fast-attach tails until the state can be completed.
+    const factState =
+      exec.factStateComplete === true ? exec.factState : undefined;
+    const facts = factState
+      ? sessionFactIntelligenceFacts(factState)
+      : undefined;
+    let activeTurnIDs: string[];
+    if (factState) {
+      activeTurnIDs = sessionFactActiveTurnIDs(factState);
+    } else {
+      const events = exec.session.events;
+      const cachedProjection = exec.snapshotProjection;
+      const projection =
+        cachedProjection && cachedProjection.eventCount === events.length
+          ? cachedProjection.value
+          : projectSession(exec.session);
+      if (!cachedProjection || cachedProjection.eventCount !== events.length)
+        exec.snapshotProjection = {
+          eventCount: events.length,
+          value: projection,
+        };
+      activeTurnIDs = projection.activeTurnIDs;
+    }
+    const active = activeTurnIDs.length > 0;
     let agentStatus = "idle";
     if (exec.paused) agentStatus = "paused";
     else if (active) agentStatus = "running";
     const step = exec.context.journalStatus().messageCount;
-    const activeTurnID = projection.activeTurnIDs[0];
+    const activeTurnID = activeTurnIDs[0];
     const activeTool = activeTurnID
       ? activeToolByTurn.get(activeTurnID)
       : undefined;
@@ -105,16 +129,19 @@ export function createSnapshot(ctx: RuntimeContext) {
           .trim()
           .slice(-2000)
       : "";
-    return buildSessionIntelligenceSnapshot({
-      id,
-      events,
-      live: {
-        agentStatus,
-        ...(active ? { currentStep: `step ${step}` } : {}),
-        ...(activeTool ? { activeTool } : {}),
-        ...(liveOutput ? { recentOutput: liveOutput } : {}),
-      },
-    });
+    const live = {
+      agentStatus,
+      ...(active ? { currentStep: `step ${step}` } : {}),
+      ...(activeTool ? { activeTool } : {}),
+      ...(liveOutput ? { recentOutput: liveOutput } : {}),
+    };
+    return facts
+      ? buildSessionIntelligenceSnapshotFromFacts({ id, facts, live })
+      : buildSessionIntelligenceSnapshot({
+          id,
+          events: exec.session.events,
+          live,
+        });
   }
 
   function publishSessionSnapshot(exec?: SessionExecutionState) {
