@@ -126,6 +126,14 @@ export function feedSessionEventWindow(
  * execution. The persistence queue can lag a just-finished turn, so a read
  * must not discard the live tail merely because the window page is older.
  */
+export async function sessionWindowEventsForExec(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+): Promise<RuntimeEvent[]> {
+  const window = await ensureSessionEventWindow(ctx, exec);
+  return window ? sessionWindowEvents(exec, window) : exec.session.events;
+}
+
 export function sessionWindowEvents(
   exec: SessionExecutionState,
   window: SessionWindow<SessionWindowEntry<RuntimeEvent>>,

@@ -14,7 +14,10 @@ import {
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
-import { ensureSessionFullEvents } from "./session-full-events";
+import {
+  ensureSessionEventWindow,
+  sessionWindowEvents,
+} from "./session-event-window";
 
 async function appendSandboxMutation(
   ctx: RuntimeContext,
@@ -97,12 +100,16 @@ export function createSandboxRuntime(
     return owner;
   }
 
-  function sandboxIDsFor(
+  async function sandboxIDsFor(
     owner: import("./context").SessionExecutionState | undefined,
   ) {
     if (!owner?.session) return new Set<string>();
+    const window = await ensureSessionEventWindow(ctx, owner);
+    const events = window
+      ? sessionWindowEvents(owner, window)
+      : owner.session.events;
     return new Set(
-      owner.session.events
+      events
         .filter((event) => event.type === "sandbox.update")
         .map((event) => event.id),
     );
@@ -113,8 +120,7 @@ export function createSandboxRuntime(
     owner: import("./context").SessionExecutionState,
     id: string,
   ) {
-    await ensureSessionFullEvents(ctx, owner);
-    if (!sandboxIDsFor(owner).has(id))
+    if (!(await sandboxIDsFor(owner)).has(id))
       throw new Error(
         `sandbox ${id} does not belong to session ${owner.session.id}`,
       );
@@ -144,7 +150,7 @@ export function createSandboxRuntime(
       const owner = sessionID
         ? await sessionOwner(sessionID)
         : ctx.ports.getActiveExec();
-      const owned = sandboxIDsFor(owner);
+      const owned = await sandboxIDsFor(owner);
       return (await requireSandboxes().list())
         .filter((sandbox) => owned.has(sandbox.id))
         .map((sandbox) => ({

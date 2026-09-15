@@ -4,7 +4,10 @@ import {
   projectedWorkGraphNodes,
 } from "@natalia/session";
 import type { RuntimeContext } from "./context";
-import { ensureSessionFullEvents } from "./session-full-events";
+import {
+  ensureSessionEventWindow,
+  sessionWindowEvents,
+} from "./session-event-window";
 
 type WorkGraphRuntime = Pick<
   RuntimeServiceClient,
@@ -31,12 +34,17 @@ export function createWorkGraphRuntime(ctx: RuntimeContext): WorkGraphRuntime {
   return {
     async workGraphNodes() {
       const exec = ctx.ports.getActiveExec();
-      if (exec) await ensureSessionFullEvents(ctx, exec);
+      const window = exec
+        ? await ensureSessionEventWindow(ctx, exec)
+        : undefined;
       const session = ctx.ports.getSession();
       if (!session) return [];
+      const events = window
+        ? sessionWindowEvents(exec!, window)
+        : session.events;
       const nodes = (await graphProjectionWithFallback(
         "workGraphNodes",
-        session.events,
+        events,
       )) as ReturnType<typeof projectedWorkGraphNodes>;
       return nodes.map((record) => ({
         nodeID: record.nodeID,
@@ -51,12 +59,17 @@ export function createWorkGraphRuntime(ctx: RuntimeContext): WorkGraphRuntime {
     },
     async workGraphEdges() {
       const exec = ctx.ports.getActiveExec();
-      if (exec) await ensureSessionFullEvents(ctx, exec);
+      const window = exec
+        ? await ensureSessionEventWindow(ctx, exec)
+        : undefined;
       const session = ctx.ports.getSession();
       if (!session) return [];
+      const events = window
+        ? sessionWindowEvents(exec!, window)
+        : session.events;
       const edges = (await graphProjectionWithFallback(
         "workGraphEdges",
-        session.events,
+        events,
       )) as ReturnType<typeof projectedWorkGraphEdges>;
       return edges.map((record) => ({
         sourceID: record.sourceID,

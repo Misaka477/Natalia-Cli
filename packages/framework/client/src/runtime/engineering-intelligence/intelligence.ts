@@ -32,6 +32,7 @@ import { ensureSessionFullEvents } from "../session-full-events";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
+  sessionWindowEventsForExec,
 } from "../session-event-window";
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
@@ -159,7 +160,12 @@ export function createIntelligenceSurface(
     return exec;
   }
   async function intelligenceSession(sessionID?: string) {
-    return (await intelligenceExec(sessionID))?.session;
+    const exec = await intelligenceExecWindow(sessionID);
+    if (!exec) return undefined;
+    return {
+      ...exec.session,
+      events: await sessionWindowEventsForExec(ctx, exec),
+    };
   }
   async function intelligenceExecWindow(sessionID?: string) {
     const exec = sessionID
@@ -175,7 +181,7 @@ export function createIntelligenceSurface(
   return {
     async confirmedWorkspaceChanges(sessionID?: string) {
       await ctx.ports.getReady();
-      const exec = await intelligenceExec(sessionID);
+      const exec = await intelligenceExecWindow(sessionID);
       const reconciled = exec
         ? await ctx.ports.reconcileWorkspaceObservation(exec)
         : [];

@@ -6,7 +6,10 @@ import {
 import { RuntimeRefusal } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
-import { ensureSessionFullEvents } from "../session-full-events";
+import {
+  ensureSessionEventWindow,
+  sessionWindowEvents,
+} from "../session-event-window";
 
 type ClientSurfaceOptions = Pick<
   RealRuntimeClientOptions,
@@ -43,12 +46,17 @@ function sessionExec(ctx: RuntimeContext, sessionID?: string) {
     : ctx.ports.getActiveExec();
 }
 
-function terminalIDsFor(
+async function terminalIDsFor(
+  ctx: RuntimeContext,
   exec: import("../context").SessionExecutionState | undefined,
 ) {
   if (!exec?.session) return new Set<string>();
+  const window = await ensureSessionEventWindow(ctx, exec);
+  const events = window
+    ? sessionWindowEvents(exec, window)
+    : exec.session.events;
   return new Set(
-    exec.session.events
+    events
       .filter((event) => event.type === "terminal.timeline")
       .map((event) => event.id),
   );
@@ -59,8 +67,7 @@ async function assertTerminalOwned(
   exec: import("../context").SessionExecutionState,
   id: string,
 ) {
-  await ensureSessionFullEvents(ctx, exec);
-  if (!terminalIDsFor(exec).has(id))
+  if (!(await terminalIDsFor(ctx, exec)).has(id))
     throw new Error(
       `terminal ${id} does not belong to session ${exec.session.id}`,
     );
