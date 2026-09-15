@@ -14,6 +14,11 @@ import {
   projectedDecisionRecords,
   projectedDriftFindings,
   projectedMailboxMessages,
+  sessionFactCollabMessages,
+  sessionFactConstitutionRules,
+  sessionFactDecisionRecords,
+  sessionFactDriftFindings,
+  sessionFactMailboxMessages,
 } from "@natalia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
@@ -35,14 +40,65 @@ export function createChatPrompt(ctx: RuntimeContext) {
     niaChatSystemPrompt,
   };
 
+  /**
+   * The complete fact state, when it was seeded from the full log. Fast-attach
+   * tails leave it undefined, and every accessor falls back to projecting the
+   * resident events exactly as before.
+   */
+  function factStateFor(exec: SessionExecutionState | undefined) {
+    return exec?.factStateComplete === true ? exec.factState : undefined;
+  }
+
   function collabMessagesFor(
     exec: SessionExecutionState | undefined,
     events: RuntimeEvent[],
   ): ReturnType<typeof projectedCollabMessages> {
+    const state = factStateFor(exec);
+    if (state) return sessionFactCollabMessages(state);
     const snapshot = exec?.collabSnapshot;
     if (snapshot && snapshot.eventCount === events.length)
       return snapshot.collabMessages;
     return projectedCollabMessages(events);
+  }
+
+  function mailboxMessagesFor(
+    exec: SessionExecutionState | undefined,
+    events: RuntimeEvent[],
+  ) {
+    const state = factStateFor(exec);
+    return state
+      ? sessionFactMailboxMessages(state)
+      : projectedMailboxMessages(events);
+  }
+
+  function driftFindingsFor(
+    exec: SessionExecutionState | undefined,
+    events: RuntimeEvent[],
+  ) {
+    const state = factStateFor(exec);
+    return state
+      ? sessionFactDriftFindings(state)
+      : projectedDriftFindings(events);
+  }
+
+  function decisionRecordsFor(
+    exec: SessionExecutionState | undefined,
+    events: RuntimeEvent[],
+  ) {
+    const state = factStateFor(exec);
+    return state
+      ? sessionFactDecisionRecords(state)
+      : projectedDecisionRecords(events);
+  }
+
+  function constitutionRulesFor(
+    exec: SessionExecutionState | undefined,
+    events: RuntimeEvent[],
+  ) {
+    const state = factStateFor(exec);
+    return state
+      ? sessionFactConstitutionRules(state)
+      : projectedConstitutionRules(events);
   }
 
   function recentMainAgentActivity(
@@ -139,7 +195,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
       (left, right) => left.createdAt.localeCompare(right.createdAt),
     );
     const activePlan = activePlanForExec(ctx, exec);
-    const mailbox = projectedMailboxMessages(chatSession.events).filter(
+    const mailbox = mailboxMessagesFor(exec, chatSession.events).filter(
       (message) =>
         message.status === "queued" || message.status === "delivered",
     );
@@ -244,15 +300,15 @@ export function createChatPrompt(ctx: RuntimeContext) {
       (left, right) => left.createdAt.localeCompare(right.createdAt),
     );
     const activePlan = activePlanForExec(ctx, exec);
-    const mailbox = projectedMailboxMessages(chatSession.events).filter(
+    const mailbox = mailboxMessagesFor(exec, chatSession.events).filter(
       (message) =>
         message.status === "queued" || message.status === "delivered",
     );
-    const drift = projectedDriftFindings(chatSession.events).filter(
+    const drift = driftFindingsFor(exec, chatSession.events).filter(
       (finding) => finding.status === "open",
     );
-    const decisions = projectedDecisionRecords(chatSession.events).slice(-6);
-    const rules = projectedConstitutionRules(chatSession.events);
+    const decisions = decisionRecordsFor(exec, chatSession.events).slice(-6);
+    const rules = constitutionRulesFor(exec, chatSession.events);
     const activity = recentMainAgentActivity(chatSession.events, snapshot);
     const recentTools = recentToolActivity(chatSession.events);
     const collab = collabMessagesFor(exec, chatSession.events);

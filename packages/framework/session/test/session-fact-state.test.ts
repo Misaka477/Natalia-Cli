@@ -9,6 +9,8 @@ import {
   projectedDecisionRecords,
   projectedDriftFindings,
   projectedMailboxMessages,
+  projectedNaviChatMessages,
+  projectedNiaChatMessages,
   sessionFactActiveTurnIDs,
   sessionFactCollabMessages,
   sessionFactConstitutionOverrides,
@@ -18,6 +20,8 @@ import {
   sessionFactIntelligenceFacts,
   sessionFactLatestSnapshot,
   sessionFactMailboxMessages,
+  sessionFactNaviChatMessages,
+  sessionFactNiaChatMessages,
   sessionFactStateFromEvents,
   sessionIntelligenceFactsFromEvents,
 } from "../src";
@@ -498,4 +502,91 @@ test("intelligence facts fold identically in the state and from events", () => {
     hasPTY: true,
     hasSandbox: false,
   });
+});
+
+test("navi/nia chat streams fold identically in the state and from events", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "navi.chat.message.added",
+      id: "chat:1",
+      messageID: "chat:m1",
+      role: "user",
+      text: "what is the agent doing",
+      at: "t1",
+    },
+    {
+      type: "navi.chat.message.added",
+      id: "chat:2",
+      messageID: "chat:m2",
+      role: "chat",
+      text: "it is running",
+      at: "t2",
+    },
+    {
+      type: "navi.chat.rollback",
+      id: "chat:r1",
+      toMessageID: "chat:m1",
+      removed: 1,
+      at: "t3",
+    },
+    {
+      type: "nia.chat.message.new",
+      id: "nia:1",
+      messageID: "nia:m1",
+      role: "user",
+      text: "audit this",
+      at: "t4",
+    },
+    {
+      type: "nia.chat.thinking.delta",
+      id: "nia:t1",
+      messageID: "nia:m1",
+      text: "weighing evidence. ",
+    },
+    // Collab rows render on the channel they belong to.
+    {
+      type: "collab.chat",
+      id: "collab:navi",
+      threadID: "collab:navi",
+      from: "live_chat",
+      to: "main_agent",
+      text: "sanity check?",
+      round: 1,
+      expectsReply: false,
+      at: "t5",
+    },
+    {
+      type: "collab.chat",
+      id: "collab:nia",
+      threadID: "collab:nia",
+      from: "nia",
+      to: "main_agent",
+      text: "audit report",
+      round: 1,
+      expectsReply: false,
+      at: "t6",
+    },
+    // An unrelated event must not enter either stream.
+    {
+      type: "tool.update",
+      id: "turn_1:call_1",
+      name: "read_file",
+      callID: "call_1",
+      status: "succeeded",
+      summary: "read",
+    },
+  ];
+
+  const state = sessionFactStateFromEvents(events);
+  expect(sessionFactNaviChatMessages(state)).toEqual(
+    projectedNaviChatMessages(events),
+  );
+  expect(sessionFactNiaChatMessages(state)).toEqual(
+    projectedNiaChatMessages(events),
+  );
+  // Rollback is honoured inside the collected subset too.
+  expect(sessionFactNaviChatMessages(state).map((m) => m.messageID)).toEqual([
+    "chat:m1",
+    "collab:navi",
+  ]);
 });

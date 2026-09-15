@@ -1702,7 +1702,31 @@ export type SessionFactState = {
   intelligence: SessionIntelligenceFactState;
   latestSnapshot?: SessionSnapshotEvent;
   collabEvents: RuntimeEvent[];
+  /**
+   * Channel-scoped chat events, collected verbatim like `collabEvents`. The
+   * chat projector resolves thinking accumulations, rollback boundaries and
+   * compaction in one pass, and only ever looks at events where a collab row or
+   * the channel predicate matches — so folding just those events is equivalent
+   * to folding the whole journal while keeping the transcript out of the raw
+   * log.
+   */
+  naviChatEvents: RuntimeEvent[];
+  niaChatEvents: RuntimeEvent[];
 };
+
+/** Would `projectChatStream` render this event on the `navi` channel? */
+function naviChatStreamEvent(event: RuntimeEvent): boolean {
+  const collab = normalizeCollaborationEvent(event);
+  if (collab) return collab.from === "live_chat";
+  return isNaviChatEvent(event);
+}
+
+/** Would `projectChatStream` render this event on the `nia` channel? */
+function niaChatStreamEvent(event: RuntimeEvent): boolean {
+  const collab = normalizeCollaborationEvent(event);
+  if (collab) return collab.from === "nia";
+  return isNiaChatEvent(event);
+}
 
 export function emptySessionFactState(): SessionFactState {
   return {
@@ -1713,6 +1737,8 @@ export function emptySessionFactState(): SessionFactState {
     decisions: emptySessionDecisionFactState(),
     intelligence: emptySessionIntelligenceFactState(),
     collabEvents: [],
+    naviChatEvents: [],
+    niaChatEvents: [],
   };
 }
 
@@ -1728,6 +1754,8 @@ export function applySessionFactEvent(
   applySessionIntelligenceFact(state.intelligence, event);
   if (event.type === "session.snapshot") state.latestSnapshot = event;
   if (normalizeCollaborationEvent(event)) state.collabEvents.push(event);
+  if (naviChatStreamEvent(event)) state.naviChatEvents.push(event);
+  if (niaChatStreamEvent(event)) state.niaChatEvents.push(event);
 }
 
 export function sessionFactStateFromEvents(
@@ -1789,4 +1817,16 @@ export function sessionFactIntelligenceFacts(
   state: SessionFactState,
 ): SessionIntelligenceFacts {
   return sessionIntelligenceFactsFrom(state.intelligence);
+}
+
+export function sessionFactNaviChatMessages(
+  state: SessionFactState,
+): ProjectedChatMessage[] {
+  return projectedNaviChatMessages(state.naviChatEvents);
+}
+
+export function sessionFactNiaChatMessages(
+  state: SessionFactState,
+): ProjectedChatMessage[] {
+  return projectedNiaChatMessages(state.niaChatEvents);
 }

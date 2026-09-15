@@ -15,6 +15,7 @@ import type {
 } from "@natalia/runtime";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
+import { ensureSessionFactState } from "../session-facts";
 import { activePlanForExec } from "./plan-doc-runtime";
 import {
   type ConcreteRuntimeEvent,
@@ -45,7 +46,11 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     },
     signal: AbortSignal,
   ) {
-    await ensureSessionFullEvents(ctx, input.exec);
+    // The system prompt and transcript read the incremental hot state when it
+    // is complete; only a fast-attach tail still needs the explicit full load.
+    ensureSessionFactState(input.exec);
+    if (input.exec.factStateComplete !== true)
+      await ensureSessionFullEvents(ctx, input.exec);
     const activeProvider = niaProvider(input);
     if (!activeProvider) throw new Error("provider unavailable for Nia chat");
     const profileModel = input.exec.niaChatModelProfile?.normal;

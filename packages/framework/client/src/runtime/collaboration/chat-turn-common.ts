@@ -2,6 +2,8 @@ import {
   projectedCollabMessages,
   projectedNaviChatMessages,
   projectedNiaChatMessages,
+  sessionFactNaviChatMessages,
+  sessionFactNiaChatMessages,
 } from "@natalia/session";
 import {
   ContextLedger,
@@ -201,14 +203,31 @@ export function promptData(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+/**
+ * The channel transcript, folded from the incremental hot state when it is
+ * complete and from the resident event log otherwise. The state's channel event
+ * lists hold exactly the events the chat projector consumes, so the result is
+ * identical while the whole journal stays out of memory.
+ */
+function chatMessagesForHistory(
+  exec: SessionExecutionState,
+  channel: "navi" | "nia",
+) {
+  const state = exec.factStateComplete === true ? exec.factState : undefined;
+  if (state)
+    return channel === "navi"
+      ? sessionFactNaviChatMessages(state)
+      : sessionFactNiaChatMessages(state);
+  return channel === "navi"
+    ? projectedNaviChatMessages(exec.session.events)
+    : projectedNiaChatMessages(exec.session.events);
+}
+
 export function chatProviderMessagesFromHistory(
   exec: SessionExecutionState,
   channel: "navi" | "nia",
 ): ProviderMessage[] {
-  const history =
-    channel === "navi"
-      ? projectedNaviChatMessages(exec.session.events)
-      : projectedNiaChatMessages(exec.session.events);
+  const history = chatMessagesForHistory(exec, channel);
   return history
     .filter((message) => message.kind !== "thinking")
     .map((message) => ({
@@ -230,7 +249,7 @@ export function naviChatHistory(
     text: string;
   }>;
 } {
-  const history = projectedNaviChatMessages(exec.session.events).filter(
+  const history = chatMessagesForHistory(exec, "navi").filter(
     (message) =>
       message.messageID !== responseMessageID && message.kind !== "thinking",
   );
@@ -258,7 +277,7 @@ export function niaChatHistory(
     text: string;
   }>;
 } {
-  const history = projectedNiaChatMessages(exec.session.events).filter(
+  const history = chatMessagesForHistory(exec, "nia").filter(
     (message) =>
       message.messageID !== responseMessageID && message.kind !== "thinking",
   );

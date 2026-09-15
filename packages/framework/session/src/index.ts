@@ -363,6 +363,8 @@ export {
   sessionFactIntelligenceFacts,
   sessionIntelligenceFactsFrom,
   sessionIntelligenceFactsFromEvents,
+  sessionFactNaviChatMessages,
+  sessionFactNiaChatMessages,
 } from "./projector";
 export type {
   ProjectedCapability,
