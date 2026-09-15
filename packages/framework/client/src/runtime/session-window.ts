@@ -14,7 +14,19 @@
  * the tail page.
  */
 
+import type {
+  RuntimeClient,
+  RuntimeEvent,
+  RuntimeEventWindow,
+} from "@natalia/contracts";
+
 export type SessionWindowOpenState = "cold" | "loading" | "open" | "error";
+
+/** One ordered window entry; renderers consume the event, pagers consume the seq. */
+export interface SessionWindowEntry<TEvent> {
+  readonly seq: number;
+  readonly event: TEvent;
+}
 
 export interface SessionWindowPage<TEvent extends { seq: number }> {
   readonly events: readonly TEvent[];
@@ -26,6 +38,54 @@ export interface SessionWindowLoader<TEvent extends { seq: number }> {
   loadTail(): Promise<SessionWindowPage<TEvent>>;
   /** Load the page immediately before `beforeSeq`. */
   loadBefore(beforeSeq: number): Promise<SessionWindowPage<TEvent>>;
+}
+
+function eventWindowPage(
+  page: RuntimeEventWindow,
+): SessionWindowPage<SessionWindowEntry<RuntimeEvent>> {
+  let next = 1;
+  return {
+    events: page.events.map((item) => {
+      const seq = item.sessionSeq ?? next;
+      next = seq + 1;
+      return { seq, event: item.event };
+    }),
+    hasMore: page.hasMore,
+  };
+}
+
+/**
+ * Adapt the runtime's `session.eventWindow` RPC to the shared window primitive.
+ *
+ * The returned loader is the only paging adapter UI surfaces should use. It
+ * preserves the server's per-session cursor and fails closed when the runtime
+ * does not expose the window API.
+ */
+export function createRuntimeEventWindowLoader(
+  runtime: Pick<RuntimeClient, "eventWindow">,
+  sessionID: string,
+  pageSize = 50,
+): SessionWindowLoader<SessionWindowEntry<RuntimeEvent>> {
+  const load = async (options: {
+    beforeSeq?: number;
+    limit: number;
+  }): Promise<SessionWindowPage<SessionWindowEntry<RuntimeEvent>>> => {
+    if (runtime.eventWindow === undefined)
+      throw new Error("runtime does not expose session.eventWindow");
+    return eventWindowPage(
+      await runtime.eventWindow({
+        sessionID,
+        limit: options.limit,
+        ...(options.beforeSeq === undefined
+          ? {}
+          : { beforeSeq: options.beforeSeq }),
+      }),
+    );
+  };
+  return {
+    loadTail: () => load({ limit: pageSize }),
+    loadBefore: (beforeSeq) => load({ beforeSeq, limit: pageSize }),
+  };
 }
 
 export interface SessionWindowSnapshot<TEvent extends { seq: number }> {

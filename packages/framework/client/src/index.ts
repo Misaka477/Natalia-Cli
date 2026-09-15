@@ -15,6 +15,8 @@ export {
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./runtime/main";
 export {
   SessionWindow,
+  createRuntimeEventWindowLoader,
+  type SessionWindowEntry,
   type SessionWindowLoader,
   type SessionWindowOpenState,
   type SessionWindowOptions,

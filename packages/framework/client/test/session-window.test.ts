@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   SessionWindow,
+  createRuntimeEventWindowLoader,
   type SessionWindowPage,
 } from "../src/runtime/session-window";
 
@@ -116,4 +117,46 @@ test("session window resync clears the old window before reopening", async () =>
   await window.resync();
   expect(window.eventsView.map((item) => item.seq)).toEqual([8, 9]);
   expect(window.baseSeq).toBe(8);
+});
+
+test("runtime event window loader preserves the per-session cursor", async () => {
+  const calls: Array<{ beforeSeq?: number; limit?: number }> = [];
+  const runtime = {
+    async eventWindow(options?: {
+      beforeSeq?: number;
+      limit?: number;
+      sessionID?: string;
+    }) {
+      calls.push({ beforeSeq: options?.beforeSeq, limit: options?.limit });
+      if (options?.beforeSeq === undefined)
+        return {
+          events: [
+            { seq: 30, sessionSeq: 3, event: event(3) },
+            { seq: 40, sessionSeq: 4, event: event(4) },
+          ],
+          hasMore: true,
+        };
+      return {
+        events: [
+          { seq: 10, sessionSeq: 1, event: event(1) },
+          { seq: 20, sessionSeq: 2, event: event(2) },
+        ],
+        hasMore: false,
+      };
+    },
+  };
+  const loader = createRuntimeEventWindowLoader(
+    runtime as never,
+    "ses_window",
+    2,
+  );
+  const tail = await loader.loadTail();
+  expect(tail.events.map((entry) => entry.seq)).toEqual([3, 4]);
+  expect(tail.hasMore).toBe(true);
+  const older = await loader.loadBefore(3);
+  expect(older.events.map((entry) => entry.seq)).toEqual([1, 2]);
+  expect(calls).toEqual([
+    { beforeSeq: undefined, limit: 2 },
+    { beforeSeq: 3, limit: 2 },
+  ]);
 });
