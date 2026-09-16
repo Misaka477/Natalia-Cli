@@ -9,6 +9,7 @@ import {
   beginNaviHydration,
   hydrateProjectedMessages,
   hydrateRuntimeNotices,
+  buildWorkGraphForest,
   deriveSessionUsageView,
   initialState,
   projectEvents,
@@ -2481,4 +2482,105 @@ test("session usage is per-session isolated via the session id on events", () =>
   const stateB = projectEvents([usage("b1", "ses_B", 70)]);
   expect(stateA.sessionUsage.outputTokens).toBe(50);
   expect(stateB.sessionUsage.outputTokens).toBe(70);
+});
+
+test("a real tool-call causal chain folds into the work-graph forest and step usage accumulates (end-to-end data flow)", () => {
+  const sessionID = "ses_e2e";
+  const turnID = "turn_1";
+  const callID = "call_1";
+  const path = "packages/x/src/app.ts";
+  const actionNode = `wg:action:${turnID}`;
+  const toolNode = `wg:tool:${turnID}:${callID}`;
+  const changeNode = `wg:change:${turnID}:${path}`;
+  const events = [
+    {
+      type: "workgraph.node_added",
+      id: actionNode,
+      nodeID: actionNode,
+      kind: "agent_action",
+      summary: "agent acted",
+      sessionID,
+      turnID,
+    },
+    {
+      type: "workgraph.node_added",
+      id: toolNode,
+      nodeID: toolNode,
+      kind: "tool_call",
+      summary: "run_shell succeeded",
+      sessionID,
+      turnID,
+    },
+    {
+      type: "workgraph.edge_added",
+      id: `e:caused:${toolNode}`,
+      sourceID: actionNode,
+      targetID: toolNode,
+      kind: "caused",
+    },
+    {
+      type: "workgraph.node_added",
+      id: changeNode,
+      nodeID: changeNode,
+      kind: "workspace_change",
+      summary: "run_shell changed",
+      target: path,
+      sessionID,
+      turnID,
+    },
+    {
+      type: "workgraph.edge_added",
+      id: `e:modified:${changeNode}`,
+      sourceID: toolNode,
+      targetID: changeNode,
+      kind: "modified",
+    },
+    {
+      type: "runtime.step_usage",
+      id: "u1",
+      sessionID,
+      inputTokens: 1000,
+      outputTokens: 200,
+      cacheReadInputTokens: 5000,
+      llmMs: 1200,
+      ttftMs: 300,
+    },
+    {
+      type: "runtime.step_usage",
+      id: "u2",
+      sessionID,
+      outputTokens: 150,
+      toolMs: 400,
+    },
+  ] as unknown as RuntimeEvent[];
+
+  const state = projectEvents(events);
+
+  // The three causal nodes folded into the per-session graph.
+  expect(Object.keys(state.workGraphNodes).sort()).toEqual(
+    [actionNode, changeNode, toolNode].sort(),
+  );
+
+  // The forest is one root (the agent action, no inbound edge) whose branch
+  // walks action --caused--> tool_call --modified--> workspace_change.
+  const forest = buildWorkGraphForest(state);
+  expect(forest).toHaveLength(1);
+  expect(forest[0]!.node.nodeID).toBe(actionNode);
+  const toolChild = forest[0]!.children.find(
+    (child) => child.node.nodeID === toolNode,
+  );
+  expect(toolChild?.via).toBe("caused");
+  const changeChild = toolChild?.children.find(
+    (child) => child.node.nodeID === changeNode,
+  );
+  expect(changeChild?.via).toBe("modified");
+
+  // Step usage accumulated over the two steps.
+  expect(state.sessionUsage).toMatchObject({
+    steps: 2,
+    inputTokens: 1000,
+    outputTokens: 350,
+    cacheReadInputTokens: 5000,
+    toolMs: 400,
+  });
 });
