@@ -641,12 +641,22 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           finishReason?: ProviderFinishReason;
           protocolViolation?: string;
           usage?: ProviderUsage;
+          /** Wall-clock timing for the token/latency dashboard (ms). */
+          timing?: {
+            llmMs: number;
+            ttftMs?: number;
+            decodeMs?: number;
+          };
         } = {
           assistant: "",
           attempt,
           thinking: "",
           calls: [],
         };
+        // Token/latency dashboard采集 (session-scoped): wall-clock boundaries
+        // measured here, emitted once as `runtime.step_usage` after the step.
+        const stepStart = performance.now();
+        let firstTokenTime: number | undefined;
         const thinkingBlocks = new Map<number, ProviderReasoningBlock>();
         const contentParts: ProviderContentPart[] = [];
         const thinkingPartIndex = new Map<number, number>();
@@ -714,6 +724,11 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               );
             }
             if (chunk.type === "thinking") {
+              if (
+                firstTokenTime === undefined &&
+                (chunk.text || chunk.signature)
+              )
+                firstTokenTime = performance.now();
               if (chunk.text) {
                 result.thinking += chunk.text;
                 input.publish({
@@ -753,6 +768,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               // Reasoning must be durably settled before the answer starts so a
               // timer-flushed `content.partial` cannot precede `thinking.done`.
               publishThinkingDone();
+              if (firstTokenTime === undefined && chunk.text)
+                firstTokenTime = performance.now();
               if (chunk.text) {
                 result.assistant += chunk.text;
                 input.publish({
@@ -819,6 +836,18 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               .sort(([left], [right]) => left - right)
               .map(([, block]) => block);
           if (contentParts.length) result.contentParts = contentParts;
+          // Dashboard timing: model stream wall time, first-token latency, and
+          // decode time (first token → stream end). Emitted after the step.
+          const streamEnd = performance.now();
+          result.timing = {
+            llmMs: streamEnd - stepStart,
+            ...(firstTokenTime !== undefined
+              ? {
+                  ttftMs: firstTokenTime - stepStart,
+                  decodeMs: streamEnd - firstTokenTime,
+                }
+              : {}),
+          };
         } finally {
           await input.setInFlightOperation(undefined);
         }
@@ -947,6 +976,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         message: `provider emitted duplicate tool_call_id(s); remapped for this turn: ${normalizedCalls.duplicates.join(", ")}`,
       });
     const calls = normalizedCalls.calls;
+    // Tool-execution wall time for the dashboard (measured outside the step
+    // closure, where executeToolCalls runs).
+    let toolMs = 0;
     if (!allowToolCalls && calls.length)
       input.publish({
         type: "diagnostic",
@@ -955,6 +987,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           "Provider emitted a tool call after tools were disabled; ignored the call and finalized with text",
       });
     if (allowToolCalls && calls.length) {
+      const toolStart = performance.now();
       const produced = await input.executeToolCalls(
         id,
         calls,
@@ -983,7 +1016,39 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       );
       toolMessages.push(...produced);
       messages.push(...produced);
+      toolMs += performance.now() - toolStart;
     }
+    // Token/latency dashboard: one `runtime.step_usage` per provider step,
+    // carrying provider usage (when reported) and the measured timing. The
+    // event-sink stamps the session id, so it folds into that session's totals.
+    input.publish({
+      type: "runtime.step_usage",
+      id: `${id}:usage:${step}`,
+      ...(output.usage?.inputTokens !== undefined
+        ? { inputTokens: output.usage.inputTokens }
+        : {}),
+      ...(output.usage?.outputTokens !== undefined
+        ? { outputTokens: output.usage.outputTokens }
+        : {}),
+      ...(output.usage?.cacheReadInputTokens !== undefined
+        ? { cacheReadInputTokens: output.usage.cacheReadInputTokens }
+        : {}),
+      ...(output.usage?.cacheCreationInputTokens !== undefined
+        ? { cacheCreationInputTokens: output.usage.cacheCreationInputTokens }
+        : {}),
+      ...(output.timing
+        ? {
+            llmMs: output.timing.llmMs,
+            ...(output.timing.ttftMs !== undefined
+              ? { ttftMs: output.timing.ttftMs }
+              : {}),
+            ...(output.timing.decodeMs !== undefined
+              ? { decodeMs: output.timing.decodeMs }
+              : {}),
+          }
+        : {}),
+      ...(toolMs > 0 ? { toolMs } : {}),
+    });
     if (output.assistant && !toolMessages.length) {
       messages.push({
         role: "assistant",

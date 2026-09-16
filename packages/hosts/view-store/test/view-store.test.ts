@@ -9,6 +9,7 @@ import {
   beginNaviHydration,
   hydrateProjectedMessages,
   hydrateRuntimeNotices,
+  deriveSessionUsageView,
   initialState,
   projectEvents,
   reduceState,
@@ -2421,4 +2422,63 @@ test("context.instructions events and the projected notices contract converge on
     "config_reload",
     "agent_switch",
   ]);
+});
+
+test("runtime.step_usage folds into per-session token/latency totals with derived figures", () => {
+  const step = (
+    id: string,
+    inputTokens: number,
+    outputTokens: number,
+    cacheRead: number,
+    llmMs: number,
+    ttftMs?: number,
+    toolMs?: number,
+  ) =>
+    ({
+      type: "runtime.step_usage",
+      id,
+      inputTokens,
+      outputTokens,
+      cacheReadInputTokens: cacheRead,
+      llmMs,
+      ...(ttftMs !== undefined ? { ttftMs } : {}),
+      ...(toolMs !== undefined ? { toolMs } : {}),
+    }) as unknown as RuntimeEvent;
+
+  const state = projectEvents([
+    step("s1", 1000, 200, 4000, 1500, 300, 500),
+    step("s2", 1200, 180, 6000, 1800, 350),
+  ]);
+  expect(state.sessionUsage).toMatchObject({
+    steps: 2,
+    inputTokens: 2200,
+    outputTokens: 380,
+    cacheReadInputTokens: 10000,
+    llmMs: 3300,
+    toolMs: 500,
+    ttftMs: 650,
+    ttftSteps: 2,
+  });
+  const view = deriveSessionUsageView(state.sessionUsage);
+  // totalInput = 2200 + 10000 + 0(cacheCreation); hitRate = 10000/12200.
+  expect(view.totalInputTokens).toBe(12200);
+  expect(view.cacheHitRate).toBeCloseTo(10000 / 12200, 5);
+  expect(view.avgTtftMs).toBe(325);
+  // decodeMs wasn't reported, so throughput is 0 (no denominator).
+  expect(view.tokensPerSecond).toBe(0);
+});
+
+test("session usage is per-session isolated via the session id on events", () => {
+  const usage = (id: string, sessionID: string, outputTokens: number) =>
+    ({
+      type: "runtime.step_usage",
+      id,
+      sessionID,
+      outputTokens,
+      llmMs: 100,
+    }) as unknown as RuntimeEvent;
+  const stateA = projectEvents([usage("a1", "ses_A", 50)]);
+  const stateB = projectEvents([usage("b1", "ses_B", 70)]);
+  expect(stateA.sessionUsage.outputTokens).toBe(50);
+  expect(stateB.sessionUsage.outputTokens).toBe(70);
 });

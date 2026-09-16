@@ -106,6 +106,8 @@ export {
   type WorkGraphNodeView,
   type MailboxMessageView,
   type PlanDocView,
+  type SessionUsageStats,
+  type SessionUsageView,
 } from "./state";
 export {
   applyActivityEvent,
@@ -140,6 +142,7 @@ export {
   selectUnattributedWorkGraphNodes,
   selectWorkGraphNeighborhood,
   type WorkGraphSlice,
+  deriveSessionUsageView,
 } from "./graph";
 
 /**

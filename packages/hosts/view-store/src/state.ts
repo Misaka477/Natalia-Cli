@@ -143,6 +143,43 @@ export type PolicyDecisionView = Extract<
   RuntimeEvent,
   { type: "policy.decision" }
 >;
+
+/**
+ * Accumulated session token / latency totals, folded from
+ * `runtime.step_usage` events. Pure sums — the display figures (cache hit
+ * rate, tokens/sec, average first-token latency) are derived by
+ * `deriveSessionUsageView`, never stored.
+ */
+export type SessionUsageStats = {
+  /** Provider steps counted (each emits one `runtime.step_usage`). */
+  steps: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  /** Model stream wall time, ms. */
+  llmMs: number;
+  /** Tool-execution wall time, ms. */
+  toolMs: number;
+  /** Summed first-token latency, ms. */
+  ttftMs: number;
+  /** Steps that carried a first token (throughput/latency denominator). */
+  ttftSteps: number;
+  /** Decode wall time, ms (first token → stream end). */
+  decodeMs: number;
+};
+
+/** Display figures derived from the raw sums (never persisted). */
+export type SessionUsageView = SessionUsageStats & {
+  /** Total input incl. cache traffic (uncached input + cache read + cache write). */
+  totalInputTokens: number;
+  /** Cache read / total input, 0..1; 0 when no input yet. */
+  cacheHitRate: number;
+  /** Average first-token latency, ms; 0 when no step reported one. */
+  avgTtftMs: number;
+  /** Output tokens per second of decode time; 0 when no decode time. */
+  tokensPerSecond: number;
+};
 export type WorkGraphNodeView = Extract<
   RuntimeEvent,
   { type: "workgraph.node_added" }
@@ -313,6 +350,14 @@ export type AppState = {
    * a live session and a replayed session converge on the same view.
    */
   runtimeNotices: Array<import("@natalia/contracts").RuntimeProjectedNotice>;
+  /**
+   * Accumulated per-session token / latency usage (folded from
+   * `runtime.step_usage` events). Session-scoped like the Work Graph: each
+   * session's state carries its own totals, so switching sessions switches the
+   * dashboard. `deriveSessionUsageView` computes the display figures (hit rate,
+   * throughput, average first-token latency).
+   */
+  sessionUsage: SessionUsageStats;
   selectedTaskID?: string;
   selectedEvidenceID?: string;
   /** Recent policy outcomes, so a UI can explain why a tool did not run. */
@@ -458,6 +503,18 @@ export function initialState(): AppState {
     mailbox: {},
     plans: {},
     runtimeNotices: [],
+    sessionUsage: {
+      steps: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      llmMs: 0,
+      toolMs: 0,
+      ttftMs: 0,
+      ttftSteps: 0,
+      decodeMs: 0,
+    },
   };
 }
 
@@ -523,6 +580,7 @@ export function cloneState(state: AppState): AppState {
     mailbox: mapRecord(state.mailbox, (value) => ({ ...value })),
     plans: mapRecord(state.plans, (value) => ({ ...value })),
     runtimeNotices: state.runtimeNotices.map((notice) => ({ ...notice })),
+    sessionUsage: { ...state.sessionUsage },
     ...(state.goal
       ? {
           goal: {

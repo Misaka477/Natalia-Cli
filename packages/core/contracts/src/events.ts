@@ -1192,6 +1192,31 @@ type RuntimeEventData =
       detail?: string[];
     }
   | {
+      /**
+       * One provider step's usage and timing, accumulated per session into the
+       * token/latency dashboard. Emitted once per provider step by the runner;
+       * token fields are omitted when the provider reported none, and timing
+       * fields are wall-clock ms measured by the runner (not derived from the
+       * event stream).
+       */
+      type: "runtime.step_usage";
+      id: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
+      /** Model stream wall time, ms (step start → stream end). */
+      llmMs?: number;
+      /** First-token latency, ms (step start → first content/thinking chunk). */
+      ttftMs?: number;
+      /** Provider-reported output tokens on this step (throughput numerator). */
+      decodeTokens?: number;
+      /** Decode wall time, ms (first token → stream end; throughput denominator). */
+      decodeMs?: number;
+      /** Tool-execution wall time on this step, ms. */
+      toolMs?: number;
+    }
+  | {
       type: "constitution.check";
       id: string;
       ruleID: string;

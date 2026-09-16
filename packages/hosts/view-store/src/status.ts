@@ -26,6 +26,26 @@ export function applyStatusEvent(
   event: RuntimeEvent,
 ): boolean {
   switch (event.type) {
+    case "runtime.step_usage": {
+      // Per-session token/latency accumulation. Absent fields contribute
+      // nothing (a step without provider usage still counts and carries
+      // timing); each numeric field is a plain sum, matching the deepseek
+      // session-stats fold the dashboard is modeled on.
+      const usage = state.sessionUsage;
+      usage.steps += 1;
+      usage.inputTokens += event.inputTokens ?? 0;
+      usage.outputTokens += event.outputTokens ?? 0;
+      usage.cacheReadInputTokens += event.cacheReadInputTokens ?? 0;
+      usage.cacheCreationInputTokens += event.cacheCreationInputTokens ?? 0;
+      usage.llmMs += event.llmMs ?? 0;
+      usage.toolMs += event.toolMs ?? 0;
+      if (event.ttftMs !== undefined) {
+        usage.ttftMs += event.ttftMs;
+        usage.ttftSteps += 1;
+      }
+      usage.decodeMs += event.decodeMs ?? 0;
+      return true;
+    }
     case "status.update":
       state.status = event.status;
       state.footer = [event.status, event.detail].filter(Boolean).join(" - ");

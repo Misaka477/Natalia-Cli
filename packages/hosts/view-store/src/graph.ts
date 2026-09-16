@@ -1,4 +1,11 @@
-import type { AppState, WorkGraphEdgeView, WorkGraphNodeView } from "./state";
+import type {
+  AppState,
+  SessionUsageStats,
+  SessionUsageView,
+  WorkGraphEdgeView,
+  WorkGraphNodeView,
+} from "./state";
+import type { WorkGraphEdgeKind, WorkGraphNodeKind } from "@natalia/contracts";
 
 export type WorkGraphSlice = {
   focusID: string;
@@ -6,6 +13,185 @@ export type WorkGraphSlice = {
   edges: WorkGraphEdgeView[];
   unattributed: WorkGraphNodeView[];
 };
+
+/**
+ * A pre-assembled causal-tree node — the unit a future Work Graph UI renders
+ * without re-deriving parent/child edges itself. `children` are already linked
+ * through real edges (never text-similarity guesses); `via` names the causal
+ * verb so a UI can label the branch ("modified", "validated_by", …). A cycle or
+ * a depth cap truncates a branch to `{ node, children: [] }` — the graph is
+ * never flattened into an infinite tree.
+ */
+export type WorkGraphTreeNode = {
+  node: WorkGraphNodeView;
+  via?: WorkGraphEdgeKind;
+  children: WorkGraphTreeNode[];
+};
+
+/**
+ * The bidirectional-navigation payload for one focus node (the data interface a
+ * Web/Desktop UI consumes; the TUI-oriented original plan is superseded):
+ *
+ * - `forward`: the causal tree the focus causes/produces
+ *   (goal/plan → steps → actions → diff → validations → checkpoint).
+ * - `backward`: the causal tree that leads into the focus
+ *   (file change → action → plan step → goal/constraint → rollback point) —
+ *   the "why changed" direction.
+ * - `unattributed`: workspace changes with no inbound edge. Per the graph
+ *   invariants these are surfaced, never silently attributed.
+ */
+export type WorkGraphNavigation = {
+  focus?: WorkGraphNodeView;
+  forward: WorkGraphTreeNode[];
+  backward: WorkGraphTreeNode[];
+  unattributed: WorkGraphNodeView[];
+};
+
+const DEFAULT_MAX_DEPTH = 8;
+
+function edgeDirection(
+  edge: WorkGraphEdgeView,
+  nodeID: string,
+): "out" | "in" | undefined {
+  if (edge.sourceID === nodeID) return "out";
+  if (edge.targetID === nodeID) return "in";
+  return undefined;
+}
+
+/** Builds one branch of the causal tree, guarding against cycles and depth. */
+function buildBranch(
+  nodes: Record<string, WorkGraphNodeView>,
+  edges: WorkGraphEdgeView[],
+  nodeID: string,
+  via: WorkGraphEdgeKind | undefined,
+  /** "out" follows source→target (what this node causes); "in" the reverse. */
+  follow: "out" | "in",
+  depth: number,
+  maxDepth: number,
+  visited: Set<string>,
+): WorkGraphTreeNode | undefined {
+  const node = nodes[nodeID];
+  if (!node) return undefined;
+  if (depth >= maxDepth || visited.has(nodeID))
+    return { node, ...(via ? { via } : {}), children: [] };
+  visited.add(nodeID);
+  const children: WorkGraphTreeNode[] = [];
+  for (const edge of edges) {
+    const direction = edgeDirection(edge, nodeID);
+    if (!direction) continue;
+    // For a forward ("out") branch, follow edges leaving this node; for a
+    // backward ("in") branch, follow edges entering it.
+    if (follow === "out" && direction !== "out") continue;
+    if (follow === "in" && direction !== "in") continue;
+    const childID = follow === "out" ? edge.targetID : edge.sourceID;
+    const child = buildBranch(
+      nodes,
+      edges,
+      childID,
+      edge.kind,
+      follow,
+      depth + 1,
+      maxDepth,
+      visited,
+    );
+    if (child) children.push(child);
+  }
+  return { node, ...(via ? { via } : {}), children };
+}
+
+/**
+ * The whole graph as a forest of forward causal trees rooted at nodes with no
+ * inbound edge (goals, plans, decisions, approvals, root actions). A Web UI
+ * renders this directly as a collapsible tree; it never has to assemble edges.
+ */
+export function buildWorkGraphForest(
+  state: AppState,
+  maxDepth = DEFAULT_MAX_DEPTH,
+): WorkGraphTreeNode[] {
+  const nodes = state.workGraphNodes;
+  const edges = Object.values(state.workGraphEdges);
+  const hasInbound = new Set(edges.map((edge) => edge.targetID));
+  const roots = Object.values(nodes).filter(
+    (node) => !hasInbound.has(node.nodeID),
+  );
+  const forest: WorkGraphTreeNode[] = [];
+  for (const root of roots) {
+    const tree = buildBranch(
+      nodes,
+      edges,
+      root.nodeID,
+      undefined,
+      "out",
+      0,
+      maxDepth,
+      new Set(),
+    );
+    if (tree) forest.push(tree);
+  }
+  return forest;
+}
+
+/**
+ * The bidirectional navigation for one focus (a file change, a plan, a goal…).
+ * `forward` walks what the focus causes; `backward` walks what leads into it —
+ * together the two directions the graph exists to answer ("what does this
+ * touch" / "why did this change").
+ */
+export function buildWorkGraphNavigation(
+  state: AppState,
+  focusID?: string,
+  maxDepth = DEFAULT_MAX_DEPTH,
+): WorkGraphNavigation {
+  const nodes = state.workGraphNodes;
+  const edges = Object.values(state.workGraphEdges);
+  const focus = focusID ? nodes[focusID] : undefined;
+  const forward = focus
+    ? (buildBranch(
+        nodes,
+        edges,
+        focus.nodeID,
+        undefined,
+        "out",
+        0,
+        maxDepth,
+        new Set(),
+      )?.children ?? [])
+    : [];
+  const backward = focus
+    ? (buildBranch(
+        nodes,
+        edges,
+        focus.nodeID,
+        undefined,
+        "in",
+        0,
+        maxDepth,
+        new Set(),
+      )?.children ?? [])
+    : [];
+  return {
+    ...(focus ? { focus } : {}),
+    forward,
+    backward,
+    unattributed: selectUnattributedWorkGraphNodes(state),
+  };
+}
+
+/** The causal slice for one plan (its committed scope, via the planID
+ * provenance on nodes) plus every edge between those nodes. */
+export function selectWorkGraphByPlan(
+  state: AppState,
+  planID: string,
+): { planID: string; nodes: WorkGraphNodeView[]; edges: WorkGraphEdgeView[] } {
+  const nodes = Object.values(state.workGraphNodes).filter(
+    (node) => node.planID === planID,
+  );
+  const ids = new Set(nodes.map((node) => node.nodeID));
+  const edges = Object.values(state.workGraphEdges).filter(
+    (edge) => ids.has(edge.sourceID) && ids.has(edge.targetID),
+  );
+  return { planID, nodes, edges };
+}
 
 /**
  * A bounded neighbourhood around one node for an external graph navigator.
@@ -58,4 +244,28 @@ export function selectUnattributedWorkGraphNodes(
   return Object.values(state.workGraphNodes).filter(
     (node) => node.kind === "workspace_change" && !inbound.has(node.nodeID),
   );
+}
+
+/**
+ * Derives the display figures from the raw session usage sums (the dashboard's
+ * data interface): total input including cache traffic, cache hit rate, average
+ * first-token latency, and decode throughput. Pure — never mutates the state,
+ * so any UI (or a future TUI) computes the same figures from the same sums.
+ */
+export function deriveSessionUsageView(
+  stats: SessionUsageStats,
+): SessionUsageView {
+  const totalInputTokens =
+    stats.inputTokens +
+    stats.cacheReadInputTokens +
+    stats.cacheCreationInputTokens;
+  return {
+    ...stats,
+    totalInputTokens,
+    cacheHitRate:
+      totalInputTokens > 0 ? stats.cacheReadInputTokens / totalInputTokens : 0,
+    avgTtftMs: stats.ttftSteps > 0 ? stats.ttftMs / stats.ttftSteps : 0,
+    tokensPerSecond:
+      stats.decodeMs > 0 ? (stats.outputTokens / stats.decodeMs) * 1000 : 0,
+  };
 }
