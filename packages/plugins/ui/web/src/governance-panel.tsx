@@ -9,7 +9,13 @@ import {
 import type { RuntimeClient } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
 
-type Tab = "constitution" | "decisions" | "evidence" | "drift" | "workgraph";
+type Tab =
+  | "constitution"
+  | "decisions"
+  | "evidence"
+  | "drift"
+  | "workgraph"
+  | "notices";
 
 export function GovernancePanel(props: {
   open: boolean;
@@ -24,6 +30,9 @@ export function GovernancePanel(props: {
   const [liveDrift, setLiveDrift] = createSignal<any[]>([]);
   const [liveNodes, setLiveNodes] = createSignal<any[]>([]);
   const [liveEdges, setLiveEdges] = createSignal<any[]>([]);
+  // ADR Phase C: the projected runtime notices (dual ingestion — the live
+  // event stream and the server-projected contract converge here).
+  const [liveNotices, setLiveNotices] = createSignal<any[]>([]);
 
   const load = async () => {
     try {
@@ -43,6 +52,9 @@ export function GovernancePanel(props: {
     } catch {}
     try {
       setLiveEdges((await props.runtime?.workGraphEdges?.()) ?? []);
+    } catch {}
+    try {
+      setLiveNotices((await props.runtime?.notices?.()) ?? []);
     } catch {}
   };
 
@@ -123,6 +135,14 @@ export function GovernancePanel(props: {
               onClick={() => setTab("workgraph")}
             >
               Work Graph
+            </button>
+            <button
+              type="button"
+              class="neu-settings-category"
+              data-active={tab() === "notices"}
+              onClick={() => setTab("notices")}
+            >
+              Notices
             </button>
           </div>
           <div class="neu-governance-content">
@@ -249,6 +269,37 @@ export function GovernancePanel(props: {
                   </div>
                 )}
               </For>
+            </Show>
+            <Show when={tab() === "notices"}>
+              <div class="neu-gov-section-title">Runtime Notices</div>
+              <For
+                each={
+                  liveNotices().length
+                    ? liveNotices()
+                    : (props.state.runtimeNotices ?? [])
+                }
+              >
+                {(notice) => (
+                  <div class="neu-gov-row">
+                    <span class="neu-gov-title" data-priority={notice.kind}>
+                      {notice.kind} · r{notice.revision}
+                    </span>
+                    <span class="neu-gov-text">{notice.summary}</span>
+                    <span class="neu-gov-meta">{notice.at}</span>
+                  </div>
+                )}
+              </For>
+              <Show
+                when={
+                  !liveNotices().length &&
+                  !(props.state.runtimeNotices ?? []).length
+                }
+              >
+                <div class="neu-gov-empty">
+                  No runtime notices yet — a config reload or agent switch
+                  records one here.
+                </div>
+              </Show>
             </Show>
           </div>
         </div>

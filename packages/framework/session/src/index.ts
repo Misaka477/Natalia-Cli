@@ -363,6 +363,8 @@ export {
   applySessionWorkContractFact,
   sessionWorkContractsFrom,
   sessionFactDriftFindings,
+  sessionFactEvidenceRecords,
+  sessionFactCompletions,
   sessionFactMailboxMessages,
   sessionFactDecisionRecords,
   sessionFactLatestSnapshot,

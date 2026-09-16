@@ -854,15 +854,18 @@ export function createWorkerRuntimeClient(
       )) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocActive"]>>>;
     },
     async planDocActivate(planID, sessionID) {
-      return (await request("planDoc.activate", { planID, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["planDocActivate"]>>
-      >;
+      return (await request("planDoc.activate", {
+        planID,
+        sessionID,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocActivate"]>>>;
     },
     async planDocDeactivate(sessionID) {
       return (await request(
         "planDoc.deactivate",
         sessionID ? { sessionID } : undefined,
-      )) as Awaited<ReturnType<NonNullable<RuntimeClient["planDocDeactivate"]>>>;
+      )) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planDocDeactivate"]>>
+      >;
     },
     async mailboxList(sessionID) {
       return (await request(
@@ -1525,11 +1528,15 @@ export async function handleWorkerRequest(
   }
   if (request.method === "drift.list")
     return await client.driftFindings?.(
-      (request.value as { sessionID?: string } | undefined)?.sessionID,
+      request.value as
+        | { sessionID?: string; limit?: number; cursor?: string }
+        | undefined,
     );
   if (request.method === "completions")
     return await client.completions?.(
-      (request.value as { sessionID?: string } | undefined)?.sessionID,
+      request.value as
+        | { sessionID?: string; limit?: number; cursor?: string }
+        | undefined,
     );
   if (request.method === "constitution.list")
     return await client.constitutionRules?.(
@@ -1541,7 +1548,9 @@ export async function handleWorkerRequest(
     );
   if (request.method === "evidence.list")
     return await client.evidenceRecords?.(
-      (request.value as { sessionID?: string } | undefined)?.sessionID,
+      request.value as
+        | { sessionID?: string; limit?: number; cursor?: string }
+        | undefined,
     );
   if (request.method === "projections.list")
     return await client.projectionContributions?.(

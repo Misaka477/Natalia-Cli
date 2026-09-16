@@ -3637,7 +3637,10 @@ export type RuntimeClient = {
     sessionID?: string,
   ): Promise<{ ok: boolean; action: string; message?: string }>;
 
-  evidenceRecords?(sessionID?: string): Promise<
+  evidenceRecords?(
+    input?: { sessionID?: string; limit?: number; cursor?: string },
+    sessionID?: string,
+  ): Promise<
     Array<{
       taskID: string;
       objective: string;
@@ -3679,7 +3682,10 @@ export type RuntimeClient = {
     safeSummary?: string;
   }>;
   /** The completion cards, projected from the journal (P2 E4). */
-  completions?(sessionID?: string): Promise<
+  completions?(
+    input?: { sessionID?: string; limit?: number; cursor?: string },
+    sessionID?: string,
+  ): Promise<
     Array<{
       completionID: string;
       taskID: string;
@@ -3736,7 +3742,10 @@ export type RuntimeClient = {
       }
     | undefined
   >;
-  driftFindings?(sessionID?: string): Promise<
+  driftFindings?(
+    input?: { sessionID?: string; limit?: number; cursor?: string },
+    sessionID?: string,
+  ): Promise<
     Array<{
       findingID: string;
       severity: "advisory" | "warning" | "high";
@@ -3744,7 +3753,20 @@ export type RuntimeClient = {
       originalObjective: string;
       currentActivity: string;
       evidence: string[];
-      status: string;
+      status:
+        | "open"
+        | "explained"
+        | "disputed"
+        | "dismissed"
+        | "corrected"
+        | "detour_declared";
+      rationale?: string;
+      /** The evaluation contract version the finding was judged under (EI §8.6). */
+      contractVersion: number;
+      /** Which rules fired with their confidences (EI §8.6 judgment matrix). */
+      ruleHits: Array<{ rule: string; confidence: number }>;
+      /** The accepted contract's planID, when judged against one. */
+      planID?: string;
     }>
   >;
   /**

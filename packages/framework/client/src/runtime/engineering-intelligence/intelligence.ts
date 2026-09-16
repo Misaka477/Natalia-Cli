@@ -5,6 +5,7 @@ import {
   type GovernanceLedgerController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import type { SessionFactState } from "@natalia/session";
 import {
   projectedCanonicalTools,
   projectedWorkGraphNodes,
@@ -20,7 +21,9 @@ import {
   projectedEvidenceRecords,
   projectedPlanDocs,
   sessionFactConstitutionRules,
+  sessionFactCompletions,
   sessionFactDriftFindings,
+  sessionFactEvidenceRecords,
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
 import type { EpisodeID } from "@natalia/contracts";
@@ -131,6 +134,31 @@ async function runSessionProjectionWithFallback(
         return projectedRuntimeNotices(events);
     }
   }
+}
+
+/**
+ * B6 read-surface helper: fold the session's hot fact state (O(1) over the
+ * live window) instead of rescanning the full journal when it is complete;
+ * fall back to the projected-events path for a tail-only attach. Returns the
+ * fact-state slice and whether it was used.
+ */
+function readFactSlice<T>(
+  exec: { factStateComplete?: boolean; factState?: SessionFactState },
+  select: (state: SessionFactState) => T[],
+  fallback: () => T[],
+): T[] {
+  if (exec.factStateComplete === true && exec.factState)
+    return select(exec.factState);
+  return fallback();
+}
+
+/** Pagination for a read surface: cursor is an offset, limit bounded. */
+function paginate<T>(items: T[], limit?: number, cursor?: string): T[] {
+  if (limit === undefined && cursor === undefined) return items;
+  const offset = cursor ? Number(cursor) : 0;
+  if (!Number.isFinite(offset) || offset < 0) return items;
+  const size = limit ?? items.length;
+  return items.slice(offset, offset + Math.max(size, 1));
 }
 
 export function createIntelligenceSurface(
@@ -310,8 +338,12 @@ export function createIntelligenceSurface(
       );
       return { recorded: true as const };
     },
-    async evidenceRecords(sessionID?: string) {
-      const session = await intelligenceSession(sessionID);
+    async evidenceRecords(
+      input?: { sessionID?: string; limit?: number; cursor?: string },
+      sessionID?: string,
+    ) {
+      const resolvedSessionID = input?.sessionID ?? sessionID;
+      const session = await intelligenceSession(resolvedSessionID);
       if (!session) return [];
       // P2 E3: the effective status of each evidence record is driven by the
       // workspace-level lifecycle of the plan whose task it belongs to (a
@@ -323,43 +355,68 @@ export function createIntelligenceSurface(
       for (const plan of plans) {
         planStateForTask.set(plan.planID, plan.status);
       }
-      const evidence = (await runSessionProjectionWithFallback(
-        "evidenceRecords",
-        session.events,
-      )) as ReturnType<typeof projectedEvidenceRecords>;
-      return evidence.map((r) => ({
-        taskID: r.taskID,
-        objective: r.objective,
-        status: r.status,
-        effectiveStatus:
-          r.taskID && planStateForTask.has(r.taskID)
-            ? requireGovernanceLedger().evidenceStatusForPlanState(
-                planStateForTask.get(r.taskID)! as PlanLifecycleState,
-                r.status,
-              )
-            : r.status,
-        changes: r.changes ?? [],
-        validations: r.validations ?? [],
-        knownGaps: r.knownGaps ?? [],
-      }));
+      // B6: the hot fact state is authoritative when complete (O(1) fold over
+      // a window, never a full-journal rescan); the projected-events path is
+      // the fallback for a tail-only attach.
+      const exec = await intelligenceExecWindow(resolvedSessionID);
+      const evidence = (
+        exec
+          ? readFactSlice(exec, sessionFactEvidenceRecords, () =>
+              projectedEvidenceRecords(session.events),
+            )
+          : projectedEvidenceRecords(session.events)
+      ) as ReturnType<typeof projectedEvidenceRecords>;
+      return paginate(
+        evidence.map((r) => ({
+          taskID: r.taskID,
+          objective: r.objective,
+          status: r.status,
+          effectiveStatus:
+            r.taskID && planStateForTask.has(r.taskID)
+              ? requireGovernanceLedger().evidenceStatusForPlanState(
+                  planStateForTask.get(r.taskID)! as PlanLifecycleState,
+                  r.status,
+                )
+              : r.status,
+          changes: r.changes ?? [],
+          validations: r.validations ?? [],
+          knownGaps: r.knownGaps ?? [],
+        })),
+        input?.limit,
+        input?.cursor,
+      );
     },
-    async completions(sessionID?: string) {
-      const session = await intelligenceSession(sessionID);
+    async completions(
+      input?: { sessionID?: string; limit?: number; cursor?: string },
+      sessionID?: string,
+    ) {
+      const resolvedSessionID = input?.sessionID ?? sessionID;
+      const session = await intelligenceSession(resolvedSessionID);
       if (!session) return [];
-      return projectedCompletions(session.events).map((c) => ({
-        completionID: c.id,
-        taskID: c.taskID,
-        objective: c.objective,
-        changeSummary: c.changeSummary,
-        ...(c.behaviorImpact ? { behaviorImpact: c.behaviorImpact } : {}),
-        validations: c.validations,
-        ...(c.humanValidation ? { humanValidation: c.humanValidation } : {}),
-        knownGaps: c.knownGaps ?? [],
-        externalSideEffects: c.externalSideEffects ?? [],
-        ...(c.rollbackState ? { rollbackState: c.rollbackState } : {}),
-        evidenceIDs: c.evidenceIDs ?? [],
-        recordedAt: c.recordedAt,
-      }));
+      const exec = await intelligenceExecWindow(resolvedSessionID);
+      const completions = exec
+        ? readFactSlice(exec, sessionFactCompletions, () =>
+            projectedCompletions(session.events),
+          )
+        : projectedCompletions(session.events);
+      return paginate(
+        completions.map((c) => ({
+          completionID: c.id,
+          taskID: c.taskID,
+          objective: c.objective,
+          changeSummary: c.changeSummary,
+          ...(c.behaviorImpact ? { behaviorImpact: c.behaviorImpact } : {}),
+          validations: c.validations,
+          ...(c.humanValidation ? { humanValidation: c.humanValidation } : {}),
+          knownGaps: c.knownGaps ?? [],
+          externalSideEffects: c.externalSideEffects ?? [],
+          ...(c.rollbackState ? { rollbackState: c.rollbackState } : {}),
+          evidenceIDs: c.evidenceIDs ?? [],
+          recordedAt: c.recordedAt,
+        })),
+        input?.limit,
+        input?.cursor,
+      );
     },
     /**
      * The `evidence.recorded` production writer (E2 起步): runs a validation
@@ -499,18 +556,36 @@ export function createIntelligenceSurface(
         );
       return { recorded: true as const, completionID };
     },
-    async driftFindings(sessionID?: string) {
-      const session = await intelligenceSession(sessionID);
+    async driftFindings(
+      input?: { sessionID?: string; limit?: number; cursor?: string },
+      sessionID?: string,
+    ) {
+      const resolvedSessionID = input?.sessionID ?? sessionID;
+      const session = await intelligenceSession(resolvedSessionID);
       if (!session) return [];
-      return projectedDriftFindings(session.events).map((f) => ({
-        findingID: f.findingID,
-        severity: f.severity,
-        confidence: f.confidence,
-        originalObjective: f.originalObjective,
-        currentActivity: f.currentActivity,
-        evidence: f.evidence,
-        status: f.status,
-      }));
+      const exec = await intelligenceExecWindow(resolvedSessionID);
+      const findings = exec
+        ? readFactSlice(exec, sessionFactDriftFindings, () =>
+            projectedDriftFindings(session.events),
+          )
+        : projectedDriftFindings(session.events);
+      return paginate(
+        findings.map((f) => ({
+          findingID: f.findingID,
+          severity: f.severity,
+          confidence: f.confidence,
+          originalObjective: f.originalObjective,
+          currentActivity: f.currentActivity,
+          evidence: f.evidence,
+          status: f.status,
+          contractVersion: f.contractVersion,
+          ruleHits: f.ruleHits,
+          ...(f.planID ? { planID: f.planID } : {}),
+          ...(f.rationale ? { rationale: f.rationale } : {}),
+        })),
+        input?.limit,
+        input?.cursor,
+      );
     },
     /**
      * Run the DriftEvaluator against safe signals and publish any findings it

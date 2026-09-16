@@ -1778,6 +1778,14 @@ export type SessionIntelligenceFactState = {
   latestOutput?: string;
   terminalActions: Map<string, string>;
   sandboxStatuses: Map<string, string>;
+  /**
+   * The evidence/completion events folded into the hot state (B6): read by the
+   * evidence/completion surfaces without rescanning the journal.
+   */
+  journalEvents: Array<
+    | Extract<RuntimeEvent, { type: "evidence.recorded" }>
+    | Extract<RuntimeEvent, { type: "completion.recorded" }>
+  >;
 };
 
 export type SessionIntelligenceFacts = {
@@ -1795,6 +1803,7 @@ export function emptySessionIntelligenceFactState(): SessionIntelligenceFactStat
     validatedChanges: 0,
     terminalActions: new Map(),
     sandboxStatuses: new Map(),
+    journalEvents: [],
   };
 }
 
@@ -1808,6 +1817,11 @@ export function applySessionIntelligenceFact(
   }
   if (event.type === "evidence.recorded") {
     state.validatedChanges += event.changes?.length ?? 0;
+    state.journalEvents.push(event);
+    return;
+  }
+  if (event.type === "completion.recorded") {
+    state.journalEvents.push(event);
     return;
   }
   if (event.type === "content.done") {
@@ -1977,6 +1991,32 @@ export function sessionFactDriftFindings(
   state: SessionFactState,
 ): ProjectedDriftFinding[] {
   return sessionDriftFindingsFrom(state.drift);
+}
+
+/**
+ * The evidence slice from the hot fact state (B6): `evidence.recorded` events
+ * folded into the intelligence slice, read without rescanning the journal.
+ */
+export function sessionFactEvidenceRecords(
+  state: SessionFactState,
+): Array<Extract<RuntimeEvent, { type: "evidence.recorded" }>> {
+  return state.intelligence.journalEvents.filter(
+    (event): event is Extract<RuntimeEvent, { type: "evidence.recorded" }> =>
+      event.type === "evidence.recorded",
+  );
+}
+
+/**
+ * The completion slice from the hot fact state (B6): `completion.recorded`
+ * events folded into the intelligence slice.
+ */
+export function sessionFactCompletions(
+  state: SessionFactState,
+): Array<Extract<RuntimeEvent, { type: "completion.recorded" }>> {
+  return state.intelligence.journalEvents.filter(
+    (event): event is Extract<RuntimeEvent, { type: "completion.recorded" }> =>
+      event.type === "completion.recorded",
+  );
 }
 
 export function sessionFactMailboxMessages(

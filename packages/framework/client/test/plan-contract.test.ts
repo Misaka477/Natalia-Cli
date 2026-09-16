@@ -1026,3 +1026,61 @@ test("constitution_propose_rule validates and gates on the user (EI §3.8 P-1.c)
   ).toBe("git push.*--force");
   await client.dispose?.();
 }, 30_000);
+
+test("the read surfaces paginate with a cursor (B6)", async () => {
+  const root = await officialPluginWorkspace("plan-contract-pagination");
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_pagination",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        const toolResult = (
+          request as {
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
+          }
+        ).messages.find(
+          (message) =>
+            message.role === "tool" && message.toolCallID === "call_record",
+        );
+        if (toolResult) {
+          yield { type: "content" as const, text: "recorded" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_record",
+              name: "record_completion",
+              arguments: JSON.stringify({
+                taskID: "plan:1:s1",
+                objective: "first slice",
+                changeSummary: "done",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!("ses_plan_contract_pagination" as SessionID);
+  await client.submitAndWait!("record a completion");
+  // A single record: the first page carries it, an offset past it is empty.
+  const page = await client.completions?.({ limit: 1 });
+  expect(page).toHaveLength(1);
+  const empty = await client.completions?.({ limit: 1, cursor: "5" });
+  expect(empty).toEqual([]);
+  // The unfiltered read is unchanged.
+  expect(await client.completions?.()).toHaveLength(1);
+  await client.dispose?.();
+}, 30_000);
