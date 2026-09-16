@@ -12,6 +12,8 @@ import {
   projectedNaviChatMessages,
   projectedNiaChatMessages,
   projectedPlanDocs,
+  projectedRuntimeNotices,
+  nextContextInstructionsRevision,
   sessionFactActiveTurnIDs,
   sessionFactCollabMessages,
   sessionFactConstitutionOverrides,
@@ -779,4 +781,68 @@ test("constitution disable and tombstone fold keep history complete", () => {
   expect(sessionFactConstitutionRules(incremental)).toEqual(
     projectedConstitutionRules(events),
   );
+});
+
+test("context.instructions notices project to the latest revision per kind", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "context.instructions",
+      id: "context:config:1",
+      kind: "config_reload",
+      at: "2026-09-16T00:00:00.000Z",
+      revision: 1,
+      summary: "runtime config reloaded; provider unchanged",
+    },
+    {
+      type: "context.instructions",
+      id: "context:agent:1",
+      kind: "agent_switch",
+      at: "2026-09-16T01:00:00.000Z",
+      revision: 1,
+      summary: "active agent switched to reviewer",
+    },
+    {
+      type: "context.instructions",
+      id: "context:config:2",
+      kind: "config_reload",
+      at: "2026-09-16T02:00:00.000Z",
+      revision: 2,
+      summary: "runtime config reloaded; provider reconfigured from disk",
+    },
+  ];
+  // The higher-revision config_reload supersedes the earlier one; the
+  // agent_switch stands on its own; history is never mutated.
+  // Sorted by `at`; the latest revision per kind survives.
+  expect(projectedRuntimeNotices(events)).toEqual([
+    {
+      noticeID: "context:agent:1",
+      kind: "agent_switch",
+      revision: 1,
+      at: "2026-09-16T01:00:00.000Z",
+      summary: "active agent switched to reviewer",
+    },
+    {
+      noticeID: "context:config:2",
+      kind: "config_reload",
+      revision: 2,
+      at: "2026-09-16T02:00:00.000Z",
+      summary: "runtime config reloaded; provider reconfigured from disk",
+    },
+  ]);
+  // The next revision is one past the highest already in the journal.
+  expect(nextContextInstructionsRevision(events)).toBe(3);
+  // An out-of-order (older) revision never clobbers the current state.
+  expect(
+    projectedRuntimeNotices([
+      ...events,
+      {
+        type: "context.instructions",
+        id: "context:config:stale",
+        kind: "config_reload",
+        at: "2026-09-16T03:00:00.000Z",
+        revision: 1,
+        summary: "stale reload",
+      },
+    ]).find((notice) => notice.kind === "config_reload"),
+  ).toMatchObject({ noticeID: "context:config:2" });
 });

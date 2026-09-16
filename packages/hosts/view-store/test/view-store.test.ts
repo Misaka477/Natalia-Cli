@@ -8,6 +8,7 @@ import {
   hydrateNiaMessages,
   beginNaviHydration,
   hydrateProjectedMessages,
+  hydrateRuntimeNotices,
   initialState,
   projectEvents,
   reduceState,
@@ -2258,9 +2259,9 @@ test("content.partial batches do not duplicate the final content.done", () => {
     },
     { type: "content.done", id: "t1", text: "hello world" },
   ]);
-  expect(state.messages.filter((block) => block.role === "assistant")).toHaveLength(
-    1,
-  );
+  expect(
+    state.messages.filter((block) => block.role === "assistant"),
+  ).toHaveLength(1);
   expect(text(state, streamID("t1", "assistant"))).toBe("hello world");
 });
 
@@ -2340,4 +2341,84 @@ test("hydrateProjectedMessages does not roll a longer live row back to a stale p
   );
 
   expect(text(state, "t1:assistant")).toBe("hello world");
+});
+
+test("context.instructions events and the projected notices contract converge on one view (ADR Phase C)", () => {
+  const configReload = (
+    id: string,
+    revision: number,
+    at: string,
+    summary: string,
+  ): Extract<RuntimeEvent, { type: "context.instructions" }> => ({
+    type: "context.instructions",
+    id,
+    kind: "config_reload",
+    at,
+    revision,
+    summary,
+  });
+  // Live stream: an earlier reload arrives first.
+  const state = projectEvents([
+    configReload(
+      "context:config:1",
+      1,
+      "2026-09-16T00:00:00.000Z",
+      "runtime config reloaded; provider unchanged",
+    ),
+  ]);
+  expect(state.runtimeNotices).toEqual([
+    {
+      noticeID: "context:config:1",
+      kind: "config_reload",
+      revision: 1,
+      at: "2026-09-16T00:00:00.000Z",
+      summary: "runtime config reloaded; provider unchanged",
+    },
+  ]);
+  // A later reload supersedes it — the earlier event stays in the journal.
+  const next = reduceState(
+    state,
+    configReload(
+      "context:config:2",
+      2,
+      "2026-09-16T01:00:00.000Z",
+      "runtime config reloaded; provider reconfigured",
+    ),
+  );
+  expect(next.runtimeNotices).toEqual([
+    {
+      noticeID: "context:config:2",
+      kind: "config_reload",
+      revision: 2,
+      at: "2026-09-16T01:00:00.000Z",
+      summary: "runtime config reloaded; provider reconfigured",
+    },
+  ]);
+  // The server-projected contract merges into the same view: a lower
+  // revision never clobbers the newer live state, a higher one applies.
+  expect(
+    hydrateRuntimeNotices(next, [
+      {
+        noticeID: "context:config:1",
+        kind: "config_reload",
+        revision: 1,
+        at: "2026-09-16T00:00:00.000Z",
+        summary: "stale",
+      },
+    ]),
+  ).toBe(false);
+  expect(next.runtimeNotices[0]?.revision).toBe(2);
+  // An agent_switch notice joins the view without touching the config one.
+  const withAgent = reduceState(next, {
+    type: "context.instructions",
+    id: "context:agent:1",
+    kind: "agent_switch",
+    at: "2026-09-16T02:00:00.000Z",
+    revision: 1,
+    summary: "active agent switched to reviewer",
+  });
+  expect(withAgent.runtimeNotices.map((notice) => notice.kind)).toEqual([
+    "config_reload",
+    "agent_switch",
+  ]);
 });

@@ -242,9 +242,7 @@ export function projectEvents(
  * merge: an in-flight answer, a thinking block, a tool card, or a
  * collaboration row. Completed rows can be replaced by the hydrated version.
  */
-function isLiveHydrationRow(
-  message: AppState["messages"][number],
-): boolean {
+function isLiveHydrationRow(message: AppState["messages"][number]): boolean {
   return (
     message.pendingText.length > 0 ||
     message.role === "thinking" ||
@@ -295,8 +293,7 @@ export function hydrateProjectedMessages(
     const incoming = projected.messages.map((message) => ({ ...message }));
     const incomingIDs = new Set(incoming.map((message) => message.id));
     const liveRows = state.messages.filter(
-      (message) =>
-        !incomingIDs.has(message.id) && isLiveHydrationRow(message),
+      (message) => !incomingIDs.has(message.id) && isLiveHydrationRow(message),
     );
     // Hydration owns a contiguous event window. Do not destructively trim it
     // here: an earlier version capped `state.messages` with `boundTranscript`,
@@ -402,7 +399,9 @@ function chatRowToBlock(row: ChatMessageRow): {
     };
   }
   if (row.kind === "tool" && row.tool) {
-    const toolID = row.tool.eventID ?? `${row.tool.name}:${row.tool.status}:${row.messageID}`;
+    const toolID =
+      row.tool.eventID ??
+      `${row.tool.name}:${row.tool.status}:${row.messageID}`;
     return {
       id: `chat:${toolID}:tool`,
       role: "tool",
@@ -467,6 +466,35 @@ export function hydrateNiaMessages(
   rows: ChatMessageRow[],
 ): boolean {
   return replaceAgentMessages(state.nia, rows);
+}
+
+/**
+ * Dual ingestion for the runtime notices (ADR Phase C): the server-projected
+ * `notices` contract merges into the same `runtimeNotices` view the live
+ * `context.instructions` event stream feeds, so a replayed session and a live
+ * session converge. Later revisions supersede earlier same-kind notices; a
+ * lower-revision projection result never clobbers a newer live event.
+ */
+export function hydrateRuntimeNotices(
+  state: AppState,
+  notices: import("@natalia/contracts").RuntimeProjectedNotice[],
+): boolean {
+  let changed = false;
+  for (const notice of notices) {
+    const existing = state.runtimeNotices.find(
+      (candidate) => candidate.kind === notice.kind,
+    );
+    if (existing && existing.revision >= notice.revision) continue;
+    if (existing)
+      state.runtimeNotices = state.runtimeNotices.filter(
+        (candidate) => candidate.kind !== notice.kind,
+      );
+    state.runtimeNotices = [...state.runtimeNotices, { ...notice }].sort(
+      (left, right) => left.at.localeCompare(right.at),
+    );
+    changed = true;
+  }
+  return changed;
 }
 
 function replaceAgentMessages(

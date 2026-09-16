@@ -147,6 +147,11 @@ export async function createUiPluginHost<TContext = unknown>(
       for (const listener of projectionListeners) listener(state);
       return evicted;
     },
+    hydrateRuntimeNotices(notices) {
+      const changed = viewStore.hydrateRuntimeNotices(state, notices);
+      if (changed) for (const listener of projectionListeners) listener(state);
+      return changed;
+    },
     beginNaviHydration() {
       viewStore.beginNaviHydration(state);
     },

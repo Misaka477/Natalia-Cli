@@ -2016,9 +2016,12 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const chatStart = performance.now();
         props.ctx.projection.beginNaviHydration?.();
         props.ctx.projection.beginNiaHydration?.();
-        const [naviChat, niaChat] = await Promise.all([
+        const [naviChat, niaChat, runtimeNotices] = await Promise.all([
           props.ctx.runtime.chatMessages?.("navi", sessionID),
           props.ctx.runtime.chatMessages?.("nia", sessionID),
+          // ADR Phase C dual ingestion: the server-projected notices merge
+          // into the same view the live `context.instructions` stream feeds.
+          props.ctx.runtime.notices?.(sessionID),
         ]);
         perfLog(
           `[perf] secondary chatMessages ${(performance.now() - chatStart).toFixed(1)}ms`,
@@ -2028,6 +2031,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           // stale durable history. Each hydration targets its explicit stream.
           props.ctx.projection.hydrateNaviMessages?.(naviChat ?? []);
           props.ctx.projection.hydrateNiaMessages?.(niaChat ?? []);
+          if (runtimeNotices?.length)
+            props.ctx.projection.hydrateRuntimeNotices?.(runtimeNotices);
           perfLog(
             `[perf] secondary chat applied +${(performance.now() - chatStart).toFixed(1)}ms`,
           );

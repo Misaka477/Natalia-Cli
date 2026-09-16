@@ -106,6 +106,9 @@ export type UiProjection = {
   ): boolean;
   hydrateNaviMessages?(messages: ChatMessageRow[]): boolean;
   hydrateNiaMessages?(messages: ChatMessageRow[]): boolean;
+  hydrateRuntimeNotices?(
+    notices: import("@natalia/contracts").RuntimeProjectedNotice[],
+  ): boolean;
   beginNaviHydration?(): void;
   beginNiaHydration?(): void;
   hydrateSubagents?(subagents: RuntimeSubagentView[]): boolean;

@@ -1,5 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { modelRefKey, parseModelRef } from "@natalia/contracts";
+import { nextContextInstructionsRevision } from "@natalia/session";
 import { discoverProviderModels, updateConfigAtScope } from "@natalia/config";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -89,6 +90,18 @@ export function createSelectionSurface(
         name: agent?.name,
         pending: false,
       });
+      // ADR Phase C: an agent switch is a prompt-level instruction change —
+      // record it as a durable `context.instructions` notice so the UI shows
+      // it in the interleaved context stream without mutating history.
+      if (exec)
+        ctx.ports.publishForSession(exec, {
+          type: "context.instructions",
+          id: `context:agent:${Date.now().toString(36)}:${nextContextInstructionsRevision(exec.session.events)}`,
+          kind: "agent_switch",
+          at: new Date().toISOString(),
+          revision: nextContextInstructionsRevision(exec.session.events),
+          summary: `active agent switched to ${agent?.name ?? "default"}`,
+        });
       return { outcome: "applied", selected: agent?.name };
     },
     async agents() {

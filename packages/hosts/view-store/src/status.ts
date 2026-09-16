@@ -149,6 +149,28 @@ export function applyStatusEvent(
     case "agent.selection":
       state.agentSelection = { name: event.name, pending: event.pending };
       return true;
+    case "context.instructions": {
+      // ADR Phase C: a prompt-level instruction change arrives as a durable
+      // event; the projection keeps the latest revision per kind (latest
+      // wins), so a replay and a live stream converge on the same view.
+      const existing = state.runtimeNotices.find(
+        (notice) => notice.kind === event.kind,
+      );
+      if (existing && existing.revision >= event.revision) return true;
+      const notice = {
+        noticeID: event.id,
+        kind: event.kind,
+        revision: event.revision,
+        at: event.at,
+        summary: event.summary,
+        ...(event.detail ? { detail: event.detail } : {}),
+      };
+      state.runtimeNotices = [
+        ...state.runtimeNotices.filter((n) => n.kind !== event.kind),
+        notice,
+      ].sort((left, right) => left.at.localeCompare(right.at));
+      return true;
+    }
     case "model.selection":
       state.modelSelection = {
         modelID: event.modelID,

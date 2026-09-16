@@ -13,6 +13,7 @@ import {
   projectedCollabMessages,
   projectedCompletions,
   projectedConstitutionRules,
+  projectedRuntimeNotices,
   projectedDecisionRecords,
   projectedDriftFindings,
   projectedEvidenceRecords,
@@ -66,6 +67,7 @@ type Surface = Pick<
   | "registeredTools"
   | "requestOverride"
   | "approveOverride"
+  | "notices"
 >;
 async function projectedCanonicalToolsWithFallback(
   events: import("@natalia/contracts").RuntimeEvent[],
@@ -97,7 +99,8 @@ async function runSessionProjectionWithFallback(
     | "workGraphNodes"
     | "workGraphEdges"
     | "mailboxMessages"
-    | "collabMessages",
+    | "collabMessages"
+    | "notices",
   events: import("@natalia/contracts").RuntimeEvent[],
 ) {
   try {
@@ -123,6 +126,8 @@ async function runSessionProjectionWithFallback(
         return projectedMailboxMessages(events);
       case "collabMessages":
         return projectedCollabMessages(events);
+      case "notices":
+        return projectedRuntimeNotices(events);
     }
   }
 }
@@ -687,6 +692,14 @@ export function createIntelligenceSurface(
       const merged = new Map<string, (typeof projected)[number]>();
       for (const tool of [...live, ...projected]) merged.set(tool.name, tool);
       return [...merged.values()];
+    },
+    async notices(sessionID?: string) {
+      const session = await intelligenceSession(sessionID);
+      if (!session) return [];
+      return (await runSessionProjectionWithFallback(
+        "notices",
+        session.events,
+      )) as import("@natalia/contracts").RuntimeProjectedNotice[];
     },
   };
 }

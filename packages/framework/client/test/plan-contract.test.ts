@@ -6,7 +6,10 @@ import type {
 } from "@natalia/runtime";
 import { createRealRuntimeClient } from "../src";
 import { officialPluginWorkspace } from "./plugin-test-helpers";
-import { projectedWorkContracts } from "@natalia/session";
+import {
+  projectedRuntimeNotices,
+  projectedWorkContracts,
+} from "@natalia/session";
 
 /** A provider whose first step proposes the contract, then settles. */
 function proposeProvider(
@@ -771,5 +774,61 @@ test("audit_report writes an evidence record for every round (EI §8.1)", async 
   };
   expect(auditEvidence.objective).toContain("Nia audit round 1");
   expect(auditEvidence.validations[0]).toMatchObject({ result: "passed" });
+  await client.dispose?.();
+}, 30_000);
+
+test("a config reload emits a context.instructions notice with a monotonic revision", async () => {
+  const root = await officialPluginWorkspace("plan-contract-reload");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_reload",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "content" as const, text: "ok" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!("ses_plan_contract_reload" as SessionID);
+  await client.reloadConfig!();
+  const notices = events.filter(
+    (event) => event.type === "context.instructions",
+  );
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toMatchObject({
+    type: "context.instructions",
+    kind: "config_reload",
+    revision: 1,
+  });
+  // A second reload raises the revision; history is never mutated.
+  await client.reloadConfig!();
+  const second = events.filter(
+    (event) => event.type === "context.instructions",
+  );
+  expect(second).toHaveLength(2);
+  expect(second[1]).toMatchObject({ revision: 2 });
+  // The projection reports the latest revision per kind.
+  expect(
+    projectedRuntimeNotices(second).map((notice) => ({
+      kind: notice.kind,
+      revision: notice.revision,
+    })),
+  ).toEqual([{ kind: "config_reload", revision: 2 }]);
+  // The notices contract answers with the same projected view.
+  const contractNotices = await client.notices!();
+  expect(contractNotices).toEqual([
+    {
+      noticeID: second[1]!.id,
+      kind: "config_reload",
+      revision: 2,
+      at: second[1]!.at,
+      summary: second[1]!.summary,
+    },
+  ]);
   await client.dispose?.();
 }, 30_000);

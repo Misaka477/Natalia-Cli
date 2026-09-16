@@ -10,6 +10,7 @@ import { agentsFromConfig } from "@natalia/agent";
 import { resolveConfig } from "@natalia/config";
 import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
+import { nextContextInstructionsRevision } from "@natalia/session";
 import {
   CHECKPOINT_FACTORY_SERVICE,
   type CheckpointFactory,
@@ -88,6 +89,23 @@ export function createConfigReload(
         ? "runtime config reloaded; provider reconfigured from disk"
         : "runtime config reloaded; provider unchanged",
     });
+    // ADR Phase C: a config reload is a prompt-level instruction change.
+    // Record it as a durable `context.instructions` notice per session so the
+    // interleaved context stream shows it — appended with a higher revision,
+    // never mutating earlier messages (D3/D6).
+    for (const exec of ctx.ports.getExecutionBySession().values()) {
+      const revision = nextContextInstructionsRevision(exec.session.events);
+      ctx.ports.publishForSession(exec, {
+        type: "context.instructions",
+        id: `context:config:${Date.now().toString(36)}:${revision}`,
+        kind: "config_reload",
+        at: new Date().toISOString(),
+        revision,
+        summary: reloaded.providerReconfigured
+          ? "runtime config reloaded; provider reconfigured from disk"
+          : "runtime config reloaded; provider unchanged",
+      });
+    }
     scheduleRuntimeStatusSnapshot();
     return { applied: true };
   }

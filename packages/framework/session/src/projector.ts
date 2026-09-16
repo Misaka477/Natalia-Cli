@@ -508,6 +508,52 @@ export function projectedGoal(events: RuntimeEvent[]): GoalView | undefined {
   return foldGoal(events);
 }
 
+/**
+ * The next `context.instructions` revision for a session (ADR Phase C):
+ * one past the highest revision already in the journal, so a later change
+ * supersedes an earlier one without mutating history.
+ */
+export function nextContextInstructionsRevision(
+  events: RuntimeEvent[],
+): number {
+  let max = 0;
+  for (const event of events)
+    if (event.type === "context.instructions" && event.revision > max)
+      max = event.revision;
+  return max + 1;
+}
+
+/**
+ * Projects the runtime notices from the journal (ADR Phase C): the latest
+ * prompt-level instruction change per kind. A later `context.instructions`
+ * event supersedes an earlier same-kind notice by revision — the projection
+ * never mutates history, it just reports the current state per kind.
+ */
+export function projectedRuntimeNotices(
+  events: RuntimeEvent[],
+): import("@natalia/contracts").RuntimeProjectedNotice[] {
+  const latest = new Map<
+    string,
+    import("@natalia/contracts").RuntimeProjectedNotice
+  >();
+  for (const event of events) {
+    if (event.type !== "context.instructions") continue;
+    const existing = latest.get(event.kind);
+    if (existing && existing.revision >= event.revision) continue;
+    latest.set(event.kind, {
+      noticeID: event.id,
+      kind: event.kind,
+      revision: event.revision,
+      at: event.at,
+      summary: event.summary,
+      ...(event.detail ? { detail: event.detail } : {}),
+    });
+  }
+  return [...latest.values()].sort((left, right) =>
+    left.at.localeCompare(right.at),
+  );
+}
+
 export function projectedConstitutionRules(events: RuntimeEvent[]) {
   const state = emptySessionConstitutionFactState();
   for (const event of events) applySessionConstitutionFact(state, event);

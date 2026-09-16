@@ -49,7 +49,8 @@ type SessionProjectTask =
         | "workGraphNodes"
         | "workGraphEdges"
         | "mailboxMessages"
-        | "collabMessages";
+        | "collabMessages"
+        | "notices";
       events: RuntimeEvent[];
     };
 
@@ -169,7 +170,8 @@ export function runSessionProjectionInWorker(
     | "workGraphNodes"
     | "workGraphEdges"
     | "mailboxMessages"
-    | "collabMessages",
+    | "collabMessages"
+    | "notices",
   events: RuntimeEvent[],
 ): Promise<unknown> {
   return run<unknown>({ op: "projection", name, events });

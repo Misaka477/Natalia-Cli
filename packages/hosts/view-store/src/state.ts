@@ -306,6 +306,13 @@ export type AppState = {
   retryBanner?: Banner;
   agentSelection?: { name?: string; pending: boolean };
   modelSelection?: { modelID?: string; variant?: string };
+  /**
+   * Projected runtime notices (ADR Phase C): the latest prompt-level
+   * instruction change per kind. Consumed through the `notices` client
+   * contract (dual ingestion) AND the `context.instructions` event stream, so
+   * a live session and a replayed session converge on the same view.
+   */
+  runtimeNotices: Array<import("@natalia/contracts").RuntimeProjectedNotice>;
   selectedTaskID?: string;
   selectedEvidenceID?: string;
   /** Recent policy outcomes, so a UI can explain why a tool did not run. */
@@ -450,6 +457,7 @@ export function initialState(): AppState {
     completions: [],
     mailbox: {},
     plans: {},
+    runtimeNotices: [],
   };
 }
 
@@ -514,6 +522,7 @@ export function cloneState(state: AppState): AppState {
     completions: [...state.completions],
     mailbox: mapRecord(state.mailbox, (value) => ({ ...value })),
     plans: mapRecord(state.plans, (value) => ({ ...value })),
+    runtimeNotices: state.runtimeNotices.map((notice) => ({ ...notice })),
     ...(state.goal
       ? {
           goal: {

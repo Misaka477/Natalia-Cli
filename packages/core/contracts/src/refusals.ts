@@ -527,6 +527,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   // drift and tool metadata still answer nothing and are named in
   // UNIMPLEMENTED_QUERIES with the reason.
   constitutionRules: { refusal: "none", note: "pure read" },
+  notices: {
+    refusal: "none",
+    note: "pure read of the projected runtime notices",
+  },
   decisionRecords: { refusal: "none", note: "pure read" },
   recordDecision: {
     refusal: "value",

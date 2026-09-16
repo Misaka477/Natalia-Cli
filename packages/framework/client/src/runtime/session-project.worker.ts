@@ -13,6 +13,7 @@ import {
   projectedWorkGraphEdges,
   projectedMailboxMessages,
   projectedCollabMessages,
+  projectedRuntimeNotices,
   type SessionProjection,
 } from "@natalia/session";
 
@@ -64,7 +65,8 @@ export type SessionProjectWorkerRequest =
         | "workGraphNodes"
         | "workGraphEdges"
         | "mailboxMessages"
-        | "collabMessages";
+        | "collabMessages"
+        | "notices";
       events: import("@natalia/contracts").RuntimeEvent[];
     };
 
@@ -155,6 +157,9 @@ port.on("message", (request: SessionProjectWorkerRequest) => {
           break;
         case "collabMessages":
           result = projectedCollabMessages(request.events);
+          break;
+        case "notices":
+          result = projectedRuntimeNotices(request.events);
           break;
       }
     }

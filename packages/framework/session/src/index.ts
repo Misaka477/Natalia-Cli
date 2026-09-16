@@ -328,6 +328,8 @@ export {
   projectedConstitutionRules,
   projectedConstitutionOverrides,
   projectedWorkContracts,
+  projectedRuntimeNotices,
+  nextContextInstructionsRevision,
   projectedDecisionRecords,
   latestSessionSnapshot,
   projectedCanonicalTools,

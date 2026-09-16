@@ -1145,6 +1145,26 @@ type RuntimeEventData =
       unverifiable?: boolean;
     }
   | {
+      /**
+       * A prompt-level context instruction change (ADR Phase C): the durable
+       * journal record that the runtime's prompt-level instructions changed
+       * (config reload, agent switch, a plan handoff notice). The projection
+       * keeps the latest revision per kind, so a later change supersedes an
+       * earlier one without mutating history (D3/D6 latest-win).
+       */
+      type: "context.instructions";
+      id: string;
+      /** What produced the instruction change. */
+      kind: "config_reload" | "agent_switch" | "plan_handoff" | "notice";
+      at: string;
+      /** Monotonic per session: the highest revision is the current state. */
+      revision: number;
+      /** One-line summary of what changed (safe prose). */
+      summary: string;
+      /** Optional detail lines (safe prose). */
+      detail?: string[];
+    }
+  | {
       type: "constitution.check";
       id: string;
       ruleID: string;
@@ -2421,6 +2441,21 @@ export type CapabilityRecordView = {
   contributions: Array<{ kind: string; name: string }>;
 };
 
+/**
+ * A projected runtime notice (ADR Phase C): the latest prompt-level
+ * instruction change per kind, projected from `context.instructions` events.
+ * The highest revision per kind is the current state; earlier same-kind
+ * notices are superseded (D6 latest-win) and never mutate history.
+ */
+export type RuntimeProjectedNotice = {
+  noticeID: string;
+  kind: "config_reload" | "agent_switch" | "plan_handoff" | "notice";
+  revision: number;
+  at: string;
+  summary: string;
+  detail?: string[];
+};
+
 export type RuntimeWorkspaceResourceReadInput = {
   /** Optional routing hint for multi-workspace clients. */
   workspaceID?: string;
@@ -3520,6 +3555,13 @@ export type RuntimeClient = {
     createdBy?: "user" | "live_chat" | "main_agent";
     sessionID?: string;
   }): Promise<{ marked: boolean; planID: string }>;
+  /**
+   * The session's projected runtime notices (ADR Phase C): the latest
+   * prompt-level instruction change per kind (config reload, agent switch,
+   * plan handoff). Later revisions supersede earlier ones; nothing mutates
+   * history.
+   */
+  notices?(sessionID?: string): Promise<RuntimeProjectedNotice[]>;
   /** Deletes a plan registry record (does not delete the Markdown file). */
   planDocDelete?(
     planID: string,
