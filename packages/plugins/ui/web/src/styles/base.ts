@@ -4743,6 +4743,46 @@ button.neu-settings-item.neu-settings-item-button:active {
 .drift-card-btn[data-kind="dispute"] {
   background: rgba(230, 180, 90, 0.18);
 }
+.constitution-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.constitution-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 12px;
+}
+.constitution-row-actions {
+  display: flex;
+  flex: none;
+  gap: 5px;
+}
+.constitution-btn {
+  padding: 2px 9px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+}
+.constitution-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.constitution-btn[data-danger] {
+  background: rgba(220, 90, 90, 0.18);
+}
+.constitution-btn[data-danger]:hover {
+  background: rgba(220, 90, 90, 0.3);
+}
 .neu-goal-action {
   display: inline-flex;
   align-items: center;

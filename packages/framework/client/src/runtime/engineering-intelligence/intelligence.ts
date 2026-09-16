@@ -71,6 +71,8 @@ type Surface = Pick<
   | "registeredTools"
   | "requestOverride"
   | "approveOverride"
+  | "updateConstitutionRule"
+  | "removeConstitutionRule"
   | "notices"
 >;
 async function projectedCanonicalToolsWithFallback(
@@ -159,6 +161,30 @@ function paginate<T>(items: T[], limit?: number, cursor?: string): T[] {
   if (!Number.isFinite(offset) || offset < 0) return items;
   const size = limit ?? items.length;
   return items.slice(offset, offset + Math.max(size, 1));
+}
+
+/**
+ * True when the rule is release-scope runtime self-protection (EI §3.8 P-1.c):
+ * it cannot be edited or removed by any UI action, only bypassed through the
+ * explicit override path.
+ */
+async function isReleaseRule(
+  ctx: import("../context").RuntimeContext,
+  exec: {
+    session: { events: import("@natalia/contracts").RuntimeEvent[] };
+    factStateComplete?: boolean;
+    factState?: import("@natalia/session").SessionFactState;
+  },
+  ruleID: string,
+): Promise<boolean> {
+  await ensureCompleteSessionFactState(ctx as never, exec as never);
+  const rules =
+    exec.factStateComplete === true && exec.factState
+      ? sessionFactConstitutionRules(exec.factState)
+      : projectedConstitutionRules(exec.session.events);
+  return rules.some(
+    (rule) => rule.ruleID === ruleID && rule.scope === "release",
+  );
 }
 
 export function createIntelligenceSurface(
@@ -759,6 +785,61 @@ export function createIntelligenceSurface(
         decision: input.decision,
       });
       return { approved: outcome.accepted && input.decision === "once" };
+    },
+    /**
+     * Update a constitution rule (EI §3.8 P-1.c, user-owned): disable or
+     * re-enable a hard rule. `enabled:false` is a reversible update; the
+     * durable tombstone is removeConstitutionRule.
+     */
+    async updateConstitutionRule(
+      input: { ruleID: string; enabled?: boolean },
+      sessionID?: string,
+    ) {
+      const exec = await intelligenceExecWindow(sessionID);
+      if (!exec?.session || !input.ruleID.trim())
+        return { updated: false as const };
+      // Runtime self-protection: release-scope rules cannot be edited by a UI
+      // action either (EI §3.8 P-1.c).
+      if (await isReleaseRule(ctx, exec, input.ruleID))
+        return { updated: false as const };
+      const governanceLedger = requireGovernanceLedger();
+      if (!governanceLedger) return { updated: false as const };
+      ctx.ports.publishForSession(
+        exec,
+        governanceLedger.buildConstitutionRuleEnabledChange({
+          id: `constitution:update:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
+          ruleID: input.ruleID,
+          ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+        }),
+      );
+      return { updated: true as const };
+    },
+    /**
+     * Remove a constitution rule (EI §3.8 P-1.c, user-owned): an append-only
+     * tombstone — the journal keeps the rule's full history, the effective
+     * set drops it. The caller confirms before this is invoked.
+     */
+    async removeConstitutionRule(
+      input: { ruleID: string },
+      sessionID?: string,
+    ) {
+      const exec = await intelligenceExecWindow(sessionID);
+      if (!exec?.session || !input.ruleID.trim())
+        return { removed: false as const };
+      // Runtime self-protection: release-scope rules are never removable.
+      if (await isReleaseRule(ctx, exec, input.ruleID))
+        return { removed: false as const };
+      const governanceLedger = requireGovernanceLedger();
+      if (!governanceLedger) return { removed: false as const };
+      ctx.ports.publishForSession(
+        exec,
+        governanceLedger.buildConstitutionRuleRemoved({
+          id: `constitution:removed:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
+          ruleID: input.ruleID,
+          removedAt: new Date().toISOString(),
+        }),
+      );
+      return { removed: true as const };
     },
     async registeredTools(sessionID?: string) {
       await ctx.ports.getReady();

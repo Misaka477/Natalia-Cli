@@ -2,6 +2,7 @@ import { createSignal, createEffect, Show, For } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
 import { WorkGraphTree } from "./components/WorkGraphTree";
+import { useConfirmDialog } from "./components/ConfirmDialog";
 
 type Tab =
   | "constitution"
@@ -32,6 +33,7 @@ export function GovernancePane(props: {
   // ADR Phase C: the projected runtime notices (dual ingestion — the live
   // event stream and the server-projected contract converge here).
   const [liveNotices, setLiveNotices] = createSignal<any[]>([]);
+  const { confirm, dialog } = useConfirmDialog();
 
   const load = async () => {
     const sessionID = props.sessionID;
@@ -201,17 +203,62 @@ export function GovernancePane(props: {
             }
           >
             {(rule) => (
-              <div class="neu-gov-row">
-                <span class="neu-gov-title" data-priority={rule.priority}>
-                  {rule.ruleID}
-                </span>
-                <span class="neu-gov-text">{rule.statement}</span>
-                <span class="neu-gov-meta">
-                  {rule.scope} · {rule.enforcement}
-                </span>
+              <div class="constitution-row">
+                <div class="constitution-row-main">
+                  <span class="neu-gov-title" data-priority={rule.priority}>
+                    {rule.ruleID}
+                  </span>
+                  <span class="neu-gov-text">{rule.statement}</span>
+                  <span class="neu-gov-meta">
+                    {rule.scope} · {rule.enforcement}
+                  </span>
+                </div>
+                <Show when={rule.scope !== "release"}>
+                  <div class="constitution-row-actions">
+                    <button
+                      type="button"
+                      class="constitution-btn"
+                      onClick={() =>
+                        void props.runtime
+                          ?.updateConstitutionRule?.(
+                            { ruleID: rule.ruleID, enabled: false },
+                            props.sessionID,
+                          )
+                          .then(() => load())
+                      }
+                    >
+                      停用
+                    </button>
+                    <button
+                      type="button"
+                      class="constitution-btn"
+                      data-danger
+                      onClick={() =>
+                        void (async () => {
+                          const ok = await confirm({
+                            title: "删除规则",
+                            message: `删除 ${rule.ruleID}？记录进 journal（墓碑），历史保留。`,
+                            confirmLabel: "删除",
+                            danger: true,
+                          });
+                          if (ok)
+                            await props.runtime
+                              ?.removeConstitutionRule?.(
+                                { ruleID: rule.ruleID },
+                                props.sessionID,
+                              )
+                              .then(() => load());
+                        })()
+                      }
+                    >
+                      删除
+                    </button>
+                  </div>
+                </Show>
               </div>
             )}
           </For>
+          {dialog}
         </Show>
         <Show when={tab() === "decisions"}>
           <For

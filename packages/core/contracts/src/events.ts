@@ -3849,6 +3849,25 @@ export type RuntimeClient = {
     requestID: string;
     decision: "once" | "reject";
   }): Promise<{ approved: boolean }>;
+  /**
+   * Update a constitution rule (EI §3.8 P-1.c, user-owned): disable or
+   * re-enable a hard rule (`enabled:false` is a reversible update; the durable
+   * tombstone is `removeConstitutionRule`). Only a user edits rules — a model
+   * never disables or weakens an existing one.
+   */
+  updateConstitutionRule?(
+    input: { ruleID: string; enabled?: boolean },
+    sessionID?: string,
+  ): Promise<{ updated: boolean }>;
+  /**
+   * Remove a constitution rule (EI §3.8 P-1.c, user-owned): an append-only
+   * tombstone — the journal keeps the rule's full history, the effective set
+   * drops it. Requires the caller's confirmation; a model never deletes.
+   */
+  removeConstitutionRule?(
+    input: { ruleID: string },
+    sessionID?: string,
+  ): Promise<{ removed: boolean }>;
   registeredTools?(sessionID?: string): Promise<
     Array<{
       name: string;

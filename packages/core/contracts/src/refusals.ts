@@ -615,6 +615,16 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "approved",
     note: "records the user's approval response for a pending constitution override",
   },
+  updateConstitutionRule: {
+    refusal: "value",
+    expressedBy: "updated",
+    note: "disables or re-enables a hard constitution rule (user-owned; a model never edits rules)",
+  },
+  removeConstitutionRule: {
+    refusal: "value",
+    expressedBy: "removed",
+    note: "records the append-only tombstone for a removed constitution rule (user-owned, confirmed)",
+  },
   projectionContributions: {
     refusal: "none",
     note: "pure read of sanitized plugin projection contributions",
