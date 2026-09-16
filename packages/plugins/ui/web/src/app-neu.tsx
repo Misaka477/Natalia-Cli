@@ -34,6 +34,7 @@ import { pendingToolLink } from "@natalia/ui-model";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { QueueDock } from "./components/QueueDock";
+import { SessionUsageBar } from "./components/SessionUsageBar";
 import { ReviewPane } from "./components/RightPanel";
 import { SettingsPanel, type RegisteredToolView } from "./settings-panel";
 import {
@@ -3816,6 +3817,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       });
                     }}
                   />
+                  <SessionUsageBar state={state()} />
                   <Composer
                     value={mainDraft()}
                     placeholder="输入消息，使用 @ 提及文件…"

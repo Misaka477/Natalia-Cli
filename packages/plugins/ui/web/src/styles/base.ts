@@ -4558,6 +4558,27 @@ button.neu-settings-item.neu-settings-item-button:active {
   opacity: 0.65;
   font-variant-numeric: tabular-nums;
 }
+.session-usage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  padding: 3px 10px;
+  margin: 0 0 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.82;
+  font-variant-numeric: tabular-nums;
+}
+.session-usage-seg {
+  white-space: nowrap;
+}
+.session-usage-sep {
+  opacity: 0.4;
+}
 .neu-goal-action {
   display: inline-flex;
   align-items: center;
